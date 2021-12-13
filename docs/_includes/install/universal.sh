@@ -34,7 +34,7 @@ then
     if [ "${ARCH}" = "x86_64" ]
     then
         DIR="macos"
-    elif [ "${ARCH}" = "aarch64" -o "${ARCH}" = "arm64" ]
+    elif [ "${ARCH}" = "aarch64" ]
     then
         DIR="macos-aarch64"
     fi

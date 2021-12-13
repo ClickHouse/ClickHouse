@@ -29,7 +29,7 @@ namespace ErrorCodes
 }
 
 MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_)
-    : IRowInputFormat(header_, buf, std::move(params_)), buf(in_), parser(visitor), data_types(header_.getDataTypes())  {}
+    : IRowInputFormat(header_, in_, std::move(params_)), buf(*in), parser(visitor), data_types(header_.getDataTypes())  {}
 
 void MsgPackRowInputFormat::resetParser()
 {

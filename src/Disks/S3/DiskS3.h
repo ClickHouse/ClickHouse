@@ -68,7 +68,7 @@ public:
         String name_,
         String bucket_,
         String s3_root_path_,
-        DiskPtr metadata_disk_,
+        String metadata_path_,
         ContextPtr context_,
         SettingsPtr settings_,
         GetDiskSettings settings_getter_);

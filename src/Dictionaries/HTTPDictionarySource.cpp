@@ -98,13 +98,11 @@ Pipe HTTPDictionarySource::loadAll()
         Poco::Net::HTTPRequest::HTTP_GET,
         ReadWriteBufferFromHTTP::OutStreamCallback(),
         timeouts,
-        credentials,
         0,
+        credentials,
         DBMS_DEFAULT_BUFFER_SIZE,
         context->getReadSettings(),
-        configuration.header_entries,
-        ReadWriteBufferFromHTTP::Range{},
-        RemoteHostFilter{}, false);
+        configuration.header_entries);
 
     return createWrappedBuffer(std::move(in_ptr));
 }
@@ -119,13 +117,11 @@ Pipe HTTPDictionarySource::loadUpdatedAll()
         Poco::Net::HTTPRequest::HTTP_GET,
         ReadWriteBufferFromHTTP::OutStreamCallback(),
         timeouts,
-        credentials,
         0,
+        credentials,
         DBMS_DEFAULT_BUFFER_SIZE,
         context->getReadSettings(),
-        configuration.header_entries,
-        ReadWriteBufferFromHTTP::Range{},
-        RemoteHostFilter{}, false);
+        configuration.header_entries);
 
     return createWrappedBuffer(std::move(in_ptr));
 }
@@ -149,13 +145,11 @@ Pipe HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
         Poco::Net::HTTPRequest::HTTP_POST,
         out_stream_callback,
         timeouts,
-        credentials,
         0,
+        credentials,
         DBMS_DEFAULT_BUFFER_SIZE,
         context->getReadSettings(),
-        configuration.header_entries,
-        ReadWriteBufferFromHTTP::Range{},
-        RemoteHostFilter{}, false);
+        configuration.header_entries);
 
     return createWrappedBuffer(std::move(in_ptr));
 }
@@ -179,13 +173,11 @@ Pipe HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::vect
         Poco::Net::HTTPRequest::HTTP_POST,
         out_stream_callback,
         timeouts,
-        credentials,
         0,
+        credentials,
         DBMS_DEFAULT_BUFFER_SIZE,
         context->getReadSettings(),
-        configuration.header_entries,
-        ReadWriteBufferFromHTTP::Range{},
-        RemoteHostFilter{}, false);
+        configuration.header_entries);
 
     return createWrappedBuffer(std::move(in_ptr));
 }

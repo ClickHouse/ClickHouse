@@ -51,9 +51,6 @@ std::string ReadBufferFromFileDescriptor::getFileName() const
 
 bool ReadBufferFromFileDescriptor::nextImpl()
 {
-    /// If internal_buffer size is empty, then read() cannot be distinguished from EOF
-    assert(!internal_buffer.empty());
-
     size_t bytes_read = 0;
     while (!bytes_read)
     {

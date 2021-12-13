@@ -40,14 +40,17 @@ public:
 };
 
 Bzip2WriteBuffer::Bzip2WriteBuffer(std::unique_ptr<WriteBuffer> out_, int compression_level, size_t buf_size, char * existing_memory, size_t alignment)
-    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment)
+    : BufferWithOwnMemory<WriteBuffer>(buf_size, existing_memory, alignment)
     , bz(std::make_unique<Bzip2StateWrapper>(compression_level))
+    , out(std::move(out_))
 {
 }
 
 Bzip2WriteBuffer::~Bzip2WriteBuffer()
 {
-    finalize();
+    /// FIXME move final flush into the caller
+    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
+    finish();
 }
 
 void Bzip2WriteBuffer::nextImpl()
@@ -89,7 +92,27 @@ void Bzip2WriteBuffer::nextImpl()
     }
 }
 
-void Bzip2WriteBuffer::finalizeBefore()
+void Bzip2WriteBuffer::finish()
+{
+    if (finished)
+        return;
+
+    try
+    {
+        finishImpl();
+        out->finalize();
+        finished = true;
+    }
+    catch (...)
+    {
+        /// Do not try to flush next time after exception.
+        out->position() = out->buffer().begin();
+        finished = true;
+        throw;
+    }
+}
+
+void Bzip2WriteBuffer::finishImpl()
 {
     next();
 

@@ -1,6 +1,6 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 
-#include <Access/Common/AccessFlags.h>
+#include <Access/AccessFlags.h>
 #include <Columns/ColumnNullable.h>
 #include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -62,18 +62,7 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         return table_function_ptr->execute(query.table_function, getContext(), table_function_ptr->getName());
     }
 
-    if (query.table_id)
-    {
-        query.table_id = getContext()->resolveStorageID(query.table_id);
-    }
-    else
-    {
-        /// Insert query parser does not fill table_id because table and
-        /// database can be parameters and be filled after parsing.
-        StorageID local_table_id(query.getDatabase(), query.getTable());
-        query.table_id = getContext()->resolveStorageID(local_table_id);
-    }
-
+    query.table_id = getContext()->resolveStorageID(query.table_id);
     return DatabaseCatalog::instance().getTable(query.table_id, getContext());
 }
 
@@ -297,7 +286,7 @@ BlockIO InterpreterInsertQuery::execute()
                 const auto & union_modes = select_query.list_of_modes;
 
                 /// ASTSelectWithUnionQuery is not normalized now, so it may pass some queries which can be Trivial select queries
-                const auto mode_is_all = [](const auto & mode) { return mode == SelectUnionMode::ALL; };
+                const auto mode_is_all = [](const auto & mode) { return mode == ASTSelectWithUnionQuery::Mode::ALL; };
 
                 is_trivial_insert_select =
                     std::all_of(union_modes.begin(), union_modes.end(), std::move(mode_is_all))

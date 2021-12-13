@@ -40,7 +40,7 @@ function update_hash() {
 
 
 function generate_selectors(elem) {
-    var html = '<div id="systems_selector" class="mb-3"><h2 class="h4">Compare</h2>';
+    var html = '<div id="systems_selector"><h3>Compare</h3>';
 
     var available_results = results;
 
@@ -63,7 +63,7 @@ function generate_selectors(elem) {
             button_class = 'btn-outline-secondary';
         };
 
-        html += '<button type="button" class="btn btn-sm mr-1 mb-1 ' + button_class +
+        html += '<button type="button" class="btn btn-sm mr-2 mb-2 ' + button_class +
             (selected && available ? ' active' : '') +
             (available ? '' : ' disabled') + '"';
         if (systems_full[i]) {
@@ -73,17 +73,17 @@ function generate_selectors(elem) {
     }
 
     if (current_data_size) {
-        html += '</div><div id="data_size_selector"><h2 class="h4">Dataset&nbsp;size</h2>';
+        html += '</div><div id="data_size_selector"><h3>Dataset&nbsp;size</h3>';
 
         for (var i = 0; i < data_sizes.length; i++) {
-            html += '<button type="button" class="btn btn-sm btn-outline-dark mr-1 mb-1' + (data_sizes[i].id == current_data_size ? ' active' : '') + '" data-size-id="' + data_sizes[i].id + '">' + data_sizes[i].name + '</button>';
+            html += '<button type="button" class="btn btn-sm btn-outline-dark mr-2 mb-2' + (data_sizes[i].id == current_data_size ? ' active' : '') + '" data-size-id="' + data_sizes[i].id + '">' + data_sizes[i].name + '</button>';
         }
     }
 
-    html += '</div><div id="runs_selector"><h2 class="h4">Run</h2>';
+    html += '</div><div id="runs_selector"><h3>Run</h3>';
 
     for (var i = 0; i < runs.length; i++) {
-        html += '<button type="button" class="btn btn-sm btn-outline-dark mr-1 mb-1' + (current_runs.indexOf(String(i)) != -1 ? ' active' : '') + '" data-run-id="' + i + '">' + runs[i] + '</button>';
+        html += '<button type="button" class="btn btn-sm btn-outline-dark mr-2 mb-2' + (current_runs.indexOf(String(i)) != -1 ? ' active' : '') + '" data-run-id="' + i + '">' + runs[i] + '</button>';
     }
 
     html += '</div>';

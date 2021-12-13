@@ -175,7 +175,6 @@ in which the `Strings` represents the named fields of the tuple and `T` are the 
 
 ``` sql
 tupleToNameValuePairs(tuple)
-```
 
 **Arguments**
 
@@ -197,7 +196,7 @@ CREATE TABLE tupletest (`col` Tuple(user_ID UInt64, session_ID UInt64) ENGINE = 
 INSERT INTO tupletest VALUES (tuple( 100, 2502)), (tuple(1,100));
 
 SELECT tupleToNameValuePairs(col) FROM tupletest;
-```
+``` 
 
 Result:
 

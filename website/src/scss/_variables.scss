@@ -165,7 +165,7 @@ $border-color:                $gray-500;
 
 $border-radius:               8px;
 $border-radius-lg:            8px;
-$border-radius-sm:            4px;
+$border-radius-sm:            8px;
 
 $box-shadow-sm:               0 2px 14px rgba($gray-700, .2);
 $box-shadow:                  0 8px 20px rgba($gray-700, .2);
@@ -238,10 +238,10 @@ $btn-font-size:               14px;
 $btn-line-height:             20px;
 $btn-white-space:             null; // Set to `nowrap` to prevent text wrapping
 
-$btn-padding-y-sm:            6px;
-$btn-padding-x-sm:            12px;
-$btn-font-size-sm:            12px;
-$btn-line-height-sm:          16px;
+$btn-padding-y-sm:            12px;
+$btn-padding-x-sm:            32px;
+$btn-font-size-sm:            14px;
+$btn-line-height-sm:          20px;
 
 $btn-padding-y-lg:            16px;
 $btn-padding-x-lg:            32px;

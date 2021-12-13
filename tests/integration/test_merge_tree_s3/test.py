@@ -50,6 +50,11 @@ def cluster():
                              main_configs=["configs/config.d/storage_conf.xml",
                                            "configs/config.d/bg_processing_pool_conf.xml"],
                              with_minio=True)
+        cluster.add_instance("node_async_read",
+                             main_configs=["configs/config.d/storage_conf.xml",
+                                           "configs/config.d/bg_processing_pool_conf.xml"],
+                             user_configs=["configs/config.d/async_read.xml"],
+                             with_minio=True)
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
@@ -140,7 +145,7 @@ def wait_for_delete_s3_objects(cluster, expected, timeout=30):
 
 
 @pytest.fixture(autouse=True)
-@pytest.mark.parametrize("node_name", ["node"])
+@pytest.mark.parametrize("node_name", ["node", "node_async_read"])
 def drop_table(cluster, node_name):
     yield
     node = cluster.instances[node_name]
@@ -160,7 +165,9 @@ def drop_table(cluster, node_name):
     "min_rows_for_wide_part,files_per_part,node_name",
     [
         (0, FILES_OVERHEAD_PER_PART_WIDE, "node"),
-        (8192, FILES_OVERHEAD_PER_PART_COMPACT, "node")
+        (8192, FILES_OVERHEAD_PER_PART_COMPACT, "node"),
+        (0, FILES_OVERHEAD_PER_PART_WIDE, "node_async_read"),
+        (8192, FILES_OVERHEAD_PER_PART_COMPACT, "node_async_read")
     ]
 )
 def test_simple_insert_select(cluster, min_rows_for_wide_part, files_per_part, node_name):
@@ -184,7 +191,9 @@ def test_simple_insert_select(cluster, min_rows_for_wide_part, files_per_part, n
 @pytest.mark.parametrize(
     "merge_vertical,node_name", [
         (True, "node"),
-        (False, "node")
+        (False, "node"),
+        (True, "node_async_read"),
+        (False, "node_async_read")
 ])
 def test_insert_same_partition_and_merge(cluster, merge_vertical, node_name):
     settings = {}
@@ -226,7 +235,7 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical, node_name):
     wait_for_delete_s3_objects(cluster, FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD)
 
 
-@pytest.mark.parametrize("node_name", ["node"])
+@pytest.mark.parametrize("node_name", ["node", "node_async_read"])
 def test_alter_table_columns(cluster, node_name):
     node = cluster.instances[node_name]
     create_table(node, "s3_test")
@@ -255,7 +264,7 @@ def test_alter_table_columns(cluster, node_name):
     wait_for_delete_s3_objects(cluster, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + 2)
 
 
-@pytest.mark.parametrize("node_name", ["node"])
+@pytest.mark.parametrize("node_name", ["node", "node_async_read"])
 def test_attach_detach_partition(cluster, node_name):
     node = cluster.instances[node_name]
     create_table(node, "s3_test")
@@ -287,7 +296,7 @@ def test_attach_detach_partition(cluster, node_name):
     assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD
 
 
-@pytest.mark.parametrize("node_name", ["node"])
+@pytest.mark.parametrize("node_name", ["node", "node_async_read"])
 def test_move_partition_to_another_disk(cluster, node_name):
     node = cluster.instances[node_name]
     create_table(node, "s3_test")
@@ -337,7 +346,7 @@ def test_table_manipulations(cluster, node_name):
     assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD
 
 
-@pytest.mark.parametrize("node_name", ["node"])
+@pytest.mark.parametrize("node_name", ["node", "node_async_read"])
 def test_move_replace_partition_to_another_table(cluster, node_name):
     node = cluster.instances[node_name]
     create_table(node, "s3_test")
@@ -489,7 +498,7 @@ def test_s3_disk_restart_during_load(cluster, node_name):
         thread.join()
 
 
-@pytest.mark.parametrize("node_name", ["node"])
+@pytest.mark.parametrize("node_name", ["node", "node_async_read"])
 def test_s3_disk_reads_on_unstable_connection(cluster, node_name):
     node = cluster.instances[node_name]
     create_table(node, "s3_test", storage_policy='unstable_s3')

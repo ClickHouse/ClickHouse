@@ -223,7 +223,7 @@ private:
         std::unique_lock<std::mutex> & state_lock);
 
     /// Add part for mutations with block_number > part.getDataVersion()
-    void addPartToMutations(const String & part_name, const MergeTreePartInfo & part_info);
+    void addPartToMutations(const String & part_name);
 
     /// Remove covered parts from mutations (parts_to_do) which were assigned
     /// for mutation. If remove_covered_parts = true, than remove parts covered

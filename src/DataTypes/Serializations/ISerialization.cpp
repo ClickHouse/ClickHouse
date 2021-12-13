@@ -3,7 +3,6 @@
 #include <Columns/IColumn.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
-#include <IO/ReadBufferFromString.h>
 #include <Common/escapeForFileName.h>
 #include <DataTypes/NestedUtils.h>
 #include <base/EnumReflection.h>
@@ -15,7 +14,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int MULTIPLE_STREAMS_REQUIRED;
-    extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 }
 
 String ISerialization::Substream::toString() const
@@ -204,20 +202,6 @@ bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
     return true;
 }
 
-void ISerialization::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    String field;
-    /// Read until \t or \n.
-    readString(field, istr);
-    ReadBufferFromString buf(field);
-    deserializeWholeText(column, buf, settings);
-}
-
-void ISerialization::serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    serializeText(column, row_num, ostr, settings);
-}
-
 size_t ISerialization::getArrayLevel(const SubstreamPath & path)
 {
     size_t level = 0;
@@ -255,18 +239,6 @@ ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath
     }
 
     return res;
-}
-
-void ISerialization::throwUnexpectedDataAfterParsedValue(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const String & type_name) const
-{
-    WriteBufferFromOwnString ostr;
-    serializeText(column, column.size() - 1, ostr, settings);
-    throw Exception(
-        ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE,
-        "Unexpected data '{}' after parsed {} value '{}'",
-        std::string(istr.position(), std::min(size_t(10), istr.available())),
-        type_name,
-        ostr.str());
 }
 
 }

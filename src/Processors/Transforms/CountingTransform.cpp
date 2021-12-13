@@ -1,9 +1,6 @@
 #include <iostream>
-
-#include <Interpreters/ProcessList.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Common/ProfileEvents.h>
-#include <Common/ThreadStatus.h>
 
 
 namespace ProfileEvents

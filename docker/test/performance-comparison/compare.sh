@@ -61,7 +61,7 @@ function configure
     cp -rv right/config left ||:
 
     # Start a temporary server to rename the tables
-    while pkill clickhouse-serv; do echo . ; sleep 1 ; done
+    while killall clickhouse-server; do echo . ; sleep 1 ; done
     echo all killed
 
     set -m # Spawn temporary in its own process groups
@@ -88,7 +88,7 @@ function configure
     clickhouse-client --port $LEFT_SERVER_PORT --query "create database test" ||:
     clickhouse-client --port $LEFT_SERVER_PORT --query "rename table datasets.hits_v1 to test.hits" ||:
 
-    while pkill clickhouse-serv; do echo . ; sleep 1 ; done
+    while killall clickhouse-server; do echo . ; sleep 1 ; done
     echo all killed
 
     # Make copies of the original db for both servers. Use hardlinks instead
@@ -106,7 +106,7 @@ function configure
 
 function restart
 {
-    while pkill clickhouse-serv; do echo . ; sleep 1 ; done
+    while killall clickhouse-server; do echo . ; sleep 1 ; done
     echo all killed
 
     # Change the jemalloc settings here.
@@ -291,7 +291,7 @@ function get_profiles_watchdog
 
     for pid in $(pgrep -f clickhouse)
     do
-        sudo gdb -p "$pid" --batch --ex "info proc all" --ex "thread apply all bt" --ex quit &> "$pid.gdb.log" &
+        gdb -p "$pid" --batch --ex "info proc all" --ex "thread apply all bt" --ex quit &> "$pid.gdb.log" &
     done
     wait
 
@@ -308,7 +308,12 @@ function get_profiles_watchdog
 function get_profiles
 {
     # Collect the profiles
+    clickhouse-client --port $LEFT_SERVER_PORT --query "set query_profiler_cpu_time_period_ns = 0"
+    clickhouse-client --port $LEFT_SERVER_PORT --query "set query_profiler_real_time_period_ns = 0"
     clickhouse-client --port $LEFT_SERVER_PORT --query "system flush logs" &
+
+    clickhouse-client --port $RIGHT_SERVER_PORT --query "set query_profiler_cpu_time_period_ns = 0"
+    clickhouse-client --port $RIGHT_SERVER_PORT --query "set query_profiler_real_time_period_ns = 0"
     clickhouse-client --port $RIGHT_SERVER_PORT --query "system flush logs" &
 
     wait
@@ -629,7 +634,7 @@ create view query_display_names as select * from
 
 create view partial_query_times as select * from
     file('analyze/partial-query-times.tsv', TSVWithNamesAndTypes,
-        'test text, query_index int, time_stddev float, time_median double')
+        'test text, query_index int, time_stddev float, time_median float')
     ;
 
 -- Report for partial queries that we could only run on the new server (e.g.
@@ -1409,7 +1414,7 @@ case "$stage" in
     while env kill -- -$watchdog_pid ; do sleep 1; done
 
     # Stop the servers to free memory for the subsequent query analysis.
-    while pkill clickhouse-serv; do echo . ; sleep 1 ; done
+    while killall clickhouse; do echo . ; sleep 1 ; done
     echo Servers stopped.
     ;&
 "analyze_queries")

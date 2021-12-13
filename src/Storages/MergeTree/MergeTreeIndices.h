@@ -18,11 +18,6 @@ constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 using MergeTreeIndexVersion = uint8_t;
 struct MergeTreeIndexFormat
 {
@@ -92,32 +87,6 @@ public:
 };
 
 using MergeTreeIndexConditionPtr = std::shared_ptr<IMergeTreeIndexCondition>;
-using MergeTreeIndexConditions = std::vector<MergeTreeIndexConditionPtr>;
-
-struct IMergeTreeIndex;
-using MergeTreeIndexPtr = std::shared_ptr<const IMergeTreeIndex>;
-
-/// IndexCondition that checks several indexes at the same time.
-class IMergeTreeIndexMergedCondition
-{
-public:
-    explicit IMergeTreeIndexMergedCondition(size_t granularity_)
-        : granularity(granularity_)
-    {
-    }
-
-    virtual ~IMergeTreeIndexMergedCondition() = default;
-
-    virtual void addIndex(const MergeTreeIndexPtr & index) = 0;
-    virtual bool alwaysUnknownOrTrue() const = 0;
-    virtual bool mayBeTrueOnGranule(const MergeTreeIndexGranules & granules) const = 0;
-
-protected:
-    const size_t granularity;
-};
-
-using MergeTreeIndexMergedConditionPtr = std::shared_ptr<IMergeTreeIndexMergedCondition>;
-using MergeTreeIndexMergedConditions = std::vector<IMergeTreeIndexMergedCondition>;
 
 
 struct IMergeTreeIndex
@@ -131,9 +100,6 @@ struct IMergeTreeIndex
 
     /// Returns filename without extension.
     String getFileName() const { return INDEX_FILE_PREFIX + index.name; }
-    size_t getGranularity() const { return index.granularity; }
-
-    virtual bool isMergeable() const { return false; }
 
     /// Returns extension for serialization.
     /// Reimplement if you want new index format.
@@ -160,14 +126,7 @@ struct IMergeTreeIndex
     virtual MergeTreeIndexAggregatorPtr createIndexAggregator() const = 0;
 
     virtual MergeTreeIndexConditionPtr createIndexCondition(
-        const SelectQueryInfo & query_info, ContextPtr context) const = 0;
-
-    virtual MergeTreeIndexMergedConditionPtr createIndexMergedCondtition(
-        const SelectQueryInfo & /*query_info*/, StorageMetadataPtr /*storage_metadata*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "MergedCondition is not implemented for index of type {}", index.type);
-    }
+            const SelectQueryInfo & query_info, ContextPtr context) const = 0;
 
     Names getColumnsRequiredForIndexCalc() const { return index.expression->getRequiredColumns(); }
 
@@ -217,8 +176,5 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool attach);
 
 MergeTreeIndexPtr bloomFilterIndexCreatorNew(const IndexDescription & index);
 void bloomFilterIndexValidatorNew(const IndexDescription & index, bool attach);
-
-MergeTreeIndexPtr hypothesisIndexCreator(const IndexDescription & index);
-void hypothesisIndexValidator(const IndexDescription & index, bool attach);
 
 }

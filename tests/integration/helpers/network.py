@@ -151,7 +151,7 @@ class _NetworkManager:
     def _iptables_cmd_suffix(
             source=None, destination=None,
             source_port=None, destination_port=None,
-            action=None, probability=None, custom_args=None):
+            action=None, probability=None):
         ret = []
         if probability is not None:
             ret.extend(['-m', 'statistic', '--mode', 'random', '--probability', str(probability)])
@@ -166,8 +166,6 @@ class _NetworkManager:
             ret.extend(['--dport', str(destination_port)])
         if action is not None:
             ret.extend(['-j'] + action.split())
-        if custom_args is not None:
-            ret.extend(custom_args)
         return ret
 
     def __init__(

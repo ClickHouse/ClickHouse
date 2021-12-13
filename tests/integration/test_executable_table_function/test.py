@@ -63,8 +63,8 @@ def test_executable_storage_no_input(started_cluster):
 def test_executable_storage_input(started_cluster):
     skip_test_msan(node)
     node.query("DROP TABLE IF EXISTS test_table")
-    node.query("CREATE TABLE test_table (value String) ENGINE=Executable('test_input.sh', 'TabSeparated', (SELECT 1))")
-    assert node.query("SELECT * FROM test_table") == 'Key 1\n'
+    node.query("CREATE TABLE test_table (value String) ENGINE=Executable('test_no_input.sh', 'TabSeparated', (SELECT 1))")
+    assert node.query("SELECT * FROM test_table") == '1\n'
     node.query("DROP TABLE test_table")
 
 def test_executable_storage_input_multiple_pipes(started_cluster):

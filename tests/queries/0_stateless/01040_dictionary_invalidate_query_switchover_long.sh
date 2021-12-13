@@ -35,7 +35,7 @@ $CLICKHOUSE_CLIENT --query "SELECT dictGetUInt8('dictdb_01041_01040.invalidate',
 # No exception happened
 $CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = 'dictdb_01041_01040' AND name = 'invalidate'"
 
-$CLICKHOUSE_CLIENT --check_table_dependencies=0 --query "DROP TABLE dictdb_01041_01040.dict_invalidate"
+$CLICKHOUSE_CLIENT --query "DROP TABLE dictdb_01041_01040.dict_invalidate"
 
 function check_exception_detected()
 {

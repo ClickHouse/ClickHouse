@@ -5,6 +5,7 @@
 #include <Common/RWLock.h>
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
+#include <Storages/JoinSettings.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 

@@ -93,11 +93,11 @@ CI_CONFIG = {
             "tidy": "disable",
             "with_coverage": False
         },
-        "binary_tidy": {
+        "package_tidy": {
             "compiler": "clang-13",
             "build_type": "debug",
             "sanitizer": "",
-            "package_type": "binary",
+            "package_type": "deb",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "enable",
@@ -163,26 +163,6 @@ CI_CONFIG = {
             "tidy": "disable",
             "with_coverage": False
         }
-    },
-    "builds_report_config": {
-        "ClickHouse build check (actions)": [
-            "package_release",
-            "performance",
-            "package_asan",
-            "package_ubsan",
-            "package_tsan",
-            "package_msan",
-            "package_debug",
-            "binary_release"
-        ],
-        "ClickHouse special build check (actions)": [
-            "binary_tidy",
-            "binary_splitted",
-            "binary_darwin",
-            "binary_arrach64",
-            "binary_freebsd",
-            "binary_darwin_aarch64"
-        ],
     },
     "tests_config": {
         "Stateful tests (address, actions)": {

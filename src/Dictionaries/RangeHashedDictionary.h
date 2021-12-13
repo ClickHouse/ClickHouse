@@ -39,8 +39,7 @@ public:
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
-        bool require_nonempty_,
-        BlockPtr update_field_loaded_block_ = nullptr);
+        bool require_nonempty_);
 
     std::string getTypeName() const override { return "RangeHashed"; }
 
@@ -64,7 +63,7 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<RangeHashedDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty, update_field_loaded_block);
+        return std::make_shared<RangeHashedDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty);
     }
 
     const IDictionarySource * getSource() const override { return source_ptr.get(); }
@@ -157,10 +156,6 @@ private:
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
-    void updateData();
-
-    void blockToAttributes(const Block & block);
-
     template <typename T>
     static void setAttributeValueImpl(Attribute & attribute, KeyType key, const Range & range, const Field & value);
 
@@ -190,8 +185,8 @@ private:
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
     const bool require_nonempty;
-    BlockPtr update_field_loaded_block;
 
+    std::map<std::string, size_t> attribute_index_by_name;
     std::vector<Attribute> attributes;
     Arena complex_key_arena;
 

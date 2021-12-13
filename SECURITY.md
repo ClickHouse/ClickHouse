@@ -19,11 +19,9 @@ The following versions of ClickHouse server are currently being supported with s
 | 21.4   | :x: |
 | 21.5   | :x: |
 | 21.6   | :x: |
-| 21.7   | :x: |
+| 21.7   | ✅ |
 | 21.8   | ✅ |
 | 21.9   | ✅ |
-| 21.10   | ✅ |
-| 21.11   | ✅ |
 
 ## Reporting a Vulnerability
 

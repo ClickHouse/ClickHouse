@@ -1,5 +1,4 @@
 #include <Access/Authentication.h>
-#include <Access/Common/AuthenticationData.h>
 #include <Access/Credentials.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/LDAPClient.h>
@@ -18,12 +17,12 @@ namespace ErrorCodes
 
 namespace
 {
-    using Digest = AuthenticationData::Digest;
-    using Util = AuthenticationData::Util;
+    using Digest = Authentication::Digest;
+    using Util = Authentication::Util;
 
     bool checkPasswordPlainText(const String & password, const Digest & password_plaintext)
     {
-        return (Util::stringToDigest(password) == password_plaintext);
+        return (Util::encodePlainText(password) == password_plaintext);
     }
 
     bool checkPasswordDoubleSHA1(const std::string_view & password, const Digest & password_double_sha1)
@@ -68,76 +67,76 @@ namespace
 }
 
 
-bool Authentication::areCredentialsValid(const Credentials & credentials, const AuthenticationData & auth_data, const ExternalAuthenticators & external_authenticators)
+bool Authentication::areCredentialsValid(const Credentials & credentials, const ExternalAuthenticators & external_authenticators) const
 {
     if (!credentials.isReady())
         return false;
 
     if (const auto * gss_acceptor_context = typeid_cast<const GSSAcceptorContext *>(&credentials))
     {
-        switch (auth_data.getType())
+        switch (type)
         {
-            case AuthenticationType::NO_PASSWORD:
-            case AuthenticationType::PLAINTEXT_PASSWORD:
-            case AuthenticationType::SHA256_PASSWORD:
-            case AuthenticationType::DOUBLE_SHA1_PASSWORD:
-            case AuthenticationType::LDAP:
-                throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
+            case NO_PASSWORD:
+            case PLAINTEXT_PASSWORD:
+            case SHA256_PASSWORD:
+            case DOUBLE_SHA1_PASSWORD:
+            case LDAP:
+                throw Require<BasicCredentials>("ClickHouse Basic Authentication");
 
-            case AuthenticationType::KERBEROS:
-                return external_authenticators.checkKerberosCredentials(auth_data.getKerberosRealm(), *gss_acceptor_context);
+            case KERBEROS:
+                return external_authenticators.checkKerberosCredentials(kerberos_realm, *gss_acceptor_context);
 
-            case AuthenticationType::MAX:
+            case MAX_TYPE:
                 break;
         }
     }
 
     if (const auto * mysql_credentials = typeid_cast<const MySQLNative41Credentials *>(&credentials))
     {
-        switch (auth_data.getType())
+        switch (type)
         {
-            case AuthenticationType::NO_PASSWORD:
+            case NO_PASSWORD:
                 return true; // N.B. even if the password is not empty!
 
-            case AuthenticationType::PLAINTEXT_PASSWORD:
-                return checkPasswordPlainTextMySQL(mysql_credentials->getScramble(), mysql_credentials->getScrambledPassword(), auth_data.getPasswordHashBinary());
+            case PLAINTEXT_PASSWORD:
+                return checkPasswordPlainTextMySQL(mysql_credentials->getScramble(), mysql_credentials->getScrambledPassword(), password_hash);
 
-            case AuthenticationType::DOUBLE_SHA1_PASSWORD:
-                return checkPasswordDoubleSHA1MySQL(mysql_credentials->getScramble(), mysql_credentials->getScrambledPassword(), auth_data.getPasswordHashBinary());
+            case DOUBLE_SHA1_PASSWORD:
+                return checkPasswordDoubleSHA1MySQL(mysql_credentials->getScramble(), mysql_credentials->getScrambledPassword(), password_hash);
 
-            case AuthenticationType::SHA256_PASSWORD:
-            case AuthenticationType::LDAP:
-            case AuthenticationType::KERBEROS:
-                throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
+            case SHA256_PASSWORD:
+            case LDAP:
+            case KERBEROS:
+                throw Require<BasicCredentials>("ClickHouse Basic Authentication");
 
-            case AuthenticationType::MAX:
+            case MAX_TYPE:
                 break;
         }
     }
 
     if (const auto * basic_credentials = typeid_cast<const BasicCredentials *>(&credentials))
     {
-        switch (auth_data.getType())
+        switch (type)
         {
-            case AuthenticationType::NO_PASSWORD:
+            case NO_PASSWORD:
                 return true; // N.B. even if the password is not empty!
 
-            case AuthenticationType::PLAINTEXT_PASSWORD:
-                return checkPasswordPlainText(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());
+            case PLAINTEXT_PASSWORD:
+                return checkPasswordPlainText(basic_credentials->getPassword(), password_hash);
 
-            case AuthenticationType::SHA256_PASSWORD:
-                return checkPasswordSHA256(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());
+            case SHA256_PASSWORD:
+                return checkPasswordSHA256(basic_credentials->getPassword(), password_hash);
 
-            case AuthenticationType::DOUBLE_SHA1_PASSWORD:
-                return checkPasswordDoubleSHA1(basic_credentials->getPassword(), auth_data.getPasswordHashBinary());
+            case DOUBLE_SHA1_PASSWORD:
+                return checkPasswordDoubleSHA1(basic_credentials->getPassword(), password_hash);
 
-            case AuthenticationType::LDAP:
-                return external_authenticators.checkLDAPCredentials(auth_data.getLDAPServerName(), *basic_credentials);
+            case LDAP:
+                return external_authenticators.checkLDAPCredentials(ldap_server_name, *basic_credentials);
 
-            case AuthenticationType::KERBEROS:
-                throw Authentication::Require<GSSAcceptorContext>(auth_data.getKerberosRealm());
+            case KERBEROS:
+                throw Require<GSSAcceptorContext>(kerberos_realm);
 
-            case AuthenticationType::MAX:
+            case MAX_TYPE:
                 break;
         }
     }
@@ -145,7 +144,7 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
     if ([[maybe_unused]] const auto * always_allow_credentials = typeid_cast<const AlwaysAllowCredentials *>(&credentials))
         return true;
 
-    throw Exception("areCredentialsValid(): authentication type " + toString(auth_data.getType()) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
+    throw Exception("areCredentialsValid(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 }

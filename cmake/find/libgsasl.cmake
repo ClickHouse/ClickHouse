@@ -7,7 +7,12 @@ if (NOT ENABLE_GSASL_LIBRARY)
     return()
 endif()
 
-option (USE_INTERNAL_LIBGSASL_LIBRARY "Set to FALSE to use system libgsasl library instead of bundled" ON)
+if (UNBUNDLED)
+    # when USE_STATIC_LIBRARIES we usually need to pick up hell a lot of dependencies for libgsasl
+    option (USE_INTERNAL_LIBGSASL_LIBRARY "Set to FALSE to use system libgsasl library instead of bundled" ${USE_STATIC_LIBRARIES})
+else()
+    option (USE_INTERNAL_LIBGSASL_LIBRARY "Set to FALSE to use system libgsasl library instead of bundled" ON)
+endif()
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libgsasl/src/gsasl.h")
     if (USE_INTERNAL_LIBGSASL_LIBRARY)
@@ -30,7 +35,7 @@ if (LIBGSASL_LIBRARY AND LIBGSASL_INCLUDE_DIR)
 elseif (NOT MISSING_INTERNAL_LIBGSASL_LIBRARY)
     set (LIBGSASL_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libgsasl/src" "${ClickHouse_SOURCE_DIR}/contrib/libgsasl/linux_x86_64/include")
     set (USE_INTERNAL_LIBGSASL_LIBRARY 1)
-    set (LIBGSASL_LIBRARY gsasl)
+    set (LIBGSASL_LIBRARY libgsasl)
 endif ()
 
 if(LIBGSASL_LIBRARY AND LIBGSASL_INCLUDE_DIR)

@@ -17,7 +17,7 @@
 #include "ProxyListConfiguration.h"
 #include "ProxyResolverConfiguration.h"
 #include "Disks/DiskRestartProxy.h"
-#include "Disks/DiskLocal.h"
+
 
 namespace DB
 {
@@ -178,13 +178,12 @@ void registerDiskS3(DiskFactory & factory)
 
         String metadata_path = config.getString(config_prefix + ".metadata_path", context->getPath() + "disks/" + name + "/");
         fs::create_directories(metadata_path);
-        auto metadata_disk = std::make_shared<DiskLocal>(name + "-metadata", metadata_path, 0);
 
         std::shared_ptr<IDisk> s3disk = std::make_shared<DiskS3>(
             name,
             uri.bucket,
             uri.key,
-            metadata_disk,
+            metadata_path,
             context,
             getSettings(config, config_prefix, context),
             getSettings);

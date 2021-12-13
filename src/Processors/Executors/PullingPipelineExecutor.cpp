@@ -44,9 +44,6 @@ bool PullingPipelineExecutor::pull(Chunk & chunk)
     if (!executor)
         executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
 
-    if (!executor->checkTimeLimitSoft())
-        return false;
-
     if (!executor->executeStep(&has_data_flag))
         return false;
 

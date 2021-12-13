@@ -19,6 +19,7 @@
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 #include <Storages/MergeTree/DataPartsExchange.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
+#include <Storages/MergeTree/LeaderElection.h>
 #include <Storages/MergeTree/PartMovesBetweenShardsOrchestrator.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/MergeFromLogEntryTask.h>
@@ -319,6 +320,7 @@ private:
       * It can be false only when old ClickHouse versions are working on the same cluster, because now we allow multiple leaders.
       */
     std::atomic<bool> is_leader {false};
+    zkutil::LeaderElectionPtr leader_election;
 
     InterserverIOEndpointPtr data_parts_exchange_endpoint;
 
@@ -512,10 +514,15 @@ private:
 
     bool processQueueEntry(ReplicatedMergeTreeQueue::SelectedEntryPtr entry);
 
-    /// Start being leader (if not disabled by setting).
-    /// Since multi-leaders are allowed, it just sets is_leader flag.
-    void startBeingLeader();
-    void stopBeingLeader();
+    /// Postcondition:
+    /// either leader_election is fully initialized (node in ZK is created and the watching thread is launched)
+    /// or an exception is thrown and leader_election is destroyed.
+    void enterLeaderElection();
+
+    /// Postcondition:
+    /// is_leader is false, merge_selecting_thread is stopped, leader_election is nullptr.
+    /// leader_election node in ZK is either deleted, or the session is marked expired.
+    void exitLeaderElection();
 
     /** Selects the parts to merge and writes to the log.
       */

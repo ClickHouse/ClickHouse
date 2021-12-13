@@ -1,9 +1,7 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <QueryPipeline/QueryPipeline.h>
-#include <Poco/Event.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadPool.h>
 #include <base/scope_guard_safe.h>
 #include <iostream>
 

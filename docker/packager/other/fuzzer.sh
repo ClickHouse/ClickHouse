@@ -31,6 +31,5 @@ do
     mv "$FUZZER_PATH" /output/fuzzers
 done
 
-
 tar -zcvf /output/fuzzers.tar.gz /output/fuzzers
 rm -rf /output/fuzzers

@@ -4,7 +4,7 @@ if (NOT ENABLE_LIBPQXX)
     return()
 endif()
 
-if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libpqxx/src")
+if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libpqxx/CMakeLists.txt")
     message (WARNING "submodule contrib/libpqxx is missing. to fix try run: \n git submodule update --init")
     message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal libpqxx library")
     set (USE_LIBPQXX 0)

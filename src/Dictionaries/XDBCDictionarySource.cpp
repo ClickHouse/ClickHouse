@@ -214,8 +214,7 @@ Pipe XDBCDictionarySource::loadFromQuery(const Poco::URI & url, const Block & re
         os << "query=" << escapeForFileName(query);
     };
 
-    auto read_buf = std::make_unique<ReadWriteBufferFromHTTP>(
-        url, Poco::Net::HTTPRequest::HTTP_POST, write_body_callback, timeouts, credentials);
+    auto read_buf = std::make_unique<ReadWriteBufferFromHTTP>(url, Poco::Net::HTTPRequest::HTTP_POST, write_body_callback, timeouts);
     auto format = getContext()->getInputFormat(IXDBCBridgeHelper::DEFAULT_FORMAT, *read_buf, required_sample_block, max_block_size);
     format->addBuffer(std::move(read_buf));
 

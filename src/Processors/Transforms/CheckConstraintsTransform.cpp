@@ -29,7 +29,7 @@ CheckConstraintsTransform::CheckConstraintsTransform(
     ContextPtr context_)
     : ExceptionKeepingTransform(header, header)
     , table_id(table_id_)
-    , constraints_to_check(constraints_.filterConstraints(ConstraintsDescription::ConstraintType::CHECK))
+    , constraints(constraints_)
     , expressions(constraints_.getExpressions(context_, header.getNamesAndTypesList()))
 {
 }
@@ -45,7 +45,7 @@ void CheckConstraintsTransform::transform(Chunk & chunk)
             auto constraint_expr = expressions[i];
             constraint_expr->execute(block_to_calculate);
 
-            auto * constraint_ptr = constraints_to_check[i]->as<ASTConstraintDeclaration>();
+            auto * constraint_ptr = constraints.constraints[i]->as<ASTConstraintDeclaration>();
 
             ColumnWithTypeAndName res_column = block_to_calculate.getByName(constraint_ptr->expr->getColumnName());
 

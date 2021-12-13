@@ -42,7 +42,7 @@ public:
     /// TODO May be it's better to use DiskMemory for such tables.
     ///      To save data on disk it's possible to explicitly CREATE DATABASE db ENGINE=Ordinary in clickhouse-local.
     String getTableDataPath(const String & table_name) const override { return data_path + escapeForFileName(table_name) + "/"; }
-    String getTableDataPath(const ASTCreateQuery & query) const override { return getTableDataPath(query.getTable()); }
+    String getTableDataPath(const ASTCreateQuery & query) const override { return getTableDataPath(query.table); }
 
     UUID tryGetTableUUID(const String & table_name) const override;
 

@@ -1,5 +1,5 @@
 ---
-toc_priority: 71
+toc_priority: 70
 toc_title: "Используемые сторонние библиотеки"
 ---
 

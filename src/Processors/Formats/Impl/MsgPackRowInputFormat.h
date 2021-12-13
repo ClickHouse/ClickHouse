@@ -59,12 +59,11 @@ class MsgPackRowInputFormat : public IRowInputFormat
 public:
     MsgPackRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_);
 
+    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     String getName() const override { return "MagPackRowInputFormat"; }
     void resetParser() override;
 
 private:
-    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
-
     bool readObject();
 
     PeekableReadBuffer buf;

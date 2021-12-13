@@ -28,9 +28,6 @@ option (ARCH_NATIVE "Add -march=native compiler flag. This makes your binaries n
 if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 
-elseif (ARCH_AARCH64)
-    set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8-a+crc")
-
 else ()
     set (TEST_FLAG "-mssse3")
     set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
@@ -45,6 +42,7 @@ else ()
     if (HAVE_SSSE3 AND ENABLE_SSSE3)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
     endif ()
+
 
     set (TEST_FLAG "-msse4.1")
     set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
@@ -140,7 +138,7 @@ else ()
         #include <immintrin.h>
         int main() {
             auto a = _mm512_setzero_epi32();
-            (void)a;
+            (void)a;            
             auto b = _mm512_add_epi16(__m512i(), __m512i());
             (void)b;
             return 0;
@@ -162,9 +160,9 @@ else ()
     " HAVE_BMI)
     if (HAVE_BMI AND ENABLE_BMI)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
-    endif ()
+    endif ()   
 
-    # Limit avx2/avx512 flag for specific source build
+#Limit avx2/avx512 flag for specific source build
     set (X86_INTRINSICS_FLAGS "")
     if (ENABLE_AVX2_FOR_SPEC_OP)
         if (HAVE_BMI)

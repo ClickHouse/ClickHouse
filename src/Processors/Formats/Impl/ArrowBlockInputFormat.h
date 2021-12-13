@@ -24,9 +24,10 @@ public:
 
     String getName() const override { return "ArrowBlockInputFormat"; }
 
-private:
+protected:
     Chunk generate() override;
 
+private:
     // Whether to use ArrowStream format
     bool stream;
     // This field is only used for ArrowStream format

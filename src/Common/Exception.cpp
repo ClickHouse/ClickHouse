@@ -206,8 +206,8 @@ static void getNoSpaceLeftInfoMessage(std::filesystem::path path, String & msg)
 
     fmt::format_to(std::back_inserter(msg),
         "\nTotal space: {}\nAvailable space: {}\nTotal inodes: {}\nAvailable inodes: {}\nMount point: {}",
-        ReadableSize(fs.f_blocks * fs.f_frsize),
-        ReadableSize(fs.f_bavail * fs.f_frsize),
+        ReadableSize(fs.f_blocks * fs.f_bsize),
+        ReadableSize(fs.f_bavail * fs.f_bsize),
         formatReadableQuantity(fs.f_files),
         formatReadableQuantity(fs.f_favail),
         mount_point);

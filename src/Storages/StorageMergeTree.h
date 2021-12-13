@@ -131,12 +131,9 @@ private:
     /// This set have to be used with `currently_processing_in_background_mutex`.
     DataParts currently_merging_mutating_parts;
 
-    std::map<UInt64, MergeTreeMutationEntry> current_mutations_by_version;
 
-    /// We store information about mutations which are not applicable to the partition of each part.
-    /// The value is a maximum version for a part which will be the same as his current version,
-    /// that is, to which version it can be upgraded without any change.
-    std::map<std::pair<Int64, Int64>, UInt64> updated_version_by_block_range;
+    std::map<String, MergeTreeMutationEntry> current_mutations_by_id;
+    std::multimap<Int64, MergeTreeMutationEntry &> current_mutations_by_version;
 
     std::atomic<bool> shutdown_called {false};
 
@@ -167,16 +164,6 @@ private:
 
     friend struct CurrentlyMergingPartsTagger;
 
-    struct PartVersionWithName
-    {
-        Int64 version;
-        String name;
-
-        bool operator <(const PartVersionWithName & s) const
-        {
-            return version < s.version;
-        }
-    };
 
     std::shared_ptr<MergeMutateSelectedEntry> selectPartsToMerge(
         const StorageMetadataPtr & metadata_snapshot,
@@ -190,23 +177,13 @@ private:
         SelectPartsDecision * select_decision_out = nullptr);
 
 
-    std::shared_ptr<MergeMutateSelectedEntry> selectPartsToMutate(const StorageMetadataPtr & metadata_snapshot, String * disable_reason, TableLockHolder & table_lock_holder, std::unique_lock<std::mutex> & currently_processing_in_background_mutex_lock, bool & were_some_mutations_for_some_parts_skipped);
+    std::shared_ptr<MergeMutateSelectedEntry> selectPartsToMutate(const StorageMetadataPtr & metadata_snapshot, String * disable_reason, TableLockHolder & table_lock_holder);
 
-    /// For current mutations queue, returns maximum version of mutation for a part,
-    /// with respect of mutations which would not change it.
-    /// Returns 0 if there is no such mutation in active status.
-    UInt64 getCurrentMutationVersion(
+    Int64 getCurrentMutationVersion(
         const DataPartPtr & part,
         std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
-    /// Returns maximum version of a part, with respect of mutations which would not change it.
-    Int64 getUpdatedDataVersion(
-        const DataPartPtr & part,
-        std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
-
-    size_t clearOldMutations(bool truncate = false);
-
-    std::vector<PartVersionWithName> getSortedPartVersionsWithNames(std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
+    void clearOldMutations(bool truncate = false);
 
     // Partition helpers
     void dropPartNoWaitNoThrow(const String & part_name) override;

@@ -27,7 +27,7 @@ public:
 
 private:
     StorageID table_id;
-    const ASTs constraints_to_check;
+    const ConstraintsDescription constraints;
     const ConstraintsExpressions expressions;
     size_t rows_written = 0;
 };

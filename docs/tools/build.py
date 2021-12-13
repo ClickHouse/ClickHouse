@@ -117,9 +117,6 @@ def build_for_lang(lang, args):
             )
         )
 
-        # Clean to be safe if last build finished abnormally
-        single_page.remove_temporary_files(lang, args)
-
         raw_config['nav'] = nav.build_docs_nav(lang, args)
 
         cfg = config.load_config(**raw_config)
@@ -192,6 +189,7 @@ if __name__ == '__main__':
     arg_parser.add_argument('--skip-multi-page', action='store_true')
     arg_parser.add_argument('--skip-single-page', action='store_true')
     arg_parser.add_argument('--skip-amp', action='store_true')
+    arg_parser.add_argument('--skip-pdf', action='store_true')
     arg_parser.add_argument('--skip-website', action='store_true')
     arg_parser.add_argument('--skip-blog', action='store_true')
     arg_parser.add_argument('--skip-git-log', action='store_true')
@@ -227,6 +225,7 @@ if __name__ == '__main__':
         args.skip_multi_page = True
         args.skip_blog = True
         args.skip_website = True
+        args.skip_pdf = True
         args.skip_amp = True
 
     if args.skip_git_log or args.skip_amp:

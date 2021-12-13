@@ -320,7 +320,7 @@ Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operat
 **Syntax**
 
 ```sql
-mapValues(map)
+mapKeys(map)
 ```
 
 **Parameters**

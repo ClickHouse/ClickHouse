@@ -22,7 +22,7 @@ endif()
 # You can set USE_INTERNAL_GRPC_LIBRARY to OFF to force using the external gRPC framework, which should be installed in the system in this case.
 # The external gRPC framework can be installed in the system by running
 # sudo apt-get install libgrpc++-dev protobuf-compiler-grpc
-option(USE_INTERNAL_GRPC_LIBRARY "Set to FALSE to use system gRPC library instead of bundled. (Experimental. Set to OFF on your own risk)" ON)
+option(USE_INTERNAL_GRPC_LIBRARY "Set to FALSE to use system gRPC library instead of bundled. (Experimental. Set to OFF on your own risk)" ${NOT_UNBUNDLED})
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/grpc/CMakeLists.txt")
   if(USE_INTERNAL_GRPC_LIBRARY)

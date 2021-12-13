@@ -29,8 +29,7 @@ struct QueryViewsLogElement
     {
         DEFAULT = 1,
         MATERIALIZED = 2,
-        LIVE = 3,
-        WINDOW = 4,
+        LIVE = 3
     };
 
     struct ViewRuntimeStats

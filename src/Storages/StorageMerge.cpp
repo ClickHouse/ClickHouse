@@ -13,7 +13,6 @@
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>

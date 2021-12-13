@@ -118,7 +118,6 @@ inline void writeStringBinary(const std::string_view & s, WriteBuffer & buf)
     writeStringBinary(StringRef{s}, buf);
 }
 
-
 template <typename T>
 void writeVectorBinary(const std::vector<T> & v, WriteBuffer & buf)
 {

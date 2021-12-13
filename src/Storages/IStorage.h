@@ -20,7 +20,6 @@
 
 #include <optional>
 #include <shared_mutex>
-#include <compare>
 
 
 namespace DB
@@ -159,9 +158,6 @@ public:
     /// This is true for most storages that store data on disk.
     virtual bool prefersLargeBlocks() const { return true; }
 
-    /// Returns true if the storage is for system, which cannot be target of SHOW CREATE TABLE.
-    virtual bool isSystemStorage() const { return false; }
-
 
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
@@ -209,7 +205,7 @@ public:
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;
 
     /// Prepares entries to backup data of the storage.
-    virtual BackupEntries backup(const ASTs & partitions, ContextPtr context);
+    virtual BackupEntries backup(const ASTs & partitions, ContextPtr context) const;
 
     /// Extract data from the backup and put it to the storage.
     virtual RestoreDataTasks restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context);

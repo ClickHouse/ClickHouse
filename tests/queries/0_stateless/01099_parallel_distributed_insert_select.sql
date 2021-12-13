@@ -1,4 +1,4 @@
--- Tags: distributed
+-- Tags: distributed, no-unbundled
 
 -- set insert_distributed_sync = 1;  -- see https://github.com/ClickHouse/ClickHouse/issues/18971
 

@@ -3,14 +3,15 @@ toc_priority: 65
 toc_title: Build on Mac OS X
 ---
 
+# You don't have to build ClickHouse
+
+You can install ClickHouse as follows: https://clickhouse.com/#quick-start
+Choose Mac x86 or M1.
+
 # How to Build ClickHouse on Mac OS X {#how-to-build-clickhouse-on-mac-os-x}
 
-!!! info "You don't have to build ClickHouse yourself!"
-    You can install pre-built ClickHouse as described in [Quick Start](https://clickhouse.com/#quick-start).
-    Follow `macOS (Intel)` or `macOS (Apple silicon)` installation instructions.
-
-Build should work on x86_64 (Intel) and arm64 (Apple silicon) based macOS 10.15 (Catalina) and higher with Homebrew's vanilla Clang.
-It is always recommended to use vanilla `clang` compiler. It is possible to use XCode's `apple-clang` or `gcc` but it's strongly discouraged.
+Build should work on x86_64 (Intel) and arm64 (Apple Silicon) based macOS 10.15 (Catalina) and higher with Homebrew's vanilla Clang.
+It is always recommended to use `clang` compiler. It is possible to use XCode's `AppleClang` or `gcc` but it's strongly discouraged.
 
 ## Install Homebrew {#install-homebrew}
 
@@ -32,6 +33,8 @@ sudo rm -rf /Library/Developer/CommandLineTools
 sudo xcode-select --install
 ```
 
+Reboot.
+
 ## Install Required Compilers, Tools, and Libraries {#install-required-compilers-tools-and-libraries}
 
 ``` bash
@@ -48,41 +51,40 @@ git clone --recursive git@github.com:ClickHouse/ClickHouse.git
 
 ## Build ClickHouse {#build-clickhouse}
 
-To build using Homebrew's vanilla Clang compiler (the only **recommended** way):
+To build using Homebrew's vanilla Clang compiler:
 
 ``` bash
 cd ClickHouse
 rm -rf build
 mkdir build
 cd build
-cmake -DCMAKE_C_COMPILER=$(brew --prefix llvm)/bin/clang -DCMAKE_CXX_COMPILER=$(brew --prefix llvm)/bin/clang++ -DCMAKE_AR=$(brew --prefix llvm)/bin/llvm-ar -DCMAKE_RANLIB=$(brew --prefix llvm)/bin/llvm-ranlib -DOBJCOPY_PATH=$(brew --prefix llvm)/bin/llvm-objcopy -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
+cmake -DCMAKE_C_COMPILER=$(brew --prefix llvm)/bin/clang -DCMAKE_CXX_COMPILER=$(brew --prefix llvm)/bin/clang++ -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
 cmake --build . --config RelWithDebInfo
-# The resulting binary will be created at: ./programs/clickhouse
+cd ..
 ```
 
-To build using Xcode's native AppleClang compiler in Xcode IDE (this option is only for development builds and workflows, and is **not recommended** unless you know what you are doing):
+To build using Xcode's native AppleClang compiler (this option is strongly not recommended; use the option above):
 
 ``` bash
 cd ClickHouse
 rm -rf build
 mkdir build
 cd build
-XCODE_IDE=1 ALLOW_APPLECLANG=1 cmake -G Xcode -DCMAKE_BUILD_TYPE=Debug -DENABLE_JEMALLOC=OFF ..
-cmake --open .
-# ...then, in Xcode IDE select ALL_BUILD scheme and start the building process.
-# The resulting binary will be created at: ./programs/Debug/clickhouse
+cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
+cmake --build . --config RelWithDebInfo
+cd ..
 ```
 
-To build using Homebrew's vanilla GCC compiler (this option is only for development experiments, and is **absolutely not recommended** unless you really know what you are doing):
+To build using Homebrew's vanilla GCC compiler (this option is absolutely not recommended, I'm wondering why do we ever have it):
 
 ``` bash
 cd ClickHouse
 rm -rf build
 mkdir build
 cd build
-cmake -DCMAKE_C_COMPILER=$(brew --prefix gcc)/bin/gcc-11 -DCMAKE_CXX_COMPILER=$(brew --prefix gcc)/bin/g++-11 -DCMAKE_AR=$(brew --prefix gcc)/bin/gcc-ar-11 -DCMAKE_RANLIB=$(brew --prefix gcc)/bin/gcc-ranlib-11 -DOBJCOPY_PATH=$(brew --prefix binutils)/bin/objcopy -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
+cmake -DCMAKE_C_COMPILER=$(brew --prefix gcc)/bin/gcc-11 -DCMAKE_CXX_COMPILER=$(brew --prefix gcc)/bin/g++-11 -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
 cmake --build . --config RelWithDebInfo
-# The resulting binary will be created at: ./programs/clickhouse
+cd ..
 ```
 
 ## Caveats {#caveats}
@@ -138,9 +140,9 @@ sudo launchctl load -w /Library/LaunchDaemons/limit.maxfiles.plist
 
 To check if it’s working, use the `ulimit -n` or `launchctl limit maxfiles` commands.
 
-## Running ClickHouse server
+## Run ClickHouse server:
 
-``` bash
+```
 cd ClickHouse
 ./build/programs/clickhouse-server --config-file ./programs/server/config.xml
 ```

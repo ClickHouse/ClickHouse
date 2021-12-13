@@ -96,13 +96,6 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('8')
     fi
 
-    if [[ -n "$RUN_BY_HASH_NUM" ]] && [[ -n "$RUN_BY_HASH_TOTAL" ]]; then
-        ADDITIONAL_OPTIONS+=('--run-by-hash-num')
-        ADDITIONAL_OPTIONS+=("$RUN_BY_HASH_NUM")
-        ADDITIONAL_OPTIONS+=('--run-by-hash-total')
-        ADDITIONAL_OPTIONS+=("$RUN_BY_HASH_TOTAL")
-    fi
-
     set +e
     clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
             --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
@@ -115,12 +108,7 @@ export -f run_tests
 
 timeout "$MAX_RUN_TIME" bash -c run_tests ||:
 
-echo "Files in current directory"
-ls -la ./
-echo "Files in root directory"
-ls -la /
-
-/process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
+./process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
 
 clickhouse-client -q "system flush logs" ||:
 
@@ -147,8 +135,6 @@ done
 
 wait ||:
 
-# Compressed (FIXME: remove once only github actions will be left)
-rm /var/log/clickhouse-server/clickhouse-server.log
 mv /var/log/clickhouse-server/stderr.log /test_output/ ||:
 if [[ -n "$WITH_COVERAGE" ]] && [[ "$WITH_COVERAGE" -eq 1 ]]; then
     tar -chf /test_output/clickhouse_coverage.tar.gz /profraw ||:
@@ -169,9 +155,6 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server2.log ||:
     pigz < /var/log/clickhouse-server/clickhouse-server1.log > /test_output/clickhouse-server1.log.gz ||:
     pigz < /var/log/clickhouse-server/clickhouse-server2.log > /test_output/clickhouse-server2.log.gz ||:
-    # FIXME: remove once only github actions will be left
-    rm /var/log/clickhouse-server/clickhouse-server1.log
-    rm /var/log/clickhouse-server/clickhouse-server2.log
     mv /var/log/clickhouse-server/stderr1.log /test_output/ ||:
     mv /var/log/clickhouse-server/stderr2.log /test_output/ ||:
     tar -chf /test_output/zookeeper_log_dump1.tar /var/lib/clickhouse1/data/system/zookeeper_log ||:

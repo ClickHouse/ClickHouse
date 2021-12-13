@@ -34,20 +34,17 @@ struct ParsedTableMetadata
 
 using ParsedMetadata = std::map<QualifiedTableName, ParsedTableMetadata>;
 using TableNames = std::vector<QualifiedTableName>;
-using TableNamesSet = std::unordered_set<QualifiedTableName>;
 
 struct DependenciesInfo
 {
-    /// Set of dependencies
-    TableNamesSet dependencies;
-    /// Set of tables/dictionaries which depend on this table/dictionary
-    TableNamesSet dependent_database_objects;
+    /// How many dependencies this table have
+    size_t dependencies_count = 0;
+    /// List of tables/dictionaries which depend on this table/dictionary
+    TableNames dependent_database_objects;
 };
 
 using DependenciesInfos = std::unordered_map<QualifiedTableName, DependenciesInfo>;
 using DependenciesInfosIter = std::unordered_map<QualifiedTableName, DependenciesInfo>::iterator;
-
-void mergeDependenciesGraphs(DependenciesInfos & main_dependencies_info, const DependenciesInfos & additional_info);
 
 struct ParsedTablesMetadata
 {
@@ -62,12 +59,11 @@ struct ParsedTablesMetadata
     /// List of tables/dictionaries that do not have any dependencies and can be loaded
     TableNames independent_database_objects;
 
-    /// Adjacent list of dependency graph, contains two maps
+    /// Actually it contains two different maps (with, probably, intersecting keys):
+    /// 1. table/dictionary name -> number of dependencies
     /// 2. table/dictionary name -> dependent tables/dictionaries list (adjacency list of dependencies graph).
-    /// 1. table/dictionary name -> dependencies of table/dictionary (adjacency list of inverted dependencies graph)
-    /// If table A depends on table B, then there is an edge B --> A, i.e. dependencies_info[B].dependent_database_objects contains A
-    /// and dependencies_info[A].dependencies contain B.
-    /// We need inverted graph to effectively maintain it on DDL queries that can modify the graph.
+    /// If table A depends on table B, then there is an edge B --> A, i.e. dependencies_info[B].dependent_database_objects contains A.
+    /// And dependencies_info[C].dependencies_count is a number of incoming edges for vertex C (how many tables we have to load before C).
     DependenciesInfos dependencies_info;
 };
 
@@ -98,7 +94,7 @@ private:
 
     ThreadPool pool;
 
-    void removeUnresolvableDependencies(bool remove_loaded);
+    void removeUnresolvableDependencies();
 
     void loadTablesInTopologicalOrder(ThreadPool & pool);
 

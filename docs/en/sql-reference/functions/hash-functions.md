@@ -89,39 +89,9 @@ SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00
 
 ## sipHash128 {#hash_functions-siphash128}
 
-Produces a 128-bit [SipHash](https://131002.net/siphash/) hash value. Differs from [sipHash64](#hash_functions-siphash64) in that the final xor-folding state is done up to 128 bits.
-
-**Syntax**
-
-``` sql
-sipHash128(par1,...)
-```
-
-**Arguments**
-
-The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
-
-**Returned value**
-
-A 128-bit `SipHash` hash value.
-
-Type: [FixedString(16)](../../sql-reference/data-types/fixedstring.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT hex(sipHash128('foo', '\x01', 3));
-```
-
-Result:
-
-``` text
-┌─hex(sipHash128('foo', '', 3))────┐
-│ 9DE516A64A414D4B1B609415E4523F24 │
-└──────────────────────────────────┘
-```
+Calculates SipHash from a string.
+Accepts a String-type argument. Returns FixedString(16).
+Differs from sipHash64 in that the final xor-folding state is only done up to 128 bits.
 
 ## cityHash64 {#cityhash64}
 
@@ -489,36 +459,28 @@ SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 
 Produces a 128-bit [MurmurHash3](https://github.com/aappleby/smhasher) hash value.
 
-**Syntax**
-
 ``` sql
-murmurHash3_128(expr)
+murmurHash3_128( expr )
 ```
 
 **Arguments**
 
--   `expr` — A list of [expressions](../../sql-reference/syntax.md#syntax-expressions). [String](../../sql-reference/data-types/string.md).
+-   `expr` — [Expressions](../../sql-reference/syntax.md#syntax-expressions) returning a [String](../../sql-reference/data-types/string.md)-type value.
 
-**Returned value**
+**Returned Value**
 
-A 128-bit `MurmurHash3` hash value.
-
-Type: [FixedString(16)](../../sql-reference/data-types/fixedstring.md).
+A [FixedString(16)](../../sql-reference/data-types/fixedstring.md) data type hash value.
 
 **Example**
 
-Query:
-
 ``` sql
-SELECT hex(murmurHash3_128('foo', 'foo', 'foo'));
+SELECT hex(murmurHash3_128('example_string')) AS MurmurHash3, toTypeName(MurmurHash3) AS type;
 ```
 
-Result:
-
 ``` text
-┌─hex(murmurHash3_128('foo', 'foo', 'foo'))─┐
-│ F8F7AD9B6CD4CF117A71E277E2EC2931          │
-└───────────────────────────────────────────┘
+┌─MurmurHash3──────────────────────┬─type───┐
+│ 368A1A311CB7342253354B548E7E7E71 │ String │
+└──────────────────────────────────┴────────┘
 ```
 
 ## xxHash32, xxHash64 {#hash-functions-xxhash32}

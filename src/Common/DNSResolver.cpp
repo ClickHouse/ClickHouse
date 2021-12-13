@@ -15,7 +15,7 @@
 
 namespace ProfileEvents
 {
-    extern const Event DNSError;
+    extern Event DNSError;
 }
 
 namespace std

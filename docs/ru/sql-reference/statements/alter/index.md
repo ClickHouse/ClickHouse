@@ -41,8 +41,6 @@ ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN 
 -   [ROW POLICY](../../../sql-reference/statements/alter/row-policy.md)
 -   [SETTINGS PROFILE](../../../sql-reference/statements/alter/settings-profile.md)
 
-Выражение [ALTER TABLE ... MODIFY COMMENT](../../../sql-reference/statements/alter/comment.md) добавляет, изменяет или удаляет комментарий к таблице, независимо от того, был ли он установлен раньше или нет.
-
 ### Мутации {#mutations}
 
 Мутации - разновидность запроса ALTER, позволяющая изменять или удалять данные в таблице. В отличие от стандартных запросов [ALTER TABLE … DELETE](../../../sql-reference/statements/alter/delete.md) и [ALTER TABLE … UPDATE](../../../sql-reference/statements/alter/update.md), рассчитанных на точечное изменение данных, область применения мутаций - достаточно тяжёлые изменения, затрагивающие много строк в таблице. Поддержана для движков таблиц семейства [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md), в том числе для движков с репликацией.

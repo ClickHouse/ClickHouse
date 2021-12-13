@@ -1,18 +1,16 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 
-#include <Access/Common/AccessRightsElement.h>
+#include <Access/AccessRightsElement.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
-#include <Parsers/ASTIdentifier_fwd.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/LiveView/LiveViewCommands.h>
@@ -45,7 +43,6 @@ InterpreterAlterQuery::InterpreterAlterQuery(const ASTPtr & query_ptr_, ContextP
 
 BlockIO InterpreterAlterQuery::execute()
 {
-    FunctionNameNormalizer().visit(query_ptr.get());
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
     if (alter.alter_object == ASTAlterQuery::AlterObjectType::DATABASE)
         return executeToDatabase(alter);
@@ -65,7 +62,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     getContext()->checkAccess(getRequiredAccess());
     auto table_id = getContext()->resolveStorageID(alter, Context::ResolveOrdinary);
-    query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
+    query_ptr->as<ASTAlterQuery &>().database = table_id.database_name;
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (typeid_cast<DatabaseReplicated *>(database.get())
@@ -83,6 +80,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
+    auto alter_lock = table->lockForAlter(getContext()->getSettingsRef().lock_acquire_timeout);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
@@ -162,7 +160,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     if (!alter_commands.empty())
     {
-        auto alter_lock = table->lockForAlter(getContext()->getSettingsRef().lock_acquire_timeout);
         StorageInMemoryMetadata metadata = table->getInMemoryMetadata();
         alter_commands.validate(metadata, getContext());
         alter_commands.prepare(metadata);
@@ -178,7 +175,7 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
 {
     BlockIO res;
     getContext()->checkAccess(getRequiredAccess());
-    DatabasePtr database = DatabaseCatalog::instance().getDatabase(alter.getDatabase());
+    DatabasePtr database = DatabaseCatalog::instance().getDatabase(alter.database);
     AlterCommands alter_commands;
 
     for (const auto & child : alter.command_list->children)
@@ -218,7 +215,7 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccess() const
     AccessRightsElements required_access;
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
     for (const auto & child : alter.command_list->children)
-        boost::range::push_back(required_access, getRequiredAccessForCommand(child->as<ASTAlterCommand&>(), alter.getDatabase(), alter.getTable()));
+        boost::range::push_back(required_access, getRequiredAccessForCommand(child->as<ASTAlterCommand&>(), alter.database, alter.table));
     return required_access;
 }
 
