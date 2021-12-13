@@ -43,6 +43,7 @@ NEED_RERUN_WORKFLOWS = {
     13241696, # PR
     15834118, # Docs
     15522500, # MasterCI
+    15516108, # ReleaseCI
 }
 
 # Individual trusted contirbutors who are not in any trusted organization.
