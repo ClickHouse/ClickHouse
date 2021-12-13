@@ -31,10 +31,10 @@ ${CLICKHOUSE_CLIENT} --query "insert into data select file('${user_files_path}/a
 ${CLICKHOUSE_CLIENT} --query "insert into data select file('${user_files_path}/a.txt'), file('${user_files_path}/b.txt');";echo ":"$?
 ${CLICKHOUSE_CLIENT} --query "select file('${user_files_path}/c.txt'), * from data";echo ":"$?
 ${CLICKHOUSE_CLIENT} --multiquery --query "
-	create table filenames(name String) engine=MergeTree() order by tuple();
-	insert into filenames values ('a.txt'), ('b.txt'), ('c.txt');
-	select file(name) from filenames format TSV;
-	drop table if exists filenames;
+    create table filenames(name String) engine=MergeTree() order by tuple();
+    insert into filenames values ('a.txt'), ('b.txt'), ('c.txt');
+    select file(name) from filenames format TSV;
+    drop table if exists filenames;
 "
 
 # Invalid cases: (Here using sub-shell to catch exception avoiding the test quit)
@@ -63,14 +63,14 @@ echo $c_count
 # Valid cases:
 # The default dir is the CWD path in LOCAL mode
 ${CLICKHOUSE_LOCAL} --query "
-	drop table if exists data;
-	create table data (A String, B String) engine=MergeTree() order by A;
-	select file('a.txt'), file('b.txt');
-	insert into data select file('a.txt'), file('b.txt');
-	insert into data select file('a.txt'), file('b.txt');
-	select file('c.txt'), * from data;
-	select file('/tmp/c.txt'), * from data;
-	select $c_count, $c_count -length(file('${CURDIR}/01518_nullable_aggregate_states2.reference'))
+    drop table if exists data;
+    create table data (A String, B String) engine=MergeTree() order by A;
+    select file('a.txt'), file('b.txt');
+    insert into data select file('a.txt'), file('b.txt');
+    insert into data select file('a.txt'), file('b.txt');
+    select file('c.txt'), * from data;
+    select file('/tmp/c.txt'), * from data;
+    select $c_count, $c_count -length(file('${CURDIR}/01518_nullable_aggregate_states2.reference'))
 "
 echo ":"$?
 
