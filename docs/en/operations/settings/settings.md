@@ -885,26 +885,6 @@ Possible values:
 
 Default value: 2013265920.
 
-## merge_tree_clear_old_temporary_directories_interval_seconds {#setting-merge-tree-clear-old-temporary-directories-interval-seconds}
-
-Sets the interval in seconds for ClickHouse to execute the cleanup of old temporary directories.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: `60` seconds.
-
-## merge_tree_clear_old_parts_interval_seconds {#setting-merge-tree-clear-old-parts-interval-seconds}
-
-Sets the interval in seconds for ClickHouse to execute the cleanup of old parts, WALs, and mutations.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: `1` second.
-
 ## min_bytes_to_use_direct_io {#settings-min-bytes-to-use-direct-io}
 
 The minimum data volume required for using direct I/O access to the storage disk.
@@ -992,9 +972,16 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 
 Setting up query threads logging.
 
-Queries’ threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server configuration parameter.
+Query threads log into [system.query_thread_log](../../operations/system-tables/query_thread_log.md) table. This setting have effect only when [log_queries](#settings-log-queries) is true. Queries’ threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server configuration parameter.
 
-Example:
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: `1`.
+
+**Example**
 
 ``` text
 log_query_threads=1
