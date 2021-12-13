@@ -261,24 +261,30 @@ function run_tests
         # Use awk because bash doesn't support floating point arithmetic.
         profile_seconds=$(awk "BEGIN { print ($profile_seconds_left > 0 ? 10 : 0) }")
 
-        TIMEFORMAT=$(printf "$test_name\t%%3R\t%%3U\t%%3S\n")
-        # The grep is to filter out set -x output and keep only time output.
-        # The '2>&1 >/dev/null' redirects stderr to stdout, and discards stdout.
-        { \
-            time "$script_dir/perf.py" --host localhost localhost --port $LEFT_SERVER_PORT $RIGHT_SERVER_PORT \
-                --runs "$CHPC_RUNS" --max-queries "$CHPC_MAX_QUERIES" \
-                --profile-seconds "$profile_seconds" \
-                -- "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" ; \
-        } 2>&1 >/dev/null | tee >(grep -v ^+ >> "wall-clock-times.tsv") \
-            || echo "Test $test_name failed with error code $?" >> "$test_name-err.log"
+        (
+            set +x
+            argv=(
+                --host localhost localhost
+                --port "$LEFT_SERVER_PORT" "$RIGHT_SERVER_PORT"
+                --runs "$CHPC_RUNS"
+                --max-queries "$CHPC_MAX_QUERIES"
+                --profile-seconds "$profile_seconds"
+
+                "$test"
+            )
+            TIMEFORMAT=$(printf "$test_name\t%%3R\t%%3U\t%%3S\n")
+            # one more subshell to suppress trace output for "set +x"
+            (
+                time "$script_dir/perf.py" "${argv[@]}" > "$test_name-raw.tsv" 2> "$test_name-err.log"
+            ) 2>>wall-clock-times.tsv >/dev/null \
+                || echo "Test $test_name failed with error code $?" >> "$test_name-err.log"
+        ) 2>/dev/null
 
         profile_seconds_left=$(awk -F'	' \
             'BEGIN { s = '$profile_seconds_left'; } /^profile-total/ { s -= $2 } END { print s }' \
             "$test_name-raw.tsv")
         current_test=$((current_test + 1))
     done
-
-    unset TIMEFORMAT
 
     wait
 }
@@ -291,7 +297,7 @@ function get_profiles_watchdog
 
     for pid in $(pgrep -f clickhouse)
     do
-        gdb -p "$pid" --batch --ex "info proc all" --ex "thread apply all bt" --ex quit &> "$pid.gdb.log" &
+        sudo gdb -p "$pid" --batch --ex "info proc all" --ex "thread apply all bt" --ex quit &> "$pid.gdb.log" &
     done
     wait
 

@@ -354,11 +354,9 @@ for query_index in queries_to_run:
             print(f'query\t{query_index}\t{run_id}\t{conn_index}\t{elapsed}')
 
             if elapsed > args.max_query_seconds:
-                # Stop processing pathologically slow queries, to avoid timing out
-                # the entire test task. This shouldn't really happen, so we don't
-                # need much handling for this case and can just exit.
+                # Do not stop processing pathologically slow queries,
+                # since this may hide errors in other queries.
                 print(f'The query no. {query_index} is taking too long to run ({elapsed} s)', file=sys.stderr)
-                exit(2)
 
         # Be careful with the counter, after this line it's the next iteration
         # already.
