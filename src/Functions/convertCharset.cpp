@@ -1,4 +1,6 @@
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 #if USE_ICU
 #    include <Columns/ColumnConst.h>
@@ -10,7 +12,7 @@
 #    include <IO/WriteHelpers.h>
 #    include <Common/ObjectPool.h>
 #    include <Common/typeid_cast.h>
-#    include <base/range.h>
+#    include <common/range.h>
 
 #    include <memory>
 #    include <string>

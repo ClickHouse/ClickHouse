@@ -1,7 +1,7 @@
 #pragma once
 
-#include <cstring>
 #include <memory>
+#include <experimental/type_traits>
 #include <type_traits>
 
 #include <IO/WriteHelpers.h>
@@ -13,7 +13,9 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -102,8 +104,8 @@ struct AggregateFunctionSumData
         const auto * end = ptr + count;
 
         if constexpr (
-            (is_integer<T> && !is_big_int_v<T>)
-            || (is_decimal<T> && !std::is_same_v<T, Decimal256> && !std::is_same_v<T, Decimal128>))
+            (is_integer_v<T> && !is_big_int_v<T>)
+            || (IsDecimalNumber<T> && !std::is_same_v<T, Decimal256> && !std::is_same_v<T, Decimal128>))
         {
             /// For integers we can vectorize the operation if we replace the null check using a multiplication (by 0 for null, 1 for not null)
             /// https://quick-bench.com/q/MLTnfTvwC2qZFVeWHfOBR3U7a8I
@@ -121,10 +123,6 @@ struct AggregateFunctionSumData
 
         if constexpr (std::is_floating_point_v<T>)
         {
-            /// For floating point we use a similar trick as above, except that now we  reinterpret the floating point number as an unsigned
-            /// integer of the same size and use a mask instead (0 to discard, 0xFF..FF to keep)
-            static_assert(sizeof(Value) == 4 || sizeof(Value) == 8);
-            typedef typename std::conditional<sizeof(Value) == 4, UInt32, UInt64>::type equivalent_integer;
             constexpr size_t unroll_count = 128 / sizeof(T);
             T partial_sums[unroll_count]{};
 
@@ -134,12 +132,10 @@ struct AggregateFunctionSumData
             {
                 for (size_t i = 0; i < unroll_count; ++i)
                 {
-                    equivalent_integer value;
-                    std::memcpy(&value, &ptr[i], sizeof(Value));
-                    value &= (!condition_map[i] != add_if_zero) - 1;
-                    Value d;
-                    std::memcpy(&d, &value, sizeof(Value));
-                    Impl::add(partial_sums[i], d);
+                    if (!condition_map[i] == add_if_zero)
+                    {
+                        Impl::add(partial_sums[i], ptr[i]);
+                    }
                 }
                 ptr += unroll_count;
                 condition_map += unroll_count;
@@ -338,7 +334,9 @@ class AggregateFunctionSum final : public IAggregateFunctionDataHelper<Data, Agg
 public:
     static constexpr bool DateTime64Supported = false;
 
-    using ColVecType = ColumnVectorOrDecimal<T>;
+    using ResultDataType = std::conditional_t<IsDecimalNumber<T>, DataTypeDecimal<TResult>, DataTypeNumber<TResult>>;
+    using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
+    using ColVecResult = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<TResult>, ColumnVector<TResult>>;
 
     String getName() const override
     {
@@ -363,13 +361,10 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        if constexpr (!is_decimal<T>)
-            return std::make_shared<DataTypeNumber<TResult>>();
+        if constexpr (IsDecimalNumber<T>)
+            return std::make_shared<ResultDataType>(ResultDataType::maxPrecision(), scale);
         else
-        {
-            using DataType = DataTypeDecimal<TResult>;
-            return std::make_shared<DataType>(DataType::maxPrecision(), scale);
-        }
+            return std::make_shared<ResultDataType>();
     }
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -424,19 +419,20 @@ public:
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         this->data(place).write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
     {
         this->data(place).read(buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        castColumnToResult(to).getData().push_back(this->data(place).get());
+        auto & column = assert_cast<ColVecResult &>(to);
+        column.getData().push_back(this->data(place).get());
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -515,14 +511,6 @@ public:
 
 private:
     UInt32 scale;
-
-    static constexpr auto & castColumnToResult(IColumn & to)
-    {
-        if constexpr (is_decimal<T>)
-            return assert_cast<ColumnDecimal<TResult> &>(to);
-        else
-            return assert_cast<ColumnVector<TResult> &>(to);
-    }
 };
 
 }

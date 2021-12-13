@@ -11,37 +11,35 @@ from github import Github
 
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
-from pr_info import PRInfo, get_event
+from pr_info import PRInfo
 from build_download_helper import download_all_deb_packages
 from upload_result_helper import upload_results
 from docker_pull_helper import get_images_with_versions
 from commit_status_helper import post_commit_status
 from clickhouse_helper import ClickHouseHelper, mark_flaky_tests, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
-from rerun_helper import RerunHelper
-from tee_popen import TeePopen
 
 
 DOWNLOAD_RETRIES_COUNT = 5
 
 IMAGES = [
-    "clickhouse/integration-tests-runner",
-    "clickhouse/mysql-golang-client",
-    "clickhouse/mysql-java-client",
-    "clickhouse/mysql-js-client",
-    "clickhouse/mysql-php-client",
-    "clickhouse/postgresql-java-client",
-    "clickhouse/integration-test",
-    "clickhouse/kerberos-kdc",
-    "clickhouse/integration-helper",
+    "yandex/clickhouse-integration-tests-runner",
+    "yandex/clickhouse-mysql-golang-client",
+    "yandex/clickhouse-mysql-java-client",
+    "yandex/clickhouse-mysql-js-client",
+    "yandex/clickhouse-mysql-php-client",
+    "yandex/clickhouse-postgresql-java-client",
+    "yandex/clickhouse-integration-test",
+    "yandex/clickhouse-kerberos-kdc",
+    "yandex/clickhouse-integration-helper",
 ]
 
-def get_json_params_dict(check_name, pr_info, docker_images):
+def get_json_params_dict(check_name, commit_sha, pr_number, docker_images):
     return {
         'context_name': check_name,
-        'commit': pr_info.sha,
-        'pull_request': pr_info.number,
-        'pr_info': {'changed_files' : list(pr_info.changed_files)},
+        'commit': commit_sha,
+        'pull_request': pr_number,
+        'pr_info': None,
         'docker_images_with_versions': docker_images,
         'shuffle_test_groups': False,
         'use_tmpfs': False,
@@ -110,15 +108,12 @@ if __name__ == "__main__":
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    is_flaky_check = 'flaky' in check_name
-    pr_info = PRInfo(get_event(), need_changed_files=is_flaky_check)
+    with open(os.getenv('GITHUB_EVENT_PATH'), 'r', encoding='utf-8') as event_file:
+        event = json.load(event_file)
+
+    pr_info = PRInfo(event)
 
     gh = Github(get_best_robot_token())
-
-    rerun_helper = RerunHelper(gh, pr_info, check_name)
-    if rerun_helper.is_already_finished_by_status():
-        logging.info("Check is already finished according to github status, exiting")
-        sys.exit(0)
 
     images = get_images_with_versions(temp_path, IMAGES)
     images_with_versions = {i.name: i.version for i in images}
@@ -140,19 +135,20 @@ if __name__ == "__main__":
 
     json_path = os.path.join(work_path, 'params.json')
     with open(json_path, 'w', encoding='utf-8') as json_params:
-        json_params.write(json.dumps(get_json_params_dict(check_name, pr_info, images_with_versions)))
+        json_params.write(json.dumps(get_json_params_dict(check_name, pr_info.sha, pr_info.number, images_with_versions)))
 
     output_path_log = os.path.join(result_path, "main_script_log.txt")
 
     runner_path = os.path.join(repo_path, "tests/integration", "ci-runner.py")
     run_command = f"sudo -E {runner_path} | tee {output_path_log}"
 
-    with TeePopen(run_command, output_path_log, my_env) as process:
-        retcode = process.wait()
-        if retcode == 0:
-            logging.info("Run tests successfully")
-        else:
-            logging.info("Some tests failed")
+    with open(output_path_log, 'w', encoding='utf-8') as log:
+        with subprocess.Popen(run_command, shell=True, stderr=log, stdout=log, env=my_env) as process:
+            retcode = process.wait()
+            if retcode == 0:
+                logging.info("Run tests successfully")
+            else:
+                logging.info("Some tests failed")
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 

@@ -1,13 +1,12 @@
-#include <Backups/BackupRenamingConfig.h>
 #include <Backups/renameInCreateQuery.h>
-#include <Interpreters/InDepthNodeVisitor.h>
-#include <Interpreters/evaluateConstantExpression.h>
+#include <Backups/BackupRenamingConfig.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/evaluateConstantExpression.h>
 
 
 namespace DB
@@ -49,23 +48,21 @@ namespace
         {
             if (create.temporary)
             {
-                if (!create.table)
+                if (create.table.empty())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Table name specified in the CREATE TEMPORARY TABLE query must not be empty");
-                create.setTable(data.renaming_config->getNewTemporaryTableName(create.getTable()));
+                create.table = data.renaming_config->getNewTemporaryTableName(create.table);
             }
-            else if (!create.table)
+            else if (create.table.empty())
             {
-                if (!create.database)
+                if (create.database.empty())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name specified in the CREATE DATABASE query must not be empty");
-                create.setDatabase(data.renaming_config->getNewDatabaseName(create.getDatabase()));
+                create.database = data.renaming_config->getNewDatabaseName(create.database);
             }
             else
             {
-                if (!create.database)
+                if (create.database.empty())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name specified in the CREATE TABLE query must not be empty");
-                auto table_and_database_name = data.renaming_config->getNewTableName({create.getDatabase(), create.getTable()});
-                create.setDatabase(table_and_database_name.first);
-                create.setTable(table_and_database_name.second);
+                std::tie(create.database, create.table) = data.renaming_config->getNewTableName({create.database, create.table});
             }
 
             create.uuid = UUIDHelpers::Nil;
@@ -163,28 +160,25 @@ namespace
             if (args.size() <= db_name_index)
                 return;
 
-            String name = evaluateConstantExpressionForDatabaseName(args[db_name_index], data.context)->as<ASTLiteral &>().value.safeGet<String>();
+            String db_name = evaluateConstantExpressionForDatabaseName(args[db_name_index], data.context)->as<ASTLiteral &>().value.safeGet<String>();
 
+            String table_name;
             size_t table_name_index = static_cast<size_t>(-1);
-
-            QualifiedTableName qualified_name;
-
-            if (function.name == "Distributed")
-                qualified_name.table = name;
-            else
-                qualified_name = QualifiedTableName::parseFromString(name);
-
-            if (qualified_name.database.empty())
+            size_t dot = String::npos;
+            if (function.name != "Distributed")
+                dot = db_name.find('.');
+            if (dot != String::npos)
             {
-                std::swap(qualified_name.database, qualified_name.table);
+                table_name = db_name.substr(dot + 1);
+                db_name.resize(dot);
+            }
+            else
+            {
                 table_name_index = 2;
                 if (args.size() <= table_name_index)
                     return;
-                qualified_name.table = evaluateConstantExpressionForDatabaseName(args[table_name_index], data.context)->as<ASTLiteral &>().value.safeGet<String>();
+                table_name = evaluateConstantExpressionForDatabaseName(args[table_name_index], data.context)->as<ASTLiteral &>().value.safeGet<String>();
             }
-
-            const String & db_name = qualified_name.database;
-            const String & table_name = qualified_name.table;
 
             if (db_name.empty() || table_name.empty())
                 return;

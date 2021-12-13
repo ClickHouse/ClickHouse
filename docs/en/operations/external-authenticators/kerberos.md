@@ -23,32 +23,32 @@ To enable Kerberos, one should include `kerberos` section in `config.xml`. This 
 Example (goes into `config.xml`):
 
 ```xml
-<clickhouse>
+<yandex>
     <!- ... -->
     <kerberos />
-</clickhouse>
+</yandex>
 ```
 
 With principal specification:
 
 ```xml
-<clickhouse>
+<yandex>
     <!- ... -->
     <kerberos>
         <principal>HTTP/clickhouse.example.com@EXAMPLE.COM</principal>
     </kerberos>
-</clickhouse>
+</yandex>
 ```
 
 With filtering by realm:
 
 ```xml
-<clickhouse>
+<yandex>
     <!- ... -->
     <kerberos>
         <realm>EXAMPLE.COM</realm>
     </kerberos>
-</clickhouse>
+</yandex>
 ```
 
 !!! warning "Note"
@@ -80,7 +80,7 @@ Parameters:
 Example (goes into `users.xml`):
 
 ```xml
-<clickhouse>
+<yandex>
     <!- ... -->
     <users>
         <!- ... -->
@@ -91,7 +91,7 @@ Example (goes into `users.xml`):
             </kerberos>
         </my_user>
     </users>
-</clickhouse>
+</yandex>
 ```
 
 !!! warning "Warning"

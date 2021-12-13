@@ -25,8 +25,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/registerStorages.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <Formats/FormatFactory.h>
-#include <Formats/registerFormats.h>
 
 
 #pragma GCC diagnostic ignored "-Wunused-function"
@@ -46,7 +44,6 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
     boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
     desc.add_options()
-        ("query", po::value<std::string>(), "query to format")
         ("help,h", "produce help message")
         ("hilite", "add syntax highlight with ANSI terminal escape sequences")
         ("oneline", "format in single line")
@@ -89,16 +86,8 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         }
 
         String query;
-
-        if (options.count("query"))
-        {
-            query = options["query"].as<std::string>();
-        }
-        else
-        {
-            ReadBufferFromFileDescriptor in(STDIN_FILENO);
-            readStringUntilEOF(query, in);
-        }
+        ReadBufferFromFileDescriptor in(STDIN_FILENO);
+        readStringUntilEOF(query, in);
 
         if (obfuscate)
         {
@@ -112,11 +101,14 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                 hash_func.update(options["seed"].as<std::string>());
             }
 
+            SharedContextHolder shared_context = Context::createShared();
+            auto context = Context::createGlobal(shared_context.get());
+            context->makeGlobalContext();
+
             registerFunctions();
             registerAggregateFunctions();
             registerTableFunctions();
             registerStorages();
-            registerFormats();
 
             std::unordered_set<std::string> additional_names;
 
@@ -130,11 +122,9 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             {
                 std::string what(name);
 
-                return FunctionFactory::instance().has(what)
+                return FunctionFactory::instance().tryGet(what, context) != nullptr
                     || AggregateFunctionFactory::instance().isAggregateFunctionName(what)
                     || TableFunctionFactory::instance().isTableFunctionName(what)
-                    || FormatFactory::instance().isOutputFormat(what)
-                    || FormatFactory::instance().isInputFormat(what)
                     || additional_names.count(what);
             };
 

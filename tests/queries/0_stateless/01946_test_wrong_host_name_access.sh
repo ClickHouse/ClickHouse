@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
 
 MYHOSTNAME=$(hostname -f)
 

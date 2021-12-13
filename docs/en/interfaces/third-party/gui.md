@@ -84,7 +84,7 @@ Features:
 -   Table data preview.
 -   Full-text search.
 
-By default, DBeaver does not connect using a session (the CLI for example does). If you require session support (for example to set settings for your session), edit the driver connection properties and set `session_id` to a random string (it uses the http connection under the hood). Then you can use any setting from the query window.
+By default, DBeaver does not connect using a session (the CLI for example does). If you require session support (for example to set settings for your session), edit the driver connection properties and set session_id to a random string (it uses the http connection under the hood). Then you can use any setting from the query window 
 
 ### clickhouse-cli {#clickhouse-cli}
 
@@ -112,36 +112,6 @@ Features:
 ### MindsDB Studio {#mindsdb}
 
 [MindsDB](https://mindsdb.com/) is an open-source AI layer for databases including ClickHouse that allows you to effortlessly develop, train and deploy state-of-the-art machine learning models. MindsDB Studio(GUI) allows you to train new models from database, interpret predictions made by the model, identify potential data biases, and evaluate and visualize model accuracy using the Explainable AI function to adapt and tune your Machine Learning models faster.
-
-### DBM {#dbm}
-
-[DBM](https://dbm.incubator.edurt.io/) DBM is a visual management tool for ClickHouse!
-
-Features:
-
--   Support query history (pagination, clear all, etc.)
--   Support selected sql clauses query
--   Support terminating query
--   Support table management (metadata, delete, preview)
--   Support database management (delete, create)
--   Support custom query
--   Support multiple data sources management(connection test, monitoring)
--   Support monitor (processor, connection, query)
--   Support migrate data
-
-### Bytebase {#bytebase}
-
-[Bytebase](https://bytebase.com) is a web-based, open source schema change and version control tool for teams. It supports various databases including ClickHouse.
-
-Features:
-
--   Schema review between developers and DBAs.
--   Database-as-Code, version control the schema in VCS such GitLab and trigger the deployment upon code commit.
--   Streamlined deployment with per-environment policy.
--   Full migration history.
--   Schema drift detection.
--   Backup and restore.
--   RBAC.
 
 ## Commercial {#commercial}
 
@@ -220,4 +190,20 @@ SeekTable is [free](https://www.seektable.com/help/cloud-pricing) for personal/i
 
 [Chadmin](https://github.com/bun4uk/chadmin) is a simple UI where you can visualize your currently running queries on your ClickHouse cluster and info about them and kill them if you want.
 
-[Original article](https://clickhouse.com/docs/en/interfaces/third-party/gui/) <!--hide-->
+### DBM {#dbm}
+
+[DBM](https://dbm.incubator.edurt.io/) DBM is a visual management tool for ClickHouse!
+
+Features:
+
+-   Support query history (pagination, clear all, etc.)
+-   Support selected sql clauses query
+-   Support terminating query
+-   Support table management (metadata, delete, preview)
+-   Support database management (delete, create)
+-   Support custom query
+-   Support multiple data sources management(connection test, monitoring)
+-   Support monitor (processor, connection, query)
+-   Support migrate data
+
+[Original article](https://clickhouse.tech/docs/en/interfaces/third-party/gui/) <!--hide-->

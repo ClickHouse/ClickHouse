@@ -412,4 +412,4 @@ Result:
 └──────────┴───────┴───────┴──────┴───────┘
 ```
 
-[Оriginal article](https://clickhouse.com/docs/en/sql-reference/statements/explain/) <!--hide-->
+[Оriginal article](https://clickhouse.tech/docs/en/sql-reference/statements/explain/) <!--hide-->

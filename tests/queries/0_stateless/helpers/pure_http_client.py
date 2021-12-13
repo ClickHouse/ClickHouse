@@ -1,6 +1,6 @@
-import os
-import io
-import sys
+import os  
+import io                                                                                                                                                                                                         
+import sys       
 import requests
 import time
 import pandas as pd
@@ -8,7 +8,6 @@ import pandas as pd
 CLICKHOUSE_HOST = os.environ.get('CLICKHOUSE_HOST', '127.0.0.1')
 CLICKHOUSE_PORT_HTTP = os.environ.get('CLICKHOUSE_PORT_HTTP', '8123')
 CLICKHOUSE_SERVER_URL_STR = 'http://' + ':'.join(str(s) for s in [CLICKHOUSE_HOST, CLICKHOUSE_PORT_HTTP]) + "/"
-CLICKHOUSE_DATABASE = os.environ.get('CLICKHOUSE_DATABASE', 'test')
 
 class ClickHouseClient:
     def __init__(self, host = CLICKHOUSE_SERVER_URL_STR):
@@ -20,12 +19,8 @@ class ClickHouseClient:
 
         for i in range(NUMBER_OF_TRIES):
             r = requests.post(
-                self.host,
-                params = {
-                    'timeout_before_checking_execution_speed': 120,
-                    'max_execution_time': 6000,
-                    'database': CLICKHOUSE_DATABASE
-                },
+                self.host, 
+                params = {'timeout_before_checking_execution_speed': 120, 'max_execution_time': 6000},
                 timeout = connection_timeout,
                 data = query)
             if r.status_code == 200:
@@ -40,7 +35,7 @@ class ClickHouseClient:
                     raise ValueError(r.text)
 
     def query_return_df(self, query, connection_timeout = 1500):
-        data = self.query(query, connection_timeout)
+        data = self.query(query, connection_timeout) 
         df = pd.read_csv(io.StringIO(data), sep = '\t')
         return df
 
