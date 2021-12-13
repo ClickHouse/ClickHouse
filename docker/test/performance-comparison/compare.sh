@@ -193,7 +193,7 @@ function run_tests
     then
         # Run only explicitly specified tests, if any.
         # shellcheck disable=SC2010
-        test_files=$(ls "$test_prefix" | grep "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}")
+        test_files=($(ls "$test_prefix" | grep "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}"))
     elif [ "$PR_TO_TEST" -ne 0 ] \
         && [ "$(wc -l < changed-test-definitions.txt)" -gt 0 ] \
         && [ "$(wc -l < other-changed-files.txt)" -eq 0 ]
@@ -201,10 +201,10 @@ function run_tests
         # If only the perf tests were changed in the PR, we will run only these
         # tests. The lists of changed files are prepared in entrypoint.sh because
         # it has the repository.
-        test_files=$(sed "s/tests\/performance/${test_prefix//\//\\/}/" changed-test-definitions.txt)
+        test_files=($(sed "s/tests\/performance/${test_prefix//\//\\/}/" changed-test-definitions.txt))
     else
         # The default -- run all tests found in the test dir.
-        test_files=$(ls "$test_prefix"/*.xml)
+        test_files=($(ls "$test_prefix"/*.xml))
     fi
 
     # We split perf tests into multiple checks to make them faster
@@ -247,7 +247,7 @@ function run_tests
     # Determine which concurrent benchmarks to run. For now, the only test
     # we run as a concurrent benchmark is 'website'. Run it as benchmark if we
     # are also going to run it as a normal test.
-    for test in $test_files; do echo "$test"; done | sed -n '/website/p' > benchmarks-to-run.txt
+    for test in ${test_files[@]}; do echo "$test"; done | sed -n '/website/p' > benchmarks-to-run.txt
 
     # Delete old report files.
     for x in {test-times,wall-clock-times}.tsv
@@ -256,8 +256,8 @@ function run_tests
         touch "$x"
     done
 
-    # Randomize test order.
-    test_files=$(for f in $test_files; do echo "$f"; done | sort -R)
+    # Randomize test order. BTW, it's not an array no more.
+    test_files=$(for f in ${test_files[@]}; do echo "$f"; done | sort -R)
 
     # Limit profiling time to 10 minutes, not to run for too long.
     profile_seconds_left=600
