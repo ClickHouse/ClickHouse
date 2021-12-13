@@ -23,6 +23,8 @@
 #    include <Databases/MySQL/ConnectionMySQLSettings.h>
 #    include <Databases/MySQL/DatabaseMySQL.h>
 #    include <Databases/MySQL/MaterializedMySQLSettings.h>
+#    include <Storages/MySQL/MySQLHelpers.h>
+#    include <Storages/MySQL/MySQLSettings.h>
 #    include <Databases/MySQL/DatabaseMaterializedMySQL.h>
 #    include <mysqlxx/Pool.h>
 #endif
@@ -198,7 +200,8 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             if (engine_name == "MySQL")
             {
                 auto mysql_database_settings = std::make_unique<ConnectionMySQLSettings>();
-                auto mysql_pool = mysqlxx::PoolWithFailover(configuration.database, configuration.addresses, configuration.username, configuration.password);
+                MySQLSettings mysql_settings;
+                auto mysql_pool = createMySQLPoolWithFailover(configuration, mysql_settings);
 
                 mysql_database_settings->loadFromQueryContext(context);
                 mysql_database_settings->loadFromQuery(*engine_define); /// higher priority
