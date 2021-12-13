@@ -73,6 +73,36 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
+  PerformanceComparison0:
+    needs: [BuilderPerformance]
+    runs-on: [self-hosted, perf-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Performance Comparison
+        env:
+          TEMP_PATH: ${{runner.temp}}/performance_comparison
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Performance Comparison (actions)'
+          REPO_COPY: ${{runner.temp}}/performance_comparison/ClickHouse
+          RUN_BY_HASH_NUM: 0
+          RUN_BY_HASH_TOTAL: 4
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 performance_comparison_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
   PerformanceComparison1:
     needs: [BuilderPerformance]
     runs-on: [self-hosted, perf-tester]
@@ -90,6 +120,66 @@ jobs:
           CHECK_NAME: 'Performance Comparison (actions)'
           REPO_COPY: ${{runner.temp}}/performance_comparison/ClickHouse
           RUN_BY_HASH_NUM: 1
+          RUN_BY_HASH_TOTAL: 4
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 performance_comparison_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  PerformanceComparison2:
+    needs: [BuilderPerformance]
+    runs-on: [self-hosted, perf-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Performance Comparison
+        env:
+          TEMP_PATH: ${{runner.temp}}/performance_comparison
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Performance Comparison (actions)'
+          REPO_COPY: ${{runner.temp}}/performance_comparison/ClickHouse
+          RUN_BY_HASH_NUM: 2
+          RUN_BY_HASH_TOTAL: 4
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 performance_comparison_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  PerformanceComparison3:
+    needs: [BuilderPerformance]
+    runs-on: [self-hosted, perf-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Performance Comparison
+        env:
+          TEMP_PATH: ${{runner.temp}}/performance_comparison
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Performance Comparison (actions)'
+          REPO_COPY: ${{runner.temp}}/performance_comparison/ClickHouse
+          RUN_BY_HASH_NUM: 3
           RUN_BY_HASH_TOTAL: 4
         run: |
           sudo rm -fr $TEMP_PATH
