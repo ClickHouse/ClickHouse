@@ -3,6 +3,7 @@
 #include <IO/ReadHelpers.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/checkStackSize.h>
+#include <DataTypes/Serializations/DataPath.h>
 #include <boost/dynamic_bitset.hpp>
 
 namespace DB
@@ -16,44 +17,6 @@ namespace ErrorCodes
 
 class ReadBuffer;
 class WriteBuffer;
-
-class Path
-{
-public:
-    // using BitSet = boost::dynamic_bitset<UInt8, AllocatorWithStackMemory<Allocator<false>, 8>>;
-
-    Path() = default;
-    explicit Path(std::string_view path_);
-
-    void append(const Path & other);
-    void append(std::string_view key);
-
-    const String & getPath() const { return path; }
-    bool isNested(size_t i) const { return is_nested.test(i); }
-    bool hasNested() const { return is_nested.any(); }
-
-    size_t getNumParts() const { return num_parts; }
-    bool empty() const { return path.empty(); }
-
-    Strings getParts() const;
-
-    static Path getNext(const Path & current_path, const Path & key, bool make_nested = false);
-
-    void writeBinary(WriteBuffer & out) const;
-    void readBinary(ReadBuffer & in);
-
-    bool operator==(const Path & other) const { return path == other.path; }
-    bool operator!=(const Path & other) const { return !(*this == other); }
-    struct Hash { size_t operator()(const Path & value) const; };
-
-private:
-    String path;
-    size_t num_parts = 0;
-    /// TODO: use dynamic bitset
-    std::bitset<64> is_nested;
-};
-
-using Paths = std::vector<Path>;
 
 template <typename Element>
 static Field getValueAsField(const Element & element)

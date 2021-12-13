@@ -20,6 +20,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
+#include <IO/Operators.h>
 
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string.hpp>
@@ -123,10 +124,10 @@ void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block, con
 
             std::vector<std::tuple<Path, DataTypePtr, ColumnPtr>> tuple_elements;
             tuple_elements.reserve(subcolumns_map.size());
-            for (const auto & [key, subcolumn] : subcolumns_map)
-                tuple_elements.emplace_back(key,
-                    subcolumn.getLeastCommonType(),
-                    subcolumn.getFinalizedColumnPtr());
+            for (const auto & entry : subcolumns_map)
+                tuple_elements.emplace_back(entry->path,
+                    entry->column.getLeastCommonType(),
+                    entry->column.getFinalizedColumnPtr());
 
             std::sort(tuple_elements.begin(), tuple_elements.end(),
                 [](const auto & lhs, const auto & rhs) { return std::get<0>(lhs).getPath() < std::get<0>(rhs).getPath(); });
@@ -179,7 +180,7 @@ void checkObjectHasNoAmbiguosPaths(const Paths & paths)
         {
             if (isPrefix(names_parts[i], names_parts[j]) || isPrefix(names_parts[j], names_parts[i]))
                 throw Exception(ErrorCodes::DUPLICATE_COLUMN,
-                    "Data in Object has ambiguous paths: '{}' and '{}",
+                    "Data in Object has ambiguous paths: '{}' and '{}'",
                     paths[i].getPath(), paths[i].getPath());
         }
     }

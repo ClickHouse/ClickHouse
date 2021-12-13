@@ -1,5 +1,9 @@
-#include <DataTypes/Serializations/JSONDataParser.h>
+#include <DataTypes/Serializations/DataPath.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeArray.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnArray.h>
 #include <Common/SipHash.h>
 
 #include <IO/ReadHelpers.h>
