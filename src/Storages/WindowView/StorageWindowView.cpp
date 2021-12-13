@@ -910,7 +910,7 @@ Pipe StorageWindowView::watch(
     }
 
     auto reader = std::make_shared<WindowViewSource>(
-        *this,
+        std::static_pointer_cast<StorageWindowView>(shared_from_this()),
         query.is_watch_events,
         window_view_timezone,
         has_limit,
