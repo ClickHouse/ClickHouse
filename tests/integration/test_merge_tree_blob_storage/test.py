@@ -62,6 +62,21 @@ def test_create_table(cluster):
     create_table(node, TABLE_NAME)
 
 
+def test_read_after_cache_is_wiped(cluster):
+    node = cluster.instances[NODE_NAME]
+    create_table(node, TABLE_NAME)
+
+    values = "('2021-11-13',3,'hello'),('2021-11-14',4,'heyo')"
+
+    node.query(f"INSERT INTO {TABLE_NAME} VALUES {values}")
+
+    # Wipe cache
+    cluster.exec_in_container(cluster.get_container_id(NODE_NAME), ["rm", "-rf", "/var/lib/clickhouse/disks/blob_storage_disk/cache/"])
+
+    # After cache is populated again, only .bin files should be accessed from Blob Storage.
+    assert node.query(f"SELECT * FROM {TABLE_NAME} order by dt, id FORMAT Values") == values
+
+
 def test_simple_insert_select(cluster):
     node = cluster.instances[NODE_NAME]
     create_table(node, TABLE_NAME)
@@ -327,18 +342,3 @@ def test_restart_during_load(cluster):
 
     for thread in threads:
         thread.join()
-
-
-def test_read_after_cache_is_wiped(cluster):
-    node = cluster.instances[NODE_NAME]
-    create_table(node, TABLE_NAME)
-
-    values = "('2021-11-13',3,'hello'),('2021-11-14',4,'heyo')"
-
-    node.query(f"INSERT INTO {TABLE_NAME} VALUES {values}")
-
-    # Wipe cache
-    cluster.exec_in_container(cluster.get_container_id(NODE_NAME), ["rm", "-rf", "/var/lib/clickhouse/disks/blob_storage_disk/cache/"])
-
-    # After cache is populated again, only .bin files should be accessed from Blob Storage.
-    assert node.query(f"SELECT * FROM {TABLE_NAME} order by dt, id FORMAT Values") == values
