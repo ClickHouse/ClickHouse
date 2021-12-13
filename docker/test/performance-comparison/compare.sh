@@ -207,6 +207,22 @@ function run_tests
         test_files=$(ls "$test_prefix"/*.xml)
     fi
 
+    # We split perf tests into multiple checks to make them faster
+    if [ -v CHPC_TEST_RUN_BY_HASH_TOTAL ]; then
+        # filter tests array in bash https://stackoverflow.com/a/40375567
+        for index in "${!test_files[@]}"; do
+            # sorry for this, just calculating hash(test_name) % total_tests_group == my_test_group_num
+            test_hash_result=$(echo test_files[$index] | perl -ne 'use Digest::MD5 qw(md5); print unpack('Q', md5($_)) % $ENV{CHPC_TEST_RUN_BY_HASH_TOTAL} == $ENV{CHPC_TEST_RUN_BY_HASH_NUM};')
+            # BTW, for some reason when hash(test_name) % total_tests_group != my_test_group_num perl outputs nothing, not zero
+            if [ "$test_hash_result" != "1" ]; then
+                # deleting element from array
+                unset -v 'test_files[$index]'
+            fi
+        done
+        # to have sequential indexes...
+        test_files=("${test_files[@]}")
+    fi
+
     # For PRs w/o changes in test definitons, test only a subset of queries,
     # and run them less times. If the corresponding environment variables are
     # already set, keep those values.
