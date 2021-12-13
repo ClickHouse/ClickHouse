@@ -1,6 +1,3 @@
--- Tags: long, replica, no-replicated-database
--- Tag no-replicated-database: Old syntax is not allowed
-
 SET optimize_on_insert = 0;
 
 SET send_logs_level = 'fatal';

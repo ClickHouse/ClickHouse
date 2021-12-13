@@ -10,8 +10,6 @@ from collections import defaultdict
 import random
 import json
 import csv
-# for crc32
-import zlib
 
 
 MAX_RETRY = 3
@@ -27,9 +25,6 @@ MAX_TIME_SECONDS = 3600
 
 MAX_TIME_IN_SANDBOX = 20 * 60   # 20 minutes
 TASK_TIMEOUT = 8 * 60 * 60      # 8 hours
-
-def stringhash(s):
-    return zlib.crc32(s.encode('utf-8'))
 
 def get_tests_to_run(pr_info):
     result = set([])
@@ -187,13 +182,6 @@ class ClickhouseIntegrationTestsRunner:
         self.disable_net_host = 'disable_net_host' in self.params and self.params['disable_net_host']
         self.start_time = time.time()
         self.soft_deadline_time = self.start_time + (TASK_TIMEOUT - MAX_TIME_IN_SANDBOX)
-
-        if 'run_by_hash_total' in self.params:
-            self.run_by_hash_total = self.params['run_by_hash_total']
-            self.run_by_hash_num = self.params['run_by_hash_num']
-        else:
-            self.run_by_hash_total = 0
-            self.run_by_hash_num = 0
 
     def path(self):
         return self.result_path
@@ -588,15 +576,6 @@ class ClickhouseIntegrationTestsRunner:
         self._install_clickhouse(build_path)
         logging.info("Dump iptables before run %s", subprocess.check_output("sudo iptables -L", shell=True))
         all_tests = self._get_all_tests(repo_path)
-
-        if self.run_by_hash_total != 0:
-            grouped_tests = self.group_test_by_file(all_tests)
-            all_filtered_by_hash_tests = []
-            for group, tests_in_group in grouped_tests.items():
-                if stringhash(group) % self.run_by_hash_total == self.run_by_hash_num:
-                    all_filtered_by_hash_tests += tests_in_group
-            all_tests = all_filtered_by_hash_tests
-
         parallel_skip_tests = self._get_parallel_tests_skip_list(repo_path)
         logging.info("Found %s tests first 3 %s", len(all_tests), ' '.join(all_tests[:3]))
         filtered_sequential_tests = list(filter(lambda test: test in all_tests, parallel_skip_tests))

@@ -9,19 +9,18 @@ namespace DB
 template <typename A>
 struct AbsImpl
 {
-    using ResultType = std::conditional_t<is_decimal<A>, A, typename NumberTraits::ResultOfAbs<A>::Type>;
+    using ResultType = std::conditional_t<IsDecimalNumber<A>, A, typename NumberTraits::ResultOfAbs<A>::Type>;
     static const constexpr bool allow_fixed_string = false;
-    static const constexpr bool allow_string_integer = false;
 
     static inline NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {
-        if constexpr (is_decimal<A>)
+        if constexpr (IsDecimalNumber<A>)
             return a < A(0) ? A(-a) : a;
         else if constexpr (is_big_int_v<A> && is_signed_v<A>)
             return (a < 0) ? -a : a;
-        else if constexpr (is_integer<A> && is_signed_v<A>)
+        else if constexpr (is_integer_v<A> && is_signed_v<A>)
             return a < 0 ? static_cast<ResultType>(~a) + 1 : static_cast<ResultType>(a);
-        else if constexpr (is_integer<A> && is_unsigned_v<A>)
+        else if constexpr (is_integer_v<A> && is_unsigned_v<A>)
             return static_cast<ResultType>(a);
         else if constexpr (std::is_floating_point_v<A>)
             return static_cast<ResultType>(std::abs(a));
@@ -46,7 +45,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameAbs>
         if ((left_float < 0 && right_float > 0) || (left_float > 0 && right_float < 0))
             return {};
 
-        return { .is_monotonic = true, .is_positive = left_float > 0 };
+        return { true, (left_float > 0) };
     }
 };
 

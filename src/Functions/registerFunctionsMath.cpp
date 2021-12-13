@@ -34,9 +34,6 @@ void registerFunctionAcosh(FunctionFactory & factory);
 void registerFunctionAtanh(FunctionFactory & factory);
 void registerFunctionPow(FunctionFactory & factory);
 void registerFunctionSign(FunctionFactory & factory);
-void registerFunctionMax2(FunctionFactory & factory);
-void registerFunctionMin2(FunctionFactory & factory);
-void registerVectorFunctions(FunctionFactory &);
 
 
 void registerFunctionsMath(FunctionFactory & factory)
@@ -73,9 +70,6 @@ void registerFunctionsMath(FunctionFactory & factory)
     registerFunctionAtanh(factory);
     registerFunctionPow(factory);
     registerFunctionSign(factory);
-    registerFunctionMax2(factory);
-    registerFunctionMin2(factory);
-    registerVectorFunctions(factory);
 }
 
 }

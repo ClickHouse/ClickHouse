@@ -2,9 +2,9 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
 #include <Interpreters/Context.h>
-#include <Common/ZooKeeper/KeeperException.h>
 
 #include <random>
+#include <pcg_random.hpp>
 #include <unordered_set>
 
 
@@ -62,7 +62,7 @@ void ReplicatedMergeTreeCleanupThread::iterate()
         /// Both use relative_data_path which changes during rename, so we
         /// do it under share lock
         storage.clearOldWriteAheadLogs();
-        storage.clearOldTemporaryDirectories(storage.merger_mutator, storage.getSettings()->temporary_directories_lifetime.totalSeconds());
+        storage.clearOldTemporaryDirectories(storage.getSettings()->temporary_directories_lifetime.totalSeconds());
     }
 
     /// This is loose condition: no problem if we actually had lost leadership at this moment

@@ -46,6 +46,9 @@ case $PACKAGE_MANAGER in
             libicu-dev)
                 $SUDO apt-get install -y libicu-dev
                 ;;
+            libreadline-dev)
+                $SUDO apt-get install -y libreadline-dev
+                ;;
             llvm-libs*)
                 $SUDO apt-get install -y ${WHAT/llvm-libs/liblld}-dev ${WHAT/llvm-libs/libclang}-dev
                 ;;
@@ -88,6 +91,9 @@ case $PACKAGE_MANAGER in
             libicu-dev)
                 $SUDO yum install -y libicu-devel
                 ;;
+            libreadline-dev)
+                $SUDO yum install -y readline-devel
+                ;;
             *)
                 echo "Unknown package"; exit 1;
                 ;;
@@ -123,6 +129,9 @@ case $PACKAGE_MANAGER in
                 ;;
             libicu-dev)
                 $SUDO pkg install -y icu
+                ;;
+            libreadline-dev)
+                $SUDO pkg install -y readline
                 ;;
             *)
                 echo "Unknown package"; exit 1;

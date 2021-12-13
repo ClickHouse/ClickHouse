@@ -16,8 +16,6 @@ public:
         MergeTreeData::DataPartPtr part_,
         size_t marks_count_,
         const MarkRanges & all_mark_ranges_,
-        MarkCache * mark_cache,
-        UncompressedCache * uncompressed_cache,
         MergeTreeReaderSettings settings);
     ~MergeTreeIndexReader();
 

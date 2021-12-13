@@ -78,15 +78,6 @@ if (SANITIZE)
 
     elseif (SANITIZE STREQUAL "undefined")
         set (UBSAN_FLAGS "-fsanitize=undefined -fno-sanitize-recover=all -fno-sanitize=float-divide-by-zero")
-        if (ENABLE_FUZZING)
-            # Unsigned integer overflow is well defined behaviour from a perspective of C++ standard,
-            # compilers or CPU. We use in hash functions like SipHash and many other places in our codebase.
-            # This flag is needed only because fuzzers are run inside oss-fuzz infrastructure
-            # and they have a bunch of flags not halt the program if UIO happend and even to silence that warnings.
-            # But for unknown reason that flags don't work with ClickHouse or we don't understand how to properly use them,
-            # that's why we often receive reports about UIO. The simplest way to avoid this is just  set this flag here.
-            set(UBSAN_FLAGS "${SAN_FLAGS} -fno-sanitize=unsigned-integer-overflow")
-        endif()
         if (COMPILER_CLANG)
             set (UBSAN_FLAGS "${UBSAN_FLAGS} -fsanitize-blacklist=${CMAKE_SOURCE_DIR}/tests/ubsan_suppressions.txt")
         else()

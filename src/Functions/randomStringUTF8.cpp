@@ -7,7 +7,7 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/randomSeed.h>
 
-#include <base/defines.h>
+#include <common/defines.h>
 
 namespace DB
 {

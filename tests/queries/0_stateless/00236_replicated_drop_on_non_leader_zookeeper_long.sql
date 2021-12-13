@@ -1,6 +1,3 @@
--- Tags: long, replica, no-replicated-database
--- Tag no-replicated-database: Old syntax is not allowed
-
 SET replication_alter_partitions_sync = 2;
 
 DROP TABLE IF EXISTS attach_r1;

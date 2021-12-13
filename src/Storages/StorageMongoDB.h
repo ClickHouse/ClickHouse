@@ -1,11 +1,10 @@
 #pragma once
 
-#include <Poco/MongoDB/Connection.h>
-
-#include <base/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
+
+#include <Poco/MongoDB/Connection.h>
 
 
 namespace DB
@@ -42,8 +41,6 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
-
-    static StorageMongoDBConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
 
 private:
     void connectIfNotConnected();
