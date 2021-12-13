@@ -76,23 +76,24 @@ def process_results(result_folder):
         test_files = [f for f in os.listdir(result_folder) if os.path.isfile(os.path.join(result_folder, f))]
         additional_files = [os.path.join(result_folder, f) for f in test_files]
 
+    status = []
     status_path = os.path.join(result_folder, "check_status.tsv")
     if os.path.exists(status_path):
         logging.info("Found test_results.tsv")
         with open(status_path, 'r', encoding='utf-8') as status_file:
             status = list(csv.reader(status_file, delimiter='\t'))
-    else:
-        status = []
 
     if len(status) != 1 or len(status[0]) != 2:
+        logging.info("Files in result folder %s", os.listdir(result_folder))
         return "error", "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
     results_path = os.path.join(result_folder, "test_results.tsv")
-    with open(results_path, 'r', encoding='utf-8') as results_file:
-        test_results = list(csv.reader(results_file, delimiter='\t'))
+    if os.path.exists(results_path):
+        with open(results_path, 'r', encoding='utf-8') as results_file:
+            test_results = list(csv.reader(results_file, delimiter='\t'))
     if len(test_results) == 0:
-        raise Exception("Empty results")
+        return "error", "Empty test_results.tsv", test_results, additional_files
 
     return state, description, test_results, additional_files
 
