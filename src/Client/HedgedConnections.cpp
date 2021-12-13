@@ -132,7 +132,7 @@ void HedgedConnections::sendQuery(
     const String & query,
     const String & query_id,
     UInt64 stage,
-    const ClientInfo & client_info,
+    ClientInfo & client_info,
     bool with_pending_data)
 {
     std::lock_guard lock(cancel_mutex);
@@ -171,7 +171,9 @@ void HedgedConnections::sendQuery(
             modified_settings.group_by_two_level_threshold_bytes = 0;
         }
 
-        if (offset_states.size() > 1)
+        const bool enable_sample_offset_parallel_processing = settings.max_parallel_replicas > 1 && !settings.allow_experimental_parallel_reading_from_replicas;
+
+        if (offset_states.size() > 1 && enable_sample_offset_parallel_processing)
         {
             modified_settings.parallel_replicas_count = offset_states.size();
             modified_settings.parallel_replica_offset = fd_to_replica_location[replica.packet_receiver->getFileDescriptor()].offset;

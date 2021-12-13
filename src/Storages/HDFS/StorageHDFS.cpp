@@ -13,6 +13,7 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -63,7 +64,11 @@ StorageHDFS::StorageHDFS(
     ContextPtr context_,
     const String & compression_method_ = "",
     ASTPtr partition_by_)
-    : IStorage(table_id_), WithContext(context_), uri(uri_), format_name(format_name_), compression_method(compression_method_)
+    : IStorage(table_id_)
+    , WithContext(context_)
+    , uri(uri_)
+    , format_name(format_name_)
+    , compression_method(compression_method_)
     , partition_by(partition_by_)
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
@@ -76,8 +81,7 @@ StorageHDFS::StorageHDFS(
     setInMemoryMetadata(storage_metadata);
 }
 
-namespace
-{
+using StorageHDFSPtr = std::shared_ptr<StorageHDFS>;
 
 class HDFSSource : public SourceWithProgress, WithContext
 {
@@ -93,8 +97,12 @@ public:
 
     using SourcesInfoPtr = std::shared_ptr<SourcesInfo>;
 
-    static Block getHeader(Block header, bool need_path_column, bool need_file_column)
+    static Block getHeader(const StorageMetadataPtr & metadata_snapshot, bool need_path_column, bool need_file_column)
     {
+        auto header = metadata_snapshot->getSampleBlock();
+
+        /// Note: AddingDefaultsBlockInputStream doesn't change header.
+
         if (need_path_column)
             header.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_path"});
         if (need_file_column)
@@ -103,22 +111,35 @@ public:
         return header;
     }
 
+    static Block getBlockForSource(
+        const StorageHDFSPtr & storage,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ColumnsDescription & columns_description,
+        const SourcesInfoPtr & files_info)
+    {
+        if (storage->isColumnOriented())
+            return metadata_snapshot->getSampleBlockForColumns(
+                columns_description.getNamesOfPhysical(), storage->getVirtuals(), storage->getStorageID());
+        else
+            return getHeader(metadata_snapshot, files_info->need_path_column, files_info->need_file_column);
+    }
+
     HDFSSource(
-        SourcesInfoPtr source_info_,
-        String uri_,
-        String format_,
-        String compression_method_,
-        Block sample_block_,
+        StorageHDFSPtr storage_,
+        const StorageMetadataPtr & metadata_snapshot_,
         ContextPtr context_,
-        UInt64 max_block_size_)
-        : SourceWithProgress(getHeader(sample_block_, source_info_->need_path_column, source_info_->need_file_column))
+        UInt64 max_block_size_,
+        SourcesInfoPtr source_info_,
+        String uri_without_path_,
+        ColumnsDescription columns_description_)
+        : SourceWithProgress(getBlockForSource(storage_, metadata_snapshot_, columns_description_, source_info_))
         , WithContext(context_)
+        , storage(std::move(storage_))
+        , metadata_snapshot(metadata_snapshot_)
         , source_info(std::move(source_info_))
-        , uri(std::move(uri_))
-        , format(std::move(format_))
-        , compression_method(compression_method_)
+        , uri_without_path(std::move(uri_without_path_))
         , max_block_size(max_block_size_)
-        , sample_block(std::move(sample_block_))
+        , columns_description(std::move(columns_description_))
     {
     }
 
@@ -138,14 +159,30 @@ public:
                     return {};
 
                 auto path =  source_info->uris[pos];
-                current_path = uri + path;
+                current_path = uri_without_path + path;
 
-                auto compression = chooseCompressionMethod(path, compression_method);
-                read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(uri, path, getContext()->getGlobalContext()->getConfigRef()), compression);
-                auto input_format = getContext()->getInputFormat(format, *read_buf, sample_block, max_block_size);
-                pipeline = QueryPipeline(std::move(input_format));
+                auto compression = chooseCompressionMethod(path, storage->compression_method);
+                read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(uri_without_path, path, getContext()->getGlobalContext()->getConfigRef()), compression);
 
-                reader = std::make_unique<PullingPipelineExecutor>(pipeline);
+                auto get_block_for_format = [&]() -> Block
+                {
+                    if (storage->isColumnOriented())
+                        return metadata_snapshot->getSampleBlockForColumns(columns_description.getNamesOfPhysical());
+                    return metadata_snapshot->getSampleBlock();
+                };
+                auto input_format = getContext()->getInputFormat(storage->format_name, *read_buf, get_block_for_format(), max_block_size);
+
+                QueryPipelineBuilder builder;
+                builder.init(Pipe(input_format));
+                if (columns_description.hasDefaults())
+                {
+                    builder.addSimpleTransform([&](const Block & header)
+                    {
+                        return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, getContext());
+                    });
+                }
+                pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+                reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
             }
 
             Block res;
@@ -180,17 +217,17 @@ public:
     }
 
 private:
-    std::unique_ptr<ReadBuffer> read_buf;
-    QueryPipeline pipeline;
-    std::unique_ptr<PullingPipelineExecutor> reader;
+    StorageHDFSPtr storage;
+    StorageMetadataPtr metadata_snapshot;
     SourcesInfoPtr source_info;
-    String uri;
-    String format;
-    String compression_method;
-    String current_path;
-
+    String uri_without_path;
     UInt64 max_block_size;
-    Block sample_block;
+    ColumnsDescription columns_description;
+
+    std::unique_ptr<ReadBuffer> read_buf;
+    std::unique_ptr<QueryPipeline> pipeline;
+    std::unique_ptr<PullingPipelineExecutor> reader;
+    String current_path;
 };
 
 class HDFSSink : public SinkToStorage
@@ -203,7 +240,7 @@ public:
         const CompressionMethod compression_method)
         : SinkToStorage(sample_block)
     {
-        write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromHDFS>(uri, context->getGlobalContext()->getConfigRef()), compression_method, 3);
+        write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromHDFS>(uri, context->getGlobalContext()->getConfigRef(), context->getSettingsRef().hdfs_replication), compression_method, 3);
         writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context);
     }
 
@@ -234,7 +271,6 @@ private:
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
 };
-
 
 class PartitionedHDFSSink : public PartitionedSink
 {
@@ -314,12 +350,13 @@ Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, c
             }
         }
     }
-
     return result;
 }
 
+bool StorageHDFS::isColumnOriented() const
+{
+    return format_name != "Distributed" && FormatFactory::instance().checkIfFormatIsColumnOriented(format_name);
 }
-
 
 Pipe StorageHDFS::read(
     const Names & column_names,
@@ -355,11 +392,27 @@ Pipe StorageHDFS::read(
         num_streams = sources_info->uris.size();
 
     Pipes pipes;
-
+    auto this_ptr = std::static_pointer_cast<StorageHDFS>(shared_from_this());
     for (size_t i = 0; i < num_streams; ++i)
-        pipes.emplace_back(std::make_shared<HDFSSource>(
-                sources_info, uri_without_path, format_name, compression_method, metadata_snapshot->getSampleBlock(), context_, max_block_size));
+    {
+         const auto get_columns_for_format = [&]() -> ColumnsDescription
+        {
+            if (isColumnOriented())
+                return ColumnsDescription{
+                    metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID()).getNamesAndTypesList()};
+            else
+                return metadata_snapshot->getColumns();
+        };
 
+        pipes.emplace_back(std::make_shared<HDFSSource>(
+            this_ptr,
+            metadata_snapshot,
+            context_,
+            max_block_size,
+            sources_info,
+            uri_without_path,
+            get_columns_for_format()));
+    }
     return Pipe::unitePipes(std::move(pipes));
 }
 
@@ -450,6 +503,7 @@ NamesAndTypesList StorageHDFS::getVirtuals() const
         {"_file", std::make_shared<DataTypeString>()}
     };
 }
+
 }
 
 #endif
