@@ -18,7 +18,7 @@ class PostgreSQLReplicationHandler
 public:
     PostgreSQLReplicationHandler(
             const String & replication_identifier,
-            const String & postgres_database_,
+            const String & remote_database_name_,
             const String & current_database_name_,
             const postgres::ConnectionInfo & connection_info_,
             ContextPtr context_,
@@ -79,7 +79,7 @@ private:
 
     /// Methods to manage replication.
 
-    void checkConnectionAndStart();
+    void waitConnectionAndStart();
 
     void consumerFunc();
 
@@ -89,19 +89,13 @@ private:
 
     PostgreSQLTableStructurePtr fetchTableStructure(pqxx::ReplicationTransaction & tx, const String & table_name) const;
 
-    String doubleQuoteWithSchema(const String & table_name) const;
-
-    std::pair<String, String> getSchemaAndTableName(const String & table_name) const;
-
     Poco::Logger * log;
     ContextPtr context;
 
     /// If it is not attach, i.e. a create query, then if publication already exists - always drop it.
     bool is_attach;
 
-    String postgres_database;
-    String postgres_schema;
-    String current_database_name;
+    const String remote_database_name, current_database_name;
 
     /// Connection string and address for logs.
     postgres::ConnectionInfo connection_info;
@@ -119,12 +113,6 @@ private:
     /// A coma-separated list of tables, which are going to be replicated for database engine. By default, a whole database is replicated.
     String tables_list;
 
-    String schema_list;
-
-    /// Schema can be as a part of table name, i.e. as a clickhouse table it is accessed like db.`schema.table`.
-    /// This is possible to allow replicating tables from multiple schemas in the same MaterializedPostgreSQL database engine.
-    mutable bool schema_as_a_part_of_table_name = false;
-
     bool user_managed_slot = true;
     String user_provided_snapshot;
 
@@ -141,6 +129,8 @@ private:
     MaterializedStorages materialized_storages;
 
     UInt64 milliseconds_to_wait;
+
+    String postgres_schema;
 };
 
 }

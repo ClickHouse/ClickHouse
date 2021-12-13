@@ -818,7 +818,6 @@ void SerializationLowCardinality::serializeTextJSON(const IColumn & column, size
 {
     serializeImpl(column, row_num, &ISerialization::serializeTextJSON, ostr, settings);
 }
-
 void SerializationLowCardinality::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     deserializeImpl(column, &ISerialization::deserializeTextJSON, istr, settings);
@@ -827,16 +826,6 @@ void SerializationLowCardinality::deserializeTextJSON(IColumn & column, ReadBuff
 void SerializationLowCardinality::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     serializeImpl(column, row_num, &ISerialization::serializeTextXML, ostr, settings);
-}
-
-void SerializationLowCardinality::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    deserializeImpl(column, &ISerialization::deserializeTextRaw, istr, settings);
-}
-
-void SerializationLowCardinality::serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    serializeImpl(column, row_num, &ISerialization::serializeTextRaw, ostr, settings);
 }
 
 template <typename... Params, typename... Args>

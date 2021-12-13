@@ -13,10 +13,6 @@ class ASTInsertQuery : public IAST
 {
 public:
     StorageID table_id = StorageID::createEmpty();
-
-    ASTPtr database;
-    ASTPtr table;
-
     ASTPtr columns;
     String format;
     ASTPtr table_function;
@@ -35,12 +31,6 @@ public:
     /// Data from buffer to insert after inlined one - may be nullptr.
     ReadBuffer * tail = nullptr;
 
-    String getDatabase() const;
-    String getTable() const;
-
-    void setDatabase(const String & name);
-    void setTable(const String & name);
-
     bool hasInlinedData() const { return data || tail; }
 
     /// Try to find table function input() in SELECT part
@@ -54,8 +44,6 @@ public:
         auto res = std::make_shared<ASTInsertQuery>(*this);
         res->children.clear();
 
-        if (database) { res->database = database->clone(); res->children.push_back(res->database); }
-        if (table) { res->table = table->clone(); res->children.push_back(res->table); }
         if (columns) { res->columns = columns->clone(); res->children.push_back(res->columns); }
         if (select) { res->select = select->clone(); res->children.push_back(res->select); }
         if (watch) { res->watch = watch->clone(); res->children.push_back(res->watch); }

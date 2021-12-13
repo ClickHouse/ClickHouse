@@ -15,7 +15,7 @@ namespace ErrorCodes
 }
 
 JSONAsStringRowInputFormat::JSONAsStringRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_) :
-    IRowInputFormat(header_, buf, std::move(params_)), buf(in_)
+    IRowInputFormat(header_, in_, std::move(params_)), buf(*in)
 {
     if (header_.columns() > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -185,7 +185,7 @@ void registerInputFormatJSONAsString(FormatFactory & factory)
 
 void registerFileSegmentationEngineJSONAsString(FormatFactory & factory)
 {
-    factory.registerFileSegmentationEngine("JSONAsString", &fileSegmentationEngineJSONEachRow);
+    factory.registerFileSegmentationEngine("JSONAsString", &fileSegmentationEngineJSONEachRowImpl);
 }
 
 void registerNonTrivialPrefixAndSuffixCheckerJSONAsString(FormatFactory & factory)

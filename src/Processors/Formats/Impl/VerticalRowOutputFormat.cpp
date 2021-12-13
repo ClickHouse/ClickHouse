@@ -115,7 +115,7 @@ void VerticalRowOutputFormat::writeBeforeTotals()
 
 void VerticalRowOutputFormat::writeBeforeExtremes()
 {
-    if (!areTotalsWritten())
+    if (!was_totals_written)
         writeCString("\n", out);
 
     writeCString("\n", out);
@@ -134,6 +134,7 @@ void VerticalRowOutputFormat::writeMaxExtreme(const Columns & columns, size_t ro
 void VerticalRowOutputFormat::writeTotals(const Columns & columns, size_t row_num)
 {
     writeSpecialRow(columns, row_num, "Totals");
+    was_totals_written = true;
 }
 
 void VerticalRowOutputFormat::writeSpecialRow(const Columns & columns, size_t row_num, const char * title)
@@ -152,7 +153,12 @@ void VerticalRowOutputFormat::writeSpecialRow(const Columns & columns, size_t ro
     writeChar('\n', out);
 
     for (size_t i = 0; i < num_columns; ++i)
+    {
+        if (i != 0)
+            writeFieldDelimiter();
+
         writeField(*columns[i], *serializations[i], row_num);
+    }
 }
 
 void registerOutputFormatVertical(FormatFactory & factory)
@@ -165,8 +171,6 @@ void registerOutputFormatVertical(FormatFactory & factory)
     {
         return std::make_shared<VerticalRowOutputFormat>(buf, sample, params, settings);
     });
-
-    factory.markOutputFormatSupportsParallelFormatting("Vertical");
 }
 
 }

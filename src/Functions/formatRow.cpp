@@ -77,8 +77,6 @@ public:
         if (!dynamic_cast<IRowOutputFormat *>(out.get()))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot turn rows into a {} format strings. {} function supports only row output formats", format_name, getName());
 
-        /// Don't write prefix if any.
-        out->doNotWritePrefix();
         out->write(arg_columns);
         return col_str;
     }

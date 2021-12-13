@@ -6,7 +6,7 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
-#include <base/TypeLists.h>
+#include <base/Typelists.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -53,7 +53,7 @@ namespace
         {
         }
 
-        template <typename T>
+        template <class T>
         void operator()(Id<T>)
         {
             if (typeid_cast<const DataTypeNumber<T> *>(&keys_type))
@@ -89,7 +89,7 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
     else if (which.isInt() || which.isUInt() || which.isFloat())
     {
         MutableColumnUniquePtr column;
-        TypeListUtils::forEach(TypeListIntAndFloat{}, CreateColumnVector(column, *type, creator));
+        TLUtils::forEach(TLIntegral{}, CreateColumnVector(column, *type, creator));
 
         if (!column)
             throw Exception("Unexpected numeric type: " + type->getName(), ErrorCodes::LOGICAL_ERROR);

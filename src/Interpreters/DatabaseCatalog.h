@@ -3,7 +3,6 @@
 #include <Core/UUID.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
-#include <Databases/TablesLoader.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 
@@ -149,7 +148,7 @@ public:
 
     void attachDatabase(const String & database_name, const DatabasePtr & database);
     DatabasePtr detachDatabase(ContextPtr local_context, const String & database_name, bool drop = false, bool check_empty = true);
-    void updateDatabaseName(const String & old_name, const String & new_name, const Strings & tables_in_database);
+    void updateDatabaseName(const String & old_name, const String & new_name);
 
     /// database_name must be not empty
     DatabasePtr getDatabase(const String & database_name) const;
@@ -208,16 +207,6 @@ public:
 
     void waitTableFinallyDropped(const UUID & uuid);
 
-    void addLoadingDependencies(const QualifiedTableName & table, TableNamesSet && dependencies);
-    void addLoadingDependencies(const DependenciesInfos & new_infos);
-    DependenciesInfo getLoadingDependenciesInfo(const StorageID & table_id) const;
-
-    TableNamesSet tryRemoveLoadingDependencies(const StorageID & table_id, bool check_dependencies, bool is_drop_database = false);
-    TableNamesSet tryRemoveLoadingDependenciesUnlocked(const QualifiedTableName & removing_table, bool check_dependencies, bool is_drop_database = false);
-    void checkTableCanBeRemovedOrRenamed(const StorageID & table_id) const;
-
-    void updateLoadingDependencies(const StorageID & table_id, TableNamesSet && new_dependencies);
-
 private:
     // The global instance of database catalog. unique_ptr is to allow
     // deferred initialization. Thought I'd use std::optional, but I can't
@@ -269,8 +258,6 @@ private:
     Databases databases;
     UUIDToDatabaseMap db_uuid_map;
     UUIDToStorageMap uuid_map;
-
-    DependenciesInfos loading_dependencies;
 
     Poco::Logger * log;
 

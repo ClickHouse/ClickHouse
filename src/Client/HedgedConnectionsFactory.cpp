@@ -7,8 +7,6 @@
 namespace ProfileEvents
 {
     extern const Event HedgedRequestsChangeReplica;
-    extern const Event DistributedConnectionFailTry;
-    extern const Event DistributedConnectionFailAtAll;
 }
 
 namespace DB

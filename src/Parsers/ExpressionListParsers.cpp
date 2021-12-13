@@ -6,15 +6,12 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/ParserUnionQueryElement.h>
 #include <Parsers/parseIntervalKind.h>
+#include <Parsers/ParserUnionQueryElement.h>
 #include <Common/StringUtils/StringUtils.h>
 
 using namespace std::literals;
@@ -145,28 +142,28 @@ bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             // SELECT ... UNION ALL SELECT ...
             if (s_all_parser.check(pos, expected))
             {
-                union_modes.push_back(SelectUnionMode::ALL);
+                union_modes.push_back(ASTSelectWithUnionQuery::Mode::ALL);
             }
             // SELECT ... UNION DISTINCT SELECT ...
             else if (s_distinct_parser.check(pos, expected))
             {
-                union_modes.push_back(SelectUnionMode::DISTINCT);
+                union_modes.push_back(ASTSelectWithUnionQuery::Mode::DISTINCT);
             }
             // SELECT ... UNION SELECT ...
             else
             {
-                union_modes.push_back(SelectUnionMode::Unspecified);
+                union_modes.push_back(ASTSelectWithUnionQuery::Mode::Unspecified);
             }
             return true;
         }
         else if (s_except_parser.check(pos, expected))
         {
-            union_modes.push_back(SelectUnionMode::EXCEPT);
+            union_modes.push_back(ASTSelectWithUnionQuery::Mode::EXCEPT);
             return true;
         }
         else if (s_intersect_parser.check(pos, expected))
         {
-            union_modes.push_back(SelectUnionMode::INTERSECT);
+            union_modes.push_back(ASTSelectWithUnionQuery::Mode::INTERSECT);
             return true;
         }
         return false;

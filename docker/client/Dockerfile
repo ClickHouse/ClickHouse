@@ -1,11 +1,9 @@
 FROM ubuntu:18.04
 
-# ARG for quick switch to a given ubuntu mirror
-ARG apt_archive="http://archive.ubuntu.com"
-RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
-
 ARG repository="deb https://repo.clickhouse.com/deb/stable/ main/"
-ARG version=21.13.1.*
+ARG version=21.11.7.*
+
+RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \

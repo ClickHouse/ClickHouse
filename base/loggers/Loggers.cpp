@@ -62,13 +62,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     if (!log_path.empty())
     {
         createDirectory(log_path);
-
-        std::string ext;
-        if (config.getRawString("logger.stream_compress", "false") == "true")
-            ext = ".lz4";
-
-        std::cerr << "Logging " << log_level_string << " to " << log_path << ext << std::endl;
-
+        std::cerr << "Logging " << log_level_string << " to " << log_path << std::endl;
         auto log_level = Poco::Logger::parseLevel(log_level_string);
         if (log_level > max_log_level)
         {
@@ -81,7 +75,6 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.size", "100M"));
         log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
         log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config.getRawString("logger.compress", "true"));
-        log_file->setProperty(Poco::FileChannel::PROP_STREAMCOMPRESS, config.getRawString("logger.stream_compress", "false"));
         log_file->setProperty(Poco::FileChannel::PROP_PURGECOUNT, config.getRawString("logger.count", "1"));
         log_file->setProperty(Poco::FileChannel::PROP_FLUSH, config.getRawString("logger.flush", "true"));
         log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config.getRawString("logger.rotateOnOpen", "false"));
@@ -107,18 +100,13 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             max_log_level = errorlog_level;
         }
 
-        std::string ext;
-        if (config.getRawString("logger.stream_compress", "false") == "true")
-            ext = ".lz4";
-
-        std::cerr << "Logging errors to " << errorlog_path << ext << std::endl;
+        std::cerr << "Logging errors to " << errorlog_path << std::endl;
 
         error_log_file = new Poco::FileChannel;
         error_log_file->setProperty(Poco::FileChannel::PROP_PATH, fs::weakly_canonical(errorlog_path));
         error_log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.size", "100M"));
         error_log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
         error_log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config.getRawString("logger.compress", "true"));
-        error_log_file->setProperty(Poco::FileChannel::PROP_STREAMCOMPRESS, config.getRawString("logger.stream_compress", "false"));
         error_log_file->setProperty(Poco::FileChannel::PROP_PURGECOUNT, config.getRawString("logger.count", "1"));
         error_log_file->setProperty(Poco::FileChannel::PROP_FLUSH, config.getRawString("logger.flush", "true"));
         error_log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config.getRawString("logger.rotateOnOpen", "false"));

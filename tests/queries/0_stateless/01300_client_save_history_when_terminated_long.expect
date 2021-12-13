@@ -1,5 +1,5 @@
 #!/usr/bin/expect -f
-# Tags: long, no-fasttest
+# Tags: long, no-unbundled, no-fasttest
 
 log_user 0
 set timeout 60

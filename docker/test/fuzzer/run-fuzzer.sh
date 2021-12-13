@@ -1,5 +1,5 @@
 #!/bin/bash
-# shellcheck disable=SC2086,SC2001,SC2046,SC2030,SC2031
+# shellcheck disable=SC2086,SC2001,SC2046
 
 set -eux
 set -o pipefail
@@ -35,7 +35,7 @@ function clone
             fi
             git diff --name-only master HEAD | tee ci-changed-files.txt
         else
-            if [ -v SHA_TO_TEST ]; then
+            if [ -v COMMIT_SHA ]; then
                 git fetch --depth 2 origin "$SHA_TO_TEST"
                 git checkout "$SHA_TO_TEST"
                 echo "Checked out nominal SHA $SHA_TO_TEST for master"
@@ -77,7 +77,7 @@ function configure
 
 function watchdog
 {
-    sleep 1800
+    sleep 3600
 
     echo "Fuzzing run has timed out"
     for _ in {1..10}
@@ -165,7 +165,7 @@ thread apply all backtrace
 continue
 " > script.gdb
 
-    sudo gdb -batch -command script.gdb -p $server_pid &
+    gdb -batch -command script.gdb -p $server_pid &
 
     # Check connectivity after we attach gdb, because it might cause the server
     # to freeze and the fuzzer will fail.
@@ -257,12 +257,6 @@ continue
         task_exit_code=0
         echo "success" > status.txt
         echo "OK" > description.txt
-    elif [ "$fuzzer_exit_code" == "137" ]
-    then
-        # Killed.
-        task_exit_code=$fuzzer_exit_code
-        echo "failure" > status.txt
-        echo "Killed" > description.txt
     else
         # The server was alive, but the fuzzer returned some error. This might
         # be some client-side error detected by fuzzing, or a problem in the

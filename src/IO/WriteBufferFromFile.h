@@ -53,9 +53,6 @@ public:
     {
         return file_name;
     }
-
-private:
-    void finalizeImpl() override;
 };
 
 }

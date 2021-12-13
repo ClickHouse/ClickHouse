@@ -1,5 +1,4 @@
 #include <IO/createReadBufferFromFileBase.h>
-#include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/MMapReadBufferFromFileWithCache.h>
 #include <IO/AsynchronousReadBufferFromFile.h>
@@ -34,8 +33,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     char * existing_memory,
     size_t alignment)
 {
-    if (size.has_value() && !*size)
-        return std::make_unique<ReadBufferFromEmptyFile>();
     size_t estimated_size = size.has_value() ? *size : 0;
 
     if (!existing_memory

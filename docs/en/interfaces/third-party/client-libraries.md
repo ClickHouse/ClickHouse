@@ -35,8 +35,6 @@ toc_title: Client Libraries
 -   NodeJs
     -   [clickhouse (NodeJs)](https://github.com/TimonKK/clickhouse)
     -   [node-clickhouse](https://github.com/apla/node-clickhouse)
-    -   [nestjs-clickhouse](https://github.com/depyronick/nestjs-clickhouse)
-    -   [clickhouse-client](https://github.com/depyronick/clickhouse-client)
 -   Perl
     -   [perl-DBD-ClickHouse](https://github.com/elcamlost/perl-DBD-ClickHouse)
     -   [HTTP-ClickHouse](https://metacpan.org/release/HTTP-ClickHouse)

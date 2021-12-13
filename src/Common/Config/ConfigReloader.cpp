@@ -36,25 +36,7 @@ ConfigReloader::ConfigReloader(
 
 void ConfigReloader::start()
 {
-    std::lock_guard lock(reload_mutex);
-    if (!thread.joinable())
-    {
-        quit = false;
-        thread = ThreadFromGlobalPool(&ConfigReloader::run, this);
-    }
-}
-
-
-void ConfigReloader::stop()
-{
-    std::unique_lock lock(reload_mutex);
-    if (!thread.joinable())
-        return;
-    quit = true;
-    zk_changed_event->set();
-    auto temp_thread = std::move(thread);
-    lock.unlock();
-    temp_thread.join();
+    thread = ThreadFromGlobalPool(&ConfigReloader::run, this);
 }
 
 
@@ -62,11 +44,15 @@ ConfigReloader::~ConfigReloader()
 {
     try
     {
-        stop();
+        quit = true;
+        zk_changed_event->set();
+
+        if (thread.joinable())
+            thread.join();
     }
     catch (...)
     {
-        tryLogCurrentException(log, __PRETTY_FUNCTION__);
+        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 

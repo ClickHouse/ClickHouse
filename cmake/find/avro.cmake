@@ -8,9 +8,10 @@ if (NOT ENABLE_AVRO)
     return()
 endif()
 
-option (USE_INTERNAL_AVRO_LIBRARY "Set to FALSE to use system avro library instead of bundled" ON)
+option (USE_INTERNAL_AVRO_LIBRARY
+        "Set to FALSE to use system avro library instead of bundled" ON) # TODO: provide unbundled support
 
-if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/avro/lang")
+if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/avro/lang/c++/CMakeLists.txt")
     if (USE_INTERNAL_AVRO_LIBRARY)
         message(WARNING "submodule contrib/avro is missing. to fix try run: \n git submodule update --init")
         message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot find internal avro")

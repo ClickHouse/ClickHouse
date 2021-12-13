@@ -83,7 +83,7 @@ def test_read_write_two_nodes(started_cluster):
 
     finally:
         try:
-            for zk_conn in [node1_zk, node2_zk]:
+            for zk_conn in [node1_zk, node2_zk, node3_zk]:
                 zk_conn.stop()
                 zk_conn.close()
         except:
@@ -156,7 +156,7 @@ def test_read_write_two_nodes_with_blocade(started_cluster):
 
     finally:
         try:
-            for zk_conn in [node1_zk, node2_zk]:
+            for zk_conn in [node1_zk, node2_zk, node3_zk]:
                 zk_conn.stop()
                 zk_conn.close()
         except:

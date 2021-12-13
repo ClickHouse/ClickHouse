@@ -157,23 +157,7 @@ public:
             set(field, child);
     }
 
-    template <typename T>
-    void reset(T * & field)
-    {
-        if (field == nullptr)
-            return;
-
-        const auto child = std::find_if(children.begin(), children.end(), [field](const auto & p)
-        {
-           return p.get() == field;
-        });
-
-        if (child == children.end())
-            throw Exception("AST subtree not found in children", ErrorCodes::LOGICAL_ERROR);
-
-        children.erase(child);
-        field = nullptr;
-    }
+    void reset(IAST *& field);
 
     /// Convert to a string.
 

@@ -163,3 +163,4 @@ protected:
     /** Creates a new object to put into the pool. */
     virtual ObjectPtr allocObject() = 0;
 };
+

@@ -24,9 +24,7 @@ void BackgroundJobsAssignee::trigger()
     if (!holder)
         return;
 
-    /// Do not reset backoff factor if some task has appeared,
-    /// but decrease it exponentially on every new task.
-    no_work_done_count /= 2;
+    no_work_done_count = 0;
     /// We have background jobs, schedule task as soon as possible
     holder->schedule();
 }
@@ -38,12 +36,12 @@ void BackgroundJobsAssignee::postpone()
     if (!holder)
         return;
 
-    no_work_done_count += 1;
+    auto no_work_done_times = no_work_done_count.fetch_add(1, std::memory_order_relaxed);
     double random_addition = std::uniform_real_distribution<double>(0, sleep_settings.task_sleep_seconds_when_no_work_random_part)(rng);
 
     size_t next_time_to_execute = 1000 * (std::min(
             sleep_settings.task_sleep_seconds_when_no_work_max,
-            sleep_settings.thread_sleep_seconds_if_nothing_to_do * std::pow(sleep_settings.task_sleep_seconds_when_no_work_multiplier, no_work_done_count))
+            sleep_settings.thread_sleep_seconds_if_nothing_to_do * std::pow(sleep_settings.task_sleep_seconds_when_no_work_multiplier, no_work_done_times))
         + random_addition);
 
     holder->scheduleAfter(next_time_to_execute, false);
@@ -71,9 +69,9 @@ void BackgroundJobsAssignee::scheduleMoveTask(ExecutableTaskPtr move_task)
 }
 
 
-void BackgroundJobsAssignee::scheduleCommonTask(ExecutableTaskPtr common_task, bool need_trigger)
+void BackgroundJobsAssignee::scheduleCommonTask(ExecutableTaskPtr common_task)
 {
-    bool res = getContext()->getCommonExecutor()->trySchedule(common_task) && need_trigger;
+    bool res = getContext()->getCommonExecutor()->trySchedule(common_task);
     res ? trigger() : postpone();
 }
 

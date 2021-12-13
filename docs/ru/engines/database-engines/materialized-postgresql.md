@@ -23,20 +23,6 @@ ENGINE = MaterializedPostgreSQL('host:port', ['database' | database], 'user', 'p
 -   `user` — пользователь PostgreSQL.
 -   `password` — пароль пользователя.
 
-## Динамическое добавление новых таблиц в репликацию {#dynamically-adding-table-to-replication}
-
-``` sql
-ATTACH TABLE postgres_database.new_table;
-```
-
-При указании конкретного списка таблиц в базе с помощью настройки [materialized_postgresql_tables_list](../../operations/settings/settings.md#materialized-postgresql-tables-list), он будет обновлен (в `.sql` метаданных) на актуальный с учетом таблиц, добавленных с помощью запроса `ATTACH TABLE`.
-
-## Динамическое удаление таблиц из репликации {#dynamically-removing-table-from-replication}
-
-``` sql
-DETACH TABLE postgres_database.table_to_remove;
-```
-
 ## Настройки {#settings}
 
 -   [materialized_postgresql_max_block_size](../../operations/settings/settings.md#materialized-postgresql-max-block-size)
@@ -56,12 +42,6 @@ SETTINGS materialized_postgresql_max_block_size = 65536,
          materialized_postgresql_tables_list = 'table1,table2,table3';
 
 SELECT * FROM database1.table1;
-```
-
-Настройки можно при необходимости изменить с помощью DDL запроса. Однако с помощью него нельзя изменить настройку `materialized_postgresql_tables_list`, для обновления списка таблиц в данной настройке нужно использовать запрос `ATTACH TABLE`.
-
-``` sql
-ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
 ```
 
 ## Требования {#requirements}

@@ -11,7 +11,7 @@ endif()
 # You can set USE_INTERNAL_PROTOBUF_LIBRARY to OFF to force using the external protobuf library, which should be installed in the system in this case.
 # The external protobuf library can be installed in the system by running
 # sudo apt-get install libprotobuf-dev protobuf-compiler libprotoc-dev
-option(USE_INTERNAL_PROTOBUF_LIBRARY "Set to FALSE to use system protobuf instead of bundled. (Experimental. Set to OFF on your own risk)" ON)
+option(USE_INTERNAL_PROTOBUF_LIBRARY "Set to FALSE to use system protobuf instead of bundled. (Experimental. Set to OFF on your own risk)" ${NOT_UNBUNDLED})
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/protobuf/cmake/CMakeLists.txt")
   if(USE_INTERNAL_PROTOBUF_LIBRARY)

@@ -32,7 +32,6 @@
 #include <Storages/MergeTree/MutateFromLogEntryTask.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
-#include <Storages/MergeTree/LeaderElection.h>
 
 
 #include <Databases/IDatabase.h>
@@ -40,7 +39,6 @@
 
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTDropQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
@@ -48,10 +46,8 @@
 #include <Parsers/ASTSetQuery.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/Sources/RemoteSource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
@@ -63,17 +59,13 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/InterserverCredentials.h>
-#include <Interpreters/SelectQueryOptions.h>
-#include <Interpreters/InterpreterSelectQuery.h>
+
 
 #include <Poco/DirectoryIterator.h>
 
 #include <base/range.h>
 #include <base/scope_guard.h>
 #include <base/scope_guard_safe.h>
-
-#include <boost/algorithm/string/join.hpp>
-#include <boost/algorithm/string/replace.hpp>
 
 #include <algorithm>
 #include <ctime>
@@ -83,14 +75,20 @@
 #include <thread>
 #include <future>
 
+#include <boost/algorithm/string/join.hpp>
+
 namespace fs = std::filesystem;
 
 namespace ProfileEvents
 {
+    extern const Event ReplicatedPartMerges;
+    extern const Event ReplicatedPartMutations;
     extern const Event ReplicatedPartFailedFetches;
     extern const Event ReplicatedPartFetchesOfMerged;
     extern const Event ObsoleteReplicatedParts;
     extern const Event ReplicatedPartFetches;
+    extern const Event DataAfterMergeDiffersFromReplica;
+    extern const Event DataAfterMutationDiffersFromReplica;
     extern const Event CreatedLogEntryForMerge;
     extern const Event NotCreatedLogEntryForMerge;
     extern const Event CreatedLogEntryForMutation;
@@ -851,47 +849,12 @@ void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
         throw Exception("Table was not dropped because ZooKeeper session has expired.", ErrorCodes::TABLE_WAS_NOT_DROPPED);
 
     auto remote_replica_path = zookeeper_path + "/replicas/" + replica;
-
     LOG_INFO(logger, "Removing replica {}, marking it as lost", remote_replica_path);
     /// Mark itself lost before removing, because the following recursive removal may fail
     /// and partially dropped replica may be considered as alive one (until someone will mark it lost)
-    zookeeper->trySet(remote_replica_path + "/is_lost", "1");
-
-    /// NOTE: we should check for remote_replica_path existence,
-    /// since otherwise DROP REPLICA will fail if the replica had been already removed.
-    if (!zookeeper->exists(remote_replica_path))
-    {
-        LOG_INFO(logger, "Removing replica {} does not exist", remote_replica_path);
-        return;
-    }
-
-    /// Analog of removeRecursive(remote_replica_path)
-    /// but it removes "metadata" firstly.
-    ///
-    /// This will allow to mark table as readonly
-    /// and skip any checks of parts between on-disk and in the zookeeper.
-    ///
-    /// Without this removeRecursive() may remove "parts" first
-    /// and on DETACH/ATTACH (or server restart) it will trigger the following error:
-    ///
-    ///       "The local set of parts of table X doesn't look like the set of parts in ZooKeeper"
-    ///
-    {
-        Strings children = zookeeper->getChildren(remote_replica_path);
-
-        if (std::find(children.begin(), children.end(), "metadata") != children.end())
-            zookeeper->remove(fs::path(remote_replica_path) / "metadata");
-
-        for (const auto & child : children)
-        {
-            if (child != "metadata")
-                zookeeper->removeRecursive(fs::path(remote_replica_path) / child);
-        }
-
-        zookeeper->remove(remote_replica_path);
-    }
-
+    zookeeper->trySet(zookeeper_path + "/replicas/" + replica + "/is_lost", "1");
     /// It may left some garbage if replica_path subtree are concurrently modified
+    zookeeper->tryRemoveRecursive(remote_replica_path);
     if (zookeeper->exists(remote_replica_path))
         LOG_ERROR(logger, "Replica was not completely removed from ZooKeeper, {} still exists and may contain some garbage.", remote_replica_path);
 
@@ -1373,6 +1336,9 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
         const auto storage_settings_ptr = getSettings();
         String part_path = fs::path(replica_path) / "parts" / part_name;
 
+        //ops.emplace_back(zkutil::makeCheckRequest(
+        //    zookeeper_path + "/columns", expected_columns_version));
+
         if (storage_settings_ptr->use_minimalistic_part_header_in_zookeeper)
         {
             ops.emplace_back(zkutil::makeCreateRequest(
@@ -1418,7 +1384,6 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
             Coordination::Requests new_ops;
             for (const String & part_path : absent_part_paths_on_replicas)
             {
-                /// NOTE Create request may fail with ZNONODE if replica is being dropped, we will throw an exception
                 new_ops.emplace_back(zkutil::makeCreateRequest(part_path, "", zkutil::CreateMode::Persistent));
                 new_ops.emplace_back(zkutil::makeRemoveRequest(part_path, -1));
             }
@@ -2191,6 +2156,12 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         {
             renameTempPartAndReplace(part_desc->res_part, nullptr, &transaction);
             getCommitPartOps(ops, part_desc->res_part);
+
+            if (ops.size() > zkutil::MULTI_BATCH_SIZE)
+            {
+                zookeeper->multi(ops);
+                ops.clear();
+            }
         }
 
         if (!ops.empty())
@@ -2980,7 +2951,7 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobsAssigne
             [this, selected_entry] () mutable
             {
                 return processQueueEntry(selected_entry);
-            }, common_assignee_trigger, getStorageID()), /* need_trigger */ true);
+            }, common_assignee_trigger, getStorageID()));
         return true;
     }
 }
@@ -3403,29 +3374,53 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 }
 
 
-void StorageReplicatedMergeTree::startBeingLeader()
+void StorageReplicatedMergeTree::enterLeaderElection()
 {
-    if (!getSettings()->replicated_can_become_leader)
+    auto callback = [this]()
     {
-        LOG_INFO(log, "Will not enter leader election because replicated_can_become_leader=0");
-        return;
+        LOG_INFO(log, "Became leader");
+
+        is_leader = true;
+        merge_selecting_task->activateAndSchedule();
+    };
+
+    try
+    {
+        leader_election = std::make_shared<zkutil::LeaderElection>(
+            getContext()->getSchedulePool(),
+            fs::path(zookeeper_path) / "leader_election",
+            *current_zookeeper,    /// current_zookeeper lives for the lifetime of leader_election,
+                                   ///  since before changing `current_zookeeper`, `leader_election` object is destroyed in `partialShutdown` method.
+            callback,
+            replica_name);
     }
-
-    zkutil::checkNoOldLeaders(log, *current_zookeeper, fs::path(zookeeper_path) / "leader_election");
-
-    LOG_INFO(log, "Became leader");
-    is_leader = true;
-    merge_selecting_task->activateAndSchedule();
+    catch (...)
+    {
+        leader_election = nullptr;
+        throw;
+    }
 }
 
-void StorageReplicatedMergeTree::stopBeingLeader()
+void StorageReplicatedMergeTree::exitLeaderElection()
 {
-    if (!is_leader)
+    if (!leader_election)
         return;
 
-    LOG_INFO(log, "Stopped being leader");
-    is_leader = false;
-    merge_selecting_task->deactivate();
+    /// Shut down the leader election thread to avoid suddenly becoming the leader again after
+    /// we have stopped the merge_selecting_thread, but before we have deleted the leader_election object.
+    leader_election->shutdown();
+
+    if (is_leader)
+    {
+        LOG_INFO(log, "Stopped being leader");
+
+        is_leader = false;
+        merge_selecting_task->deactivate();
+    }
+
+    /// Delete the node in ZK only after we have stopped the merge_selecting_thread - so that only one
+    /// replica assigns merges at any given time.
+    leader_election = nullptr;
 }
 
 ConnectionTimeouts StorageReplicatedMergeTree::getFetchPartHTTPTimeouts(ContextPtr local_context)
@@ -4091,11 +4086,8 @@ void StorageReplicatedMergeTree::startup()
         /// In this thread replica will be activated.
         restarting_thread.start();
 
-        /// Wait while restarting_thread finishing initialization
+        /// Wait while restarting_thread initializes LeaderElection (and so on) or makes first attempt to do it
         startup_event.wait();
-
-        /// Restarting thread has initialized replication queue, replica can become leader now
-        startBeingLeader();
 
         startBackgroundMovesIfNeeded();
 
@@ -4127,7 +4119,6 @@ void StorageReplicatedMergeTree::shutdown()
     fetcher.blocker.cancelForever();
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
-    stopBeingLeader();
 
     restarting_thread.shutdown();
     background_operations_assignee.finish();
@@ -4230,9 +4221,6 @@ void StorageReplicatedMergeTree::read(
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    /// If true, then we will ask initiator if we can read chosen ranges
-    const bool enable_parallel_reading = local_context->getClientInfo().collaborate_with_initiator;
-
     /** The `select_sequential_consistency` setting has two meanings:
     * 1. To throw an exception if on a replica there are not all parts which have been written down on quorum of remaining replicas.
     * 2. Do not read parts that have not yet been written to the quorum of the replicas.
@@ -4242,18 +4230,13 @@ void StorageReplicatedMergeTree::read(
     {
         auto max_added_blocks = std::make_shared<ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock>(getMaxAddedBlocks());
         if (auto plan = reader.read(
-                column_names, metadata_snapshot, query_info, local_context,
-                max_block_size, num_streams, processed_stage, std::move(max_added_blocks), enable_parallel_reading))
+                column_names, metadata_snapshot, query_info, local_context, max_block_size, num_streams, processed_stage, std::move(max_added_blocks)))
             query_plan = std::move(*plan);
         return;
     }
 
-    if (auto plan = reader.read(
-        column_names, metadata_snapshot, query_info, local_context,
-        max_block_size, num_streams, processed_stage, nullptr, enable_parallel_reading))
-    {
+    if (auto plan = reader.read(column_names, metadata_snapshot, query_info, local_context, max_block_size, num_streams, processed_stage))
         query_plan = std::move(*plan);
-    }
 }
 
 Pipe StorageReplicatedMergeTree::read(
@@ -6239,195 +6222,186 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
 
     /// NOTE: Some covered parts may be missing in src_all_parts if corresponding log entries are not executed yet.
     DataPartsVector src_all_parts = src_data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+    DataPartsVector src_parts;
+    MutableDataPartsVector dst_parts;
+    Strings block_id_paths;
+    Strings part_checksums;
+    auto zookeeper = getZooKeeper();
+    std::vector<EphemeralLockInZooKeeper> ephemeral_locks;
 
     LOG_DEBUG(log, "Cloning {} parts", src_all_parts.size());
 
     static const String TMP_PREFIX = "tmp_replace_from_";
-    auto zookeeper = getZooKeeper();
 
-    /// Retry if alter_partition_version changes
-    for (size_t retry = 0; retry < 1000; ++retry)
+    String alter_partition_version_path = zookeeper_path + "/alter_partition_version";
+    Coordination::Stat alter_partition_version_stat;
+    zookeeper->get(alter_partition_version_path, &alter_partition_version_stat);
+
+    /// Firstly, generate last block number and compute drop_range
+    /// NOTE: Even if we make ATTACH PARTITION instead of REPLACE PARTITION drop_range will not be empty, it will contain a block.
+    /// So, such case has special meaning, if drop_range contains only one block it means that nothing to drop.
+    /// TODO why not to add normal DROP_RANGE entry to replication queue if `replace` is true?
+    MergeTreePartInfo drop_range;
+    std::optional<EphemeralLockInZooKeeper> delimiting_block_lock;
+    bool partition_was_empty = !getFakePartCoveringAllPartsInPartition(partition_id, drop_range, delimiting_block_lock, true);
+    if (replace && partition_was_empty)
     {
-        DataPartsVector src_parts;
-        MutableDataPartsVector dst_parts;
-        Strings block_id_paths;
-        Strings part_checksums;
-        std::vector<EphemeralLockInZooKeeper> ephemeral_locks;
-        String alter_partition_version_path = zookeeper_path + "/alter_partition_version";
-        Coordination::Stat alter_partition_version_stat;
-        zookeeper->get(alter_partition_version_path, &alter_partition_version_stat);
-
-        /// Firstly, generate last block number and compute drop_range
-        /// NOTE: Even if we make ATTACH PARTITION instead of REPLACE PARTITION drop_range will not be empty, it will contain a block.
-        /// So, such case has special meaning, if drop_range contains only one block it means that nothing to drop.
-        /// TODO why not to add normal DROP_RANGE entry to replication queue if `replace` is true?
-        MergeTreePartInfo drop_range;
-        std::optional<EphemeralLockInZooKeeper> delimiting_block_lock;
-        bool partition_was_empty = !getFakePartCoveringAllPartsInPartition(partition_id, drop_range, delimiting_block_lock, true);
-        if (replace && partition_was_empty)
-        {
-            /// Nothing to drop, will just attach new parts
-            LOG_INFO(log, "Partition {} was empty, REPLACE PARTITION will work as ATTACH PARTITION FROM", drop_range.partition_id);
-            replace = false;
-        }
-
-        if (!replace)
-        {
-            /// It's ATTACH PARTITION FROM, not REPLACE PARTITION. We have to reset drop range
-            drop_range = makeDummyDropRangeForMovePartitionOrAttachPartitionFrom(partition_id);
-        }
-
-        assert(replace == !LogEntry::ReplaceRangeEntry::isMovePartitionOrAttachFrom(drop_range));
-
-        String drop_range_fake_part_name = getPartNamePossiblyFake(format_version, drop_range);
-
-        for (const auto & src_part : src_all_parts)
-        {
-            /// We also make some kind of deduplication to avoid duplicated parts in case of ATTACH PARTITION
-            /// Assume that merges in the partition are quite rare
-            /// Save deduplication block ids with special prefix replace_partition
-
-            if (!canReplacePartition(src_part))
-                throw Exception(
-                    "Cannot replace partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
-                    ErrorCodes::LOGICAL_ERROR);
-
-            String hash_hex = src_part->checksums.getTotalChecksumHex();
-
-            if (replace)
-                LOG_INFO(log, "Trying to replace {} with hash_hex {}", src_part->name, hash_hex);
-            else
-                LOG_INFO(log, "Trying to attach {} with hash_hex {}", src_part->name, hash_hex);
-
-            String block_id_path = replace ? "" : (fs::path(zookeeper_path) / "blocks" / (partition_id + "_replace_from_" + hash_hex));
-
-            auto lock = allocateBlockNumber(partition_id, zookeeper, block_id_path);
-            if (!lock)
-            {
-                LOG_INFO(log, "Part {} (hash {}) has been already attached", src_part->name, hash_hex);
-                continue;
-            }
-
-            UInt64 index = lock->getNumber();
-            MergeTreePartInfo dst_part_info(partition_id, index, index, src_part->info.level);
-            auto dst_part = cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, metadata_snapshot);
-
-            src_parts.emplace_back(src_part);
-            dst_parts.emplace_back(dst_part);
-            ephemeral_locks.emplace_back(std::move(*lock));
-            block_id_paths.emplace_back(block_id_path);
-            part_checksums.emplace_back(hash_hex);
-        }
-
-        ReplicatedMergeTreeLogEntryData entry;
-        {
-            auto src_table_id = src_data.getStorageID();
-            entry.type = ReplicatedMergeTreeLogEntryData::REPLACE_RANGE;
-            entry.source_replica = replica_name;
-            entry.create_time = time(nullptr);
-            entry.replace_range_entry = std::make_shared<ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry>();
-
-            auto & entry_replace = *entry.replace_range_entry;
-            entry_replace.drop_range_part_name = drop_range_fake_part_name;
-            entry_replace.from_database = src_table_id.database_name;
-            entry_replace.from_table = src_table_id.table_name;
-            for (const auto & part : src_parts)
-                entry_replace.src_part_names.emplace_back(part->name);
-            for (const auto & part : dst_parts)
-                entry_replace.new_part_names.emplace_back(part->name);
-            for (const String & checksum : part_checksums)
-                entry_replace.part_names_checksums.emplace_back(checksum);
-            entry_replace.columns_version = -1;
-        }
-
-        /// Remove deduplication block_ids of replacing parts
-        if (replace)
-            clearBlocksInPartition(*zookeeper, drop_range.partition_id, drop_range.max_block, drop_range.max_block);
-
-        DataPartsVector parts_to_remove;
-        Coordination::Responses op_results;
-
-        try
-        {
-            Coordination::Requests ops;
-            for (size_t i = 0; i < dst_parts.size(); ++i)
-            {
-                getCommitPartOps(ops, dst_parts[i], block_id_paths[i]);
-                ephemeral_locks[i].getUnlockOps(ops);
-            }
-
-            if (auto txn = query_context->getZooKeeperMetadataTransaction())
-                txn->moveOpsTo(ops);
-
-            delimiting_block_lock->getUnlockOps(ops);
-            /// Check and update version to avoid race with DROP_RANGE
-            ops.emplace_back(zkutil::makeSetRequest(alter_partition_version_path, "", alter_partition_version_stat.version));
-            /// Just update version, because merges assignment relies on it
-            ops.emplace_back(zkutil::makeSetRequest(fs::path(zookeeper_path) / "log", "", -1));
-            ops.emplace_back(zkutil::makeCreateRequest(fs::path(zookeeper_path) / "log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential));
-
-            Transaction transaction(*this);
-            {
-                auto data_parts_lock = lockParts();
-
-                for (MutableDataPartPtr & part : dst_parts)
-                    renameTempPartAndReplace(part, nullptr, &transaction, data_parts_lock);
-            }
-
-            Coordination::Error code = zookeeper->tryMulti(ops, op_results);
-            if (code == Coordination::Error::ZOK)
-                delimiting_block_lock->assumeUnlocked();
-            else if (code == Coordination::Error::ZBADVERSION)
-            {
-                /// Cannot retry automatically, because some zookeeper ops were lost on the first attempt. Will retry on DDLWorker-level.
-                if (query_context->getZooKeeperMetadataTransaction())
-                    throw Exception(
-                        "Cannot execute alter, because alter partition version was suddenly changed due to concurrent alter",
-                        ErrorCodes::CANNOT_ASSIGN_ALTER);
-                continue;
-            }
-            else
-                zkutil::KeeperMultiException::check(code, ops, op_results);
-
-            {
-                auto data_parts_lock = lockParts();
-
-                transaction.commit(&data_parts_lock);
-                if (replace)
-                    parts_to_remove = removePartsInRangeFromWorkingSet(drop_range, true, data_parts_lock);
-            }
-
-            PartLog::addNewParts(getContext(), dst_parts, watch.elapsed());
-        }
-        catch (...)
-        {
-            PartLog::addNewParts(getContext(), dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException());
-            throw;
-        }
-
-        String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*op_results.back()).path_created;
-        entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
-
-        for (auto & lock : ephemeral_locks)
-            lock.assumeUnlocked();
-
-        /// Forcibly remove replaced parts from ZooKeeper
-        tryRemovePartsFromZooKeeperWithRetries(parts_to_remove);
-
-        /// Speedup removing of replaced parts from filesystem
-        parts_to_remove.clear();
-        cleanup_thread.wakeup();
-
-        lock2.reset();
-        lock1.reset();
-
-        waitForLogEntryToBeProcessedIfNecessary(entry, query_context);
-
-        return;
+        /// Nothing to drop, will just attach new parts
+        LOG_INFO(log, "Partition {} was empty, REPLACE PARTITION will work as ATTACH PARTITION FROM", drop_range.partition_id);
+        replace = false;
     }
 
-    throw Exception(
-        ErrorCodes::CANNOT_ASSIGN_ALTER, "Cannot assign ALTER PARTITION, because another ALTER PARTITION query was concurrently executed");
+    if (!replace)
+    {
+        /// It's ATTACH PARTITION FROM, not REPLACE PARTITION. We have to reset drop range
+        drop_range = makeDummyDropRangeForMovePartitionOrAttachPartitionFrom(partition_id);
+    }
+
+    assert(replace == !LogEntry::ReplaceRangeEntry::isMovePartitionOrAttachFrom(drop_range));
+
+    String drop_range_fake_part_name = getPartNamePossiblyFake(format_version, drop_range);
+
+    for (const auto & src_part : src_all_parts)
+    {
+        /// We also make some kind of deduplication to avoid duplicated parts in case of ATTACH PARTITION
+        /// Assume that merges in the partition are quite rare
+        /// Save deduplication block ids with special prefix replace_partition
+
+        if (!canReplacePartition(src_part))
+            throw Exception(
+                "Cannot replace partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
+                ErrorCodes::LOGICAL_ERROR);
+
+        String hash_hex = src_part->checksums.getTotalChecksumHex();
+
+        if (replace)
+            LOG_INFO(log, "Trying to replace {} with hash_hex {}", src_part->name, hash_hex);
+        else
+            LOG_INFO(log, "Trying to attach {} with hash_hex {}", src_part->name, hash_hex);
+
+        String block_id_path = replace ? "" : (fs::path(zookeeper_path) / "blocks" / (partition_id + "_replace_from_" + hash_hex));
+
+        auto lock = allocateBlockNumber(partition_id, zookeeper, block_id_path);
+        if (!lock)
+        {
+            LOG_INFO(log, "Part {} (hash {}) has been already attached", src_part->name, hash_hex);
+            continue;
+        }
+
+        UInt64 index = lock->getNumber();
+        MergeTreePartInfo dst_part_info(partition_id, index, index, src_part->info.level);
+        auto dst_part = cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, metadata_snapshot);
+
+        src_parts.emplace_back(src_part);
+        dst_parts.emplace_back(dst_part);
+        ephemeral_locks.emplace_back(std::move(*lock));
+        block_id_paths.emplace_back(block_id_path);
+        part_checksums.emplace_back(hash_hex);
+    }
+
+    ReplicatedMergeTreeLogEntryData entry;
+    {
+        auto src_table_id = src_data.getStorageID();
+        entry.type = ReplicatedMergeTreeLogEntryData::REPLACE_RANGE;
+        entry.source_replica = replica_name;
+        entry.create_time = time(nullptr);
+        entry.replace_range_entry = std::make_shared<ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry>();
+
+        auto & entry_replace = *entry.replace_range_entry;
+        entry_replace.drop_range_part_name = drop_range_fake_part_name;
+        entry_replace.from_database = src_table_id.database_name;
+        entry_replace.from_table = src_table_id.table_name;
+        for (const auto & part : src_parts)
+            entry_replace.src_part_names.emplace_back(part->name);
+        for (const auto & part : dst_parts)
+            entry_replace.new_part_names.emplace_back(part->name);
+        for (const String & checksum : part_checksums)
+            entry_replace.part_names_checksums.emplace_back(checksum);
+        entry_replace.columns_version = -1;
+    }
+
+    /// Remove deduplication block_ids of replacing parts
+    if (replace)
+        clearBlocksInPartition(*zookeeper, drop_range.partition_id, drop_range.max_block, drop_range.max_block);
+
+    DataPartsVector parts_to_remove;
+    Coordination::Responses op_results;
+
+    try
+    {
+        Coordination::Requests ops;
+        for (size_t i = 0; i < dst_parts.size(); ++i)
+        {
+            getCommitPartOps(ops, dst_parts[i], block_id_paths[i]);
+            ephemeral_locks[i].getUnlockOps(ops);
+
+            if (ops.size() > zkutil::MULTI_BATCH_SIZE)
+            {
+                /// It is unnecessary to add parts to working set until we commit log entry
+                zookeeper->multi(ops);
+                ops.clear();
+            }
+        }
+
+        if (auto txn = query_context->getZooKeeperMetadataTransaction())
+            txn->moveOpsTo(ops);
+
+        delimiting_block_lock->getUnlockOps(ops);
+        /// Check and update version to avoid race with DROP_RANGE
+        ops.emplace_back(zkutil::makeSetRequest(alter_partition_version_path, "", alter_partition_version_stat.version));
+        /// Just update version, because merges assignment relies on it
+        ops.emplace_back(zkutil::makeSetRequest(fs::path(zookeeper_path) / "log", "", -1));
+        ops.emplace_back(zkutil::makeCreateRequest(fs::path(zookeeper_path) / "log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential));
+
+        Transaction transaction(*this);
+        {
+            auto data_parts_lock = lockParts();
+
+            for (MutableDataPartPtr & part : dst_parts)
+                renameTempPartAndReplace(part, nullptr, &transaction, data_parts_lock);
+        }
+
+        Coordination::Error code = zookeeper->tryMulti(ops, op_results);
+        if (code == Coordination::Error::ZOK)
+            delimiting_block_lock->assumeUnlocked();
+        else if (code == Coordination::Error::ZBADVERSION)
+            throw Exception(ErrorCodes::CANNOT_ASSIGN_ALTER, "Cannot assign ALTER PARTITION, because another ALTER PARTITION query was concurrently executed");
+        else
+            zkutil::KeeperMultiException::check(code, ops, op_results);
+
+        {
+            auto data_parts_lock = lockParts();
+
+            transaction.commit(&data_parts_lock);
+            if (replace)
+                parts_to_remove = removePartsInRangeFromWorkingSet(drop_range, true, data_parts_lock);
+        }
+
+        PartLog::addNewParts(getContext(), dst_parts, watch.elapsed());
+    }
+    catch (...)
+    {
+        PartLog::addNewParts(getContext(), dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException());
+        throw;
+    }
+
+    String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*op_results.back()).path_created;
+    entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+
+    for (auto & lock : ephemeral_locks)
+        lock.assumeUnlocked();
+
+    /// Forcibly remove replaced parts from ZooKeeper
+    tryRemovePartsFromZooKeeperWithRetries(parts_to_remove);
+
+    /// Speedup removing of replaced parts from filesystem
+    parts_to_remove.clear();
+    cleanup_thread.wakeup();
+
+    lock2.reset();
+    lock1.reset();
+
+    waitForLogEntryToBeProcessedIfNecessary(entry, query_context);
 }
 
 void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr query_context)
@@ -6455,201 +6429,199 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
 
     /// A range for log entry to remove parts from the source table (myself).
     auto zookeeper = getZooKeeper();
-    /// Retry if alter_partition_version changes
-    for (size_t retry = 0; retry < 1000; ++retry)
+    String alter_partition_version_path = zookeeper_path + "/alter_partition_version";
+    Coordination::Stat alter_partition_version_stat;
+    zookeeper->get(alter_partition_version_path, &alter_partition_version_stat);
+
+    MergeTreePartInfo drop_range;
+    std::optional<EphemeralLockInZooKeeper> delimiting_block_lock;
+    getFakePartCoveringAllPartsInPartition(partition_id, drop_range, delimiting_block_lock, true);
+    String drop_range_fake_part_name = getPartNamePossiblyFake(format_version, drop_range);
+
+    DataPartPtr covering_part;
+    DataPartsVector src_all_parts;
     {
-        String alter_partition_version_path = zookeeper_path + "/alter_partition_version";
-        Coordination::Stat alter_partition_version_stat;
-        zookeeper->get(alter_partition_version_path, &alter_partition_version_stat);
-
-        MergeTreePartInfo drop_range;
-        std::optional<EphemeralLockInZooKeeper> delimiting_block_lock;
-        getFakePartCoveringAllPartsInPartition(partition_id, drop_range, delimiting_block_lock, true);
-        String drop_range_fake_part_name = getPartNamePossiblyFake(format_version, drop_range);
-
-        DataPartPtr covering_part;
-        DataPartsVector src_all_parts;
-        {
-            /// NOTE: Some covered parts may be missing in src_all_parts if corresponding log entries are not executed yet.
-            auto parts_lock = src_data.lockParts();
-            src_all_parts = src_data.getActivePartsToReplace(drop_range, drop_range_fake_part_name, covering_part, parts_lock);
-        }
-
-        if (covering_part)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got part {} covering drop range {}, it's a bug",
-                            covering_part->name, drop_range_fake_part_name);
-
-        /// After allocating block number for drop_range we must ensure that it does not intersect block numbers
-        /// allocated by concurrent REPLACE query.
-        /// We could check it in multi-request atomically with creation of DROP_RANGE entry in source table log,
-        /// but it's better to check it here and fail as early as possible (before we have done something to destination table).
-        Coordination::Error version_check_code = zookeeper->trySet(alter_partition_version_path, "", alter_partition_version_stat.version);
-        if (version_check_code != Coordination::Error::ZOK)
-            throw Exception(ErrorCodes::CANNOT_ASSIGN_ALTER, "Cannot DROP PARTITION in {} after copying partition to {}, "
-                            "because another ALTER PARTITION query was concurrently executed",
-                            getStorageID().getFullTableName(), dest_table_storage->getStorageID().getFullTableName());
-
-        DataPartsVector src_parts;
-        MutableDataPartsVector dst_parts;
-        Strings block_id_paths;
-        Strings part_checksums;
-        std::vector<EphemeralLockInZooKeeper> ephemeral_locks;
-
-        LOG_DEBUG(log, "Cloning {} parts", src_all_parts.size());
-
-        static const String TMP_PREFIX = "tmp_move_from_";
-
-        /// Clone parts into destination table.
-        String dest_alter_partition_version_path = dest_table_storage->zookeeper_path + "/alter_partition_version";
-        Coordination::Stat dest_alter_partition_version_stat;
-        zookeeper->get(dest_alter_partition_version_path, &dest_alter_partition_version_stat);
-        for (const auto & src_part : src_all_parts)
-        {
-            if (!dest_table_storage->canReplacePartition(src_part))
-                throw Exception(
-                    "Cannot move partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
-                    ErrorCodes::LOGICAL_ERROR);
-
-            String hash_hex = src_part->checksums.getTotalChecksumHex();
-            String block_id_path;
-
-            auto lock = dest_table_storage->allocateBlockNumber(partition_id, zookeeper, block_id_path);
-            if (!lock)
-            {
-                LOG_INFO(log, "Part {} (hash {}) has been already attached", src_part->name, hash_hex);
-                continue;
-            }
-
-            UInt64 index = lock->getNumber();
-            MergeTreePartInfo dst_part_info(partition_id, index, index, src_part->info.level);
-            auto dst_part = dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, dest_metadata_snapshot);
-
-            src_parts.emplace_back(src_part);
-            dst_parts.emplace_back(dst_part);
-            ephemeral_locks.emplace_back(std::move(*lock));
-            block_id_paths.emplace_back(block_id_path);
-            part_checksums.emplace_back(hash_hex);
-        }
-
-        ReplicatedMergeTreeLogEntryData entry_delete;
-        {
-            entry_delete.type = LogEntry::DROP_RANGE;
-            entry_delete.source_replica = replica_name;
-            entry_delete.new_part_name = drop_range_fake_part_name;
-            entry_delete.detach = false; //-V1048
-            entry_delete.create_time = time(nullptr);
-        }
-
-        ReplicatedMergeTreeLogEntryData entry;
-        {
-            MergeTreePartInfo drop_range_dest = makeDummyDropRangeForMovePartitionOrAttachPartitionFrom(partition_id);
-
-            entry.type = ReplicatedMergeTreeLogEntryData::REPLACE_RANGE;
-            entry.source_replica = dest_table_storage->replica_name;
-            entry.create_time = time(nullptr);
-            entry.replace_range_entry = std::make_shared<ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry>();
-
-            auto & entry_replace = *entry.replace_range_entry;
-            entry_replace.drop_range_part_name = getPartNamePossiblyFake(format_version, drop_range_dest);
-            entry_replace.from_database = src_data_id.database_name;
-            entry_replace.from_table = src_data_id.table_name;
-            for (const auto & part : src_parts)
-                entry_replace.src_part_names.emplace_back(part->name);
-            for (const auto & part : dst_parts)
-                entry_replace.new_part_names.emplace_back(part->name);
-            for (const String & checksum : part_checksums)
-                entry_replace.part_names_checksums.emplace_back(checksum);
-            entry_replace.columns_version = -1;
-        }
-
-        clearBlocksInPartition(*zookeeper, drop_range.partition_id, drop_range.max_block, drop_range.max_block);
-
-        DataPartsVector parts_to_remove;
-        Coordination::Responses op_results;
-
-        try
-        {
-            Coordination::Requests ops;
-            for (size_t i = 0; i < dst_parts.size(); ++i)
-            {
-                dest_table_storage->getCommitPartOps(ops, dst_parts[i], block_id_paths[i]);
-                ephemeral_locks[i].getUnlockOps(ops);
-            }
-
-            /// Check and update version to avoid race with DROP_RANGE
-            ops.emplace_back(zkutil::makeSetRequest(dest_alter_partition_version_path, "", dest_alter_partition_version_stat.version));
-            /// Just update version, because merges assignment relies on it
-            ops.emplace_back(zkutil::makeSetRequest(fs::path(dest_table_storage->zookeeper_path) / "log", "", -1));
-            ops.emplace_back(zkutil::makeCreateRequest(fs::path(dest_table_storage->zookeeper_path) / "log/log-",
-                                                       entry.toString(), zkutil::CreateMode::PersistentSequential));
-
-            {
-                Transaction transaction(*dest_table_storage);
-
-                auto src_data_parts_lock = lockParts();
-                auto dest_data_parts_lock = dest_table_storage->lockParts();
-
-                std::mutex mutex;
-                DataPartsLock lock(mutex);
-
-                for (MutableDataPartPtr & part : dst_parts)
-                    dest_table_storage->renameTempPartAndReplace(part, nullptr, &transaction, lock);
-
-                Coordination::Error code = zookeeper->tryMulti(ops, op_results);
-                if (code == Coordination::Error::ZBADVERSION)
-                    continue;
-                else
-                    zkutil::KeeperMultiException::check(code, ops, op_results);
-
-                parts_to_remove = removePartsInRangeFromWorkingSet(drop_range, true, lock);
-                transaction.commit(&lock);
-            }
-
-            PartLog::addNewParts(getContext(), dst_parts, watch.elapsed());
-        }
-        catch (...)
-        {
-            PartLog::addNewParts(getContext(), dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException());
-            throw;
-        }
-
-        String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*op_results.back()).path_created;
-        entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
-
-        for (auto & lock : ephemeral_locks)
-            lock.assumeUnlocked();
-
-        tryRemovePartsFromZooKeeperWithRetries(parts_to_remove);
-
-        parts_to_remove.clear();
-        cleanup_thread.wakeup();
-        lock2.reset();
-
-        dest_table_storage->waitForLogEntryToBeProcessedIfNecessary(entry, query_context);
-
-        /// Create DROP_RANGE for the source table
-        Coordination::Requests ops_src;
-        ops_src.emplace_back(zkutil::makeCreateRequest(
-            fs::path(zookeeper_path) / "log/log-", entry_delete.toString(), zkutil::CreateMode::PersistentSequential));
-        /// Just update version, because merges assignment relies on it
-        ops_src.emplace_back(zkutil::makeSetRequest(fs::path(zookeeper_path) / "log", "", -1));
-        delimiting_block_lock->getUnlockOps(ops_src);
-
-        op_results = zookeeper->multi(ops_src);
-
-        log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*op_results.front()).path_created;
-        entry_delete.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
-
-        lock1.reset();
-        waitForLogEntryToBeProcessedIfNecessary(entry_delete, query_context);
-
-        /// Cleaning possibly stored information about parts from /quorum/last_part node in ZooKeeper.
-        cleanLastPartNode(partition_id);
-
-        return;
+        /// NOTE: Some covered parts may be missing in src_all_parts if corresponding log entries are not executed yet.
+        auto parts_lock = src_data.lockParts();
+        src_all_parts = src_data.getActivePartsToReplace(drop_range, drop_range_fake_part_name, covering_part, parts_lock);
     }
 
-    throw Exception(ErrorCodes::CANNOT_ASSIGN_ALTER, "Cannot assign ALTER PARTITION, because another ALTER PARTITION query was concurrently executed");
+    if (covering_part)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got part {} covering drop range {}, it's a bug",
+                        covering_part->name, drop_range_fake_part_name);
+
+    /// After allocating block number for drop_range we must ensure that it does not intersect block numbers
+    /// allocated by concurrent REPLACE query.
+    /// We could check it in multi-request atomically with creation of DROP_RANGE entry in source table log,
+    /// but it's better to check it here and fail as early as possible (before we have done something to destination table).
+    Coordination::Error version_check_code = zookeeper->trySet(alter_partition_version_path, "", alter_partition_version_stat.version);
+    if (version_check_code != Coordination::Error::ZOK)
+        throw Exception(ErrorCodes::CANNOT_ASSIGN_ALTER, "Cannot DROP PARTITION in {} after copying partition to {}, "
+                        "because another ALTER PARTITION query was concurrently executed",
+                        getStorageID().getFullTableName(), dest_table_storage->getStorageID().getFullTableName());
+
+    DataPartsVector src_parts;
+    MutableDataPartsVector dst_parts;
+    Strings block_id_paths;
+    Strings part_checksums;
+    std::vector<EphemeralLockInZooKeeper> ephemeral_locks;
+
+    LOG_DEBUG(log, "Cloning {} parts", src_all_parts.size());
+
+    static const String TMP_PREFIX = "tmp_move_from_";
+
+    /// Clone parts into destination table.
+    String dest_alter_partition_version_path = dest_table_storage->zookeeper_path + "/alter_partition_version";
+    Coordination::Stat dest_alter_partition_version_stat;
+    zookeeper->get(dest_alter_partition_version_path, &dest_alter_partition_version_stat);
+    for (const auto & src_part : src_all_parts)
+    {
+        if (!dest_table_storage->canReplacePartition(src_part))
+            throw Exception(
+                "Cannot move partition '" + partition_id + "' because part '" + src_part->name + "' has inconsistent granularity with table",
+                ErrorCodes::LOGICAL_ERROR);
+
+        String hash_hex = src_part->checksums.getTotalChecksumHex();
+        String block_id_path;
+
+        auto lock = dest_table_storage->allocateBlockNumber(partition_id, zookeeper, block_id_path);
+        if (!lock)
+        {
+            LOG_INFO(log, "Part {} (hash {}) has been already attached", src_part->name, hash_hex);
+            continue;
+        }
+
+        UInt64 index = lock->getNumber();
+        MergeTreePartInfo dst_part_info(partition_id, index, index, src_part->info.level);
+        auto dst_part = dest_table_storage->cloneAndLoadDataPartOnSameDisk(src_part, TMP_PREFIX, dst_part_info, dest_metadata_snapshot);
+
+        src_parts.emplace_back(src_part);
+        dst_parts.emplace_back(dst_part);
+        ephemeral_locks.emplace_back(std::move(*lock));
+        block_id_paths.emplace_back(block_id_path);
+        part_checksums.emplace_back(hash_hex);
+    }
+
+    ReplicatedMergeTreeLogEntryData entry_delete;
+    {
+        entry_delete.type = LogEntry::DROP_RANGE;
+        entry_delete.source_replica = replica_name;
+        entry_delete.new_part_name = drop_range_fake_part_name;
+        entry_delete.detach = false; //-V1048
+        entry_delete.create_time = time(nullptr);
+    }
+
+    ReplicatedMergeTreeLogEntryData entry;
+    {
+        MergeTreePartInfo drop_range_dest = makeDummyDropRangeForMovePartitionOrAttachPartitionFrom(partition_id);
+
+        entry.type = ReplicatedMergeTreeLogEntryData::REPLACE_RANGE;
+        entry.source_replica = dest_table_storage->replica_name;
+        entry.create_time = time(nullptr);
+        entry.replace_range_entry = std::make_shared<ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry>();
+
+        auto & entry_replace = *entry.replace_range_entry;
+        entry_replace.drop_range_part_name = getPartNamePossiblyFake(format_version, drop_range_dest);
+        entry_replace.from_database = src_data_id.database_name;
+        entry_replace.from_table = src_data_id.table_name;
+        for (const auto & part : src_parts)
+            entry_replace.src_part_names.emplace_back(part->name);
+        for (const auto & part : dst_parts)
+            entry_replace.new_part_names.emplace_back(part->name);
+        for (const String & checksum : part_checksums)
+            entry_replace.part_names_checksums.emplace_back(checksum);
+        entry_replace.columns_version = -1;
+    }
+
+    clearBlocksInPartition(*zookeeper, drop_range.partition_id, drop_range.max_block, drop_range.max_block);
+
+    DataPartsVector parts_to_remove;
+    Coordination::Responses op_results;
+
+    try
+    {
+        Coordination::Requests ops;
+        for (size_t i = 0; i < dst_parts.size(); ++i)
+        {
+            dest_table_storage->getCommitPartOps(ops, dst_parts[i], block_id_paths[i]);
+            ephemeral_locks[i].getUnlockOps(ops);
+
+            if (ops.size() > zkutil::MULTI_BATCH_SIZE)
+            {
+                zookeeper->multi(ops);
+                ops.clear();
+            }
+        }
+
+        /// Check and update version to avoid race with DROP_RANGE
+        ops.emplace_back(zkutil::makeSetRequest(dest_alter_partition_version_path, "", dest_alter_partition_version_stat.version));
+        /// Just update version, because merges assignment relies on it
+        ops.emplace_back(zkutil::makeSetRequest(fs::path(dest_table_storage->zookeeper_path) / "log", "", -1));
+        ops.emplace_back(zkutil::makeCreateRequest(fs::path(dest_table_storage->zookeeper_path) / "log/log-",
+                                                   entry.toString(), zkutil::CreateMode::PersistentSequential));
+
+        {
+            Transaction transaction(*dest_table_storage);
+
+            auto src_data_parts_lock = lockParts();
+            auto dest_data_parts_lock = dest_table_storage->lockParts();
+
+            std::mutex mutex;
+            DataPartsLock lock(mutex);
+
+            for (MutableDataPartPtr & part : dst_parts)
+                dest_table_storage->renameTempPartAndReplace(part, nullptr, &transaction, lock);
+
+            Coordination::Error code = zookeeper->tryMulti(ops, op_results);
+            if (code == Coordination::Error::ZBADVERSION)
+                throw Exception(ErrorCodes::CANNOT_ASSIGN_ALTER, "Cannot assign ALTER PARTITION, because another ALTER PARTITION query was concurrently executed");
+            else
+                zkutil::KeeperMultiException::check(code, ops, op_results);
+
+            parts_to_remove = removePartsInRangeFromWorkingSet(drop_range, true, lock);
+            transaction.commit(&lock);
+        }
+
+        PartLog::addNewParts(getContext(), dst_parts, watch.elapsed());
+    }
+    catch (...)
+    {
+        PartLog::addNewParts(getContext(), dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException());
+        throw;
+    }
+
+    String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*op_results.back()).path_created;
+    entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+
+    for (auto & lock : ephemeral_locks)
+        lock.assumeUnlocked();
+
+    tryRemovePartsFromZooKeeperWithRetries(parts_to_remove);
+
+    parts_to_remove.clear();
+    cleanup_thread.wakeup();
+    lock2.reset();
+
+    dest_table_storage->waitForLogEntryToBeProcessedIfNecessary(entry, query_context);
+
+    /// Create DROP_RANGE for the source table
+    Coordination::Requests ops_src;
+    ops_src.emplace_back(zkutil::makeCreateRequest(
+        fs::path(zookeeper_path) / "log/log-", entry_delete.toString(), zkutil::CreateMode::PersistentSequential));
+    /// Just update version, because merges assignment relies on it
+    ops_src.emplace_back(zkutil::makeSetRequest(fs::path(zookeeper_path) / "log", "", -1));
+    delimiting_block_lock->getUnlockOps(ops_src);
+
+    op_results = zookeeper->multi(ops_src);
+
+    log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*op_results.front()).path_created;
+    entry_delete.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+
+    lock1.reset();
+    waitForLogEntryToBeProcessedIfNecessary(entry_delete, query_context);
+
+    /// Cleaning possibly stored information about parts from /quorum/last_part node in ZooKeeper.
+    cleanLastPartNode(partition_id);
 }
 
 void StorageReplicatedMergeTree::movePartitionToShard(
@@ -6977,80 +6949,68 @@ bool StorageReplicatedMergeTree::dropPartImpl(
 bool StorageReplicatedMergeTree::dropAllPartsInPartition(
     zkutil::ZooKeeper & zookeeper, String & partition_id, LogEntry & entry, ContextPtr query_context, bool detach)
 {
-    /// Retry if alter_partition_version changes
-    for (size_t retry = 0; retry < 1000; ++retry)
+    String alter_partition_version_path = zookeeper_path + "/alter_partition_version";
+    Coordination::Stat alter_partition_version_stat;
+    zookeeper.get(alter_partition_version_path, &alter_partition_version_stat);
+
+    MergeTreePartInfo drop_range_info;
+
+    /// It would prevent other replicas from assigning merges which intersect locked block number.
+    std::optional<EphemeralLockInZooKeeper> delimiting_block_lock;
+
+    if (!getFakePartCoveringAllPartsInPartition(partition_id, drop_range_info, delimiting_block_lock))
     {
-        String alter_partition_version_path = zookeeper_path + "/alter_partition_version";
-        Coordination::Stat alter_partition_version_stat;
-        zookeeper.get(alter_partition_version_path, &alter_partition_version_stat);
-
-        MergeTreePartInfo drop_range_info;
-
-        /// It would prevent other replicas from assigning merges which intersect locked block number.
-        std::optional<EphemeralLockInZooKeeper> delimiting_block_lock;
-
-        if (!getFakePartCoveringAllPartsInPartition(partition_id, drop_range_info, delimiting_block_lock))
-        {
-            LOG_INFO(log, "Will not drop partition {}, it is empty.", partition_id);
-            return false;
-        }
-
-        clearBlocksInPartition(zookeeper, partition_id, drop_range_info.min_block, drop_range_info.max_block);
-
-        String drop_range_fake_part_name = getPartNamePossiblyFake(format_version, drop_range_info);
-
-        LOG_DEBUG(log, "Disabled merges covered by range {}", drop_range_fake_part_name);
-
-        /// Finally, having achieved the necessary invariants, you can put an entry in the log.
-        entry.type = LogEntry::DROP_RANGE;
-        entry.source_replica = replica_name;
-        entry.new_part_name = drop_range_fake_part_name;
-        entry.detach = detach;
-        entry.create_time = time(nullptr);
-
-        Coordination::Requests ops;
-
-        ops.emplace_back(zkutil::makeCreateRequest(fs::path(zookeeper_path) / "log/log-", entry.toString(),
-            zkutil::CreateMode::PersistentSequential));
-
-        /// Check and update version to avoid race with REPLACE_RANGE.
-        /// Otherwise new parts covered by drop_range_info may appear after execution of current DROP_RANGE entry
-        /// as a result of execution of concurrently created REPLACE_RANGE entry.
-        ops.emplace_back(zkutil::makeSetRequest(alter_partition_version_path, "", alter_partition_version_stat.version));
-
-        /// Just update version, because merges assignment relies on it
-        ops.emplace_back(zkutil::makeSetRequest(fs::path(zookeeper_path) / "log", "", -1));
-        delimiting_block_lock->getUnlockOps(ops);
-
-        if (auto txn = query_context->getZooKeeperMetadataTransaction())
-            txn->moveOpsTo(ops);
-
-        Coordination::Responses responses;
-        Coordination::Error code = zookeeper.tryMulti(ops, responses);
-
-        if (code == Coordination::Error::ZOK)
-            delimiting_block_lock->assumeUnlocked();
-        else if (code == Coordination::Error::ZBADVERSION)
-        {
-            /// Cannot retry automatically, because some zookeeper ops were lost on the first attempt. Will retry on DDLWorker-level.
-            if (query_context->getZooKeeperMetadataTransaction())
-                throw Exception(
-                    "Cannot execute alter, because alter partition version was suddenly changed due to concurrent alter",
-                    ErrorCodes::CANNOT_ASSIGN_ALTER);
-            continue;
-        }
-        else
-            zkutil::KeeperMultiException::check(code, ops, responses);
-
-        String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.front()).path_created;
-        entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
-
-        getContext()->getMergeList().cancelInPartition(getStorageID(), partition_id, drop_range_info.max_block);
-
-        return true;
+        LOG_INFO(log, "Will not drop partition {}, it is empty.", partition_id);
+        return false;
     }
-    throw Exception(ErrorCodes::CANNOT_ASSIGN_ALTER,
-        "Cannot assign ALTER PARTITION because another ALTER PARTITION query was concurrently executed");
+
+    clearBlocksInPartition(zookeeper, partition_id, drop_range_info.min_block, drop_range_info.max_block);
+
+    String drop_range_fake_part_name = getPartNamePossiblyFake(format_version, drop_range_info);
+
+    LOG_DEBUG(log, "Disabled merges covered by range {}", drop_range_fake_part_name);
+
+    /// Finally, having achieved the necessary invariants, you can put an entry in the log.
+    entry.type = LogEntry::DROP_RANGE;
+    entry.source_replica = replica_name;
+    entry.new_part_name = drop_range_fake_part_name;
+    entry.detach = detach;
+    entry.create_time = time(nullptr);
+
+    Coordination::Requests ops;
+
+    ops.emplace_back(zkutil::makeCreateRequest(fs::path(zookeeper_path) / "log/log-", entry.toString(),
+        zkutil::CreateMode::PersistentSequential));
+
+    /// Check and update version to avoid race with REPLACE_RANGE.
+    /// Otherwise new parts covered by drop_range_info may appear after execution of current DROP_RANGE entry
+    /// as a result of execution of concurrently created REPLACE_RANGE entry.
+    ops.emplace_back(zkutil::makeSetRequest(alter_partition_version_path, "", alter_partition_version_stat.version));
+
+    /// Just update version, because merges assignment relies on it
+    ops.emplace_back(zkutil::makeSetRequest(fs::path(zookeeper_path) / "log", "", -1));
+    delimiting_block_lock->getUnlockOps(ops);
+
+    if (auto txn = query_context->getZooKeeperMetadataTransaction())
+        txn->moveOpsTo(ops);
+
+    Coordination::Responses responses;
+    Coordination::Error code = zookeeper.tryMulti(ops, responses);
+
+    if (code == Coordination::Error::ZOK)
+        delimiting_block_lock->assumeUnlocked();
+    else if (code == Coordination::Error::ZBADVERSION)
+        throw Exception(ErrorCodes::CANNOT_ASSIGN_ALTER,
+            "Cannot assign ALTER PARTITION because another ALTER PARTITION query was concurrently executed");
+    else
+        zkutil::KeeperMultiException::check(code, ops, responses);
+
+    String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.front()).path_created;
+    entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+
+    getContext()->getMergeList().cancelInPartition(getStorageID(), partition_id, drop_range_info.max_block);
+
+    return true;
 }
 
 

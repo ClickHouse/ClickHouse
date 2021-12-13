@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Parsers/ASTIdentifier.h>
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -40,6 +41,7 @@ struct StorageMySQLConfiguration : ExternalDataSourceConfiguration
 
 struct StorageMongoDBConfiguration : ExternalDataSourceConfiguration
 {
+    String collection;
     String options;
 };
 
@@ -91,7 +93,6 @@ struct URLBasedDataSourceConfiguration
     String structure;
 
     std::vector<std::pair<String, Field>> headers;
-    String http_method;
 
     void set(const URLBasedDataSourceConfiguration & conf);
 };
@@ -109,8 +110,5 @@ struct URLBasedDataSourceConfig
 };
 
 std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const ASTs & args, ContextPtr context);
-
-template<typename T>
-bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<T> & settings, ContextPtr context);
 
 }

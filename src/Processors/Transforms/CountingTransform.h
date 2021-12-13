@@ -1,14 +1,12 @@
 #pragma once
 
-#include <IO/Progress.h>
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
+#include <Interpreters/ProcessList.h>
 
 
 namespace DB
 {
 
-class QueryStatus;
-class ThreadStatus;
 
 /// Proxy class which counts number of written block, rows, bytes
 class CountingTransform final : public ExceptionKeepingTransform

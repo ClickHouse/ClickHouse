@@ -48,6 +48,7 @@ enum class JoinTableSide
 
 class TableJoin
 {
+
 public:
     using NameToTypeMap = std::unordered_map<String, DataTypePtr>;
 
@@ -282,10 +283,6 @@ public:
     Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;
 
     String renamedRightColumnName(const String & name) const;
-
-    void resetKeys();
-    void resetToCross();
-
     std::unordered_map<String, String> leftToRightKeyRemap() const;
 
     void setStorageJoin(std::shared_ptr<StorageJoin> storage);

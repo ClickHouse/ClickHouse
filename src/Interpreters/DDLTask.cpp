@@ -257,12 +257,12 @@ bool DDLTask::tryFindHostInCluster()
                          * */
                         is_circular_replicated = true;
                         auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get());
-                        if (!query_with_table || !query_with_table->database)
+                        if (!query_with_table || query_with_table->database.empty())
                         {
                             throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
                                             "For a distributed DDL on circular replicated cluster its table name must be qualified by database name.");
                         }
-                        if (default_database == query_with_table->getDatabase())
+                        if (default_database == query_with_table->database)
                             return true;
                     }
                 }
@@ -351,8 +351,8 @@ void DatabaseReplicatedTask::parseQueryFromEntry(ContextPtr context)
     if (auto * ddl_query = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get()))
     {
         /// Update database name with actual name of local database
-        assert(!ddl_query->database);
-        ddl_query->setDatabase(database->getDatabaseName());
+        assert(ddl_query->database.empty());
+        ddl_query->database = database->getDatabaseName();
     }
 }
 

@@ -2,7 +2,7 @@ option (ENABLE_DATASKETCHES "Enable DataSketches" ${ENABLE_LIBRARIES})
 
 if (ENABLE_DATASKETCHES)
 
-option (USE_INTERNAL_DATASKETCHES_LIBRARY "Set to FALSE to use system DataSketches library instead of bundled" ON)
+option (USE_INTERNAL_DATASKETCHES_LIBRARY "Set to FALSE to use system DataSketches library instead of bundled" ${NOT_UNBUNDLED})
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/datasketches-cpp/theta/CMakeLists.txt")
     if (USE_INTERNAL_DATASKETCHES_LIBRARY)

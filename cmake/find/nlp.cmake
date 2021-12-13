@@ -13,7 +13,7 @@ if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libstemmer_c/Makefile")
     return()
 endif ()
 
-if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/wordnet-blast/wnb")
+if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/wordnet-blast/CMakeLists.txt")
     message (WARNING "submodule contrib/wordnet-blast is missing. to fix try run: \n git submodule update --init")
     message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal wordnet-blast library, NLP functions will be disabled")
     set (USE_NLP 0)

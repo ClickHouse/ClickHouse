@@ -64,12 +64,19 @@ void ODBCDriver2BlockOutputFormat::write(Chunk chunk, PortKind port_kind)
 
 void ODBCDriver2BlockOutputFormat::consume(Chunk chunk)
 {
+    writePrefixIfNot();
     write(std::move(chunk), PortKind::Main);
 }
 
 void ODBCDriver2BlockOutputFormat::consumeTotals(Chunk chunk)
 {
+    writePrefixIfNot();
     write(std::move(chunk), PortKind::Totals);
+}
+
+void ODBCDriver2BlockOutputFormat::finalize()
+{
+    writePrefixIfNot();
 }
 
 void ODBCDriver2BlockOutputFormat::writePrefix()

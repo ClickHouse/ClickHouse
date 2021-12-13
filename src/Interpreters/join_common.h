@@ -19,46 +19,6 @@ using UInt8ColumnDataPtr = const ColumnUInt8::Container *;
 
 namespace JoinCommon
 {
-
-/// Store boolean column handling constant value without materializing
-/// Behaves similar to std::variant<bool, ColumnPtr>, but provides more convenient specialized interface
-class JoinMask
-{
-public:
-    explicit JoinMask(bool value)
-        : column(nullptr)
-        , const_value(value)
-    {}
-
-    explicit JoinMask(ColumnPtr col)
-        : column(col)
-        , const_value(false)
-    {}
-
-    bool isConstant() { return !column; }
-
-    /// Return data if mask is not constant
-    UInt8ColumnDataPtr getData()
-    {
-        if (column)
-            return &assert_cast<const ColumnUInt8 &>(*column).getData();
-        return nullptr;
-    }
-
-    inline bool isRowFiltered(size_t row) const
-    {
-        if (column)
-            return !assert_cast<const ColumnUInt8 &>(*column).getData()[row];
-        return !const_value;
-    }
-
-private:
-    ColumnPtr column;
-    /// Used if column is null
-    bool const_value;
-};
-
-
 bool canBecomeNullable(const DataTypePtr & type);
 DataTypePtr convertTypeToNullable(const DataTypePtr & type);
 void convertColumnToNullable(ColumnWithTypeAndName & column);
@@ -98,7 +58,7 @@ void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count);
 bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type);
 
 /// Return mask array of type ColumnUInt8 for specified column. Source should have type UInt8 or Nullable(UInt8).
-JoinMask getColumnAsMask(const Block & block, const String & column_name);
+ColumnPtr getColumnAsMask(const Block & block, const String & column_name);
 
 /// Split key and other columns by keys name list
 void splitAdditionalColumns(const Names & key_names, const Block & sample_block, Block & block_keys, Block & block_others);

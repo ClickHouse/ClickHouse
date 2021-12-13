@@ -1,7 +1,6 @@
 #pragma once
 
 #include <IO/ReadBuffer.h>
-#include <optional>
 
 namespace DB
 {
@@ -35,36 +34,4 @@ public:
 };
 
 using SeekableReadBufferPtr = std::shared_ptr<SeekableReadBuffer>;
-
-
-class SeekableReadBufferWithSize : public SeekableReadBuffer
-{
-public:
-    SeekableReadBufferWithSize(Position ptr, size_t size)
-        : SeekableReadBuffer(ptr, size) {}
-    SeekableReadBufferWithSize(Position ptr, size_t size, size_t offset)
-        : SeekableReadBuffer(ptr, size, offset) {}
-
-    /// set std::nullopt in case it is impossible to find out total size.
-    virtual std::optional<size_t> getTotalSize() = 0;
-
-    /**
-    * Some buffers might have different seek restrictions according to where it is used.
-    * For example, ReadBufferFromS3 and ReadBufferFromWebServer, when used for reading
-    * from remote disks, require some additional invariants and restrictions, which
-    * are not needed in other cases.
-    */
-    enum class ReadType
-    {
-        DEFAULT,
-        DISK_READ
-    };
-
-    void setReadType(ReadType type) { read_type = type; }
-
-protected:
-    ReadType read_type = ReadType::DEFAULT;
-    std::optional<size_t> file_size;
-};
-
 }

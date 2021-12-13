@@ -16,6 +16,5 @@
         <count>10</count>
         <stderr>/var/log/clickhouse-server/stderr.log</stderr>
         <stdout>/var/log/clickhouse-server/stdout.log</stdout>
-        <rotateOnOpen>true</rotateOnOpen>
     </logger>
 </clickhouse>

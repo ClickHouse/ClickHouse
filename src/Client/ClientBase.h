@@ -10,8 +10,6 @@
 #include <Client/Suggest.h>
 #include <Client/QueryFuzzer.h>
 #include <boost/program_options.hpp>
-#include <Storages/StorageFile.h>
-#include <Storages/SelectQueryInfo.h>
 
 namespace po = boost::program_options;
 
@@ -78,6 +76,9 @@ protected:
         String & query_to_execute, ASTPtr & parsed_query, const String & all_queries_text,
         std::optional<Exception> & current_exception);
 
+    /// For non-interactive multi-query mode get queries text prefix.
+    virtual String getQueryTextPrefix() { return ""; }
+
     static void clearTerminal();
     void showClientVersion();
 
@@ -97,10 +98,9 @@ protected:
                                 const std::vector<Arguments> & external_tables_arguments) = 0;
     virtual void processConfig() = 0;
 
-protected:
+private:
     bool processQueryText(const String & text);
 
-private:
     void receiveResult(ASTPtr parsed_query);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled);
     void receiveLogs(ASTPtr parsed_query);
@@ -120,13 +120,15 @@ private:
     void sendData(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query);
     void sendDataFrom(ReadBuffer & buf, Block & sample,
                       const ColumnsDescription & columns_description, ASTPtr parsed_query);
-    void sendDataFromPipe(Pipe && pipe, ASTPtr parsed_query);
     void sendExternalTables(ASTPtr parsed_query);
 
     void initBlockOutputStream(const Block & block, ASTPtr parsed_query);
     void initLogsOutputStream();
 
-    String prompt() const;
+    inline String prompt() const
+    {
+        return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
+    }
 
     void resetOutput();
     void outputQueryInfo(bool echo_query_);
@@ -136,7 +138,6 @@ private:
 protected:
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool is_multiquery = false;
-    bool delayed_interactive = false;
 
     bool echo_queries = false; /// Print queries before execution in batch mode.
     bool ignore_error = false; /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.

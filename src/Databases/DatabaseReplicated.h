@@ -46,12 +46,8 @@ public:
     /// then it will be executed on all replicas.
     BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context);
 
-    bool hasReplicationThread() const override { return true; }
+    void stopReplication();
 
-    void stopReplication() override;
-
-    String getShardName() const { return shard_name; }
-    String getReplicaName() const { return replica_name; }
     String getFullReplicaName() const;
     static std::pair<String, String> parseFullReplicaName(const String & name);
 

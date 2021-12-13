@@ -97,7 +97,6 @@ public:
         const char * getTypeName() const;
         const char * getDescription() const;
         bool isCustom() const;
-        bool isObsolete() const;
 
         bool operator==(const SettingFieldRef & other) const { return (getName() == other.getName()) && (getValue() == other.getValue()); }
         bool operator!=(const SettingFieldRef & other) const { return !(*this == other); }
@@ -183,7 +182,6 @@ struct BaseSettingsHelpers
     {
         IMPORTANT = 0x01,
         CUSTOM = 0x02,
-        OBSOLETE = 0x04,
     };
     static void writeFlags(Flags flags, WriteBuffer & out);
     static Flags readFlags(ReadBuffer & in);
@@ -747,17 +745,6 @@ bool BaseSettings<Traits_>::SettingFieldRef::isCustom() const
         return false;
 }
 
-template <typename Traits_>
-bool BaseSettings<Traits_>::SettingFieldRef::isObsolete() const
-{
-    if constexpr (Traits::allow_custom_settings)
-    {
-        if (custom_setting)
-            return false;
-    }
-    return accessor->isObsolete(index);
-}
-
 #define DECLARE_SETTINGS_TRAITS(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO) \
     DECLARE_SETTINGS_TRAITS_COMMON(SETTINGS_TRAITS_NAME, LIST_OF_SETTINGS_MACRO, 0)
 
@@ -782,7 +769,6 @@ bool BaseSettings<Traits_>::SettingFieldRef::isObsolete() const
             const char * getTypeName(size_t index) const { return field_infos[index].type; } \
             const char * getDescription(size_t index) const { return field_infos[index].description; } \
             bool isImportant(size_t index) const { return field_infos[index].is_important; } \
-            bool isObsolete(size_t index) const { return field_infos[index].is_obsolete; } \
             Field castValueUtil(size_t index, const Field & value) const { return field_infos[index].cast_value_util_function(value); } \
             String valueToStringUtil(size_t index, const Field & value) const { return field_infos[index].value_to_string_util_function(value); } \
             Field stringToValueUtil(size_t index, const String & str) const { return field_infos[index].string_to_value_util_function(str); } \
@@ -803,7 +789,6 @@ bool BaseSettings<Traits_>::SettingFieldRef::isObsolete() const
                 const char * type; \
                 const char * description; \
                 bool is_important; \
-                bool is_obsolete; \
                 Field (*cast_value_util_function)(const Field &); \
                 String (*value_to_string_util_function)(const Field &); \
                 Field (*string_to_value_util_function)(const String &); \
@@ -831,7 +816,7 @@ bool BaseSettings<Traits_>::SettingFieldRef::isObsolete() const
         static const Accessor the_instance = [] \
         { \
             Accessor res; \
-            constexpr int IMPORTANT = 0x01; \
+            constexpr int IMPORTANT = 1; \
             UNUSED(IMPORTANT); \
             LIST_OF_SETTINGS_MACRO(IMPLEMENT_SETTINGS_TRAITS_) \
             for (size_t i : collections::range(res.field_infos.size())) \
@@ -860,7 +845,6 @@ bool BaseSettings<Traits_>::SettingFieldRef::isObsolete() const
 #define IMPLEMENT_SETTINGS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS) \
     res.field_infos.emplace_back( \
         FieldInfo{#NAME, #TYPE, DESCRIPTION, FLAGS & IMPORTANT, \
-            static_cast<bool>(FLAGS & BaseSettingsHelpers::Flags::OBSOLETE), \
             [](const Field & value) -> Field { return static_cast<Field>(SettingField##TYPE{value}); }, \
             [](const Field & value) -> String { return SettingField##TYPE{value}.toString(); }, \
             [](const String & str) -> Field { SettingField##TYPE temp; temp.parseFromString(str); return static_cast<Field>(temp); }, \

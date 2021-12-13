@@ -22,7 +22,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
-#include <Databases/DatabaseReplicatedHelpers.h>
 
 namespace DB
 {
@@ -542,12 +541,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// to make possible copying metadata files between replicas.
         Macros::MacroExpansionInfo info;
         info.table_id = args.table_id;
-        if (is_replicated_database)
-        {
-            auto database = DatabaseCatalog::instance().getDatabase(args.table_id.database_name);
-            info.shard = getReplicatedDatabaseShardName(database);
-            info.replica = getReplicatedDatabaseReplicaName(database);
-        }
         if (!allow_uuid_macro)
             info.table_id.uuid = UUIDHelpers::Nil;
         zookeeper_path = args.getContext()->getMacros()->expand(zookeeper_path, info);
@@ -691,8 +684,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
         auto primary_key_asts = metadata.primary_key.expression_list_ast->children;
-        metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-            args.columns, metadata.partition_key.expression_list_ast, minmax_columns, primary_key_asts, args.getContext()));
+        metadata.minmax_count_projection.emplace(
+            ProjectionDescription::getMinMaxCountProjection(args.columns, minmax_columns, primary_key_asts, args.getContext()));
 
         if (args.storage_def->sample_by)
             metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, args.getContext());
@@ -714,11 +707,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 metadata.projections.add(std::move(projection));
             }
 
-        auto constraints = metadata.constraints.getConstraints();
         if (args.query.columns_list && args.query.columns_list->constraints)
             for (auto & constraint : args.query.columns_list->constraints->children)
-                constraints.push_back(constraint);
-        metadata.constraints = ConstraintsDescription(constraints);
+                metadata.constraints.constraints.push_back(constraint);
 
         auto column_ttl_asts = args.columns.getColumnTTLs();
         for (const auto & [name, ast] : column_ttl_asts)
@@ -773,8 +764,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
         auto primary_key_asts = metadata.primary_key.expression_list_ast->children;
-        metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-            args.columns, metadata.partition_key.expression_list_ast, minmax_columns, primary_key_asts, args.getContext()));
+        metadata.minmax_count_projection.emplace(
+            ProjectionDescription::getMinMaxCountProjection(args.columns, minmax_columns, primary_key_asts, args.getContext()));
 
         const auto * ast = engine_args[arg_num]->as<ASTLiteral>();
         if (ast && ast->value.getType() == Field::Types::UInt64)

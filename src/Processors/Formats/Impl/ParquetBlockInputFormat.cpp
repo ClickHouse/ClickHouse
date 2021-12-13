@@ -93,7 +93,7 @@ static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
 
 void ParquetBlockInputFormat::prepareReader()
 {
-    THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(asArrowFile(*in, format_settings), arrow::default_memory_pool(), &file_reader));
+    THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(asArrowFile(*in), arrow::default_memory_pool(), &file_reader));
     row_group_total = file_reader->num_row_groups();
     row_group_current = 0;
 

@@ -21,8 +21,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/StorageFactory.h>
 
-#include <boost/algorithm/string/split.hpp>
-
 
 namespace DB
 {

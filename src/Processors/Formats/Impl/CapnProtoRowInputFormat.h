@@ -26,9 +26,9 @@ public:
 
     String getName() const override { return "CapnProtoRowInputFormat"; }
 
-private:
     bool readRow(MutableColumns & columns, RowReadExtension &) override;
 
+private:
     kj::Array<capnp::word> readMessage();
 
     std::shared_ptr<CapnProtoSchemaParser> parser;

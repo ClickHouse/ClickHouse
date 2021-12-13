@@ -399,7 +399,7 @@ Default value: 1.
 
 ## input_format_defaults_for_omitted_fields {#session_settings-input_format_defaults_for_omitted_fields}
 
-When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option only applies to [JSONEachRow](../../interfaces/formats.md#jsoneachrow), [CSV](../../interfaces/formats.md#csv), [TabSeparated](../../interfaces/formats.md#tabseparated) formats and formats with `WithNames`/`WithNamesAndTypes` suffixes.
+When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option only applies to [JSONEachRow](../../interfaces/formats.md#jsoneachrow), [CSV](../../interfaces/formats.md#csv) and [TabSeparated](../../interfaces/formats.md#tabseparated) formats.
 
 !!! note "Note"
     When this option is enabled, extended table metadata are sent from server to client. It consumes additional computing resources on the server and can reduce performance.
@@ -417,20 +417,14 @@ When enabled, replace empty input fields in TSV with default values. For complex
 
 Disabled by default.
 
-## input_format_csv_empty_as_default {#settings-input-format-csv-empty-as-default}
-
-When enabled, replace empty input fields in CSV with default values. For complex default expressions `input_format_defaults_for_omitted_fields` must be enabled too.
-
-Enabled by default.
-
 ## input_format_tsv_enum_as_number {#settings-input_format_tsv_enum_as_number}
 
-When enabled, always treat enum values as enum ids for TSV input format. It's recommended to enable this setting if data contains only enum ids to optimize enum parsing.
+Enables or disables parsing enum values as enum ids for TSV input format.
 
 Possible values:
 
--   0 — Enum values are parsed as values or as enum IDs.
--   1 — Enum values are parsed only as enum IDs.
+-   0 — Enum values are parsed as values.
+-   1 — Enum values are parsed as enum IDs.
 
 Default value: 0.
 
@@ -444,39 +438,10 @@ CREATE TABLE table_with_enum_column_for_tsv_insert (Id Int32,Value Enum('first' 
 
 When the `input_format_tsv_enum_as_number` setting is enabled:
 
-Query:
-
 ```sql
 SET input_format_tsv_enum_as_number = 1;
 INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
-SELECT * FROM table_with_enum_column_for_tsv_insert;
-```
-
-Result:
-
-```text
-┌──Id─┬─Value──┐
-│ 102 │ second │
-└─────┴────────┘
-```
-
-Query:
-
-```sql
-SET input_format_tsv_enum_as_number = 1;
-INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	'first';
-```
-
-throws an exception.
-
-When the `input_format_tsv_enum_as_number` setting is disabled:
-
-Query:
-
-```sql
-SET input_format_tsv_enum_as_number = 0;
-INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
-INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	'first';
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	1;
 SELECT * FROM table_with_enum_column_for_tsv_insert;
 ```
 
@@ -490,6 +455,15 @@ Result:
 │ 103 │ first  │
 └─────┴────────┘
 ```
+
+When the `input_format_tsv_enum_as_number` setting is disabled, the `INSERT` query:
+
+```sql
+SET input_format_tsv_enum_as_number = 0;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
+```
+
+throws an exception.
 
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
@@ -566,40 +540,8 @@ To improve insert performance, we recommend disabling this check if you are sure
 
 Supported formats:
 
-- [CSVWithNames](../../interfaces/formats.md#csvwithnames)
-- [CSVWithNames](../../interfaces/formats.md#csvwithnamesandtypes)
-- [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
-- [TabSeparatedWithNamesAndTypes](../../interfaces/formats.md#tabseparatedwithnamesandtypes)
-- [JSONCompactEachRowWithNames](../../interfaces/formats.md#jsoncompacteachrowwithnames)
-- [JSONCompactEachRowWithNamesAndTypes](../../interfaces/formats.md#jsoncompacteachrowwithnamesandtypes)
-- [JSONCompactStringsEachRowWithNames](../../interfaces/formats.md#jsoncompactstringseachrowwithnames)
-- [JSONCompactStringsEachRowWithNamesAndTypes](../../interfaces/formats.md#jsoncompactstringseachrowwithnamesandtypes)
-- [RowBinaryWithNames](../../interfaces/formats.md#rowbinarywithnames-rowbinarywithnames)
-- [RowBinaryWithNamesAndTypes](../../interfaces/formats.md#rowbinarywithnamesandtypes-rowbinarywithnamesandtypes)
-
-Possible values:
-
--   0 — Disabled.
--   1 — Enabled.
-
-Default value: 1.
-
-## input_format_with_types_use_header {#settings-input-format-with-types-use-header}
-
-Controls whether format parser should check if data types from the input data match data types from the target table.
-
-Supported formats:
-
-- [CSVWithNames](../../interfaces/formats.md#csvwithnames)
-- [CSVWithNames](../../interfaces/formats.md#csvwithnamesandtypes)
-- [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
-- [TabSeparatedWithNamesAndTypes](../../interfaces/formats.md#tabseparatedwithnamesandtypes)
-- [JSONCompactEachRowWithNames](../../interfaces/formats.md#jsoncompacteachrowwithnames)
-- [JSONCompactEachRowWithNamesAndTypes](../../interfaces/formats.md#jsoncompacteachrowwithnamesandtypes)
-- [JSONCompactStringsEachRowWithNames](../../interfaces/formats.md#jsoncompactstringseachrowwithnames)
-- [JSONCompactStringsEachRowWithNamesAndTypes](../../interfaces/formats.md#jsoncompactstringseachrowwithnamesandtypes)
-- [RowBinaryWithNames](../../interfaces/formats.md#rowbinarywithnames-rowbinarywithnames)
-- [RowBinaryWithNamesAndTypes](../../interfaces/formats.md#rowbinarywithnamesandtypes-rowbinarywithnamesandtypes)
+-   [CSVWithNames](../../interfaces/formats.md#csvwithnames)
+-   [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
 
 Possible values:
 
@@ -885,6 +827,26 @@ Possible values:
 
 Default value: 2013265920.
 
+## merge_tree_clear_old_temporary_directories_interval_seconds {#setting-merge-tree-clear-old-temporary-directories-interval-seconds}
+
+Sets the interval in seconds for ClickHouse to execute the cleanup of old temporary directories.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: `60` seconds.
+
+## merge_tree_clear_old_parts_interval_seconds {#setting-merge-tree-clear-old-parts-interval-seconds}
+
+Sets the interval in seconds for ClickHouse to execute the cleanup of old parts, WALs, and mutations.
+
+Possible values:
+
+-   Any positive integer.
+
+Default value: `1` second.
+
 ## min_bytes_to_use_direct_io {#settings-min-bytes-to-use-direct-io}
 
 The minimum data volume required for using direct I/O access to the storage disk.
@@ -972,16 +934,9 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 
 Setting up query threads logging.
 
-Query threads log into [system.query_thread_log](../../operations/system-tables/query_thread_log.md) table. This setting have effect only when [log_queries](#settings-log-queries) is true. Queries’ threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server configuration parameter.
+Queries’ threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server configuration parameter.
 
-Possible values:
-
--   0 — Disabled.
--   1 — Enabled.
-
-Default value: `1`.
-
-**Example**
+Example:
 
 ``` text
 log_query_threads=1
@@ -999,16 +954,6 @@ Example:
 log_query_views=1
 ```
 
-## log_formatted_queries {#settings-log-formatted-queries}
-
-Allows to log formatted queries to the [system.query_log](../../operations/system-tables/query_log.md) system table.
-
-Possible values:
-
--   0 — Formatted queries are not logged in the system table.
--   1 — Formatted queries are logged in the system table.
-
-Default value: `0`.
 
 ## log_comment {#settings-log-comment}
 
@@ -1223,9 +1168,6 @@ Default value: `0`.
 
 Could be used for throttling speed when replicating the data to add or replace new nodes.
 
-!!! note "Note"
-    60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
-
 ## max_replicated_sends_network_bandwidth_for_server {#max_replicated_sends_network_bandwidth_for_server}
 
 Limits the maximum speed of data exchange over the network in bytes per second for [replicated](../../engines/table-engines/mergetree-family/replication.md) sends for the server. Only has meaning at server startup.  You can also limit the speed for a particular table with [max_replicated_sends_network_bandwidth](../../operations/settings/merge-tree-settings.md#max_replicated_sends_network_bandwidth) setting.
@@ -1242,9 +1184,6 @@ Default value: `0`.
 **Usage**
 
 Could be used for throttling speed when replicating the data to add or replace new nodes.
-
-!!! note "Note"
-    60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
 
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
@@ -1458,32 +1397,6 @@ Minimum count of executing same expression before it is get compiled.
 
 Default value: `3`.
 
-## compile_aggregate_expressions {#compile_aggregate_expressions}
-
-Enables or disables JIT-compilation of aggregate functions to native code. Enabling this setting can improve the performance.
-
-Possible values:
-
--   0 — Aggregation is done without JIT compilation.
--   1 — Aggregation is done using JIT compilation.
-
-Default value: `1`.
-
-**See Also** 
-
--   [min_count_to_compile_aggregate_expression](#min_count_to_compile_aggregate_expression)
-
-## min_count_to_compile_aggregate_expression {#min_count_to_compile_aggregate_expression}
-
-The minimum number of identical aggregate expressions to start JIT-compilation. Works only if the [compile_aggregate_expressions](#compile_aggregate_expressions) setting is enabled.
-
-Possible values:
-
--   Positive integer.
--   0 — Identical aggregate expressions are always JIT-compiled.
-
-Default value: `3`.
-
 ## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
 Controls quoting of 64-bit or bigger [integers](../../sql-reference/data-types/int-uint.md) (like `UInt64` or `Int128`) when they are output in a [JSON](../../interfaces/formats.md#json) format.
@@ -1599,14 +1512,18 @@ When `output_format_json_quote_denormals = 1`, the query returns:
 
 The character is interpreted as a delimiter in the CSV data. By default, the delimiter is `,`.
 
+## input_format_csv_unquoted_null_literal_as_null {#settings-input_format_csv_unquoted_null_literal_as_null}
+
+For CSV input format enables or disables parsing of unquoted `NULL` as literal (synonym for `\N`).
+
 ## input_format_csv_enum_as_number {#settings-input_format_csv_enum_as_number}
 
-When enabled, always treat enum values as enum ids for CSV input format. It's recommended to enable this setting if data contains only enum ids to optimize enum parsing.
+Enables or disables parsing enum values as enum ids for CSV input format.
 
 Possible values:
 
--   0 — Enum values are parsed as values or as enum IDs.
--   1 — Enum values are parsed only as enum IDs.
+-   0 — Enum values are parsed as values.
+-   1 — Enum values are parsed as enum IDs.
 
 Default value: 0.
 
@@ -1620,51 +1537,28 @@ CREATE TABLE table_with_enum_column_for_csv_insert (Id Int32,Value Enum('first' 
 
 When the `input_format_csv_enum_as_number` setting is enabled:
 
-Query:
-
 ```sql
 SET input_format_csv_enum_as_number = 1;
-INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2
-```
-
-Result:
-
-```text
-┌──Id─┬─Value──┐
-│ 102 │ second │
-└─────┴────────┘
-```
-
-Query:
-
-```sql
-SET input_format_csv_enum_as_number = 1;
-INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 103,'first'
-```
-
-throws an exception.
-
-When the `input_format_csv_enum_as_number` setting is disabled:
-
-Query:
-
-```sql
-SET input_format_csv_enum_as_number = 0;
-INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2
-INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 103,'first'
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2;
 SELECT * FROM table_with_enum_column_for_csv_insert;
 ```
 
 Result:
 
 ```text
-┌──Id─┬─Value──┐
-│ 102 │ second │
-└─────┴────────┘
-┌──Id─┬─Value─┐
-│ 103 │ first │
-└─────┴───────┘
+┌──Id─┬─Value─────┐
+│ 102 │ second    │
+└─────┴───────────┘
 ```
+
+When the `input_format_csv_enum_as_number` setting is disabled, the `INSERT` query:
+
+```sql
+SET input_format_csv_enum_as_number = 0;
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2;
+```
+
+throws an exception.
 
 ## output_format_csv_crlf_end_of_line {#settings-output-format-csv-crlf-end-of-line}
 
@@ -2982,9 +2876,9 @@ Possible values:
 
 Default value: `1`.
 
-## format_csv_null_representation {#format_csv_null_representation}
+## output_format_csv_null_representation {#output_format_csv_null_representation}
 
-Defines the representation of `NULL` for [CSV](../../interfaces/formats.md#csv) output and input formats. User can set any string as a value, for example, `My NULL`.
+Defines the representation of `NULL` for [CSV](../../interfaces/formats.md#csv) output format. User can set any string as a value, for example, `My NULL`.
 
 Default value: `\N`.
 
@@ -3007,7 +2901,7 @@ Result
 Query
 
 ```sql
-SET format_csv_null_representation = 'My NULL';
+SET output_format_csv_null_representation = 'My NULL';
 SELECT * FROM csv_custom_null FORMAT CSV;
 ```
 
@@ -3019,9 +2913,9 @@ My NULL
 My NULL
 ```
 
-## format_tsv_null_representation {#format_tsv_null_representation}
+## output_format_tsv_null_representation {#output_format_tsv_null_representation}
 
-Defines the representation of `NULL` for [TSV](../../interfaces/formats.md#tabseparated) output and input formats. User can set any string as a value, for example, `My NULL`.
+Defines the representation of `NULL` for [TSV](../../interfaces/formats.md#tabseparated) output format. User can set any string as a value, for example, `My NULL`.
 
 Default value: `\N`.
 
@@ -3044,7 +2938,7 @@ Result
 Query
 
 ```sql
-SET format_tsv_null_representation = 'My NULL';
+SET output_format_tsv_null_representation = 'My NULL';
 SELECT * FROM tsv_custom_null FORMAT TSV;
 ```
 
@@ -3678,14 +3572,6 @@ Sets a comma-separated list of PostgreSQL database tables, which will be replica
 
 Default value: empty list — means whole PostgreSQL database will be replicated.
 
-## materialized_postgresql_schema {#materialized-postgresql-schema}
-
-Default value: empty string. (Default schema is used)
-
-## materialized_postgresql_schema_list {#materialized-postgresql-schema-list}
-
-Default value: empty list. (Default schema is used)
-
 ## materialized_postgresql_allow_automatic_update {#materialized-postgresql-allow-automatic-update}
 
 Allows reloading table in the background, when schema changes are detected. DDL queries on the PostgreSQL side are not replicated via ClickHouse [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) engine, because it is not allowed with PostgreSQL logical replication protocol, but the fact of DDL changes is detected transactionally. In this case, the default behaviour is to stop replicating those tables once DDL is detected. However, if this setting is enabled, then, instead of stopping the replication of those tables, they will be reloaded in the background via database snapshot without data losses and replication will continue for them.
@@ -4043,112 +3929,3 @@ Possible values:
 -   0 — Timeout disabled.
 
 Default value: `0`.
-
-## alter_partition_verbose_result {#alter-partition-verbose-result}
-
-Enables or disables the display of information about the parts to which the manipulation operations with partitions and parts have been successfully applied. 
-Applicable to [ATTACH PARTITION|PART](../../sql-reference/statements/alter/partition.md#alter_attach-partition) and to [FREEZE PARTITION](../../sql-reference/statements/alter/partition.md#alter_freeze-partition).
-
-Possible values:
-
--   0 — disable verbosity.
--   1 — enable verbosity.
-
-Default value: `0`.
-
-**Example**
-
-```sql
-CREATE TABLE test(a Int64, d Date, s String) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY a;
-INSERT INTO test VALUES(1, '2021-01-01', '');
-INSERT INTO test VALUES(1, '2021-01-01', '');
-ALTER TABLE test DETACH PARTITION ID '202101';
-
-ALTER TABLE test ATTACH PARTITION ID '202101' SETTINGS alter_partition_verbose_result = 1;
-
-┌─command_type─────┬─partition_id─┬─part_name────┬─old_part_name─┐
-│ ATTACH PARTITION │ 202101       │ 202101_7_7_0 │ 202101_5_5_0  │
-│ ATTACH PARTITION │ 202101       │ 202101_8_8_0 │ 202101_6_6_0  │
-└──────────────────┴──────────────┴──────────────┴───────────────┘
-
-ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
-
-┌─command_type─┬─partition_id─┬─part_name────┬─backup_name─┬─backup_path───────────────────┬─part_backup_path────────────────────────────────────────────┐
-│ FREEZE ALL   │ 202101       │ 202101_7_7_0 │ 8           │ /var/lib/clickhouse/shadow/8/ │ /var/lib/clickhouse/shadow/8/data/default/test/202101_7_7_0 │
-│ FREEZE ALL   │ 202101       │ 202101_8_8_0 │ 8           │ /var/lib/clickhouse/shadow/8/ │ /var/lib/clickhouse/shadow/8/data/default/test/202101_8_8_0 │
-└──────────────┴──────────────┴──────────────┴─────────────┴───────────────────────────────┴─────────────────────────────────────────────────────────────┘
-```
-
-## format_capn_proto_enum_comparising_mode {#format-capn-proto-enum-comparising-mode}
-
-Determines how to map ClickHouse `Enum` data type and [CapnProto](../../interfaces/formats.md#capnproto) `Enum` data type from schema.
-
-Possible values:
-
--   `'by_values'` — Values in enums should be the same, names can be different.
--   `'by_names'` — Names in enums should be the same, values can be different.
--   `'by_name_case_insensitive'` — Names in enums should be the same case-insensitive, values can be different.
-
-Default value: `'by_values'`.
-
-## min_bytes_to_use_mmap_io {#min-bytes-to-use-mmap-io}
-
-This is an experimental setting. Sets the minimum amount of memory for reading large files without copying data from the kernel to userspace. Recommended threshold is about 64 MB, because [mmap/munmap](https://en.wikipedia.org/wiki/Mmap) is slow. It makes sense only for large files and helps only if data reside in the page cache.
-
-Possible values:
-
--   Positive integer.
--   0 — Big files read with only copying data from kernel to userspace.
-
-Default value: `0`.
-
-## format_custom_escaping_rule {#format-custom-escaping-rule}
-
-Sets the field escaping rule for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
-
-Possible values:
-
--   `'Escaped'` — Similarly to [TSV](../../interfaces/formats.md#tabseparated).
--   `'Quoted'` — Similarly to [Values](../../interfaces/formats.md#data-format-values).
--   `'CSV'` — Similarly to [CSV](../../interfaces/formats.md#csv).
--   `'JSON'` — Similarly to [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
--   `'XML'` — Similarly to [XML](../../interfaces/formats.md#xml).
--   `'Raw'` — Extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](../../interfaces/formats.md#tabseparatedraw).
-
-Default value: `'Escaped'`.
-
-## format_custom_field_delimiter {#format-custom-field-delimiter}
-
-Sets the character that is interpreted as a delimiter between the fields for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
-
-Default value: `'\t'`.
-
-## format_custom_row_before_delimiter {#format-custom-row-before-delimiter}
-
-Sets the character that is interpreted as a delimiter before the field of the first column for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
-
-Default value: `''`.
-
-## format_custom_row_after_delimiter {#format-custom-row-after-delimiter}
-
-Sets the character that is interpreted as a delimiter after the field of the last column for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
-
-Default value: `'\n'`.
-
-## format_custom_row_between_delimiter {#format-custom-row-between-delimiter}
-
-Sets the character that is interpreted as a delimiter between the rows for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
-
-Default value: `''`.
-
-## format_custom_result_before_delimiter {#format-custom-result-before-delimiter}
-
-Sets the character that is interpreted as a prefix before the result set for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
-
-Default value: `''`.
-
-## format_custom_result_after_delimiter {#format-custom-result-after-delimiter}
-
-Sets the character that is interpreted as a suffix after the result set for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
-
-Default value: `''`.

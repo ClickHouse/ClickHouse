@@ -7,7 +7,12 @@ if (NOT ENABLE_BROTLI)
     return()
 endif()
 
-option (USE_INTERNAL_BROTLI_LIBRARY "Set to FALSE to use system libbrotli library instead of bundled" ON)
+if (UNBUNDLED)
+    # Many system ship only dynamic brotly libraries, so we back off to bundled by default
+    option (USE_INTERNAL_BROTLI_LIBRARY "Set to FALSE to use system libbrotli library instead of bundled" ${USE_STATIC_LIBRARIES})
+else()
+    option (USE_INTERNAL_BROTLI_LIBRARY "Set to FALSE to use system libbrotli library instead of bundled" ON)
+endif()
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/brotli/c/include/brotli/decode.h")
     if (USE_INTERNAL_BROTLI_LIBRARY)

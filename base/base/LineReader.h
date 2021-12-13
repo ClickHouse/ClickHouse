@@ -53,6 +53,7 @@ protected:
 
     String input;
 
+private:
     bool multiline;
 
     Patterns extenders;

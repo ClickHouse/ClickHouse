@@ -41,7 +41,7 @@ public:
     {
         try
         {
-            finalize();
+            RestartAwareWriteBuffer::finalize();
         }
         catch (...)
         {
@@ -49,9 +49,12 @@ public:
         }
     }
 
-    void finalizeImpl() override
+    void finalize() override
     {
-        WriteBufferFromFileDecorator::finalizeImpl();
+        if (finalized)
+            return;
+
+        WriteBufferFromFileDecorator::finalize();
 
         lock.unlock();
     }

@@ -12,7 +12,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
@@ -20,7 +19,6 @@
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/KafkaSource.h>
 #include <Storages/Kafka/WriteBufferToKafkaProducer.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <boost/algorithm/string/replace.hpp>
@@ -49,7 +47,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int QUERY_NOT_ALLOWED;
 }
 
 struct StorageKafkaInterceptors
@@ -171,9 +168,7 @@ namespace
 }
 
 StorageKafka::StorageKafka(
-    const StorageID & table_id_, ContextPtr context_,
-    const ColumnsDescription & columns_, std::unique_ptr<KafkaSettings> kafka_settings_,
-    const String & collection_name_)
+    const StorageID & table_id_, ContextPtr context_, const ColumnsDescription & columns_, std::unique_ptr<KafkaSettings> kafka_settings_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , kafka_settings(std::move(kafka_settings_))
@@ -192,7 +187,6 @@ StorageKafka::StorageKafka(
     , intermediate_commit(kafka_settings->kafka_commit_every_batch.value)
     , settings_adjustments(createSettingsAdjustments())
     , thread_per_consumer(kafka_settings->kafka_thread_per_consumer.value)
-    , collection_name(collection_name_)
 {
     if (kafka_settings->kafka_handle_error_mode == HandleKafkaErrorMode::STREAM)
     {
@@ -272,12 +266,6 @@ Pipe StorageKafka::read(
     if (num_created_consumers == 0)
         return {};
 
-    if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
-        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
-
-    if (mv_attached)
-        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka with attached materialized views");
-
     /// Always use all consumers at once, otherwise SELECT may not read messages from all partitions.
     Pipes pipes;
     pipes.reserve(num_created_consumers);
@@ -290,7 +278,7 @@ Pipe StorageKafka::read(
         /// Use block size of 1, otherwise LIMIT won't work properly as it will buffer excess messages in the last block
         /// TODO: probably that leads to awful performance.
         /// FIXME: seems that doesn't help with extra reading and committing unprocessed messages.
-        pipes.emplace_back(std::make_shared<KafkaSource>(*this, metadata_snapshot, modified_context, column_names, log, 1, kafka_settings->kafka_commit_on_select));
+        pipes.emplace_back(std::make_shared<KafkaSource>(*this, metadata_snapshot, modified_context, column_names, log, 1));
     }
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
@@ -471,25 +459,17 @@ size_t StorageKafka::getPollTimeoutMillisecond() const
         : getContext()->getSettingsRef().stream_poll_timeout_ms.totalMilliseconds();
 }
 
-String StorageKafka::getConfigPrefix() const
-{
-    if (!collection_name.empty())
-        return "named_collections." + collection_name + "." + CONFIG_PREFIX; /// Add one more level to separate librdkafka configuration.
-    return CONFIG_PREFIX;
-}
-
 void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
 {
     // Update consumer configuration from the configuration
     const auto & config = getContext()->getConfigRef();
-    auto config_prefix = getConfigPrefix();
-    if (config.has(config_prefix))
-        loadFromConfig(conf, config, config_prefix);
+    if (config.has(CONFIG_PREFIX))
+        loadFromConfig(conf, config, CONFIG_PREFIX);
 
     // Update consumer topic-specific configuration
     for (const auto & topic : topics)
     {
-        const auto topic_config_key = config_prefix + "_" + topic;
+        const auto topic_config_key = CONFIG_PREFIX + "_" + topic;
         if (config.has(topic_config_key))
             loadFromConfig(conf, config, topic_config_key);
     }
@@ -564,8 +544,6 @@ void StorageKafka::threadFunc(size_t idx)
         {
             auto start_time = std::chrono::steady_clock::now();
 
-            mv_attached.store(true);
-
             // Keep streaming as long as there are attached views and streaming is not cancelled
             while (!task->stream_cancelled && num_created_consumers > 0)
             {
@@ -596,8 +574,6 @@ void StorageKafka::threadFunc(size_t idx)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
-
-    mv_attached.store(false);
 
     // Wait for attached views
     if (!task->stream_cancelled)
@@ -690,7 +666,6 @@ void registerStorageKafka(StorageFactory & factory)
         bool has_settings = args.storage_def->settings;
 
         auto kafka_settings = std::make_unique<KafkaSettings>();
-        auto named_collection = getExternalDataSourceConfiguration(args.engine_args, *kafka_settings, args.getLocalContext());
         if (has_settings)
         {
             kafka_settings->loadFromQuery(*args.storage_def);
@@ -754,25 +729,17 @@ void registerStorageKafka(StorageFactory & factory)
           * - Do intermediate commits when the batch consumed and handled
           */
 
-        String collection_name;
-        if (named_collection)
-        {
-            collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
-        }
-        else
-        {
-            /* 0 = raw, 1 = evaluateConstantExpressionAsLiteral, 2=evaluateConstantExpressionOrIdentifierAsLiteral */
-            CHECK_KAFKA_STORAGE_ARGUMENT(1, kafka_broker_list, 0)
-            CHECK_KAFKA_STORAGE_ARGUMENT(2, kafka_topic_list, 1)
-            CHECK_KAFKA_STORAGE_ARGUMENT(3, kafka_group_name, 2)
-            CHECK_KAFKA_STORAGE_ARGUMENT(4, kafka_format, 2)
-            CHECK_KAFKA_STORAGE_ARGUMENT(5, kafka_row_delimiter, 2)
-            CHECK_KAFKA_STORAGE_ARGUMENT(6, kafka_schema, 2)
-            CHECK_KAFKA_STORAGE_ARGUMENT(7, kafka_num_consumers, 0)
-            CHECK_KAFKA_STORAGE_ARGUMENT(8, kafka_max_block_size, 0)
-            CHECK_KAFKA_STORAGE_ARGUMENT(9, kafka_skip_broken_messages, 0)
-            CHECK_KAFKA_STORAGE_ARGUMENT(10, kafka_commit_every_batch, 0)
-        }
+        /* 0 = raw, 1 = evaluateConstantExpressionAsLiteral, 2=evaluateConstantExpressionOrIdentifierAsLiteral */
+        CHECK_KAFKA_STORAGE_ARGUMENT(1, kafka_broker_list, 0)
+        CHECK_KAFKA_STORAGE_ARGUMENT(2, kafka_topic_list, 1)
+        CHECK_KAFKA_STORAGE_ARGUMENT(3, kafka_group_name, 2)
+        CHECK_KAFKA_STORAGE_ARGUMENT(4, kafka_format, 2)
+        CHECK_KAFKA_STORAGE_ARGUMENT(5, kafka_row_delimiter, 2)
+        CHECK_KAFKA_STORAGE_ARGUMENT(6, kafka_schema, 2)
+        CHECK_KAFKA_STORAGE_ARGUMENT(7, kafka_num_consumers, 0)
+        CHECK_KAFKA_STORAGE_ARGUMENT(8, kafka_max_block_size, 0)
+        CHECK_KAFKA_STORAGE_ARGUMENT(9, kafka_skip_broken_messages, 0)
+        CHECK_KAFKA_STORAGE_ARGUMENT(10, kafka_commit_every_batch, 0)
 
         #undef CHECK_KAFKA_STORAGE_ARGUMENT
 
@@ -798,7 +765,7 @@ void registerStorageKafka(StorageFactory & factory)
             throw Exception("kafka_poll_max_batch_size can not be lower than 1", ErrorCodes::BAD_ARGUMENTS);
         }
 
-        return StorageKafka::create(args.table_id, args.getContext(), args.columns, std::move(kafka_settings), collection_name);
+        return StorageKafka::create(args.table_id, args.getContext(), args.columns, std::move(kafka_settings));
     };
 
     factory.registerStorage("Kafka", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });

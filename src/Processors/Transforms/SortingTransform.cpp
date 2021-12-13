@@ -13,9 +13,15 @@
 #include <Formats/NativeWriter.h>
 
 
+namespace ProfileEvents
+{
+    extern const Event ExternalSortWritePart;
+    extern const Event ExternalSortMerge;
+}
+
+
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;

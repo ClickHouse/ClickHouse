@@ -5,7 +5,7 @@
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTIdentifier_fwd.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Core/ColumnNumbers.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/joinDispatch.h>
@@ -261,7 +261,9 @@ void registerStorageJoin(StorageFactory & factory)
                     disk_name = setting.value.get<String>();
                 else if (setting.name == "persistent")
                 {
-                    persistent = setting.value.get<bool>();
+                    auto join_settings = std::make_unique<JoinSettings>();
+                    join_settings->loadFromQuery(*args.storage_def);
+                    persistent = join_settings->persistent;
                 }
                 else
                     throw Exception("Unknown setting " + setting.name + " for storage " + args.engine_name, ErrorCodes::BAD_ARGUMENTS);

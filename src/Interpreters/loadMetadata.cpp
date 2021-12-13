@@ -20,7 +20,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <filesystem>
-#include <base/logger_useful.h>
 
 namespace fs = std::filesystem;
 
@@ -39,7 +38,7 @@ static void executeCreateQuery(
         parser, query.data(), query.data() + query.size(), "in file " + file_name, 0, context->getSettingsRef().max_parser_depth);
 
     auto & ast_create_query = ast->as<ASTCreateQuery &>();
-    ast_create_query.setDatabase(database);
+    ast_create_query.database = database;
 
     InterpreterCreateQuery interpreter(ast, context);
     interpreter.setInternal(true);

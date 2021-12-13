@@ -7,6 +7,9 @@
 #include "MaterializedPostgreSQLSettings.h"
 
 #include <Parsers/IAST.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -18,11 +21,6 @@
 
 namespace DB
 {
-
-/** TODO list:
- * - Actually I think we can support ddl even though logical replication does not fully support it.
- *   But some basic ddl like adding/dropping columns, changing column type, column names -- is manageable.
- */
 
 /** Case of single MaterializedPostgreSQL table engine.
  *
@@ -114,9 +112,13 @@ public:
 
     StorageID getNestedStorageID() const;
 
-    void set(StoragePtr nested_storage);
+    void setNestedStorageID(const StorageID & id) { nested_table_id.emplace(id); }
 
     static std::shared_ptr<Context> makeNestedTableContext(ContextPtr from_context);
+
+    /// Get nested table (or throw if it does not exist), set in-memory metadata (taken from nested table)
+    /// for current table, set has_nested = true.
+    StoragePtr prepare();
 
     bool supportsFinal() const override { return true; }
 

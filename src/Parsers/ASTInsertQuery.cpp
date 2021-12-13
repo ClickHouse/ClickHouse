@@ -1,5 +1,4 @@
 #include <iomanip>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -16,35 +15,6 @@ namespace ErrorCodes
     extern const int INVALID_USAGE_OF_INPUT;
 }
 
-String ASTInsertQuery::getDatabase() const
-{
-    String name;
-    tryGetIdentifierNameInto(database, name);
-    return name;
-}
-
-String ASTInsertQuery::getTable() const
-{
-    String name;
-    tryGetIdentifierNameInto(table, name);
-    return name;
-}
-
-void ASTInsertQuery::setDatabase(const String & name)
-{
-    if (name.empty())
-        database.reset();
-    else
-        database = std::make_shared<ASTIdentifier>(name);
-}
-
-void ASTInsertQuery::setTable(const String & name)
-{
-    if (name.empty())
-        table.reset();
-    else
-        table = std::make_shared<ASTIdentifier>(name);
-}
 
 void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
@@ -61,16 +31,9 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
             partition_by->formatImpl(settings, state, frame);
         }
     }
-    else if (table_id)
-    {
+    else
         settings.ostr << (settings.hilite ? hilite_none : "")
                       << (!table_id.database_name.empty() ? backQuoteIfNeed(table_id.database_name) + "." : "") << backQuoteIfNeed(table_id.table_name);
-    }
-    else
-    {
-        settings.ostr << (settings.hilite ? hilite_none : "")
-                      << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
-    }
 
     if (columns)
     {

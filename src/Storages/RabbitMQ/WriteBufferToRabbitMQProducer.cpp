@@ -7,7 +7,6 @@
 #include <base/logger_useful.h>
 #include <amqpcpp.h>
 #include <uv.h>
-#include <boost/algorithm/string/split.hpp>
 #include <chrono>
 #include <thread>
 #include <atomic>
@@ -90,7 +89,7 @@ void WriteBufferToRabbitMQProducer::countRow()
         const std::string & last_chunk = chunks.back();
         size_t last_chunk_size = offset();
 
-        if (last_chunk_size && delim && last_chunk[last_chunk_size - 1] == delim)
+        if (delim && last_chunk[last_chunk_size - 1] == delim)
             --last_chunk_size;
 
         std::string payload;

@@ -10,16 +10,14 @@
 
 namespace DB
 {
-class AccessControl;
-struct Quota;
-using QuotaPtr = std::shared_ptr<const Quota>;
-struct RolesOrUsersSet;
+class AccessControlManager;
+
 
 /// Stores information how much amount of resources have been consumed and how much are left.
 class QuotaCache
 {
 public:
-    QuotaCache(const AccessControl & access_control_);
+    QuotaCache(const AccessControlManager & access_control_manager_);
     ~QuotaCache();
 
     std::shared_ptr<const EnabledQuota> getEnabledQuota(
@@ -58,7 +56,7 @@ private:
     void chooseQuotaToConsume();
     void chooseQuotaToConsumeFor(EnabledQuota & enabled_quota);
 
-    const AccessControl & access_control;
+    const AccessControlManager & access_control_manager;
     mutable std::mutex mutex;
     std::unordered_map<UUID /* quota id */, QuotaInfo> all_quotas;
     bool all_quotas_read = false;

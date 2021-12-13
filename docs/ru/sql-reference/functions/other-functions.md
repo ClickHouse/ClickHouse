@@ -2411,39 +2411,3 @@ SELECT getOSKernelVersion();
 │ Linux 4.15.0-55-generic │
 └─────────────────────────┘
 ```
-
-## zookeeperSessionUptime {#zookeepersessionuptime}
-
-Возвращает аптайм текущего сеанса ZooKeeper в секундах.
-
-**Синтаксис**
-
-``` sql
-zookeeperSessionUptime()
-```
-
-**Аргументы**
-
--   Нет.
-
-**Возвращаемое значение**
-
--   Аптайм текущего сеанса ZooKeeper в секундах.
-
-Тип: [UInt32](../../sql-reference/data-types/int-uint.md).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT zookeeperSessionUptime();
-```
-
-Результат:
-
-``` text
-┌─zookeeperSessionUptime()─┐
-│                      286 │
-└──────────────────────────┘
-```

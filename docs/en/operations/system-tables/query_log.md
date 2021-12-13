@@ -26,8 +26,6 @@ Each query creates one or two rows in the `query_log` table, depending on the st
 
 You can use the [log_queries_probability](../../operations/settings/settings.md#log-queries-probability) setting to reduce the number of queries, registered in the `query_log` table.
 
-You can use the [log_formatted_queries](../../operations/settings/settings.md#settings-log-formatted-queries) setting to log formatted queries to the `formatted_query` column.
-
 Columns:
 
 -   `type` ([Enum8](../../sql-reference/data-types/enum.md)) — Type of an event that occurred when executing the query. Values:
@@ -50,7 +48,6 @@ Columns:
 -   `memory_usage` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Memory consumption by the query.
 -   `current_database` ([String](../../sql-reference/data-types/string.md)) — Name of the current database.
 -   `query` ([String](../../sql-reference/data-types/string.md)) — Query string.
--   `formatted_query` ([String](../../sql-reference/data-types/string.md)) — Formatted query string.
 -   `normalized_query_hash` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Identical hash value without the values of literals for similar queries.
 -   `query_kind` ([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md)) — Type of the query.
 -   `databases` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the databases present in the query.
@@ -117,68 +114,68 @@ SELECT * FROM system.query_log WHERE type = 'QueryFinish' ORDER BY query_start_t
 Row 1:
 ──────
 type:                                  QueryFinish
-event_date:                            2021-11-03
-event_time:                            2021-11-03 16:13:54
-event_time_microseconds:               2021-11-03 16:13:54.953024
-query_start_time:                      2021-11-03 16:13:54
-query_start_time_microseconds:         2021-11-03 16:13:54.952325
-query_duration_ms:                     0
-read_rows:                             69
-read_bytes:                            6187
+event_date:                            2021-07-28
+event_time:                            2021-07-28 13:46:56
+event_time_microseconds:               2021-07-28 13:46:56.719791
+query_start_time:                      2021-07-28 13:46:56
+query_start_time_microseconds:         2021-07-28 13:46:56.704542
+query_duration_ms:                     14
+read_rows:                             8393
+read_bytes:                            374325
 written_rows:                          0
 written_bytes:                         0
-result_rows:                           69
-result_bytes:                          48256
-memory_usage:                          0
+result_rows:                           4201
+result_bytes:                          153024
+memory_usage:                          4714038
 current_database:                      default
-query:                                 DESCRIBE TABLE system.query_log
-formatted_query:
-normalized_query_hash:                 8274064835331539124
-query_kind:
-databases:                             []
-tables:                                []
-columns:                               []
+query:                                 SELECT DISTINCT arrayJoin(extractAll(name, '[\\w_]{2,}')) AS res FROM (SELECT name FROM system.functions UNION ALL SELECT name FROM system.table_engines UNION ALL SELECT name FROM system.formats UNION ALL SELECT name FROM system.table_functions UNION ALL SELECT name FROM system.data_type_families UNION ALL SELECT name FROM system.merge_tree_settings UNION ALL SELECT name FROM system.settings UNION ALL SELECT cluster FROM system.clusters UNION ALL SELECT macro FROM system.macros UNION ALL SELECT policy_name FROM system.storage_policies UNION ALL SELECT concat(func.name, comb.name) FROM system.functions AS func CROSS JOIN system.aggregate_function_combinators AS comb WHERE is_aggregate UNION ALL SELECT name FROM system.databases LIMIT 10000 UNION ALL SELECT DISTINCT name FROM system.tables LIMIT 10000 UNION ALL SELECT DISTINCT name FROM system.dictionaries LIMIT 10000 UNION ALL SELECT DISTINCT name FROM system.columns LIMIT 10000) WHERE notEmpty(res)
+normalized_query_hash:                 6666026786019643712
+query_kind:                            Select
+databases:                             ['system']
+tables:                                ['system.aggregate_function_combinators','system.clusters','system.columns','system.data_type_families','system.databases','system.dictionaries','system.formats','system.functions','system.macros','system.merge_tree_settings','system.settings','system.storage_policies','system.table_engines','system.table_functions','system.tables']
+columns:                               ['system.aggregate_function_combinators.name','system.clusters.cluster','system.columns.name','system.data_type_families.name','system.databases.name','system.dictionaries.name','system.formats.name','system.functions.is_aggregate','system.functions.name','system.macros.macro','system.merge_tree_settings.name','system.settings.name','system.storage_policies.policy_name','system.table_engines.name','system.table_functions.name','system.tables.name']
 projections:                           []
-views:                                 []
 exception_code:                        0
 exception:
 stack_trace:
 is_initial_query:                      1
 user:                                  default
-query_id:                              7c28bbbb-753b-4eba-98b1-efcbe2b9bdf6
+query_id:                              a3361f6e-a1fd-4d54-9f6f-f93a08bab0bf
 address:                               ::ffff:127.0.0.1
-port:                                  40452
+port:                                  51006
 initial_user:                          default
-initial_query_id:                      7c28bbbb-753b-4eba-98b1-efcbe2b9bdf6
+initial_query_id:                      a3361f6e-a1fd-4d54-9f6f-f93a08bab0bf
 initial_address:                       ::ffff:127.0.0.1
-initial_port:                          40452
-initial_query_start_time:              2021-11-03 16:13:54
-initial_query_start_time_microseconds: 2021-11-03 16:13:54.952325
+initial_port:                          51006
+initial_query_start_time:              2021-07-28 13:46:56
+initial_query_start_time_microseconds: 2021-07-28 13:46:56.704542
 interface:                             1
-os_user:                               sevirov
-client_hostname:                       clickhouse.ru-central1.internal
-client_name:                           ClickHouse
+os_user:
+client_hostname:
+client_name:                           ClickHouse client
 client_revision:                       54449
 client_version_major:                  21
-client_version_minor:                  10
-client_version_patch:                  1
+client_version_minor:                  8
+client_version_patch:                  0
 http_method:                           0
 http_user_agent:
 http_referer:
 forwarded_for:
 quota_key:
-revision:                              54456
+revision:                              54453
 log_comment:
-thread_ids:                            [30776,31174]
-ProfileEvents:                         {'Query':1,'NetworkSendElapsedMicroseconds':59,'NetworkSendBytes':2643,'SelectedRows':69,'SelectedBytes':6187,'ContextLock':9,'RWLockAcquiredReadLocks':1,'RealTimeMicroseconds':817,'UserTimeMicroseconds':427,'SystemTimeMicroseconds':212,'OSCPUVirtualTimeMicroseconds':639,'OSReadChars':894,'OSWriteChars':319}
-Settings:                              {'load_balancing':'random','max_memory_usage':'10000000000'}
+thread_ids:                            [5058,22097,22110,22094]
+ProfileEvents.Names:                   ['Query','SelectQuery','ArenaAllocChunks','ArenaAllocBytes','FunctionExecute','NetworkSendElapsedMicroseconds','SelectedRows','SelectedBytes','ContextLock','RWLockAcquiredReadLocks','RealTimeMicroseconds','UserTimeMicroseconds','SystemTimeMicroseconds','SoftPageFaults','OSCPUWaitMicroseconds','OSCPUVirtualTimeMicroseconds','OSWriteBytes','OSWriteChars']
+ProfileEvents.Values:                  [1,1,39,352256,64,360,8393,374325,412,440,34480,13108,4723,671,19,17828,8192,10240]
+Settings.Names:                        ['load_balancing','max_memory_usage']
+Settings.Values:                       ['random','10000000000']
 used_aggregate_functions:              []
 used_aggregate_function_combinators:   []
 used_database_engines:                 []
-used_data_type_families:               []
+used_data_type_families:               ['UInt64','UInt8','Nullable','String','date']
 used_dictionaries:                     []
 used_formats:                          []
-used_functions:                        []
+used_functions:                        ['concat','notEmpty','extractAll']
 used_storages:                         []
 used_table_functions:                  []
 ```
@@ -186,3 +183,6 @@ used_table_functions:                  []
 **See Also**
 
 -   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — This table contains information about each query execution thread.
+-   [system.query_views_log](../../operations/system-tables/query_views_log.md#system_tables-query_views_log) — This table contains information about each view executed during a query.
+
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/query_log) <!--hide-->

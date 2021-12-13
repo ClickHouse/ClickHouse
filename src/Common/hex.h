@@ -116,26 +116,3 @@ inline UInt16 unhex4(const char * data)
         + static_cast<UInt16>(unhex(data[2])) * 0x10
         + static_cast<UInt16>(unhex(data[3]));
 }
-
-template <typename TUInt>
-TUInt unhexUInt(const char * data)
-{
-    TUInt res = 0;
-    if constexpr ((sizeof(TUInt) <= 8) || ((sizeof(TUInt) % 8) != 0))
-    {
-        for (size_t i = 0; i < sizeof(TUInt) * 2; ++i, ++data)
-        {
-            res <<= 4;
-            res += unhex(*data);
-        }
-    }
-    else
-    {
-        for (size_t i = 0; i < sizeof(TUInt) / 8; ++i, data += 16)
-        {
-            res <<= 64;
-            res += unhexUInt<UInt64>(data);
-        }
-    }
-    return res;
-}

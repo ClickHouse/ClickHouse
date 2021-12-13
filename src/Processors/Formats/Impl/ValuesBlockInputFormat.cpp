@@ -3,6 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Parsers/TokenIterator.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Core/Block.h>
@@ -11,6 +12,7 @@
 #include <Common/checkStackSize.h>
 #include <Parsers/ASTLiteral.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
@@ -178,7 +180,7 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
         bool read = true;
         const auto & type = types[column_idx];
         const auto & serialization = serializations[column_idx];
-        if (format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable())
+        if (format_settings.null_as_default && !type->isNullable())
             read = SerializationNullable::deserializeTextQuotedImpl(column, *buf, format_settings, serialization);
         else
             serialization->deserializeTextQuoted(column, *buf, format_settings);
@@ -419,7 +421,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     Field value = convertFieldToType(expression_value, type, value_raw.second.get());
 
     /// Check that we are indeed allowed to insert a NULL.
-    if (value.isNull() && !type.isNullable() && !type.isLowCardinalityNullable())
+    if (value.isNull() && !type.isNullable())
     {
         if (format_settings.null_as_default)
         {

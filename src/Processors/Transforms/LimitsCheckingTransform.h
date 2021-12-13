@@ -1,9 +1,8 @@
 #pragma once
-#include <Access/EnabledQuota.h>
 #include <Processors/ISimpleTransform.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Poco/Timespan.h>
-#include <Common/Stopwatch.h>
+#include <Interpreters/ProcessList.h>
 
 #include <QueryPipeline/StreamLocalLimits.h>
 

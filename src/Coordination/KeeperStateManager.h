@@ -13,6 +13,20 @@ namespace DB
 
 using KeeperServerConfigPtr = nuraft::ptr<nuraft::srv_config>;
 
+/// Wrapper struct for Keeper cluster config. We parse this
+/// info from XML files.
+struct KeeperConfigurationWrapper
+{
+    /// Our port
+    int port;
+    /// Our config
+    KeeperServerConfigPtr config;
+    /// Servers id's to start as followers
+    std::unordered_set<int> servers_start_as_followers;
+    /// Cluster config
+    ClusterConfigPtr cluster_config;
+};
+
 /// When our configuration changes the following action types
 /// can happen
 enum class ConfigUpdateActionType
@@ -38,9 +52,9 @@ public:
     KeeperStateManager(
         int server_id_,
         const std::string & config_prefix_,
-        const std::string & log_storage_path,
         const Poco::Util::AbstractConfiguration & config,
-        const CoordinationSettingsPtr & coordination_settings);
+        const CoordinationSettingsPtr & coordination_settings,
+        bool standalone_keeper);
 
     /// Constructor for tests
     KeeperStateManager(
@@ -107,20 +121,6 @@ public:
     ConfigUpdateActions getConfigurationDiff(const Poco::Util::AbstractConfiguration & config) const;
 
 private:
-    /// Wrapper struct for Keeper cluster config. We parse this
-    /// info from XML files.
-    struct KeeperConfigurationWrapper
-    {
-        /// Our port
-        int port;
-        /// Our config
-        KeeperServerConfigPtr config;
-        /// Servers id's to start as followers
-        std::unordered_set<int> servers_start_as_followers;
-        /// Cluster config
-        ClusterConfigPtr cluster_config;
-    };
-
     int my_server_id;
     bool secure;
     std::string config_prefix;
