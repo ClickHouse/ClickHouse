@@ -308,7 +308,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
         span.parent_span_id = context->getClientInfo().client_trace_context.span_id;
         span.operation_name = "query";
         span.start_time_us = current_time_us;
-        span.finish_time_us = current_time_us;
+        span.finish_time_us = time_in_microseconds(std::chrono::system_clock::now());
 
         /// Keep values synchronized to type enum in QueryLogElement::createBlock.
         span.attribute_names.push_back("clickhouse.query_status");
@@ -632,7 +632,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
 
         {
-            OpenTelemetrySpanHolder span("IInterpreter::execute()");
+            std::unique_ptr<OpenTelemetrySpanHolder> span;
+            if (context->query_trace_context.trace_id != UUID())
+            {
+                auto raw_interpreter_ptr = interpreter.get();
+                std::string class_name(abi::__cxa_demangle(typeid(*raw_interpreter_ptr).name(), nullptr, nullptr, nullptr));
+                span = std::make_unique<OpenTelemetrySpanHolder>(class_name + "::execute()");
+            }
             res = interpreter->execute();
         }
 
