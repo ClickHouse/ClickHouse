@@ -310,6 +310,18 @@ def test_seekable_formats(started_cluster):
     result = node1.query(f"SELECT count() FROM {table_function}")
     assert(int(result) == 5000000)
 
+def test_read_table_with_default(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+
+    data = "n\n100\n"
+    hdfs_api.write_data("/simple_table_function", data)
+    assert hdfs_api.read_data("/simple_table_function") == data
+
+    output = "n\tm\n100\t200\n"
+    assert node1.query(
+        "select * from hdfs('hdfs://hdfs1:9000/simple_table_function', 'TSVWithNames', 'n UInt32, m UInt32 DEFAULT n * 2') FORMAT TSVWithNames") == output
+
+
 
 if __name__ == '__main__':
     cluster.start()

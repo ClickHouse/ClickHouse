@@ -131,6 +131,11 @@ public:
         const Block & sample,
         ContextPtr context,
         WriteCallback callback = {},
+        const std::optional<FormatSettings> & _format_settings = std::nullopt) const;
+
+    String getContentType(
+        const String & name,
+        ContextPtr context,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     void registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine);

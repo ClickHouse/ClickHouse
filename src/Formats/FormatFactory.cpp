@@ -304,6 +304,26 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     return format;
 }
 
+String FormatFactory::getContentType(
+    const String & name,
+    ContextPtr context,
+    const std::optional<FormatSettings> & _format_settings) const
+{
+    const auto & output_getter = getCreators(name).output_creator;
+    if (!output_getter)
+        throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output (with processors)", name);
+
+    auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
+
+    Block empty_block;
+    RowOutputFormatParams empty_params;
+    WriteBufferFromOwnString empty_buffer;
+    auto format = output_getter(empty_buffer, empty_block, empty_params, format_settings);
+
+    return format->getContentType();
+}
+
+
 void FormatFactory::registerInputFormat(const String & name, InputCreator input_creator)
 {
     auto & target = dict[name].input_creator;

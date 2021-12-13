@@ -11,6 +11,7 @@ from get_robot_token import get_best_robot_token
 from pr_info import PRInfo, get_event
 from commit_status_helper import  get_commit
 from ci_config import CI_CONFIG
+from rerun_helper import RerunHelper
 
 class BuildResult():
     def __init__(self, compiler, build_type, sanitizer, bundled, splitted, status, elapsed_seconds, with_coverage):
@@ -83,6 +84,13 @@ if __name__ == "__main__":
 
     build_check_name = sys.argv[1]
 
+    gh = Github(get_best_robot_token())
+    pr_info = PRInfo(get_event())
+    rerun_helper = RerunHelper(gh, pr_info, build_check_name)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
+
     reports_order = CI_CONFIG["builds_report_config"][build_check_name]
     logging.info("My reports list %s", reports_order)
 
@@ -113,8 +121,10 @@ if __name__ == "__main__":
         build_logs += build_logs_url
 
     logging.info("Totally got %s results", len(build_results))
+    if len(build_results) == 0:
+        logging.info("No builds, failing check")
+        sys.exit(1)
 
-    gh = Github(get_best_robot_token())
     s3_helper = S3Helper('https://s3.amazonaws.com')
 
     pr_info = PRInfo(get_event())
@@ -161,7 +171,7 @@ if __name__ == "__main__":
             ok_builds += 1
 
     if ok_builds == 0:
-        summary_status = "failure"
+        summary_status = "error"
 
     description = "{}/{} builds are OK".format(ok_builds, total_builds)
 
