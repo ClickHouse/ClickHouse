@@ -985,18 +985,29 @@ def test_abrupt_server_restart_while_heavy_replication(started_cluster):
         cursor.execute('drop table if exists postgresql_replica_{};'.format(i))
 
 
-def test_quoting(started_cluster):
-    table_name = 'user'
-    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
-                             port=started_cluster.postgres_port,
-                             database=True)
+def test_quoting_1(started_cluster):
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port, database=True)
     cursor = conn.cursor()
+    table_name = 'user'
     create_postgres_table(cursor, table_name);
-    instance.query("INSERT INTO postgres_database.{} SELECT number, number from numbers(50)".format(table_name))
+    instance.query(f"INSERT INTO postgres_database.{table_name} SELECT number, number from numbers(50)")
     create_materialized_db(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port)
     check_tables_are_synchronized(table_name);
-    drop_postgres_table(cursor, table_name)
     drop_materialized_db()
+    drop_postgres_table(cursor, table_name)
+
+
+def test_quoting_2(started_cluster):
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port, database=True)
+    cursor = conn.cursor()
+    table_name = 'user'
+    create_postgres_table(cursor, table_name);
+    instance.query(f"INSERT INTO postgres_database.{table_name} SELECT number, number from numbers(50)")
+    create_materialized_db(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port,
+                           settings=[f"materialized_postgresql_tables_list = '{table_name}'"])
+    check_tables_are_synchronized(table_name);
+    drop_materialized_db()
+    drop_postgres_table(cursor, table_name)
 
 
 def test_user_managed_slots(started_cluster):
