@@ -92,6 +92,8 @@ public:
 
     void sendExternalTablesData(ExternalTablesData &) override;
 
+    void sendMergeTreeReadTaskResponse(const PartitionReadResponse & response) override;
+
     bool poll(size_t timeout_microseconds/* = 0 */) override;
 
     bool hasReadPendingData() const override;
