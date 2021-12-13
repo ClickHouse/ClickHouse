@@ -235,7 +235,7 @@ jobs:
 ##############################################################################################
 ########################### FUNCTIONAl STATELESS TESTS #######################################
 ##############################################################################################
-  FunctionalStatelessTestAsan:
+  FunctionalStatelessTestAsan0:
     needs: [BuilderDebAsan]
     runs-on: [self-hosted, func-tester]
     steps:
@@ -252,6 +252,39 @@ jobs:
           CHECK_NAME: 'Stateless tests (address, actions)'
           REPO_COPY: ${{runner.temp}}/stateless_debug/ClickHouse
           KILL_TIMEOUT: 10800
+          RUN_BY_HASH_NUM: 0
+          RUN_BY_HASH_TOTAL: 2
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  FunctionalStatelessTestAsan1:
+    needs: [BuilderDebAsan]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        env:
+          TEMP_PATH: ${{runner.temp}}/stateless_debug
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Stateless tests (address, actions)'
+          REPO_COPY: ${{runner.temp}}/stateless_debug/ClickHouse
+          KILL_TIMEOUT: 10800
+          RUN_BY_HASH_NUM: 1
+          RUN_BY_HASH_TOTAL: 2
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -330,7 +363,7 @@ jobs:
 #############################################################################################
 ############################# INTEGRATION TESTS #############################################
 #############################################################################################
-  IntegrationTestsRelease:
+  IntegrationTestsRelease0:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
@@ -346,6 +379,38 @@ jobs:
           REPORTS_PATH: ${{runner.temp}}/reports_dir
           CHECK_NAME: 'Integration tests (release, actions)'
           REPO_COPY: ${{runner.temp}}/integration_tests_release/ClickHouse
+          RUN_BY_HASH_NUM: 0
+          RUN_BY_HASH_TOTAL: 2
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 integration_test_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  IntegrationTestsRelease1:
+    needs: [BuilderDebRelease]
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Integration test
+        env:
+          TEMP_PATH: ${{runner.temp}}/integration_tests_release
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Integration tests (release, actions)'
+          REPO_COPY: ${{runner.temp}}/integration_tests_release/ClickHouse
+          RUN_BY_HASH_NUM: 1
+          RUN_BY_HASH_TOTAL: 2
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -362,10 +427,12 @@ jobs:
     needs:
       - DockerHubPush
       - BuilderReport
-      - FunctionalStatelessTestAsan
+      - FunctionalStatelessTestAsan0
+      - FunctionalStatelessTestAsan1
       - FunctionalStatefulTestDebug
       - StressTestTsan
-      - IntegrationTestsRelease
+      - IntegrationTestsRelease0
+      - IntegrationTestsRelease1
       - CompatibilityCheck
     runs-on: [self-hosted, style-checker]
     steps:
