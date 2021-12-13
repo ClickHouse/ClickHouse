@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <storage_configuration>
         <disks>
             <s3>
@@ -21,6 +21,7 @@
 
     <merge_tree>
         <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
+        <allow_remote_fs_zero_copy_replication>1</allow_remote_fs_zero_copy_replication>
     </merge_tree>
 
     <remote_servers>
@@ -46,4 +47,4 @@
         <shard>0</shard>
     </macros>
 
-</clickhouse>
+</yandex>

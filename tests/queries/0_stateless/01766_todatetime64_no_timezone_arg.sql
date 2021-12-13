@@ -1,1 +1,1 @@
-SELECT toDateTime64('2021-03-23', 3);
+SELECT toDateTime64('2021-03-22', 3);

@@ -171,13 +171,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-// Allows to make queries like SELECT SUM(<expr>) FILTER(WHERE <cond>) FROM ...
-class ParserFilterClause : public IParserBase
-{
-    const char * getName() const override { return "filter"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
 // Window reference (the thing that goes after OVER) for window function.
 // Can be either window name or window definition.
 class ParserWindowReference : public IParserBase
@@ -294,14 +287,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/** Bool literal.
-  */
-class ParserBool : public IParserBase
-{
-protected:
-    const char * getName() const override { return "Bool"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
 
 /** Numeric literal.
   */
@@ -323,23 +308,11 @@ protected:
 
 
 /** String in single quotes.
-  * String in heredoc $here$txt$here$ equivalent to 'txt'.
   */
 class ParserStringLiteral : public IParserBase
 {
 protected:
     const char * getName() const override { return "string literal"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-
-/**
-  * Parse query with EXISTS expression.
-  */
-class ParserExistsExpression : public IParserBase
-{
-protected:
-    const char * getName() const override { return "exists expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

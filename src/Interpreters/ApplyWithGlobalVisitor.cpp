@@ -1,7 +1,6 @@
 #include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTWithAlias.h>
 
 namespace DB
@@ -41,31 +40,6 @@ void ApplyWithGlobalVisitor::visit(
         {
             visit(*node_select, exprs, with_expression_list);
         }
-        else if (ASTSelectIntersectExceptQuery * node_intersect_except = select->as<ASTSelectIntersectExceptQuery>())
-        {
-            visit(*node_intersect_except, exprs, with_expression_list);
-        }
-    }
-}
-
-void ApplyWithGlobalVisitor::visit(
-    ASTSelectIntersectExceptQuery & selects, const std::map<String, ASTPtr> & exprs, const ASTPtr & with_expression_list)
-{
-    auto selects_list = selects.getListOfSelects();
-    for (auto & select : selects_list)
-    {
-        if (ASTSelectWithUnionQuery * node_union = select->as<ASTSelectWithUnionQuery>())
-        {
-            visit(*node_union, exprs, with_expression_list);
-        }
-        else if (ASTSelectQuery * node_select = select->as<ASTSelectQuery>())
-        {
-            visit(*node_select, exprs, with_expression_list);
-        }
-        else if (ASTSelectIntersectExceptQuery * node_intersect_except = select->as<ASTSelectIntersectExceptQuery>())
-        {
-            visit(*node_intersect_except, exprs, with_expression_list);
-        }
     }
 }
 
@@ -73,7 +47,7 @@ void ApplyWithGlobalVisitor::visit(ASTPtr & ast)
 {
     if (ASTSelectWithUnionQuery * node_union = ast->as<ASTSelectWithUnionQuery>())
     {
-        if (auto * first_select = typeid_cast<ASTSelectQuery *>(node_union->list_of_selects->children[0].get()))
+        if (auto * first_select = node_union->list_of_selects->children[0]->as<ASTSelectQuery>())
         {
             ASTPtr with_expression_list = first_select->with();
             if (with_expression_list)
@@ -90,8 +64,6 @@ void ApplyWithGlobalVisitor::visit(ASTPtr & ast)
                         visit(*union_child, exprs, with_expression_list);
                     else if (auto * select_child = (*it)->as<ASTSelectQuery>())
                         visit(*select_child, exprs, with_expression_list);
-                    else if (auto * intersect_except_child = (*it)->as<ASTSelectIntersectExceptQuery>())
-                        visit(*intersect_except_child, exprs, with_expression_list);
                 }
             }
         }

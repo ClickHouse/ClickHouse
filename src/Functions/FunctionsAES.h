@@ -1,6 +1,8 @@
 #pragma once
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 #if USE_SSL
 #include <DataTypes/DataTypeString.h>
@@ -146,7 +148,6 @@ private:
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -154,21 +155,21 @@ private:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto optional_args = FunctionArgumentDescriptors{
-            {"IV", &isStringOrFixedString<IDataType>, nullptr, "Initialization vector binary string"},
+            {"IV", isStringOrFixedString, nullptr, "Initialization vector binary string"},
         };
 
         if constexpr (compatibility_mode == OpenSSLDetails::CompatibilityMode::OpenSSL)
         {
             optional_args.emplace_back(FunctionArgumentDescriptor{
-                "AAD", &isStringOrFixedString<IDataType>, nullptr, "Additional authenticated data binary string for GCM mode"
+                "AAD", isStringOrFixedString, nullptr, "Additional authenticated data binary string for GCM mode"
             });
         }
 
         validateFunctionArgumentTypes(*this, arguments,
             FunctionArgumentDescriptors{
-                {"mode", &isStringOrFixedString<IDataType>, isColumnConst, "encryption mode string"},
-                {"input", &isStringOrFixedString<IDataType>, nullptr, "plaintext"},
-                {"key", &isStringOrFixedString<IDataType>, nullptr, "encryption key binary string"},
+                {"mode", isStringOrFixedString, isColumnConst, "encryption mode string"},
+                {"input", isStringOrFixedString, nullptr, "plaintext"},
+                {"key", isStringOrFixedString, nullptr, "encryption key binary string"},
             },
             optional_args
         );
@@ -279,33 +280,37 @@ private:
             // That may lead later to reading unallocated data from underlying PaddedPODArray
             // due to assumption that it is safe to read up to 15 bytes past end.
             const auto pad_to_next_block = block_size == 1 ? 0 : 1;
-            for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
+            for (size_t r = 0; r < input_rows_count; ++r)
             {
-                resulting_size += (input_column->getDataAt(row_idx).size / block_size + pad_to_next_block) * block_size + 1;
+                resulting_size += (input_column->getDataAt(r).size / block_size + pad_to_next_block) * block_size + 1;
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
                     resulting_size += tag_size;
             }
+#if defined(MEMORY_SANITIZER)
+            encrypted_result_column_data.resize_fill(resulting_size, 0xFF);
+#else
             encrypted_result_column_data.resize(resulting_size);
+#endif
         }
 
         auto * encrypted = encrypted_result_column_data.data();
 
         KeyHolder<mode> key_holder;
 
-        for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
+        for (size_t r = 0; r < input_rows_count; ++r)
         {
-            const auto key_value = key_holder.setKey(key_size, key_column->getDataAt(row_idx));
+            const auto key_value = key_holder.setKey(key_size, key_column->getDataAt(r));
             auto iv_value = StringRef{};
             if (iv_column)
             {
-                iv_value = iv_column->getDataAt(row_idx);
+                iv_value = iv_column->getDataAt(r);
 
                 /// If the length is zero (empty string is passed) it should be treat as no IV.
                 if (iv_value.size == 0)
                     iv_value.data = nullptr;
             }
 
-            const StringRef input_value = input_column->getDataAt(row_idx);
+            const StringRef input_value = input_column->getDataAt(r);
 
             if constexpr (mode != CipherMode::MySQLCompatibility)
             {
@@ -344,7 +349,7 @@ private:
                     // 1.a.2 Set AAD
                     if (aad_column)
                     {
-                        const auto aad_data = aad_column->getDataAt(row_idx);
+                        const auto aad_data = aad_column->getDataAt(r);
                         int tmp_len = 0;
                         if (aad_data.size != 0 && EVP_EncryptUpdate(evp_ctx, nullptr, &tmp_len,
                                 reinterpret_cast<const unsigned char *>(aad_data.data), aad_data.size) != 1)
@@ -404,7 +409,7 @@ private:
 };
 
 
-/// decrypt(string, key, block_mode[, init_vector])
+/// AES_decrypt(string, key, block_mode[, init_vector])
 template <typename Impl>
 class FunctionDecrypt : public IFunction
 {
@@ -418,7 +423,6 @@ private:
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -426,21 +430,21 @@ private:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto optional_args = FunctionArgumentDescriptors{
-            {"IV", &isStringOrFixedString<IDataType>, nullptr, "Initialization vector binary string"},
+            {"IV", isStringOrFixedString, nullptr, "Initialization vector binary string"},
         };
 
         if constexpr (compatibility_mode == OpenSSLDetails::CompatibilityMode::OpenSSL)
         {
             optional_args.emplace_back(FunctionArgumentDescriptor{
-                "AAD", &isStringOrFixedString<IDataType>, nullptr, "Additional authenticated data binary string for GCM mode"
+                "AAD", isStringOrFixedString, nullptr, "Additional authenticated data binary string for GCM mode"
             });
         }
 
         validateFunctionArgumentTypes(*this, arguments,
             FunctionArgumentDescriptors{
-                {"mode", &isStringOrFixedString<IDataType>, isColumnConst, "decryption mode string"},
+                {"mode", isStringOrFixedString, isColumnConst, "decryption mode string"},
                 {"input", nullptr, nullptr, "ciphertext"},
-                {"key", &isStringOrFixedString<IDataType>, nullptr, "decryption key binary string"},
+                {"key", isStringOrFixedString, nullptr, "decryption key binary string"},
             },
             optional_args
         );
@@ -467,9 +471,7 @@ private:
 
         ColumnPtr result_column;
         if (arguments.size() <= 3)
-        {
             result_column = doDecrypt(evp_cipher, input_rows_count, input_column, key_column, nullptr, nullptr);
-        }
         else
         {
             const auto iv_column = arguments[3].column;
@@ -546,58 +548,59 @@ private:
 
         {
             size_t resulting_size = 0;
-            for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
+            for (size_t r = 0; r < input_rows_count; ++r)
             {
-                size_t string_size = input_column->getDataAt(row_idx).size;
+                size_t string_size = input_column->getDataAt(r).size;
                 resulting_size += string_size + 1;  /// With terminating zero.
 
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
                 {
-                    if (string_size > 0)
-                    {
-                        if (string_size < tag_size)
-                            throw Exception("Encrypted data is smaller than the size of additional data for AEAD mode, cannot decrypt.",
-                                ErrorCodes::BAD_ARGUMENTS);
+                    if (string_size < tag_size)
+                        throw Exception("Encrypted data is smaller than the size of additional data for AEAD mode, cannot decrypt.",
+                            ErrorCodes::BAD_ARGUMENTS);
 
-                        resulting_size -= tag_size;
-                    }
+                    resulting_size -= tag_size;
                 }
             }
 
+#if defined(MEMORY_SANITIZER)
+            // Pre-fill result column with values to prevent MSAN from dropping dead on
+            // aes-X-ecb mode with "WARNING: MemorySanitizer: use-of-uninitialized-value".
+            // This is most likely to be caused by the underlying assembler implementation:
+            // see crypto/aes/aesni-x86_64.s, function aesni_ecb_encrypt
+            // which msan seems to fail instrument correctly.
+            decrypted_result_column_data.resize_fill(resulting_size, 0xFF);
+#else
             decrypted_result_column_data.resize(resulting_size);
+#endif
         }
 
         auto * decrypted = decrypted_result_column_data.data();
 
         KeyHolder<mode> key_holder;
-        for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
+        for (size_t r = 0; r < input_rows_count; ++r)
         {
             // 0: prepare key if required
-            auto key_value = key_holder.setKey(key_size, key_column->getDataAt(row_idx));
+            auto key_value = key_holder.setKey(key_size, key_column->getDataAt(r));
             auto iv_value = StringRef{};
             if (iv_column)
             {
-                iv_value = iv_column->getDataAt(row_idx);
+                iv_value = iv_column->getDataAt(r);
 
                 /// If the length is zero (empty string is passed) it should be treat as no IV.
                 if (iv_value.size == 0)
                     iv_value.data = nullptr;
             }
 
-            auto input_value = input_column->getDataAt(row_idx);
-
+            auto input_value = input_column->getDataAt(r);
             if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
             {
-                if (input_value.size > 0)
-                {
-                    // empty plaintext results in empty ciphertext + tag, means there should be at least tag_size bytes.
-                    if (input_value.size < tag_size)
-                        throw Exception(fmt::format("Encrypted data is too short: only {} bytes, "
-                                "should contain at least {} bytes of a tag.",
-                                input_value.size, block_size, tag_size), ErrorCodes::BAD_ARGUMENTS);
-
-                    input_value.size -= tag_size;
-                }
+                // empty plaintext results in empty ciphertext + tag, means there should be at least tag_size bytes.
+                if (input_value.size < tag_size)
+                    throw Exception(fmt::format("Encrypted data is too short: only {} bytes, "
+                            "should contain at least {} bytes of a tag.",
+                            input_value.size, block_size, tag_size), ErrorCodes::BAD_ARGUMENTS);
+                input_value.size -= tag_size;
             }
 
             if constexpr (mode != CipherMode::MySQLCompatibility)
@@ -616,9 +619,8 @@ private:
                 }
             }
 
-            /// Avoid extra work on empty ciphertext/plaintext. Always decrypt empty to empty.
-            /// This makes sense for default implementation for NULLs.
-            if (input_value.size > 0)
+            // Avoid extra work on empty ciphertext/plaintext for some ciphers
+            if (!(input_value.size == 0 && block_size == 1 && mode != CipherMode::RFC5116_AEAD_AES_GCM))
             {
                 // 1: Init CTX
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
@@ -639,7 +641,7 @@ private:
                     // 1.a.2: Set AAD if present
                     if (aad_column)
                     {
-                        StringRef aad_data = aad_column->getDataAt(row_idx);
+                        StringRef aad_data = aad_column->getDataAt(r);
                         int tmp_len = 0;
                         if (aad_data.size != 0 && EVP_DecryptUpdate(evp_ctx, nullptr, &tmp_len,
                                 reinterpret_cast<const unsigned char *>(aad_data.data), aad_data.size) != 1)

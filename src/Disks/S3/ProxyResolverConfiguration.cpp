@@ -7,7 +7,7 @@
 #include "Poco/StreamCopier.h"
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 namespace DB::ErrorCodes
 {
@@ -16,10 +16,8 @@ namespace DB::ErrorCodes
 
 namespace DB::S3
 {
-
-ProxyResolverConfiguration::ProxyResolverConfiguration(const Poco::URI & endpoint_, String proxy_scheme_
-    , unsigned proxy_port_, unsigned cache_ttl_)
-    : endpoint(endpoint_), proxy_scheme(std::move(proxy_scheme_)), proxy_port(proxy_port_), cache_ttl(cache_ttl_)
+ProxyResolverConfiguration::ProxyResolverConfiguration(const Poco::URI & endpoint_, String proxy_scheme_, unsigned proxy_port_)
+    : endpoint(endpoint_), proxy_scheme(std::move(proxy_scheme_)), proxy_port(proxy_port_)
 {
 }
 
@@ -27,25 +25,16 @@ Aws::Client::ClientConfigurationPerRequest ProxyResolverConfiguration::getConfig
 {
     LOG_DEBUG(&Poco::Logger::get("AWSClient"), "Obtain proxy using resolver: {}", endpoint.toString());
 
-    std::unique_lock lock(cache_mutex);
-
-    std::chrono::time_point<std::chrono::system_clock> now = std::chrono::system_clock::now();
-
-    if (cache_ttl.count() && cache_valid && now <= cache_timestamp + cache_ttl && now >= cache_timestamp)
-    {
-        LOG_DEBUG(&Poco::Logger::get("AWSClient"), "Use cached proxy: {}://{}:{}", Aws::Http::SchemeMapper::ToString(cached_config.proxyScheme), cached_config.proxyHost, cached_config.proxyPort);
-        return cached_config;
-    }
-
     /// 1 second is enough for now.
     /// TODO: Make timeouts configurable.
     ConnectionTimeouts timeouts(
         Poco::Timespan(1000000), /// Connection timeout.
         Poco::Timespan(1000000), /// Send timeout.
-        Poco::Timespan(1000000)  /// Receive timeout.
+        Poco::Timespan(1000000) /// Receive timeout.
     );
     auto session = makeHTTPSession(endpoint, timeouts);
 
+    Aws::Client::ClientConfigurationPerRequest cfg;
     try
     {
         /// It should be just empty GET request.
@@ -64,39 +53,18 @@ Aws::Client::ClientConfigurationPerRequest ProxyResolverConfiguration::getConfig
 
         LOG_DEBUG(&Poco::Logger::get("AWSClient"), "Use proxy: {}://{}:{}", proxy_scheme, proxy_host, proxy_port);
 
-        cached_config.proxyScheme = Aws::Http::SchemeMapper::FromString(proxy_scheme.c_str());
-        cached_config.proxyHost = proxy_host;
-        cached_config.proxyPort = proxy_port;
-        cache_timestamp = std::chrono::system_clock::now();
-        cache_valid = true;
+        cfg.proxyScheme = Aws::Http::SchemeMapper::FromString(proxy_scheme.c_str());
+        cfg.proxyHost = proxy_host;
+        cfg.proxyPort = proxy_port;
 
-        return cached_config;
+        return cfg;
     }
     catch (...)
     {
         tryLogCurrentException("AWSClient", "Failed to obtain proxy");
         /// Don't use proxy if it can't be obtained.
-        Aws::Client::ClientConfigurationPerRequest cfg;
         return cfg;
     }
-}
-
-void ProxyResolverConfiguration::errorReport(const Aws::Client::ClientConfigurationPerRequest & config)
-{
-    if (config.proxyHost.empty())
-        return;
-
-    std::unique_lock lock(cache_mutex);
-
-    if (!cache_ttl.count() || !cache_valid)
-        return;
-
-    if (cached_config.proxyScheme != config.proxyScheme || cached_config.proxyHost != config.proxyHost
-            || cached_config.proxyPort != config.proxyPort)
-        return;
-
-    /// Invalidate cached proxy when got error with this proxy
-    cache_valid = false;
 }
 
 }

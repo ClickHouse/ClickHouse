@@ -25,7 +25,7 @@ public:
             const AMQP::ExchangeType exchange_type_,
             const size_t channel_id_base_,
             const bool persistent_,
-            std::atomic<bool> & shutdown_called_,
+            std::atomic<bool> & wait_confirm_,
             Poco::Logger * log_,
             std::optional<char> delimiter,
             size_t rows_per_message,
@@ -60,7 +60,7 @@ private:
     /* false: when shutdown is called; needed because table might be dropped before all acks are received
      * true: in all other cases
      */
-    std::atomic<bool> & shutdown_called;
+    std::atomic<bool> & wait_confirm;
 
     AMQP::Table key_arguments;
     BackgroundSchedulePool::TaskHolder writing_task;
