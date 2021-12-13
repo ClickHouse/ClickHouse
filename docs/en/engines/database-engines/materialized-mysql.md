@@ -194,6 +194,14 @@ when the `CREATE DATABASE` query executes, so extra care needs to be taken.
 
 You may specify overrides for tables that do not exist yet.
 
+!!! note "Warning"
+    It is easy to break replication with TABLE OVERRIDEs if not used with care. For example:
+    
+    * If a column is added with a table override, but then later added to the source MySQL table, the converted ALTER TABLE
+      query in ClickHouse will fail because the column already exists.
+    * It is currently possible to add overrides that reference nullable columns where not-nullable are required, such as in
+      `ORDER BY` or `PARTITION BY`.
+
 ## Examples of Use {#examples-of-use}
 
 Queries in MySQL:
