@@ -78,6 +78,9 @@ if __name__ == "__main__":
         run_by_hash_total = int(os.getenv('RUN_BY_HASH_TOTAL'))
         run_by_hash_num = int(os.getenv('RUN_BY_HASH_NUM'))
         docker_env += f' -e CHPC_TEST_RUN_BY_HASH_TOTAL={run_by_hash_total} -e CHPC_TEST_RUN_BY_HASH_NUM={run_by_hash_num}'
+        check_name_with_group = check_name + f' [{run_by_hash_num + 1}/{run_by_hash_total}]'
+    else:
+        check_name_with_group = check_name
 
     docker_image = get_image_with_version(reports_path, IMAGE_NAME)
 
@@ -108,7 +111,8 @@ if __name__ == "__main__":
         'runlog.log': run_log_path,
     }
 
-    s3_prefix = f'{pr_info.number}/{pr_info.sha}/performance_comparison/'
+    check_name_prefix = check_name_with_group.lower().replace(' ', '_').replace('(', '_').replace(')', '_').replace(',', '_')
+    s3_prefix = f'{pr_info.number}/{pr_info.sha}/{check_name_prefix}/'
     s3_helper = S3Helper('https://s3.amazonaws.com')
     for file in paths:
         try:
@@ -165,4 +169,4 @@ if __name__ == "__main__":
         report_url = paths['report.html']
 
 
-    post_commit_status(gh, pr_info.sha, check_name, message, status, report_url)
+    post_commit_status(gh, pr_info.sha, check_name_with_group, message, status, report_url)
