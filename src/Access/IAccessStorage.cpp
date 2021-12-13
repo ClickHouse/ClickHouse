@@ -21,7 +21,6 @@ namespace ErrorCodes
     extern const int ACCESS_STORAGE_READONLY;
     extern const int WRONG_PASSWORD;
     extern const int IP_ADDRESS_NOT_ALLOWED;
-    extern const int AUTHENTICATION_FAILED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
@@ -441,28 +440,27 @@ void IAccessStorage::notify(const Notifications & notifications)
 UUID IAccessStorage::authenticate(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
-    const ExternalAuthenticators & external_authenticators,
-    bool replace_exception_with_cannot_authenticate) const
+    const ExternalAuthenticators & external_authenticators) const
 {
-    try
-    {
-        return authenticateImpl(credentials, address, external_authenticators);
-    }
-    catch (...)
-    {
-        if (!replace_exception_with_cannot_authenticate)
-            throw;
-
-        tryLogCurrentException(getLogger(), "from: " + address.toString() + ", user: " + credentials.getUserName()  + ": Authentication failed");
-        throwCannotAuthenticate(credentials.getUserName());
-    }
+    return *authenticateImpl(credentials, address, external_authenticators, /* throw_if_user_not_exists = */ true);
 }
 
 
-UUID IAccessStorage::authenticateImpl(
+std::optional<UUID> IAccessStorage::authenticate(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
-    const ExternalAuthenticators & external_authenticators) const
+    const ExternalAuthenticators & external_authenticators,
+    bool throw_if_user_not_exists) const
+{
+    return authenticateImpl(credentials, address, external_authenticators, throw_if_user_not_exists);
+}
+
+
+std::optional<UUID> IAccessStorage::authenticateImpl(
+    const Credentials & credentials,
+    const Poco::Net::IPAddress & address,
+    const ExternalAuthenticators & external_authenticators,
+    bool throw_if_user_not_exists) const
 {
     if (auto id = find<User>(credentials.getUserName()))
     {
@@ -474,10 +472,14 @@ UUID IAccessStorage::authenticateImpl(
             if (!areCredentialsValid(*user, credentials, external_authenticators))
                 throwInvalidCredentials();
 
-            return *id;
+            return id;
         }
     }
-    throwNotFound(AccessEntityType::USER, credentials.getUserName());
+
+    if (throw_if_user_not_exists)
+        throwNotFound(AccessEntityType::USER, credentials.getUserName());
+    else
+        return std::nullopt;
 }
 
 
@@ -599,13 +601,6 @@ void IAccessStorage::throwAddressNotAllowed(const Poco::Net::IPAddress & address
 void IAccessStorage::throwInvalidCredentials()
 {
     throw Exception("Invalid credentials", ErrorCodes::WRONG_PASSWORD);
-}
-
-void IAccessStorage::throwCannotAuthenticate(const String & user_name)
-{
-    /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons,
-    /// only the log will show the exact reason.
-    throw Exception(user_name + ": Authentication failed: password is incorrect or there is no user with such name", ErrorCodes::AUTHENTICATION_FAILED);
 }
 
 }
