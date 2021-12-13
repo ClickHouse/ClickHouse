@@ -93,17 +93,15 @@ def process_results(result_folder, server_log_path):
         server_log_files = [f for f in os.listdir(server_log_path) if os.path.isfile(os.path.join(server_log_path, f))]
         additional_files = additional_files + [os.path.join(server_log_path, f) for f in server_log_files]
 
+    status = []
     status_path = os.path.join(result_folder, "check_status.tsv")
     if os.path.exists(status_path):
-        logging.info("Found check_status.tsv")
-    else:
-        logging.info("Files in result folder %s", os.listdir(result_folder))
-        raise Exception("File check_status.tsv not found")
-
-    with open(status_path, 'r', encoding='utf-8') as status_file:
-        status = list(csv.reader(status_file, delimiter='\t'))
+        logging.info("Found test_results.tsv")
+        with open(status_path, 'r', encoding='utf-8') as status_file:
+            status = list(csv.reader(status_file, delimiter='\t'))
 
     if len(status) != 1 or len(status[0]) != 2:
+        logging.info("Files in result folder %s", os.listdir(result_folder))
         return "error", "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
@@ -113,12 +111,12 @@ def process_results(result_folder, server_log_path):
         logging.info("Found test_results.tsv")
     else:
         logging.info("Files in result folder %s", os.listdir(result_folder))
-        raise Exception("File test_results.tsv not found")
+        return "error", "Not found test_results.tsv", test_results, additional_files
 
     with open(results_path, 'r', encoding='utf-8') as results_file:
         test_results = list(csv.reader(results_file, delimiter='\t'))
     if len(test_results) == 0:
-        raise Exception("Empty results")
+        return "error", "Empty test_results.tsv", test_results, additional_files
 
     return state, description, test_results, additional_files
 
