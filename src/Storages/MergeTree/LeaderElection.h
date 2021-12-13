@@ -35,7 +35,6 @@ void checkNoOldLeaders(Poco::Logger * log, ZooKeeper & zookeeper, const String p
         else if (code != Coordination::Error::ZOK)
             throw KeeperException(code, path);
 
-        std::sort(potential_leaders.begin(), potential_leaders.end());
         Coordination::Requests ops;
 
         if (potential_leaders.empty())
@@ -49,6 +48,7 @@ void checkNoOldLeaders(Poco::Logger * log, ZooKeeper & zookeeper, const String p
         }
         else
         {
+            std::sort(potential_leaders.begin(), potential_leaders.end());
             if (potential_leaders.front() == persistent_multiple_leaders)
                 return;
 
