@@ -250,28 +250,28 @@ Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table defa
     `set allow_experimental_window_view = 1`。
 
 ``` sql
-CREATE WINDOW VIEW [IF NOT EXISTS] [db.]table_name [TO [db.]table_name] [ENGINE = engine] [WATERMARK = strategy] [ALLOWED_LATENESS = interval_function] AS SELECT ... GROUP BY window_view_function
+CREATE WINDOW VIEW [IF NOT EXISTS] [db.]table_name [TO [db.]table_name] [ENGINE = engine] [WATERMARK = strategy] [ALLOWED_LATENESS = interval_function] AS SELECT ... GROUP BY time_window_function
 ```
 
 Window view可以通过时间窗口聚合数据，并在满足窗口触发条件时自动触发对应窗口计算。其通过将计算状态保存降低处理延迟，支持将处理结果输出至目标表或通过`WATCH`语句输出至终端。
 
 创建window view的方式和创建物化视图类似。Window view使用默认为`AggregatingMergeTree`的内部存储引擎存储计算中间状态。
 
-### Window View 函数 {#window-view-han-shu}
+### 时间窗口函数 {#window-view-shi-jian-chuang-kou-han-shu}
 
-[Window view函数](../../functions/window-view-functions.md)用于获取窗口的起始和结束时间。Window view需要和window view函数配合使用。
+[时间窗口函数](../../functions/time-window-functions.md)用于获取窗口的起始和结束时间。Window view需要和时间窗口函数配合使用。
 
 ### 时间属性 {#window-view-shi-jian-shu-xing}
 
 Window view 支持**处理时间**和**事件时间**两种时间类型。
 
-**处理时间**为默认时间类型，该模式下window view使用本地机器时间计算窗口数据。“处理时间”时间类型计算简单，但具有不确定性。该模式下时间可以为window view函数的第一个参数`time_attr`，或通过函数`now()`使用当前机器时间。下面的例子展示了使用“处理时间”创建的window view的例子。
+**处理时间**为默认时间类型，该模式下window view使用本地机器时间计算窗口数据。“处理时间”时间类型计算简单，但具有不确定性。该模式下时间可以为时间窗口函数的第一个参数`time_attr`，或通过函数`now()`使用当前机器时间。下面的例子展示了使用“处理时间”创建window view的例子。
 
 ``` sql
 CREATE WINDOW VIEW wv AS SELECT count(number), tumbleStart(w_id) as w_start from date GROUP BY tumble(now(), INTERVAL '5' SECOND) as w_id
 ```
 
-**事件时间** 是事件真实发生的时间，该时间往往在事件发生时便嵌入数据记录。事件时间处理提供较高的确定性，可以处理乱序数据以及迟到数据。Window view 通过水位线(`WATERMARK`)启用事件时间处理。
+**事件时间** 是事件真实发生的时间，该时间往往在事件发生时便嵌入数据记录。事件时间处理提供较高的确定性，可以处理乱序数据以及迟到数据。Window view通过水位线(`WATERMARK`)启用事件时间处理。
 
 Window view提供如下三种水位线策略：
 

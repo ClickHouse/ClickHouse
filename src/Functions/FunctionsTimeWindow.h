@@ -7,7 +7,7 @@
 namespace DB
 {
 
-/** Window functions:
+/** Time window functions:
   *
   * tumble(time_attr, interval [, timezone])
   *
@@ -30,7 +30,7 @@ namespace DB
   * hopEnd(time_attr, hop_interval, window_interval [, timezone])
   *
   */
-enum WindowFunctionName
+enum TimeWindowFunctionName
 {
     TUMBLE,
     TUMBLE_START,
@@ -117,8 +117,8 @@ struct ToStartOfTransform;
     ADD_TIME(Second, 1)
 #undef ADD_TIME
 
-template <WindowFunctionName type>
-struct WindowImpl
+template <TimeWindowFunctionName type>
+struct TimeWindowImpl
 {
     static constexpr auto name = "UNKNOWN";
 
@@ -127,12 +127,12 @@ struct WindowImpl
     static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name);
 };
 
-template <WindowFunctionName type>
-class FunctionWindow : public IFunction
+template <TimeWindowFunctionName type>
+class FunctionTimeWindow : public IFunction
 {
 public:
-    static constexpr auto name = WindowImpl<type>::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionWindow>(); }
+    static constexpr auto name = TimeWindowImpl<type>::name;
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTimeWindow>(); }
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -145,11 +145,11 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override;
 };
 
-using FunctionTumble = FunctionWindow<TUMBLE>;
-using FunctionTumbleStart = FunctionWindow<TUMBLE_START>;
-using FunctionTumbleEnd = FunctionWindow<TUMBLE_END>;
-using FunctionHop = FunctionWindow<HOP>;
-using FunctionWindowId = FunctionWindow<WINDOW_ID>;
-using FunctionHopStart = FunctionWindow<HOP_START>;
-using FunctionHopEnd = FunctionWindow<HOP_END>;
+using FunctionTumble = FunctionTimeWindow<TUMBLE>;
+using FunctionTumbleStart = FunctionTimeWindow<TUMBLE_START>;
+using FunctionTumbleEnd = FunctionTimeWindow<TUMBLE_END>;
+using FunctionHop = FunctionTimeWindow<HOP>;
+using FunctionWindowId = FunctionTimeWindow<WINDOW_ID>;
+using FunctionHopStart = FunctionTimeWindow<HOP_START>;
+using FunctionHopEnd = FunctionTimeWindow<HOP_END>;
 }
