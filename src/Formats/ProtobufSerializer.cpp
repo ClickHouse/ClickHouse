@@ -860,7 +860,7 @@ namespace
         template <typename NumberType>
         void toStringAppend(NumberType value, PaddedPODArray<UInt8> & str)
         {
-            WriteBufferFromVector buf{str, WriteBufferFromVector<PaddedPODArray<UInt8>>::AppendModeTag{}};
+            WriteBufferFromVector buf{str, AppendModeTag{}};
             writeText(value, buf);
         }
 
