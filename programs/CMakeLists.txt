@@ -11,28 +11,28 @@ option (ENABLE_CLICKHOUSE_SERVER "Server mode (main mode)" ${ENABLE_CLICKHOUSE_A
 option (ENABLE_CLICKHOUSE_CLIENT "Client mode (interactive tui/shell that connects to the server)"
     ${ENABLE_CLICKHOUSE_ALL})
 
-# https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/
+# https://clickhouse.tech/docs/en/operations/utilities/clickhouse-local/
 option (ENABLE_CLICKHOUSE_LOCAL "Local files fast processing mode" ${ENABLE_CLICKHOUSE_ALL})
 
-# https://clickhouse.com/docs/en/operations/utilities/clickhouse-benchmark/
+# https://clickhouse.tech/docs/en/operations/utilities/clickhouse-benchmark/
 option (ENABLE_CLICKHOUSE_BENCHMARK "Queries benchmarking mode" ${ENABLE_CLICKHOUSE_ALL})
 
 option (ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG "Configs processor (extract values etc.)" ${ENABLE_CLICKHOUSE_ALL})
 
-# https://clickhouse.com/docs/en/operations/utilities/clickhouse-compressor/
+# https://clickhouse.tech/docs/en/operations/utilities/clickhouse-compressor/
 option (ENABLE_CLICKHOUSE_COMPRESSOR "Data compressor and decompressor" ${ENABLE_CLICKHOUSE_ALL})
 
-# https://clickhouse.com/docs/en/operations/utilities/clickhouse-copier/
+# https://clickhouse.tech/docs/en/operations/utilities/clickhouse-copier/
 option (ENABLE_CLICKHOUSE_COPIER "Inter-cluster data copying mode" ${ENABLE_CLICKHOUSE_ALL})
 
 option (ENABLE_CLICKHOUSE_FORMAT "Queries pretty-printer and formatter with syntax highlighting"
     ${ENABLE_CLICKHOUSE_ALL})
 
-# https://clickhouse.com/docs/en/operations/utilities/clickhouse-obfuscator/
+# https://clickhouse.tech/docs/en/operations/utilities/clickhouse-obfuscator/
 option (ENABLE_CLICKHOUSE_OBFUSCATOR "Table data obfuscator (convert real data to benchmark-ready one)"
     ${ENABLE_CLICKHOUSE_ALL})
 
-# https://clickhouse.com/docs/en/operations/utilities/odbc-bridge/
+# https://clickhouse.tech/docs/en/operations/utilities/odbc-bridge/
 # TODO Also needs NANODBC.
 if (ENABLE_ODBC)
     option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "HTTP-server working like a proxy to ODBC driver"
@@ -44,7 +44,7 @@ endif ()
 option (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE "HTTP-server working like a proxy to Library dictionary source"
     ${ENABLE_CLICKHOUSE_ALL})
 
-# https://presentations.clickhouse.com/matemarketing_2020/
+# https://presentations.clickhouse.tech/matemarketing_2020/
 option (ENABLE_CLICKHOUSE_GIT_IMPORT "A tool to analyze Git repositories" ${ENABLE_CLICKHOUSE_ALL})
 
 option (ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER "A tool to export table data files to be later put to a static files web server" ${ENABLE_CLICKHOUSE_ALL})
@@ -473,7 +473,3 @@ if (ENABLE_TESTS AND USE_GTEST)
     add_custom_target (clickhouse-tests ALL DEPENDS ${CLICKHOUSE_UNIT_TESTS_TARGETS})
     add_dependencies(clickhouse-bundle clickhouse-tests)
 endif()
-
-if (ENABLE_FUZZING)
-    add_compile_definitions(FUZZING_MODE=1)
-endif ()

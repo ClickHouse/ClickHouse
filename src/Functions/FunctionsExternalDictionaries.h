@@ -21,7 +21,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnNullable.h>
 
-#include <Access/Common/AccessFlags.h>
+#include <Access/AccessFlags.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -29,7 +29,7 @@
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
-#include <base/range.h>
+#include <common/range.h>
 
 #include <type_traits>
 

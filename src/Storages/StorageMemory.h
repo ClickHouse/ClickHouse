@@ -4,10 +4,11 @@
 #include <optional>
 #include <mutex>
 
-#include <base/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
+#include <DataStreams/IBlockOutputStream.h>
 
 #include <Common/MultiVersion.h>
 

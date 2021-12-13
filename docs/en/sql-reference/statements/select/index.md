@@ -27,7 +27,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [LIMIT [n, ]m] [WITH TIES]
 [SETTINGS ...]
 [UNION  ...]
-[INTO OUTFILE filename [COMPRESSION type] ]
+[INTO OUTFILE filename]
 [FORMAT format]
 ```
 
@@ -49,8 +49,6 @@ Specifics of each optional clause are covered in separate sections, which are li
 -   [LIMIT clause](../../../sql-reference/statements/select/limit.md)
 -   [OFFSET clause](../../../sql-reference/statements/select/offset.md)
 -   [UNION clause](../../../sql-reference/statements/select/union.md)
--   [INTERSECT clause](../../../sql-reference/statements/select/intersect.md)
--   [EXCEPT clause](../../../sql-reference/statements/select/except.md)
 -   [INTO OUTFILE clause](../../../sql-reference/statements/select/into-outfile.md)
 -   [FORMAT clause](../../../sql-reference/statements/select/format.md)
 
@@ -146,7 +144,7 @@ Extreme values are calculated for rows before `LIMIT`, but after `LIMIT BY`. How
 
 You can use synonyms (`AS` aliases) in any part of a query.
 
-The `GROUP BY`, `ORDER BY`, and `LIMIT BY` clauses can support positional arguments. To enable this, switch on the [enable_positional_arguments](../../../operations/settings/settings.md#enable-positional-arguments) setting. Then, for example, `ORDER BY 1,2` will be sorting rows in the table on the first and then the second column.
+The `GROUP BY` and `ORDER BY` clauses do not support positional arguments. This contradicts MySQL, but conforms to standard SQL. For example, `GROUP BY 1, 2` will be interpreted as grouping by constants (i.e. aggregation of all rows into one).
 
 ## Implementation Details {#implementation-details}
 
@@ -284,4 +282,4 @@ Other ways to make settings see [here](../../../operations/settings/index.md).
 SELECT * FROM some_table SETTINGS optimize_read_in_order=1, cast_keep_nullable=1;
 ```
 
-[Original article](https://clickhouse.com/docs/en/sql-reference/statements/select/)<!--hide-->
+[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/select/)<!--hide-->

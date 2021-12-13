@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <remote_servers>
         <two_shards>
             <shard>
@@ -13,4 +13,4 @@
             </shard>
         </two_shards>
     </remote_servers>
-</clickhouse>
+</yandex>

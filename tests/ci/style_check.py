@@ -3,18 +3,17 @@ import logging
 import subprocess
 import os
 import csv
-import sys
-
+import json
 from github import Github
 from s3_helper import S3Helper
-from pr_info import PRInfo, get_event
+from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
 from commit_status_helper import post_commit_status
 from clickhouse_helper import ClickHouseHelper, mark_flaky_tests, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
-from rerun_helper import RerunHelper
+
 
 NAME = "Style Check (actions)"
 
@@ -47,7 +46,6 @@ def process_result(result_folder):
             state, description = "error", "Failed to read test_results.tsv"
         return state, description, test_results, additional_files
 
-
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
@@ -56,17 +54,14 @@ if __name__ == "__main__":
     repo_path = os.path.join(os.getenv("GITHUB_WORKSPACE", os.path.abspath("../../")))
     temp_path = os.path.join(os.getenv("RUNNER_TEMP", os.path.abspath("./temp")), 'style_check')
 
-    pr_info = PRInfo(get_event())
-
-    gh = Github(get_best_robot_token())
-
-    rerun_helper = RerunHelper(gh, pr_info, NAME)
-    if rerun_helper.is_already_finished_by_status():
-        logging.info("Check is already finished according to github status, exiting")
-        sys.exit(0)
+    with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
+        event = json.load(event_file)
+    pr_info = PRInfo(event)
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
+
+    gh = Github(get_best_robot_token())
 
     docker_image = get_image_with_version(temp_path, 'clickhouse/style-test')
     s3_helper = S3Helper('https://s3.amazonaws.com')

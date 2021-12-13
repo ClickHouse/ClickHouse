@@ -1,5 +1,3 @@
--- Tags: no-replicated-database, no-parallel
-
 drop table if exists test;
 drop table if exists file;
 drop table if exists mt;

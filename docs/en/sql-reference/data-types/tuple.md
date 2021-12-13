@@ -75,4 +75,4 @@ Result:
 └────────────────────┘
 ```
 
-[Original article](https://clickhouse.com/docs/en/data_types/tuple/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/data_types/tuple/) <!--hide-->

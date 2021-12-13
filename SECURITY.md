@@ -1,7 +1,7 @@
 # Security Policy
 
 ## Security Announcements
-Security fixes will be announced by posting them in the [security changelog](https://clickhouse.com/docs/en/whats-new/security-changelog/).
+Security fixes will be announced by posting them in the [security changelog](https://clickhouse.tech/docs/en/whats-new/security-changelog/)
 
 ## Scope and Supported Versions
 
@@ -12,24 +12,31 @@ The following versions of ClickHouse server are currently being supported with s
 | 1.x   | :x: |
 | 18.x   | :x:                |
 | 19.x   | :x:                |
-| 20.x   | :x: |
+| 20.1   | :x: |
+| 20.3   | :x: |
+| 20.4   | :x: |
+| 20.5   | :x: |
+| 20.6   | :x: |
+| 20.7   | :x: |
+| 20.8   | :x: |
+| 20.9   | :x: |
+| 20.10  | :x: |
+| 20.11  | :x: |
+| 20.12  | :x: |
 | 21.1   | :x: |
 | 21.2   | :x: |
 | 21.3   | ✅ |
 | 21.4   | :x: |
 | 21.5   | :x: |
-| 21.6   | :x: |
-| 21.7   | :x: |
+| 21.6   | ✅ |
+| 21.7   | ✅ |
 | 21.8   | ✅ |
-| 21.9   | ✅ |
-| 21.10   | ✅ |
-| 21.11   | ✅ |
 
 ## Reporting a Vulnerability
 
 We're extremely grateful for security researchers and users that report vulnerabilities to the ClickHouse Open Source Community. All reports are thoroughly investigated by developers.
 
-To report a potential vulnerability in ClickHouse please send the details about it to [security@clickhouse.com](mailto:security@clickhouse.com).
+To report a potential vulnerability in ClickHouse please send the details about it to [clickhouse-feedback@yandex-team.com](mailto:clickhouse-feedback@yandex-team.com).
 
 ### When Should I Report a Vulnerability?
 

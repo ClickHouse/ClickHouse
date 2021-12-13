@@ -1,11 +1,11 @@
 #include <Core/SortCursor.h>
 #include <Interpreters/SortedBlocksWriter.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Merges/MergingSortedTransform.h>
-#include <Processors/Sources/TemporaryFileLazySource.h>
-#include <Formats/TemporaryFileStream.h>
+#include <DataStreams/TemporaryFileStream.h>
+#include <DataStreams/materializeBlock.h>
 #include <Disks/IVolume.h>
 
 
@@ -15,7 +15,7 @@ namespace DB
 namespace
 {
 
-std::unique_ptr<TemporaryFile> flushToFile(const String & tmp_path, const Block & header, QueryPipelineBuilder pipeline, const String & codec)
+std::unique_ptr<TemporaryFile> flushToFile(const String & tmp_path, const Block & header, QueryPipeline pipeline, const String & codec)
 {
     auto tmp_file = createTemporaryFile(tmp_path);
 
@@ -24,11 +24,10 @@ std::unique_ptr<TemporaryFile> flushToFile(const String & tmp_path, const Block 
     return tmp_file;
 }
 
-SortedBlocksWriter::SortedFiles flushToManyFiles(const String & tmp_path, const Block & header, QueryPipelineBuilder builder,
+SortedBlocksWriter::SortedFiles flushToManyFiles(const String & tmp_path, const Block & header, QueryPipeline pipeline,
                                                  const String & codec, std::function<void(const Block &)> callback = [](const Block &){})
 {
     std::vector<std::unique_ptr<TemporaryFile>> files;
-    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     PullingPipelineExecutor executor(pipeline);
 
     Block block;
@@ -39,7 +38,7 @@ SortedBlocksWriter::SortedFiles flushToManyFiles(const String & tmp_path, const 
 
         callback(block);
 
-        QueryPipelineBuilder one_block_pipeline;
+        QueryPipeline one_block_pipeline;
         Chunk chunk(block.getColumns(), block.rows());
         one_block_pipeline.init(Pipe(std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), std::move(chunk))));
         auto tmp_file = flushToFile(tmp_path, header, std::move(one_block_pipeline), codec);
@@ -127,7 +126,7 @@ SortedBlocksWriter::TmpFilePtr SortedBlocksWriter::flush(const BlocksList & bloc
     if (pipes.empty())
         return {};
 
-    QueryPipelineBuilder pipeline;
+    QueryPipeline pipeline;
     pipeline.init(Pipe::unitePipes(std::move(pipes)));
 
     if (pipeline.getNumStreams() > 1)
@@ -180,7 +179,7 @@ SortedBlocksWriter::PremergedFiles SortedBlocksWriter::premerge()
 
                 if (pipes.size() == num_files_for_merge || &file == &files.back())
                 {
-                    QueryPipelineBuilder pipeline;
+                    QueryPipeline pipeline;
                     pipeline.init(Pipe::unitePipes(std::move(pipes)));
                     pipes = Pipes();
 
@@ -213,7 +212,7 @@ SortedBlocksWriter::PremergedFiles SortedBlocksWriter::premerge()
 SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<void(const Block &)> callback)
 {
     PremergedFiles files = premerge();
-    QueryPipelineBuilder pipeline;
+    QueryPipeline pipeline;
     pipeline.init(std::move(files.pipe));
 
     if (pipeline.getNumStreams() > 1)
@@ -294,21 +293,20 @@ Block SortedBlocksBuffer::mergeBlocks(Blocks && blocks) const
 
         Blocks tmp_blocks;
 
-        QueryPipelineBuilder builder;
-        builder.init(Pipe::unitePipes(std::move(pipes)));
+        QueryPipeline pipeline;
+        pipeline.init(Pipe::unitePipes(std::move(pipes)));
 
-        if (builder.getNumStreams() > 1)
+        if (pipeline.getNumStreams() > 1)
         {
             auto transform = std::make_shared<MergingSortedTransform>(
-                builder.getHeader(),
-                builder.getNumStreams(),
+                pipeline.getHeader(),
+                pipeline.getNumStreams(),
                 sort_description,
                 num_rows);
 
-            builder.addTransform(std::move(transform));
+            pipeline.addTransform(std::move(transform));
         }
 
-        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         PullingPipelineExecutor executor(pipeline);
         Block block;
         while (executor.pull(block))

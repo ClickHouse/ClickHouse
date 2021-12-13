@@ -4,9 +4,6 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/OptimizeIfChains.h>
 #include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
-#include <Interpreters/WhereConstraintsOptimizer.h>
-#include <Interpreters/SubstituteColumnOptimizer.h>
-#include <Interpreters/TreeCNFConverter.h>
 #include <Interpreters/ArithmeticOperationsInAgrFuncOptimize.h>
 #include <Interpreters/DuplicateOrderByVisitor.h>
 #include <Interpreters/GroupByFunctionKeysVisitor.h>
@@ -17,10 +14,10 @@
 #include <Interpreters/RewriteCountVariantsVisitor.h>
 #include <Interpreters/MonotonicityCheckVisitor.h>
 #include <Interpreters/ConvertStringsToEnumVisitor.h>
+#include <Interpreters/PredicateExpressionsOptimizer.h>
 #include <Interpreters/RewriteFunctionToSubcolumnVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Interpreters/GatherFunctionQuantileVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -542,44 +539,6 @@ void optimizeLimitBy(const ASTSelectQuery * select_query)
         elems = std::move(unique_elems);
 }
 
-/// Use constraints to get rid of useless parts of query
-void optimizeWithConstraints(ASTSelectQuery * select_query,
-                             Aliases & /*aliases*/,
-                             const NameSet & /*source_columns_set*/,
-                             const std::vector<TableWithColumnNamesAndTypes> & /*tables_with_columns*/,
-                             const StorageMetadataPtr & metadata_snapshot,
-                             const bool optimize_append_index)
-{
-    WhereConstraintsOptimizer(select_query, metadata_snapshot, optimize_append_index).perform();
-}
-
-void optimizeSubstituteColumn(ASTSelectQuery * select_query,
-                              Aliases & /*aliases*/,
-                              const NameSet & /*source_columns_set*/,
-                              const std::vector<TableWithColumnNamesAndTypes> & /*tables_with_columns*/,
-                              const StorageMetadataPtr & metadata_snapshot,
-                              const ConstStoragePtr & storage)
-{
-    SubstituteColumnOptimizer(select_query, metadata_snapshot, storage).perform();
-}
-
-/// Transform WHERE to CNF for more convenient optimization.
-bool convertQueryToCNF(ASTSelectQuery * select_query)
-{
-    if (select_query->where())
-    {
-        auto cnf_form = TreeCNFConverter::tryConvertToCNF(select_query->where());
-        if (!cnf_form)
-            return false;
-
-        cnf_form->pushNotInFuntions();
-        select_query->refWhere() = TreeCNFConverter::fromCNF(*cnf_form);
-        return true;
-    }
-
-    return false;
-}
-
 /// Remove duplicated columns from USING(...).
 void optimizeUsing(const ASTSelectQuery * select_query)
 {
@@ -658,59 +617,6 @@ void optimizeFunctionsToSubcolumns(ASTPtr & query, const StorageMetadataPtr & me
     RewriteFunctionToSubcolumnVisitor(data).visit(query);
 }
 
-std::shared_ptr<ASTFunction> getQuantileFuseCandidate(const String & func_name, std::vector<ASTPtr *> & functions)
-{
-    if (functions.size() < 2)
-        return nullptr;
-
-    const auto & common_arguments = (*functions[0])->as<ASTFunction>()->arguments->children;
-    auto func_base = makeASTFunction(GatherFunctionQuantileData::getFusedName(func_name));
-    func_base->arguments->children = common_arguments;
-    func_base->parameters = std::make_shared<ASTExpressionList>();
-
-    for (const auto * ast : functions)
-    {
-        assert(ast && *ast);
-        const auto * func = (*ast)->as<ASTFunction>();
-        assert(func && func->parameters->as<ASTExpressionList>());
-        const ASTs & parameters = func->parameters->as<ASTExpressionList &>().children;
-        if (parameters.size() != 1)
-            return nullptr; /// query is illegal, give up
-        func_base->parameters->children.push_back(parameters[0]);
-    }
-    return func_base;
-}
-
-/// Rewrites multi quantile()() functions with the same arguments to quantiles()()[]
-/// eg:SELECT quantile(0.5)(x), quantile(0.9)(x), quantile(0.95)(x) FROM...
-///    rewrite to : SELECT quantiles(0.5, 0.9, 0.95)(x)[1], quantiles(0.5, 0.9, 0.95)(x)[2], quantiles(0.5, 0.9, 0.95)(x)[3] FROM ...
-void optimizeFuseQuantileFunctions(ASTPtr & query)
-{
-    GatherFunctionQuantileVisitor::Data data{};
-    GatherFunctionQuantileVisitor(data).visit(query);
-    for (auto & candidate : data.fuse_quantile)
-    {
-        String func_name = candidate.first;
-        auto & args_to_functions = candidate.second;
-
-        /// Try to fuse multiply `quantile*` Function to plural
-        for (auto it : args_to_functions.arg_map_function)
-        {
-            std::vector<ASTPtr *> & functions = it.second;
-            auto func_base = getQuantileFuseCandidate(func_name, functions);
-            if (!func_base)
-                continue;
-            for (size_t i = 0; i < functions.size(); ++i)
-            {
-                std::shared_ptr<ASTFunction> ast_new = makeASTFunction("arrayElement", func_base, std::make_shared<ASTLiteral>(i + 1));
-                if (const auto & alias = (*functions[i])->tryGetAlias(); !alias.empty())
-                    ast_new->setAlias(alias);
-                *functions[i] = ast_new;
-            }
-        }
-    }
-}
-
 }
 
 void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif)
@@ -741,19 +647,8 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (settings.optimize_arithmetic_operations_in_aggregate_functions)
         optimizeAggregationFunctions(query);
 
-    bool converted_to_cnf = false;
-    if (settings.convert_query_to_cnf)
-        converted_to_cnf = convertQueryToCNF(select_query);
-
-    if (converted_to_cnf && settings.optimize_using_constraints)
-    {
-        optimizeWithConstraints(select_query, result.aliases, result.source_columns_set,
-            tables_with_columns, result.metadata_snapshot, settings.optimize_append_index);
-
-        if (settings.optimize_substitute_columns)
-            optimizeSubstituteColumn(select_query, result.aliases, result.source_columns_set,
-                tables_with_columns, result.metadata_snapshot, result.storage);
-    }
+    /// Push the predicate expression down to the subqueries.
+    result.rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_columns, settings).optimize(*select_query);
 
     /// GROUP BY injective function elimination.
     optimizeGroupBy(select_query, context);
@@ -819,9 +714,6 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     /// Remove duplicated columns from USING(...).
     optimizeUsing(select_query);
-
-    if (settings.optimize_syntax_fuse_functions)
-        optimizeFuseQuantileFunctions(query);
 }
 
 }
