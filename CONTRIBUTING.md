@@ -8,7 +8,7 @@ Thank you!
 
 When you open your first pull-request to ClickHouse repo, a bot will invite you to accept ClickHouse Individual CLA (Contributor License Agreement). It is a simple few click process. For subsequent pull-requests the bot will check if you have already signed it and won't bother you again.
 
-Optionally, to make contributions even more tight legally, your employer as legal entity may want to sign a ClickHouse Corporate CLA with ClickHouse, Inc. If you're interested to do so, contact us at [legal@clickhouse.com](mailto:legal@clickhouse.com).
+Optionally, to make contributions even more tight legally, your employer as a legal entity may want to sign a ClickHouse Corporate CLA with ClickHouse, Inc. If you're interested to do so, contact us at [legal@clickhouse.com](mailto:legal@clickhouse.com).
 
 ## Technical Info
 
