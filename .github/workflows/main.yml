@@ -90,7 +90,7 @@ jobs:
           CHECK_NAME: 'Performance Comparison (actions)'
           REPO_COPY: ${{runner.temp}}/performance_comparison/ClickHouse
           RUN_BY_HASH_NUM: 1
-          RUN_BY_HASH_TOTAL: 3
+          RUN_BY_HASH_TOTAL: 4
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
