@@ -1,7 +1,7 @@
-<clickhouse>
+<yandex>
     <profiles>
         <default>
             <use_uncompressed_cache>1</use_uncompressed_cache>
         </default>
     </profiles>
-</clickhouse>
+</yandex>

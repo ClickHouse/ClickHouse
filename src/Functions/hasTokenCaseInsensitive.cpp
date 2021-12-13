@@ -15,7 +15,7 @@ struct NameHasTokenCaseInsensitive
 };
 
 using FunctionHasTokenCaseInsensitive
-    = FunctionsStringSearch<HasTokenImpl<NameHasTokenCaseInsensitive, VolnitskyCaseInsensitiveToken, false>>;
+    = FunctionsStringSearch<HasTokenImpl<VolnitskyCaseInsensitiveToken, false>, NameHasTokenCaseInsensitive>;
 
 }
 

@@ -430,7 +430,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 <http_handlers>
     <rule>
         <url><![CDATA[/query_param_with_url/\w+/(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></url>
-        <methods>GET</methods>
+        <method>GET</method>
         <headers>
             <XXX>TEST_HEADER_VALUE</XXX>
             <PARAMS_XXX><![CDATA[(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></PARAMS_XXX>

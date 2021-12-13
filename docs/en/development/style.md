@@ -1,5 +1,5 @@
 ---
-toc_priority: 69
+toc_priority: 68
 toc_title: C++ Guide
 ---
 
@@ -828,4 +828,4 @@ function(
       size_t limit)
 ```
 
-[Original article](https://clickhouse.com/docs/en/development/style/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/development/style/) <!--hide-->

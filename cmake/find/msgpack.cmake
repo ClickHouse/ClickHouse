@@ -7,11 +7,11 @@ if(NOT ENABLE_MSGPACK)
     return()
 endif()
 
-option (USE_INTERNAL_MSGPACK_LIBRARY "Set to FALSE to use system msgpack library instead of bundled" ON)
+option (USE_INTERNAL_MSGPACK_LIBRARY "Set to FALSE to use system msgpack library instead of bundled" ${NOT_UNBUNDLED})
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/msgpack-c/include/msgpack.hpp")
     if(USE_INTERNAL_MSGPACK_LIBRARY)
-        message(WARNING "Submodule contrib/msgpack-c is missing. To fix try run: \n git submodule update --init")
+        message(WARNING "Submodule contrib/msgpack-c is missing. To fix try run: \n git submodule update --init --recursive")
         message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use internal msgpack")
         set(USE_INTERNAL_MSGPACK_LIBRARY 0)
     endif()

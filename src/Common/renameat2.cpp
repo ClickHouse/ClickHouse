@@ -4,6 +4,13 @@
 #include <Poco/Environment.h>
 #include <filesystem>
 
+#if defined(linux) || defined(__linux) || defined(__linux__)
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/syscall.h>
+#include <linux/fs.h>
+#endif
+
 namespace fs = std::filesystem;
 
 namespace DB
@@ -18,56 +25,25 @@ namespace ErrorCodes
     extern const int FILE_ALREADY_EXISTS;
 }
 
-}
-
-
-#if defined(__linux__)
-
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/syscall.h>
-#include <linux/fs.h>
-
-/// For old versions of libc.
-#if !defined(RENAME_NOREPLACE)
-    #define RENAME_NOREPLACE 1
-#endif
-
-#if !defined(RENAME_EXCHANGE)
-    #define RENAME_EXCHANGE 2
-#endif
-
-#if !defined(__NR_renameat2)
-    #if defined(__x86_64__)
-        #define __NR_renameat2 316
-    #elif defined(__aarch64__)
-        #define __NR_renameat2 276
-    #elif defined(__ppc64__)
-        #define __NR_renameat2 357
-    #elif defined(__riscv)
-        #define __NR_renameat2 276
-    #else
-        #error "Unsupported architecture"
-    #endif
-#endif
-
-
-namespace DB
-{
-
 static bool supportsRenameat2Impl()
 {
+#if defined(__NR_renameat2)
     VersionNumber renameat2_minimal_version(3, 15, 0);
     VersionNumber linux_version(Poco::Environment::osVersion());
     return linux_version >= renameat2_minimal_version;
+#else
+    return false;
+#endif
 }
+
+#if defined(__NR_renameat2)
 
 static bool renameat2(const std::string & old_path, const std::string & new_path, int flags)
 {
     if (!supportsRenameat2())
         return false;
     if (old_path.empty() || new_path.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot rename {} to {}: path is empty", old_path, new_path);
+        throw Exception("Cannot rename " + old_path + " to " + new_path + ": path is empty", ErrorCodes::LOGICAL_ERROR);
 
     /// int olddirfd (ignored for absolute oldpath), const char *oldpath,
     /// int newdirfd (ignored for absolute newpath), const char *newpath,
@@ -87,50 +63,28 @@ static bool renameat2(const std::string & old_path, const std::string & new_path
         return false;
 
     if (errno == EEXIST)
-        throwFromErrno(fmt::format("Cannot rename {} to {} because the second path already exists", old_path, new_path), ErrorCodes::ATOMIC_RENAME_FAIL);
+        throwFromErrno("Cannot rename " + old_path + " to " + new_path + " because the second path already exists", ErrorCodes::ATOMIC_RENAME_FAIL);
     if (errno == ENOENT)
-        throwFromErrno(fmt::format("Paths cannot be exchanged because {} or {} does not exist", old_path, new_path), ErrorCodes::ATOMIC_RENAME_FAIL);
-    throwFromErrnoWithPath(fmt::format("Cannot rename {} to {}", old_path, new_path), new_path, ErrorCodes::SYSTEM_ERROR);
-}
-
-bool supportsRenameat2()
-{
-    static bool supports = supportsRenameat2Impl();
-    return supports;
-}
-
+        throwFromErrno("Paths cannot be exchanged because " + old_path + " or " + new_path + " does not exist", ErrorCodes::ATOMIC_RENAME_FAIL);
+    throwFromErrnoWithPath("Cannot rename " + old_path + " to " + new_path, new_path, ErrorCodes::SYSTEM_ERROR);
 }
 
 #else
-
 #define RENAME_NOREPLACE -1
 #define RENAME_EXCHANGE -1
-
-namespace DB
-{
 
 static bool renameat2(const std::string &, const std::string &, int)
 {
     return false;
 }
 
-bool supportsRenameat2()
-{
-    return false;
-}
-
-}
-
 #endif
-
-namespace DB
-{
 
 static void renameNoReplaceFallback(const std::string & old_path, const std::string & new_path)
 {
     /// NOTE it's unsafe
     if (fs::exists(new_path))
-        throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File {} exists", new_path);
+        throw Exception("File " + new_path + " exists", ErrorCodes::FILE_ALREADY_EXISTS);
     fs::rename(old_path, new_path);
 }
 
@@ -142,6 +96,13 @@ static void renameExchangeFallback(const std::string &, const std::string &)
     throw Exception("System call renameat2() is not supported", ErrorCodes::UNSUPPORTED_METHOD);
 }
 #pragma GCC diagnostic pop
+
+
+bool supportsRenameat2()
+{
+    static bool supports = supportsRenameat2Impl();
+    return supports;
+}
 
 void renameNoReplace(const std::string & old_path, const std::string & new_path)
 {

@@ -8,16 +8,8 @@ from get_robot_token import get_parameter_from_ssm
 
 class ClickHouseHelper:
     def __init__(self, url=None, user=None, password=None):
-        self.url2 = None
-        self.auth2 = None
-
         if url is None:
             url = get_parameter_from_ssm("clickhouse-test-stat-url")
-            self.url2 = get_parameter_from_ssm("clickhouse-test-stat-url2")
-            self.auth2 = {
-                'X-ClickHouse-User': get_parameter_from_ssm("clickhouse-test-stat-login2"),
-                'X-ClickHouse-Key': ''
-            }
 
         self.url = url
         self.auth = {
@@ -25,8 +17,7 @@ class ClickHouseHelper:
             'X-ClickHouse-Key': password if password is not None else get_parameter_from_ssm("clickhouse-test-stat-password")
         }
 
-    @staticmethod
-    def _insert_json_str_info_impl(url, auth, db, table, json_str):
+    def _insert_json_str_info(self, db, table, json_str):
         params = {
             'database': db,
             'query': 'INSERT INTO {table} FORMAT JSONEachRow'.format(table=table),
@@ -35,7 +26,7 @@ class ClickHouseHelper:
         }
 
         for i in range(5):
-            response = requests.post(url, params=params, data=json_str, headers=auth, verify=False)
+            response = requests.post(self.url, params=params, data=json_str, headers=self.auth, verify=False)
 
             logging.info("Response content '%s'", response.content)
 
@@ -57,11 +48,6 @@ class ClickHouseHelper:
             raise Exception(error)
         else:
             raise Exception(error)
-
-    def _insert_json_str_info(self, db, table, json_str):
-        self._insert_json_str_info_impl(self.url, self.auth, db, table, json_str)
-        if self.url2:
-            self._insert_json_str_info_impl(self.url2, self.auth2, db, table, json_str)
 
     def insert_event_into(self, db, table, event):
         event_str = json.dumps(event)
