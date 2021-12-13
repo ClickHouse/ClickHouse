@@ -5,7 +5,6 @@
 #include <memory>
 #include <Server/IServer.h>
 #include <Core/PostgreSQLProtocol.h>
-#include <Common/config.h>
 
 namespace DB
 {

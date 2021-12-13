@@ -3,10 +3,6 @@
 #include <Storages/StorageURL.h>
 #include <Bridge/XDBCBridgeHelper.h>
 
-namespace Poco
-{
-class Logger;
-}
 
 namespace DB
 {
@@ -41,6 +37,7 @@ public:
 
     std::string getName() const override;
 private:
+
     BridgeHelperPtr bridge_helper;
     std::string remote_database_name;
     std::string remote_table_name;

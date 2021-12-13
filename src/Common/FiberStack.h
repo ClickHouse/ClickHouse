@@ -1,5 +1,5 @@
 #pragma once
-#include <base/defines.h>
+#include <common/defines.h>
 #include <boost/context/stack_context.hpp>
 #include <Common/formatReadable.h>
 #include <Common/CurrentMemoryTracker.h>
@@ -27,12 +27,7 @@ private:
     size_t stack_size;
     size_t page_size = 0;
 public:
-    /// NOTE: If you see random segfaults in CI and stack starts from boost::context::...fiber...
-    /// probably it worth to try to increase stack size for coroutines.
-    ///
-    /// Current value is just enough for all tests in our CI. It's not selected in some special
-    /// way. We will have 40 pages with 4KB page size.
-    static constexpr size_t default_stack_size = 192 * 1024; /// 64KB was not enough for tests
+    static constexpr size_t default_stack_size = 128 * 1024; /// 64KB was not enough for tests
 
     explicit FiberStack(size_t stack_size_ = default_stack_size) : stack_size(stack_size_)
     {
@@ -48,8 +43,6 @@ public:
         if (MAP_FAILED == vp)
             DB::throwFromErrno(fmt::format("FiberStack: Cannot mmap {}.", ReadableSize(num_bytes)), DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
-        /// TODO: make reports on illegal guard page access more clear.
-        /// Currently we will see segfault and almost random stacktrace.
         if (-1 == ::mprotect(vp, page_size, PROT_NONE))
         {
             ::munmap(vp, num_bytes);

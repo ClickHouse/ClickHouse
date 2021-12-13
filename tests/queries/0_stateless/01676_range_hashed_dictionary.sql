@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 DROP DATABASE IF EXISTS database_for_range_dict;
 
 CREATE DATABASE database_for_range_dict;
@@ -53,8 +51,8 @@ SELECT CountryID, StartDate, Tax FROM database_for_range_dict.range_dictionary;
 SELECT 'onlySpecificColumn';
 SELECT Tax FROM database_for_range_dict.range_dictionary;
 
-DROP DICTIONARY database_for_range_dict.range_dictionary;
 DROP TABLE database_for_range_dict.date_table;
+DROP DICTIONARY database_for_range_dict.range_dictionary;
 
 CREATE TABLE database_for_range_dict.date_table
 (
@@ -105,8 +103,8 @@ SELECT CountryID, StartDate, Tax FROM database_for_range_dict.range_dictionary_n
 SELECT 'onlySpecificColumn';
 SELECT Tax FROM database_for_range_dict.range_dictionary_nullable;
 
-DROP DICTIONARY database_for_range_dict.range_dictionary_nullable;
 DROP TABLE database_for_range_dict.date_table;
+DROP DICTIONARY database_for_range_dict.range_dictionary_nullable;
 
 DROP DATABASE database_for_range_dict;
 

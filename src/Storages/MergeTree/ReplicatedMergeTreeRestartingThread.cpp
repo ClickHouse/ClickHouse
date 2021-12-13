@@ -6,7 +6,6 @@
 #include <Interpreters/Context.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/randomSeed.h>
-#include <boost/algorithm/string/replace.hpp>
 
 
 namespace ProfileEvents
@@ -179,8 +178,6 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 
             storage.queue.load(zookeeper);
 
-            storage.queue.createLogEntriesToFetchBrokenParts();
-
             /// pullLogsToQueue() after we mark replica 'is_active' (and after we repair if it was lost);
             /// because cleanup_thread doesn't delete log_pointer of active replicas.
             storage.queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::LOAD);
@@ -197,6 +194,11 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 
         updateQuorumIfWeHavePart();
 
+        if (storage_settings->replicated_can_become_leader)
+            storage.enterLeaderElection();
+        else
+            LOG_INFO(log, "Will not enter leader election because replicated_can_become_leader=0");
+
         /// Anything above can throw a KeeperException if something is wrong with ZK.
         /// Anything below should not throw exceptions.
 
@@ -204,7 +206,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         storage.partial_shutdown_event.reset();
 
         /// Start queue processing
-        storage.background_operations_assignee.start();
+        storage.background_executor.start();
 
         storage.queue_updating_task->activateAndSchedule();
         storage.mutations_updating_task->activateAndSchedule();
@@ -375,6 +377,8 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 
     LOG_TRACE(log, "Waiting for threads to finish");
 
+    storage.exitLeaderElection();
+
     storage.queue_updating_task->deactivate();
     storage.mutations_updating_task->deactivate();
     storage.mutations_finalizing_task->deactivate();
@@ -387,7 +391,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
         auto fetch_lock = storage.fetcher.blocker.cancel();
         auto merge_lock = storage.merger_mutator.merges_blocker.cancel();
         auto move_lock = storage.parts_mover.moves_blocker.cancel();
-        storage.background_operations_assignee.finish();
+        storage.background_executor.finish();
     }
 
     LOG_TRACE(log, "Threads finished");

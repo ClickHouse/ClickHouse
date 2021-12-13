@@ -403,22 +403,12 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
     /// Close all other waiting for data outputs (there is no corresponding input for them).
     while (!waiting_outputs.empty())
     {
-        auto & output = output_ports[waiting_outputs.front()];
-        waiting_outputs.pop();
+       auto & output = output_ports[waiting_outputs.front()];
+       waiting_outputs.pop();
 
-        if (output.status != OutputStatus::Finished)
-           ++num_finished_outputs;
-
-        output.status = OutputStatus::Finished;
-        output.port->finish();
-    }
-
-    if (num_finished_outputs == outputs.size())
-    {
-        for (auto & input : inputs)
-            input.close();
-
-        return Status::Finished;
+       output.status = OutputStatus::Finished;
+       output.port->finish();
+       ++num_finished_outputs;
     }
 
     if (disabled_input_ports.empty())
@@ -428,3 +418,4 @@ IProcessor::Status StrictResizeProcessor::prepare(const PortNumbers & updated_in
 }
 
 }
+

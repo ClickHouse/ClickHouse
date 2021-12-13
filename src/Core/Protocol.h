@@ -1,7 +1,6 @@
 #pragma once
 
-#include <base/types.h>
-#include <Core/ProtocolDefines.h>
+#include <common/types.h>
 
 
 namespace DB
@@ -64,26 +63,23 @@ namespace Protocol
     {
         enum Enum
         {
-            Hello = 0,                      /// Name, version, revision.
-            Data = 1,                       /// A block of data (compressed or not).
-            Exception = 2,                  /// The exception during query execution.
-            Progress = 3,                   /// Query execution progress: rows read, bytes read.
-            Pong = 4,                       /// Ping response
-            EndOfStream = 5,                /// All packets were transmitted
-            ProfileInfo = 6,                /// Packet with profiling info.
-            Totals = 7,                     /// A block with totals (compressed or not).
-            Extremes = 8,                   /// A block with minimums and maximums (compressed or not).
-            TablesStatusResponse = 9,       /// A response to TablesStatus request.
-            Log = 10,                       /// System logs of the query execution
-            TableColumns = 11,              /// Columns' description for default values calculation
-            PartUUIDs = 12,                 /// List of unique parts ids.
-            ReadTaskRequest = 13,           /// String (UUID) describes a request for which next task is needed
-                                            /// This is such an inverted logic, where server sends requests
-                                            /// And client returns back response
-            ProfileEvents = 14,             /// Packet with profile events from server.
-            MergeTreeReadTaskRequest = 15,  /// Request from a MergeTree replica to a coordinator
-            MAX = MergeTreeReadTaskRequest,
-
+            Hello = 0,                /// Name, version, revision.
+            Data = 1,                 /// A block of data (compressed or not).
+            Exception = 2,            /// The exception during query execution.
+            Progress = 3,             /// Query execution progress: rows read, bytes read.
+            Pong = 4,                 /// Ping response
+            EndOfStream = 5,          /// All packets were transmitted
+            ProfileInfo = 6,          /// Packet with profiling info.
+            Totals = 7,               /// A block with totals (compressed or not).
+            Extremes = 8,             /// A block with minimums and maximums (compressed or not).
+            TablesStatusResponse = 9, /// A response to TablesStatus request.
+            Log = 10,                 /// System logs of the query execution
+            TableColumns = 11,        /// Columns' description for default values calculation
+            PartUUIDs = 12,           /// List of unique parts ids.
+            ReadTaskRequest = 13,     /// String (UUID) describes a request for which next task is needed
+                                      /// This is such an inverted logic, where server sends requests
+                                      /// And client returns back response
+            MAX = ReadTaskRequest,
         };
 
         /// NOTE: If the type of packet argument would be Enum, the comparison packet >= 0 && packet < 10
@@ -106,9 +102,7 @@ namespace Protocol
                 "Log",
                 "TableColumns",
                 "PartUUIDs",
-                "ReadTaskRequest",
-                "ProfileEvents",
-                "MergeTreeReadTaskRequest",
+                "ReadTaskRequest"
             };
             return packet <= MAX
                 ? data[packet]
@@ -133,20 +127,20 @@ namespace Protocol
     {
         enum Enum
         {
-            Hello = 0,                      /// Name, version, revision, default DB
-            Query = 1,                      /// Query id, query settings, stage up to which the query must be executed,
-                                            /// whether the compression must be used,
-                                            /// query text (without data for INSERTs).
-            Data = 2,                       /// A block of data (compressed or not).
-            Cancel = 3,                     /// Cancel the query execution.
-            Ping = 4,                       /// Check that connection to the server is alive.
-            TablesStatusRequest = 5,        /// Check status of tables on the server.
-            KeepAlive = 6,                  /// Keep the connection alive
-            Scalar = 7,                     /// A block of data (compressed or not).
-            IgnoredPartUUIDs = 8,           /// List of unique parts ids to exclude from query processing
-            ReadTaskResponse = 9,           /// A filename to read from s3 (used in s3Cluster)
-            MergeTreeReadTaskResponse = 10, /// Coordinator's decision with a modified set of mark ranges allowed to read
-            MAX = MergeTreeReadTaskResponse,
+            Hello = 0,               /// Name, version, revision, default DB
+            Query = 1,               /// Query id, query settings, stage up to which the query must be executed,
+                                     /// whether the compression must be used,
+                                     /// query text (without data for INSERTs).
+            Data = 2,                /// A block of data (compressed or not).
+            Cancel = 3,              /// Cancel the query execution.
+            Ping = 4,                /// Check that connection to the server is alive.
+            TablesStatusRequest = 5, /// Check status of tables on the server.
+            KeepAlive = 6,           /// Keep the connection alive
+            Scalar = 7,              /// A block of data (compressed or not).
+            IgnoredPartUUIDs = 8,    /// List of unique parts ids to exclude from query processing
+            ReadTaskResponse = 9,     /// TODO:
+
+            MAX = ReadTaskResponse,
         };
 
         inline const char * toString(UInt64 packet)
@@ -162,7 +156,6 @@ namespace Protocol
                 "Scalar",
                 "IgnoredPartUUIDs",
                 "ReadTaskResponse",
-                "MergeTreeReadTaskResponse"
             };
             return packet <= MAX
                 ? data[packet]

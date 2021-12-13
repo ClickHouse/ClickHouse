@@ -15,7 +15,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/assert_cast.h>
-#include <pqxx/pqxx>
+#include <pqxx/pqxx> // Y_IGNORE
 
 
 namespace DB

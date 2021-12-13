@@ -3,14 +3,14 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Parsers/IAST_fwd.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/IAST.h>
 
 namespace DB
 {
 
 class ASTSelectIntersectExceptQuery;
-class ASTSelectQuery;
-class ASTSelectWithUnionQuery;
 
 class PredicateRewriteVisitorData : WithContext
 {

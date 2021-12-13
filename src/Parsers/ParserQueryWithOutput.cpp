@@ -13,17 +13,16 @@
 #include <Parsers/ParserRenameQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/ParserShowAccessEntitiesQuery.h>
+#include <Parsers/ParserShowAccessQuery.h>
+#include <Parsers/ParserShowCreateAccessEntityQuery.h>
+#include <Parsers/ParserShowGrantsQuery.h>
+#include <Parsers/ParserShowPrivilegesQuery.h>
 #include <Parsers/ParserShowProcesslistQuery.h>
 #include <Parsers/ParserShowTablesQuery.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
 #include <Parsers/ParserWatchQuery.h>
 #include <Parsers/QueryWithOutputSettingsPushDownVisitor.h>
-#include <Parsers/Access/ParserShowAccessEntitiesQuery.h>
-#include <Parsers/Access/ParserShowAccessQuery.h>
-#include <Parsers/Access/ParserShowCreateAccessEntityQuery.h>
-#include <Parsers/Access/ParserShowGrantsQuery.h>
-#include <Parsers/Access/ParserShowPrivilegesQuery.h>
-#include "Common/Exception.h"
 
 
 namespace DB
@@ -86,14 +85,6 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         ParserStringLiteral out_file_p;
         if (!out_file_p.parse(pos, query_with_output.out_file, expected))
             return false;
-
-        ParserKeyword s_compression_method("COMPRESSION");
-        if (s_compression_method.ignore(pos, expected))
-        {
-            ParserStringLiteral compression;
-            if (!compression.parse(pos, query_with_output.compression, expected))
-                return false;
-        }
 
         query_with_output.children.push_back(query_with_output.out_file);
     }

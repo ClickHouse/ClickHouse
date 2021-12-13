@@ -67,10 +67,10 @@ class AggregateFunctionQuantile final : public IAggregateFunctionDataHelper<Data
     AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>
 {
 private:
-    using ColVecType = ColumnVectorOrDecimal<Value>;
+    using ColVecType = std::conditional_t<IsDecimalNumber<Value>, ColumnDecimal<Value>, ColumnVector<Value>>;
 
     static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
-    static_assert(!is_decimal<Value> || !returns_float);
+    static_assert(!IsDecimalNumber<Value> || !returns_float);
 
     QuantileLevels<Float64> levels;
 
@@ -136,13 +136,13 @@ public:
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         /// const_cast is required because some data structures apply finalizaton (like compactization) before serializing.
         this->data(const_cast<AggregateDataPtr>(place)).serialize(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
     {
         this->data(place).deserialize(buf);
     }

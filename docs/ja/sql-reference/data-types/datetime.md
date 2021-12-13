@@ -126,4 +126,4 @@ FROM dt
 -   [日付と時刻を操作する演算子](../../sql-reference/operators/index.md#operators-datetime)
 -   [その `Date` データ型](date.md)
 
-[元の記事](https://clickhouse.com/docs/en/data_types/datetime/) <!--hide-->
+[元の記事](https://clickhouse.tech/docs/en/data_types/datetime/) <!--hide-->

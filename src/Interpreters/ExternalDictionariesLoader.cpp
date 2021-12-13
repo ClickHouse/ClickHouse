@@ -6,7 +6,9 @@
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 #if USE_MYSQL
 #   include <mysqlxx/PoolFactory.h>
@@ -95,69 +97,71 @@ QualifiedTableName ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase
         return qualified_dictionary_name;
     }
 
-    /// If dictionary was not qualified with database name, try to resolve dictionary as xml dictionary.
-    if (qualified_name->database.empty() && !has(qualified_name->table))
+    if (qualified_name->database.empty() && has(dictionary_name))
     {
-        std::string current_database_name = query_context->getCurrentDatabase();
-        std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name, current_database_name);
-
-        /// If after qualify dictionary_name with default_database_name we find it, add default_database to qualified name.
-        if (has(resolved_name))
-            qualified_name->database = std::move(current_database_name);
+        /// This is xml dictionary
+        return *qualified_name;
     }
+
+    if (qualified_name->database.empty())
+        qualified_name->database = query_context->getCurrentDatabase();
 
     return *qualified_name;
 }
 
 std::string ExternalDictionariesLoader::resolveDictionaryName(const std::string & dictionary_name, const std::string & current_database_name) const
 {
-    if (has(dictionary_name))
+    bool has_dictionary = has(dictionary_name);
+    if (has_dictionary)
         return dictionary_name;
 
-    std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name, current_database_name);
+    std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name);
+    has_dictionary = has(resolved_name);
 
-    if (has(resolved_name))
-        return resolved_name;
+    if (!has_dictionary)
+    {
+        /// If dictionary not found. And database was not implicitly specified
+        /// we can qualify dictionary name with current database name.
+        /// It will help if dictionary is created with DDL and is in current database.
+        if (dictionary_name.find('.') == std::string::npos)
+        {
+            String dictionary_name_with_database = current_database_name + '.' + dictionary_name;
+            resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name_with_database);
+            has_dictionary = has(resolved_name);
+        }
+    }
 
-    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary ({}) not found", backQuote(dictionary_name));
+    if (!has_dictionary)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary ({}) not found", backQuote(dictionary_name));
+
+    return resolved_name;
 }
 
-std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog(const std::string & name, const std::string & current_database_name) const
+std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog(const std::string & name) const
 {
     /// If it's dictionary from Atomic database, then we need to convert qualified name to UUID.
     /// Try to split name and get id from associated StorageDictionary.
     /// If something went wrong, return name as is.
 
-    String res = name;
+    auto pos = name.find('.');
+    if (pos == std::string::npos || name.find('.', pos + 1) != std::string::npos)
+        return name;
 
-    auto qualified_name = QualifiedTableName::tryParseFromString(name);
-    if (!qualified_name)
-        return res;
-
-    if (qualified_name->database.empty())
-    {
-        /// Ether database name is not specified and we should use current one
-        /// or it's an XML dictionary.
-        bool is_xml_dictionary = has(name);
-        if (is_xml_dictionary)
-            return res;
-
-        qualified_name->database = current_database_name;
-        res = current_database_name + '.' + name;
-    }
+    std::string maybe_database_name = name.substr(0, pos);
+    std::string maybe_table_name = name.substr(pos + 1);
 
     auto [db, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(
-        {qualified_name->database, qualified_name->table},
+        {maybe_database_name, maybe_table_name},
         const_pointer_cast<Context>(getContext()));
 
     if (!db)
-        return res;
+        return name;
     assert(table);
 
     if (db->getUUID() == UUIDHelpers::Nil)
-        return res;
+        return name;
     if (table->getName() != "Dictionary")
-        return res;
+        return name;
 
     return toString(table->getStorageID().uuid);
 }

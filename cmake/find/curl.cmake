@@ -7,7 +7,7 @@ if (NOT ENABLE_CURL)
     return()
 endif()
 
-option (USE_INTERNAL_CURL "Use internal curl library" ON)
+option (USE_INTERNAL_CURL "Use internal curl library" ${NOT_UNBUNDLED})
 
 if (NOT USE_INTERNAL_CURL)
     find_package (CURL)
@@ -22,6 +22,8 @@ if (NOT CURL_FOUND)
 
     # find_package(CURL) compatibility for the following packages that uses
     # find_package(CURL)/include(FindCURL):
+    # - mariadb-connector-c
+    # - aws-s3-cmake
     # - sentry-native
     set (CURL_FOUND ON CACHE BOOL "")
     set (CURL_ROOT_DIR ${CURL_LIBRARY_DIR} CACHE PATH "")

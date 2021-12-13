@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Pipe.h>
 
 #include <vector>
 #include <atomic>
