@@ -21,7 +21,7 @@ IMAGE_NAME = 'clickhouse/fuzzer'
 
 def get_run_command(pr_number, sha, download_url, workspace_path, image):
     return f'docker run --network=host --volume={workspace_path}:/workspace ' \
-          '--cap-add syslog --cap-add sys_admin ' \
+          '--cap-add syslog --cap-add sys_admin --cap-add=SYS_PTRACE ' \
           f'-e PR_TO_TEST={pr_number} -e SHA_TO_TEST={sha} -e BINARY_URL_TO_DOWNLOAD="{download_url}" '\
           f'{image}'
 
