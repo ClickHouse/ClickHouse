@@ -117,7 +117,7 @@ public:
                     + " has signature: transform(T, Array(T), Array(U), U) -> U; or transform(T, Array(T), Array(T)) -> T; where T and U are types.",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-            return getLeastSupertype({type_x, type_arr_to_nested});
+            return getLeastSupertype(DataTypes{type_x, type_arr_to_nested});
         }
         else
         {

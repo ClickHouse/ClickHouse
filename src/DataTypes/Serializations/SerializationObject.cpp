@@ -10,6 +10,8 @@
 #include <Common/HashTable/HashSet.h>
 #include <Columns/ColumnObject.h>
 
+#include <Common/FieldVisitorToString.h>
+
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
@@ -31,7 +33,8 @@ namespace
 class FieldVisitorReplaceScalars : public StaticVisitor<Field>
 {
 public:
-    explicit FieldVisitorReplaceScalars(const Field & replacement_) : replacement(replacement_)
+    explicit FieldVisitorReplaceScalars(const Field & replacement_)
+        : replacement(replacement_)
     {
     }
 
@@ -53,6 +56,41 @@ public:
 private:
     const Field & replacement;
 };
+
+bool tryInsertDefaultFromNested(
+    ColumnObject::SubcolumnsTree::LeafPtr entry, const ColumnObject::SubcolumnsTree & subcolumns)
+{
+    if (!entry->path.hasNested())
+        return false;
+
+    const auto * node = subcolumns.findLeaf(entry->path);
+    if (!node)
+        return false;
+
+    const auto * node_nested = subcolumns.findParent(node,
+        [](const auto & candidate) { return candidate.isNested(); });
+
+    if (!node_nested)
+        return false;
+
+    const auto * leaf = subcolumns.findLeaf(node_nested,
+        [&](const auto & candidate)
+        {
+            return candidate.column.size() == entry->column.size() + 1;
+        });
+
+    if (!leaf)
+        return false;
+
+    auto last_field = leaf->column.getLastField();
+    if (last_field.isNull())
+        return false;
+
+    auto default_scalar = getBaseTypeOfArray(leaf->column.getLeastCommonType())->getDefault();
+    auto default_field = applyVisitor(FieldVisitorReplaceScalars(default_scalar), last_field);
+    entry->column.insert(std::move(default_field));
+    return true;
+}
 
 }
 
@@ -91,34 +129,14 @@ void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader &
         subcolumn.insert(std::move(values[i]));
     }
 
-    for (auto & [key, subcolumn] : column_object.getSubcolumns())
+    const auto & subcolumns = column_object.getSubcolumns();
+    for (const auto & entry : subcolumns)
     {
-        if (!paths_set.has(key.getPath()))
+        if (!paths_set.has(entry->path.getPath()))
         {
-            if (key.hasNested())
-            {
-                auto nested_key = column_object.findSubcolumnForNested(key, subcolumn.size() + 1);
-
-                if (nested_key)
-                {
-                    const auto & subcolumn_nested = column_object.getSubcolumn(*nested_key);
-                    auto last_field = subcolumn_nested.getLastField();
-                    if (last_field.isNull())
-                        continue;
-
-                    auto default_scalar = getBaseTypeOfArray(subcolumn_nested.getLeastCommonType())->getDefault();
-                    auto default_field = applyVisitor(FieldVisitorReplaceScalars(default_scalar), last_field);
-                    subcolumn.insert(std::move(default_field));
-                }
-                else
-                {
-                    subcolumn.insertDefault();
-                }
-            }
-            else
-            {
-                subcolumn.insertDefault();
-            }
+            bool inserted = tryInsertDefaultFromNested(entry, subcolumns);
+            if (!inserted)
+                entry->column.insertDefault();
         }
     }
 }
@@ -208,26 +226,27 @@ void SerializationObject<Parser>::serializeBinaryBulkWithMultipleStreams(
     if (auto * stream = settings.getter(settings.path))
         writeVarUInt(column_object.getSubcolumns().size(), *stream);
 
-    for (const auto & [key, subcolumn] : column_object.getSubcolumns())
+    const auto & subcolumns = column_object.getSubcolumns().getLeaves();
+    for (const auto & entry : subcolumns)
     {
         settings.path.back() = Substream::ObjectStructure;
-        settings.path.back().object_key_name = key.getPath();
+        settings.path.back().object_key_name = entry->path.getPath();
 
-        const auto & type = subcolumn.getLeastCommonType();
+        const auto & type = entry->column.getLeastCommonType();
         if (auto * stream = settings.getter(settings.path))
         {
-            key.writeBinary(*stream);
+            entry->path.writeBinary(*stream);
             writeStringBinary(type->getName(), *stream);
         }
 
         settings.path.back() = Substream::ObjectElement;
-        settings.path.back().object_key_name = key.getPath();
+        settings.path.back().object_key_name = entry->path.getPath();
 
         if (auto * stream = settings.getter(settings.path))
         {
             auto serialization = type->getDefaultSerialization();
             serialization->serializeBinaryBulkWithMultipleStreams(
-                subcolumn.getFinalizedColumn(), offset, limit, settings, state);
+                entry->column.getFinalizedColumn(), offset, limit, settings, state);
         }
     }
 
@@ -335,11 +354,11 @@ void SerializationObject<Parser>::serializeTextImpl(const IColumn & column, size
         if (it != subcolumns.begin())
             writeCString(",", ostr);
 
-        writeDoubleQuoted(it->first.getPath(), ostr);
+        writeDoubleQuoted((*it)->path.getPath(), ostr);
         writeChar(':', ostr);
 
-        auto serialization = it->second.getLeastCommonType()->getDefaultSerialization();
-        serialization->serializeTextJSON(it->second.getFinalizedColumn(), row_num, ostr, settings);
+        auto serialization = (*it)->column.getLeastCommonType()->getDefaultSerialization();
+        serialization->serializeTextJSON((*it)->column.getFinalizedColumn(), row_num, ostr, settings);
     }
     writeChar('}', ostr);
 }

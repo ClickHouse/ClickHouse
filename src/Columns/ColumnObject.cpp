@@ -45,10 +45,12 @@ Array createEmptyArrayField(size_t num_dimensions)
     return array;
 }
 
-ColumnPtr recreateWithDefaultValues(const ColumnPtr & column)
+ColumnPtr recreateColumnWithDefaultValues(const ColumnPtr & column)
 {
     if (const auto * column_array = checkAndGetColumn<ColumnArray>(column.get()))
-        return ColumnArray::create(recreateWithDefaultValues(column_array->getDataPtr()), IColumn::mutate(column_array->getOffsetsPtr()));
+        return ColumnArray::create(
+            recreateColumnWithDefaultValues(column_array->getDataPtr()),
+                IColumn::mutate(column_array->getOffsetsPtr()));
     else
         return column->cloneEmpty()->cloneResized(column->size());
 }
@@ -171,16 +173,8 @@ public:
         type_indexes.insert(TypeId<NearestFieldType<T>>);
     }
 
-    DataTypePtr getScalarType() const
-    {
-
-        auto res = getLeastSupertype(type_indexes, true);
-        if (have_nulls)
-            return makeNullable(res);
-
-        return res;
-    }
-
+    DataTypePtr getScalarType() const { return getLeastSupertype(type_indexes, true); }
+    bool haveNulls() const { return have_nulls; }
     bool needConvertField() const { return field_types.size() > 1; }
 
 private:
@@ -248,6 +242,17 @@ void ColumnObject::Subcolumn::checkTypes() const
 
 void ColumnObject::Subcolumn::insert(Field field)
 {
+    FieldVisitorToScalarType to_scalar_type_visitor;
+    applyVisitor(to_scalar_type_visitor, field);
+
+    auto base_type = to_scalar_type_visitor.getScalarType();
+
+    if (isNothing(base_type) && (!is_nullable || !to_scalar_type_visitor.haveNulls()))
+    {
+        insertDefault();
+        return;
+    }
+
     auto column_dim = getNumberOfDimensions(*least_common_type);
     auto value_dim = applyVisitor(FieldVisitorToNumberOfDimensions(), field);
 
@@ -259,39 +264,24 @@ void ColumnObject::Subcolumn::insert(Field field)
 
     if (value_dim != column_dim)
         throw Exception(ErrorCodes::NUMBER_OF_DIMENSIONS_MISMATHED,
-            "Dimension of types mismatched between inserted value and column."
+            "Dimension of types mismatched between inserted value and column. "
             "Dimension of value: {}. Dimension of column: {}",
              value_dim, column_dim);
 
-    FieldVisitorToScalarType to_scalar_type_visitor;
-    applyVisitor(to_scalar_type_visitor, field);
-
-    auto base_type = to_scalar_type_visitor.getScalarType();
-    if (isNothing(base_type))
-    {
-        insertDefault();
-        return;
-    }
-
-    if (is_nullable && !base_type->isNullable())
+    if (is_nullable)
         base_type = makeNullable(base_type);
 
     DataTypePtr value_type;
-    if (!is_nullable && base_type->isNullable())
+    if (!is_nullable && to_scalar_type_visitor.haveNulls())
     {
-        base_type = removeNullable(base_type);
-        if (isNothing(base_type))
-        {
-            insertDefault();
-            return;
-        }
-
-        value_type = createArrayOfType(base_type, value_dim);
         auto default_value = base_type->getDefault();
+        value_type = createArrayOfType(base_type, value_dim);
         field = applyVisitor(FieldVisitorReplaceNull(default_value, value_dim), std::move(field));
     }
     else
+    {
         value_type = createArrayOfType(base_type, value_dim);
+    }
 
     bool type_changed = false;
 
@@ -394,17 +384,6 @@ void ColumnObject::Subcolumn::finalize()
     num_of_defaults_in_prefix = 0;
 }
 
-Field ColumnObject::Subcolumn::getLastField() const
-{
-    if (data.empty())
-        return Field();
-
-    const auto & last_part = data.back();
-    assert(!last_part.empty());
-    return (*last_part)[last_part->size() - 1];
-}
-
-
 void ColumnObject::Subcolumn::insertDefault()
 {
     if (data.empty())
@@ -419,6 +398,56 @@ void ColumnObject::Subcolumn::insertManyDefaults(size_t length)
         num_of_defaults_in_prefix += length;
     else
         data.back()->insertManyDefaults(length);
+}
+
+void ColumnObject::Subcolumn::popBack(size_t n)
+{
+    assert(n <= size);
+
+    size_t num_removed = 0;
+    for (auto it = data.rbegin(); it != data.rend(); ++it)
+    {
+        if (n == 0)
+            break;
+
+        auto & column = *it;
+        if (n < column->size())
+        {
+            column->popBack(n);
+            n = 0;
+        }
+        else
+        {
+            ++num_removed;
+            n -= column->size();
+        }
+    }
+
+    data.resize(data.size() - num_removed);
+    num_of_defaults_in_prefix -= n;
+}
+
+Field ColumnObject::Subcolumn::getLastField() const
+{
+    if (data.empty())
+        return Field();
+
+    const auto & last_part = data.back();
+    assert(!last_part.empty());
+    return (*last_part)[last_part->size() - 1];
+}
+
+ColumnObject::Subcolumn ColumnObject::Subcolumn::recreateWithDefaultValues() const
+{
+    Subcolumn new_subcolumn;
+    new_subcolumn.least_common_type = least_common_type;
+    new_subcolumn.num_of_defaults_in_prefix = num_of_defaults_in_prefix;
+    new_subcolumn.data.reserve(data.size());
+
+    for (const auto & part : data)
+        new_subcolumn.data.push_back(recreateColumnWithDefaultValues(part));
+
+    return new_subcolumn;
 }
 
 IColumn & ColumnObject::Subcolumn::getFinalizedColumn()
@@ -444,7 +473,7 @@ ColumnObject::ColumnObject(bool is_nullable_)
 {
 }
 
-ColumnObject::ColumnObject(SubcolumnsMap && subcolumns_, bool is_nullable_)
+ColumnObject::ColumnObject(SubcolumnsTree && subcolumns_, bool is_nullable_)
     : subcolumns(std::move(subcolumns_))
     , is_nullable(is_nullable_)
 {
@@ -456,14 +485,16 @@ void ColumnObject::checkConsistency() const
     if (subcolumns.empty())
         return;
 
-    size_t first_size = subcolumns.begin()->second.size();
-    for (const auto & [key, column] : subcolumns)
+    const auto & first_leaf = *subcolumns.begin();
+    size_t first_size = first_leaf->column.size();
+
+    for (const auto & leaf : subcolumns)
     {
-        if (first_size != column.size())
+        if (first_size != leaf->column.size())
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Sizes of subcolumns are inconsistent in ColumnObject."
                 " Subcolumn '{}' has {} rows, subcolumn '{}' has {} rows",
-                subcolumns.begin()->first.getPath(), first_size, key.getPath(), column.size());
+                first_leaf->path.getPath(), first_size, leaf->path.getPath(), leaf->column.size());
         }
     }
 }
@@ -473,7 +504,7 @@ size_t ColumnObject::size() const
 #ifndef NDEBUG
     checkConsistency();
 #endif
-    return subcolumns.empty() ? 0 : subcolumns.begin()->second.size();
+    return subcolumns.empty() ? 0 : (*subcolumns.begin())->column.size();
 }
 
 MutableColumnPtr ColumnObject::cloneResized(size_t new_size) const
@@ -488,16 +519,16 @@ MutableColumnPtr ColumnObject::cloneResized(size_t new_size) const
 size_t ColumnObject::byteSize() const
 {
     size_t res = 0;
-    for (const auto & [_, column] : subcolumns)
-        res += column.byteSize();
+    for (const auto & entry : subcolumns)
+        res += entry->column.byteSize();
     return res;
 }
 
 size_t ColumnObject::allocatedBytes() const
 {
     size_t res = 0;
-    for (const auto & [_, column] : subcolumns)
-        res += column.allocatedBytes();
+    for (const auto & entry : subcolumns)
+        res += entry->column.allocatedBytes();
     return res;
 }
 
@@ -506,8 +537,8 @@ void ColumnObject::forEachSubcolumn(ColumnCallback callback)
     if (!isFinalized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot iterate over non-finalized ColumnObject");
 
-    for (auto & [_, column] : subcolumns)
-        callback(column.data.back());
+    for (auto & entry : subcolumns)
+        callback(entry->column.data.back());
 }
 
 void ColumnObject::insert(const Field & field)
@@ -527,15 +558,15 @@ void ColumnObject::insert(const Field & field)
         subcolumn.insert(value);
     }
 
-    for (auto & [key, subcolumn] : subcolumns)
-        if (!inserted.has(key.getPath()))
-            subcolumn.insertDefault();
+    for (auto & entry : subcolumns)
+        if (!inserted.has(entry->path.getPath()))
+            entry->column.insertDefault();
 }
 
 void ColumnObject::insertDefault()
 {
-    for (auto & [_, subcolumn] : subcolumns)
-        subcolumn.insertDefault();
+    for (auto & entry : subcolumns)
+        entry->column.insertDefault();
 }
 
 Field ColumnObject::operator[](size_t n) const
@@ -544,8 +575,8 @@ Field ColumnObject::operator[](size_t n) const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get Field from non-finalized ColumnObject");
 
     Object object;
-    for (const auto & [key, subcolumn] : subcolumns)
-        object[key.getPath()] = (*subcolumn.data.back())[n];
+    for (const auto & entry : subcolumns)
+        object[entry->path.getPath()] = (*entry->column.data.back())[n];
 
     return object;
 }
@@ -556,10 +587,10 @@ void ColumnObject::get(size_t n, Field & res) const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get Field from non-finalized ColumnObject");
 
     auto & object = res.get<Object &>();
-    for (const auto & [key, subcolumn] : subcolumns)
+    for (const auto & entry : subcolumns)
     {
-        auto it = object.try_emplace(key.getPath()).first;
-        subcolumn.data.back()->get(n, it->second);
+        auto it = object.try_emplace(entry->path.getPath()).first;
+        entry->column.data.back()->get(n, it->second);
     }
 }
 
@@ -567,12 +598,12 @@ void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t len
 {
     const auto & src_object = assert_cast<const ColumnObject &>(src);
 
-    for (auto & [name, subcolumn] : subcolumns)
+    for (auto & entry : subcolumns)
     {
-        if (src_object.hasSubcolumn(name))
-            subcolumn.insertRangeFrom(src_object.getSubcolumn(name), start, length);
+        if (src_object.hasSubcolumn(entry->path))
+            entry->column.insertRangeFrom(src_object.getSubcolumn(entry->path), start, length);
         else
-            subcolumn.insertManyDefaults(length);
+            entry->column.insertManyDefaults(length);
     }
 
     finalize();
@@ -584,10 +615,10 @@ ColumnPtr ColumnObject::replicate(const Offsets & offsets) const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot replicate non-finalized ColumnObject");
 
     auto res_column = ColumnObject::create(is_nullable);
-    for (const auto & [key, subcolumn] : subcolumns)
+    for (const auto & entry : subcolumns)
     {
-        auto replicated_data = subcolumn.data.back()->replicate(offsets)->assumeMutable();
-        res_column->addSubcolumn(key, std::move(replicated_data), is_nullable);
+        auto replicated_data = entry->column.data.back()->replicate(offsets)->assumeMutable();
+        res_column->addSubcolumn(entry->path, std::move(replicated_data), is_nullable);
     }
 
     return res_column;
@@ -595,128 +626,105 @@ ColumnPtr ColumnObject::replicate(const Offsets & offsets) const
 
 void ColumnObject::popBack(size_t length)
 {
-    if (!isFinalized())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot popBack from non-finalized ColumnObject");
-
-    for (auto & [_, subcolumn] : subcolumns)
-        subcolumn.data.back()->popBack(length);
+    for (auto & entry : subcolumns)
+        entry->column.popBack(length);
 }
 
 const ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const Path & key) const
 {
-    auto it = subcolumns.find(key);
-    if (it != subcolumns.end())
-        return it->second;
+    if (const auto * node = subcolumns.findLeaf(key))
+        return node->column;
 
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in ColumnObject", key.getPath());
 }
 
 ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const Path & key)
 {
-    auto it = subcolumns.find(key);
-    if (it != subcolumns.end())
-        return it->second;
+    if (const auto * node = subcolumns.findLeaf(key))
+        return const_cast<SubcolumnsTree::Leaf *>(node)->column;
 
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in ColumnObject", key.getPath());
 }
 
-std::optional<Path> ColumnObject::findSubcolumnForNested(const Path & key, size_t expected_size) const
-{
-    for (const auto & [other_key, other_subcolumn] : subcolumns)
-    {
-        if (key == other_key || expected_size != other_subcolumn.size())
-            continue;
-
-        auto split_lhs = Nested::splitName(key.getPath(), true);
-        auto split_rhs = Nested::splitName(other_key.getPath(), true);
-
-        if (!split_lhs.first.empty() && split_lhs.first == split_rhs.first)
-            return other_key;
-    }
-
-    return {};
-}
-
 bool ColumnObject::hasSubcolumn(const Path & key) const
 {
-    return subcolumns.count(key) != 0;
+    return subcolumns.findLeaf(key) != nullptr;
 }
 
 void ColumnObject::addSubcolumn(const Path & key, size_t new_size, bool check_size)
 {
-    if (subcolumns.count(key))
-        throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Subcolumn '{}' already exists", key.getPath());
-
     if (check_size && new_size != size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Cannot add subcolumn '{}' with {} rows to ColumnObject with {} rows",
             key.getPath(), new_size, size());
 
+    bool inserted = false;
     if (key.hasNested())
     {
-        auto nested_key = findSubcolumnForNested(key, new_size);
-        if (nested_key)
+        const auto * nested_node = subcolumns.findBestMatch(key);
+        if (nested_node && nested_node->isNested())
         {
-            auto & nested_subcolumn = subcolumns[*nested_key];
-            nested_subcolumn.finalize();
-            auto default_column = recreateWithDefaultValues(nested_subcolumn.getFinalizedColumnPtr());
-            subcolumns[key] = Subcolumn(default_column->assumeMutable(), is_nullable);
-        }
-        else
-        {
-            subcolumns[key] = Subcolumn(new_size, is_nullable);
+            const auto * leaf = subcolumns.findLeaf(nested_node, [&](const auto & ) { return true; });
+            assert(leaf);
+
+            auto new_subcolumn = leaf->column.recreateWithDefaultValues();
+            if (new_subcolumn.size() == new_size + 1)
+                new_subcolumn.popBack(1);
+
+            inserted = subcolumns.add(key, new_subcolumn);
         }
     }
-    else
-    {
-        subcolumns[key] = Subcolumn(new_size, is_nullable);
-    }
+
+    if (!inserted)
+        inserted = subcolumns.add(key, Subcolumn(new_size, is_nullable));
+
+    if (!inserted)
+        throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Subcolumn '{}' already exists", key.getPath());
 }
 
 void ColumnObject::addSubcolumn(const Path & key, MutableColumnPtr && subcolumn, bool check_size)
 {
-    if (subcolumns.count(key))
-        throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Subcolumn '{}' already exists", key.getPath());
-
     if (check_size && subcolumn->size() != size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Cannot add subcolumn '{}' with {} rows to ColumnObject with {} rows",
             key.getPath(), subcolumn->size(), size());
 
-    subcolumns[key] = Subcolumn(std::move(subcolumn), is_nullable);
+    bool inserted = subcolumns.add(key, Subcolumn(std::move(subcolumn), is_nullable));
+    if (!inserted)
+        throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Subcolumn '{}' already exists", key.getPath());
 }
 
 Paths ColumnObject::getKeys() const
 {
     Paths keys;
     keys.reserve(subcolumns.size());
-    for (const auto & [key, _] : subcolumns)
-        keys.emplace_back(key);
+    for (const auto & entry : subcolumns)
+        keys.emplace_back(entry->path);
     return keys;
 }
 
 bool ColumnObject::isFinalized() const
 {
     return std::all_of(subcolumns.begin(), subcolumns.end(),
-        [](const auto & elem) { return elem.second.isFinalized(); });
+        [](const auto & entry) { return entry->column.isFinalized(); });
 }
 
 void ColumnObject::finalize()
 {
     size_t old_size = size();
-    SubcolumnsMap new_subcolumns;
-    for (auto && [name, subcolumn] : subcolumns)
+    SubcolumnsTree new_subcolumns;
+    for (auto && entry : subcolumns)
     {
-        const auto & least_common_type = subcolumn.getLeastCommonType();
+        const auto & least_common_type = entry->column.getLeastCommonType();
         if (isNothing(getBaseTypeOfArray(least_common_type)))
             continue;
 
-        subcolumn.finalize();
-        new_subcolumns[name] = std::move(subcolumn);
+        entry->column.finalize();
+        new_subcolumns.add(entry->path, std::move(entry->column));
     }
 
     if (new_subcolumns.empty())
-        new_subcolumns[Path(COLUMN_NAME_DUMMY)] = Subcolumn{ColumnUInt8::create(old_size), is_nullable};
+        new_subcolumns.add(Path{COLUMN_NAME_DUMMY}, Subcolumn{ColumnUInt8::create(old_size), is_nullable});
 
     std::swap(subcolumns, new_subcolumns);
     checkObjectHasNoAmbiguosPaths(getKeys());

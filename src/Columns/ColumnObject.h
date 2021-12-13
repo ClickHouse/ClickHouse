@@ -6,6 +6,7 @@
 #include <Common/PODArray.h>
 #include <Common/HashTable/HashMap.h>
 #include <DataTypes/Serializations/JSONDataParser.h>
+#include <DataTypes/Serializations/DataPath.h>
 
 #include <DataTypes/IDataType.h>
 
@@ -39,10 +40,12 @@ public:
         void insertDefault();
         void insertManyDefaults(size_t length);
         void insertRangeFrom(const Subcolumn & src, size_t start, size_t length);
+        void popBack(size_t n);
 
         void finalize();
 
         Field getLastField() const;
+        Subcolumn recreateWithDefaultValues() const;
 
         IColumn & getFinalizedColumn();
         const IColumn & getFinalizedColumn() const;
@@ -57,17 +60,19 @@ public:
         size_t num_of_defaults_in_prefix = 0;
     };
 
-    using SubcolumnsMap = std::unordered_map<Path, Subcolumn, Path::Hash>;
+    // using SubcolumnsMap = std::unordered_map<Path, Subcolumn, Path::Hash>;
+    using SubcolumnsTree = SubcolumnsTree<Subcolumn>;
 
 private:
-    SubcolumnsMap subcolumns;
+    // SubcolumnsMap subcolumns;
+    SubcolumnsTree subcolumns;
     bool is_nullable;
 
 public:
     static constexpr auto COLUMN_NAME_DUMMY = "_dummy";
 
     explicit ColumnObject(bool is_nullable_);
-    ColumnObject(SubcolumnsMap && subcolumns_, bool is_nullable_);
+    ColumnObject(SubcolumnsTree && subcolumns_, bool is_nullable_);
 
     void checkConsistency() const;
 
@@ -75,13 +80,12 @@ public:
 
     const Subcolumn & getSubcolumn(const Path & key) const;
     Subcolumn & getSubcolumn(const Path & key);
-    std::optional<Path> findSubcolumnForNested(const Path & key, size_t expected_size) const;
 
     void addSubcolumn(const Path & key, size_t new_size, bool check_size = false);
     void addSubcolumn(const Path & key, MutableColumnPtr && subcolumn, bool check_size = false);
 
-    const SubcolumnsMap & getSubcolumns() const { return subcolumns; }
-    SubcolumnsMap & getSubcolumns() { return subcolumns; }
+    const SubcolumnsTree & getSubcolumns() const { return subcolumns; }
+    SubcolumnsTree & getSubcolumns() { return subcolumns; }
     Paths getKeys() const;
 
     bool isFinalized() const;
@@ -134,7 +138,7 @@ public:
     void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override { throwMustBeConcrete(); }
 
 private:
-    [[noreturn]] void throwMustBeConcrete() const
+    [[noreturn]] static void throwMustBeConcrete()
     {
         throw Exception("ColumnObject must be converted to ColumnTuple before use", ErrorCodes::LOGICAL_ERROR);
     }

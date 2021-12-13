@@ -20,18 +20,17 @@ public:
         setInMemoryMetadata(storage_metadata);
     }
 
-public:
     std::string getName() const override { return "WindowViewProxy"; }
 
     QueryProcessingStage::Enum
-    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageMetadataPtr &, SelectQueryInfo &) const override
+    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageSnapshotPtr &, SelectQueryInfo &) const override
     {
         return to_stage;
     }
 
     Pipe read(
         const Names &,
-        const StorageMetadataPtr & /*metadata_snapshot*/,
+        const StorageSnapshotPtr & /*storage_snapshot*/,
         SelectQueryInfo & /*query_info*/,
         ContextPtr /*context*/,
         QueryProcessingStage::Enum /*processed_stage*/,
