@@ -492,48 +492,73 @@ catch (...)
 
 void Client::connect()
 {
+    bool is_secure = config().getBool("secure", false);
     connection_parameters = ConnectionParameters(config());
-
-    if (is_interactive)
-        std::cout << "Connecting to "
-                    << (!connection_parameters.default_database.empty() ? "database " + connection_parameters.default_database + " at "
-                                                                        : "")
-                    << connection_parameters.host << ":" << connection_parameters.port
-                    << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "") << "." << std::endl;
 
     String server_name;
     UInt64 server_version_major = 0;
     UInt64 server_version_minor = 0;
     UInt64 server_version_patch = 0;
 
-    try
+    String tcp_port_config_key = is_secure ? "tcp_port_secure" : "tcp_port";
+    UInt16 default_port = config().getInt(tcp_port_config_key, is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT);
+
+    for (size_t attempted_address_index = 0; attempted_address_index < hosts_ports.size(); ++attempted_address_index)
     {
-        connection = Connection::createConnection(connection_parameters, global_context);
+        connection_parameters.host = hosts_ports[attempted_address_index].host;
+        connection_parameters.port = hosts_ports[attempted_address_index].port.value_or(default_port);
 
-        if (max_client_network_bandwidth)
+        if (is_interactive)
+            std::cout << "Connecting to "
+                      << (!connection_parameters.default_database.empty() ? "database " + connection_parameters.default_database + " at "
+                                                                          : "")
+                      << connection_parameters.host << ":" << connection_parameters.port
+                      << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "") << "." << std::endl;
+
+        try
         {
-            ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0, "");
-            connection->setThrottler(throttler);
-        }
+            connection = Connection::createConnection(connection_parameters, global_context);
 
-        connection->getServerVersion(
-            connection_parameters.timeouts, server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
-    }
-    catch (const Exception & e)
-    {
-        /// It is typical when users install ClickHouse, type some password and instantly forget it.
-        if ((connection_parameters.user.empty() || connection_parameters.user == "default")
-            && e.code() == DB::ErrorCodes::AUTHENTICATION_FAILED)
+            if (max_client_network_bandwidth)
+            {
+                ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0, "");
+                connection->setThrottler(throttler);
+            }
+
+            connection->getServerVersion(
+                connection_parameters.timeouts, server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
+            break;
+        }
+        catch (const Exception & e)
         {
-            std::cerr << std::endl
-                << "If you have installed ClickHouse and forgot password you can reset it in the configuration file." << std::endl
-                << "The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml" << std::endl
-                << "and deleting this file will reset the password." << std::endl
-                << "See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed." << std::endl
-                << std::endl;
-        }
+            /// It is typical when users install ClickHouse, type some password and instantly forget it.
+            /// This problem can't be fixed with reconnection so it is not attempted
+            if ((connection_parameters.user.empty() || connection_parameters.user == "default")
+                && e.code() == DB::ErrorCodes::AUTHENTICATION_FAILED)
+            {
+                std::cerr << std::endl
+                          << "If you have installed ClickHouse and forgot password you can reset it in the configuration file." << std::endl
+                          << "The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml" << std::endl
+                          << "and deleting this file will reset the password." << std::endl
+                          << "See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed." << std::endl
+                          << std::endl;
+                throw;
+            }
+            else
+            {
+                if (attempted_address_index == hosts_ports.size() - 1)
+                    throw;
 
-        throw;
+                std::cerr << "Connection attempt to database at "
+                          << connection_parameters.host << ":" << connection_parameters.port
+                          << " resulted in failure"
+                          << std::endl
+                          << getExceptionMessage(e, false)
+                          << std::endl
+                          << "Attempting connection to the next provided address"
+                          << std::endl;
+            }
+        }
     }
 
     server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
