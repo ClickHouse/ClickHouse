@@ -28,12 +28,10 @@ According to Täht, switching to ClickHouse was the best technical decision thei
 
 “I don’t think we would be able to be where we are today without ClickHouse,” Saric said. “Without switching from Postgres, Plausible would not have all this growth and new customers.”
 
-Visit [https://plausible.io/](https://plausible.io/) for more information or to start a free trial.
-
 ## About Plausible
 
 Plausible Analytics is an open-source project dedicated to making web analytics more privacy-friendly. Our mission is to reduce corporate surveillance by providing an alternative web analytics tool which doesn’t come from the AdTech world.
 
-For more information please visit: [https://plausible.io/](https://plausible.io/)
+Visit [plausible.io](https://plausible.io/) for more information or to start a free trial.
 
 
