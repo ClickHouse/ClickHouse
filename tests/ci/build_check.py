@@ -14,6 +14,7 @@ from version_helper import get_version_from_repo, update_version_local
 from ccache_utils import get_ccache_if_not_exists, upload_ccache
 from ci_config import CI_CONFIG
 from docker_pull_helper import get_image_with_version
+from tee_popen import TeePopen
 
 
 def get_build_config(build_check_name, build_name):
@@ -77,8 +78,8 @@ def get_image_name(build_config):
 
 def build_clickhouse(packager_cmd, logs_path):
     build_log_path = os.path.join(logs_path, 'build_log.log')
-    with open(build_log_path, 'w') as log_file:
-        retcode = subprocess.Popen(packager_cmd, shell=True, stderr=log_file, stdout=log_file).wait()
+    with TeePopen(packager_cmd, build_log_path) as process:
+        retcode = process.wait()
         if retcode == 0:
             logging.info("Built successfully")
         else:
