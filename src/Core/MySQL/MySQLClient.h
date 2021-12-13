@@ -1,5 +1,5 @@
 #pragma once
-#include <base/types.h>
+#include <common/types.h>
 #include <Core/MySQL/MySQLReplication.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
@@ -45,9 +45,9 @@ private:
     String password;
 
     bool connected = false;
-    uint8_t sequence_id = 0;
-    uint32_t client_capabilities = 0;
+    UInt32 client_capability_flags = 0;
 
+    uint8_t seq = 0;
     const UInt8 charset_utf8 = 33;
     const String mysql_native_password = "mysql_native_password";
 

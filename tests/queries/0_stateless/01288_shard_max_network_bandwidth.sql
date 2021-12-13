@@ -1,5 +1,3 @@
--- Tags: shard
-
 -- Limit to 10 MB/sec
 SET max_network_bandwidth = 10000000;
 

@@ -6,7 +6,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Interpreters/AggregationCommon.h>
-#include <Formats/MarkInCompressedFile.h>
+#include <DataStreams/MarkInCompressedFile.h>
 
 
 namespace ProfileEvents
@@ -50,7 +50,7 @@ public:
 
         SipHash hash;
         hash.update(path_to_file.data(), path_to_file.size() + 1);
-        hash.get128(key);
+        hash.get128(key.low, key.high);
 
         return key;
     }

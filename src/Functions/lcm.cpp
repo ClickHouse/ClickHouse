@@ -2,9 +2,6 @@
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <Functions/GCDLCMImpl.h>
 
-#include <boost/integer/common_factor.hpp>
-
-
 namespace
 {
 
@@ -49,7 +46,7 @@ struct LCMImpl : public GCDLCMImpl<A, B, LCMImpl<A, B>, NameLCM>
           * (example: throw an exception or overflow in implementation specific way).
           */
 
-        Unsigned val1 = abs<Int>(a) / boost::integer::gcd(Int(a), Int(b));
+        Unsigned val1 = abs<Int>(a) / std::gcd(Int(a), Int(b));
         Unsigned val2 = abs<Int>(b);
 
         /// Overflow in implementation specific way.

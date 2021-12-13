@@ -4,7 +4,7 @@
 
 #if USE_AWS_S3
 
-#include <base/types.h>
+#include <common/types.h>
 #include <aws/core/Aws.h>
 #include <aws/core/client/ClientConfiguration.h>
 #include <IO/S3/PocoHTTPClient.h>
@@ -38,11 +38,9 @@ public:
         const String & secret_access_key,
         const String & server_side_encryption_customer_key_base64,
         HeaderCollection headers,
-        bool use_environment_credentials,
-        bool use_insecure_imds_request);
+        bool use_environment_credentials);
 
     PocoHTTPClientConfiguration createClientConfiguration(
-        const String & force_region,
         const RemoteHostFilter & remote_host_filter,
         unsigned int s3_max_redirects);
 
@@ -72,8 +70,6 @@ struct URI
     bool is_virtual_hosted_style;
 
     explicit URI(const Poco::URI & uri_);
-
-    static void validateBucket(const String & bucket, const Poco::URI & uri);
 };
 
 }

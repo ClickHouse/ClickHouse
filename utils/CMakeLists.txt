@@ -12,6 +12,7 @@ include(../cmake/limit_jobs.cmake)
 # Utils used in package
 add_subdirectory (config-processor)
 add_subdirectory (report)
+add_subdirectory (syntax-analyzer)
 
 # Not used in package
 if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
@@ -31,16 +32,10 @@ if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
     add_subdirectory (db-generator)
     add_subdirectory (wal-dump)
     add_subdirectory (check-mysql-binlog)
-    add_subdirectory (keeper-bench)
+endif ()
 
-    if (USE_NURAFT)
-        add_subdirectory (keeper-data-dumper)
-    endif ()
-
-    # memcpy_jart.S contains position dependent code
-    if (NOT CMAKE_POSITION_INDEPENDENT_CODE AND OS_LINUX AND ARCH_AMD64)
-        add_subdirectory (memcpy-bench)
-    endif ()
+if (ENABLE_CODE_QUALITY)
+    add_subdirectory (check-style)
 endif ()
 
 add_subdirectory (package)

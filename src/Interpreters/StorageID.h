@@ -1,5 +1,5 @@
 #pragma once
-#include <base/types.h>
+#include <common/types.h>
 #include <Core/UUID.h>
 #include <tuple>
 #include <Parsers/IAST_fwd.h>
@@ -25,7 +25,7 @@ namespace ErrorCodes
 static constexpr char const * TABLE_WITH_UUID_NAME_PLACEHOLDER = "_";
 
 class ASTQueryWithTableAndOutput;
-class ASTTableIdentifier;
+class ASTIdentifier;
 class Context;
 
 // TODO(ilezhankin): refactor and merge |ASTTableIdentifier|
@@ -42,7 +42,7 @@ struct StorageID
     }
 
     StorageID(const ASTQueryWithTableAndOutput & query);
-    StorageID(const ASTTableIdentifier & table_identifier_node);
+    StorageID(const ASTIdentifier & table_identifier_node);
     StorageID(const ASTPtr & node);
 
     String getDatabaseName() const;
@@ -54,7 +54,7 @@ struct StorageID
 
     String getNameForLogs() const;
 
-    explicit operator bool () const
+    operator bool () const
     {
         return !empty();
     }
@@ -70,7 +70,6 @@ struct StorageID
     }
 
     bool operator<(const StorageID & rhs) const;
-    bool operator==(const StorageID & rhs) const;
 
     void assertNotEmpty() const
     {
@@ -90,10 +89,8 @@ struct StorageID
                                           const String & config_prefix);
 
     /// If dictionary has UUID, then use it as dictionary name in ExternalLoader to allow dictionary renaming.
-    /// ExternalDictnariesLoader::resolveDictionaryName(...) should be used to access such dictionaries by name.
-    String getInternalDictionaryName() const { return getShortName(); }
-    /// Get short, but unique, name.
-    String getShortName() const;
+    /// DatabaseCatalog::resolveDictionaryName(...) should be used to access such dictionaries by name.
+    String getInternalDictionaryName() const;
 
 private:
     StorageID() = default;

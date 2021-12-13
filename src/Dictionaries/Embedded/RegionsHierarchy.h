@@ -2,7 +2,7 @@
 
 #include <vector>
 #include <boost/noncopyable.hpp>
-#include <base/types.h>
+#include <common/types.h>
 #include "GeodataProviders/IHierarchiesProvider.h"
 #include <Core/Defines.h>
 

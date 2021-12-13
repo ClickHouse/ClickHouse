@@ -1,5 +1,5 @@
-# docker build -t clickhouse/stateful-test .
-FROM clickhouse/stateless-test
+# docker build -t yandex/clickhouse-stateful-test .
+FROM yandex/clickhouse-stateless-test
 
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
@@ -9,7 +9,6 @@ RUN apt-get update -y \
 
 COPY s3downloader /s3downloader
 
-ENV S3_URL="https://clickhouse-datasets.s3.yandex.net"
 ENV DATASETS="hits visits"
 
 COPY run.sh /

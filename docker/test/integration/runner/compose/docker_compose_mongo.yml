@@ -1,17 +1,11 @@
 version: '2.3'
 services:
     mongo1:
-        image: mongo:5.0
+        image: mongo:3.6
         restart: always
         environment:
             MONGO_INITDB_ROOT_USERNAME: root
             MONGO_INITDB_ROOT_PASSWORD: clickhouse
         ports:
-            - ${MONGO_EXTERNAL_PORT}:${MONGO_INTERNAL_PORT}
+            - 27018:27017
         command: --profile=2 --verbose
-
-    mongo2:
-        image: mongo:5.0
-        restart: always
-        ports:
-            - "27018:27017"

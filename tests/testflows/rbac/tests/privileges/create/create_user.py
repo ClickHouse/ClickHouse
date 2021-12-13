@@ -17,7 +17,7 @@ def create_user_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(run=create_user,
+        Suite(run=create_user, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[user_name,user_name]) for row in create_user.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
@@ -38,14 +38,13 @@ def create_user_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(run=create_user,
+        Suite(run=create_user, flags=TE,
             examples=Examples("privilege grant_target_name user_name", [
                 tuple(list(row)+[role_name,user_name]) for row in create_user.examples
             ], args=Args(name="check privilege={privilege}", format_name=True)))
 
 @TestOutline(Suite)
 @Examples("privilege",[
-    ("ALL",),
     ("ACCESS MANAGEMENT",),
     ("CREATE USER",),
 ])
@@ -61,13 +60,7 @@ def create_user(self, privilege, grant_target_name, user_name, node=None):
         create_user_name = f"create_user_{getuid()}"
 
         try:
-            with When("I grant the user NONE privilege"):
-                node.query(f"GRANT NONE TO {grant_target_name}")
-
-            with And("I grant the user USAGE privilege"):
-                node.query(f"GRANT USAGE ON *.* TO {grant_target_name}")
-
-            with Then("I check the user can't create a user"):
+            with When("I check the user can't create a user"):
                 node.query(f"CREATE USER {create_user_name}", settings=[("user",user_name)],
                     exitcode=exitcode, message=message)
 
@@ -134,7 +127,7 @@ def default_role_granted_directly(self, node=None):
 
     with user(node, f"{user_name}"):
 
-        Suite(test=default_role)(grant_target_name=user_name, user_name=user_name)
+        Suite(test=default_role, flags=TE)(grant_target_name=user_name, user_name=user_name)
 
 @TestSuite
 def default_role_granted_via_role(self, node=None):
@@ -152,7 +145,7 @@ def default_role_granted_via_role(self, node=None):
         with When("I grant the role to the user"):
             node.query(f"GRANT {role_name} TO {user_name}")
 
-        Suite(test=default_role)(grant_target_name=role_name, user_name=user_name)
+        Suite(test=default_role, flags=TE)(grant_target_name=role_name, user_name=user_name)
 
 @TestSuite
 @Requirements(
@@ -222,7 +215,7 @@ def default_role(self, grant_target_name, user_name, node=None):
                     settings = [("user", f"{user_name}")])
 
         finally:
-            with Finally("I drop the user"):
+            with Finally("I drop the user", flags=TE):
                 node.query(f"DROP USER IF EXISTS {create_user_name} ON CLUSTER sharded_cluster")
 
             with And("I drop the role from the cluster"):
@@ -271,8 +264,6 @@ def default_role(self, grant_target_name, user_name, node=None):
 @Name("create user")
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_CreateUser("1.0"),
-    RQ_SRS_006_RBAC_Privileges_All("1.0"),
-    RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 def feature(self, node="clickhouse1"):
     """Check the RBAC functionality of CREATE USER.

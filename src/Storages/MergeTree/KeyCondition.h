@@ -5,13 +5,14 @@
 #include <Interpreters/Set.h>
 #include <Core/SortDescription.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Storages/SelectQueryInfo.h>
 
 
 namespace DB
 {
 
-class ASTFunction;
 class Context;
 class IFunction;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
@@ -54,24 +55,25 @@ private:
     static bool less(const Field & lhs, const Field & rhs);
 
 public:
-    FieldRef left = NEGATIVE_INFINITY;   /// the left border
-    FieldRef right = POSITIVE_INFINITY;  /// the right border
-    bool left_included = false;           /// includes the left border
-    bool right_included = false;          /// includes the right border
+    FieldRef left;                       /// the left border, if any
+    FieldRef right;                      /// the right border, if any
+    bool left_bounded = false;        /// bounded at the left
+    bool right_bounded = false;       /// bounded at the right
+    bool left_included = false;       /// includes the left border, if any
+    bool right_included = false;      /// includes the right border, if any
 
-    /// The whole universe (not null).
+    /// The whole unversum.
     Range() {}
 
     /// One point.
     Range(const FieldRef & point)
-        : left(point), right(point), left_included(true), right_included(true) {}
+        : left(point), right(point), left_bounded(true), right_bounded(true), left_included(true), right_included(true) {}
 
     /// A bounded two-sided range.
     Range(const FieldRef & left_, bool left_included_, const FieldRef & right_, bool right_included_)
-        : left(left_)
-        , right(right_)
-        , left_included(left_included_)
-        , right_included(right_included_)
+        : left(left_), right(right_),
+        left_bounded(true), right_bounded(true),
+        left_included(left_included_), right_included(right_included_)
     {
         shrinkToIncludedIfPossible();
     }
@@ -80,11 +82,9 @@ public:
     {
         Range r;
         r.right = right_point;
+        r.right_bounded = true;
         r.right_included = right_included;
         r.shrinkToIncludedIfPossible();
-        // Special case for [-Inf, -Inf]
-        if (r.right.isNegativeInfinity() && right_included)
-            r.left_included = true;
         return r;
     }
 
@@ -92,11 +92,9 @@ public:
     {
         Range r;
         r.left = left_point;
+        r.left_bounded = true;
         r.left_included = left_included;
         r.shrinkToIncludedIfPossible();
-        // Special case for [+Inf, +Inf]
-        if (r.left.isPositiveInfinity() && left_included)
-            r.right_included = true;
         return r;
     }
 
@@ -106,7 +104,7 @@ public:
       */
     void shrinkToIncludedIfPossible()
     {
-        if (left.isExplicit() && !left_included)
+        if (left.isExplicit() && left_bounded && !left_included)
         {
             if (left.getType() == Field::Types::UInt64 && left.get<UInt64>() != std::numeric_limits<UInt64>::max())
             {
@@ -119,7 +117,7 @@ public:
                 left_included = true;
             }
         }
-        if (right.isExplicit() && !right_included)
+        if (right.isExplicit() && right_bounded && !right_included)
         {
             if (right.getType() == Field::Types::UInt64 && right.get<UInt64>() != std::numeric_limits<UInt64>::min())
             {
@@ -134,7 +132,12 @@ public:
         }
     }
 
-    bool empty() const { return less(right, left) || ((!left_included || !right_included) && !less(left, right)); }
+    bool empty() const
+    {
+        return left_bounded && right_bounded
+            && (less(right, left)
+                || ((!left_included || !right_included) && !less(left, right)));
+    }
 
     /// x contained in the range
     bool contains(const FieldRef & x) const
@@ -145,23 +148,35 @@ public:
     /// x is to the left
     bool rightThan(const FieldRef & x) const
     {
-        return less(left, x) || (left_included && equals(x, left));
+        return (left_bounded
+            ? !(less(left, x) || (left_included && equals(x, left)))
+            : false);
     }
 
     /// x is to the right
     bool leftThan(const FieldRef & x) const
     {
-        return less(x, right) || (right_included && equals(x, right));
+        return (right_bounded
+            ? !(less(x, right) || (right_included && equals(x, right)))
+            : false);
     }
 
     bool intersectsRange(const Range & r) const
     {
         /// r to the left of me.
-        if (less(r.right, left) || ((!left_included || !r.right_included) && equals(r.right, left)))
+        if (r.right_bounded
+            && left_bounded
+            && (less(r.right, left)
+                || ((!left_included || !r.right_included)
+                    && equals(r.right, left))))
             return false;
 
         /// r to the right of me.
-        if (less(right, r.left) || ((!right_included || !r.left_included) && equals(r.left, right)))
+        if (r.left_bounded
+            && right_bounded
+            && (less(right, r.left)                          /// ...} {...
+                || ((!right_included || !r.left_included)    /// ...) [... or ...] (...
+                    && equals(r.left, right))))
             return false;
 
         return true;
@@ -170,23 +185,30 @@ public:
     bool containsRange(const Range & r) const
     {
         /// r starts to the left of me.
-        if (less(r.left, left) || (r.left_included && !left_included && equals(r.left, left)))
+        if (left_bounded
+            && (!r.left_bounded
+                || less(r.left, left)
+                || (r.left_included
+                    && !left_included
+                    && equals(r.left, left))))
             return false;
 
         /// r ends right of me.
-        if (less(right, r.right) || (r.right_included && !right_included && equals(r.right, right)))
+        if (right_bounded
+            && (!r.right_bounded
+                || less(right, r.right)
+                || (r.right_included
+                    && !right_included
+                    && equals(r.right, right))))
             return false;
 
         return true;
     }
 
-    void invert()
+    void swapLeftAndRight()
     {
         std::swap(left, right);
-        if (left.isPositiveInfinity())
-            left = NEGATIVE_INFINITY;
-        if (right.isNegativeInfinity())
-            right = POSITIVE_INFINITY;
+        std::swap(left_bounded, right_bounded);
         std::swap(left_included, right_included);
     }
 
@@ -207,7 +229,7 @@ public:
     /// Does not take into account the SAMPLE section. all_columns - the set of all columns of the table.
     KeyCondition(
         const SelectQueryInfo & query_info,
-        ContextPtr context,
+        const Context & context,
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
         bool single_point_ = false,
@@ -225,8 +247,16 @@ public:
     /// one of the resulting mask components (see BoolMask::consider_only_can_be_XXX).
     BoolMask checkInRange(
         size_t used_key_size,
-        const FieldRef * left_keys,
-        const FieldRef * right_keys,
+        const FieldRef * left_key,
+        const FieldRef* right_key,
+        const DataTypes & data_types,
+        BoolMask initial_mask = BoolMask(false, false)) const;
+
+    /// Are the condition and its negation valid in a semi-infinite (not limited to the right) key range.
+    /// left_key must contain all the fields in the sort_descr in the appropriate order.
+    BoolMask checkAfter(
+        size_t used_key_size,
+        const FieldRef * left_key,
         const DataTypes & data_types,
         BoolMask initial_mask = BoolMask(false, false)) const;
 
@@ -234,8 +264,15 @@ public:
     /// This is more efficient than checkInRange(...).can_be_true.
     bool mayBeTrueInRange(
         size_t used_key_size,
-        const FieldRef * left_keys,
-        const FieldRef * right_keys,
+        const FieldRef * left_key,
+        const FieldRef * right_key,
+        const DataTypes & data_types) const;
+
+    /// Same as checkAfter, but calculate only may_be_true component of a result.
+    /// This is more efficient than checkAfter(...).can_be_true.
+    bool mayBeTrueAfter(
+        size_t used_key_size,
+        const FieldRef * left_key,
         const DataTypes & data_types) const;
 
     /// Checks that the index can not be used
@@ -256,16 +293,6 @@ public:
 
     String toString() const;
 
-    /// Condition description for EXPLAIN query.
-    struct Description
-    {
-        /// Which columns from PK were used, in PK order.
-        std::vector<std::string> used_keys;
-        /// Condition which was applied, mostly human-readable.
-        std::string condition;
-    };
-
-    Description getDescription() const;
 
     /** A chain of possibly monotone functions.
       * If the key column is wrapped in functions that can be monotonous in some value ranges
@@ -280,7 +307,7 @@ public:
             const ASTPtr & expr, Block & block_with_constants, Field & out_value, DataTypePtr & out_type);
 
     static Block getBlockWithConstants(
-        const ASTPtr & query, const TreeRewriterResultPtr & syntax_analyzer_result, ContextPtr context);
+        const ASTPtr & query, const TreeRewriterResultPtr & syntax_analyzer_result, const Context & context);
 
     static std::optional<Range> applyMonotonicFunctionsChainToRange(
         Range key_range,
@@ -301,8 +328,6 @@ private:
             FUNCTION_NOT_IN_RANGE,
             FUNCTION_IN_SET,
             FUNCTION_NOT_IN_SET,
-            FUNCTION_IS_NULL,
-            FUNCTION_IS_NOT_NULL,
             FUNCTION_UNKNOWN, /// Can take any value.
             /// Operators of the logical expression.
             FUNCTION_NOT,
@@ -320,7 +345,6 @@ private:
             : function(function_), range(range_), key_column(key_column_) {}
 
         String toString() const;
-        String toString(const std::string_view & column_name, bool print_constants) const;
 
         Function function = FUNCTION_UNKNOWN;
 
@@ -351,8 +375,8 @@ private:
         bool right_bounded,
         BoolMask initial_mask) const;
 
-    void traverseAST(const ASTPtr & node, ContextPtr context, Block & block_with_constants);
-    bool tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, Block & block_with_constants, RPNElement & out);
+    void traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants);
+    bool tryParseAtomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out);
     static bool tryParseLogicalOperatorFromAST(const ASTFunction * func, RPNElement & out);
 
     /** Is node the key column
@@ -363,7 +387,7 @@ private:
       */
     bool isKeyPossiblyWrappedByMonotonicFunctions(
         const ASTPtr & node,
-        ContextPtr context,
+        const Context & context,
         size_t & out_key_column_num,
         DataTypePtr & out_key_res_column_type,
         MonotonicFunctionsChain & out_functions_chain);
@@ -373,14 +397,6 @@ private:
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         std::vector<const ASTFunction *> & out_functions_chain);
-
-    bool transformConstantWithValidFunctions(
-        const String & expr_name,
-        size_t & out_key_column_num,
-        DataTypePtr & out_key_column_type,
-        Field & out_value,
-        DataTypePtr & out_type,
-        std::function<bool(IFunctionBase &, const IDataType &)> always_monotonic) const;
 
     bool canConstantBeWrappedByMonotonicFunctions(
         const ASTPtr & node,
@@ -397,7 +413,7 @@ private:
     /// do it and return true.
     bool tryPrepareSetIndex(
         const ASTs & args,
-        ContextPtr context,
+        const Context & context,
         RPNElement & out,
         size_t & out_key_column_num);
 
@@ -428,12 +444,7 @@ private:
     RPN rpn;
 
     ColumnIndices key_columns;
-    /// Expression which is used for key condition.
-    const ExpressionActionsPtr key_expr;
-    /// All intermediate columns are used to calculate key_expr.
-    const NameSet key_subexpr_names;
-
-    NameSet array_joined_columns;
+    ExpressionActionsPtr key_expr;
     PreparedSets prepared_sets;
 
     // If true, always allow key_expr to be wrapped by function

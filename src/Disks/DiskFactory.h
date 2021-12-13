@@ -1,21 +1,18 @@
 #pragma once
 
+#include <common/types.h>
 #include <Disks/IDisk.h>
-#include <Interpreters/Context_fwd.h>
-#include <base/types.h>
-
-#include <boost/noncopyable.hpp>
-#include <Poco/Util/AbstractConfiguration.h>
 
 #include <functional>
-#include <map>
 #include <unordered_map>
+#include <boost/noncopyable.hpp>
+#include <Poco/Util/AbstractConfiguration.h>
 
 
 namespace DB
 {
+class Context;
 
-using DisksMap = std::map<String, DiskPtr>;
 /**
  * Disk factory. Responsible for creating new disk objects.
  */
@@ -26,8 +23,7 @@ public:
         const String & name,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
-        ContextPtr context,
-        const DisksMap & map)>;
+        const Context & context)>;
 
     static DiskFactory & instance();
 
@@ -37,8 +33,7 @@ public:
         const String & name,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
-        ContextPtr context,
-        const DisksMap & map) const;
+        const Context & context) const;
 
 private:
     using DiskTypeRegistry = std::unordered_map<String, Creator>;

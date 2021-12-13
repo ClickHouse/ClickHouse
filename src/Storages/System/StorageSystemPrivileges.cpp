@@ -1,18 +1,18 @@
 #include <Storages/System/StorageSystemPrivileges.h>
-#include <Access/AccessControl.h>
-#include <Access/Common/AccessFlags.h>
-#include <Access/SettingsProfile.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnNullable.h>
 #include <Interpreters/Context.h>
-#include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
+#include <Access/AccessControlManager.h>
+#include <Access/SettingsProfile.h>
+#include <Access/AccessFlags.h>
 
 
 namespace DB
@@ -74,7 +74,7 @@ NamesAndTypesList StorageSystemPrivileges::getNamesAndTypes()
 }
 
 
-void StorageSystemPrivileges::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemPrivileges::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
 {
     size_t column_index = 0;
     auto & column_access_type = assert_cast<ColumnInt8 &>(*res_columns[column_index++]).getData();

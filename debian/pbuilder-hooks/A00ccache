@@ -1,0 +1,22 @@
+#!/bin/sh
+
+# set -x
+
+# CCACHEDIR - for pbuilder ; CCACHE_DIR - for ccache
+
+echo "CCACHEDIR=$CCACHEDIR CCACHE_DIR=$CCACHE_DIR SET_CCACHEDIR=$SET_CCACHEDIR"
+
+[ -z "$CCACHE_DIR" ] && export CCACHE_DIR=${CCACHEDIR:=${SET_CCACHEDIR=/var/cache/pbuilder/ccache}}
+
+if [ -n "$CCACHE_DIR" ]; then
+    mkdir -p $CCACHE_DIR $DISTCC_DIR ||:
+    chown -R $BUILDUSERID:$BUILDUSERID $CCACHE_DIR $DISTCC_DIR ||:
+    chmod -R a+rwx $CCACHE_DIR $DISTCC_DIR ||:
+fi
+
+[ $CCACHE_PREFIX = 'distcc' ] && mkdir -p $DISTCC_DIR && echo "localhost/`nproc`" >> $DISTCC_DIR/hosts && distcc --show-hosts
+
+df -h
+ccache --show-stats
+ccache --zero-stats
+ccache --max-size=${CCACHE_SIZE:=32G}

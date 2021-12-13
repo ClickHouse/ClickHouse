@@ -7,11 +7,12 @@
 
 #include <condition_variable>
 #include <boost/noncopyable.hpp>
-#include <base/logger_useful.h>
-#include <base/scope_guard.h>
-#include <base/types.h>
+#include <common/logger_useful.h>
+#include <ext/scope_guard.h>
+#include <common/types.h>
 #include <Core/Defines.h>
 #include <Storages/IStorage.h>
+#include <Common/Stopwatch.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -19,7 +20,6 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -52,8 +52,7 @@ namespace DB
         /// fields
 
         static std::string name();
-        static NamesAndTypesList getNamesAndTypes();
-        static NamesAndAliases getNamesAndAliases();
+        static Block createBlock();
         void appendToBlock(MutableColumns & columns) const;
     };
     */
@@ -61,7 +60,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TIMEOUT_EXCEEDED;
-    extern const int LOGICAL_ERROR;
 }
 
 #define DBMS_SYSTEM_LOG_QUEUE_SIZE 1048576
@@ -75,27 +73,19 @@ class CrashLog;
 class MetricLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
-class QueryViewsLog;
-class ZooKeeperLog;
-class SessionLog;
 
 
 class ISystemLog
 {
 public:
     virtual String getName() = 0;
+    virtual ASTPtr getCreateTableQuery() = 0;
     //// force -- force table creation (used for SYSTEM FLUSH LOGS)
     virtual void flush(bool force = false) = 0;
     virtual void prepareTable() = 0;
     virtual void startup() = 0;
     virtual void shutdown() = 0;
     virtual ~ISystemLog() = default;
-
-    /// returns CREATE TABLE query, but with removed:
-    /// - UUID
-    /// - SETTINGS (for MergeTree)
-    /// That way it can be used to compare with the SystemLog::getCreateTableQuery()
-    static ASTPtr getCreateTableQueryClean(const StorageID & table_id, ContextPtr context);
 };
 
 
@@ -103,7 +93,7 @@ public:
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables
 struct SystemLogs
 {
-    SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config);
+    SystemLogs(Context & global_context, const Poco::Util::AbstractConfiguration & config);
     ~SystemLogs();
 
     void shutdown();
@@ -119,19 +109,13 @@ struct SystemLogs
     std::shared_ptr<AsynchronousMetricLog> asynchronous_metric_log;
     /// OpenTelemetry trace spans.
     std::shared_ptr<OpenTelemetrySpanLog> opentelemetry_span_log;
-    /// Used to log queries of materialized and live views
-    std::shared_ptr<QueryViewsLog> query_views_log;
-    /// Used to log all actions of ZooKeeper client
-    std::shared_ptr<ZooKeeperLog> zookeeper_log;
-    /// Login, LogOut and Login failure events
-    std::shared_ptr<SessionLog> session_log;
 
     std::vector<ISystemLog *> logs;
 };
 
 
 template <typename LogElement>
-class SystemLog : public ISystemLog, private boost::noncopyable, WithContext
+class SystemLog : public ISystemLog, private boost::noncopyable
 {
 public:
     using Self = SystemLog;
@@ -145,7 +129,7 @@ public:
       *   and new table get created - as if previous table was not exist.
       */
     SystemLog(
-        ContextPtr context_,
+        Context & context_,
         const String & database_name_,
         const String & table_name_,
         const String & storage_def_,
@@ -168,8 +152,6 @@ public:
     void shutdown() override
     {
         stopFlushThread();
-        if (table)
-            table->flushAndShutdown();
     }
 
     String getName() override
@@ -177,18 +159,17 @@ public:
         return LogElement::name();
     }
 
-    ASTPtr getCreateTableQuery();
+    ASTPtr getCreateTableQuery() override;
 
 protected:
     Poco::Logger * log;
 
 private:
     /* Saving thread data */
+    Context & context;
     const StorageID table_id;
     const String storage_def;
     StoragePtr table;
-    String create_query;
-    String old_create_query;
     bool is_prepared = false;
     const size_t flush_interval_milliseconds;
     ThreadFromGlobalPool saving_thread;
@@ -203,13 +184,12 @@ private:
     // synchronous log flushing for SYSTEM FLUSH LOGS.
     uint64_t queue_front_index = 0;
     bool is_shutdown = false;
-    // A flag that says we must create the tables even if the queue is empty.
     bool is_force_prepare_tables = false;
     std::condition_variable flush_event;
     // Requested to flush logs up to this index, exclusive
-    uint64_t requested_flush_up_to = 0;
+    uint64_t requested_flush_before = 0;
     // Flushed log up to this index, exclusive
-    uint64_t flushed_up_to = 0;
+    uint64_t flushed_before = 0;
     // Logged overflow message at this queue front index
     uint64_t logged_queue_full_at_index = -1;
 
@@ -227,16 +207,14 @@ private:
 
 
 template <typename LogElement>
-SystemLog<LogElement>::SystemLog(
-    ContextPtr context_,
+SystemLog<LogElement>::SystemLog(Context & context_,
     const String & database_name_,
     const String & table_name_,
     const String & storage_def_,
     size_t flush_interval_milliseconds_)
-    : WithContext(context_)
+    : context(context_)
     , table_id(database_name_, table_name_)
     , storage_def(storage_def_)
-    , create_query(serializeAST(*getCreateTableQuery()))
     , flush_interval_milliseconds(flush_interval_milliseconds_)
 {
     assert(database_name_ == DatabaseCatalog::SYSTEM_DATABASE);
@@ -289,8 +267,8 @@ void SystemLog<LogElement>::add(const LogElement & element)
             // It is enough to only wake the flushing thread once, after the message
             // count increases past half available size.
             const uint64_t queue_end = queue_front_index + queue.size();
-            if (requested_flush_up_to < queue_end)
-                requested_flush_up_to = queue_end;
+            if (requested_flush_before < queue_end)
+                requested_flush_before = queue_end;
 
             flush_event.notify_all();
         }
@@ -326,36 +304,24 @@ void SystemLog<LogElement>::add(const LogElement & element)
 template <typename LogElement>
 void SystemLog<LogElement>::flush(bool force)
 {
-    uint64_t this_thread_requested_offset;
+    std::unique_lock lock(mutex);
 
+    if (is_shutdown)
+        return;
+
+    const uint64_t queue_end = queue_front_index + queue.size();
+
+    is_force_prepare_tables = force;
+    if (requested_flush_before < queue_end || force)
     {
-        std::unique_lock lock(mutex);
-
-        if (is_shutdown)
-            return;
-
-        this_thread_requested_offset = queue_front_index + queue.size();
-
-        // Publish our flush request, taking care not to overwrite the requests
-        // made by other threads.
-        is_force_prepare_tables |= force;
-        requested_flush_up_to = std::max(requested_flush_up_to,
-            this_thread_requested_offset);
-
+        requested_flush_before = queue_end;
         flush_event.notify_all();
     }
 
-    LOG_DEBUG(log, "Requested flush up to offset {}",
-        this_thread_requested_offset);
-
-    // Use an arbitrary timeout to avoid endless waiting. 60s proved to be
-    // too fast for our parallel functional tests, probably because they
-    // heavily load the disk.
-    const int timeout_seconds = 180;
-    std::unique_lock lock(mutex);
+    // Use an arbitrary timeout to avoid endless waiting.
+    const int timeout_seconds = 60;
     bool result = flush_event.wait_for(lock, std::chrono::seconds(timeout_seconds),
-        [&] { return flushed_up_to >= this_thread_requested_offset
-                && !is_force_prepare_tables; });
+        [&] { return flushed_before >= queue_end && !is_force_prepare_tables; });
 
     if (!result)
     {
@@ -405,8 +371,6 @@ void SystemLog<LogElement>::savingThreadFunction()
             // The end index (exclusive, like std end()) of the messages we are
             // going to flush.
             uint64_t to_flush_end = 0;
-            // Should we prepare table even if there are no new messages.
-            bool should_prepare_tables_anyway = false;
 
             {
                 std::unique_lock lock(mutex);
@@ -414,7 +378,7 @@ void SystemLog<LogElement>::savingThreadFunction()
                     std::chrono::milliseconds(flush_interval_milliseconds),
                     [&] ()
                     {
-                        return requested_flush_up_to > flushed_up_to || is_shutdown || is_force_prepare_tables;
+                        return requested_flush_before > flushed_before || is_shutdown || is_force_prepare_tables;
                     }
                 );
 
@@ -425,14 +389,18 @@ void SystemLog<LogElement>::savingThreadFunction()
                 to_flush.resize(0);
                 queue.swap(to_flush);
 
-                should_prepare_tables_anyway = is_force_prepare_tables;
-
                 exit_this_thread = is_shutdown;
             }
 
             if (to_flush.empty())
             {
-                if (should_prepare_tables_anyway)
+                bool force;
+                {
+                    std::lock_guard lock(mutex);
+                    force = is_force_prepare_tables;
+                }
+
+                if (force)
                 {
                     prepareTable();
                     LOG_TRACE(log, "Table created (force)");
@@ -461,8 +429,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 {
     try
     {
-        LOG_TRACE(log, "Flushing system log, {} entries to flush up to offset {}",
-            to_flush.size(), to_flush_end);
+        LOG_TRACE(log, "Flushing system log, {} entries to flush", to_flush.size());
 
         /// We check for existence of the table and create it as needed at every
         /// flush. This is done to allow user to drop the table at any moment
@@ -470,18 +437,10 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         /// is called from single thread.
         prepareTable();
 
-        ColumnsWithTypeAndName log_element_columns;
-        auto log_element_names_and_types = LogElement::getNamesAndTypes();
-
-        for (auto name_and_type : log_element_names_and_types)
-            log_element_columns.emplace_back(name_and_type.type, name_and_type.name);
-
-        Block block(std::move(log_element_columns));
-
+        Block block = LogElement::createBlock();
         MutableColumns columns = block.mutateColumns();
         for (const auto & elem : to_flush)
             elem.appendToBlock(columns);
-
         block.setColumns(std::move(columns));
 
         /// We write to table indirectly, using InterpreterInsertQuery.
@@ -492,17 +451,15 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         ASTPtr query_ptr(insert.release());
 
         // we need query context to do inserts to target table with MV containing subqueries or joins
-        auto insert_context = Context::createCopy(context);
-        insert_context->makeQueryContext();
+        Context insert_context(context);
+        insert_context.makeQueryContext();
 
         InterpreterInsertQuery interpreter(query_ptr, insert_context);
         BlockIO io = interpreter.execute();
 
-        PushingPipelineExecutor executor(io.pipeline);
-
-        executor.start();
-        executor.push(block);
-        executor.finish();
+        io.out->writePrefix();
+        io.out->write(block);
+        io.out->writeSuffix();
     }
     catch (...)
     {
@@ -511,12 +468,12 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 
     {
         std::lock_guard lock(mutex);
-        flushed_up_to = to_flush_end;
+        flushed_before = to_flush_end;
         is_force_prepare_tables = false;
         flush_event.notify_all();
     }
 
-    LOG_TRACE(log, "Flushed system log up to offset {}", to_flush_end);
+    LOG_TRACE(log, "Flushed system log");
 }
 
 
@@ -525,23 +482,19 @@ void SystemLog<LogElement>::prepareTable()
 {
     String description = table_id.getNameForLogs();
 
-    table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+    table = DatabaseCatalog::instance().tryGetTable(table_id, context);
 
     if (table)
     {
-        if (old_create_query.empty())
-        {
-            old_create_query = serializeAST(*getCreateTableQueryClean(table_id, getContext()));
-            if (old_create_query.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty CREATE QUERY for {}", backQuoteIfNeed(table_id.table_name));
-        }
+        auto metadata_snapshot = table->getInMemoryMetadataPtr();
+        const Block expected = LogElement::createBlock();
+        const Block actual = metadata_snapshot->getSampleBlockNonMaterialized();
 
-        if (old_create_query != create_query)
+        if (!blocksHaveEqualStructure(actual, expected))
         {
             /// Rename the existing table.
             int suffix = 0;
-            while (DatabaseCatalog::instance().isTableExist(
-                {table_id.database_name, table_id.table_name + "_" + toString(suffix)}, getContext()))
+            while (DatabaseCatalog::instance().isTableExist({table_id.database_name, table_id.table_name + "_" + toString(suffix)}, context))
                 ++suffix;
 
             auto rename = std::make_shared<ASTRenameQuery>();
@@ -560,16 +513,10 @@ void SystemLog<LogElement>::prepareTable()
 
             rename->elements.emplace_back(elem);
 
-            LOG_DEBUG(
-                log,
-                "Existing table {} for system log has obsolete or different structure. Renaming it to {}.\nOld: {}\nNew: {}\n.",
-                description,
-                backQuoteIfNeed(to.table),
-                old_create_query,
-                create_query);
+            LOG_DEBUG(log, "Existing table {} for system log has obsolete or different structure. Renaming it to {}", description, backQuoteIfNeed(to.table));
 
-            auto query_context = Context::createCopy(context);
-            query_context->makeQueryContext();
+            Context query_context = context;
+            query_context.makeQueryContext();
             InterpreterRenameQuery(rename, query_context).execute();
 
             /// The required table will be created.
@@ -584,17 +531,16 @@ void SystemLog<LogElement>::prepareTable()
         /// Create the table.
         LOG_DEBUG(log, "Creating new table {} for {}", description, LogElement::name());
 
-        auto query_context = Context::createCopy(context);
-        query_context->makeQueryContext();
+        auto create = getCreateTableQuery();
 
-        auto create_query_ast = getCreateTableQuery();
-        InterpreterCreateQuery interpreter(create_query_ast, query_context);
+
+        Context query_context = context;
+        query_context.makeQueryContext();
+        InterpreterCreateQuery interpreter(create, query_context);
         interpreter.setInternal(true);
         interpreter.execute();
 
-        table = DatabaseCatalog::instance().getTable(table_id, getContext());
-
-        old_create_query.clear();
+        table = DatabaseCatalog::instance().getTable(table_id, context);
     }
 
     is_prepared = true;
@@ -606,13 +552,13 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
 {
     auto create = std::make_shared<ASTCreateQuery>();
 
-    create->setDatabase(table_id.database_name);
-    create->setTable(table_id.table_name);
+    create->database = table_id.database_name;
+    create->table = table_id.table_name;
 
-    auto ordinary_columns = LogElement::getNamesAndTypes();
-    auto alias_columns = LogElement::getNamesAndAliases();
+    Block sample = LogElement::createBlock();
+
     auto new_columns_list = std::make_shared<ASTColumns>();
-    new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns, alias_columns));
+    new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(sample.getNamesAndTypesList()));
     create->set(create->columns_list, new_columns_list);
 
     ParserStorage storage_parser;

@@ -1,6 +1,6 @@
 ---
 toc_priority: 20
-toc_title: "Данные о такси в Нью-Йорке"
+toc_title: "\u0414\u0430\u043d\u043d\u044b\u0435\u0020\u043e\u0020\u0442\u0430\u043a\u0441\u0438\u0020\u0432\u0020\u041d\u044c\u044e\u002d\u0419\u043e\u0440\u043a\u0435"
 ---
 
 # Данные о такси в Нью-Йорке {#dannye-o-taksi-v-niu-iorke}
@@ -283,7 +283,7 @@ SELECT formatReadableSize(sum(bytes)) FROM system.parts WHERE table = 'trips_mer
 ## Скачивание готовых партиций {#skachivanie-gotovykh-partitsii}
 
 ``` bash
-$ curl -O https://datasets.clickhouse.com/trips_mergetree/partitions/trips_mergetree.tar
+$ curl -O https://datasets.clickhouse.tech/trips_mergetree/partitions/trips_mergetree.tar
 $ tar xvf trips_mergetree.tar -C /var/lib/clickhouse # путь к папке с данными ClickHouse
 $ # убедитесь, что установлены корректные права доступа на файлы
 $ sudo service clickhouse-server restart
@@ -390,3 +390,4 @@ Q4: 0.072 sec.
 | 3        | 0.212 | 0.438 | 0.733 | 1.241 |
 | 140      | 0.028 | 0.043 | 0.051 | 0.072 |
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/getting_started/example_datasets/nyc_taxi/) <!--hide-->

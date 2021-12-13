@@ -77,13 +77,6 @@ struct RowRefList : RowRef
             return &batch->row_refs[position];
         }
 
-        const RowRef * operator * () const
-        {
-            if (first)
-                return root;
-            return &batch->row_refs[position];
-        }
-
         void operator ++ ()
         {
             if (first)

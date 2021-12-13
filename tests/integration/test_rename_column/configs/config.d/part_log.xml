@@ -1,7 +1,7 @@
-<clickhouse>
+<yandex>
     <part_log>
         <database>system</database>
         <table>part_log</table>
         <flush_interval_milliseconds>500</flush_interval_milliseconds>
     </part_log>
-</clickhouse>
+</yandex>

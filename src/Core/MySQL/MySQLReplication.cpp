@@ -5,11 +5,10 @@
 #include <IO/MySQLBinlogEventReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
-#include <base/DateLUT.h>
-#include <Common/FieldVisitorToString.h>
+#include <common/DateLUT.h>
+#include <Common/FieldVisitors.h>
 #include <Core/MySQL/PacketsGeneric.h>
 #include <Core/MySQL/PacketsProtocolText.h>
-
 
 namespace DB
 {
@@ -18,7 +17,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_EXCEPTION;
     extern const int LOGICAL_ERROR;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
-    extern const int CANNOT_READ_ALL_DATA;
 }
 
 namespace MySQLReplication
@@ -105,16 +103,12 @@ namespace MySQLReplication
         if (query.starts_with("BEGIN") || query.starts_with("COMMIT"))
         {
             typ = QUERY_EVENT_MULTI_TXN_FLAG;
-            if (!query.starts_with("COMMIT"))
-                transaction_complete = false;
         }
         else if (query.starts_with("XA"))
         {
             if (query.starts_with("XA ROLLBACK"))
                 throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::LOGICAL_ERROR);
             typ = QUERY_EVENT_XA;
-            if (!query.starts_with("XA COMMIT"))
-                transaction_complete = false;
         }
         else if (query.starts_with("SAVEPOINT"))
         {
@@ -302,6 +296,7 @@ namespace MySQLReplication
     }
 
     /// Types that do not used in the binlog event:
+    /// MYSQL_TYPE_ENUM
     /// MYSQL_TYPE_SET
     /// MYSQL_TYPE_TINY_BLOB
     /// MYSQL_TYPE_MEDIUM_BLOB
@@ -425,8 +420,8 @@ namespace MySQLReplication
                         UInt32 i24 = 0;
                         payload.readStrict(reinterpret_cast<char *>(&i24), 3);
 
-                        const DayNum date_day_number(DateLUT::instance().makeDayNum(
-                            static_cast<int>((i24 >> 9) & 0x7fff), static_cast<int>((i24 >> 5) & 0xf), static_cast<int>(i24 & 0x1f)).toUnderType());
+                        DayNum date_day_number = DateLUT::instance().makeDayNum(
+                            static_cast<int>((i24 >> 9) & 0x7fff), static_cast<int>((i24 >> 5) & 0xf), static_cast<int>(i24 & 0x1f));
 
                         row.push_back(Field(date_day_number.toUnderType()));
                         break;
@@ -448,7 +443,7 @@ namespace MySQLReplication
                             row.push_back(Field{UInt32(date_time)});
                         else
                         {
-                            DB::DecimalUtils::DecimalComponents<DateTime64> components{
+                            DB::DecimalUtils::DecimalComponents<DateTime64::NativeType> components{
                                 static_cast<DateTime64::NativeType>(date_time), 0};
 
                             components.fractional = fsp;
@@ -467,7 +462,7 @@ namespace MySQLReplication
                             row.push_back(Field{sec});
                         else
                         {
-                            DB::DecimalUtils::DecimalComponents<DateTime64> components{
+                            DB::DecimalUtils::DecimalComponents<DateTime64::NativeType> components{
                                 static_cast<DateTime64::NativeType>(sec), 0};
 
                             components.fractional = fsp;
@@ -478,19 +473,19 @@ namespace MySQLReplication
                     }
                     case MYSQL_TYPE_NEWDECIMAL:
                     {
-                        const auto & dispatch = [](size_t precision, size_t scale, const auto & function) -> Field
+                        const auto & dispatch = [](const size_t & precision, const size_t & scale, const auto & function) -> Field
                         {
                             if (precision <= DecimalUtils::max_precision<Decimal32>)
                                 return Field(function(precision, scale, Decimal32()));
-                            else if (precision <= DecimalUtils::max_precision<Decimal64>) //-V547
+                            else if (precision <= DecimalUtils::max_precision<Decimal64>)
                                 return Field(function(precision, scale, Decimal64()));
-                            else if (precision <= DecimalUtils::max_precision<Decimal128>) //-V547
+                            else if (precision <= DecimalUtils::max_precision<Decimal128>)
                                 return Field(function(precision, scale, Decimal128()));
 
                             return Field(function(precision, scale, Decimal256()));
                         };
 
-                        const auto & read_decimal = [&](size_t precision, size_t scale, auto decimal)
+                        const auto & read_decimal = [&](const size_t & precision, const size_t & scale, auto decimal)
                         {
                             using DecimalType = decltype(decimal);
                             static constexpr size_t digits_per_integer = 9;
@@ -500,9 +495,6 @@ namespace MySQLReplication
 
                             UInt32 mask = 0;
                             DecimalType res(0);
-
-                            if (payload.eof())
-                                throw Exception("Attempt to read after EOF.", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
 
                             if ((*payload.position() & 0x80) == 0)
                                 mask = UInt32(-1);
@@ -550,7 +542,7 @@ namespace MySQLReplication
                                     UInt32 val = 0;
                                     size_t to_read = compressed_bytes_map[compressed_decimals];
 
-                                    if (to_read) //-V547
+                                    if (to_read)
                                     {
                                         readBigEndianStrict(payload, reinterpret_cast<char *>(&val), to_read);
                                         res *= intExp10OfSize<DecimalType>(compressed_decimals);
@@ -566,22 +558,6 @@ namespace MySQLReplication
                         };
 
                         row.push_back(dispatch((meta >> 8) & 0xFF, meta & 0xFF, read_decimal));
-                        break;
-                    }
-                    case MYSQL_TYPE_ENUM:
-                    {
-                        if ((meta & 0xFF) == 1)
-                        {
-                            UInt8 val = 0;
-                            payload.readStrict(reinterpret_cast<char *>(&val), 1);
-                            row.push_back(Field{UInt8{val}});
-                        }
-                        else
-                        {
-                            UInt16 val = 0;
-                            payload.readStrict(reinterpret_cast<char *>(&val), 2);
-                            row.push_back(Field{UInt16{val}});
-                        }
                         break;
                     }
                     case MYSQL_TYPE_VARCHAR:
@@ -681,13 +657,12 @@ namespace MySQLReplication
         payload.readStrict(reinterpret_cast<char *>(&commit_flag), 1);
 
         // MySQL UUID is big-endian.
-        UInt64 high = 0UL;
-        UInt64 low = 0UL;
+        UInt64 high = 0UL, low = 0UL;
         readBigEndianStrict(payload, reinterpret_cast<char *>(&low), 8);
-        gtid.uuid.toUnderType().items[0] = low;
+        gtid.uuid.toUnderType().low = low;
 
         readBigEndianStrict(payload, reinterpret_cast<char *>(&high), 8);
-        gtid.uuid.toUnderType().items[1] = high;
+        gtid.uuid.toUnderType().high = high;
 
         payload.readStrict(reinterpret_cast<char *>(&gtid.seq_no), 8);
 
@@ -718,26 +693,9 @@ namespace MySQLReplication
     {
         switch (event->header.type)
         {
-            case FORMAT_DESCRIPTION_EVENT: {
-                binlog_pos = event->header.log_pos;
-                break;
-            }
-            case QUERY_EVENT: {
-                auto query = std::static_pointer_cast<QueryEvent>(event);
-                if (query->transaction_complete && pending_gtid)
-                {
-                    gtid_sets.update(*pending_gtid);
-                    pending_gtid.reset();
-                }
-                binlog_pos = event->header.log_pos;
-                break;
-            }
+            case FORMAT_DESCRIPTION_EVENT:
+            case QUERY_EVENT:
             case XID_EVENT: {
-                if (pending_gtid)
-                {
-                    gtid_sets.update(*pending_gtid);
-                    pending_gtid.reset();
-                }
                 binlog_pos = event->header.log_pos;
                 break;
             }
@@ -748,11 +706,9 @@ namespace MySQLReplication
                 break;
             }
             case GTID_EVENT: {
-                if (pending_gtid)
-                    gtid_sets.update(*pending_gtid);
                 auto gtid_event = std::static_pointer_cast<GTIDEvent>(event);
                 binlog_pos = event->header.log_pos;
-                pending_gtid = gtid_event->gtid;
+                gtid_sets.update(gtid_event->gtid);
                 break;
             }
             default:
@@ -784,7 +740,7 @@ namespace MySQLReplication
         switch (header)
         {
             case PACKET_EOF:
-                throw ReplicationError("Master maybe lost", ErrorCodes::CANNOT_READ_ALL_DATA);
+                throw ReplicationError("Master maybe lost", ErrorCodes::UNKNOWN_EXCEPTION);
             case PACKET_ERR:
                 ERRPacket err;
                 err.readPayloadWithUnpacked(payload);
@@ -818,7 +774,6 @@ namespace MySQLReplication
             {
                 event = std::make_shared<QueryEvent>(std::move(event_header));
                 event->parseEvent(event_payload);
-                position.update(event);
 
                 auto query = std::static_pointer_cast<QueryEvent>(event);
                 switch (query->typ)
@@ -830,7 +785,7 @@ namespace MySQLReplication
                         break;
                     }
                     default:
-                        break;
+                        position.update(event);
                 }
                 break;
             }

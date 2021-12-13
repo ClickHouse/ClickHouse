@@ -2,7 +2,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/castColumn.h>
 
@@ -31,7 +31,7 @@ class FunctionNeighbor : public IFunction
 {
 public:
     static constexpr auto name = "neighbor";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionNeighbor>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionNeighbor>(); }
 
     /// Get the name of the function.
     String getName() const override { return name; }
@@ -45,8 +45,6 @@ public:
     bool isDeterministic() const override { return false; }
 
     bool isDeterministicInScopeOfQuery() const override { return false; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
 
@@ -180,7 +178,7 @@ public:
 
             for (size_t row = 0; row < input_rows_count; ++row)
             {
-                Int64 offset = offset_column->getInt(row);
+                Int64 offset = offset_column->getInt(offset_is_constant ? 0 : row);
 
                 /// Protection from possible overflow.
                 if (unlikely(offset > (1 << 30) || offset < -(1 << 30)))

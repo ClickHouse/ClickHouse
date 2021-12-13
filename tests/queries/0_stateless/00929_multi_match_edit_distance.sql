@@ -1,6 +1,3 @@
--- Tags: no-fasttest
--- Tag no-fasttest: Hyperscan
-
 SET send_logs_level = 'fatal';
 
 select 0 = multiFuzzyMatchAny('abc', 0, ['a1c']) from system.numbers limit 5;

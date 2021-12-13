@@ -1,7 +1,6 @@
 #include "MySQLGtid.h"
-#include <boost/algorithm/string.hpp>
-#include <IO/ReadHelpers.h>
 
+#include <boost/algorithm/string.hpp>
 
 namespace DB
 {
@@ -39,7 +38,7 @@ void GTIDSets::parse(const String gtid_format)
         boost::split(server_ids, gset, [](char c) { return c == ':'; });
 
         GTIDSet set;
-        set.uuid = DB::parse<UUID>(server_ids[0]);
+        set.uuid = stringToUUID(server_ids[0]);
 
         for (size_t k = 1; k < server_ids.size(); k++)
         {
@@ -175,8 +174,8 @@ String GTIDSets::toPayload() const
     for (const auto & set : sets)
     {
         // MySQL UUID is big-endian.
-        writeBinaryBigEndian(set.uuid.toUnderType().items[0], buffer);
-        writeBinaryBigEndian(set.uuid.toUnderType().items[1], buffer);
+        writeBinaryBigEndian(set.uuid.toUnderType().low, buffer);
+        writeBinaryBigEndian(set.uuid.toUnderType().high, buffer);
 
         UInt64 intervals_size = set.intervals.size();
         buffer.write(reinterpret_cast<const char *>(&intervals_size), 8);

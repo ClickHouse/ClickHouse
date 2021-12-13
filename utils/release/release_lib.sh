@@ -91,12 +91,9 @@ function gen_revision_author {
 
             git_describe=`git describe`
             git_hash=`git rev-parse HEAD`
-            VERSION_DATE=`git show -s --format=%cs $git_hash`
-
             sed -i -e "s/SET(VERSION_REVISION [^) ]*/SET(VERSION_REVISION $VERSION_REVISION/g;" \
                 -e "s/SET(VERSION_DESCRIBE [^) ]*/SET(VERSION_DESCRIBE $git_describe/g;" \
                 -e "s/SET(VERSION_GITHASH [^) ]*/SET(VERSION_GITHASH $git_hash/g;" \
-                -e "s/SET(VERSION_DATE [^) ]*/SET(VERSION_DATE $VERSION_DATE/g;" \
                 -e "s/SET(VERSION_MAJOR [^) ]*/SET(VERSION_MAJOR $VERSION_MAJOR/g;" \
                 -e "s/SET(VERSION_MINOR [^) ]*/SET(VERSION_MINOR $VERSION_MINOR/g;" \
                 -e "s/SET(VERSION_PATCH [^) ]*/SET(VERSION_PATCH $VERSION_PATCH/g;" \
@@ -168,7 +165,7 @@ function gen_changelog {
         -e "s/[@]VERSION_STRING[@]/$VERSION_STRING/g" \
         -e "s/[@]DATE[@]/$CHDATE/g" \
         -e "s/[@]AUTHOR[@]/$AUTHOR/g" \
-        -e "s/[@]EMAIL[@]/$(whoami)@clickhouse.com/g" \
+        -e "s/[@]EMAIL[@]/$(whoami)@yandex-team.ru/g" \
         < $CHLOG.in > $CHLOG
 }
 

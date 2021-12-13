@@ -1,8 +1,7 @@
 import random
 import string
-import logging
+
 import pytest
-import time
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -131,9 +130,6 @@ def test_default_codec_single(start_cluster):
     assert node1.query("SELECT COUNT() FROM compression_table") == "3\n"
     assert node2.query("SELECT COUNT() FROM compression_table") == "3\n"
 
-    node1.query("DROP TABLE compression_table SYNC")
-    node2.query("DROP TABLE compression_table SYNC")
-
 
 def test_default_codec_multiple(start_cluster):
     for i, node in enumerate([node1, node2]):
@@ -203,9 +199,6 @@ def test_default_codec_multiple(start_cluster):
     assert node1.query("SELECT COUNT() FROM compression_table_multiple") == "3\n"
     assert node2.query("SELECT COUNT() FROM compression_table_multiple") == "3\n"
 
-    node1.query("DROP TABLE compression_table_multiple SYNC")
-    node2.query("DROP TABLE compression_table_multiple SYNC")
-
 
 def test_default_codec_version_update(start_cluster):
     node3.query("""
@@ -219,10 +212,8 @@ def test_default_codec_version_update(start_cluster):
     node3.query("INSERT INTO compression_table VALUES (2, '{}')".format(get_random_string(2048)))
     node3.query("INSERT INTO compression_table VALUES (3, '{}')".format(get_random_string(22048)))
 
-    old_version = node3.query("SELECT version()")
     node3.restart_with_latest_version()
-    new_version = node3.query("SELECT version()")
-    logging.debug(f"Updated from {old_version} to {new_version}")
+
     assert node3.query(
         "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '1_1_1_0'") == "ZSTD(1)\n"
     assert node3.query(
@@ -238,16 +229,6 @@ def test_default_codec_version_update(start_cluster):
         "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '2_2_2_1'") == "LZ4HC(5)\n"
     assert node3.query(
         "SELECT default_compression_codec FROM system.parts WHERE table = 'compression_table' and name = '3_3_3_1'") == "LZ4\n"
-
-    node3.query("DROP TABLE compression_table SYNC")
-
-    def callback(n):
-        n.exec_in_container(['bash', '-c', 'rm -rf /var/lib/clickhouse/metadata/system /var/lib/clickhouse/data/system '], user='root')
-    node3.restart_with_original_version(callback_onstop=callback)
-
-    cur_version = node3.query("SELECT version()")
-    logging.debug(f"End with {cur_version}")
-
 
 def test_default_codec_for_compact_parts(start_cluster):
     node4.query("""
@@ -273,4 +254,3 @@ def test_default_codec_for_compact_parts(start_cluster):
     node4.query("ATTACH TABLE compact_parts_table")
 
     assert node4.query("SELECT COUNT() FROM compact_parts_table") == "1\n"
-    node4.query("DROP TABLE compact_parts_table SYNC")

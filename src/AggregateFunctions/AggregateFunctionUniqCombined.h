@@ -1,8 +1,7 @@
 #pragma once
 
-#include <base/bit_cast.h>
-
 #include <Common/CombinedCardinalityEstimator.h>
+#include <Common/FieldVisitors.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
@@ -15,13 +14,14 @@
 #include <AggregateFunctions/UniqCombinedBiasData.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 
+#include <ext/bit_cast.h>
+
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
 
 
 namespace DB
 {
-struct Settings;
 namespace detail
 {
     /** Hash function for uniqCombined/uniqCombined64 (based on Ret).
@@ -52,7 +52,7 @@ namespace detail
     {
         static Ret hash(Float32 x)
         {
-            UInt64 res = bit_cast<UInt64>(x);
+            UInt64 res = ext::bit_cast<UInt64>(x);
             return static_cast<Ret>(intHash64(res));
         }
     };
@@ -62,7 +62,7 @@ namespace detail
     {
         static Ret hash(Float64 x)
         {
-            UInt64 res = bit_cast<UInt64>(x);
+            UInt64 res = ext::bit_cast<UInt64>(x);
             return static_cast<Ret>(intHash64(res));
         }
     };
@@ -141,8 +141,6 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
-
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         if constexpr (!std::is_same_v<T, String>)
@@ -162,12 +160,12 @@ public:
         this->data(place).set.merge(this->data(rhs).set);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         this->data(place).set.write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
     {
         this->data(place).set.read(buf);
     }
@@ -213,8 +211,6 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
-
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         this->data(place).set.insert(typename AggregateFunctionUniqCombinedData<UInt64, K, HashValueType>::Set::value_type(
@@ -226,12 +222,12 @@ public:
         this->data(place).set.merge(this->data(rhs).set);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         this->data(place).set.write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version  */, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
     {
         this->data(place).set.read(buf);
     }

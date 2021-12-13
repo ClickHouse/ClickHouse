@@ -2,13 +2,13 @@
 
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
 
 namespace DB
 {
-
-class ASTIdentifier;
 
 class RedundantFunctionsInOrderByMatcher
 {
@@ -16,7 +16,7 @@ public:
     struct Data
     {
         std::unordered_set<String> & keys;
-        ContextPtr context;
+        const Context & context;
         bool redundant = true;
         bool done = false;
 

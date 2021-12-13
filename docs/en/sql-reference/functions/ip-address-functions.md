@@ -48,19 +48,19 @@ LIMIT 10
 └────────────────┴───────┘
 ```
 
-Since using ‘xxx’ is highly unusual, this may be changed in the future. We recommend that you do not rely on the exact format of this fragment.
+Since using ‘xxx’ is highly unusual, this may be changed in the future. We recommend that you don’t rely on the exact format of this fragment.
 
 ### IPv6NumToString(x) {#ipv6numtostringx}
 
 Accepts a FixedString(16) value containing the IPv6 address in binary format. Returns a string containing this address in text format.
-IPv6-mapped IPv4 addresses are output in the format ::ffff:111.222.33.44.
+IPv6-mapped IPv4 addresses are output in the format ::ffff:111.222.33.44. 
 
 Alias: `INET6_NTOA`.
 
 Examples:
 
 ``` sql
-SELECT IPv6NumToString(toFixedString(unhex('2A0206B8000000000000000000000011'), 16)) AS addr;
+SELECT IPv6NumToString(toFixedString(unhex('2A0206B8000000000000000000000011'), 16)) AS addr
 ```
 
 ``` text
@@ -123,7 +123,7 @@ LIMIT 10
 
 ## IPv6StringToNum {#ipv6stringtonums}
 
-The reverse function of [IPv6NumToString](#ipv6numtostringx). If the IPv6 address has an invalid format, it returns a string of null bytes.
+The reverse function of [IPv6NumToString](#ipv6numtostringx). If the IPv6 address has an invalid format, it returns a string of null bytes. 
 
 If the input string contains a valid IPv4 address, returns its IPv6 equivalent.
 HEX can be uppercase or lowercase.
@@ -136,13 +136,13 @@ Alias: `INET6_ATON`.
 IPv6StringToNum(string)
 ```
 
-**Argument**
+**Argument** 
 
 -   `string` — IP address. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
--   IPv6 address in binary format.
+-   IPv6 address in binary format. 
 
 Type: [FixedString(16)](../../sql-reference/data-types/fixedstring.md).
 
@@ -164,7 +164,7 @@ Result:
 └────────────┴──────────────────────────────────────┘
 ```
 
-**See Also**
+**See also**
 
 -   [cutIPv6](#cutipv6x-bytestocutforipv6-bytestocutforipv4).
 
@@ -173,7 +173,7 @@ Result:
 Takes a `UInt32` number. Interprets it as an IPv4 address in [big endian](https://en.wikipedia.org/wiki/Endianness). Returns a `FixedString(16)` value containing the IPv6 address in binary format. Examples:
 
 ``` sql
-SELECT IPv6NumToString(IPv4ToIPv6(IPv4StringToNum('192.168.0.1'))) AS addr;
+SELECT IPv6NumToString(IPv4ToIPv6(IPv4StringToNum('192.168.0.1'))) AS addr
 ```
 
 ``` text
@@ -206,7 +206,7 @@ SELECT
 Accepts an IPv4 and an UInt8 value containing the [CIDR](https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing). Return a tuple with two IPv4 containing the lower range and the higher range of the subnet.
 
 ``` sql
-SELECT IPv4CIDRToRange(toIPv4('192.168.5.2'), 16);
+SELECT IPv4CIDRToRange(toIPv4('192.168.5.2'), 16)
 ```
 
 ``` text
@@ -280,7 +280,7 @@ toIPv6(string)
 
 **Returned value**
 
--   IP address.
+-   IP address. 
 
 Type: [IPv6](../../sql-reference/data-types/domains/ipv6.md).
 
@@ -342,7 +342,7 @@ Type: [UInt8](../../sql-reference/data-types/int-uint.md).
 Query:
 
 ```sql
-SELECT addr, isIPv4String(addr) FROM ( SELECT ['0.0.0.0', '127.0.0.1', '::ffff:127.0.0.1'] AS addr ) ARRAY JOIN addr;
+SELECT addr, isIPv4String(addr) FROM ( SELECT ['0.0.0.0', '127.0.0.1', '::ffff:127.0.0.1'] AS addr ) ARRAY JOIN addr
 ```
 
 Result:
@@ -380,7 +380,7 @@ Type: [UInt8](../../sql-reference/data-types/int-uint.md).
 Query:
 
 ``` sql
-SELECT addr, isIPv6String(addr) FROM ( SELECT ['::', '1111::ffff', '::ffff:127.0.0.1', '127.0.0.1'] AS addr ) ARRAY JOIN addr;
+SELECT addr, isIPv6String(addr) FROM ( SELECT ['::', '1111::ffff', '::ffff:127.0.0.1', '127.0.0.1'] AS addr ) ARRAY JOIN addr
 ```
 
 Result:
@@ -394,55 +394,4 @@ Result:
 └──────────────────┴────────────────────┘
 ```
 
-## isIPAddressInRange {#isipaddressinrange}
-
-Determines if an IP address is contained in a network represented in the [CIDR](https://en.wikipedia.org/wiki/Classless_Inter-Domain_Routing) notation. Returns `1` if true, or `0` otherwise.
-
-**Syntax**
-
-``` sql
-isIPAddressInRange(address, prefix)
-```
-
-This function accepts both IPv4 and IPv6 addresses (and networks) represented as strings. It returns `0` if the IP version of the address and the CIDR don't match.
-
-**Arguments**
-
--   `address` — An IPv4 or IPv6 address. [String](../../sql-reference/data-types/string.md).
--   `prefix` — An IPv4 or IPv6 network prefix in CIDR. [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
--   `1` or `0`.
-
-Type: [UInt8](../../sql-reference/data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT isIPAddressInRange('127.0.0.1', '127.0.0.0/8');
-```
-
-Result:
-
-``` text
-┌─isIPAddressInRange('127.0.0.1', '127.0.0.0/8')─┐
-│                                              1 │
-└────────────────────────────────────────────────┘
-```
-
-Query:
-
-``` sql
-SELECT isIPAddressInRange('127.0.0.1', 'ffff::/16');
-```
-
-Result:
-
-``` text
-┌─isIPAddressInRange('127.0.0.1', 'ffff::/16')─┐
-│                                            0 │
-└──────────────────────────────────────────────┘
-```
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/ip_address_functions/) <!--hide-->

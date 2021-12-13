@@ -8,13 +8,13 @@ from helpers.cluster import ClickHouseCluster
 from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
 from helpers.external_sources import SourceMySQL
 
-SOURCE = None
+SOURCE = SourceMySQL("MySQL", "localhost", "3308", "mysql1", "3306", "root", "clickhouse")
+
 cluster = None
 node = None
 simple_tester = None
 complex_tester = None
 ranged_tester = None
-test_name = "mysql"
 
 
 def setup_module(module):
@@ -24,37 +24,43 @@ def setup_module(module):
     global complex_tester
     global ranged_tester
 
-    cluster = ClickHouseCluster(__file__, name=test_name)
+    for f in os.listdir(DICT_CONFIG_PATH):
+        os.remove(os.path.join(DICT_CONFIG_PATH, f))
 
-    SOURCE = SourceMySQL("MySQL", None, cluster.mysql_port, cluster.mysql_host, cluster.mysql_port, "root", "clickhouse")
-
-    simple_tester = SimpleLayoutTester(test_name)
-    simple_tester.cleanup()
+    simple_tester = SimpleLayoutTester()
     simple_tester.create_dictionaries(SOURCE)
 
-    complex_tester = ComplexLayoutTester(test_name)
+    complex_tester = ComplexLayoutTester()
     complex_tester.create_dictionaries(SOURCE)
 
-    ranged_tester = RangedLayoutTester(test_name)
+    ranged_tester = RangedLayoutTester()
     ranged_tester.create_dictionaries(SOURCE)
     # Since that all .xml configs were created
 
+    cluster = ClickHouseCluster(__file__)
+
+    dictionaries = []
     main_configs = []
     main_configs.append(os.path.join('configs', 'disable_ssl_verification.xml'))
+    main_configs.append(os.path.join('configs', 'log_conf.xml'))
 
-    dictionaries = simple_tester.list_dictionaries()
- 
+    for fname in os.listdir(DICT_CONFIG_PATH):
+        dictionaries.append(os.path.join(DICT_CONFIG_PATH, fname))
+
     node = cluster.add_instance('node', main_configs=main_configs, dictionaries=dictionaries, with_mysql=True)
 
 
 def teardown_module(module):
-    simple_tester.cleanup()
+    global DICT_CONFIG_PATH
+    for fname in os.listdir(DICT_CONFIG_PATH):
+        os.remove(os.path.join(DICT_CONFIG_PATH, fname))
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
-        
+
         simple_tester.prepare(cluster)
         complex_tester.prepare(cluster)
         ranged_tester.prepare(cluster)

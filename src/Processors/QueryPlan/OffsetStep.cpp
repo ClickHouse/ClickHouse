@@ -1,8 +1,7 @@
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/OffsetTransform.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <IO/Operators.h>
-#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -29,7 +28,7 @@ OffsetStep::OffsetStep(const DataStream & input_stream_, size_t offset_)
 {
 }
 
-void OffsetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void OffsetStep::transformPipeline(QueryPipeline & pipeline)
 {
     auto transform = std::make_shared<OffsetTransform>(
             pipeline.getHeader(), offset, pipeline.getNumStreams());
@@ -40,11 +39,6 @@ void OffsetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
 void OffsetStep::describeActions(FormatSettings & settings) const
 {
     settings.out << String(settings.offset, ' ') << "Offset " << offset << '\n';
-}
-
-void OffsetStep::describeActions(JSONBuilder::JSONMap & map) const
-{
-    map.add("Offset", offset);
 }
 
 }

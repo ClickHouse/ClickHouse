@@ -4,11 +4,10 @@
 #include <AggregateFunctions/AggregateFunctionAvgWeighted.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include "registerAggregateFunctions.h"
 
 namespace DB
 {
-struct Settings;
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -61,8 +60,7 @@ static IAggregateFunction * create(const IDataType & first_type, const IDataType
 #undef LINE
 }
 
-AggregateFunctionPtr
-createAggregateFunctionAvgWeighted(const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+AggregateFunctionPtr createAggregateFunctionAvgWeighted(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertNoParameters(name, parameters);
     assertBinary(name, argument_types);
@@ -82,17 +80,17 @@ createAggregateFunctionAvgWeighted(const std::string & name, const DataTypes & a
     const bool left_decimal = isDecimal(data_type);
     const bool right_decimal = isDecimal(data_type_weight);
 
-    /// We multiply value by weight, so actual scale of numerator is <scale of value> + <scale of weight>
     if (left_decimal && right_decimal)
         ptr.reset(create(*data_type, *data_type_weight,
             argument_types,
-            getDecimalScale(*data_type) + getDecimalScale(*data_type_weight), getDecimalScale(*data_type_weight)));
+            getDecimalScale(*data_type), getDecimalScale(*data_type_weight)));
     else if (left_decimal)
         ptr.reset(create(*data_type, *data_type_weight, argument_types,
             getDecimalScale(*data_type)));
     else if (right_decimal)
         ptr.reset(create(*data_type, *data_type_weight, argument_types,
-            getDecimalScale(*data_type_weight), getDecimalScale(*data_type_weight)));
+            // numerator is not decimal, so its scale is 0
+            0, getDecimalScale(*data_type_weight)));
     else
         ptr.reset(create(*data_type, *data_type_weight, argument_types));
 

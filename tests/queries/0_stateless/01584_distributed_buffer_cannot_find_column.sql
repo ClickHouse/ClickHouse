@@ -1,5 +1,3 @@
--- Tags: distributed
-
 DROP TABLE IF EXISTS realtimedrep;
 DROP TABLE IF EXISTS realtimedistributed;
 DROP TABLE IF EXISTS realtimebuff;

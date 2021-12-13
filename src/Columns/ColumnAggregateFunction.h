@@ -82,9 +82,7 @@ private:
     /// Name of the type to distinguish different aggregation states.
     String type_string;
 
-    std::optional<size_t> version;
-
-    ColumnAggregateFunction() = default;
+    ColumnAggregateFunction() {}
 
     /// Create a new column that has another column as a source.
     MutablePtr createView() const;
@@ -94,16 +92,17 @@ private:
     ///  but ownership of different elements cannot be mixed by different columns.
     void ensureOwnership();
 
-    ColumnAggregateFunction(const AggregateFunctionPtr & func_, std::optional<size_t> version_ = std::nullopt);
+    ColumnAggregateFunction(const AggregateFunctionPtr & func_);
 
-    ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_);
+    ColumnAggregateFunction(const AggregateFunctionPtr & func_,
+                            const ConstArenas & arenas_);
 
     ColumnAggregateFunction(const ColumnAggregateFunction & src_);
 
 public:
     ~ColumnAggregateFunction() override;
 
-    void set(const AggregateFunctionPtr & func_, size_t version_);
+    void set(const AggregateFunctionPtr & func_);
 
     AggregateFunctionPtr getAggregateFunction() { return func; }
     AggregateFunctionPtr getAggregateFunction() const { return func; }
@@ -120,7 +119,7 @@ public:
     const char * getFamilyName() const override { return "AggregateFunction"; }
     TypeIndex getDataType() const override { return TypeIndex::AggregateFunction; }
 
-    MutableColumnPtr predictValues(const ColumnsWithTypeAndName & arguments, ContextPtr context) const;
+    MutableColumnPtr predictValues(const ColumnsWithTypeAndName & arguments, const Context & context) const;
 
     size_t size() const override
     {
@@ -156,8 +155,6 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * src_arena) override;
 
-    const char * skipSerializedInArena(const char *) const override;
-
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
     void updateWeakHash32(WeakHash32 & hash) const override;
@@ -177,8 +174,6 @@ public:
     void popBack(size_t n) override;
 
     ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
-
-    void expand(const Filter & mask, bool inverted) override;
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 

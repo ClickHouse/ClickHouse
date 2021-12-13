@@ -2,8 +2,6 @@
 #include <Functions/FunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Interpreters/IdentifierSemantic.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSubquery.h>
 
 
@@ -42,7 +40,7 @@ void ExpressionInfoMatcher::visit(const ASTFunction & ast_function, const ASTPtr
     }
     else
     {
-        const auto & function = FunctionFactory::instance().tryGet(ast_function.name, data.getContext());
+        const auto & function = FunctionFactory::instance().tryGet(ast_function.name, data.context);
 
         /// Skip lambda, tuple and other special functions
         if (function)
@@ -84,12 +82,11 @@ bool ExpressionInfoMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &)
     return !node->as<ASTSubquery>();
 }
 
-bool hasNonRewritableFunction(const ASTPtr & node, ContextPtr context)
+bool hasNonRewritableFunction(const ASTPtr & node, const Context & context)
 {
     for (const auto & select_expression : node->children)
     {
-        TablesWithColumns tables;
-        ExpressionInfoVisitor::Data expression_info{WithContext{context}, tables};
+        ExpressionInfoVisitor::Data expression_info{.context = context, .tables = {}};
         ExpressionInfoVisitor(expression_info).visit(select_expression);
 
         if (expression_info.is_stateful_function

@@ -8,13 +8,14 @@ from helpers.cluster import ClickHouseCluster
 from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
 from helpers.external_sources import SourceMongo
 
-SOURCE = None
+SOURCE = SourceMongo("MongoDB", "localhost", "27018", "mongo1", "27017", "root", "clickhouse")
+
 cluster = None
 node = None
 simple_tester = None
 complex_tester = None
 ranged_tester = None
-test_name = "mongo"
+
 
 def setup_module(module):
     global cluster
@@ -23,30 +24,36 @@ def setup_module(module):
     global complex_tester
     global ranged_tester
 
-    cluster = ClickHouseCluster(__file__, name=test_name)
-    SOURCE = SourceMongo("MongoDB", "localhost", cluster.mongo_port, cluster.mongo_host, "27017", "root", "clickhouse")
+    for f in os.listdir(DICT_CONFIG_PATH):
+        os.remove(os.path.join(DICT_CONFIG_PATH, f))
 
-    simple_tester = SimpleLayoutTester(test_name)
-    simple_tester.cleanup()
+    simple_tester = SimpleLayoutTester()
     simple_tester.create_dictionaries(SOURCE)
 
-    complex_tester = ComplexLayoutTester(test_name)
+    complex_tester = ComplexLayoutTester()
     complex_tester.create_dictionaries(SOURCE)
 
-    ranged_tester = RangedLayoutTester(test_name)
+    ranged_tester = RangedLayoutTester()
     ranged_tester.create_dictionaries(SOURCE)
     # Since that all .xml configs were created
 
+    cluster = ClickHouseCluster(__file__)
+
+    dictionaries = []
     main_configs = []
     main_configs.append(os.path.join('configs', 'disable_ssl_verification.xml'))
 
-    dictionaries = simple_tester.list_dictionaries()
+    for fname in os.listdir(DICT_CONFIG_PATH):
+        dictionaries.append(os.path.join(DICT_CONFIG_PATH, fname))
 
     node = cluster.add_instance('node', main_configs=main_configs, dictionaries=dictionaries, with_mongo=True)
 
 
 def teardown_module(module):
-    simple_tester.cleanup()
+    global DICT_CONFIG_PATH
+    for fname in os.listdir(DICT_CONFIG_PATH):
+        os.remove(os.path.join(DICT_CONFIG_PATH, fname))
+
 
 @pytest.fixture(scope="module")
 def started_cluster():

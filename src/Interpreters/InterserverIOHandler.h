@@ -7,18 +7,12 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ActionBlocker.h>
-#include <base/types.h>
+#include <common/types.h>
 
 #include <atomic>
 #include <map>
 #include <shared_mutex>
 #include <utility>
-
-namespace zkutil
-{
-    class ZooKeeper;
-    using ZooKeeperPtr = std::shared_ptr<ZooKeeper>;
-}
 
 namespace DB
 {

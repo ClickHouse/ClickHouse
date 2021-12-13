@@ -1,7 +1,3 @@
-#ifdef HAS_RESERVED_IDENTIFIER
-#pragma clang diagnostic ignored "-Wreserved-identifier"
-#endif
-
 #include <daemon/BaseDaemon.h>
 #include <daemon/SentryWriter.h>
 
@@ -13,28 +9,39 @@
 #if defined(__linux__)
     #include <sys/prctl.h>
 #endif
+#include <fcntl.h>
 #include <errno.h>
 #include <string.h>
 #include <signal.h>
+#include <cxxabi.h>
 #include <unistd.h>
 
 #include <typeinfo>
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <memory>
-#include <base/scope_guard.h>
+#include <ext/scope_guard.h>
 
+#include <Poco/Observer.h>
+#include <Poco/AutoPtr.h>
+#include <Poco/PatternFormatter.h>
+#include <Poco/File.h>
+#include <Poco/Path.h>
 #include <Poco/Message.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Exception.h>
 #include <Poco/ErrorHandler.h>
+#include <Poco/Condition.h>
+#include <Poco/SyslogChannel.h>
+#include <Poco/DirectoryIterator.h>
 
-#include <base/logger_useful.h>
-#include <base/ErrorHandlers.h>
-#include <base/argsToConfig.h>
-#include <base/getThreadId.h>
-#include <base/coverage.h>
-#include <base/sleep.h>
+#include <common/logger_useful.h>
+#include <common/ErrorHandlers.h>
+#include <common/argsToConfig.h>
+#include <common/getThreadId.h>
+#include <common/coverage.h>
+#include <common/sleep.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
@@ -47,16 +54,15 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/MemorySanitizer.h>
 #include <Common/SymbolIndex.h>
 #include <Common/getExecutablePath.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/Elf.h>
-#include <filesystem>
 
-#include <loggers/OwnFormattingChannel.h>
-#include <loggers/OwnPatternFormatter.h>
-
-#include <Common/config_version.h>
+#if !defined(ARCADIA_BUILD)
+#   include <Common/config_version.h>
+#endif
 
 #if defined(OS_DARWIN)
 #   pragma GCC diagnostic ignored "-Wunused-macros"
@@ -64,7 +70,6 @@
 #endif
 #include <ucontext.h>
 
-namespace fs = std::filesystem;
 
 DB::PipeFDs signal_pipe;
 
@@ -104,7 +109,7 @@ static void writeSignalIDtoSignalPipe(int sig)
     errno = saved_errno;
 }
 
-/** Signal handler for HUP */
+/** Signal handler for HUP / USR1 */
 static void closeLogsSignalHandler(int sig, siginfo_t *, void *)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
@@ -161,7 +166,7 @@ __attribute__((__weak__)) void collectCrashLog(
 
 
 /** The thread that read info about signal or std::terminate from pipe.
-  * On HUP, close log files (for new files to be opened later).
+  * On HUP / USR1, close log files (for new files to be opened later).
   * On information about std::terminate, write it to log.
   * On other signals, write info to log.
   */
@@ -201,7 +206,7 @@ public:
                 LOG_INFO(log, "Stop SignalListener thread");
                 break;
             }
-            else if (sig == SIGHUP)
+            else if (sig == SIGHUP || sig == SIGUSR1)
             {
                 LOG_DEBUG(log, "Received signal to close logs.");
                 BaseDaemon::instance().closeLogs(BaseDaemon::instance().logger());
@@ -254,25 +259,10 @@ private:
     Poco::Logger * log;
     BaseDaemon & daemon;
 
-    void onTerminate(std::string_view message, UInt32 thread_num) const
+    void onTerminate(const std::string & message, UInt32 thread_num) const
     {
-        size_t pos = message.find('\n');
-
         LOG_FATAL(log, "(version {}{}, {}) (from thread {}) {}",
-            VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num, message.substr(0, pos));
-
-        /// Print trace from std::terminate exception line-by-line to make it easy for grep.
-        while (pos != std::string_view::npos)
-        {
-            ++pos;
-            size_t next_pos = message.find('\n', pos);
-            size_t size = next_pos;
-            if (next_pos != std::string_view::npos)
-                size = next_pos - pos;
-
-            LOG_FATAL(log, "{}", message.substr(pos, size));
-            pos = next_pos;
-        }
+            VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num, message);
     }
 
     void onFault(
@@ -447,11 +437,11 @@ static void sanitizerDeathCallback()
 
 static std::string createDirectory(const std::string & file)
 {
-    fs::path path = fs::path(file).parent_path();
-    if (path.empty())
+    auto path = Poco::Path(file).makeParent();
+    if (path.toString().empty())
         return "";
-    fs::create_directories(path);
-    return path;
+    Poco::File(path).createDirectories();
+    return path.toString();
 };
 
 
@@ -459,7 +449,7 @@ static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path
 {
     try
     {
-        fs::create_directories(path);
+        Poco::File(path).createDirectories();
         return true;
     }
     catch (...)
@@ -478,9 +468,9 @@ void BaseDaemon::reloadConfiguration()
       *  instead of using files specified in config.xml.
       * (It's convenient to log in console when you start server without any command line parameters.)
       */
-    config_path = config().getString("config-file", getDefaultConfigFileName());
+    config_path = config().getString("config-file", "config.xml");
     DB::ConfigProcessor config_processor(config_path, false, true);
-    config_processor.setConfigPath(fs::path(config_path).parent_path());
+    config_processor.setConfigPath(Poco::Path(config_path).makeParent().toString());
     loaded_config = config_processor.loadConfig(/* allow_zk_includes = */ true);
 
     if (last_configuration != nullptr)
@@ -526,28 +516,21 @@ std::string BaseDaemon::getDefaultCorePath() const
     return "/opt/cores/";
 }
 
-std::string BaseDaemon::getDefaultConfigFileName() const
-{
-    return "config.xml";
-}
-
 void BaseDaemon::closeFDs()
 {
 #if defined(OS_FREEBSD) || defined(OS_DARWIN)
-    fs::path proc_path{"/dev/fd"};
+    Poco::File proc_path{"/dev/fd"};
 #else
-    fs::path proc_path{"/proc/self/fd"};
+    Poco::File proc_path{"/proc/self/fd"};
 #endif
-    if (fs::is_directory(proc_path)) /// Hooray, proc exists
+    if (proc_path.isDirectory()) /// Hooray, proc exists
     {
-        /// in /proc/self/fd directory filenames are numeric file descriptors.
-        /// Iterate directory separately from closing fds to avoid closing iterated directory fd.
-        std::vector<int> fds;
-        for (const auto & path : fs::directory_iterator(proc_path))
-            fds.push_back(DB::parse<int>(path.path().filename()));
-
-        for (const auto & fd : fds)
+        std::vector<std::string> fds;
+        /// in /proc/self/fd directory filenames are numeric file descriptors
+        proc_path.list(fds);
+        for (const auto & fd_str : fds)
         {
+            int fd = DB::parse<int>(fd_str);
             if (fd > 2 && fd != signal_pipe.fds_rw[0] && fd != signal_pipe.fds_rw[1])
                 ::close(fd);
         }
@@ -609,7 +592,7 @@ void BaseDaemon::initialize(Application & self)
     {
         /** When creating pid file and looking for config, will search for paths relative to the working path of the program when started.
           */
-        std::string path = fs::path(config().getString("application.path")).replace_filename("");
+        std::string path = Poco::Path(config().getString("application.path")).setFileName("").toString();
         if (0 != chdir(path.c_str()))
             throw Poco::Exception("Cannot change directory to " + path);
     }
@@ -657,7 +640,7 @@ void BaseDaemon::initialize(Application & self)
 
     std::string log_path = config().getString("logger.log", "");
     if (!log_path.empty())
-        log_path = fs::path(log_path).replace_filename("");
+        log_path = Poco::Path(log_path).setFileName("").toString();
 
     /** Redirect stdout, stderr to separate files in the log directory (or in the specified file).
       * Some libraries write to stderr in case of errors in debug mode,
@@ -668,34 +651,6 @@ void BaseDaemon::initialize(Application & self)
     if ((!log_path.empty() && is_daemon) || config().has("logger.stderr"))
     {
         std::string stderr_path = config().getString("logger.stderr", log_path + "/stderr.log");
-
-        /// Check that stderr is writable before freopen(),
-        /// since freopen() will make stderr invalid on error,
-        /// and logging to stderr will be broken,
-        /// so the following code (that is used in every program) will not write anything:
-        ///
-        ///     int main(int argc, char ** argv)
-        ///     {
-        ///         try
-        ///         {
-        ///             DB::SomeApp app;
-        ///             return app.run(argc, argv);
-        ///         }
-        ///         catch (...)
-        ///         {
-        ///             std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
-        ///             return 1;
-        ///         }
-        ///     }
-        if (access(stderr_path.c_str(), W_OK))
-        {
-            int fd;
-            if ((fd = creat(stderr_path.c_str(), 0600)) == -1 && errno != EEXIST)
-                throw Poco::OpenFileException("File " + stderr_path + " (logger.stderr) is not writable");
-            if (fd != -1)
-                ::close(fd);
-        }
-
         if (!freopen(stderr_path.c_str(), "a+", stderr))
             throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
 
@@ -748,7 +703,8 @@ void BaseDaemon::initialize(Application & self)
 
         tryCreateDirectories(&logger(), core_path);
 
-        if (!(fs::exists(core_path) && fs::is_directory(core_path)))
+        Poco::File cores = core_path;
+        if (!(cores.exists() && cores.isDirectory()))
         {
             core_path = !log_path.empty() ? log_path : "/opt/";
             tryCreateDirectories(&logger(), core_path);
@@ -832,7 +788,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     /// SIGTSTP is added for debugging purposes. To output a stack trace of any running thread at anytime.
 
     addSignalHandler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP, SIGTRAP}, signalHandler, &handled_signals);
-    addSignalHandler({SIGHUP}, closeLogsSignalHandler, &handled_signals);
+    addSignalHandler({SIGHUP, SIGUSR1}, closeLogsSignalHandler, &handled_signals);
     addSignalHandler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler, &handled_signals);
 
 #if defined(SANITIZER)
@@ -994,19 +950,11 @@ void BaseDaemon::setupWatchdog()
             memcpy(argv0, new_process_name, std::min(strlen(new_process_name), original_process_name.size()));
         }
 
-        /// If streaming compression of logs is used then we write watchdog logs to cerr
-        if (config().getRawString("logger.stream_compress", "false") == "true")
-        {
-            Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
-            Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
-            logger().setChannel(log);
-        }
-
         logger().information(fmt::format("Will watch for the process with pid {}", pid));
 
         /// Forward signals to the child process.
         addSignalHandler(
-            {SIGHUP, SIGINT, SIGQUIT, SIGTERM},
+            {SIGHUP, SIGUSR1, SIGINT, SIGQUIT, SIGTERM},
             [](int sig, siginfo_t *, void *)
             {
                 /// Forward all signals except INT as it can be send by terminal to the process group when user press Ctrl+C,

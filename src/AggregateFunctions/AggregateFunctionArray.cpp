@@ -1,11 +1,10 @@
 #include <AggregateFunctions/AggregateFunctionArray.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 #include <Common/typeid_cast.h>
-
+#include "registerAggregateFunctions.h"
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -20,8 +19,6 @@ class AggregateFunctionCombinatorArray final : public IAggregateFunctionCombinat
 {
 public:
     String getName() const override { return "Array"; }
-
-    bool supportsNesting() const override { return true; }
 
     DataTypes transformArguments(const DataTypes & arguments) const override
     {

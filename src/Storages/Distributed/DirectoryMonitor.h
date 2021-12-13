@@ -21,11 +21,6 @@ class StorageDistributed;
 class ActionBlocker;
 class BackgroundSchedulePool;
 
-class IProcessor;
-using ProcessorPtr = std::shared_ptr<IProcessor>;
-
-class ISource;
-
 /** Details of StorageDistributed.
   * This type is not designed for standalone use.
   */
@@ -50,28 +45,20 @@ public:
 
     void shutdownAndDropAllData();
 
-    static std::shared_ptr<ISource> createSourceFromFile(const String & file_name);
+    static BlockInputStreamPtr createStreamFromFile(const String & file_name);
 
     /// For scheduling via DistributedBlockOutputStream
     bool addAndSchedule(size_t file_size, size_t ms);
 
-    struct InternalStatus
-    {
-        std::exception_ptr last_exception;
-
-        size_t error_count = 0;
-
-        size_t files_count = 0;
-        size_t bytes_count = 0;
-
-        size_t broken_files_count = 0;
-        size_t broken_bytes_count = 0;
-    };
     /// system.distribution_queue interface
-    struct Status : InternalStatus
+    struct Status
     {
         std::string path;
-        bool is_blocked = false;
+        std::exception_ptr last_exception;
+        size_t error_count;
+        size_t files_count;
+        size_t bytes_count;
+        bool is_blocked;
     };
     Status getStatus();
 
@@ -97,7 +84,6 @@ private:
     std::string path;
 
     const bool should_batch_inserts = false;
-    const bool split_batch_on_failure = true;
     const bool dir_fsync = false;
     const size_t min_batched_block_size_rows = 0;
     const size_t min_batched_block_size_bytes = 0;
@@ -106,8 +92,11 @@ private:
     struct BatchHeader;
     struct Batch;
 
-    std::mutex status_mutex;
-    InternalStatus status;
+    std::mutex metrics_mutex;
+    size_t error_count = 0;
+    size_t files_count = 0;
+    size_t bytes_count = 0;
+    std::exception_ptr last_exception;
 
     const std::chrono::milliseconds default_sleep_time;
     std::chrono::milliseconds sleep_time;
@@ -121,7 +110,6 @@ private:
     BackgroundSchedulePoolTaskHolder task_handle;
 
     CurrentMetrics::Increment metric_pending_files;
-    CurrentMetrics::Increment metric_broken_files;
 
     friend class DirectoryMonitorBlockInputStream;
 };

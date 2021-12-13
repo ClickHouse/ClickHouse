@@ -79,8 +79,8 @@ IMPLEMENT_SETTING_ENUM(LogsLevel, ErrorCodes::BAD_ARGUMENTS,
      {"warning",     LogsLevel::warning},
      {"information", LogsLevel::information},
      {"debug",       LogsLevel::debug},
-     {"trace",       LogsLevel::trace},
-     {"test",        LogsLevel::test}})
+     {"trace",       LogsLevel::trace}})
+
 
 IMPLEMENT_SETTING_ENUM_WITH_RENAME(LogQueriesType, ErrorCodes::BAD_ARGUMENTS,
     {{"QUERY_START",                QUERY_START},
@@ -102,32 +102,4 @@ IMPLEMENT_SETTING_ENUM(UnionMode, ErrorCodes::UNKNOWN_UNION,
      {"ALL",      UnionMode::ALL},
      {"DISTINCT", UnionMode::DISTINCT}})
 
-IMPLEMENT_SETTING_ENUM(DistributedDDLOutputMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"none",         DistributedDDLOutputMode::NONE},
-     {"throw",    DistributedDDLOutputMode::THROW},
-     {"null_status_on_timeout", DistributedDDLOutputMode::NULL_STATUS_ON_TIMEOUT},
-     {"never_throw", DistributedDDLOutputMode::NEVER_THROW}})
-
-IMPLEMENT_SETTING_ENUM(HandleKafkaErrorMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"default",      HandleKafkaErrorMode::DEFAULT},
-     {"stream",       HandleKafkaErrorMode::STREAM}})
-
-IMPLEMENT_SETTING_ENUM(ShortCircuitFunctionEvaluation, ErrorCodes::BAD_ARGUMENTS,
-    {{"enable",          ShortCircuitFunctionEvaluation::ENABLE},
-     {"force_enable",    ShortCircuitFunctionEvaluation::FORCE_ENABLE},
-     {"disable",         ShortCircuitFunctionEvaluation::DISABLE}})
-
-IMPLEMENT_SETTING_ENUM(EnumComparingMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"by_names",   FormatSettings::EnumComparingMode::BY_NAMES},
-     {"by_values",  FormatSettings::EnumComparingMode::BY_VALUES},
-     {"by_names_case_insensitive", FormatSettings::EnumComparingMode::BY_NAMES_CASE_INSENSITIVE}})
-
-IMPLEMENT_SETTING_ENUM(EscapingRule, ErrorCodes::BAD_ARGUMENTS,
-    {{"None", FormatSettings::EscapingRule::None},
-     {"Escaped", FormatSettings::EscapingRule::Escaped},
-     {"Quoted", FormatSettings::EscapingRule::Quoted},
-     {"CSV", FormatSettings::EscapingRule::CSV},
-     {"JSON", FormatSettings::EscapingRule::JSON},
-     {"XML", FormatSettings::EscapingRule::XML},
-     {"Raw", FormatSettings::EscapingRule::Raw}})
 }

@@ -1,7 +1,7 @@
-if(ARCH_AMD64 AND NOT OS_FREEBSD AND NOT OS_DARWIN)
+if(NOT ARCH_ARM AND NOT OS_FREEBSD AND NOT OS_DARWIN)
     option(ENABLE_FASTOPS "Enable fast vectorized mathematical functions library by Mikhail Parakhin" ${ENABLE_LIBRARIES})
 elseif(ENABLE_FASTOPS)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "Fastops library is supported on x86_64 only, and not FreeBSD or Darwin")
+    message (${RECONFIGURE_MESSAGE_LEVEL} "Fastops library is not supported on ARM, FreeBSD and Darwin")
 endif()
 
 if(NOT ENABLE_FASTOPS)
@@ -10,7 +10,7 @@ if(NOT ENABLE_FASTOPS)
 endif()
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/fastops/fastops/fastops.h")
-    message(WARNING "submodule contrib/fastops is missing. to fix try run: \n git submodule update --init")
+    message(WARNING "submodule contrib/fastops is missing. to fix try run: \n git submodule update --init --recursive")
     message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal fastops library")
     set(MISSING_INTERNAL_FASTOPS_LIBRARY 1)
 endif()

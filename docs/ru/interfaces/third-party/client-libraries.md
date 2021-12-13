@@ -1,6 +1,6 @@
 ---
 toc_priority: 26
-toc_title: "Клиентские библиотеки от сторонних разработчиков"
+toc_title: "\u041a\u043b\u0438\u0435\u043d\u0442\u0441\u043a\u0438\u0435\u0020\u0431\u0438\u0431\u043b\u0438\u043e\u0442\u0435\u043a\u0438\u0020\u043e\u0442\u0020\u0441\u0442\u043e\u0440\u043e\u043d\u043d\u0438\u0445\u0020\u0440\u0430\u0437\u0440\u0430\u0431\u043e\u0442\u0447\u0438\u043a\u043e\u0432"
 ---
 
 # Клиентские библиотеки от сторонних разработчиков {#klientskie-biblioteki-ot-storonnikh-razrabotchikov}
@@ -31,8 +31,6 @@ toc_title: "Клиентские библиотеки от сторонних р
 -   NodeJs
     -   [clickhouse (NodeJs)](https://github.com/TimonKK/clickhouse)
     -   [node-clickhouse](https://github.com/apla/node-clickhouse)
-    -   [nestjs-clickhouse](https://github.com/depyronick/nestjs-clickhouse)
-    -   [clickhouse-client](https://github.com/depyronick/clickhouse-client)
 -   Perl
     -   [perl-DBD-ClickHouse](https://github.com/elcamlost/perl-DBD-ClickHouse)
     -   [HTTP-ClickHouse](https://metacpan.org/release/HTTP-ClickHouse)
@@ -40,8 +38,6 @@ toc_title: "Клиентские библиотеки от сторонних р
 -   Ruby
     -   [ClickHouse (Ruby)](https://github.com/shlima/click_house)
     -   [clickhouse-activerecord](https://github.com/PNixx/clickhouse-activerecord)
--   Rust
-    -   [Klickhouse](https://github.com/Protryon/klickhouse)
 -   R
     -   [clickhouse-r](https://github.com/hannesmuehleisen/clickhouse-r)
     -   [RClickhouse](https://github.com/IMSMWU/RClickhouse)
@@ -62,3 +58,4 @@ toc_title: "Клиентские библиотеки от сторонних р
 -   Nim
     -   [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/interfaces/third-party/client_libraries/) <!--hide-->
