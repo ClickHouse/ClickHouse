@@ -285,6 +285,8 @@ class ClickHouseCluster:
         self.minio_redirect_ip = None
         self.minio_redirect_port = 8080
 
+        self.with_azurite = False
+
         # available when with_hdfs == True
         self.hdfs_host = "hdfs1"
         self.hdfs_ip = None
@@ -744,6 +746,13 @@ class ClickHouseCluster:
                                 '--file', p.join(docker_compose_yml_dir, 'docker_compose_minio.yml')]
         return self.base_minio_cmd
 
+    def setup_azurite_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_azurite = True
+        self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_azurite.yml')])
+        self.base_azurite_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
+            '--file', p.join(docker_compose_yml_dir, 'docker_compose_azurite.yml')]
+        return self.base_azurite_cmd
+
     def setup_cassandra_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_cassandra = True
         env_variables['CASSANDRA_PORT'] = str(self.cassandra_port)
@@ -775,7 +784,7 @@ class ClickHouseCluster:
                      with_kafka=False, with_kerberized_kafka=False, with_rabbitmq=False, clickhouse_path_dir=None,
                      with_odbc_drivers=False, with_postgres=False, with_postgres_cluster=False, with_hdfs=False,
                      with_kerberized_hdfs=False, with_mongo=False, with_mongo_secure=False, with_nginx=False,
-                     with_redis=False, with_minio=False, with_cassandra=False, with_jdbc_bridge=False,
+                     with_redis=False, with_minio=False, with_azurite=False, with_cassandra=False, with_jdbc_bridge=False,
                      hostname=None, env_variables=None, image="clickhouse/integration-test", tag=None,
                      stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, external_dirs=None, tmpfs=None,
                      zookeeper_docker_compose_path=None, minio_certs_dir=None, use_keeper=True,
@@ -831,6 +840,7 @@ class ClickHouseCluster:
             with_mongo=with_mongo or with_mongo_secure,
             with_redis=with_redis,
             with_minio=with_minio,
+            with_azurite=with_azurite,
             with_cassandra=with_cassandra,
             with_jdbc_bridge=with_jdbc_bridge,
             server_bin_path=self.server_bin_path,
@@ -933,6 +943,9 @@ class ClickHouseCluster:
 
         if with_minio and not self.with_minio:
             cmds.append(self.setup_minio_cmd(instance, env_variables, docker_compose_yml_dir))
+
+        if with_azurite and not self.with_azurite:
+            cmds.append(self.setup_azurite_cmd(instance, env_variables, docker_compose_yml_dir))
 
         if minio_certs_dir is not None:
             if self.minio_certs_dir is None:
@@ -1385,6 +1398,23 @@ class ClickHouseCluster:
 
         raise Exception("Can't wait Minio to start")
 
+    def wait_azurite_to_start(self, timeout=180):
+        from azure.storage.blob import BlobServiceClient
+        connection_string = "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
+        time.sleep(1)
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+                logging.debug(blob_service_client.get_account_information())
+                self.blob_service_client = blob_service_client
+                return
+            except Exception as ex:
+                logging.debug("Can't connect to Azurite: %s", str(ex))
+                time.sleep(1)
+
+        raise Exception("Can't wait Azurite to start")
+
     def wait_schema_registry_to_start(self, timeout=180):
         sr_client = CachedSchemaRegistryClient({"url":'http://localhost:{}'.format(self.schema_registry_port)})
         start = time.time()
@@ -1626,6 +1656,14 @@ class ClickHouseCluster:
                 logging.info("Trying to connect to Minio...")
                 self.wait_minio_to_start(secure=self.minio_certs_dir is not None)
 
+            if self.with_azurite and self.base_azurite_cmd:
+                azurite_start_cmd = self.base_azurite_cmd + common_opts
+                logging.info("Trying to create Azurite instance by command %s", ' '.join(map(str, azurite_start_cmd)))
+                run_and_check(azurite_start_cmd)
+                self.up_called = True
+                logging.info("Trying to connect to Azurite")
+                self.wait_azurite_to_start()
+
             if self.with_cassandra and self.base_cassandra_cmd:
                 subprocess_check_call(self.base_cassandra_cmd + ['up', '-d'])
                 self.up_called = True
@@ -1845,7 +1883,7 @@ class ClickHouseInstance:
             self, cluster, base_path, name, base_config_dir, custom_main_configs, custom_user_configs,
             custom_dictionaries,
             macros, with_zookeeper, zookeeper_config_path, with_mysql_client,  with_mysql, with_mysql8, with_mysql_cluster, with_kafka, with_kerberized_kafka,
-            with_rabbitmq, with_nginx, with_kerberized_hdfs, with_mongo, with_redis, with_minio, with_jdbc_bridge,
+            with_rabbitmq, with_nginx, with_kerberized_hdfs, with_mongo, with_redis, with_minio, with_azurite, with_jdbc_bridge,
             with_cassandra, server_bin_path, odbc_bridge_bin_path, library_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers, with_postgres, with_postgres_cluster,
             clickhouse_start_command=CLICKHOUSE_START_COMMAND,
             main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True,
@@ -1889,6 +1927,7 @@ class ClickHouseInstance:
         self.with_mongo = with_mongo
         self.with_redis = with_redis
         self.with_minio = with_minio
+        self.with_azurite = with_azurite
         self.with_cassandra = with_cassandra
         self.with_jdbc_bridge = with_jdbc_bridge
 
@@ -2551,6 +2590,9 @@ class ClickHouseInstance:
 
         if self.with_minio:
             depends_on.append("minio1")
+
+        if self.with_azurite:
+            depends_on.append("azurite1")
 
         self.cluster.env_variables.update(self.env_variables)
 
