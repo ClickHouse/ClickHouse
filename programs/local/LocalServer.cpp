@@ -388,12 +388,6 @@ void LocalServer::setupUsers()
 }
 
 
-String LocalServer::getQueryTextPrefix()
-{
-    return getInitialCreateTableQuery();
-}
-
-
 void LocalServer::connect()
 {
     connection_parameters = ConnectionParameters(config());
@@ -462,6 +456,10 @@ try
     first_time = false;
     }
 #endif
+
+    String initial_query = getInitialCreateTableQuery();
+    if (!initial_query.empty())
+        processQueryText(initial_query);
 
     if (is_interactive && !delayed_interactive)
     {

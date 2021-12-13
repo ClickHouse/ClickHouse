@@ -1,13 +1,13 @@
 ---
 toc_priority: 68
-toc_title: Window View
+toc_title: Time Window
 ---
 
-# Window View Functions {#window-view-functions}
+# Time Window Functions {#time-window-functions}
 
-Window view functions return the inclusive lower and exclusive upper bound of the corresponding window. The functions for working with WindowView are listed below:
+Time window functions return the inclusive lower and exclusive upper bound of the corresponding window. The functions for working with WindowView are listed below:
 
-## tumble {#window-view-functions-tumble}
+## tumble {#time-window-functions-tumble}
 
 A tumbling time window assigns records to non-overlapping, continuous windows with a fixed duration (`interval`). 
 
@@ -42,7 +42,7 @@ Result:
 └───────────────────────────────────────────────┘
 ```
 
-## hop {#window-view-functions-hop}
+## hop {#time-window-functions-hop}
 
 A hopping time window has a fixed duration (`window_interval`) and hops by a specified hop interval (`hop_interval`). If the `hop_interval` is smaller than the `window_interval`, hopping windows are overlapping. Thus, records can be assigned to multiple windows. 
 
@@ -79,7 +79,7 @@ Result:
 └───────────────────────────────────────────────────────────┘
 ```
 
-## tumbleStart {#window-view-functions-tumblestart}
+## tumbleStart {#time-window-functions-tumblestart}
 
 Returns the inclusive lower bound of the corresponding tumbling window.
 
@@ -87,7 +87,7 @@ Returns the inclusive lower bound of the corresponding tumbling window.
 tumbleStart(time_attr, interval [, timezone]);
 ```
 
-## tumbleEnd {#window-view-functions-tumbleend}
+## tumbleEnd {#time-window-functions-tumbleend}
 
 Returns the exclusive upper bound of the corresponding tumbling window.
 
@@ -95,7 +95,7 @@ Returns the exclusive upper bound of the corresponding tumbling window.
 tumbleEnd(time_attr, interval [, timezone]);
 ```
 
-## hopStart {#window-view-functions-hopstart}
+## hopStart {#time-window-functions-hopstart}
 
 Returns the inclusive lower bound of the corresponding hopping window.
 
@@ -103,7 +103,7 @@ Returns the inclusive lower bound of the corresponding hopping window.
 hopStart(time_attr, hop_interval, window_interval [, timezone]);
 ```
 
-## hopEnd {#window-view-functions-hopend}
+## hopEnd {#time-window-functions-hopend}
 
 Returns the exclusive upper bound of the corresponding hopping window.
 
