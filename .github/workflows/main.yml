@@ -73,7 +73,7 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
-  PerformanceComparison:
+  PerformanceComparison1:
     needs: [BuilderPerformance]
     runs-on: [self-hosted, perf-tester]
     steps:
@@ -89,8 +89,8 @@ jobs:
           REPORTS_PATH: ${{runner.temp}}/reports_dir
           CHECK_NAME: 'Performance Comparison (actions)'
           REPO_COPY: ${{runner.temp}}/performance_comparison/ClickHouse
-          RAMDRIVE_PATH: ${{runner.temp}}/performance_comparison/ramdrive
-          RAMDRIVE_SIZE: '30G'
+          RUN_BY_HASH_NUM: 1
+          RUN_BY_HASH_TOTAL: 3
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH

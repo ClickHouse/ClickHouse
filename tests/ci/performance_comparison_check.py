@@ -45,7 +45,8 @@ if __name__ == "__main__":
     temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
     repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
     ramdrive_path = os.getenv("RAMDRIVE_PATH", os.path.join(temp_path, "ramdrive"))
-    ramdrive_size = os.getenv("RAMDRIVE_SIZE", '30G')
+    # currently unused, doesn't make tests more stable
+    ramdrive_size = os.getenv("RAMDRIVE_SIZE", '0G')
     reports_path = os.getenv("REPORTS_PATH", "./reports")
 
     check_name = sys.argv[1]
@@ -72,6 +73,11 @@ if __name__ == "__main__":
     task_url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
     docker_env += ' -e CHPC_ADD_REPORT_LINKS="<a href={}>Job (actions)</a> <a href={}>Tested commit</a>"'.format(
         task_url, pr_link)
+
+    if 'RUN_BY_HASH_TOTAL' in os.environ:
+        run_by_hash_total = int(os.getenv('RUN_BY_HASH_TOTAL'))
+        run_by_hash_num = int(os.getenv('RUN_BY_HASH_NUM'))
+        docker_env += f' -e CHPC_TEST_RUN_BY_HASH_TOTAL={run_by_hash_total} -e CHPC_TEST_RUN_BY_HASH_NUM={run_by_hash_num}'
 
     docker_image = get_image_with_version(reports_path, IMAGE_NAME)
 
