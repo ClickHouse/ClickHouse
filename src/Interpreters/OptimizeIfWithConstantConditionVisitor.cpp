@@ -47,7 +47,7 @@ static bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & v
                 }
             }
         }
-        else if (function->name == "toUInt8" || function->name == "toInt8")
+        else if (function->name == "toUInt8" || function->name == "toInt8" || function->name == "identity")
         {
             if (const auto * expr_list = function->arguments->as<ASTExpressionList>())
             {
