@@ -17,8 +17,8 @@ protected:
 
 private:
     AggregatingTransformParamsPtr params;
-    ColumnNumbers keys;
-    ColumnNumbersList keys_vector;
+    const ColumnNumbers & keys;
+    const ColumnNumbersList & keys_vector;
 
     Chunks consumed_chunks;
     Chunk grouping_sets_chunk;
