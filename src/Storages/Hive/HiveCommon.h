@@ -19,32 +19,37 @@ class HiveMetastoreClient : public WithContext
 public:
     struct FileInfo
     {
-        std::string path;
-        UInt64 last_modify_time; // in ms
+        String path;
+        UInt64 last_modify_time; /// In ms
         size_t size;
 
         FileInfo() = default;
-        //FileInfo(const FileInfo & b) : path(b.path), last_modify_time(b.last_modify_time), size(b.size){}
-        FileInfo(const std::string & path_, UInt64 last_modify_time_, size_t size_) : path(path_), last_modify_time(last_modify_time_), size(size_) {}
+        FileInfo(const String & path_, UInt64 last_modify_time_, size_t size_)
+            : path(path_), last_modify_time(last_modify_time_), size(size_)
+        {
+        }
     };
 
     struct PartitionInfo
     {
         Apache::Hadoop::Hive::Partition partition;
         std::vector<FileInfo> files;
+        bool initialized = false; /// If true, files are initialized.
 
-        bool equal(const Apache::Hadoop::Hive::Partition & other);
+        explicit PartitionInfo(const Apache::Hadoop::Hive::Partition & partition_): partition(partition_) {}
+        bool haveSameParameters(const Apache::Hadoop::Hive::Partition & other) const;
     };
 
-    // use for speeding up query metadata
+
+    /// Used for speeding up metadata query process.
     struct HiveTableMetadata : public WithContext
     {
     public:
         HiveTableMetadata(
-            const std::string & db_name_,
-            const std::string & table_name_,
+            const String & db_name_,
+            const String & table_name_,
             std::shared_ptr<Apache::Hadoop::Hive::Table> table_,
-            std::map<std::string, PartitionInfo> && partition_infos_,
+            const std::map<String, PartitionInfo> & partition_infos_,
             ContextPtr context_)
             : WithContext(context_)
             , db_name(db_name_)
@@ -54,41 +59,56 @@ public:
             , empty_partition_keys(table->partitionKeys.empty())
         {
         }
-        std::vector<Apache::Hadoop::Hive::Partition> getPartitions();
-        inline std::map<std::string, PartitionInfo> getPartitionInfos()
+
+
+        std::map<String, PartitionInfo> & getPartitionInfos()
         {
             std::lock_guard lock{mutex};
             return partition_infos;
         }
-        std::vector<FileInfo> getLocationFiles(const std::string & location);
-        std::vector<FileInfo> getLocationFiles(const HDFSFSPtr & fs, const std::string & location);
-        inline std::shared_ptr<Apache::Hadoop::Hive::Table> getTable() { return table; }
+
+        std::shared_ptr<Apache::Hadoop::Hive::Table> getTable() const
+        {
+            std::lock_guard lock{mutex};
+            return table;
+        }
+
+        std::vector<Apache::Hadoop::Hive::Partition> getPartitions() const;
+
+        std::vector<FileInfo> getFilesByLocation(const HDFSFSPtr & fs, const String & location);
 
     private:
-        std::string db_name;
-        std::string table_name;
+        String db_name;
+        String table_name;
 
-        std::mutex mutex;
+        mutable std::mutex mutex;
         std::shared_ptr<Apache::Hadoop::Hive::Table> table;
-        std::map<std::string, PartitionInfo> partition_infos;
+        std::map<String, PartitionInfo> partition_infos;
         const bool empty_partition_keys;
+
+        Poco::Logger * log = &Poco::Logger::get("HiveMetastoreClient");
     };
 
     explicit HiveMetastoreClient(std::shared_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> client_, ContextPtr context_)
-        : WithContext(context_), client(client_), table_meta_cache(1000)
+        : WithContext(context_), client(client_), table_metadata_cache(1000)
     {
     }
 
-    std::shared_ptr<HiveTableMetadata> getTableMetadata(const std::string & db_name, const std::string & table_name);
-    void clearTableMetadata(const std::string & db_name, const std::string & table_name);
+    std::shared_ptr<HiveTableMetadata> getTableMetadata(const String & db_name, const String & table_name);
+    void clearTableMetadata(const String & db_name, const String & table_name);
     void setClient(std::shared_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> client_);
-    inline bool isExpired() const { return expired; }
-    inline void setExpired() { expired = true; }
-    inline void clearExpired() { expired = false; }
+    bool isExpired() const { return expired; }
+    void setExpired() { expired = true; }
+    void clearExpired() { expired = false; }
 
 private:
+    static String getCacheKey(const String & db_name, const String & table_name)  { return db_name + "." + table_name; }
+
+    bool shouldUpdateTableMetadata(
+        const String & db_name, const String & table_name, const std::vector<Apache::Hadoop::Hive::Partition> & partitions);
+
     std::shared_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> client;
-    LRUCache<std::string, HiveTableMetadata> table_meta_cache;
+    LRUCache<String, HiveTableMetadata> table_metadata_cache;
     mutable std::mutex mutex;
     std::atomic<bool> expired{false};
 

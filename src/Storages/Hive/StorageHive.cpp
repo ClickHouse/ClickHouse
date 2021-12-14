@@ -60,7 +60,7 @@ using HiveFiles = std::vector<HiveFilePtr>;
 static std::string getBaseName(const String & path)
 {
     size_t basename_start = path.rfind('/');
-    return std::string{&path[basename_start + 1], path.length() - basename_start - 1};
+    return path.substr(basename_start + 1);
 }
 
 class HiveSource : public SourceWithProgress, WithContext
@@ -167,7 +167,7 @@ public:
                     }
                 }
 
-                // Use local cache for remote filesystem if enabled.
+                /// Use local cache for remote filesystem if enabled.
                 std::unique_ptr<ReadBuffer> remote_read_buf;
                 if (RemoteReadBufferCache::instance().isInitialized() && getContext()->getSettingsRef().use_local_cache_for_remote_fs)
                     remote_read_buf = RemoteReadBuffer::create(getContext(),
@@ -298,10 +298,10 @@ StorageHive::StorageHive(
             format_name = "HiveText";
             break;
         case FileFormat::RC_FILE:
-            // TODO to be implemented
+            /// TODO to be implemented
             throw Exception("Unsopported hive format rc_file", ErrorCodes::NOT_IMPLEMENTED);
         case FileFormat::SEQUENCE_FILE:
-            // TODO to be implemented
+            /// TODO to be implemented
             throw Exception("Unsopported hive format sequence_file", ErrorCodes::NOT_IMPLEMENTED);
         case FileFormat::AVRO:
             format_name = "Avro";
@@ -314,7 +314,7 @@ StorageHive::StorageHive(
             break;
     }
 
-    // Need to specify text_input_fields_names from table_schema for TextInputFormated Hive table
+    /// Need to specify text_input_fields_names from table_schema for TextInputFormated Hive table
     if (format_name == "HiveText")
     {
         size_t i = 0;
@@ -421,19 +421,21 @@ Pipe StorageHive::read(
     auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url, getContext());
     auto hive_table_metadata = hive_metastore_client->getTableMetadata(hive_database, hive_table);
 
-    // List files under partition directory in HDFS
-    auto list_paths = [hive_table_metadata, &fs](const String & path) { return hive_table_metadata->getLocationFiles(fs, path); };
+    /// List files under partition directory in HDFS
+    auto list_paths = [hive_table_metadata, &fs](const String & path) { return hive_table_metadata->getFilesByLocation(fs, path); };
 
     std::vector<Apache::Hadoop::Hive::Partition> partitions = hive_table_metadata->getPartitions();
-    HiveFiles hive_files; // hive files to read
-    std::mutex hive_files_mutex; // Mutext to protect hive_files, which maybe appended in multiple threads
+    /// Hive files to read
+    HiveFiles hive_files;
+    /// Mutext to protect hive_files, which maybe appended in multiple threads
+    std::mutex hive_files_mutex;
 
     auto append_hive_files = [&](const HiveMetastoreClient::FileInfo & hfile, const FieldVector & fields)
     {
-        LOG_TRACE(log, "append hive file:{}", hfile.path);
+        LOG_TRACE(log, "Append hive file {}", hfile.path);
         String filename = getBaseName(hfile.path);
 
-        // Skip temporary files starts with '.'
+        /// Skip temporary files starts with '.'
         if (filename.find('.') == 0)
             return;
 
@@ -448,7 +450,7 @@ Pipe StorageHive::read(
             storage_settings,
             context_);
 
-        // Load file level minmax index and apply
+        /// Load file level minmax index and apply
         const KeyCondition hivefile_key_condition(query_info, getContext(), hivefile_name_types.getNames(), hivefile_minmax_idx_expr);
         if (file->hasMinMaxIndex())
         {
@@ -456,12 +458,12 @@ Pipe StorageHive::read(
             if (!hivefile_key_condition.checkInHyperrectangle(file->getMinMaxIndex()->hyperrectangle, hivefile_name_types.getTypes())
                      .can_be_true)
             {
-                LOG_DEBUG(log, "skip file:{} index:{}", file->getPath(), file->describeMinMaxIndex(file->getMinMaxIndex()));
+                LOG_TRACE(log, "Skip hive file {} by index {}", file->getPath(), file->describeMinMaxIndex(file->getMinMaxIndex()));
                 return;
             }
         }
 
-        // Load sub-file level minmax index and apply
+        /// Load sub-file level minmax index and apply
         std::set<int> skip_splits;
         if (file->hasSubMinMaxIndex())
         {
@@ -472,7 +474,7 @@ Pipe StorageHive::read(
                 if (!hivefile_key_condition.checkInHyperrectangle(sub_minmax_idxes[i]->hyperrectangle, hivefile_name_types.getTypes())
                          .can_be_true)
                 {
-                    LOG_DEBUG(log, "skip split:{} in file {}", i, file->getPath());
+                    LOG_TRACE(log, "Skip split {} of hive file {}", i, file->getPath());
                     skip_splits.insert(i);
                 }
             }
@@ -491,13 +493,15 @@ Pipe StorageHive::read(
         const auto partition_names = partition_name_types.getNames();
         const auto partition_types = partition_name_types.getTypes();
 
-        for (const auto & p : partitions)
+        for (const auto & partition : partitions)
         {
-            auto f = [&]()
+            auto process_partition = [&]()
             {
-                // Skip partition "__HIVE_DEFAULT_PARTITION__"
+                LOG_DEBUG(log, "Process partition {}", boost::join(partition.values, ","));
+
+                /// Skip partition "__HIVE_DEFAULT_PARTITION__"
                 bool has_default_partition = false;
-                for (const auto & value : p.values)
+                for (const auto & value : partition.values)
                 {
                     if (value == "__HIVE_DEFAULT_PARTITION__")
                     {
@@ -507,22 +511,21 @@ Pipe StorageHive::read(
                 }
                 if (has_default_partition)
                 {
-                    //LOG_DEBUG(log, "skip partition:__HIVE_DEFAULT_PARTITION__");
                     return;
                 }
 
                 std::vector<Range> ranges;
                 WriteBufferFromOwnString wb;
-                if (p.values.size() != partition_names.size())
+                if (partition.values.size() != partition_names.size())
                     throw Exception(
-                        fmt::format("Partition value size not match, expect {}, but got {}", partition_names.size(), p.values.size()),
+                        fmt::format("Partition value size not match, expect {}, but got {}", partition_names.size(), partition.values.size()),
                         ErrorCodes::INVALID_PARTITION_VALUE);
 
-                for (size_t i = 0; i < p.values.size(); ++i)
+                for (size_t i = 0; i < partition.values.size(); ++i)
                 {
                     if (i != 0)
                         writeString(",", wb);
-                    writeString(p.values[i], wb);
+                    writeString(partition.values[i], wb);
                 }
                 writeString("\n", wb);
 
@@ -545,22 +548,20 @@ Pipe StorageHive::read(
                 const KeyCondition partition_key_condition(query_info, getContext(), partition_names, partition_minmax_idx_expr);
                 if (!partition_key_condition.checkInHyperrectangle(ranges, partition_types).can_be_true)
                 {
-                    //LOG_DEBUG(log, "skip partition:{}", boost::algorithm::join(p.values, "|"));
                     return;
                 }
 
-                LOG_TRACE(log, "list location:{}", p.sd.location);
-                auto paths = list_paths(p.sd.location);
+                auto paths = list_paths(partition.sd.location);
                 for (const auto & path : paths)
                 {
                     append_hive_files(path, fields);
                 }
             };
-            pool.scheduleOrThrowOnError(f);
+            pool.scheduleOrThrowOnError(process_partition);
         }
         pool.wait();
     }
-    else if (partition_name_types.empty()) // Partition keys is empty
+    else if (partition_name_types.empty()) /// Partition keys is empty
     {
         auto paths = list_paths(hive_table_metadata->getTable()->sd.location);
         for (const auto & path : paths)
@@ -569,7 +570,7 @@ Pipe StorageHive::read(
         }
         pool.wait();
     }
-    else // Partition keys is not empty but partitions is empty
+    else /// Partition keys is not empty but partitions is empty
     {
         return {};
     }
