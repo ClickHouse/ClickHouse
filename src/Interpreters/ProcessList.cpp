@@ -309,11 +309,13 @@ QueryStatus::~QueryStatus()
 {
     assert(executors.empty());
 
-    auto * memory_tracker = getMemoryTracker();
-    if (user_process_list)
-        user_process_list->user_overcommit_tracker.unsubscribe(memory_tracker);
-    if (auto shared_context = getContext())
-        shared_context->getGlobalOvercommitTracker()->unsubscribe(memory_tracker);
+    if (auto * memory_tracker = getMemoryTracker())
+    {
+        if (user_process_list)
+            user_process_list->user_overcommit_tracker.unsubscribe(memory_tracker);
+        if (auto shared_context = getContext())
+            shared_context->getGlobalOvercommitTracker()->unsubscribe(memory_tracker);
+    }
 }
 
 CancellationCode QueryStatus::cancelQuery(bool)

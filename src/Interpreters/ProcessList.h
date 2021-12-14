@@ -149,6 +149,8 @@ public:
 
     MemoryTracker * getMemoryTracker() const
     {
+        if (!thread_group)
+            return nullptr;
         return &thread_group->memory_tracker;
     }
 
