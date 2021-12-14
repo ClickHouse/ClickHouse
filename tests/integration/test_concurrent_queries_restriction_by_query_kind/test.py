@@ -36,16 +36,16 @@ def execute_with_background(node, sql, background_sql, background_times, wait_ti
     return node.query(sql, stdin='')
 
 
-def common_pattern(node, query_kind, restricted_sql, normal_sql, limit):
+def common_pattern(node, query_kind, restricted_sql, normal_sql, limit, wait_times):
     # restriction is working
     with pytest.raises(Exception, match=r".*Too many simultaneous {} queries.*".format(query_kind)):
-        execute_with_background(node, restricted_sql, restricted_sql, limit)
+        execute_with_background(node, restricted_sql, restricted_sql, limit, wait_times)
 
     # different query kind is independent
-    execute_with_background(node, normal_sql, restricted_sql, limit)
+    execute_with_background(node, normal_sql, restricted_sql, limit, wait_times)
 
     # normal
-    execute_with_background(node, restricted_sql, '', 0)
+    execute_with_background(node, restricted_sql, '', 0, wait_times)
 
 
 def test_select(started_cluster):
@@ -53,7 +53,8 @@ def test_select(started_cluster):
         node_select, 'select',
         'select sleep(3)',
         'insert into test_concurrent_insert values (0)',
-        2
+        2,
+        10
     )
 
     # subquery is not counted
@@ -61,7 +62,8 @@ def test_select(started_cluster):
         node_select,
         'select sleep(3)',
         'insert into test_concurrent_insert select sleep(3)',
-        2
+        2,
+        10
     )
 
 
@@ -70,5 +72,6 @@ def test_insert(started_cluster):
         node_insert, 'insert',
         'insert into test_concurrent_insert select sleep(3)',
         'select 1',
-        2
+        2,
+        10
     )
