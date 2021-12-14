@@ -66,7 +66,11 @@ void UserOvercommitTracker::pickQueryToExcludeImpl()
     {
         if (query.second->isKilled())
             continue;
+
         auto * memory_tracker = query.second->getMemoryTracker();
+        if (!memory_tracker)
+            continue;
+
         auto ratio = memory_tracker->getOvercommitRatio();
         LOG_DEBUG(logger, "Query has ratio {}/{}", ratio.committed, ratio.soft_limit);
         if (ratio.soft_limit != 0 && current_ratio < ratio)
@@ -96,6 +100,8 @@ void GlobalOvercommitTracker::pickQueryToExcludeImpl()
             return;
 
         auto * memory_tracker = query.getMemoryTracker();
+        if (!memory_tracker)
+            return;
         auto ratio = memory_tracker->getOvercommitRatio(user_soft_limit);
         LOG_DEBUG(logger, "Query has ratio {}/{}", ratio.committed, ratio.soft_limit);
         if (current_ratio < ratio)
