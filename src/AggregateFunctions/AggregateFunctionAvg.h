@@ -4,9 +4,11 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnsCommon.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/AggregateFunctionSum.h>
 #include <Core/DecimalFunctions.h>
 
 #include <Common/config.h>
@@ -18,6 +20,7 @@
 
 namespace DB
 {
+
 struct Settings;
 
 template <typename T> constexpr bool DecimalOrExtendedInt =
@@ -40,39 +43,19 @@ struct AvgFraction
     /// Invoked only is either Numerator or Denominator are Decimal.
     Float64 NO_SANITIZE_UNDEFINED divideIfAnyDecimal(UInt32 num_scale, UInt32 denom_scale [[maybe_unused]]) const
     {
-        if constexpr (is_decimal<Numerator> && is_decimal<Denominator>)
-        {
-            // According to the docs, num(S1) / denom(S2) would have scale S1
-
-            if constexpr (std::is_same_v<Numerator, Decimal256> && std::is_same_v<Denominator, Decimal128>)
-                ///Special case as Decimal256 / Decimal128 = compile error (as Decimal128 is not parametrized by a wide
-                ///int), but an __int128 instead
-                return DecimalUtils::convertTo<Float64>(
-                    numerator / (denominator.template convertTo<Decimal256>()), num_scale);
-            else
-                return DecimalUtils::convertTo<Float64>(numerator / denominator, num_scale);
-        }
-
-        /// Numerator is always casted to Float64 to divide correctly if the denominator is not Float64.
-        Float64 num_converted;
-
+        Float64 numerator_float;
         if constexpr (is_decimal<Numerator>)
-            num_converted = DecimalUtils::convertTo<Float64>(numerator, num_scale);
+            numerator_float = DecimalUtils::convertTo<Float64>(numerator, num_scale);
         else
-            num_converted = static_cast<Float64>(numerator); /// all other types, including extended integral.
+            numerator_float = numerator;
 
-        std::conditional_t<DecimalOrExtendedInt<Denominator>,
-            Float64, Denominator> denom_converted;
-
+        Float64 denominator_float;
         if constexpr (is_decimal<Denominator>)
-            denom_converted = DecimalUtils::convertTo<Float64>(denominator, denom_scale);
-        else if constexpr (DecimalOrExtendedInt<Denominator>)
-            /// no way to divide Float64 and extended integral type without an explicit cast.
-            denom_converted = static_cast<Float64>(denominator);
+            denominator_float = DecimalUtils::convertTo<Float64>(denominator, denom_scale);
         else
-            denom_converted = denominator; /// can divide on float, no cast required.
+            denominator_float = denominator;
 
-        return num_converted / denom_converted;
+        return numerator_float / denominator_float;
     }
 
     Float64 NO_SANITIZE_UNDEFINED divide() const
@@ -113,7 +96,7 @@ public:
         this->data(place).denominator += this->data(rhs).denominator;
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         writeBinary(this->data(place).numerator, buf);
 
@@ -123,7 +106,7 @@ public:
             writeBinary(this->data(place).denominator, buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         readBinary(this->data(place).numerator, buf);
 
@@ -223,7 +206,7 @@ using AvgFieldType = std::conditional_t<is_decimal<T>,
     NearestFieldType<T>>;
 
 template <typename T>
-class AggregateFunctionAvg final : public AggregateFunctionAvgBase<AvgFieldType<T>, UInt64, AggregateFunctionAvg<T>>
+class AggregateFunctionAvg : public AggregateFunctionAvgBase<AvgFieldType<T>, UInt64, AggregateFunctionAvg<T>>
 {
 public:
     using Base = AggregateFunctionAvgBase<AvgFieldType<T>, UInt64, AggregateFunctionAvg<T>>;
@@ -232,14 +215,65 @@ public:
     using Numerator = typename Base::Numerator;
     using Denominator = typename Base::Denominator;
     using Fraction = typename Base::Fraction;
+    using ColVecType = ColumnVectorOrDecimal<T>;
 
-    void NO_SANITIZE_UNDEFINED add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const final
+
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const final
     {
-        this->data(place).numerator += static_cast<const ColumnVectorOrDecimal<T> &>(*columns[0]).getData()[row_num];
+        increment(place, static_cast<const ColVecType &>(*columns[0]).getData()[row_num]);
         ++this->data(place).denominator;
     }
 
-    String getName() const final { return "avg"; }
+    void
+    addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena *, ssize_t if_argument_pos) const final
+    {
+        AggregateFunctionSumData<Numerator> sum_data;
+        const auto & column = assert_cast<const ColVecType &>(*columns[0]);
+        if (if_argument_pos >= 0)
+        {
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            sum_data.addManyConditional(column.getData().data(), flags.data(), batch_size);
+            this->data(place).denominator += countBytesInFilter(flags.data(), batch_size);
+        }
+        else
+        {
+            sum_data.addMany(column.getData().data(), batch_size);
+            this->data(place).denominator += batch_size;
+        }
+        increment(place, sum_data.sum);
+    }
+
+    void addBatchSinglePlaceNotNull(
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, const UInt8 * null_map, Arena *, ssize_t if_argument_pos)
+        const final
+    {
+        AggregateFunctionSumData<Numerator> sum_data;
+        const auto & column = assert_cast<const ColVecType &>(*columns[0]);
+        if (if_argument_pos >= 0)
+        {
+            /// Merge the 2 sets of flags (null and if) into a single one. This allows us to use parallelizable sums when available
+            const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
+            auto final_flags = std::make_unique<UInt8[]>(batch_size);
+            size_t used_value = 0;
+            for (size_t i = 0; i < batch_size; ++i)
+            {
+                UInt8 kept = (!null_map[i]) & !!if_flags[i];
+                final_flags[i] = kept;
+                used_value += kept;
+            }
+
+            sum_data.addManyConditional(column.getData().data(), final_flags.get(), batch_size);
+            this->data(place).denominator += used_value;
+        }
+        else
+        {
+            sum_data.addManyNotNull(column.getData().data(), null_map, batch_size);
+            this->data(place).denominator += batch_size - countBytesInFilter(null_map, batch_size);
+        }
+        increment(place, sum_data.sum);
+    }
+
+    String getName() const override { return "avg"; }
 
 #if USE_EMBEDDED_COMPILER
 
@@ -264,5 +298,10 @@ public:
 
 #endif
 
+private:
+    void NO_SANITIZE_UNDEFINED increment(AggregateDataPtr __restrict place, Numerator inc) const
+    {
+        this->data(place).numerator += inc;
+    }
 };
 }

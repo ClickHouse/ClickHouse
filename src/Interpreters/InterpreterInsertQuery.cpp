@@ -62,7 +62,18 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         return table_function_ptr->execute(query.table_function, getContext(), table_function_ptr->getName());
     }
 
-    query.table_id = getContext()->resolveStorageID(query.table_id);
+    if (query.table_id)
+    {
+        query.table_id = getContext()->resolveStorageID(query.table_id);
+    }
+    else
+    {
+        /// Insert query parser does not fill table_id because table and
+        /// database can be parameters and be filled after parsing.
+        StorageID local_table_id(query.getDatabase(), query.getTable());
+        query.table_id = getContext()->resolveStorageID(local_table_id);
+    }
+
     return DatabaseCatalog::instance().getTable(query.table_id, getContext());
 }
 
@@ -286,7 +297,7 @@ BlockIO InterpreterInsertQuery::execute()
                 const auto & union_modes = select_query.list_of_modes;
 
                 /// ASTSelectWithUnionQuery is not normalized now, so it may pass some queries which can be Trivial select queries
-                const auto mode_is_all = [](const auto & mode) { return mode == ASTSelectWithUnionQuery::Mode::ALL; };
+                const auto mode_is_all = [](const auto & mode) { return mode == SelectUnionMode::ALL; };
 
                 is_trivial_insert_select =
                     std::all_of(union_modes.begin(), union_modes.end(), std::move(mode_is_all))
@@ -369,13 +380,6 @@ BlockIO InterpreterInsertQuery::execute()
 
     BlockIO res;
 
-    res.pipeline.addStorageHolder(table);
-    if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
-    {
-        if (auto inner_table = mv->tryGetTargetTable())
-            res.pipeline.addStorageHolder(inner_table);
-    }
-
     /// What type of query: INSERT or INSERT SELECT or INSERT WATCH?
     if (is_distributed_insert_select)
     {
@@ -432,6 +436,13 @@ BlockIO InterpreterInsertQuery::execute()
             auto pipe = getSourceFromASTInsertQuery(query_ptr, true, query_sample_block, getContext(), nullptr);
             res.pipeline.complete(std::move(pipe));
         }
+    }
+
+    res.pipeline.addStorageHolder(table);
+    if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
+    {
+        if (auto inner_table = mv->tryGetTargetTable())
+            res.pipeline.addStorageHolder(inner_table);
     }
 
     return res;

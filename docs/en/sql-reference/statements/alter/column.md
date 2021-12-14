@@ -10,7 +10,7 @@ A set of queries that allow changing the table structure.
 Syntax:
 
 ``` sql
-ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|MODIFY|MATERIALIZE COLUMN ...
+ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|{MODIFY|ALTER}|MATERIALIZE COLUMN ...
 ```
 
 In the query, specify a list of one or more comma-separated actions.
@@ -138,6 +138,7 @@ ALTER TABLE visits COMMENT COLUMN browser 'The table shows the browser used for 
 
 ``` sql
 MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [codec] [TTL] [AFTER name_after | FIRST]
+ALTER COLUMN [IF EXISTS] name TYPE [type] [default_expr] [codec] [TTL] [AFTER name_after | FIRST]
 ```
 
 This query changes the `name` column properties:
@@ -212,6 +213,9 @@ SET mutations_sync = 2;
 CREATE TABLE tmp (x Int64) ENGINE = MergeTree() ORDER BY tuple() PARTITION BY tuple();
 INSERT INTO tmp SELECT * FROM system.numbers LIMIT 10;
 ALTER TABLE tmp ADD COLUMN s String MATERIALIZED toString(x);
+
+ALTER TABLE tmp MATERIALIZE COLUMN s;
+
 SELECT groupArray(x), groupArray(s) FROM tmp;
 ```
 

@@ -61,6 +61,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TIMEOUT_EXCEEDED;
+    extern const int LOGICAL_ERROR;
 }
 
 #define DBMS_SYSTEM_LOG_QUEUE_SIZE 1048576
@@ -83,13 +84,18 @@ class ISystemLog
 {
 public:
     virtual String getName() = 0;
-    virtual ASTPtr getCreateTableQuery() = 0;
     //// force -- force table creation (used for SYSTEM FLUSH LOGS)
     virtual void flush(bool force = false) = 0;
     virtual void prepareTable() = 0;
     virtual void startup() = 0;
     virtual void shutdown() = 0;
     virtual ~ISystemLog() = default;
+
+    /// returns CREATE TABLE query, but with removed:
+    /// - UUID
+    /// - SETTINGS (for MergeTree)
+    /// That way it can be used to compare with the SystemLog::getCreateTableQuery()
+    static ASTPtr getCreateTableQueryClean(const StorageID & table_id, ContextPtr context);
 };
 
 
@@ -171,7 +177,7 @@ public:
         return LogElement::name();
     }
 
-    ASTPtr getCreateTableQuery() override;
+    ASTPtr getCreateTableQuery();
 
 protected:
     Poco::Logger * log;
@@ -181,6 +187,8 @@ private:
     const StorageID table_id;
     const String storage_def;
     StoragePtr table;
+    String create_query;
+    String old_create_query;
     bool is_prepared = false;
     const size_t flush_interval_milliseconds;
     ThreadFromGlobalPool saving_thread;
@@ -228,6 +236,7 @@ SystemLog<LogElement>::SystemLog(
     : WithContext(context_)
     , table_id(database_name_, table_name_)
     , storage_def(storage_def_)
+    , create_query(serializeAST(*getCreateTableQuery()))
     , flush_interval_milliseconds(flush_interval_milliseconds_)
 {
     assert(database_name_ == DatabaseCatalog::SYSTEM_DATABASE);
@@ -520,14 +529,14 @@ void SystemLog<LogElement>::prepareTable()
 
     if (table)
     {
-        auto metadata_columns = table->getInMemoryMetadataPtr()->getColumns();
-        auto old_query = InterpreterCreateQuery::formatColumns(metadata_columns);
+        if (old_create_query.empty())
+        {
+            old_create_query = serializeAST(*getCreateTableQueryClean(table_id, getContext()));
+            if (old_create_query.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty CREATE QUERY for {}", backQuoteIfNeed(table_id.table_name));
+        }
 
-        auto ordinary_columns = LogElement::getNamesAndTypes();
-        auto alias_columns = LogElement::getNamesAndAliases();
-        auto current_query = InterpreterCreateQuery::formatColumns(ordinary_columns, alias_columns);
-
-        if (serializeAST(*old_query) != serializeAST(*current_query))
+        if (old_create_query != create_query)
         {
             /// Rename the existing table.
             int suffix = 0;
@@ -553,9 +562,11 @@ void SystemLog<LogElement>::prepareTable()
 
             LOG_DEBUG(
                 log,
-                "Existing table {} for system log has obsolete or different structure. Renaming it to {}",
+                "Existing table {} for system log has obsolete or different structure. Renaming it to {}.\nOld: {}\nNew: {}\n.",
                 description,
-                backQuoteIfNeed(to.table));
+                backQuoteIfNeed(to.table),
+                old_create_query,
+                create_query);
 
             auto query_context = Context::createCopy(context);
             query_context->makeQueryContext();
@@ -573,17 +584,17 @@ void SystemLog<LogElement>::prepareTable()
         /// Create the table.
         LOG_DEBUG(log, "Creating new table {} for {}", description, LogElement::name());
 
-        auto create = getCreateTableQuery();
-
-
         auto query_context = Context::createCopy(context);
         query_context->makeQueryContext();
 
-        InterpreterCreateQuery interpreter(create, query_context);
+        auto create_query_ast = getCreateTableQuery();
+        InterpreterCreateQuery interpreter(create_query_ast, query_context);
         interpreter.setInternal(true);
         interpreter.execute();
 
         table = DatabaseCatalog::instance().getTable(table_id, getContext());
+
+        old_create_query.clear();
     }
 
     is_prepared = true;
@@ -595,8 +606,8 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
 {
     auto create = std::make_shared<ASTCreateQuery>();
 
-    create->database = table_id.database_name;
-    create->table = table_id.table_name;
+    create->setDatabase(table_id.database_name);
+    create->setTable(table_id.table_name);
 
     auto ordinary_columns = LogElement::getNamesAndTypes();
     auto alias_columns = LogElement::getNamesAndAliases();

@@ -5,9 +5,9 @@
 #include <Interpreters/evaluateConstantExpression.h>
 
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTLiteral.h>
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -147,8 +147,7 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
     Strings paths;
     /// Do not use fs::canonical or fs::weakly_canonical.
     /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
-    String path = fs::absolute(fs_table_path);
-    path = fs::path(path).lexically_normal(); /// Normalize path.
+    String path = fs::absolute(fs_table_path).lexically_normal(); /// Normalize path.
     if (path.find_first_of("*?{") == std::string::npos)
     {
         std::error_code error;
@@ -621,25 +620,20 @@ public:
             naked_buffer = std::make_unique<WriteBufferFromFile>(paths[0], DBMS_DEFAULT_BUFFER_SIZE, flags);
         }
 
-        /// In case of CSVWithNames we have already written prefix.
-        if (naked_buffer->size())
-            prefix_written = true;
+        /// In case of formats with prefixes if file is not empty we have already written prefix.
+        bool do_not_write_prefix = naked_buffer->size();
 
         write_buf = wrapWriteBufferWithCompressionMethod(std::move(naked_buffer), compression_method, 3);
 
         writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format_name,
             *write_buf, metadata_snapshot->getSampleBlock(), context,
             {}, format_settings);
+
+        if (do_not_write_prefix)
+            writer->doNotWritePrefix();
     }
 
     String getName() const override { return "StorageFileSink"; }
-
-    void onStart() override
-    {
-        if (!prefix_written)
-            writer->doWritePrefix();
-        prefix_written = true;
-    }
 
     void consume(Chunk chunk) override
     {
@@ -648,13 +642,10 @@ public:
 
     void onFinish() override
     {
-        writer->doWriteSuffix();
+        writer->finalize();
+        writer->flush();
+        write_buf->finalize();
     }
-
-    // void flush() override
-    // {
-    //     writer->flush();
-    // }
 
 private:
     StorageMetadataPtr metadata_snapshot;
@@ -662,7 +653,6 @@ private:
 
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
-    bool prefix_written{false};
 
     int table_fd;
     bool use_table_fd;

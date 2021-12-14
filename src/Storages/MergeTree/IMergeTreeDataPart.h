@@ -103,7 +103,7 @@ public:
 
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// Otherwise return information about column size on disk.
-    ColumnSize getColumnSize(const String & column_name, const IDataType & /* type */) const;
+    ColumnSize getColumnSize(const String & column_name) const;
 
     /// NOTE: Returns zeros if secondary indexes are not found in checksums.
     /// Otherwise return information about secondary index size on disk.
@@ -198,6 +198,7 @@ public:
     mutable std::atomic<time_t> remove_time { std::numeric_limits<time_t>::max() };
 
     /// If true, the destructor will delete the directory with the part.
+    /// FIXME Why do we need this flag? What's difference from Temporary and DeleteOnDestroy state? Can we get rid of this?
     bool is_temp = false;
 
     /// If true it means that there are no ZooKeeper node for this part, so it should be deleted only from filesystem
@@ -357,7 +358,7 @@ public:
     /// Calculate column and secondary indices sizes on disk.
     void calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
-    String getRelativePathForPrefix(const String & prefix) const;
+    String getRelativePathForPrefix(const String & prefix, bool detached = false) const;
 
     bool isProjectionPart() const { return parent_part != nullptr; }
 

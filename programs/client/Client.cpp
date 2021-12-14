@@ -20,9 +20,7 @@
 #include <base/argsToConfig.h>
 #include <base/find_symbols.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
+#include <Common/config_version.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <Common/TerminalSize.h>
@@ -60,10 +58,7 @@
 
 namespace CurrentMetrics
 {
-    extern const Metric Revision;
-    extern const Metric VersionInteger;
     extern const Metric MemoryTracking;
-    extern const Metric MaxDDLEntryID;
 }
 
 namespace fs = std::filesystem;
@@ -330,7 +325,9 @@ std::vector<String> Client::loadWarningMessages()
 {
     std::vector<String> messages;
     connection->sendQuery(connection_parameters.timeouts, "SELECT message FROM system.warnings", "" /* query_id */,
-                          QueryProcessingStage::Complete, nullptr, nullptr, false);
+                          QueryProcessingStage::Complete,
+                          &global_context->getSettingsRef(),
+                          &global_context->getClientInfo(), false);
     while (true)
     {
         Packet packet = connection->receivePacket();
@@ -403,36 +400,6 @@ void Client::initialize(Poco::Util::Application & self)
 }
 
 
-void Client::prepareForInteractive()
-{
-    clearTerminal();
-    showClientVersion();
-
-    if (delayed_interactive)
-        std::cout << std::endl;
-
-    /// Load Warnings at the beginning of connection
-    if (!config().has("no-warnings"))
-    {
-        try
-        {
-            std::vector<String> messages = loadWarningMessages();
-            if (!messages.empty())
-            {
-                std::cout << "Warnings:" << std::endl;
-                for (const auto & message : messages)
-                    std::cout << " * " << message << std::endl;
-                std::cout << std::endl;
-            }
-        }
-        catch (...)
-        {
-            /// Ignore exception
-        }
-    }
-}
-
-
 int Client::main(const std::vector<std::string> & /*args*/)
 try
 {
@@ -459,11 +426,37 @@ try
 
     processConfig();
 
+    /// Includes delayed_interactive.
+    if (is_interactive)
+    {
+        clearTerminal();
+        showClientVersion();
+    }
+
     connect();
+
+    /// Load Warnings at the beginning of connection
+    if (is_interactive && !config().has("no-warnings"))
+    {
+        try
+        {
+            std::vector<String> messages = loadWarningMessages();
+            if (!messages.empty())
+            {
+                std::cout << "Warnings:" << std::endl;
+                for (const auto & message : messages)
+                    std::cout << " * " << message << std::endl;
+                std::cout << std::endl;
+            }
+        }
+        catch (...)
+        {
+            /// Ignore exception
+        }
+    }
 
     if (is_interactive && !delayed_interactive)
     {
-        prepareForInteractive();
         runInteractive();
     }
     else
@@ -489,10 +482,7 @@ try
         }
 
         if (delayed_interactive)
-        {
-            prepareForInteractive();
             runInteractive();
-        }
     }
 
     return 0;
@@ -566,9 +556,7 @@ void Client::connect()
     if (is_interactive)
     {
         std::cout << "Connected to " << server_name << " server version " << server_version << " revision " << server_revision << "."
-                    << std::endl;
-        if (!delayed_interactive)
-            std::cout << std::endl;
+                    << std::endl << std::endl;
 
         auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
         auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
@@ -715,16 +703,16 @@ bool Client::processWithFuzzing(const String & full_query)
             throw;
     }
 
+    if (!orig_ast)
+    {
+        // Can't continue after a parsing error
+        return true;
+    }
+
     // `USE db` should not be executed
     // since this will break every query after `DROP db`
     if (orig_ast->as<ASTUseQuery>())
     {
-        return true;
-    }
-
-    if (!orig_ast)
-    {
-        // Can't continue after a parsing error
         return true;
     }
 
@@ -1013,7 +1001,6 @@ void Client::addOptions(OptionsDescription & options_description)
         ("password", po::value<std::string>()->implicit_value("\n", ""), "password")
         ("ask-password", "ask-password")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
-        ("pager", po::value<std::string>(), "pager")
         ("testmode,T", "enable test hints in comments")
 
         ("max_client_network_bandwidth", po::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
@@ -1114,8 +1101,6 @@ void Client::processOptions(const OptionsDescription & options_description,
         config().setString("host", options["host"].as<std::string>());
     if (options.count("interleave-queries-file"))
         interleave_queries_files = options["interleave-queries-file"].as<std::vector<std::string>>();
-    if (options.count("pager"))
-        config().setString("pager", options["pager"].as<std::string>());
     if (options.count("port") && !options["port"].defaulted())
         config().setInt("port", options["port"].as<int>());
     if (options.count("secure"))

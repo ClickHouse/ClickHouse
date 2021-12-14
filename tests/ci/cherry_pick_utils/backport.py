@@ -5,9 +5,9 @@ try:
     from clickhouse.utils.github.query import Query as RemoteRepo
     from clickhouse.utils.github.local import Repository as LocalRepo
 except:
-    from cherrypick import CherryPick
-    from query import Query as RemoteRepo
-    from local import Repository as LocalRepo
+    from .cherrypick import CherryPick
+    from .query import Query as RemoteRepo
+    from .local import Repository as LocalRepo
 
 import argparse
 import logging
@@ -74,7 +74,7 @@ class Backport:
 
             # First pass. Find all must-backports
             for label in pr['labels']['nodes']:
-                if label['name'] == 'pr-bugfix' or label['name'] == 'pr-must-backport':
+                if label['name'] == 'pr-must-backport':
                     backport_map[pr['number']] = branch_set.copy()
                     continue
                 matched = RE_MUST_BACKPORT.match(label['name'])
