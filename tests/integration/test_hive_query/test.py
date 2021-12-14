@@ -1,6 +1,7 @@
 import logging
 import os
 
+import time
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
@@ -26,6 +27,7 @@ def started_cluster():
 def test_create_parquet_table(started_cluster):
     logging.info('Start testing creating hive table ...')
     node = started_cluster.instances['h0_0_0']
+    node.query("set input_format_parquet_allow_missing_columns = true")
     result = node.query("""
     CREATE TABLE default.demo_parquet (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String)) ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo') PARTITION BY(day)
             """)
@@ -89,3 +91,22 @@ def test_text_count(started_cluster):
 2021-11-16	2
 """
     assert result == expected_result
+
+def test_parquet_groupby_witch_cache(started_cluster):
+    logging.info('Start testing groupby ...')
+    node = started_cluster.instances['h0_0_0']
+    result = node.query("""
+    SELECT day, count(*) FROM default.demo_parquet group by day order by day
+            """)
+    expected_result = """2021-11-01	1
+2021-11-05	2
+2021-11-11	1
+2021-11-16	2
+"""
+    assert result == expected_result
+def test_cache_read_bytes(started_cluster):
+    node = started_cluster.instances['h0_0_0']
+    time.sleep(3)
+    result = node.query("select sum(ProfileEvent_ExternalDataSourceLocalCacheReadBytes)  from system.metric_log where ProfileEvent_ExternalDataSourceLocalCacheReadBytes > 0")
+    logging.info("Read bytes from cache:{}".format(result))
+    assert result.strip() != '0'

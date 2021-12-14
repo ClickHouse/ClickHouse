@@ -274,6 +274,7 @@
     M(ThreadPoolReaderPageCacheMissElapsedMicroseconds, "Time spent reading data inside the asynchronous job in ThreadPoolReader - when read was not done from page cache.") \
     \
     M(AsynchronousReadWaitMicroseconds, "Time spent in waiting for asynchronous reads.") \
+    M(ExternalDataSourceLocalCacheReadBytes, "Bytes read from local cache buffer in RemoteReadBufferCache")\
 
 
 namespace ProfileEvents
