@@ -2156,7 +2156,7 @@ class ClickHouseInstance:
     def wait_start(self, start_wait_sec):
         start_time = time.time()
         last_err = None
-        while time.time() <= start_time + start_wait_sec:
+        while True:
             try:
                 pid = self.get_process_pid("clickhouse")
                 if pid is None:
@@ -2170,6 +2170,8 @@ class ClickHouseInstance:
                     logging.warning(f"ERROR {err}")
                 else:
                     raise Exception("ClickHouse server is not running. Check logs.")
+            if time.time() > start_time + start_wait_sec:
+                break
         logging.error(f"No time left to start. But process is still running. Will dump threads.")
         ps_clickhouse = self.exec_in_container(["bash", "-c", "ps -C clickhouse"], nothrow=True, user='root')
         logging.info(f"PS RESULT:\n{ps_clickhouse}")
