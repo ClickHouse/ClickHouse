@@ -106,6 +106,10 @@ if (USE_AWS_S3)
     add_headers_and_sources(dbms Disks/S3)
 endif()
 
+if (USE_AZURE_BLOB_STORAGE)
+    add_headers_and_sources(dbms Disks/BlobStorage)
+endif()
+
 if (USE_HDFS)
     add_headers_and_sources(dbms Storages/HDFS)
     add_headers_and_sources(dbms Disks/HDFS)
@@ -450,6 +454,11 @@ if (USE_AWS_S3)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${AWS_S3_INCLUDE_DIR})
 endif()
 
+if (USE_AZURE_BLOB_STORAGE)
+    target_link_libraries (clickhouse_common_io PUBLIC ${AZURE_BLOB_STORAGE_LIBRARY})
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${AZURE_SDK_INCLUDES})
+endif()
+
 if (USE_S2_GEOMETRY)
     dbms_target_link_libraries (PUBLIC ${S2_GEOMETRY_LIBRARY})
     dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${S2_GEOMETRY_INCLUDE_DIR})
@@ -517,6 +526,8 @@ if (USE_BZIP2)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${BZIP2_INCLUDE_DIR})
 endif()
 
+dbms_target_link_libraries(PUBLIC consistent-hashing)
+
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
 
 if (ENABLE_TESTS AND USE_GTEST)
@@ -547,7 +558,6 @@ if (ENABLE_TESTS AND USE_GTEST)
         clickhouse_parsers
         clickhouse_storages_system
         dbms
-        clickhouse_common_config
         clickhouse_common_zookeeper
         string_utils)
 

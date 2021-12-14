@@ -231,8 +231,8 @@ bool isStorageTouchedByMutations(
     PullingPipelineExecutor executor(io.pipeline);
 
     Block block;
-    while (!block.rows())
-        executor.pull(block);
+    while (executor.pull(block)) {}
+
     if (!block.rows())
         return false;
     else if (block.rows() != 1)
@@ -421,6 +421,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
 
     NameSet updated_columns;
     bool materialize_ttl_recalculate_only = materializeTTLRecalculateOnly(storage);
+
     for (const MutationCommand & command : commands)
     {
         if (command.type == MutationCommand::Type::UPDATE
@@ -569,7 +570,16 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 stages.emplace_back(context);
 
             const auto & column = columns_desc.get(command.column_name);
-            stages.back().column_to_updated.emplace(column.name, column.default_desc.expression->clone());
+
+            if (!column.default_desc.expression)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot materialize column `{}` because it doesn't have default expression", column.name);
+
+            auto materialized_column = makeASTFunction(
+                "_CAST", column.default_desc.expression->clone(), std::make_shared<ASTLiteral>(column.type->getName()));
+
+            stages.back().column_to_updated.emplace(column.name, materialized_column);
         }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {
@@ -622,7 +632,9 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                         dependencies.insert(dependency);
                 }
             }
-            else if (metadata_snapshot->hasRowsTTL())
+            else if (metadata_snapshot->hasRowsTTL()
+                || metadata_snapshot->hasAnyRowsWhereTTL()
+                || metadata_snapshot->hasAnyGroupByTTL())
             {
                 for (const auto & column : all_columns)
                     dependencies.emplace(column.name, ColumnDependency::TTL_TARGET);

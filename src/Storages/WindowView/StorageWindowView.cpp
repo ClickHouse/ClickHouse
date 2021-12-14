@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsWindow.h>
+#include <Functions/FunctionsTimeWindow.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -62,7 +62,7 @@ namespace ErrorCodes
 
 namespace
 {
-    /// Fetch all window info and replace TUMPLE or HOP node names with WINDOW_ID
+    /// Fetch all window info and replace tumble or hop node names with windowID
     struct FetchQueryInfoMatcher
     {
         using Visitor = InDepthNodeVisitor<FetchQueryInfoMatcher, true>;
@@ -85,20 +85,20 @@ namespace
         {
             if (auto * t = ast->as<ASTFunction>())
             {
-                if (t->name == "TUMBLE" || t->name == "HOP")
+                if (t->name == "tumble" || t->name == "hop")
                 {
-                    data.is_tumble = t->name == "TUMBLE";
-                    data.is_hop = t->name == "HOP";
+                    data.is_tumble = t->name == "tumble";
+                    data.is_hop = t->name == "hop";
                     auto temp_node = t->clone();
                     temp_node->setAlias("");
                     if (startsWith(t->arguments->children[0]->getColumnName(), "toDateTime"))
                         throw Exception(
-                            "The first argument of window function should not be a constant value.",
+                            "The first argument of time window function should not be a constant value.",
                             ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
                     if (!data.window_function)
                     {
                         data.serialized_window_function = serializeAST(*temp_node);
-                        t->name = "WINDOW_ID";
+                        t->name = "windowID";
                         data.window_id_name = t->getColumnName();
                         data.window_id_alias = t->alias;
                         data.window_function = t->clone();
@@ -108,15 +108,15 @@ namespace
                     else
                     {
                         if (serializeAST(*temp_node) != data.serialized_window_function)
-                            throw Exception("WINDOW VIEW only support ONE WINDOW FUNCTION", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
-                        t->name = "WINDOW_ID";
+                            throw Exception("WINDOW VIEW only support ONE TIME WINDOW FUNCTION", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
+                        t->name = "windowID";
                     }
                 }
             }
         }
     };
 
-    /// Replace WINDOW_ID node name with either TUMBLE or HOP.
+    /// Replace windowID node name with either tumble or hop
     struct ReplaceWindowIdMatcher
     {
     public:
@@ -132,15 +132,15 @@ namespace
         {
             if (auto * t = ast->as<ASTFunction>())
             {
-                if (t->name == "WINDOW_ID")
+                if (t->name == "windowID")
                     t->name = data.window_name;
             }
         }
     };
 
-    /// GROUP BY TUMBLE(now(), INTERVAL '5' SECOND)
+    /// GROUP BY tumble(now(), INTERVAL '5' SECOND)
     /// will become
-    /// GROUP BY TUMBLE(____timestamp, INTERVAL '5' SECOND)
+    /// GROUP BY tumble(____timestamp, INTERVAL '5' SECOND)
     struct ReplaceFunctionNowData
     {
         using TypeToVisit = ASTFunction;
@@ -151,7 +151,7 @@ namespace
 
         void visit(ASTFunction & node, ASTPtr & node_ptr)
         {
-            if (node.name == "WINDOW_ID" || node.name == "TUMBLE" || node.name == "HOP")
+            if (node.name == "windowID" || node.name == "tumble" || node.name == "hop")
             {
                 if (const auto * t = node.arguments->children[0]->as<ASTFunction>();
                     t && t->name == "now")
@@ -188,8 +188,8 @@ namespace
         {
             if (auto * t = ast->as<ASTFunction>())
             {
-                if (t->name == "HOP" || t->name == "TUMBLE")
-                    t->name = "WINDOW_ID";
+                if (t->name == "hop" || t->name == "tumble")
+                    t->name = "windowID";
             }
         }
     };
@@ -221,12 +221,12 @@ namespace
         {
             if (node.name == "tuple")
             {
-                /// tuple(WINDOW_ID(timestamp, toIntervalSecond('5')))
+                /// tuple(windowID(timestamp, toIntervalSecond('5')))
                 return;
             }
             else
             {
-                /// WINDOW_ID(timestamp, toIntervalSecond('5')) -> identifier.
+                /// windowID(timestamp, toIntervalSecond('5')) -> identifier.
                 /// and other...
                 node_ptr = std::make_shared<ASTIdentifier>(node.getColumnName());
             }
@@ -351,14 +351,14 @@ static size_t getWindowIDColumnPosition(const Block & header)
     auto position = -1;
     for (const auto & column : header.getColumnsWithTypeAndName())
     {
-        if (startsWith(column.name, "WINDOW_ID"))
+        if (startsWith(column.name, "windowID"))
         {
             position = header.getPositionByName(column.name);
             break;
         }
     }
     if (position < 0)
-        throw Exception("Not found column WINDOW_ID", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Not found column windowID", ErrorCodes::LOGICAL_ERROR);
     return position;
 }
 
@@ -631,7 +631,7 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
                     time_now_visitor.visit(node);
                     function_now_timezone = time_now_data.now_timezone;
                 }
-                /// TUMBLE/HOP -> WINDOW_ID
+                /// tumble/hop -> windowID
                 func_window_visitor.visit(node);
                 to_identifier_visitor.visit(node);
                 new_storage->set(field, node);
@@ -960,7 +960,7 @@ StorageWindowView::StorageWindowView(
     select_table_id = StorageID(select_database_name, select_table_name);
     DatabaseCatalog::instance().addDependency(select_table_id, table_id_);
 
-    /// Extract all info from query; substitute Function_TUMPLE and Function_HOP with Function_WINDOW_ID.
+    /// Extract all info from query; substitute Function_tumble and Function_hop with Function_windowID.
     auto inner_query = innerQueryParser(select_query->as<ASTSelectQuery &>());
 
     // Parse mergeable query
@@ -971,13 +971,13 @@ StorageWindowView::StorageWindowView(
     if (is_time_column_func_now)
         window_id_name = func_now_data.window_id_name;
 
-    // Parse final query (same as mergeable query but has TUMBLE/HOP instead of WINDOW_ID)
+    // Parse final query (same as mergeable query but has tumble/hop instead of windowID)
     final_query = mergeable_query->clone();
     ReplaceWindowIdMatcher::Data final_query_data;
     if (is_tumble)
-        final_query_data.window_name = "TUMBLE";
+        final_query_data.window_name = "tumble";
     else
-        final_query_data.window_name = "HOP";
+        final_query_data.window_name = "hop";
     ReplaceWindowIdMatcher::Visitor(final_query_data).visit(final_query);
 
     is_watermark_strictly_ascending = query.is_watermark_strictly_ascending;
@@ -989,9 +989,9 @@ StorageWindowView::StorageWindowView(
     eventTimeParser(query);
 
     if (is_tumble)
-        window_column_name = std::regex_replace(window_id_name, std::regex("WINDOW_ID"), "TUMBLE");
+        window_column_name = std::regex_replace(window_id_name, std::regex("windowID"), "tumble");
     else
-        window_column_name = std::regex_replace(window_id_name, std::regex("WINDOW_ID"), "HOP");
+        window_column_name = std::regex_replace(window_id_name, std::regex("windowID"), "hop");
 
     auto generate_inner_table_name = [](const StorageID & storage_id)
     {
@@ -1042,14 +1042,14 @@ ASTPtr StorageWindowView::innerQueryParser(const ASTSelectQuery & query)
 
     if (!query_info_data.is_tumble && !query_info_data.is_hop)
         throw Exception(ErrorCodes::INCORRECT_QUERY,
-                        "WINDOW FUNCTION is not specified for {}", getName());
+                        "TIME WINDOW FUNCTION is not specified for {}", getName());
 
     window_id_name = query_info_data.window_id_name;
     window_id_alias = query_info_data.window_id_alias;
     timestamp_column_name = query_info_data.timestamp_column_name;
     is_tumble = query_info_data.is_tumble;
 
-    // Parse window function
+    // Parse time window function
     ASTFunction & window_function = typeid_cast<ASTFunction &>(*query_info_data.window_function);
     const auto & arguments = window_function.arguments->children;
     extractWindowArgument(

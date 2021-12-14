@@ -20,6 +20,7 @@
 
 #include <optional>
 #include <shared_mutex>
+#include <compare>
 
 
 namespace DB
