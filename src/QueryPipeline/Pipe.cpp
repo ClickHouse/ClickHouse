@@ -463,18 +463,10 @@ void Pipe::addParallelTransforms(Processors transforms)
                         std::to_string(transforms.size()) + " transforms were passed, "
                         "but " + std::to_string(output_ports.size()) + " expected", ErrorCodes::LOGICAL_ERROR);
 
-    size_t next_output = 0;
     for (size_t i = 0; i < inputs.size(); ++i)
-    {
-        connect(*output_ports[next_output], *inputs[i]);
-        ++next_output;
-    }
+        connect(*output_ports[i], *inputs[i]);
 
-    output_ports.clear();
-    output_ports.reserve(outputs.size());
-
-    for (auto * output : outputs)
-        output_ports.emplace_back(std::move(output));
+    output_ports = std::move(outputs);
 
     /// do not check output formats because they are different in case of parallel aggregations
     LOG_DEBUG(log, "addParallelTransforms do not check format");

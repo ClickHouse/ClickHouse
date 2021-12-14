@@ -1196,7 +1196,7 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
     {
         for (const auto & ast : asts)
         {
-            for(const auto & ast_element : ast->children)
+            for (const auto & ast_element : ast->children)
             {
                 step.addRequiredOutput(ast_element->getColumnName());
                 getRootActions(ast_element, only_types, step.actions());

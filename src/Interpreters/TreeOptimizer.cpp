@@ -84,9 +84,6 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
 {
     const FunctionFactory & function_factory = FunctionFactory::instance();
 
-//    if (select_query->group_by_with_grouping_sets)
-//        return;
-
     if (!select_query->groupBy())
         return;
 
