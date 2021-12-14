@@ -85,7 +85,8 @@ RUN python3 -m pip install \
     tzlocal==2.1 \
     urllib3 \
     requests-kerberos \
-    pyhdfs
+    pyhdfs \
+    azure-storage-blob
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/

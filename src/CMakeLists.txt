@@ -106,6 +106,10 @@ if (USE_AWS_S3)
     add_headers_and_sources(dbms Disks/S3)
 endif()
 
+if (USE_AZURE_BLOB_STORAGE)
+    add_headers_and_sources(dbms Disks/BlobStorage)
+endif()
+
 if (USE_HDFS)
     add_headers_and_sources(dbms Storages/HDFS)
     add_headers_and_sources(dbms Disks/HDFS)
@@ -458,6 +462,11 @@ if (USE_AWS_S3)
     target_link_libraries (clickhouse_common_io PUBLIC ${AWS_S3_LIBRARY})
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${AWS_S3_CORE_INCLUDE_DIR})
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${AWS_S3_INCLUDE_DIR})
+endif()
+
+if (USE_AZURE_BLOB_STORAGE)
+    target_link_libraries (clickhouse_common_io PUBLIC ${AZURE_BLOB_STORAGE_LIBRARY})
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${AZURE_SDK_INCLUDES})
 endif()
 
 if (USE_S2_GEOMETRY)
