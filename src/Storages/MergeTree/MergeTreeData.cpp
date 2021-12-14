@@ -1528,7 +1528,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 void MergeTreeData::flushAllInMemoryPartsIfNeeded()
 {
     if(getSettings()->in_memory_parts_enable_wal)
-        return ;
+        return;
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
     DataPartsVector parts = getDataPartsVector();
