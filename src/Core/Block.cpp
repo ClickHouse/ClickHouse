@@ -139,13 +139,13 @@ void Block::insert(size_t position, ColumnWithTypeAndName elem)
     if (elem.name.empty())
         throw Exception("Column name in Block cannot be empty", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
 
-    auto [it, inserted] = index_by_name.emplace(elem.name, (size_t)-1);
+    auto [it, inserted] = index_by_name.emplace(elem.name, std::npos);
     if (!inserted)
         checkColumnStructure<void>(data[it->second], elem,
             "(columns with identical name must have identical structure)", true, ErrorCodes::AMBIGUOUS_COLUMN_NAME);
 
     for (auto & name_pos : index_by_name)
-        if (name_pos.second == (size_t)-1)
+        if (name_pos.second == std::npos)
             name_pos.second = position;
         else if (name_pos.second >= position)
             ++name_pos.second;
