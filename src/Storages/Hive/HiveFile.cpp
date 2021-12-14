@@ -149,6 +149,7 @@ void HiveOrcFile::loadMinMaxIndex()
 
 bool HiveOrcFile::hasSubMinMaxIndex() const
 {
+    // TODO To be implemented
     return false;
 }
 
@@ -162,7 +163,7 @@ void HiveOrcFile::loadSubMinMaxIndex()
 bool HiveParquetFile::hasSubMinMaxIndex() const
 {
     // TODO To be implemented
-    throw Exception("Unimplemented HiveParquetFile::hasSubMinMaxIndex", ErrorCodes::NOT_IMPLEMENTED);
+    return false;
 }
 
 void HiveParquetFile::prepareReader()
