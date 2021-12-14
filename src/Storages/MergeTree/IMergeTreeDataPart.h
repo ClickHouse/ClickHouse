@@ -397,7 +397,8 @@ public:
     String getUniqueId() const;
 
     const MergeTreeDataPartDeletedMask& getDeletedMask() const { return deleted_mask; }
-    void setDeletedMaskData(MergeTreeDataPartDeletedMask::DeletedRows new_mask);
+//    MergeTreeDataPartDeletedMask& getDeletedMask() { return deleted_mask; }
+    void setDeletedMaskData(MergeTreeDataPartDeletedMask::DeletedRows new_mask);// { deleted_mask = std::move(new_mask); }
 
 
 protected:

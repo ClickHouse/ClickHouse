@@ -49,8 +49,6 @@ public:
 
 constexpr UInt8 FORMAT_VERSION = 1;
 constexpr UInt8 DEFAULT_CODEC = static_cast<UInt8>(CompressionMethodByte::T64);
-//constexpr UInt8 DEFAULT_COMPRESSION = static_cast<UInt8>(CompressionMethod::Lz4);
-constexpr UInt8 COMPRESSION_LEVEL = 0;
 constexpr UInt8 PADDING_SIZE = 7; // just in case
 constexpr UInt8 HEADER_SIZE = 0
         + sizeof(FORMAT_VERSION)
