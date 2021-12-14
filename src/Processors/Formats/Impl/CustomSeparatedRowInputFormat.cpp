@@ -24,14 +24,27 @@ static FormatSettings updateFormatSettings(const FormatSettings & settings)
 
 CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
     const Block & header_,
-    ReadBuffer & in_,
+    ReadBuffer & in_buf_,
     const Params & params_,
     bool with_names_,
     bool with_types_,
     bool ignore_spaces_,
     const FormatSettings & format_settings_)
-    : RowInputFormatWithNamesAndTypes(header_, buf, params_, with_names_, with_types_, updateFormatSettings(format_settings_))
-    , buf(in_)
+    : CustomSeparatedRowInputFormat(
+        header_, std::make_unique<PeekableReadBuffer>(in_buf_), params_, with_names_, with_types_, ignore_spaces_, format_settings_)
+{
+}
+
+CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
+    const Block & header_,
+    std::unique_ptr<PeekableReadBuffer> buf_,
+    const Params & params_,
+    bool with_names_,
+    bool with_types_,
+    bool ignore_spaces_,
+    const FormatSettings & format_settings_)
+    : RowInputFormatWithNamesAndTypes(header_, *buf_, params_, with_names_, with_types_, updateFormatSettings(format_settings_))
+    , buf(std::move(buf_))
     , ignore_spaces(ignore_spaces_)
     , escaping_rule(format_settings_.custom.escaping_rule)
 {
