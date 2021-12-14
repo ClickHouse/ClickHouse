@@ -155,12 +155,6 @@ void QueryPipelineBuilder::transform(const Transformer & transformer)
     pipe.transform(transformer);
 }
 
-void QueryPipelineBuilder::addParallelTransforms(Processors transforms)
-{
-    checkInitializedAndNotCompleted();
-    pipe.addParallelTransforms(transforms);
-}
-
 void QueryPipelineBuilder::setSinks(const Pipe::ProcessorGetterWithStreamKind & getter)
 {
     checkInitializedAndNotCompleted();

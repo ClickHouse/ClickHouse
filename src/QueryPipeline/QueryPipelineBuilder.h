@@ -67,8 +67,6 @@ public:
     /// Transform pipeline in general way.
     void transform(const Transformer & transformer);
 
-    /// Add transforms and connect it to outputs streams
-    void addParallelTransforms(Processors transform);
     /// Add TotalsHavingTransform. Resize pipeline to single input. Adds totals port.
     void addTotalsHavingTransform(ProcessorPtr transform);
     /// Add transform which calculates extremes. This transform adds extremes port and doesn't change inputs number.
