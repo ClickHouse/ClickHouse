@@ -1109,7 +1109,7 @@ class ClickHouseCluster:
                 errors += [str(ex)]
                 time.sleep(1)
 
-        run_and_check(['docker-compose', 'ps', '--services', '--all'])
+        run_and_check(['docker', 'ps', '--all'])
         logging.error("Can't connect to MySQL Client:{}".format(errors))
         raise Exception("Cannot wait MySQL Client container")
 
