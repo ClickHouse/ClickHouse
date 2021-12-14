@@ -1,5 +1,6 @@
 #include "PostgreSQLReplicationHandler.h"
 
+#include <Parsers/ASTTableOverrides.h>
 #include <Processors/Transforms/PostgreSQLSource.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
@@ -279,7 +280,9 @@ ASTPtr PostgreSQLReplicationHandler::getCreateNestedTableQuery(StorageMaterializ
     auto table_structure = std::make_unique<PostgreSQLTableStructure>(fetchPostgreSQLTableStructure(tx, table_name, postgres_schema, true, true, true));
     if (!table_structure)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to get PostgreSQL table structure");
-    return storage->getCreateNestedTableQuery(std::move(table_structure));
+
+    auto table_override = ASTTableOverride::tryGetTableOverride(current_database_name, table_name);
+    return storage->getCreateNestedTableQuery(std::move(table_structure), table_override->as<ASTTableOverride>());
 }
 
 
@@ -297,7 +300,8 @@ StoragePtr PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection &
     query_str = fmt::format("SELECT * FROM {}", quoted_name);
     LOG_DEBUG(log, "Loading PostgreSQL table {}.{}", postgres_database, quoted_name);
 
-    materialized_storage->createNestedIfNeeded(fetchTableStructure(*tx, table_name));
+    auto table_override = ASTTableOverride::tryGetTableOverride(current_database_name, table_name);
+    materialized_storage->createNestedIfNeeded(fetchTableStructure(*tx, table_name), table_override->as<ASTTableOverride>());
     auto nested_storage = materialized_storage->getNested();
 
     auto insert = std::make_shared<ASTInsertQuery>();
