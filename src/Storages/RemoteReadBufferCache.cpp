@@ -9,6 +9,7 @@
 #include <base/logger_useful.h>
 #include <base/sleep.h>
 #include <base/errnoToString.h>
+#include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/hex.h>
 #include <Common/Exception.h>
@@ -16,7 +17,10 @@
 #include <IO/WriteHelpers.h>
 
 namespace fs = std::filesystem;
-
+namespace ProfileEvents
+{
+    extern const Event ExternalDataSourceLocalCacheReadBytes;
+}
 namespace DB
 {
 namespace ErrorCodes
@@ -307,13 +311,15 @@ bool RemoteReadBuffer::nextImpl()
     auto start_offset = file_buffer->getPosition();
     auto end_offset = start_offset + file_buffer->internalBuffer().size();
     file_cache_controller->waitMoreData(start_offset, end_offset);
-    //LOG_TRACE(&Poco::Logger::get("RemoteReadBuffer"), "nextImpl, {}->{}", start_offset, end_offset);
 
     auto status = file_buffer->next();
     if (status)
+    {
         BufferBase::set(file_buffer->buffer().begin(),
                 file_buffer->buffer().size(),
                 file_buffer->offset());
+        ProfileEvents::increment(ProfileEvents::ExternalDataSourceLocalCacheReadBytes, file_buffer->available());
+    }
     return status;
 }
 
