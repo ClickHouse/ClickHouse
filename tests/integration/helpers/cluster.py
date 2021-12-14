@@ -44,8 +44,8 @@ HELPERS_DIR = p.dirname(__file__)
 CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
 LOCAL_DOCKER_COMPOSE_DIR = p.join(CLICKHOUSE_ROOT_DIR, "docker/test/integration/runner/compose/")
 DEFAULT_ENV_NAME = '.env'
-
 SANITIZER_SIGN = "=================="
+DOCKER_COMPOSE_CMD_NUM_TRIES = 5
 
 # to create docker-compose env file
 def _create_env_file(path, variables):
@@ -106,10 +106,17 @@ def retry_exception(num, delay, func, exception=Exception, *args, **kwargs):
         return
     raise StopIteration('Function did not finished successfully')
 
-def subprocess_check_call(args, detach=False, nothrow=False):
+def subprocess_check_call(args, detach=False, nothrow=False, num_tries=1):
     # Uncomment for debugging
     #logging.info('run:' + ' '.join(args))
-    return run_and_check(args, detach=detach, nothrow=nothrow)
+    for i in range(num_tries):
+        try:
+            return run_and_check(args, detach=detach, nothrow=nothrow)
+        except Exception as ex:
+            if i == num_tries - 1:
+                raise ex
+            else:
+                logging.info("Got execption while executing command: %s", ex)
 
 
 def get_odbc_bridge_path():
@@ -1521,7 +1528,7 @@ class ClickHouseCluster:
 
             if self.with_mysql_client and self.base_mysql_client_cmd:
                 logging.debug('Setup MySQL Client')
-                subprocess_check_call(self.base_mysql_client_cmd + common_opts)
+                subprocess_check_call(self.base_mysql_client_cmd + common_opts, num_tries=DOCKER_COMPOSE_CMD_NUM_TRIES)
                 self.wait_mysql_client_to_start()
 
             if self.with_mysql and self.base_mysql_cmd:
@@ -1530,7 +1537,7 @@ class ClickHouseCluster:
                     shutil.rmtree(self.mysql_dir)
                 os.makedirs(self.mysql_logs_dir)
                 os.chmod(self.mysql_logs_dir, stat.S_IRWXO)
-                subprocess_check_call(self.base_mysql_cmd + common_opts)
+                subprocess_check_call(self.base_mysql_cmd + common_opts, num_tries=DOCKER_COMPOSE_CMD_NUM_TRIES)
                 self.up_called = True
                 self.wait_mysql_to_start()
 
@@ -1540,7 +1547,7 @@ class ClickHouseCluster:
                     shutil.rmtree(self.mysql8_dir)
                 os.makedirs(self.mysql8_logs_dir)
                 os.chmod(self.mysql8_logs_dir, stat.S_IRWXO)
-                subprocess_check_call(self.base_mysql8_cmd + common_opts)
+                subprocess_check_call(self.base_mysql8_cmd + common_opts, num_tries=DOCKER_COMPOSE_CMD_NUM_TRIES)
                 self.wait_mysql8_to_start()
 
             if self.with_mysql_cluster and self.base_mysql_cluster_cmd:
@@ -1550,7 +1557,7 @@ class ClickHouseCluster:
                 os.makedirs(self.mysql_cluster_logs_dir)
                 os.chmod(self.mysql_cluster_logs_dir, stat.S_IRWXO)
 
-                subprocess_check_call(self.base_mysql_cluster_cmd + common_opts)
+                subprocess_check_call(self.base_mysql_cluster_cmd + common_opts, num_tries=DOCKER_COMPOSE_CMD_NUM_TRIES)
                 self.up_called = True
                 self.wait_mysql_cluster_to_start()
 
@@ -1561,7 +1568,7 @@ class ClickHouseCluster:
                 os.makedirs(self.postgres_logs_dir)
                 os.chmod(self.postgres_logs_dir, stat.S_IRWXO)
 
-                subprocess_check_call(self.base_postgres_cmd + common_opts)
+                subprocess_check_call(self.base_postgres_cmd + common_opts, num_tries=DOCKER_COMPOSE_CMD_NUM_TRIES)
                 self.up_called = True
                 self.wait_postgres_to_start()
 
@@ -1573,20 +1580,20 @@ class ClickHouseCluster:
                 os.chmod(self.postgres3_logs_dir, stat.S_IRWXO)
                 os.makedirs(self.postgres4_logs_dir)
                 os.chmod(self.postgres4_logs_dir, stat.S_IRWXO)
-                subprocess_check_call(self.base_postgres_cluster_cmd + common_opts)
+                subprocess_check_call(self.base_postgres_cluster_cmd + common_opts, num_tries=DOCKER_COMPOSE_CMD_NUM_TRIES)
                 self.up_called = True
                 self.wait_postgres_cluster_to_start()
 
             if self.with_kafka and self.base_kafka_cmd:
                 logging.debug('Setup Kafka')
-                subprocess_check_call(self.base_kafka_cmd + common_opts + ['--renew-anon-volumes'])
+                subprocess_check_call(self.base_kafka_cmd + common_opts + ['--renew-anon-volumes'], num_tries=DOCKER_COMPOSE_CMD_NUM_TRIES)
                 self.up_called = True
                 self.wait_kafka_is_available(self.kafka_docker_id, self.kafka_port)
                 self.wait_schema_registry_to_start()
 
             if self.with_kerberized_kafka and self.base_kerberized_kafka_cmd:
                 logging.debug('Setup kerberized kafka')
-                run_and_check(self.base_kerberized_kafka_cmd + common_opts + ['--renew-anon-volumes'])
+                subprocess_check_call(self.base_kerberized_kafka_cmd + common_opts + ['--renew-anon-volumes'], num_tries=DOCKER_COMPOSE_CMD_NUM_TRIES)
                 self.up_called = True
                 self.wait_kafka_is_available(self.kerberized_kafka_docker_id, self.kerberized_kafka_port, 100)
 
@@ -1596,7 +1603,7 @@ class ClickHouseCluster:
                 os.chmod(self.rabbitmq_logs_dir, stat.S_IRWXO)
 
                 for i in range(5):
-                    subprocess_check_call(self.base_rabbitmq_cmd + common_opts + ['--renew-anon-volumes'])
+                    subprocess_check_call(self.base_rabbitmq_cmd + common_opts + ['--renew-anon-volumes'], num_tries=DOCKER_COMPOSE_CMD_NUM_TRIES)
                     self.up_called = True
                     self.rabbitmq_docker_id = self.get_instance_docker_id('rabbitmq1')
                     logging.debug(f"RabbitMQ checking container try: {i}")
@@ -1607,7 +1614,7 @@ class ClickHouseCluster:
                 logging.debug('Setup HDFS')
                 os.makedirs(self.hdfs_logs_dir)
                 os.chmod(self.hdfs_logs_dir, stat.S_IRWXO)
-                subprocess_check_call(self.base_hdfs_cmd + common_opts)
+                subprocess_check_call(self.base_hdfs_cmd + common_opts, num_tries=DOCKER_COMPOSE_CMD_NUM_TRIES)
                 self.up_called = True
                 self.make_hdfs_api()
                 self.wait_hdfs_to_start()
@@ -1616,27 +1623,27 @@ class ClickHouseCluster:
                 logging.debug('Setup kerberized HDFS')
                 os.makedirs(self.hdfs_kerberized_logs_dir)
                 os.chmod(self.hdfs_kerberized_logs_dir, stat.S_IRWXO)
-                run_and_check(self.base_kerberized_hdfs_cmd + common_opts)
+                subprocess_check_call(self.base_kerberized_hdfs_cmd + common_opts, num_tries=DOCKER_COMPOSE_CMD_NUM_TRIES)
                 self.up_called = True
                 self.make_hdfs_api(kerberized=True)
                 self.wait_hdfs_to_start(check_marker=True)
 
             if self.with_nginx and self.base_nginx_cmd:
                 logging.debug('Setup nginx')
-                subprocess_check_call(self.base_nginx_cmd + common_opts + ['--renew-anon-volumes'])
+                subprocess_check_call(self.base_nginx_cmd + common_opts + ['--renew-anon-volumes'], num_tries=DOCKER_COMPOSE_CMD_NUM_TRIES)
                 self.up_called = True
                 self.nginx_docker_id = self.get_instance_docker_id('nginx')
                 self.wait_nginx_to_start()
 
             if self.with_mongo and self.base_mongo_cmd:
                 logging.debug('Setup Mongo')
-                run_and_check(self.base_mongo_cmd + common_opts)
+                subprocess_check_call(self.base_mongo_cmd + common_opts, num_tries=DOCKER_COMPOSE_CMD_NUM_TRIES)
                 self.up_called = True
                 self.wait_mongo_to_start(30, secure=self.with_mongo_secure)
 
             if self.with_redis and self.base_redis_cmd:
                 logging.debug('Setup Redis')
-                subprocess_check_call(self.base_redis_cmd + common_opts)
+                subprocess_check_call(self.base_redis_cmd + common_opts, num_tries=DOCKER_COMPOSE_CMD_NUM_TRIES)
                 self.up_called = True
                 time.sleep(10)
 
@@ -1651,7 +1658,7 @@ class ClickHouseCluster:
                 minio_start_cmd = self.base_minio_cmd + common_opts
 
                 logging.info("Trying to create Minio instance by command %s", ' '.join(map(str, minio_start_cmd)))
-                run_and_check(minio_start_cmd)
+                subprocess_check_call(minio_start_cmd, num_tries=DOCKER_COMPOSE_CMD_NUM_TRIES)
                 self.up_called = True
                 logging.info("Trying to connect to Minio...")
                 self.wait_minio_to_start(secure=self.minio_certs_dir is not None)
@@ -1659,13 +1666,13 @@ class ClickHouseCluster:
             if self.with_azurite and self.base_azurite_cmd:
                 azurite_start_cmd = self.base_azurite_cmd + common_opts
                 logging.info("Trying to create Azurite instance by command %s", ' '.join(map(str, azurite_start_cmd)))
-                run_and_check(azurite_start_cmd)
+                subprocess_check_call(azurite_start_cmd, num_tries=DOCKER_COMPOSE_CMD_NUM_TRIES)
                 self.up_called = True
                 logging.info("Trying to connect to Azurite")
                 self.wait_azurite_to_start()
 
             if self.with_cassandra and self.base_cassandra_cmd:
-                subprocess_check_call(self.base_cassandra_cmd + ['up', '-d'])
+                subprocess_check_call(self.base_cassandra_cmd + ['up', '-d'], num_tries=DOCKER_COMPOSE_CMD_NUM_TRIES)
                 self.up_called = True
                 self.wait_cassandra_to_start()
 
@@ -1673,7 +1680,7 @@ class ClickHouseCluster:
                 os.makedirs(self.jdbc_driver_logs_dir)
                 os.chmod(self.jdbc_driver_logs_dir, stat.S_IRWXO)
 
-                subprocess_check_call(self.base_jdbc_bridge_cmd + ['up', '-d'])
+                subprocess_check_call(self.base_jdbc_bridge_cmd + ['up', '-d'], num_tries=DOCKER_COMPOSE_CMD_NUM_TRIES)
                 self.up_called = True
                 self.jdbc_bridge_ip = self.get_instance_ip(self.jdbc_bridge_host)
                 self.wait_for_url(f"http://{self.jdbc_bridge_ip}:{self.jdbc_bridge_port}/ping")
