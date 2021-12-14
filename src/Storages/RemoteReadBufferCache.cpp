@@ -9,6 +9,7 @@
 #include <base/logger_useful.h>
 #include <base/sleep.h>
 #include <base/errnoToString.h>
+#include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/hex.h>
 #include <Common/Exception.h>
@@ -16,7 +17,10 @@
 #include <IO/WriteHelpers.h>
 
 namespace fs = std::filesystem;
-
+namespace ProfileEvents
+{
+    extern const Event ExternalDataSourceLocalCacheReadBytes;
+}
 namespace DB
 {
 namespace ErrorCodes
@@ -55,8 +59,15 @@ std::shared_ptr<RemoteCacheController> RemoteCacheController::recover(const std:
         LOG_INFO(log, "Recover cached file failed. local path:{}", local_path_.string());
         return nullptr;
     }
-
-    cache_controller->file_metadata_ptr = RemoteFileMetadataFactory::instance().get(cache_controller->metadata_class);
+    try
+    {
+        cache_controller->file_metadata_ptr = RemoteFileMetadataFactory::instance().get(cache_controller->metadata_class);
+    }
+    catch(...)
+    {
+        LOG_ERROR(log, "Get metadata class failed for {}", cache_controller->metadata_class);
+        cache_controller->file_metadata_ptr = nullptr;
+    }
     if (!cache_controller->file_metadata_ptr)
     {
         // do not load this invalid cached file and clear it. the clear action is in
@@ -96,6 +107,7 @@ RemoteCacheController::RemoteCacheController(
     // when we allocate a whole new file cache ， file_metadata_ptr must not be null.
     if (file_metadata_ptr)
     {
+        metadata_class = file_metadata_ptr->getName();
         auto metadata_file_writer = std::make_unique<WriteBufferFromFile>((local_path_ / "metadata.txt").string());
         auto str_buf = file_metadata_ptr->toString();
         metadata_file_writer->write(str_buf.c_str(), str_buf.size());
@@ -214,7 +226,7 @@ void RemoteCacheController::close()
 std::unique_ptr<ReadBufferFromFileBase> RemoteCacheController::allocFile()
 {
     ReadSettings settings;
-    settings.local_fs_method = LocalFSReadMethod::read;
+    //settings.local_fs_method = LocalFSReadMethod::read;
     auto file_buffer = createReadBufferFromFileBase((local_path / "data.bin").string(), settings);
 
     if (file_buffer)
@@ -302,9 +314,12 @@ bool RemoteReadBuffer::nextImpl()
 
     auto status = file_buffer->next();
     if (status)
+    {
         BufferBase::set(file_buffer->buffer().begin(),
                 file_buffer->buffer().size(),
                 file_buffer->offset());
+        ProfileEvents::increment(ProfileEvents::ExternalDataSourceLocalCacheReadBytes, file_buffer->available());
+    }
     return status;
 }
 
