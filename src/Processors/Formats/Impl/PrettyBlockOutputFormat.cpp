@@ -325,7 +325,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
 {
     String serialized_value = " ";
     {
-        WriteBufferFromString out_serialize(serialized_value, WriteBufferFromString::AppendModeTag());
+        WriteBufferFromString out_serialize(serialized_value, AppendModeTag());
         serialization.serializeText(column, row_num, out_serialize, format_settings);
     }
 
