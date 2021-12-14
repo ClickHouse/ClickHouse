@@ -2446,7 +2446,7 @@ bool MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr & part, MergeTreeTra
 
 bool MergeTreeData::renameTempPartAndReplace(
     MutableDataPartPtr & part, MergeTreeTransaction * txn, SimpleIncrement * increment, Transaction * out_transaction,
-    std::unique_lock<std::mutex> & lock, DataPartsVector * out_covered_parts, MergeTreeDeduplicationLog * deduplication_log)
+    std::unique_lock<std::mutex> & lock, DataPartsVector * out_covered_parts, MergeTreeDeduplicationLog * deduplication_log, bool)
 {
     if (out_transaction && &out_transaction->data != this)
         throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",

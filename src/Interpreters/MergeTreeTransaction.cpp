@@ -6,6 +6,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INVALID_TRANSACTION;
+    extern const int LOGICAL_ERROR;
+}
+
 MergeTreeTransaction::MergeTreeTransaction(Snapshot snapshot_, LocalTID local_tid_, UUID host_id)
     : tid({snapshot_, local_tid_, host_id})
     , snapshot(snapshot_)
@@ -15,9 +21,10 @@ MergeTreeTransaction::MergeTreeTransaction(Snapshot snapshot_, LocalTID local_ti
 
 MergeTreeTransaction::State MergeTreeTransaction::getState() const
 {
-    if (csn == Tx::UnknownCSN)
+    CSN c = csn.load();
+    if (c == Tx::UnknownCSN || c == Tx::CommittingCSN)
         return RUNNING;
-    if (csn == Tx::RolledBackCSN)
+    if (c == Tx::RolledBackCSN)
         return ROLLED_BACK;
     return COMMITTED;
 }
@@ -64,16 +71,31 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage
 
 void MergeTreeTransaction::addNewPart(const StoragePtr & storage, const DataPartPtr & new_part)
 {
-    assert(csn == Tx::UnknownCSN);
+    CSN c = csn.load();
+    if (c == Tx::RolledBackCSN)
+        throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction was cancelled");
+    else if (c != Tx::UnknownCSN)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CSN state: {}", c);
+
     storages.insert(storage);
     creating_parts.push_back(new_part);
 }
 
 void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataPartPtr & part_to_remove)
 {
-    assert(csn == Tx::UnknownCSN);
+    CSN c = csn.load();
+    if (c == Tx::RolledBackCSN)
+        throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction was cancelled");
+    else if (c != Tx::UnknownCSN)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CSN state: {}", c);
+
     storages.insert(storage);
     removing_parts.push_back(part_to_remove);
+}
+
+void MergeTreeTransaction::addMutation(const StoragePtr & table, const String & mutation_id)
+{
+    mutations.emplace_back(table, mutation_id);
 }
 
 bool MergeTreeTransaction::isReadOnly() const
@@ -81,25 +103,45 @@ bool MergeTreeTransaction::isReadOnly() const
     return creating_parts.empty() && removing_parts.empty();
 }
 
-void MergeTreeTransaction::beforeCommit() const
+void MergeTreeTransaction::beforeCommit()
 {
-    assert(csn == Tx::UnknownCSN);
+    for (const auto & table_and_mutation : mutations)
+        table_and_mutation.first->waitForMutation(table_and_mutation.second);
+
+    CSN expected = Tx::UnknownCSN;
+    bool can_commit = csn.compare_exchange_strong(expected, Tx::CommittingCSN);
+    if (can_commit)
+        return;
+
+    if (expected == Tx::RolledBackCSN)
+        throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction was cancelled");
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CSN state: {}", expected);
 }
 
 void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
 {
-    assert(csn == Tx::UnknownCSN);
-    csn = assigned_csn;
+    [[maybe_unused]] CSN prev_value = csn.exchange(assigned_csn);
+    assert(prev_value == Tx::CommittingCSN);
     for (const auto & part : creating_parts)
         part->versions.mincsn.store(csn);
     for (const auto & part : removing_parts)
         part->versions.maxcsn.store(csn);
 }
 
-void MergeTreeTransaction::rollback() noexcept
+bool MergeTreeTransaction::rollback() noexcept
 {
-    assert(csn == Tx::UnknownCSN);
-    csn = Tx::RolledBackCSN;
+    CSN expected = Tx::UnknownCSN;
+    bool need_rollback = csn.compare_exchange_strong(expected, Tx::RolledBackCSN);
+
+    if (!need_rollback)
+    {
+        /// TODO add assertions for the case when this method called from background operation
+        return false;
+    }
+
+    for (const auto & table_and_mutation : mutations)
+        table_and_mutation.first->killMutation(table_and_mutation.second);
+
     for (const auto & part : creating_parts)
         part->versions.mincsn.store(Tx::RolledBackCSN);
 
@@ -114,14 +156,11 @@ void MergeTreeTransaction::rollback() noexcept
         if (part->versions.getMinTID() != tid)
             const_cast<MergeTreeData &>(part->storage).restoreAndActivatePart(part);
 
-    /// FIXME seems like session holds shared_ptr to Transaction and transaction holds shared_ptr to parts preventing cleanup
+    return true;
 }
 
 void MergeTreeTransaction::onException()
 {
-    if (csn)
-        return;
-
     TransactionLog::instance().rollbackTransaction(shared_from_this());
 }
 

@@ -20,6 +20,7 @@ struct VersionMetadata
     TransactionID getMinTID() const { return mintid; }
     TransactionID getMaxTID() const;
 
+    bool tryLockMaxTID(const TransactionID & tid, TIDHash * locked_by_id = nullptr);
     void lockMaxTID(const TransactionID & tid, const String & error_context = {});
     void unlockMaxTID(const TransactionID & tid);
 

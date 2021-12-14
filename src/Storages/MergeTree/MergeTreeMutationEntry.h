@@ -4,6 +4,7 @@
 #include <Disks/IDisk.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MutationCommands.h>
+#include <Common/TransactionID.h>
 
 
 namespace DB
@@ -28,8 +29,14 @@ struct MergeTreeMutationEntry
     time_t latest_fail_time = 0;
     String latest_fail_reason;
 
+    /// ID of transaction which has created mutation.
+    TransactionID tid = Tx::PrehistoricTID;
+    CSN csn;
+
     /// Create a new entry and write it to a temporary file.
-    MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk, const String & path_prefix_, UInt64 tmp_number);
+    MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk, const String & path_prefix_, UInt64 tmp_number,
+                           const TransactionID & tid_);
+
     MergeTreeMutationEntry(const MergeTreeMutationEntry &) = delete;
     MergeTreeMutationEntry(MergeTreeMutationEntry &&) = default;
 

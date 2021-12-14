@@ -38,7 +38,20 @@ TransactionID VersionMetadata::getMaxTID() const
 
 void VersionMetadata::lockMaxTID(const TransactionID & tid, const String & error_context)
 {
-    assert(tid);
+    TIDHash locked_by = 0;
+    if (tryLockMaxTID(tid, &locked_by))
+        return;
+
+    throw Exception(ErrorCodes::SERIALIZATION_ERROR,
+                    "Serialization error: "
+                    "Transaction {} tried to remove data part, "
+                    "but it's locked ({}) by another transaction {} which is currently removing this part. {}",
+                    tid, locked_by, getMaxTID(), error_context);
+}
+
+bool VersionMetadata::tryLockMaxTID(const TransactionID & tid, TIDHash * locked_by_id)
+{
+    assert(!tid.isEmpty());
     TIDHash max_lock_value = tid.getHash();
     TIDHash expected_max_lock_value = 0;
     bool locked = maxtid_lock.compare_exchange_strong(expected_max_lock_value, max_lock_value);
@@ -48,21 +61,21 @@ void VersionMetadata::lockMaxTID(const TransactionID & tid, const String & error
         {
             /// Don't need to lock part for queries without transaction
             //FIXME Transactions: why is it possible?
-            return;
+            return true;
         }
 
-        throw Exception(ErrorCodes::SERIALIZATION_ERROR, "Serialization error: "
-                                                         "Transaction {} tried to remove data part, "
-                                                         "but it's locked ({}) by another transaction {} which is currently removing this part. {}",
-                        tid, expected_max_lock_value, getMaxTID(), error_context);
+        if (locked_by_id)
+            *locked_by_id = expected_max_lock_value;
+        return false;
     }
 
     maxtid = tid;
+    return true;
 }
 
 void VersionMetadata::unlockMaxTID(const TransactionID & tid)
 {
-    assert(tid);
+    assert(!tid.isEmpty());
     TIDHash max_lock_value = tid.getHash();
     TIDHash locked_by = maxtid_lock.load();
 
@@ -91,7 +104,7 @@ void VersionMetadata::setMinTID(const TransactionID & tid)
 {
     /// TODO Transactions: initialize it in constructor on part creation and remove this method
     /// FIXME ReplicatedMergeTreeBlockOutputStream may add one part multiple times
-    assert(!mintid || mintid == tid);
+    assert(mintid.isEmpty() || mintid == tid);
     const_cast<TransactionID &>(mintid) = tid;
 }
 
@@ -103,7 +116,7 @@ bool VersionMetadata::isVisible(const MergeTreeTransaction & txn)
 bool VersionMetadata::isVisible(Snapshot snapshot_version, TransactionID current_tid)
 {
     //Poco::Logger * log = &Poco::Logger::get("WTF");
-    assert(mintid);
+    assert(!mintid.isEmpty());
     CSN min = mincsn.load(std::memory_order_relaxed);
     TIDHash max_lock = maxtid_lock.load(std::memory_order_relaxed);
     CSN max = maxcsn.load(std::memory_order_relaxed);
@@ -115,6 +128,8 @@ bool VersionMetadata::isVisible(Snapshot snapshot_version, TransactionID current
     [[maybe_unused]] bool had_maxcsn = max;
     assert(!had_maxcsn || had_maxtid);
     assert(!had_maxcsn || had_mincsn);
+    assert(min == Tx::UnknownCSN || min == Tx::PrehistoricCSN || Tx::MaxReservedCSN < min);
+    assert(max == Tx::UnknownCSN || max == Tx::PrehistoricCSN || Tx::MaxReservedCSN < max);
 
     /// Fast path:
 
@@ -126,7 +141,7 @@ bool VersionMetadata::isVisible(Snapshot snapshot_version, TransactionID current
         return false;
     if (max && max <= snapshot_version)
         return false;
-    if (current_tid && max_lock && max_lock == current_tid.getHash())
+    if (!current_tid.isEmpty() && max_lock && max_lock == current_tid.getHash())
         return false;
 
     /// Otherwise, part is definitely visible if:
@@ -137,7 +152,7 @@ bool VersionMetadata::isVisible(Snapshot snapshot_version, TransactionID current
         return true;
     if (min && min <= snapshot_version && max && snapshot_version < max)
         return true;
-    if (current_tid && mintid == current_tid)
+    if (!current_tid.isEmpty() && mintid == current_tid)
         return true;
 
     /// End of fast path.
@@ -146,7 +161,7 @@ bool VersionMetadata::isVisible(Snapshot snapshot_version, TransactionID current
     /// It means that some transaction is creating/removing the part right now or has done it recently
     /// and we don't know if it was already committed or not.
     assert(!had_mincsn || (had_maxtid && !had_maxcsn));
-    assert(!current_tid || (mintid != current_tid && max_lock != current_tid.getHash()));
+    assert(current_tid.isEmpty() || (mintid != current_tid && max_lock != current_tid.getHash()));
 
     /// Before doing CSN lookup, let's check some extra conditions.
     /// If snapshot_version <= some_tid.start_csn, then changes of the transaction with some_tid

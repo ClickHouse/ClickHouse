@@ -1,0 +1,20 @@
+1	10	all_1_1_0_4
+1	30	all_3_3_0_4
+2	1	all_1_1_0
+2	2	all_2_2_0
+Serialization error
+INVALID_TRANSACTION
+3	1	all_1_1_0
+Serialization error
+4	2	all_1_1_0_8
+4	5	all_11_11_0
+4	6	all_7_7_0_8
+5	2	all_1_1_0_8
+5	5	all_11_11_0
+5	6	all_7_7_0_8
+SERIALIZATION_ERROR
+6	2	all_1_1_0_12
+6	6	all_7_7_0_12
+7	20	all_1_1_0_14
+7	60	all_7_7_0_14
+7	80	all_13_13_0_14

@@ -87,7 +87,7 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn)
 void TransactionLog::rollbackTransaction(const MergeTreeTransactionPtr & txn) noexcept
 {
     LOG_TRACE(log, "Rolling back transaction {}", txn->tid);
-    txn->rollback();
+    if (txn->rollback())
     {
         std::lock_guard lock{running_list_mutex};
         bool removed = running_list.erase(txn->tid.getHash());

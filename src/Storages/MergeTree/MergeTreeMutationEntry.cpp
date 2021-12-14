@@ -4,6 +4,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
+#include <Interpreters/TransactionLog.h>
 
 #include <utility>
 
@@ -43,16 +44,20 @@ UInt64 MergeTreeMutationEntry::parseFileName(const String & file_name_)
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse mutation version from file name, expected 'mutation_<UInt64>.txt', got '{}'", file_name_);
 }
 
-MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk_, const String & path_prefix_, UInt64 tmp_number)
+MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk_, const String & path_prefix_, UInt64 tmp_number,
+                                               const TransactionID & tid_)
     : create_time(time(nullptr))
     , commands(std::move(commands_))
     , disk(std::move(disk_))
     , path_prefix(path_prefix_)
     , file_name("tmp_mutation_" + toString(tmp_number) + ".txt")
     , is_temp(true)
+    , tid(tid_)
+    , csn(Tx::UnknownCSN)
 {
     try
     {
+        /// TODO Transactions: write (and read) tid
         auto out = disk->writeFile(path_prefix + file_name);
         *out << "format version: 1\n"
             << "create time: " << LocalDateTime(create_time) << "\n";
@@ -112,6 +117,7 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & pat
     *buf >> "\n";
 
     assertEOF(*buf);
+    csn = Tx::PrehistoricCSN;
 }
 
 MergeTreeMutationEntry::~MergeTreeMutationEntry()
