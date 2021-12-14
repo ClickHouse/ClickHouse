@@ -20,11 +20,25 @@ extern const int SYNTAX_ERROR;
 }
 
 
-TemplateRowInputFormat::TemplateRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
+TemplateRowInputFormat::TemplateRowInputFormat(
+    const Block & header_,
+    ReadBuffer & in_,
+    const Params & params_,
+    FormatSettings settings_,
+    bool ignore_spaces_,
+    ParsedTemplateFormatString format_,
+    ParsedTemplateFormatString row_format_,
+    std::string row_between_delimiter_)
+    : TemplateRowInputFormat(
+        header_, std::make_unique<PeekableReadBuffer>(in_), params_, settings_, ignore_spaces_, format_, row_format_, row_between_delimiter_)
+{
+}
+
+TemplateRowInputFormat::TemplateRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, const Params & params_,
                                                FormatSettings settings_, bool ignore_spaces_,
                                                ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_,
                                                std::string row_between_delimiter_)
-    : RowInputFormatWithDiagnosticInfo(header_, buf, params_), buf(in_), data_types(header_.getDataTypes()),
+    : RowInputFormatWithDiagnosticInfo(header_, *buf_, params_), buf(std::move(buf_)), data_types(header_.getDataTypes()),
       settings(std::move(settings_)), ignore_spaces(ignore_spaces_),
       format(std::move(format_)), row_format(std::move(row_format_)),
       default_csv_delimiter(settings.csv.delimiter), row_between_delimiter(std::move(row_between_delimiter_))
@@ -101,10 +115,10 @@ ReturnType TemplateRowInputFormat::tryReadPrefixOrSuffix(size_t & input_part_beg
 
     skipSpaces();
     if constexpr (throw_exception)
-        assertString(format.delimiters[input_part_beg], buf);
+        assertString(format.delimiters[input_part_beg], *buf);
     else
     {
-        if (likely(!checkString(format.delimiters[input_part_beg], buf)))
+        if (likely(!checkString(format.delimiters[input_part_beg], *buf)))
             return ReturnType(false);
     }
 
@@ -133,10 +147,10 @@ ReturnType TemplateRowInputFormat::tryReadPrefixOrSuffix(size_t & input_part_beg
 
         skipSpaces();
         if constexpr (throw_exception)
-            assertString(format.delimiters[input_part_beg], buf);
+            assertString(format.delimiters[input_part_beg], *buf);
         else
         {
-            if (likely(!checkString(format.delimiters[input_part_beg], buf)))
+            if (likely(!checkString(format.delimiters[input_part_beg], *buf)))
                 return ReturnType(false);
         }
     }
@@ -162,14 +176,14 @@ bool TemplateRowInputFormat::readRow(MutableColumns & columns, RowReadExtension 
     updateDiagnosticInfo();
 
     if (likely(row_num != 1))
-        assertString(row_between_delimiter, buf);
+        assertString(row_between_delimiter, *buf);
 
     extra.read_columns.assign(columns.size(), false);
 
     for (size_t i = 0; i < row_format.columnsCount(); ++i)
     {
         skipSpaces();
-        assertString(row_format.delimiters[i], buf);
+        assertString(row_format.delimiters[i], *buf);
         skipSpaces();
         if (row_format.format_idx_to_column_idx[i])
         {
@@ -182,7 +196,7 @@ bool TemplateRowInputFormat::readRow(MutableColumns & columns, RowReadExtension 
     }
 
     skipSpaces();
-    assertString(row_format.delimiters.back(), buf);
+    assertString(row_format.delimiters.back(), *buf);
 
     for (const auto & idx : always_default_columns)
         data_types[idx]->insertDefaultInto(*columns[idx]);
@@ -200,7 +214,7 @@ bool TemplateRowInputFormat::deserializeField(const DataTypePtr & type,
                                                                                 row_format.delimiters[file_column + 1].front();
     try
     {
-        return deserializeFieldByEscapingRule(type, serialization, column, buf, escaping_rule, settings);
+        return deserializeFieldByEscapingRule(type, serialization, column, *buf, escaping_rule, settings);
     }
     catch (Exception & e)
     {
@@ -214,7 +228,7 @@ void TemplateRowInputFormat::skipField(TemplateRowInputFormat::EscapingRule esca
 {
     try
     {
-        skipFieldByEscapingRule(buf, escaping_rule, settings);
+        skipFieldByEscapingRule(*buf, escaping_rule, settings);
     }
     catch (Exception & e)
     {
@@ -228,7 +242,7 @@ void TemplateRowInputFormat::skipField(TemplateRowInputFormat::EscapingRule esca
 /// Otherwise returns false
 bool TemplateRowInputFormat::checkForSuffix()
 {
-    PeekableReadBufferCheckpoint checkpoint{buf};
+    PeekableReadBufferCheckpoint checkpoint{*buf};
     bool suffix_found = false;
     size_t last_successfully_parsed_idx = format_data_idx + 1;
     try
@@ -246,11 +260,11 @@ bool TemplateRowInputFormat::checkForSuffix()
     if (unlikely(suffix_found))
     {
         skipSpaces();
-        if (buf.eof())
+        if (buf->eof())
             return true;
     }
 
-    buf.rollbackToCheckpoint();
+    buf->rollbackToCheckpoint();
     return false;
 }
 
@@ -258,11 +272,11 @@ bool TemplateRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & col
 {
     out << "Suffix does not match: ";
     size_t last_successfully_parsed_idx = format_data_idx + 1;
-    const ReadBuffer::Position row_begin_pos = buf.position();
+    const ReadBuffer::Position row_begin_pos = buf->position();
     bool caught = false;
     try
     {
-        PeekableReadBufferCheckpoint checkpoint{buf, true};
+        PeekableReadBufferCheckpoint checkpoint{*buf, true};
         tryReadPrefixOrSuffix<void>(last_successfully_parsed_idx, format.columnsCount());
     }
     catch (Exception & e)
@@ -273,12 +287,12 @@ bool TemplateRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & col
     if (!caught)
     {
         out << " There is some data after suffix (EOF expected, got ";
-        verbosePrintString(buf.position(), std::min(buf.buffer().end(), buf.position() + 16), out);
+        verbosePrintString(buf->position(), std::min(buf->buffer().end(), buf->position() + 16), out);
         out << "). ";
     }
     out << " Format string (from format_schema): \n" << format.dump() << "\n";
 
-    if (row_begin_pos != buf.position())
+    if (row_begin_pos != buf->position())
     {
         /// Pointers to buffer memory were invalidated during checking for suffix
         out << "\nCannot print more diagnostic info.";
@@ -287,12 +301,12 @@ bool TemplateRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & col
 
     out << "\nUsing format string (from format_schema_rows): " << row_format.dump() << "\n";
     out << "\nTrying to parse next row, because suffix does not match:\n";
-    if (likely(row_num != 1) && !parseDelimiterWithDiagnosticInfo(out, buf, row_between_delimiter, "delimiter between rows", ignore_spaces))
+    if (likely(row_num != 1) && !parseDelimiterWithDiagnosticInfo(out, *buf, row_between_delimiter, "delimiter between rows", ignore_spaces))
         return false;
 
     for (size_t i = 0; i < row_format.columnsCount(); ++i)
     {
-        if (!parseDelimiterWithDiagnosticInfo(out, buf, row_format.delimiters[i], "delimiter before field " + std::to_string(i), ignore_spaces))
+        if (!parseDelimiterWithDiagnosticInfo(out, *buf, row_format.delimiters[i], "delimiter before field " + std::to_string(i), ignore_spaces))
             return false;
 
         skipSpaces();
@@ -318,7 +332,7 @@ bool TemplateRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & col
         }
     }
 
-    return parseDelimiterWithDiagnosticInfo(out, buf, row_format.delimiters.back(), "delimiter after last field", ignore_spaces);
+    return parseDelimiterWithDiagnosticInfo(out, *buf, row_format.delimiters.back(), "delimiter after last field", ignore_spaces);
 }
 
 bool parseDelimiterWithDiagnosticInfo(WriteBuffer & out, ReadBuffer & buf, const String & delimiter, const String & description, bool skip_spaces)
@@ -366,9 +380,9 @@ bool TemplateRowInputFormat::allowSyncAfterError() const
 
 void TemplateRowInputFormat::syncAfterError()
 {
-    skipToNextRowOrEof(buf, row_format.delimiters.back(), row_between_delimiter, ignore_spaces);
-    end_of_stream = buf.eof();
-    /// It can happen that buf.position() is not at the beginning of row
+    skipToNextRowOrEof(*buf, row_format.delimiters.back(), row_between_delimiter, ignore_spaces);
+    end_of_stream = buf->eof();
+    /// It can happen that buf->position() is not at the beginning of row
     /// if some delimiters is similar to row_format.delimiters.back() and row_between_delimiter.
     /// It will cause another parsing error.
 }
@@ -384,7 +398,13 @@ void TemplateRowInputFormat::resetParser()
 {
     RowInputFormatWithDiagnosticInfo::resetParser();
     end_of_stream = false;
-    buf.reset();
+    buf->reset();
+}
+
+void TemplateRowInputFormat::setReadBuffer(ReadBuffer & in_)
+{
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    IInputFormat::setReadBuffer(*buf);
 }
 
 void registerInputFormatTemplate(FormatFactory & factory)
