@@ -397,8 +397,7 @@ public:
     String getUniqueId() const;
 
     const MergeTreeDataPartDeletedMask& getDeletedMask() const { return deleted_mask; }
-    MergeTreeDataPartDeletedMask& getDeletedMask() { return deleted_mask; }
-    void setDeletedMask(MergeTreeDataPartDeletedMask && new_mask ) { deleted_mask = std::move(new_mask); }
+    void setDeletedMaskData(MergeTreeDataPartDeletedMask::DeletedRows new_mask);
 
 
 protected:
@@ -468,6 +467,8 @@ private:
     void loadTTLInfos();
 
     void loadPartitionAndMinMaxIndex();
+
+    void loadDeletedRowsMask();
 
     void calculateColumnsSizesOnDisk();
 

@@ -3128,7 +3128,9 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_na
     return getPartIfExists(MergeTreePartInfo::fromPartName(part_name, format_version), valid_states);
 }
 
-void MergeTreeData::updateDeletedRowsMask(const String & part_name, MergeTreeDataPartDeletedMask::DeletedRows deleted_rows)
+void MergeTreeData::updateDeletedRowsMask(
+        const String & part_name,
+        MergeTreeDataPartDeletedMask::DeletedRows deleted_rows)
 {
     const MergeTreeData::DataPartStates parts_to_modify = {
         IMergeTreeDataPart::State::Committed
@@ -3139,7 +3141,7 @@ void MergeTreeData::updateDeletedRowsMask(const String & part_name, MergeTreeDat
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} is expected to exist", part_name);
 
     auto * mutable_data_part = const_cast<IMergeTreeDataPart *>(data_part.get());
-    std::swap(mutable_data_part->getDeletedMask().deleted_rows, deleted_rows);
+    mutable_data_part->setDeletedMaskData(deleted_rows);
 
     // TODO: save the part to disk
 }

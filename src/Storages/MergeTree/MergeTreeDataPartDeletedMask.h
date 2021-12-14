@@ -16,18 +16,21 @@ class ReadBuffer;
 class WriteBuffer;
 
 /// Per-part info about rows deleted by lightweight mutations.
-// TODO Current implementation is naive, may research other compression formats
 struct MergeTreeDataPartDeletedMask
 {
     explicit MergeTreeDataPartDeletedMask();
     using DeletedRows = ColumnUInt8::Ptr;
 
-    static constexpr std::string_view name = "deleted_mask_{}.bin"; // {} substituted by block number
-//    static constexpr std::hash<size_t> hasher;
+    static constexpr std::string_view name = "deleted_mask.bin"; // {} substituted by block number
 
-    ColumnUInt8::Ptr deleted_rows;
+    const ColumnUInt8 & getDeletedRows() const;
+    void setDeletedRows(DeletedRows new_rows);
+    void setDeletedRows(size_t rows, bool value);
 
     void read(ReadBuffer & in);
     void write(WriteBuffer & out) const;
+
+private:
+    ColumnUInt8::Ptr deleted_rows;
 };
 };

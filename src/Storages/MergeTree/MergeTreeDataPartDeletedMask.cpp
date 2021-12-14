@@ -18,13 +18,14 @@
 namespace DB::ErrorCodes
 {
     extern const int UNKNOWN_FORMAT_VERSION;
-    extern const int HASH_MISMATCH_FOR_DELETED_MASK;
     extern const int CORRUPTED_DATA;
 }
 
 namespace DB
 {
 
+namespace
+{
 struct HashValue
 {
 private:
@@ -46,41 +47,42 @@ public:
     }
 };
 
-//CompressionCodecPtr getCodec(const String & name, const IDataType & data_type)
-//{
-//    const String codec_statement = "(" + name + ")";
-//    Tokens tokens(codec_statement.begin().base(), codec_statement.end().base());
-//    IParser::Pos token_iterator(tokens, 0);
-
-//    Expected expected;
-//    ASTPtr codec_ast;
-//    ParserCodec parser;
-
-//    parser.parse(token_iterator, codec_ast, expected);
-
-//    return CompressionCodecFactory::instance().get(codec_ast, &data_type);
-//}
-
 constexpr UInt8 FORMAT_VERSION = 1;
 constexpr UInt8 DEFAULT_CODEC = static_cast<UInt8>(CompressionMethodByte::T64);
-constexpr UInt8 DEFAULT_COMPRESSION = static_cast<UInt8>(CompressionMethod::Lz4);
+//constexpr UInt8 DEFAULT_COMPRESSION = static_cast<UInt8>(CompressionMethod::Lz4);
 constexpr UInt8 COMPRESSION_LEVEL = 0;
-constexpr UInt8 PADDING_SIZE = 6; // just in case
-constexpr UInt8 HEADER_SIZE =
-        sizeof(FORMAT_VERSION)
+constexpr UInt8 PADDING_SIZE = 7; // just in case
+constexpr UInt8 HEADER_SIZE = 0
+        + sizeof(FORMAT_VERSION)
         + sizeof(UInt64)                  // number of rows in mask
-        + sizeof(HashValue)               // 128-bit column hash
-        + sizeof(DEFAULT_COMPRESSION)
-        + PADDING_SIZE
+        + sizeof(HashValue)               // column data hash
+        + PADDING_SIZE                    // padding: zero-bytes
         + sizeof(HashValue);              // header hash
+}
 
 MergeTreeDataPartDeletedMask::MergeTreeDataPartDeletedMask()
+    : deleted_rows(ColumnUInt8::create())
 {}
+
+const ColumnUInt8 & MergeTreeDataPartDeletedMask::getDeletedRows() const
+{
+    return *deleted_rows;
+}
+
+void MergeTreeDataPartDeletedMask::setDeletedRows(DeletedRows new_rows)
+{
+    deleted_rows.swap(new_rows);
+}
+
+void MergeTreeDataPartDeletedMask::setDeletedRows(size_t rows, bool value)
+{
+    setDeletedRows(ColumnUInt8::create(rows, value));
+}
 
 void MergeTreeDataPartDeletedMask::read(ReadBuffer & in)
 {
     std::array<char, HEADER_SIZE - sizeof(HashValue)> header_buffer_data;
-    in.readBig(header_buffer_data.data(), header_buffer_data.size());
+    in.readStrict(header_buffer_data.data(), header_buffer_data.size());
     {// validate hash of the header first
         SipHash hash;
         hash.update(header_buffer_data.data(), header_buffer_data.size());
@@ -95,25 +97,22 @@ void MergeTreeDataPartDeletedMask::read(ReadBuffer & in)
 
     UInt8 format_version = FORMAT_VERSION;
     UInt64 stored_rows = 0;
-    UInt8 compression = DEFAULT_COMPRESSION;
     HashValue column_hash;
-    {// Read header
+    {// Read header values
         ReadBuffer header(header_buffer_data.data(), header_buffer_data.size(), 0);
         readBinary(format_version, header);
         if (format_version != FORMAT_VERSION)
             throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION,
-                    "Unknown deleted mask file format version {}", static_cast<UInt32>(format_version));
+                    "Unknown deleted mask file format version {}",
+                    static_cast<UInt32>(format_version));
 
         readBinary(stored_rows, header);
         readPODBinary(column_hash, header);
-        readBinary(compression, header);
         header.ignore(PADDING_SIZE);
         assertEOF(header);
     }
 
-    auto data_read_buffer = wrapReadBufferWithCompressionMethod(
-            std::make_unique<CompressedReadBuffer>(in),
-            static_cast<CompressionMethod>(compression));
+    auto data_read_buffer = std::make_unique<CompressedReadBuffer>(in);
 
     auto res_column = DeletedRows(ColumnUInt8::create());
     ColumnPtr res_col_ptr = res_column;
@@ -126,7 +125,7 @@ void MergeTreeDataPartDeletedMask::read(ReadBuffer & in)
 
 void MergeTreeDataPartDeletedMask::write(WriteBuffer & out) const
 {
-    {
+    {// Header
         std::array<char, HEADER_SIZE - sizeof(HashValue)> header_buffer_data;
         WriteBuffer header(header_buffer_data.data(), header_buffer_data.size());
 
@@ -138,7 +137,7 @@ void MergeTreeDataPartDeletedMask::write(WriteBuffer & out) const
             deleted_rows->updateHashFast(hash);
             writePODBinary(HashValue(hash), header);
         }
-        writeBinary(DEFAULT_COMPRESSION, header);
+
         {
             const char padding[PADDING_SIZE] = {'\0'};
             writePODBinary(padding, header);
@@ -146,7 +145,7 @@ void MergeTreeDataPartDeletedMask::write(WriteBuffer & out) const
         assert(header_buffer_data.max_size() == header.count());
 
         writePODBinary(header_buffer_data, out);
-        {
+        {// header hash
             SipHash hash;
             hash.update(header_buffer_data.data(), header_buffer_data.size());
             writePODBinary(HashValue(hash), out);
@@ -154,14 +153,12 @@ void MergeTreeDataPartDeletedMask::write(WriteBuffer & out) const
     }
     assert(HEADER_SIZE == out.count());
 
-    DataTypeUInt8 col_datatype;
-    auto codec = CompressionCodecFactory::instance().get(DEFAULT_CODEC, &col_datatype);
-
-    auto data_write_buffer = wrapWriteBufferWithCompressionMethod(
-                std::make_unique<CompressedWriteBuffer>(out, codec),
-            static_cast<CompressionMethod>(DEFAULT_COMPRESSION),
-            COMPRESSION_LEVEL);
+    const DataTypeUInt8 col_datatype;
+    auto codec = CompressionCodecFactory::instance().get(static_cast<UInt8>(DEFAULT_CODEC), &col_datatype);
+    auto data_write_buffer = std::make_unique<CompressedWriteBuffer>(out, codec);
 
     NativeWriter::writeData(col_datatype, deleted_rows, *data_write_buffer, 0, deleted_rows->size());
+    data_write_buffer->finalize();
 }
+
 }

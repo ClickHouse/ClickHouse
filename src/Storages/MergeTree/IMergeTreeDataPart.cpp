@@ -592,6 +592,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     loadIndex();     /// Must be called after loadIndexGranularity as it uses the value of `index_granularity`
     loadRowsCount(); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
     loadPartitionAndMinMaxIndex();
+    loadDeletedRowsMask();
     if (!parent_part)
     {
         loadTTLInfos();
@@ -822,6 +823,30 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
             "While loading part " + getFullPath() + ": calculated partition ID: " + calculated_partition_id
             + " differs from partition ID in part name: " + info.partition_id,
             ErrorCodes::CORRUPTED_DATA);
+}
+
+void IMergeTreeDataPart::loadDeletedRowsMask()
+{
+    auto disk = volume->getDisk();
+    const String filename = fs::path(getFullRelativePath()) / String(deleted_mask.name);
+    if (disk->isFile(filename))
+    {
+        auto read_buf = openForReading(disk, filename);
+        deleted_mask.read(*read_buf);
+        assertEOF(*read_buf);
+
+        if (deleted_mask.getDeletedRows().size() != rows_count)
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                    "Size of deleted mask loaded from '{}':'{}' doesn't match expected "
+                    "for path {}"
+                    "(loaded {} rows, expected {} rows).",
+                    disk->getName(), filename, name, deleted_mask.getDeletedRows().size(), rows_count);
+    }
+    else
+    {
+        // if there is no deleted mask, assume that no rows were previously deleted.
+        deleted_mask.setDeletedRows(rows_count, false);
+    }
 }
 
 void IMergeTreeDataPart::loadChecksums(bool require)
@@ -1558,6 +1583,20 @@ String IMergeTreeDataPart::getUniqueId() const
 
     String id = disk->getUniqueId(fs::path(getFullRelativePath()) / "checksums.txt");
     return id;
+}
+
+void IMergeTreeDataPart::setDeletedMaskData(MergeTreeDataPartDeletedMask::DeletedRows new_mask)
+{
+    const String final_path = fs::path(getFullRelativePath()) / deleted_mask.name;
+    const String tmp_path = final_path + ".tmp";
+
+    deleted_mask.setDeletedRows(new_mask);
+    {
+        auto out = volume->getDisk()->writeFile(tmp_path, 4096);
+        deleted_mask.write(*out);
+    }
+
+    volume->getDisk()->moveFile(tmp_path, final_path);
 }
 
 

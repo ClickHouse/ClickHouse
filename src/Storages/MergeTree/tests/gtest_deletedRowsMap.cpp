@@ -11,13 +11,7 @@ namespace DB
 {
 bool operator==(const MergeTreeDataPartDeletedMask & left, const MergeTreeDataPartDeletedMask & right)
 {
-    if (!!left.deleted_rows == !!right.deleted_rows)
-    {
-        if (!!left.deleted_rows)
-            return left.deleted_rows->getData() == right.deleted_rows->getData();
-        return true;
-    }
-    return false;
+    return left.getDeletedRows().getData() == right.getDeletedRows().getData();
 }
 
 }
@@ -55,7 +49,8 @@ MergeTreeDataPartDeletedMask generateDeletedRows(size_t size)
     }
 
     MergeTreeDataPartDeletedMask mask;
-    mask.deleted_rows = ColumnUInt8::Ptr(std::move(result));
+    mask.setDeletedRows(ColumnUInt8::Ptr(std::move(result)));
+
     return mask;
 }
 
@@ -67,7 +62,8 @@ MergeTreeDataPartDeletedMask generateDeletedRowsValues(size_t size)
     result_data.resize_fill(size, value);
 
     MergeTreeDataPartDeletedMask mask;
-    mask.deleted_rows = ColumnUInt8::Ptr(std::move(result));
+    mask.setDeletedRows(ColumnUInt8::Ptr(std::move(result)));
+
     return mask;
 }
 
@@ -92,7 +88,7 @@ TEST_P(DeletedRowsTest, SerializeAndDeserialize)
         write_buffer.finalize();
     }
 
-    std::cerr << "Input data size: " << mask.deleted_rows->size()
+    std::cerr << "Input data size: " << mask.getDeletedRows().size()
               << " serialized size: " << serialized_data.size() << std::endl;
     ASSERT_LT(0, serialized_data.size());
 //    DUMP("!!!!! ", *mask.deleted_rows, serialized_data.size(), serialized_data);
