@@ -1903,11 +1903,7 @@ class ClickHouseInstance:
             self, cluster, base_path, name, base_config_dir, custom_main_configs, custom_user_configs,
             custom_dictionaries,
             macros, with_zookeeper, zookeeper_config_path, with_mysql_client,  with_mysql, with_mysql8, with_mysql_cluster, with_kafka, with_kerberized_kafka,
-<<<<<<< HEAD
-            with_rabbitmq, with_nginx, with_kerberized_hdfs, with_mongo, with_redis, with_minio, with_jdbc_bridge,with_hive,
-=======
-            with_rabbitmq, with_nginx, with_kerberized_hdfs, with_mongo, with_redis, with_minio, with_azurite, with_jdbc_bridge,
->>>>>>> ck/master
+            with_rabbitmq, with_nginx, with_kerberized_hdfs, with_mongo, with_redis, with_minio, with_azurite, with_jdbc_bridge, with_hive
             with_cassandra, server_bin_path, odbc_bridge_bin_path, library_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers, with_postgres, with_postgres_cluster,
             clickhouse_start_command=CLICKHOUSE_START_COMMAND,
             main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True,
@@ -1955,6 +1951,7 @@ class ClickHouseInstance:
         self.with_azurite = with_azurite
         self.with_cassandra = with_cassandra
         self.with_jdbc_bridge = with_jdbc_bridge
+        self.with_hive = with_hive
 
         self.main_config_name = main_config_name
         self.users_config_name = users_config_name
