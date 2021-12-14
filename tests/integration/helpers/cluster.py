@@ -1101,10 +1101,8 @@ class ClickHouseCluster:
                 info = self.mysql_client_container.client.api.inspect_container(self.mysql_client_container.name)
                 if info['State']['Health']['Status'] == 'healthy':
                     logging.debug("Mysql Client Container Started")
-                    break
+                    return
                 time.sleep(1)
-
-                return
             except Exception as ex:
                 errors += [str(ex)]
                 time.sleep(1)
