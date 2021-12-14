@@ -1,3 +1,4 @@
+#pragma once
 #include "config_core.h"
 
 #if USE_MYSQL
