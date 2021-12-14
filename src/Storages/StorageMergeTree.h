@@ -168,9 +168,10 @@ private:
 
     /// Allocate block number for new mutation, write mutation to disk
     /// and into in-memory structures. Wake up merge-mutation task.
-    Int64 startMutation(const MutationCommands & commands, String & mutation_file_name);
+    Int64 startMutation(const MutationCommands & commands, ContextPtr query_context);
     /// Wait until mutation with version will finish mutation for all parts
-    void waitForMutation(Int64 version, const String & file_name);
+    void waitForMutation(Int64 version);
+    void waitForMutation(const String & mutation_id) override;
 
     friend struct CurrentlyMergingPartsTagger;
 

@@ -35,6 +35,8 @@ public:
     void addNewPart(const StoragePtr & storage, const DataPartPtr & new_part);
     void removeOldPart(const StoragePtr & storage, const DataPartPtr & part_to_remove);
 
+    void addMutation(const StoragePtr & table, const String & mutation_id);
+
     static void addNewPart(const StoragePtr & storage, const DataPartPtr & new_part, MergeTreeTransaction * txn);
     static void removeOldPart(const StoragePtr & storage, const DataPartPtr & part_to_remove, MergeTreeTransaction * txn);
     static void addNewPartAndRemoveCovered(const StoragePtr & storage, const DataPartPtr & new_part, const DataPartsVector & covered_parts, MergeTreeTransaction * txn);
@@ -46,9 +48,9 @@ public:
     String dumpDescription() const;
 
 private:
-    void beforeCommit() const;
+    void beforeCommit();
     void afterCommit(CSN assigned_csn) noexcept;
-    void rollback() noexcept;
+    bool rollback() noexcept;
 
     Snapshot snapshot;
 
@@ -56,10 +58,12 @@ private:
     DataPartsVector creating_parts;
     DataPartsVector removing_parts;
 
-    CSN csn;
+    std::atomic<CSN> csn;
 
     /// FIXME it's ugly
     std::list<Snapshot>::iterator snapshot_in_use_it;
+
+    std::vector<std::pair<StoragePtr, String>> mutations;
 };
 
 using MergeTreeTransactionPtr = std::shared_ptr<MergeTreeTransaction>;

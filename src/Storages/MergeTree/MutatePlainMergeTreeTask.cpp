@@ -1,7 +1,7 @@
 #include <Storages/MergeTree/MutatePlainMergeTreeTask.h>
 
 #include <Storages/StorageMergeTree.h>
-
+#include <Interpreters/TransactionLog.h>
 
 namespace DB
 {
@@ -85,7 +85,8 @@ bool MutatePlainMergeTreeTask::executeStep()
 
                 new_part = mutate_task->getFuture().get();
 
-                storage.renameTempPartAndReplace(new_part, nullptr);     //FIXME
+                /// FIXME Transaction: it's too optimistic, better to lock parts before starting transaction
+                storage.renameTempPartAndReplace(new_part, merge_mutate_entry->txn.get());
                 storage.updateMutationEntriesErrors(future_part, true, "");
                 write_part_log({});
 
@@ -94,6 +95,8 @@ bool MutatePlainMergeTreeTask::executeStep()
             }
             catch (...)
             {
+                if (merge_mutate_entry->txn)
+                    merge_mutate_entry->txn->onException();
                 storage.updateMutationEntriesErrors(future_part, false, getCurrentExceptionMessage(false));
                 write_part_log(ExecutionStatus::fromCurrentException());
                 return false;

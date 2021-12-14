@@ -521,9 +521,10 @@ public:
         Transaction * out_transaction = nullptr, MergeTreeDeduplicationLog * deduplication_log = nullptr);
 
     /// Low-level version of previous one, doesn't lock mutex
+    /// FIXME Transactions: remove add_to_txn flag, maybe merge MergeTreeTransaction and Transaction
     bool renameTempPartAndReplace(
             MutableDataPartPtr & part, MergeTreeTransaction * txn, SimpleIncrement * increment, Transaction * out_transaction, DataPartsLock & lock,
-            DataPartsVector * out_covered_parts = nullptr, MergeTreeDeduplicationLog * deduplication_log = nullptr);
+            DataPartsVector * out_covered_parts = nullptr, MergeTreeDeduplicationLog * deduplication_log = nullptr, bool add_to_txn = true);
 
 
     /// Remove parts from working set immediately (without wait for background

@@ -17,6 +17,17 @@ using Snapshot = CSN;
 using LocalTID = UInt64;
 using TIDHash = UInt64;
 
+namespace Tx
+{
+    const CSN UnknownCSN = 0;
+    const CSN PrehistoricCSN = 1;
+    const CSN CommittingCSN = 2; /// TODO do we really need it?
+    const CSN MaxReservedCSN = 16;
+
+    const LocalTID PrehistoricLocalTID = 1;
+    const LocalTID MaxReservedLocalTID = 16;
+}
+
 struct TransactionID
 {
     CSN start_csn = 0;
@@ -33,31 +44,28 @@ struct TransactionID
         return !(*this == rhs);
     }
 
-    operator bool() const
+    TIDHash getHash() const;
+
+    bool isEmpty() const
     {
-        assert(local_tid || (start_csn == 0 && host_id == UUIDHelpers::Nil));
-        return local_tid;
+        assert((local_tid == 0) == (start_csn == 0 && host_id == UUIDHelpers::Nil));
+        return local_tid == 0;
     }
 
-    TIDHash getHash() const;
+    bool isPrehistoric() const
+    {
+        assert((local_tid == Tx::PrehistoricLocalTID) == (start_csn == Tx::PrehistoricCSN));
+        return local_tid == Tx::PrehistoricLocalTID;
+    }
 };
 
 namespace Tx
 {
+    const TransactionID EmptyTID = {0, 0, UUIDHelpers::Nil};
+    const TransactionID PrehistoricTID = {PrehistoricCSN, PrehistoricLocalTID, UUIDHelpers::Nil};
 
-const CSN UnknownCSN = 0;
-const CSN PrehistoricCSN = 1;
-const CSN MaxReservedCSN = 16;
-
-const LocalTID PrehistoricLocalTID = 1;
-const LocalTID MaxReservedLocalTID = 16;
-
-const TransactionID EmptyTID = {0, 0, UUIDHelpers::Nil};
-const TransactionID PrehistoricTID = {PrehistoricCSN, PrehistoricLocalTID, UUIDHelpers::Nil};
-
-/// So far, that changes will never become visible
-const CSN RolledBackCSN = std::numeric_limits<CSN>::max();
-
+    /// So far, that changes will never become visible
+    const CSN RolledBackCSN = std::numeric_limits<CSN>::max();
 }
 
 }
