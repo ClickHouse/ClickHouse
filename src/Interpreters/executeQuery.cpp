@@ -599,7 +599,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             return std::make_tuple(ast, std::move(io));
         }
 
-        auto interpreter = InterpreterFactory::get(ast, context, SelectQueryOptions(stage).setInternal(internal));
+        auto query_options = SelectQueryOptions(stage).setInternal(internal);
+        if (settings.allow_experimental_exclude_deleted_rows_from_result)
+        {
+            query_options.exclude_deleted_rows = true;
+        }
+        auto interpreter = InterpreterFactory::get(ast, context, query_options);
 
         std::shared_ptr<const EnabledQuota> quota;
         if (!interpreter->ignoreQuota())

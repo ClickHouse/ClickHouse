@@ -287,6 +287,25 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         source_header = input_pipe->getHeader();
     }
 
+    ASTSelectQuery & query = getSelectQuery();
+    if (options.exclude_deleted_rows)
+    {
+        ASTPtr exclude_deleted_rows_expression = makeASTFunction("equals",
+                std::make_shared<ASTIdentifier>("_is_deleted"),
+                std::make_shared<ASTLiteral>(0));
+        if (query.where())
+        {
+            /// Filter block in WHERE instead to get better performance
+            query.setExpression(
+                ASTSelectQuery::Expression::WHERE,
+                makeASTFunction("and", std::move(exclude_deleted_rows_expression), query.where()->clone()));
+        }
+        else
+        {
+            query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(exclude_deleted_rows_expression));
+        }
+    }
+
     // Only propagate WITH elements to subqueries if we're not a subquery
     if (!options.is_subquery)
     {
@@ -343,7 +362,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     joined_tables.rewriteDistributedInAndJoins(query_ptr);
 
     max_streams = settings.max_threads;
-    ASTSelectQuery & query = getSelectQuery();
     std::shared_ptr<TableJoin> table_join = joined_tables.makeTableJoin(query);
 
     if (storage)
