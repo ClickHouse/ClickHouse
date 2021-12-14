@@ -25,7 +25,7 @@
     </substitutions>
 
     <create_query>CREATE TABLE `zz_{type}_{engine}` (x {type}) ENGINE {engine}</create_query>
-    <fill_query>INSERT INTO `zz_{type}_{engine}` SELECT rand() FROM numbers_mt(1000000000) SETTINGS max_insert_threads = 8</fill_query>
+    <fill_query>INSERT INTO `zz_{type}_{engine}` SELECT rand() FROM numbers_mt(300000000) SETTINGS max_insert_threads = 8</fill_query>
     <fill_query>OPTIMIZE TABLE `zz_{type}_MergeTree ORDER BY tuple()` FINAL</fill_query>
 
     <query>SELECT sum(x) FROM `zz_{type}_{engine}`</query>
