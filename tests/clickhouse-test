@@ -1343,6 +1343,7 @@ if __name__ == '__main__':
     parser.add_argument('--client-option', nargs='+', help='Specify additional client argument')
     parser.add_argument('--print-time', action='store_true', dest='print_time', help='Print test time')
     parser.add_argument('--check-zookeeper-session', action='store_true', help='Check ZooKeeper session uptime to determine if failed test should be retried')
+    parser.add_argument('--use-skip-list', action='store_true', default=False, help="This argument does nothing and needed for compatibility")
 
     parser.add_argument('--run-by-hash-num', type=int, help='Run tests matching crc32(test_name) % run_by_hash_total == run_by_hash_num')
     parser.add_argument('--run-by-hash-total', type=int, help='Total test groups for crc32(test_name) % run_by_hash_total == run_by_hash_num')
