@@ -1,0 +1,5 @@
+Server was built in debug mode. It will work slowly.
+0
+Some obsolete setting is changed. Check \'select * from system.settings where changed\' and read the changelog.
+1
+1

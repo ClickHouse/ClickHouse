@@ -1,9 +1,6 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#endif
-
 #include <IO/ReadBufferFromFile.h>
 #include <IO/AsynchronousReader.h>
 #include <utility>
@@ -76,7 +73,7 @@ private:
 
     size_t bytes_to_ignore = 0;
 
-    std::optional<size_t> read_until_position = 0;
+    std::optional<size_t> read_until_position;
 
     bool must_read_until_position;
 };

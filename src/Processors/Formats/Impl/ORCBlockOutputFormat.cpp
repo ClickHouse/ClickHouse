@@ -495,7 +495,7 @@ void ORCBlockOutputFormat::consume(Chunk chunk)
     writer->add(*batch);
 }
 
-void ORCBlockOutputFormat::finalize()
+void ORCBlockOutputFormat::finalizeImpl()
 {
     if (!writer)
         prepareWriter();

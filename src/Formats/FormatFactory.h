@@ -68,13 +68,11 @@ public:
         size_t row)>;
 
 private:
-    using InputCreatorFunc = InputFormatPtr(
-        ReadBuffer & buf,
-        const Block & header,
-        const RowInputFormatParams & params,
-        const FormatSettings & settings);
-
-    using InputCreator = std::function<InputCreatorFunc>;
+    using InputCreator = std::function<InputFormatPtr(
+            ReadBuffer & buf,
+            const Block & header,
+            const RowInputFormatParams & params,
+            const FormatSettings & settings)>;
 
     using OutputCreator = std::function<OutputFormatPtr(
             WriteBuffer & buf,
@@ -133,6 +131,11 @@ public:
         const Block & sample,
         ContextPtr context,
         WriteCallback callback = {},
+        const std::optional<FormatSettings> & _format_settings = std::nullopt) const;
+
+    String getContentType(
+        const String & name,
+        ContextPtr context,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     void registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine);

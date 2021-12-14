@@ -3,6 +3,7 @@
 #include <Poco/Net/TCPServerConnection.h>
 
 #include <base/getFQDNOrHostName.h>
+#include "Common/ProfileEvents.h"
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
 #include <Core/Protocol.h>
@@ -14,7 +15,10 @@
 #include <Interpreters/Context_fwd.h>
 #include <Formats/NativeReader.h>
 
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+
 #include "IServer.h"
+#include "base/types.h"
 
 
 namespace CurrentMetrics
@@ -182,6 +186,10 @@ private:
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::TCPConnection};
 
+    using ThreadIdToCountersSnapshot = std::unordered_map<UInt64, ProfileEvents::Counters::Snapshot>;
+
+    ThreadIdToCountersSnapshot last_sent_snapshots;
+
     /// It is the name of the server that will be sent to the client.
     String server_display_name;
 
@@ -195,6 +203,7 @@ private:
     void receiveQuery();
     void receiveIgnoredPartUUIDs();
     String receiveReadTaskResponseAssumeLocked();
+    std::optional<PartitionReadResponse> receivePartitionMergeTreeReadTaskResponseAssumeLocked();
     bool receiveData(bool scalar);
     bool readDataNext();
     void readData();
@@ -227,6 +236,7 @@ private:
     void sendEndOfStream();
     void sendPartUUIDs();
     void sendReadTaskRequestAssumeLocked();
+    void sendMergeTreeReadTaskRequstAssumeLocked(PartitionReadRequest request);
     void sendProfileInfo(const ProfileInfo & info);
     void sendTotals(const Block & totals);
     void sendExtremes(const Block & extremes);

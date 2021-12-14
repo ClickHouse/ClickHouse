@@ -1,4 +1,5 @@
 #include <Coordination/KeeperStateManager.h>
+
 #include <Coordination/Defines.h>
 #include <Common/Exception.h>
 #include <filesystem>
@@ -11,33 +12,17 @@ namespace ErrorCodes
     extern const int RAFT_ERROR;
 }
 
-namespace
-{
-    std::string getLogsPathFromConfig(
-        const std::string & config_prefix, const Poco::Util::AbstractConfiguration & config, bool standalone_keeper)
-{
-    /// the most specialized path
-    if (config.has(config_prefix + ".log_storage_path"))
-        return config.getString(config_prefix + ".log_storage_path");
-
-    if (config.has(config_prefix + ".storage_path"))
-        return std::filesystem::path{config.getString(config_prefix + ".storage_path")} / "logs";
-
-    if (standalone_keeper)
-        return std::filesystem::path{config.getString("path", KEEPER_DEFAULT_PATH)} / "logs";
-    else
-        return std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination/logs";
-}
-
-}
-
-
-KeeperConfigurationWrapper KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us) const
+KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us) const
 {
     KeeperConfigurationWrapper result;
     result.cluster_config = std::make_shared<nuraft::cluster_config>();
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix + ".raft_configuration", keys);
+
+    /// Sometimes (especially in cloud envs) users can provide incorrect
+    /// configuration with duplicated raft ids or endpoints. We check them
+    /// on config parsing stage and never commit to quorum.
+    std::unordered_map<std::string, int> check_duplicated_hostnames;
 
     size_t total_servers = 0;
     for (const auto & server_key : keys)
@@ -57,6 +42,24 @@ KeeperConfigurationWrapper KeeperStateManager::parseServersConfiguration(const P
             result.servers_start_as_followers.insert(new_server_id);
 
         auto endpoint = hostname + ":" + std::to_string(port);
+        if (check_duplicated_hostnames.count(endpoint))
+        {
+            throw Exception(ErrorCodes::RAFT_ERROR, "Raft config contain duplicate endpoints: "
+                            "endpoint {} has been already added with id {}, but going to add it one more time with id {}",
+                            endpoint, check_duplicated_hostnames[endpoint], new_server_id);
+        }
+        else
+        {
+            /// Fullscan to check duplicated ids
+            for (const auto & [id_endpoint, id] : check_duplicated_hostnames)
+            {
+                if (new_server_id == id)
+                    throw Exception(ErrorCodes::RAFT_ERROR, "Raft config contain duplicate ids: id {} has been already added with endpoint {}, "
+                                    "but going to add it one more time with endpoint {}", id, id_endpoint, endpoint);
+            }
+            check_duplicated_hostnames.emplace(endpoint, new_server_id);
+        }
+
         auto peer_config = nuraft::cs_new<nuraft::srv_config>(new_server_id, 0, endpoint, "", !can_become_leader, priority);
         if (my_server_id == new_server_id)
         {
@@ -78,9 +81,9 @@ KeeperConfigurationWrapper KeeperStateManager::parseServersConfiguration(const P
 }
 
 KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host, int port, const std::string & logs_path)
-    : my_server_id(server_id_)
-    , secure(false)
-    , log_store(nuraft::cs_new<KeeperLogStore>(logs_path, 5000, false, false))
+: my_server_id(server_id_)
+, secure(false)
+, log_store(nuraft::cs_new<KeeperLogStore>(logs_path, 5000, false, false))
 {
     auto peer_config = nuraft::cs_new<nuraft::srv_config>(my_server_id, host + ":" + std::to_string(port));
     configuration_wrapper.cluster_config = nuraft::cs_new<nuraft::cluster_config>();
@@ -90,18 +93,20 @@ KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host,
 }
 
 KeeperStateManager::KeeperStateManager(
-    int server_id_,
+    int my_server_id_,
     const std::string & config_prefix_,
+    const std::string & log_storage_path,
     const Poco::Util::AbstractConfiguration & config,
-    const CoordinationSettingsPtr & coordination_settings,
-    bool standalone_keeper)
-    : my_server_id(server_id_)
+    const CoordinationSettingsPtr & coordination_settings)
+    : my_server_id(my_server_id_)
     , secure(config.getBool(config_prefix_ + ".raft_configuration.secure", false))
     , config_prefix(config_prefix_)
     , configuration_wrapper(parseServersConfiguration(config, false))
     , log_store(nuraft::cs_new<KeeperLogStore>(
-                    getLogsPathFromConfig(config_prefix_, config, standalone_keeper),
-                    coordination_settings->rotate_log_storage_interval, coordination_settings->force_sync, coordination_settings->compress_logs))
+                    log_storage_path,
+                    coordination_settings->rotate_log_storage_interval,
+                    coordination_settings->force_sync,
+                    coordination_settings->compress_logs))
 {
 }
 

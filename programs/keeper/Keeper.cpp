@@ -20,11 +20,10 @@
 #include <Poco/Environment.h>
 #include <sys/stat.h>
 #include <pwd.h>
+#include <Coordination/FourLetterCommand.h>
 
-#if !defined(ARCADIA_BUILD)
-#   include "config_core.h"
-#   include "Common/config_version.h"
-#endif
+#include "config_core.h"
+#include "Common/config_version.h"
 
 #if USE_SSL
 #    include <Poco/Net/Context.h>
@@ -334,7 +333,11 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
 
-    GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 100));
+    GlobalThreadPool::initialize(
+        config().getUInt("max_thread_pool_size", 100),
+        config().getUInt("max_thread_pool_free_size", 1000),
+        config().getUInt("thread_pool_queue_size", 10000)
+    );
 
     static ServerErrorHandler error_handler;
     Poco::ErrorHandler::set(&error_handler);
@@ -363,6 +366,8 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 
     /// Initialize keeper RAFT. Do nothing if no keeper_server in config.
     global_context->initializeKeeperDispatcher(/* start_async = */false);
+    FourLetterCommandFactory::registerCommands(*global_context->getKeeperDispatcher());
+
     for (const auto & listen_host : listen_hosts)
     {
         /// TCP Keeper
