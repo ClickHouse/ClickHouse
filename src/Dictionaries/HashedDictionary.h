@@ -4,8 +4,7 @@
 #include <memory>
 #include <variant>
 #include <optional>
-
-#include <Common/SparseHashMap.h>
+#include <sparsehash/sparse_hash_map>
 
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
@@ -124,7 +123,7 @@ private:
         HashMap<UInt64, Value>,
         HashMapWithSavedHash<StringRef, Value, DefaultHash<StringRef>>>;
 
-    /// Here we use SparseHashMap with DefaultHash<> for the following reasons:
+    /// Here we use sparse_hash_map with DefaultHash<> for the following reasons:
     ///
     /// - DefaultHash<> is used for HashMap
     /// - DefaultHash<> (from HashTable/Hash.h> works better then std::hash<>
@@ -138,8 +137,8 @@ private:
     template <typename Value>
     using CollectionTypeSparse = std::conditional_t<
         dictionary_key_type == DictionaryKeyType::Simple,
-        SparseHashMap<UInt64, Value, DefaultHash<KeyType>>,
-        SparseHashMap<StringRef, Value, DefaultHash<KeyType>>>;
+        google::sparse_hash_map<UInt64, Value, DefaultHash<KeyType>>,
+        google::sparse_hash_map<StringRef, Value, DefaultHash<KeyType>>>;
 
     template <typename Value>
     using CollectionType = std::conditional_t<sparse, CollectionTypeSparse<Value>, CollectionTypeNonSparse<Value>>;
