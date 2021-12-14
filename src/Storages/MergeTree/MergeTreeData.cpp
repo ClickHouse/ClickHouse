@@ -782,13 +782,12 @@ DataTypePtr MergeTreeData::getPartitionValueType() const
 
 Block MergeTreeData::getSampleBlockWithVirtualColumns() const
 {
-    const auto virtual_columns = getVirtuals();
-    Block result;
-    for (const auto & column : virtual_columns)
-    {
-        result.insert(ColumnWithTypeAndName(column.type->createColumn(), column.type, column.name));
-    }
-    return result;
+    DataTypePtr partition_value_type = getPartitionValueType();
+    return {
+        ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "_part"),
+        ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "_partition_id"),
+        ColumnWithTypeAndName(ColumnUUID::create(), std::make_shared<DataTypeUUID>(), "_part_uuid"),
+        ColumnWithTypeAndName(partition_value_type->createColumn(), partition_value_type, "_partition_value")};
 }
 
 
@@ -800,8 +799,8 @@ Block MergeTreeData::getBlockWithVirtualPartColumns(const MergeTreeData::DataPar
     // See getVirtuals() for the order of columns
     auto & part_column = columns[0];
     auto & part_uuid_column = columns[2];
-    auto & partition_id_column = columns[3];
-    auto & partition_value_column = columns[4];
+    auto & partition_id_column = columns[1];
+    auto & partition_value_column = columns[3];
 
     bool has_partition_value = typeid_cast<const ColumnTuple *>(partition_value_column.get());
     for (const auto & part_or_projection : parts)
