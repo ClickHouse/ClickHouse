@@ -254,16 +254,24 @@ ColumnDependencies StorageInMemoryMetadata::getColumnDependencies(const NameSet 
     for (const auto & projection : getProjections())
         add_dependent_columns(&projection, projections_columns);
 
-    if (hasRowsTTL())
+    auto add_for_rows_ttl = [&](const auto & expression, auto & to_set)
     {
-        auto rows_expression = getRowsTTL().expression;
-        if (add_dependent_columns(rows_expression, required_ttl_columns) && include_ttl_target)
+        if (add_dependent_columns(expression, to_set) && include_ttl_target)
         {
             /// Filter all columns, if rows TTL expression have to be recalculated.
             for (const auto & column : getColumns().getAllPhysical())
                 updated_ttl_columns.insert(column.name);
         }
-    }
+    };
+
+    if (hasRowsTTL())
+        add_for_rows_ttl(getRowsTTL().expression, required_ttl_columns);
+
+    for (const auto & entry : getRowsWhereTTLs())
+        add_for_rows_ttl(entry.expression, required_ttl_columns);
+
+    for (const auto & entry : getGroupByTTLs())
+        add_for_rows_ttl(entry.expression, required_ttl_columns);
 
     for (const auto & entry : getRecompressionTTLs())
         add_dependent_columns(entry.expression, required_ttl_columns);
