@@ -381,13 +381,6 @@ BlockIO InterpreterInsertQuery::execute()
 
     BlockIO res;
 
-    res.pipeline.addStorageHolder(table);
-    if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
-    {
-        if (auto inner_table = mv->tryGetTargetTable())
-            res.pipeline.addStorageHolder(inner_table);
-    }
-
     /// What type of query: INSERT or INSERT SELECT or INSERT WATCH?
     if (is_distributed_insert_select)
     {
@@ -451,6 +444,13 @@ BlockIO InterpreterInsertQuery::execute()
             auto pipe = getSourceFromASTInsertQuery(query_ptr, true, query_sample_block, getContext(), nullptr);
             res.pipeline.complete(std::move(pipe));
         }
+    }
+
+    res.pipeline.addStorageHolder(table);
+    if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
+    {
+        if (auto inner_table = mv->tryGetTargetTable())
+            res.pipeline.addStorageHolder(inner_table);
     }
 
     return res;

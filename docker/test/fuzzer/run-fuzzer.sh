@@ -1,5 +1,5 @@
 #!/bin/bash
-# shellcheck disable=SC2086,SC2001,SC2046
+# shellcheck disable=SC2086,SC2001,SC2046,SC2030,SC2031
 
 set -eux
 set -o pipefail
@@ -35,7 +35,7 @@ function clone
             fi
             git diff --name-only master HEAD | tee ci-changed-files.txt
         else
-            if [ -v COMMIT_SHA ]; then
+            if [ -v SHA_TO_TEST ]; then
                 git fetch --depth 2 origin "$SHA_TO_TEST"
                 git checkout "$SHA_TO_TEST"
                 echo "Checked out nominal SHA $SHA_TO_TEST for master"
@@ -165,7 +165,7 @@ thread apply all backtrace
 continue
 " > script.gdb
 
-    gdb -batch -command script.gdb -p $server_pid &
+    sudo gdb -batch -command script.gdb -p $server_pid &
 
     # Check connectivity after we attach gdb, because it might cause the server
     # to freeze and the fuzzer will fail.
@@ -189,6 +189,7 @@ continue
         --receive_data_timeout_ms=10000 \
         --stacktrace \
         --query-fuzzer-runs=1000 \
+        --testmode \
         --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) \
         $NEW_TESTS_OPT \
         > >(tail -n 100000 > fuzzer.log) \

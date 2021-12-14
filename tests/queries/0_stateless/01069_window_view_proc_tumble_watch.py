@@ -32,7 +32,7 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
 
     client1.send('CREATE TABLE 01069_window_view_proc_tumble_watch.mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple()')
     client1.expect(prompt)
-    client1.send("CREATE WINDOW VIEW 01069_window_view_proc_tumble_watch.wv AS SELECT count(a) AS count FROM 01069_window_view_proc_tumble_watch.mt GROUP BY TUMBLE(timestamp, INTERVAL '1' SECOND, 'US/Samoa') AS wid;")
+    client1.send("CREATE WINDOW VIEW 01069_window_view_proc_tumble_watch.wv AS SELECT count(a) AS count FROM 01069_window_view_proc_tumble_watch.mt GROUP BY tumble(timestamp, INTERVAL '1' SECOND, 'US/Samoa') AS wid;")
     client1.expect(prompt)
 
     client1.send('WATCH 01069_window_view_proc_tumble_watch.wv')
