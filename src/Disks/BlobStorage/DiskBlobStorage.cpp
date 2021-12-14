@@ -7,6 +7,7 @@
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
+#include <Common/getRandomASCIIString.h>
 
 
 namespace DB
@@ -93,7 +94,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskBlobStorage::writeFile(
     WriteMode mode)
 {
     auto metadata = readOrCreateMetaForWriting(path, mode);
-    auto blob_path = path + "_" + getRandomName(8); /// NOTE: path contains the tmp_* prefix in the blob name
+    auto blob_path = path + "_" + getRandomASCIIString(8); /// NOTE: path contains the tmp_* prefix in the blob name
 
     LOG_TRACE(log, "{} to file by path: {}. Blob Storage path: {}",
         mode == WriteMode::Rewrite ? "Write" : "Append", backQuote(metadata_disk->getPath() + path), blob_path);

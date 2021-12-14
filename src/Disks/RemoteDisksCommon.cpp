@@ -1,4 +1,5 @@
 #include <Disks/RemoteDisksCommon.h>
+#include <Common/getRandomASCIIString.h>
 
 namespace DB
 {
@@ -7,17 +8,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
-
-
-String getRandomName(size_t len, char first, char last)
-{
-    std::uniform_int_distribution<int> distribution(first, last);
-    String res(len, ' ');
-    for (auto & c : res)
-        c = distribution(thread_local_rng);
-    return res;
-}
-
 
 std::shared_ptr<DiskCacheWrapper> wrapWithCache(
     std::shared_ptr<IDisk> disk, String cache_name, String cache_path, String metadata_path)
