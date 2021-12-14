@@ -121,6 +121,9 @@ if __name__ == "__main__":
         build_logs += build_logs_url
 
     logging.info("Totally got %s results", len(build_results))
+    if len(build_results) == 0:
+        logging.info("No builds, failing check")
+        sys.exit(1)
 
     s3_helper = S3Helper('https://s3.amazonaws.com')
 
