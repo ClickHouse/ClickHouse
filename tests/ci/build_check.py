@@ -189,6 +189,10 @@ if __name__ == "__main__":
         logging.info("cache was not fetched, will create empty dir")
         os.makedirs(ccache_path)
 
+    if build_config['package_type'] == "performance":
+        # because perf tests store some information about git commits
+        subprocess.check_call(f"cd {repo_path} && git fetch origin master:master", shell=True)
+
     packager_cmd = get_packager_cmd(build_config, os.path.join(repo_path, "docker/packager"), build_output_path, version.get_version_string(), image_version, ccache_path, pr_info)
     logging.info("Going to run packager with %s", packager_cmd)
 
