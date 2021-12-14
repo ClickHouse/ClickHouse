@@ -1525,6 +1525,24 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
     }
 }
 
+void MergeTreeData::flushAllInMemoryPartsIfNeeded()
+{
+    if(getSettings()->in_memory_parts_enable_wal)
+        return ;
+
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    DataPartsVector parts = getDataPartsVector();
+    for (const auto & part : parts)
+    {
+        if (auto part_in_memory = asInMemoryPart(part))
+        {
+            const auto & storage_relative_path = part_in_memory->storage.relative_data_path;
+            part_in_memory->flushToDisk(storage_relative_path, part_in_memory->relative_path, metadata_snapshot);
+        }
+    }
+
+}
+
 size_t MergeTreeData::clearOldPartsFromFilesystem(bool force)
 {
     DataPartsVector parts_to_remove = grabOldParts(force);
