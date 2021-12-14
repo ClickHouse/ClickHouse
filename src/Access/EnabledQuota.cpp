@@ -65,9 +65,7 @@ struct EnabledQuota::Impl
             end = end + duration * n;
             if (end_of_interval.compare_exchange_strong(end_loaded, end.time_since_epoch()))
             {
-                /// We reset counters only if the interval's end has been calculated before.
-                /// If it hasn't we just calculate the interval's end for the first time and don't reset counters yet.
-                need_reset_counters = (end_loaded.count() != 0);
+                need_reset_counters = true;
                 break;
             }
             end = std::chrono::system_clock::time_point{end_loaded};
@@ -93,11 +91,20 @@ struct EnabledQuota::Impl
     {
         for (const auto & interval : intervals.intervals)
         {
+            if (!interval.end_of_interval.load().count())
+            {
+                /// We need to calculate end of the interval if it hasn't been calculated before.
+                bool dummy;
+                getEndOfInterval(interval, current_time, dummy);
+            }
+
             auto quota_type_i = static_cast<size_t>(quota_type);
             QuotaValue used = (interval.used[quota_type_i] += value);
             QuotaValue max = interval.max[quota_type_i];
+
             if (!max)
                 continue;
+
             if (used > max)
             {
                 bool counters_were_reset = false;
@@ -123,10 +130,19 @@ struct EnabledQuota::Impl
         auto quota_type_i = static_cast<size_t>(quota_type);
         for (const auto & interval : intervals.intervals)
         {
+            if (!interval.end_of_interval.load().count())
+            {
+                /// We need to calculate end of the interval if it hasn't been calculated before.
+                bool dummy;
+                getEndOfInterval(interval, current_time, dummy);
+            }
+
             QuotaValue used = interval.used[quota_type_i];
             QuotaValue max = interval.max[quota_type_i];
+
             if (!max)
                 continue;
+
             if (used > max)
             {
                 bool counters_were_reset = false;
