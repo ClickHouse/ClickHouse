@@ -1117,7 +1117,11 @@ if __name__ == '__main__':
     parser.add_argument('--no-long', action='store_false', dest='no_long', help='Do not run long tests')
     parser.add_argument('--client-option', nargs='+', help='Specify additional client argument')
     parser.add_argument('--print-time', action='store_true', dest='print_time', help='Print test time')
-    group=parser.add_mutually_exclusive_group(required=False)
+
+    parser.add_argument('--run-by-hash-num', type=int, help='Run tests matching crc32(test_name) % run_by_hash_total == run_by_hash_num')
+    parser.add_argument('--run-by-hash-total', type=int, help='Total test groups for crc32(test_name) % run_by_hash_total == run_by_hash_num')
+
+    group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument('--zookeeper', action='store_true', default=None, dest='zookeeper', help='Run zookeeper related tests')
     group.add_argument('--no-zookeeper', action='store_false', default=None, dest='zookeeper', help='Do not run zookeeper related tests')
     group=parser.add_mutually_exclusive_group(required=False)
