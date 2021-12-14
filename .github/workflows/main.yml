@@ -75,7 +75,7 @@ jobs:
           sudo rm -fr $TEMP_PATH
   PerformanceComparison0:
     needs: [BuilderPerformance]
-    runs-on: [self-hosted, perf-tester]
+    runs-on: [self-hosted, stress-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -105,7 +105,7 @@ jobs:
           sudo rm -fr $TEMP_PATH
   PerformanceComparison1:
     needs: [BuilderPerformance]
-    runs-on: [self-hosted, perf-tester]
+    runs-on: [self-hosted, stress-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -135,7 +135,7 @@ jobs:
           sudo rm -fr $TEMP_PATH
   PerformanceComparison2:
     needs: [BuilderPerformance]
-    runs-on: [self-hosted, perf-tester]
+    runs-on: [self-hosted, stress-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -165,7 +165,7 @@ jobs:
           sudo rm -fr $TEMP_PATH
   PerformanceComparison3:
     needs: [BuilderPerformance]
-    runs-on: [self-hosted, perf-tester]
+    runs-on: [self-hosted, stress-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
