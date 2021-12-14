@@ -5,7 +5,9 @@
 #include <iostream>
 #include "testConfig.h"
 #include <fstream>
+#include <Parser/SparkColumnToCHColumn.h>
 #include <Parser/CHColumnToSparkRow.h>
+
 
 TEST(TestSelect, ReadRel)
 {
@@ -39,6 +41,9 @@ TEST(TestSelect, ReadRel)
         std::cout << "fetch batch" << std::endl;
         local_engine::SparkRowInfoPtr spark_row_info = local_executor.next();
         ASSERT_GT(spark_row_info->getNumRows(), 0);
+        local_engine::SparkColumnToCHColumn converter;
+        auto block = converter.convertCHColumnToSparkRow(*spark_row_info, local_executor.getHeader());
+        ASSERT_GT(spark_row_info->getNumRows(), block->rows());
     }
 }
 

@@ -92,6 +92,8 @@ public:
         }
     }
 
+    Block & getHeader() const;
+
 private:
     std::unique_ptr<local_engine::SparkRowInfo> writeBlockToSparkRow(DB::Block & block);
     QueryPipelinePtr query_pipeline;

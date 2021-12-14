@@ -6,13 +6,18 @@
 namespace local_engine
 {
 
+int64_t calculateBitSetWidthInBytes(int32_t num_fields);
+
 class CHColumnToSparkRow;
+class SparkColumnToCHColumn;
 
 class SparkRowInfo
 {
     friend CHColumnToSparkRow;
+    friend SparkColumnToCHColumn;
+
 public:
-    SparkRowInfo(DB::Block& block);
+    SparkRowInfo(DB::Block & block);
     int64_t getNullBitsetWidthInBytes() const;
     void setNullBitsetWidthInBytes(int64_t nullBitsetWidthInBytes);
     int64_t getNumCols() const;
@@ -45,4 +50,3 @@ public:
     void freeMem(uint8_t * address, size_t size);
 };
 }
-
