@@ -50,13 +50,6 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
-#include <Processors/QueryPlan/AggregatingStep.h>
-#include <Processors/QueryPlan/CreatingSetsStep.h>
-#include <Processors/QueryPlan/TotalsHavingStep.h>
-#include <Processors/QueryPlan/RollupStep.h>
-#include <Processors/QueryPlan/CubeStep.h>
-#include <Processors/QueryPlan/FillingStep.h>
-#include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
