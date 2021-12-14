@@ -39,7 +39,6 @@ void registerInputFormatHiveText(FormatFactory & factory)
         {
             FormatSettings settings_copy = settings;
             settings_copy.csv.delimiter = settings_copy.hive_text.fields_delimiter;
-            settings_copy.csv.read_bool_as_uint8 = settings_copy.hive_text.read_bool_as_uint8;
             return std::make_shared<HiveTextRowInputFormat>(sample, buf, params, settings_copy);
         });
 }

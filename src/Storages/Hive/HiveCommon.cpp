@@ -13,9 +13,35 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-std::shared_ptr<HiveMetastoreClient::HiveTableMetadata> HiveMetastoreClient::getTableMetadata(const std::string & db_name, const std::string & table_name)
+bool HiveMetastoreClient::shouldUpdateTableMetadata(
+    const String & db_name, const String & table_name, const std::vector<Apache::Hadoop::Hive::Partition> & partitions)
 {
-    LOG_TRACE(log, "get table meta:" + db_name + ":" + table_name);
+    String cache_key = getCacheKey(db_name, table_name);
+    std::shared_ptr<HiveMetastoreClient::HiveTableMetadata> metadata = table_metadata_cache.get(cache_key);
+    if (!metadata)
+        return true;
+
+    auto old_partiton_infos = metadata->getPartitionInfos();
+    if (old_partiton_infos.size() != partitions.size())
+        return true;
+
+    for (const auto & partition : partitions)
+    {
+        auto it = old_partiton_infos.find(partition.sd.location);
+        if (it == old_partiton_infos.end())
+            return true;
+
+        const auto & old_partition_info = it->second;
+        if (!old_partition_info.haveSameParameters(partition))
+            return true;
+    }
+    return false;
+}
+
+std::shared_ptr<HiveMetastoreClient::HiveTableMetadata>
+HiveMetastoreClient::getTableMetadata(const String & db_name, const String & table_name)
+{
+    LOG_TRACE(log, "Get table metadata for {}.{}", db_name, table_name);
     std::lock_guard lock{mutex};
 
     auto table = std::make_shared<Apache::Hadoop::Hive::Table>();
@@ -24,71 +50,66 @@ std::shared_ptr<HiveMetastoreClient::HiveTableMetadata> HiveMetastoreClient::get
     {
         client->get_table(*table, db_name, table_name);
 
-        /**
-          * query the latest partition info to check new change
-          */
+        /// Query the latest partition info to check new change.
         client->get_partitions(partitions, db_name, table_name, -1);
     }
     catch (apache::thrift::transport::TTransportException & e)
     {
         setExpired();
-        throw Exception("Hive Metastore expired because " + String(e.what()), ErrorCodes::NO_HIVEMETASTORE);
+        throw Exception(ErrorCodes::NO_HIVEMETASTORE, "Hive Metastore expired because {}", String(e.what()));
     }
 
-    std::string cache_key = db_name + "." + table_name;
-    std::shared_ptr<HiveMetastoreClient::HiveTableMetadata> result = table_meta_cache.get(cache_key);
-    bool update_cache = false;
-    std::map<std::string, PartitionInfo> old_partition_infos;
-    std::map<std::string, PartitionInfo> new_partition_infos;
-    if (result)
-    {
-        old_partition_infos = result->getPartitionInfos();
-        if (old_partition_infos.size() != partitions.size())
-            update_cache = true;
-    }
-    else
-    {
-        update_cache = true;
-    }
+    bool update_cache = shouldUpdateTableMetadata(db_name, table_name, partitions);
+    String cache_key = db_name + "." + table_name;
 
-    for (const auto & partition : partitions)
-    {
-        auto & partition_info = new_partition_infos[partition.sd.location];
-        partition_info.partition = partition;
-
-        // query files under the partition by hdfs api is costly, we reuse the files in case the partition has no change
-        if (result)
-        {
-            auto it = old_partition_infos.find(partition.sd.location);
-            if (it != old_partition_infos.end() && it->second.equal(partition))
-                partition_info.files = it->second.files;
-            else
-                update_cache = true;
-        }
-    }
-
-    /**
-     * FIXME: force to update.
-     * we have found some cases under which the partition's meta don't update if the table changed
-     */
-    //invalid_meta = true;
+    std::shared_ptr<HiveMetastoreClient::HiveTableMetadata> metadata = table_metadata_cache.get(cache_key);
 
     if (update_cache)
     {
-        LOG_INFO(log, "reload hive partition meta info:" + db_name + ":" + table_name);
-        result = std::make_shared<HiveMetastoreClient::HiveTableMetadata>(db_name, table_name, table, std::move(new_partition_infos), getContext());
-        table_meta_cache.set(cache_key, result);
+        LOG_INFO(log, "Reload hive partition metadata info for {}.{}", db_name, table_name);
+
+        /// Generate partition infos from partitions and old partition infos(if exists).
+        std::map<String, PartitionInfo> new_partition_infos;
+        if (metadata)
+        {
+            auto & old_partiton_infos = metadata->getPartitionInfos();
+            for (const auto & partition : partitions)
+            {
+                auto it = old_partiton_infos.find(partition.sd.location);
+                if (it == old_partiton_infos.end() || !it->second.haveSameParameters(partition) || !it->second.initialized)
+                {
+                    new_partition_infos.emplace(partition.sd.location, PartitionInfo(partition));
+                    continue;
+                }
+                else
+                {
+                    PartitionInfo new_partition_info(partition);
+                    new_partition_info.files = std::move(it->second.files);
+                    new_partition_info.initialized = true;
+                }
+            }
+        }
+        else
+        {
+            for (const auto & partition : partitions)
+                new_partition_infos.emplace(partition.sd.location, PartitionInfo(partition));
+        }
+
+        metadata = std::make_shared<HiveMetastoreClient::HiveTableMetadata>(
+            db_name, table_name, table, std::move(new_partition_infos), getContext());
+        table_metadata_cache.set(cache_key, metadata);
     }
-    return result;
+    return metadata;
 }
 
-void HiveMetastoreClient::clearTableMetadata(const std::string & db_name, const std::string & table_name)
+void HiveMetastoreClient::clearTableMetadata(const String & db_name, const String & table_name)
 {
+    String cache_key = getCacheKey(db_name, table_name);
+
     std::lock_guard lock{mutex};
-    std::string cache_key = db_name + "." + table_name;
-    std::shared_ptr<HiveMetastoreClient::HiveTableMetadata> meta = table_meta_cache.get(cache_key);
-    if (meta)
-        table_meta_cache.set(cache_key, nullptr);
+    std::shared_ptr<HiveMetastoreClient::HiveTableMetadata> metadata = table_metadata_cache.get(cache_key);
+    if (metadata)
+        table_metadata_cache.set(cache_key, nullptr);
 }
 
 void HiveMetastoreClient::setClient(std::shared_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> client_)
@@ -98,90 +119,54 @@ void HiveMetastoreClient::setClient(std::shared_ptr<Apache::Hadoop::Hive::Thrift
     clearExpired();
 }
 
-bool HiveMetastoreClient::PartitionInfo::equal(const Apache::Hadoop::Hive::Partition & other)
+bool HiveMetastoreClient::PartitionInfo::haveSameParameters(const Apache::Hadoop::Hive::Partition & other) const
 {
-    // parameters include keys:numRows,numFiles,rawDataSize,totalSize,transient_lastDdlTime
-    auto it1 = partition.parameters.begin();
-    auto it2 = other.parameters.begin();
-    for (; it1 != partition.parameters.end() && it2 != other.parameters.end(); ++it1, ++it2)
+    /// Parameters include keys:numRows,numFiles,rawDataSize,totalSize,transient_lastDdlTime
+    auto it1 = partition.parameters.cbegin();
+    auto it2 = other.parameters.cbegin();
+    for (; it1 != partition.parameters.cend() && it2 != other.parameters.cend(); ++it1, ++it2)
     {
         if (it1->first != it2->first || it1->second != it2->second)
             return false;
     }
-    return (it1 == partition.parameters.end() && it2 == other.parameters.end());
+    return (it1 == partition.parameters.cend() && it2 == other.parameters.cend());
 }
 
-std::vector<Apache::Hadoop::Hive::Partition> HiveMetastoreClient::HiveTableMetadata::getPartitions()
+std::vector<Apache::Hadoop::Hive::Partition> HiveMetastoreClient::HiveTableMetadata::getPartitions() const
 {
     std::vector<Apache::Hadoop::Hive::Partition> result;
 
     std::lock_guard lock{mutex};
-    for (const auto & partition : partition_infos)
-        result.emplace_back(partition.second.partition);
+    for (const auto & partition_info : partition_infos)
+        result.emplace_back(partition_info.second.partition);
     return result;
 }
 
-std::vector<HiveMetastoreClient::FileInfo> HiveMetastoreClient::HiveTableMetadata::getLocationFiles(const std::string & location)
+std::vector<HiveMetastoreClient::FileInfo> HiveMetastoreClient::HiveTableMetadata::getFilesByLocation(const HDFSFSPtr & fs, const String & location)
 {
-    std::map<std::string, PartitionInfo>::const_iterator it;
+    LOG_TRACE(log, "List directory {}", location);
+    std::map<String, PartitionInfo>::iterator it;
     if (!empty_partition_keys)
     {
         std::lock_guard lock{mutex};
         it = partition_infos.find(location);
         if (it == partition_infos.end())
-            throw Exception("invalid location " + location, ErrorCodes::BAD_ARGUMENTS);
-        return it->second.files;
-    }
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid location {}", location);
 
-    auto fs_builder = createHDFSBuilder(getNameNodeUrl(table->sd.location), getContext()->getGlobalContext()->getConfigRef());
-    auto fs = createHDFSFS(fs_builder.get());
-    Poco::URI uri(location);
-    HDFSFileInfo dir_info;
-    dir_info.file_info = hdfsListDirectory(fs.get(), uri.getPath().c_str(), &dir_info.length);
-
-    std::vector<FileInfo> result;
-    result.reserve(dir_info.length);
-    for (int i = 0; i < dir_info.length; ++i)
-    {
-        auto & file_info = dir_info.file_info[i];
-        /// skip directories and empty files, mKind value 'D' represents directory, otherwise file
-        if (file_info.mKind != 'D' && file_info.mSize > 0)
-            result.emplace_back(String(file_info.mName), file_info.mLastMod, file_info.mSize);
-    }
-
-    if (!empty_partition_keys)
-    {
-        std::lock_guard lock{mutex};
-        partition_infos[location].files = result;
-    }
-    return result;
-}
-
-std::vector<HiveMetastoreClient::FileInfo> HiveMetastoreClient::HiveTableMetadata::getLocationFiles(const HDFSFSPtr & fs, const std::string & location)
-{
-    LOG_TRACE(&Poco::Logger::get("HiveMetastoreClient"), "ls  {}", location);
-    std::map<std::string, PartitionInfo>::const_iterator it;
-    bool x = false;
-    if (!empty_partition_keys && x)
-    {
-        std::lock_guard lock{mutex};
-        it = partition_infos.find(location);
-        if (it == partition_infos.end())
-            throw Exception("invalid location " + location, ErrorCodes::BAD_ARGUMENTS);
-
-        LOG_TRACE(&Poco::Logger::get("HiveMetastoreClient"), "empty_partition_keys  {} {}", location, it->second.files.size());
-        return it->second.files;
+        if (it->second.initialized)
+        {
+            LOG_TRACE(log, "Get {} files under directory {}", it->second.files.size(), location);
+            return it->second.files;
+        }
     }
 
     Poco::URI location_uri(location);
     HDFSFileInfo ls;
     ls.file_info = hdfsListDirectory(fs.get(), location_uri.getPath().c_str(), &ls.length);
     std::vector<FileInfo> result;
-    LOG_TRACE(&Poco::Logger::get("HiveMetastoreClient"), "ls result. {} {}", ls.length, location);
     for (int i = 0; i < ls.length; ++i)
     {
         auto & file_info = ls.file_info[i];
-        LOG_TRACE(&Poco::Logger::get("HiveMetastoreClient"), "get file:{} {} {}", file_info.mName, file_info.mKind, file_info.mSize);
         if (file_info.mKind != 'D' && file_info.mSize > 0)
             result.emplace_back(String(file_info.mName), file_info.mLastMod, file_info.mSize);
     }
@@ -189,8 +174,14 @@ std::vector<HiveMetastoreClient::FileInfo> HiveMetastoreClient::HiveTableMetadat
     if (!empty_partition_keys)
     {
         std::lock_guard lock{mutex};
-        partition_infos[location].files = result;
+        it = partition_infos.find(location);
+        if (it == partition_infos.end())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid location {}", location);
+
+        it->second.files = result;
+        it->second.initialized = true;
     }
+    LOG_TRACE(log, "Get {} files under directory {}", result.size(), location);
     return result;
 }
 
@@ -211,7 +202,7 @@ HiveMetastoreClientPtr HiveMetastoreClientFactory::getOrCreate(const String & na
     auto it = clients.find(name);
     if (it == clients.end() || it->second->isExpired())
     {
-        // connect to hive metastore
+        /// Connect to hive metastore
         Poco::URI hive_metastore_url(name);
         const auto & host = hive_metastore_url.getHost();
         auto port = hive_metastore_url.getPort();

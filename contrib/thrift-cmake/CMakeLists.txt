@@ -45,21 +45,3 @@ include("${ClickHouse_SOURCE_DIR}/contrib/thrift/build/cmake/ConfigureChecks.cma
 add_library(${THRIFT_LIBRARY} ${thriftcpp_SOURCES} ${thriftcpp_threads_SOURCES})
 target_include_directories(${THRIFT_LIBRARY} SYSTEM PUBLIC "${THRIFT_INCLUDE_DIR}" ${CMAKE_CURRENT_BINARY_DIR})
 target_link_libraries (${THRIFT_LIBRARY} PUBLIC boost::headers_only)
-
-# set(COMPILER_DIR "${ClickHouse_SOURCE_DIR}/contrib/thrift/compiler/cpp")
-# configure_file(${COMPILER_DIR}/src/thrift/version.h.in ${COMPILER_DIR}/src/thrift/version.h)
-# set(thrift_compiler_SOURCES
-#     ${COMPILER_DIR}/src/thrift/main.cc
-#     ${COMPILER_DIR}/src/thrift/audit/t_audit.cpp
-#     ${COMPILER_DIR}/src/thrift/generate/t_cpp_generator.cc
-#     ${COMPILER_DIR}/src/thrift/common.cc
-#     ${COMPILER_DIR}/src/thrift/generate/t_generator.cc
-#     ${COMPILER_DIR}/src/thrift/parse/t_typedef.cc
-#     ${COMPILER_DIR}/src/thrift/parse/parse.cc
-#     ${COMPILER_DIR}/src/thrift/version.h
-#     ${COMPILER_DIR}/src/thrift/thrifty.cc
-#     ${COMPILER_DIR}/src/thrift/thriftl.cc
-#     ${COMPILER_DIR}/src/thrift/thrifty.hh
-# )
-# add_executable(${THRIFT_COMPILER} ${thrift_compiler_SOURCES})
-# include_directories(${THRIFT_COMPILER} SYSTEM ${COMPILER_DIR}/src)

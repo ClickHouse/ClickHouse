@@ -96,7 +96,6 @@ struct FormatSettings
         bool crlf_end_of_line = false;
         bool input_format_enum_as_number = false;
         bool input_format_arrays_as_nested_csv = false;
-        bool read_bool_as_uint8 = false;
         String null_representation = "\\N";
     } csv;
 
@@ -105,7 +104,6 @@ struct FormatSettings
         char fields_delimiter = '\x01';
         char collection_items_delimiter = '\x02';
         char map_keys_delimiter = '\x03';
-        bool read_bool_as_uint8 = true;
         Names input_field_names;
     } hive_text;
 

@@ -21,6 +21,11 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 namespace DB
 {
 
@@ -114,11 +119,13 @@ Range HiveOrcFile::buildRange(const orc::ColumnStatistics * col_stats)
 void HiveOrcFile::prepareReader()
 {
     // TODO To be implemented
+    throw Exception("Unimplemented HiveOrcFile::prepareReader", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void HiveOrcFile::prepareColumnMapping()
 {
     // TODO To be implemented
+    throw Exception("Unimplemented HiveOrcFile::prepareColumnMapping", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 bool HiveOrcFile::hasMinMaxIndex() const
@@ -130,13 +137,14 @@ bool HiveOrcFile::hasMinMaxIndex() const
 std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> HiveOrcFile::buildMinMaxIndex(const orc::Statistics * /*statistics*/)
 {
     // TODO To be implemented
-    return {};
+    throw Exception("Unimplemented HiveOrcFile::buildMinMaxIndex", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 
 void HiveOrcFile::loadMinMaxIndex()
 {
     // TODO To be implemented
+    throw Exception("Unimplemented HiveOrcFile::loadMinMaxIndex", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 bool HiveOrcFile::hasSubMinMaxIndex() const
@@ -148,23 +156,26 @@ bool HiveOrcFile::hasSubMinMaxIndex() const
 void HiveOrcFile::loadSubMinMaxIndex()
 {
     // TODO To be implemented
+    throw Exception("Unimplemented HiveOrcFile::loadSubMinMaxIndex", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 bool HiveParquetFile::hasSubMinMaxIndex() const
 {
     // TODO To be implemented
-    return false;
+    throw Exception("Unimplemented HiveParquetFile::hasSubMinMaxIndex", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 void HiveParquetFile::prepareReader()
 {
     // TODO To be implemented
+    throw Exception("Unimplemented HiveParquetFile::prepareReader", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 
 void HiveParquetFile::loadSubMinMaxIndex()
 {
     // TODO To be implemented
+    throw Exception("Unimplemented HiveParquetFile::loadSubMinMaxIndex", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 }
