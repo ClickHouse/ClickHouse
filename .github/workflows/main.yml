@@ -200,7 +200,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   BuilderPerformance:
-    needs: DockerHubPush
+    needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
     steps:
       - name: Download changed images
