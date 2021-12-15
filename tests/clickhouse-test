@@ -20,6 +20,9 @@ from subprocess import TimeoutExpired
 from datetime import datetime
 from time import time, sleep
 from errno import ESRCH
+# for crc32
+import zlib
+
 try:
     import termcolor
 except ImportError:
@@ -46,6 +49,13 @@ MESSAGES_TO_RETRY = [
 ]
 
 MAX_RETRIES = 3
+
+TEST_FILE_EXTENSIONS = ['.sql', '.sql.j2', '.sh', '.py', '.expect']
+
+def stringhash(s):
+    # default hash() function consistent
+    # only during process invocation https://stackoverflow.com/a/42089311
+    return zlib.crc32(s.encode('utf-8'))
 
 class Terminated(KeyboardInterrupt):
     pass
@@ -759,7 +769,6 @@ def do_run_tests(jobs, suite, suite_dir, suite_tmp_dir, all_tests, parallel_test
         run_tests_array((all_tests, num_tests, suite, suite_dir, suite_tmp_dir))
         return num_tests
 
-
 def main(args):
     global server_died
     global stop_time
@@ -911,8 +920,16 @@ def main(args):
                 except ValueError:
                     return 99997
 
+            filter_func = lambda x: True
+
+            if args.run_by_hash_num is not None and args.run_by_hash_total is not None:
+                if args.run_by_hash_num > args.run_by_hash_total:
+                    raise Exception(f"Incorrect run by hash, value {args.run_by_hash_num} bigger than total {args.run_by_hash_total}")
+
+                filter_func = lambda x: stringhash(x) % args.run_by_hash_total == args.run_by_hash_num
+
             all_tests = os.listdir(suite_dir)
-            all_tests = [case for case in all_tests if is_test_from_dir(suite_dir, case)]
+            all_tests = [case for case in all_tests if is_test_from_dir(suite_dir, case) and filter_func(case)]
             if args.test:
                 all_tests = [t for t in all_tests if any(re.search(r, t) for r in args.test)]
             all_tests = all_tests * args.test_runs
@@ -1100,7 +1117,11 @@ if __name__ == '__main__':
     parser.add_argument('--no-long', action='store_false', dest='no_long', help='Do not run long tests')
     parser.add_argument('--client-option', nargs='+', help='Specify additional client argument')
     parser.add_argument('--print-time', action='store_true', dest='print_time', help='Print test time')
-    group=parser.add_mutually_exclusive_group(required=False)
+
+    parser.add_argument('--run-by-hash-num', type=int, help='Run tests matching crc32(test_name) % run_by_hash_total == run_by_hash_num')
+    parser.add_argument('--run-by-hash-total', type=int, help='Total test groups for crc32(test_name) % run_by_hash_total == run_by_hash_num')
+
+    group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument('--zookeeper', action='store_true', default=None, dest='zookeeper', help='Run zookeeper related tests')
     group.add_argument('--no-zookeeper', action='store_false', default=None, dest='zookeeper', help='Do not run zookeeper related tests')
     group=parser.add_mutually_exclusive_group(required=False)
