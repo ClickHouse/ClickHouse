@@ -83,15 +83,15 @@ TEST_P(TableOverrideTest, applyOverrides)
     ASSERT_NE(nullptr, database);
     ASTPtr table_ast;
     ASSERT_NO_THROW(table_ast = parseQuery(parser, table_query, 0, 0));
-    auto table = table_ast->as<ASTCreateQuery>();
+    auto * table = table_ast->as<ASTCreateQuery>();
     ASSERT_NE(nullptr, table);
     auto table_name = table->table->as<ASTIdentifier>()->name();
     if (database->table_overrides)
     {
         auto override_ast = database->table_overrides->tryGetTableOverride(table_name);
         ASSERT_NE(nullptr, override_ast);
-        auto override = override_ast->as<ASTTableOverride>();
-        ASSERT_NE(nullptr, override);
+        auto override_table_ast = override_ast->as<ASTTableOverride>();
+        ASSERT_NE(nullptr, override_table_ast);
         override->applyToCreateTableQuery(table);
     }
     EXPECT_EQ(expected_query, serializeAST(*table));
