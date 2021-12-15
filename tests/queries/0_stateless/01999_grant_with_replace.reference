@@ -13,7 +13,7 @@ GRANT SELECT(cola) ON db5.table TO test_user_01999
 GRANT INSERT(colb) ON db6.tb61 TO test_user_01999
 GRANT SHOW ON db7.* TO test_user_01999
 F
-GRANT SELECT ON all.* TO test_user_01999
+GRANT SELECT ON `all`.* TO test_user_01999
 G
 H
 GRANT SELECT ON db1.tb1 TO test_user_01999
