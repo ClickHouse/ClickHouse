@@ -92,7 +92,7 @@ TEST_P(TableOverrideTest, applyOverrides)
         ASSERT_NE(nullptr, override_ast);
         auto override_table_ast = override_ast->as<ASTTableOverride>();
         ASSERT_NE(nullptr, override_table_ast);
-        override->applyToCreateTableQuery(table);
+        override_table_ast->applyToCreateTableQuery(table);
     }
     EXPECT_EQ(expected_query, serializeAST(*table));
 }
