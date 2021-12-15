@@ -85,7 +85,7 @@ void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataP
 {
     CSN c = csn.load();
     if (c == Tx::RolledBackCSN)
-        throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction was cancelled");
+        throw Exception(ErrorCodes::INVALID_TRANSACTION, "Transaction was cancelled");//FIXME
     else if (c != Tx::UnknownCSN)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CSN state: {}", c);
 

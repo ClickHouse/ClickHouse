@@ -1663,11 +1663,15 @@ size_t MergeTreeData::clearEmptyParts()
     auto parts = getDataPartsVector();
     for (const auto & part : parts)
     {
-        if (part->rows_count == 0)
-        {
-            dropPartNoWaitNoThrow(part->name);
-            ++cleared_count;
-        }
+        if (part->rows_count != 0)
+            continue;
+
+        /// Do not drop empty part if it may be visible for some transaction (otherwise it may cause conflicts)
+        if (!part->versions.canBeRemoved(TransactionLog::instance().getOldestSnapshot()))
+            continue;
+
+        dropPartNoWaitNoThrow(part->name);
+        ++cleared_count;
     }
     return cleared_count;
 }
@@ -2734,7 +2738,8 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(
 void MergeTreeData::restoreAndActivatePart(const DataPartPtr & part, DataPartsLock * acquired_lock)
 {
     auto lock = (acquired_lock) ? DataPartsLock() : lockParts();    //-V1018
-    assert(part->getState() != DataPartState::Committed);
+    if (part->getState() == DataPartState::Committed)
+        return;
     addPartContributionToColumnAndSecondaryIndexSizes(part);
     addPartContributionToDataVolume(part);
     modifyPartState(part, DataPartState::Committed);

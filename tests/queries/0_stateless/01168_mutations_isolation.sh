@@ -49,9 +49,36 @@ tx 6                                            "select 6, n, _part from mt orde
 tx 5 "rollback"
 tx 6                                            "insert into mt values (8)"
 tx 6                                            "alter table mt update n=n*10 where 1"
+tx 6                                            "insert into mt values (40)"
 tx 6                                            "commit"
 
-tx 8 "begin transaction"
-tx 8 "select 7, n, _part from mt order by n"
+
+tx 7 "begin transaction"
+tx 7 "select 7, n, _part from mt order by n"
+tx 8                                            "begin transaction"
+tx 8                                            "alter table mt update n = 0 where 1"
+$CLICKHOUSE_CLIENT -q "kill mutation where database=currentDatabase() and mutation_id='mutation_16.txt' format Null"
+tx 7 "optimize table mt final"
+tx 7 "select 8, n, _part from mt order by n"
+tx 8                                            "commit" | grep -Eo "INVALID_TRANSACTION" | uniq
+tx 8                                            "rollback"
+tx 10                                           "begin transaction"
+tx 10                                           "alter table mt update n = 0 where 1"
+tx 7 "alter table mt update n=n+1 where 1"
+tx 10                                           "commit" | grep -Eo "INVALID_TRANSACTION" | uniq
+tx 10                                            "rollback"
+tx 7 "commit"
+
+
+tx 11 "begin transaction"
+tx 11 "select 9, n, _part from mt order by n"
+tx 12                                           "begin transaction"
+tx 11 "alter table mt update n=n+1 where 1"
+tx 12                                           "alter table mt update n=n+1 where 1"
+tx 11 "commit" >/dev/null
+tx 12                                           "commit" >/dev/null
+
+tx 11 "begin transaction"
+tx 11 "select 10, n, _part from mt order by n"
 
 $CLICKHOUSE_CLIENT --database_atomic_wait_for_drop_and_detach_synchronously=0 -q "drop table mt"
