@@ -310,8 +310,23 @@ void TCPHandler::runImpl()
             query_context->setReadTaskCallback([this]() -> String
             {
                 std::lock_guard lock(task_callback_mutex);
+
+                if (state.is_cancelled)
+                    return {};
+
                 sendReadTaskRequestAssumeLocked();
                 return receiveReadTaskResponseAssumeLocked();
+            });
+
+            query_context->setMergeTreeReadTaskCallback([this](PartitionReadRequest request) -> std::optional<PartitionReadResponse>
+            {
+                std::lock_guard lock(task_callback_mutex);
+
+                if (state.is_cancelled)
+                    return std::nullopt;
+
+                sendMergeTreeReadTaskRequstAssumeLocked(std::move(request));
+                return receivePartitionMergeTreeReadTaskResponseAssumeLocked();
             });
 
             /// Processing Query
@@ -663,10 +678,13 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
         Block block;
         while (executor.pull(block, interactive_delay / 1000))
         {
-            std::lock_guard lock(task_callback_mutex);
+            std::unique_lock lock(task_callback_mutex);
 
             if (isQueryCancelled())
             {
+                /// Several callback like callback for parallel reading could be called from inside the pipeline
+                /// and we have to unlock the mutex from our side to prevent deadlock.
+                lock.unlock();
                 /// A packet was received requesting to stop execution of the request.
                 executor.cancel();
                 break;
@@ -785,6 +803,15 @@ void TCPHandler::sendReadTaskRequestAssumeLocked()
     writeVarUInt(Protocol::Server::ReadTaskRequest, *out);
     out->next();
 }
+
+
+void TCPHandler::sendMergeTreeReadTaskRequstAssumeLocked(PartitionReadRequest request)
+{
+    writeVarUInt(Protocol::Server::MergeTreeReadTaskRequest, *out);
+    request.serialize(*out);
+    out->next();
+}
+
 
 void TCPHandler::sendProfileInfo(const ProfileInfo & info)
 {
@@ -1297,6 +1324,35 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked()
 }
 
 
+std::optional<PartitionReadResponse> TCPHandler::receivePartitionMergeTreeReadTaskResponseAssumeLocked()
+{
+    UInt64 packet_type = 0;
+    readVarUInt(packet_type, *in);
+    if (packet_type != Protocol::Client::MergeTreeReadTaskResponse)
+    {
+        if (packet_type == Protocol::Client::Cancel)
+        {
+            state.is_cancelled = true;
+            /// For testing connection collector.
+            if (sleep_in_receive_cancel.totalMilliseconds())
+            {
+                std::chrono::milliseconds ms(sleep_in_receive_cancel.totalMilliseconds());
+                std::this_thread::sleep_for(ms);
+            }
+            return std::nullopt;
+        }
+        else
+        {
+            throw Exception(fmt::format("Received {} packet after requesting read task",
+                    Protocol::Client::toString(packet_type)), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+        }
+    }
+    PartitionReadResponse response;
+    response.deserialize(*in);
+    return response;
+}
+
+
 void TCPHandler::receiveClusterNameAndSalt()
 {
     readStringBinary(cluster, *in);
@@ -1697,7 +1753,7 @@ bool TCPHandler::isQueryCancelled()
                 return true;
 
             default:
-                throw NetException("Unknown packet from client", ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+                throw NetException("Unknown packet from client " + toString(packet_type), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
         }
     }
 
