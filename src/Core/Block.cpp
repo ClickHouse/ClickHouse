@@ -145,14 +145,12 @@ void Block::insert(size_t position, ColumnWithTypeAndName elem)
         checkColumnStructure<void>(data[it->second], elem,
             "(columns with identical name must have identical structure)", true, ErrorCodes::AMBIGUOUS_COLUMN_NAME);
     }
-    else
-    {
-        index_by_name.emplace(elem.name, position);
-    }
 
     for (auto & name_pos : index_by_name)
         if (name_pos.second >= position)
             ++name_pos.second;
+
+    index_by_name.emplace(elem.name, position);
 
     data.emplace(data.begin() + position, std::move(elem));
 }
