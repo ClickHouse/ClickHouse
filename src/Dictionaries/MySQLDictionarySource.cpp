@@ -56,8 +56,8 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
             configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
             MySQLSettings mysql_settings;
             const auto & settings = global_context->getSettingsRef();
-            mysql_settings.connect_timeout = settings.external_storage_connect_timeout;
-            mysql_settings.read_write_timeout = settings.external_storage_rw_timeout;
+            mysql_settings.connect_timeout = settings.external_storage_connect_timeout_sec;
+            mysql_settings.read_write_timeout = settings.external_storage_rw_timeout_sec;
             pool = std::make_shared<mysqlxx::PoolWithFailover>(createMySQLPoolWithFailover(configuration, mysql_settings));
         }
         else

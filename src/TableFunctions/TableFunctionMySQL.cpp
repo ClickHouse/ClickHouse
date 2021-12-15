@@ -40,8 +40,8 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
     configuration = StorageMySQL::getConfiguration(args_func.arguments->children, context);
     MySQLSettings mysql_settings;
     const auto & settings = context->getSettingsRef();
-    mysql_settings.connect_timeout = settings.external_storage_connect_timeout;
-    mysql_settings.read_write_timeout = settings.external_storage_rw_timeout;
+    mysql_settings.connect_timeout = settings.external_storage_connect_timeout_sec;
+    mysql_settings.read_write_timeout = settings.external_storage_rw_timeout_sec;
     pool.emplace(createMySQLPoolWithFailover(*configuration, mysql_settings));
 }
 
