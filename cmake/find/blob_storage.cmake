@@ -1,6 +1,6 @@
 option(USE_INTERNAL_AZURE_BLOB_STORAGE_LIBRARY
     "Set to FALSE to use system Azure SDK instead of bundled (OFF currently not implemented)"
-    ON)
+    ${ENABLE_LIBRARIES})
 
 if (USE_INTERNAL_AZURE_BLOB_STORAGE_LIBRARY)
     set(USE_AZURE_BLOB_STORAGE 1)
