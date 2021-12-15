@@ -216,7 +216,7 @@ local_engine::SparkRowInfoPtr dbms::LocalExecutor::next()
     this->spark_buffer->size = row_info->getTotalBytes();
     return row_info;
 }
-DB::Block & dbms::LocalExecutor::getHeader() const
+DB::Block & dbms::LocalExecutor::getHeader()
 {
     return header;
 }

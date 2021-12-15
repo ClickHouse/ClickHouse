@@ -7,7 +7,7 @@ cmake_minimum_required(VERSION 3.11)
 if(CMAKE_VERSION VERSION_LESS 3.11)
     message(FATAL_ERROR "Building local engine JNI bindings requires CMake version >= 3.11")
 endif()
-
+include (${ClickHouse_SOURCE_DIR}/cmake/warnings.cmake)
 # Find java/jni
 include(FindJava)
 include(UseJava)

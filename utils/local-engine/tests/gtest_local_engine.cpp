@@ -7,6 +7,7 @@
 #include <fstream>
 #include <Parser/SparkColumnToCHColumn.h>
 #include <Parser/CHColumnToSparkRow.h>
+#include <Poco/URI.h>
 
 
 TEST(TestSelect, ReadRel)
@@ -99,13 +100,17 @@ TEST(TestSelect, PerformanceTest)
 
 TEST(TestSelect, MergeTreeWriteTest)
 {
-    DB::StorageID id("default", "test");
-    std::string relative_path = TEST_DATA(/data/mergetree);
-    DB::StorageInMemoryMetadata storage_in_memory_metadata;
-    auto shared = DB::Context::createShared();
-    auto global = DB::Context::createGlobal(shared.get());
-    auto merging_params = DB::MergeTreeData::MergingParams();
-    auto storage_setting = std::make_unique<DB::MergeTreeSettings>();
+//    DB::StorageID id("default", "test");
+//    std::string relative_path = TEST_DATA(/data/mergetree);
+//    DB::StorageInMemoryMetadata storage_in_memory_metadata;
+//    auto shared = DB::Context::createShared();
+//    auto global = DB::Context::createGlobal(shared.get());
+//    auto merging_params = DB::MergeTreeData::MergingParams();
+//    auto storage_setting = std::make_unique<DB::MergeTreeSettings>();
+
+    Poco::URI uri("hdfs://clusterB/test.txt");
+    std::cout << uri.toString() << std::endl;
+    ASSERT_GT("clusterB", uri.getHost());
 
 //    DB::MergeTreeData(id, relative_path, storage_in_memory_metadata, global, "", merging_params, std::move(storage_setting), false, false, nullptr);
 }

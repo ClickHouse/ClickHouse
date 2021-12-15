@@ -92,7 +92,7 @@ public:
         }
     }
 
-    Block & getHeader() const;
+    Block & getHeader();
 
 private:
     std::unique_ptr<local_engine::SparkRowInfo> writeBlockToSparkRow(DB::Block & block);

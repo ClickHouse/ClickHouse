@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <common/StringRef.h>
 #include "CHColumnToSparkRow.h"
 
 namespace local_engine
@@ -108,13 +109,13 @@ public:
         return getValue<double_t>(getFieldOffset(ordinal));
     }
 
-    std::string getString(int ordinal)
+    StringRef getString(int ordinal)
     {
         assertIndexIsValid(ordinal);
         int64_t offset_and_size = getLong(ordinal);
         int32_t offset = static_cast<int32_t>(offset_and_size >> 32);
         int32_t size = static_cast<int32_t>(offset_and_size);
-        return std::string(reinterpret_cast<char *>(offset), size);
+        return StringRef(reinterpret_cast<char *>(this->base_offset + offset), size);
     }
 
     int32_t getStringSize(int ordinal)
