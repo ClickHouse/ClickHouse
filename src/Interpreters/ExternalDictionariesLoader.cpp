@@ -93,7 +93,7 @@ QualifiedTableName ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase
     if (qualified_name->database.empty() && !has(qualified_name->table))
     {
         std::string current_database_name = query_context->getCurrentDatabase();
-        std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name);
+        std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name, current_database_name);
 
         /// If after qualify dictionary_name with default_database_name we find it, add default_database to qualified name.
         if (has(resolved_name))
