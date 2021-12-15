@@ -301,7 +301,11 @@ jobs:
 ##############################################################################################
   StressTestTsan:
     needs: [BuilderDebTsan]
-    runs-on: [self-hosted, stress-tester]
+    # func testers have 16 cores + 128 GB memory
+    # while stress testers have 36 cores + 72 memory
+    # It would be better to have something like 32 + 128,
+    # but such servers almost unavailable as spot instances.
+    runs-on: [self-hosted, func-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
