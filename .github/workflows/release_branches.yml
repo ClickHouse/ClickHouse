@@ -345,7 +345,7 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
-  FunctionalStatelessTestAsan:
+  FunctionalStatelessTestAsan0:
     needs: [BuilderDebAsan]
     runs-on: [self-hosted, func-tester]
     steps:
@@ -362,6 +362,8 @@ jobs:
           CHECK_NAME: 'Stateless tests (address, actions)'
           REPO_COPY: ${{runner.temp}}/stateless_debug/ClickHouse
           KILL_TIMEOUT: 10800
+          RUN_BY_HASH_NUM: 0
+          RUN_BY_HASH_TOTAL: 2
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -374,7 +376,38 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
-  FunctionalStatelessTestTsan:
+  FunctionalStatelessTestAsan1:
+    needs: [BuilderDebAsan]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        env:
+          TEMP_PATH: ${{runner.temp}}/stateless_debug
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Stateless tests (address, actions)'
+          REPO_COPY: ${{runner.temp}}/stateless_debug/ClickHouse
+          KILL_TIMEOUT: 10800
+          RUN_BY_HASH_NUM: 1
+          RUN_BY_HASH_TOTAL: 2
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  FunctionalStatelessTestTsan0:
     needs: [BuilderDebTsan]
     runs-on: [self-hosted, func-tester]
     steps:
@@ -391,6 +424,70 @@ jobs:
           CHECK_NAME: 'Stateless tests (thread, actions)'
           REPO_COPY: ${{runner.temp}}/stateless_tsan/ClickHouse
           KILL_TIMEOUT: 10800
+          RUN_BY_HASH_NUM: 0
+          RUN_BY_HASH_TOTAL: 3
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  FunctionalStatelessTestTsan1:
+    needs: [BuilderDebTsan]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        env:
+          TEMP_PATH: ${{runner.temp}}/stateless_tsan
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Stateless tests (thread, actions)'
+          REPO_COPY: ${{runner.temp}}/stateless_tsan/ClickHouse
+          KILL_TIMEOUT: 10800
+          RUN_BY_HASH_NUM: 1
+          RUN_BY_HASH_TOTAL: 3
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  FunctionalStatelessTestTsan2:
+    needs: [BuilderDebTsan]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        env:
+          TEMP_PATH: ${{runner.temp}}/stateless_tsan
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Stateless tests (thread, actions)'
+          REPO_COPY: ${{runner.temp}}/stateless_tsan/ClickHouse
+          KILL_TIMEOUT: 10800
+          RUN_BY_HASH_NUM: 2
+          RUN_BY_HASH_TOTAL: 3
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -432,7 +529,7 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
-  FunctionalStatelessTestMsan:
+  FunctionalStatelessTestMsan0:
     needs: [BuilderDebMsan]
     runs-on: [self-hosted, func-tester]
     steps:
@@ -449,6 +546,8 @@ jobs:
           CHECK_NAME: 'Stateless tests (memory, actions)'
           REPO_COPY: ${{runner.temp}}/stateless_memory/ClickHouse
           KILL_TIMEOUT: 10800
+          RUN_BY_HASH_NUM: 0
+          RUN_BY_HASH_TOTAL: 3
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -461,7 +560,69 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
-  FunctionalStatelessTestDebug:
+  FunctionalStatelessTestMsan1:
+    needs: [BuilderDebMsan]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        env:
+          TEMP_PATH: ${{runner.temp}}/stateless_memory
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Stateless tests (memory, actions)'
+          REPO_COPY: ${{runner.temp}}/stateless_memory/ClickHouse
+          KILL_TIMEOUT: 10800
+          RUN_BY_HASH_NUM: 1
+          RUN_BY_HASH_TOTAL: 3
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  FunctionalStatelessTestMsan2:
+    needs: [BuilderDebMsan]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        env:
+          TEMP_PATH: ${{runner.temp}}/stateless_memory
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Stateless tests (memory, actions)'
+          REPO_COPY: ${{runner.temp}}/stateless_memory/ClickHouse
+          KILL_TIMEOUT: 10800
+          RUN_BY_HASH_NUM: 2
+          RUN_BY_HASH_TOTAL: 3
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  FunctionalStatelessTestDebug0:
     needs: [BuilderDebDebug]
     runs-on: [self-hosted, func-tester]
     steps:
@@ -478,6 +639,70 @@ jobs:
           CHECK_NAME: 'Stateless tests (debug, actions)'
           REPO_COPY: ${{runner.temp}}/stateless_debug/ClickHouse
           KILL_TIMEOUT: 10800
+          RUN_BY_HASH_NUM: 0
+          RUN_BY_HASH_TOTAL: 3
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  FunctionalStatelessTestDebug1:
+    needs: [BuilderDebDebug]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        env:
+          TEMP_PATH: ${{runner.temp}}/stateless_debug
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Stateless tests (debug, actions)'
+          REPO_COPY: ${{runner.temp}}/stateless_debug/ClickHouse
+          KILL_TIMEOUT: 10800
+          RUN_BY_HASH_NUM: 1
+          RUN_BY_HASH_TOTAL: 3
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  FunctionalStatelessTestDebug2:
+    needs: [BuilderDebDebug]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        env:
+          TEMP_PATH: ${{runner.temp}}/stateless_debug
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Stateless tests (debug, actions)'
+          REPO_COPY: ${{runner.temp}}/stateless_debug/ClickHouse
+          KILL_TIMEOUT: 10800
+          RUN_BY_HASH_NUM: 2
+          RUN_BY_HASH_TOTAL: 3
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -813,8 +1038,8 @@ jobs:
 #############################################################################################
 ############################# INTEGRATION TESTS #############################################
 #############################################################################################
-  IntegrationTestsAsan:
-    needs: [BuilderDebAsan, FunctionalStatelessTestAsan]
+  IntegrationTestsAsan0:
+    needs: [BuilderDebAsan]
     runs-on: [self-hosted, stress-tester]
     steps:
       - name: Download json reports
@@ -829,6 +1054,8 @@ jobs:
           REPORTS_PATH: ${{runner.temp}}/reports_dir
           CHECK_NAME: 'Integration tests (asan, actions)'
           REPO_COPY: ${{runner.temp}}/integration_tests_asan/ClickHouse
+          RUN_BY_HASH_NUM: 0
+          RUN_BY_HASH_TOTAL: 3
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -841,8 +1068,68 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
-  IntegrationTestsTsan:
-    needs: [BuilderDebTsan, FunctionalStatelessTestTsan]
+  IntegrationTestsAsan1:
+    needs: [BuilderDebAsan]
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Integration test
+        env:
+          TEMP_PATH: ${{runner.temp}}/integration_tests_asan
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Integration tests (asan, actions)'
+          REPO_COPY: ${{runner.temp}}/integration_tests_asan/ClickHouse
+          RUN_BY_HASH_NUM: 1
+          RUN_BY_HASH_TOTAL: 3
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 integration_test_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  IntegrationTestsAsan2:
+    needs: [BuilderDebAsan]
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Integration test
+        env:
+          TEMP_PATH: ${{runner.temp}}/integration_tests_asan
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Integration tests (asan, actions)'
+          REPO_COPY: ${{runner.temp}}/integration_tests_asan/ClickHouse
+          RUN_BY_HASH_NUM: 2
+          RUN_BY_HASH_TOTAL: 3
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 integration_test_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  IntegrationTestsTsan0:
+    needs: [BuilderDebTsan]
     runs-on: [self-hosted, stress-tester]
     steps:
       - name: Download json reports
@@ -857,6 +1144,8 @@ jobs:
           REPORTS_PATH: ${{runner.temp}}/reports_dir
           CHECK_NAME: 'Integration tests (thread, actions)'
           REPO_COPY: ${{runner.temp}}/integration_tests_tsan/ClickHouse
+          RUN_BY_HASH_NUM: 0
+          RUN_BY_HASH_TOTAL: 4
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -869,8 +1158,98 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
-  IntegrationTestsRelease:
-    needs: [BuilderDebRelease, FunctionalStatelessTestRelease]
+  IntegrationTestsTsan1:
+    needs: [BuilderDebTsan]
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Integration test
+        env:
+          TEMP_PATH: ${{runner.temp}}/integration_tests_tsan
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Integration tests (thread, actions)'
+          REPO_COPY: ${{runner.temp}}/integration_tests_tsan/ClickHouse
+          RUN_BY_HASH_NUM: 1
+          RUN_BY_HASH_TOTAL: 4
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 integration_test_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  IntegrationTestsTsan2:
+    needs: [BuilderDebTsan]
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Integration test
+        env:
+          TEMP_PATH: ${{runner.temp}}/integration_tests_tsan
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Integration tests (thread, actions)'
+          REPO_COPY: ${{runner.temp}}/integration_tests_tsan/ClickHouse
+          RUN_BY_HASH_NUM: 2
+          RUN_BY_HASH_TOTAL: 4
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 integration_test_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  IntegrationTestsTsan3:
+    needs: [BuilderDebTsan]
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Integration test
+        env:
+          TEMP_PATH: ${{runner.temp}}/integration_tests_tsan
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Integration tests (thread, actions)'
+          REPO_COPY: ${{runner.temp}}/integration_tests_tsan/ClickHouse
+          RUN_BY_HASH_NUM: 3
+          RUN_BY_HASH_TOTAL: 4
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 integration_test_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  IntegrationTestsRelease0:
+    needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
       - name: Download json reports
@@ -885,6 +1264,38 @@ jobs:
           REPORTS_PATH: ${{runner.temp}}/reports_dir
           CHECK_NAME: 'Integration tests (release, actions)'
           REPO_COPY: ${{runner.temp}}/integration_tests_release/ClickHouse
+          RUN_BY_HASH_NUM: 0
+          RUN_BY_HASH_TOTAL: 2
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 integration_test_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  IntegrationTestsRelease1:
+    needs: [BuilderDebRelease]
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Integration test
+        env:
+          TEMP_PATH: ${{runner.temp}}/integration_tests_release
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Integration tests (release, actions)'
+          REPO_COPY: ${{runner.temp}}/integration_tests_release/ClickHouse
+          RUN_BY_HASH_NUM: 1
+          RUN_BY_HASH_TOTAL: 2
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -901,11 +1312,18 @@ jobs:
     needs:
       - DockerHubPush
       - BuilderReport
-      - FunctionalStatelessTestDebug
+      - FunctionalStatelessTestDebug0
+      - FunctionalStatelessTestDebug1
+      - FunctionalStatelessTestDebug2
       - FunctionalStatelessTestRelease
-      - FunctionalStatelessTestAsan
-      - FunctionalStatelessTestTsan
-      - FunctionalStatelessTestMsan
+      - FunctionalStatelessTestAsan0
+      - FunctionalStatelessTestAsan1
+      - FunctionalStatelessTestTsan0
+      - FunctionalStatelessTestTsan1
+      - FunctionalStatelessTestTsan2
+      - FunctionalStatelessTestMsan0
+      - FunctionalStatelessTestMsan1
+      - FunctionalStatelessTestMsan2
       - FunctionalStatelessTestUBsan
       - FunctionalStatefulTestDebug
       - FunctionalStatefulTestRelease
@@ -918,9 +1336,15 @@ jobs:
       - StressTestTsan
       - StressTestMsan
       - StressTestUBsan
-      - IntegrationTestsAsan
-      - IntegrationTestsRelease
-      - IntegrationTestsTsan
+      - IntegrationTestsAsan0
+      - IntegrationTestsAsan1
+      - IntegrationTestsAsan2
+      - IntegrationTestsRelease0
+      - IntegrationTestsRelease1
+      - IntegrationTestsTsan0
+      - IntegrationTestsTsan1
+      - IntegrationTestsTsan2
+      - IntegrationTestsTsan3
       - CompatibilityCheck
     runs-on: [self-hosted, style-checker]
     steps:
