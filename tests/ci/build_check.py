@@ -136,8 +136,10 @@ if __name__ == "__main__":
     if 'release' in pr_info.labels or 'release-lts' in pr_info.labels:
         # for release pull requests we use branch names prefixes, not pr numbers
         release_or_pr = pr_info.head_ref
-    elif pr_info.number == 0:
-        # for pushes to master - major version
+    elif pr_info.number == 0 and build_config['package_type'] != "performance":
+        # for pushes to master - major version, but not for performance builds
+        # they havily relies on a fixed path for build package and nobody going
+        # to deploy them somewhere, so it's ok.
         release_or_pr = ".".join(version.as_tuple()[:2])
     else:
         # PR number for anything else
@@ -188,6 +190,10 @@ if __name__ == "__main__":
     if not os.path.exists(ccache_path):
         logging.info("cache was not fetched, will create empty dir")
         os.makedirs(ccache_path)
+
+    if build_config['package_type'] == "performance" and pr_info.number != 0:
+        # because perf tests store some information about git commits
+        subprocess.check_call(f"cd {repo_path} && git fetch origin master:master", shell=True)
 
     packager_cmd = get_packager_cmd(build_config, os.path.join(repo_path, "docker/packager"), build_output_path, version.get_version_string(), image_version, ccache_path, pr_info)
     logging.info("Going to run packager with %s", packager_cmd)

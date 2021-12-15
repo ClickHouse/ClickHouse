@@ -117,6 +117,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     static const std::unordered_set<std::string_view> engines_with_arguments{"MySQL", "MaterializeMySQL", "MaterializedMySQL",
         "Lazy", "Replicated", "PostgreSQL", "MaterializedPostgreSQL", "SQLite"};
 
+    static const std::unordered_set<std::string_view> engines_with_table_overrides{"MaterializeMySQL", "MaterializedMySQL"};
     bool engine_may_have_arguments = engines_with_arguments.contains(engine_name);
 
     if (engine_define->engine->arguments && !engine_may_have_arguments)
@@ -130,6 +131,9 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     if (has_unexpected_element || (!may_have_settings && engine_define->settings))
         throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_AST,
                         "Database engine `{}` cannot have parameters, primary_key, order_by, sample_by, settings", engine_name);
+
+    if (create.table_overrides && !engines_with_table_overrides.contains(engine_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine `{}` cannot have table overrides", engine_name);
 
     if (engine_name == "Ordinary")
         return std::make_shared<DatabaseOrdinary>(database_name, metadata_path, context);
