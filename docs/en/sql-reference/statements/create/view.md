@@ -298,13 +298,16 @@ Note that elements emitted by a late firing should be treated as updated results
 
 ### Monitoring New Windows {#window-view-monitoring}
 
-Window view supports the `WATCH` query to constantly append the processing results to the console or use `TO` syntax to output the results to a table.
+Window view supports the [WATCH](../../../sql-reference/statements/watch.md) query to monitoring changes, or use `TO` syntax to output the results to a table.
 
 ``` sql
-WATCH [db.]name [LIMIT n]
+WATCH [db.]window_view
+[EVENTS]
+[LIMIT n]
+[FORMAT format]
 ```
 
-`WATCH` query acts similar as in `LIVE VIEW`. A `LIMIT` can be specified to set the number of updates to receive before terminating the query. 
+`WATCH` query acts similar as in `LIVE VIEW`. A `LIMIT` can be specified to set the number of updates to receive before terminating the query. The `EVENTS` clause can be used to obtain a short form of the `WATCH` query where instead of the query result you will just get the latest query watermark.
 
 ### Settings {#window-view-settings}
 
