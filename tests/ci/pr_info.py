@@ -71,7 +71,7 @@ class PRInfo:
                     self.user_orgs = set(org['id'] for org in response_json)
 
             self.diff_url = github_event['pull_request']['diff_url']
-        elif 'commits' in github_event:
+        elif 'commits' in github_event:  # push (commit) event 
             self.sha = github_event['after']
             pull_request = get_pr_for_commit(self.sha, github_event['ref'])
             repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
