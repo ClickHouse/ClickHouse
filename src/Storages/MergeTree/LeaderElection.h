@@ -48,6 +48,7 @@ void checkNoOldLeaders(Poco::Logger * log, ZooKeeper & zookeeper, const String p
         }
         else
         {
+            std::sort(potential_leaders.begin(), potential_leaders.end());
             if (potential_leaders.front() == persistent_multiple_leaders)
                 return;
 
