@@ -5,8 +5,6 @@
 #include <variant>
 #include <optional>
 
-#include <Common/SparseHashMap.h>
-
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Core/Block.h>
