@@ -3,6 +3,7 @@
 #include <Formats/FormatSettings.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>
+#include <Poco/JSON/Object.h>
 #include <utility>
 
 namespace DB
@@ -10,6 +11,21 @@ namespace DB
 
 std::pair<bool, size_t> fileSegmentationEngineJSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size);
 std::pair<bool, size_t> fileSegmentationEngineJSONCompactEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size, size_t min_rows);
+
+
+/// Convert JSON type to ClickHouse type. Make the result type always Nullable.
+/// JSON array with different nested types is treated as Tuple.
+/// If cannot convert (for example when field contains null), return nullptr.
+DataTypePtr getDataTypeFromJSONField(const Poco::Dynamic::Var & field);
+
+/// Read row in JSONEachRow format and try to determine type for each field.
+/// Return map {column_name : type}.
+/// If cannot determine the type of some field, return nullptr for it.
+std::unordered_map<String, DataTypePtr> readRowAndGetNamesAndDataTypesForJSONEachRow(ReadBuffer & in, bool json_strings);
+
+/// Read row in JSONCompactEachRow format and try to determine type for each field.
+/// If cannot determine the type of some field, return nullptr for it.
+DataTypes readRowAndGetDataTypesForJSONCompactEachRow(ReadBuffer & in, bool json_strings);
 
 bool nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl(ReadBuffer & buf);
 

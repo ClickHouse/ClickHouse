@@ -3,6 +3,7 @@
 #if USE_PARQUET
 
 #include <Processors/Formats/IInputFormat.h>
+#include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
 
 namespace parquet::arrow { class FileReader; }
@@ -42,6 +43,17 @@ private:
     const FormatSettings format_settings;
 
     std::atomic<int> is_stopped{0};
+};
+
+class ParquetSchemaReader : public ISchemaReader
+{
+public:
+    ParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
+
+    NamesAndTypesList readSchema() override;
+
+private:
+    const FormatSettings format_settings;
 };
 
 }
