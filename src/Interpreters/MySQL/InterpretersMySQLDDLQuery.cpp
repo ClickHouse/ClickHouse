@@ -521,8 +521,8 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
 
     if (auto table_override = ASTTableOverride::tryGetTableOverride(mapped_to_database, create_query.table))
     {
-        auto override = table_override->as<ASTTableOverride>();
-        override->applyToCreateTableQuery(rewritten_query.get());
+        auto * override_ast = table_override->as<ASTTableOverride>();
+        override_ast->applyToCreateTableQuery(rewritten_query.get());
     }
 
     return ASTs{rewritten_query};
