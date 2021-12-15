@@ -706,6 +706,7 @@ public:
     /// For ATTACH/DETACH/DROP PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context) const;
     std::unordered_set<String> getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
+    std::set<String> getPartitionIdsAffectedByCommands(const MutationCommands & commands, ContextPtr query_context) const;
 
     /// Extracts MergeTreeData of other *MergeTree* storage
     ///  and checks that their structure suitable for ALTER TABLE ATTACH PARTITION FROM
