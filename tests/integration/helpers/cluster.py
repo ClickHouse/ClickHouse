@@ -109,6 +109,7 @@ def retry_exception(num, delay, func, exception=Exception, *args, **kwargs):
 def subprocess_check_call(args, detach=False, nothrow=False, num_tries=1):
     # Uncomment for debugging
     #logging.info('run:' + ' '.join(args))
+    delay = 1
     for i in range(num_tries):
         try:
             return run_and_check(args, detach=detach, nothrow=nothrow)
@@ -117,6 +118,8 @@ def subprocess_check_call(args, detach=False, nothrow=False, num_tries=1):
                 raise ex
             else:
                 logging.info("Got execption while executing command: %s", ex)
+                time.sleep(delay)
+                delay = delay * 2
 
 
 def get_odbc_bridge_path():
