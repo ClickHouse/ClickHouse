@@ -136,8 +136,10 @@ if __name__ == "__main__":
     if 'release' in pr_info.labels or 'release-lts' in pr_info.labels:
         # for release pull requests we use branch names prefixes, not pr numbers
         release_or_pr = pr_info.head_ref
-    elif pr_info.number == 0:
-        # for pushes to master - major version
+    elif pr_info.number == 0 and build_config['package_type'] != "performance":
+        # for pushes to master - major version, but not for performance builds
+        # they havily relies on a fixed path for build package and nobody going
+        # to deploy them somewhere, so it's ok.
         release_or_pr = ".".join(version.as_tuple()[:2])
     else:
         # PR number for anything else
