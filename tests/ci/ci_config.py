@@ -40,6 +40,7 @@ CI_CONFIG = {
             "package_type": "deb",
             "bundled": "bundled",
             "splitted": "unsplitted",
+            "alien_pkgs": True,
             "tidy": "disable",
             "with_coverage": False,
         },
