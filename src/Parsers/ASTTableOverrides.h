@@ -42,7 +42,7 @@ public:
     String getID(char) const override { return "TableOverrideList"; }
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-    void setTableOverride(const String & name, ASTPtr override);
+    void setTableOverride(const String & name, const ASTPtr ast);
     void removeTableOverride(const String & name);
     ASTPtr tryGetTableOverride(const String & name) const;
     bool hasOverride(const String & name) const;
