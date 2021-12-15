@@ -90,7 +90,7 @@ TEST_P(TableOverrideTest, applyOverrides)
     {
         auto override_ast = database->table_overrides->tryGetTableOverride(table_name);
         ASSERT_NE(nullptr, override_ast);
-        auto override_table_ast = override_ast->as<ASTTableOverride>();
+        auto * override_table_ast = override_ast->as<ASTTableOverride>();
         ASSERT_NE(nullptr, override_table_ast);
         override_table_ast->applyToCreateTableQuery(table);
     }
