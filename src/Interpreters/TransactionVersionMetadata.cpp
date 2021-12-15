@@ -38,6 +38,7 @@ TransactionID VersionMetadata::getMaxTID() const
 
 void VersionMetadata::lockMaxTID(const TransactionID & tid, const String & error_context)
 {
+    //LOG_TRACE(&Poco::Logger::get("WTF"), "Trying to lock maxtid by {}: {}\n{}", tid, error_context, StackTrace().toString());
     TIDHash locked_by = 0;
     if (tryLockMaxTID(tid, &locked_by))
         return;
@@ -75,6 +76,7 @@ bool VersionMetadata::tryLockMaxTID(const TransactionID & tid, TIDHash * locked_
 
 void VersionMetadata::unlockMaxTID(const TransactionID & tid)
 {
+    //LOG_TRACE(&Poco::Logger::get("WTF"), "Unlocking maxtid by {}", tid);
     assert(!tid.isEmpty());
     TIDHash max_lock_value = tid.getHash();
     TIDHash locked_by = maxtid_lock.load();
