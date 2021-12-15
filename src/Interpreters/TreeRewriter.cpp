@@ -401,8 +401,12 @@ void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, 
             ASTFunction * func = elem->as<ASTFunction>();
 
             /// Never remove untuple. It's result column may be in required columns.
-            /// It is not easy to analyze untuple here, because types were not calculated yes.
+            /// It is not easy to analyze untuple here, because types were not calculated yet.
             if (func && func->name == "untuple")
+                new_elements.push_back(elem);
+
+            /// removing aggregation can change number of rows, so `count()` result in outer sub-query would be wrong
+            if (func && AggregateFunctionFactory::instance().isAggregateFunctionName(func->name) && !select_query->groupBy())
                 new_elements.push_back(elem);
         }
     }
