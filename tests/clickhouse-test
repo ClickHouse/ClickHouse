@@ -21,6 +21,8 @@ from subprocess import TimeoutExpired
 from datetime import datetime
 from time import time, sleep
 from errno import ESRCH
+# for crc32
+import zlib
 
 try:
     import termcolor
@@ -60,6 +62,11 @@ MESSAGES_TO_RETRY = [
 MAX_RETRIES = 3
 
 TEST_FILE_EXTENSIONS = ['.sql', '.sql.j2', '.sh', '.py', '.expect']
+
+def stringhash(s):
+    # default hash() function consistent
+    # only during process invocation https://stackoverflow.com/a/42089311
+    return zlib.crc32(s.encode('utf-8'))
 
 class Terminated(KeyboardInterrupt):
     pass
@@ -985,7 +992,7 @@ def render_test_template(j2env, suite_dir, test_name):
     return test_name
 
 
-def get_selected_tests(suite_dir, patterns):
+def get_selected_tests(suite_dir, patterns, filter_func):
     """
     Find all files with tests, filter, render templates
     """
@@ -1002,16 +1009,18 @@ def get_selected_tests(suite_dir, patterns):
             continue
         if USE_JINJA and test_name.endswith(".gen.sql"):
             continue
+        if not filter_func(test_name):
+            continue
         test_name = render_test_template(j2env, suite_dir, test_name)
         yield test_name
 
 
-def get_tests_list(suite_dir, patterns, test_runs, sort_key):
+def get_tests_list(suite_dir, patterns, test_runs, sort_key, filter_func):
     """
     Return list of tests file names to run
     """
 
-    all_tests = list(get_selected_tests(suite_dir, patterns))
+    all_tests = list(get_selected_tests(suite_dir, patterns, filter_func))
     all_tests = all_tests * test_runs
     all_tests.sort(key=sort_key)
     return all_tests
@@ -1141,8 +1150,16 @@ def main(args):
                 print("Won't run stateful tests because they were manually disabled.")
                 continue
 
+            filter_func = lambda x: True
+
+            if args.run_by_hash_num is not None and args.run_by_hash_total is not None:
+                if args.run_by_hash_num > args.run_by_hash_total:
+                    raise Exception(f"Incorrect run by hash, value {args.run_by_hash_num} bigger than total {args.run_by_hash_total}")
+
+                filter_func = lambda x: stringhash(x) % args.run_by_hash_total == args.run_by_hash_num
+
             all_tests = get_tests_list(
-                suite_dir, args.test, args.test_runs, tests_in_suite_key_func)
+                suite_dir, args.test, args.test_runs, tests_in_suite_key_func, filter_func)
 
             jobs = args.jobs
 
@@ -1312,6 +1329,9 @@ if __name__ == '__main__':
     parser.add_argument('--no-long', action='store_true', dest='no_long', help='Do not run long tests')
     parser.add_argument('--client-option', nargs='+', help='Specify additional client argument')
     parser.add_argument('--print-time', action='store_true', dest='print_time', help='Print test time')
+
+    parser.add_argument('--run-by-hash-num', type=int, help='Run tests matching crc32(test_name) % run_by_hash_total == run_by_hash_num')
+    parser.add_argument('--run-by-hash-total', type=int, help='Total test groups for crc32(test_name) % run_by_hash_total == run_by_hash_num')
 
     group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument('--zookeeper', action='store_true', default=None, dest='zookeeper', help='Run zookeeper related tests')

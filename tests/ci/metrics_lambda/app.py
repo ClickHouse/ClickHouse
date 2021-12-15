@@ -7,6 +7,30 @@ import sys
 import json
 import time
 from collections import namedtuple
+import boto3
+
+def get_dead_runners_in_ec2(runners):
+    ids = {runner.name: runner for runner in runners if runner.offline == True and runner.busy == False}
+    if not ids:
+        return []
+
+    client = boto3.client('ec2')
+
+    print("Checking ids", list(ids.keys()))
+    instances_statuses = client.describe_instance_status(InstanceIds=list(ids.keys()))
+    found_instances = set([])
+    print("Response", instances_statuses)
+    for instance_status in instances_statuses['InstanceStatuses']:
+        if instance_status['InstanceState']['Name'] in ('pending', 'running'):
+            found_instances.add(instance_status['InstanceId'])
+
+    print("Found instances", found_instances)
+    result_to_delete = []
+    for instance_id, runner in ids.items():
+        if instance_id not in found_instances:
+            print("Instance", instance_id, "is not alive, going to remove it")
+            result_to_delete.append(runner)
+    return result_to_delete
 
 def get_key_and_app_from_aws():
     import boto3
@@ -23,7 +47,7 @@ def get_key_and_app_from_aws():
 
 def handler(event, context):
     private_key, app_id = get_key_and_app_from_aws()
-    main(private_key, app_id, True, False)
+    main(private_key, app_id, True, True)
 
 def get_installation_id(jwt_token):
     headers = {
@@ -74,12 +98,13 @@ def list_runners(access_token):
         desc = RunnerDescription(id=runner['id'], name=runner['name'], tags=tags,
                                  offline=runner['status']=='offline', busy=runner['busy'])
         result.append(desc)
+
     return result
 
 def group_runners_by_tag(listed_runners):
     result = {}
 
-    RUNNER_TYPE_LABELS = ['style-checker', 'builder', 'func-tester', 'stress-tester']
+    RUNNER_TYPE_LABELS = ['style-checker', 'builder', 'func-tester', 'stress-tester', 'fuzzer-unit-tester']
     for runner in listed_runners:
         for tag in runner.tags:
             if tag in RUNNER_TYPE_LABELS:
@@ -95,10 +120,9 @@ def group_runners_by_tag(listed_runners):
 
 
 def push_metrics_to_cloudwatch(listed_runners, namespace):
-    import boto3
     client = boto3.client('cloudwatch')
     metrics_data = []
-    busy_runners = sum(1 for runner in listed_runners if runner.busy)
+    busy_runners = sum(1 for runner in listed_runners if runner.busy and not runner.offline)
     metrics_data.append({
         'MetricName': 'BusyRunners',
         'Value': busy_runners,
@@ -154,6 +178,7 @@ def main(github_secret_key, github_app_id, push_to_cloudwatch, delete_offline_ru
     grouped_runners = group_runners_by_tag(runners)
     for group, group_runners in grouped_runners.items():
         if push_to_cloudwatch:
+            print(group)
             push_metrics_to_cloudwatch(group_runners, 'RunnersMetrics/' + group)
         else:
             print(group, f"({len(group_runners)})")
@@ -162,12 +187,10 @@ def main(github_secret_key, github_app_id, push_to_cloudwatch, delete_offline_ru
 
     if delete_offline_runners:
         print("Going to delete offline runners")
-        for runner in runners:
-            if runner.offline and not runner.busy:
-                print("Deleting runner", runner)
-                delete_runner(access_token, runner)
-
-
+        dead_runners = get_dead_runners_in_ec2(runners)
+        for runner in dead_runners:
+            print("Deleting runner", runner)
+            delete_runner(access_token, runner)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Get list of runners and their states')
