@@ -76,15 +76,23 @@ def get_image_name(build_config):
         return 'clickhouse/deb-builder'
 
 
-def build_clickhouse(packager_cmd, logs_path):
+def build_clickhouse(packager_cmd, logs_path, build_output_path):
     build_log_path = os.path.join(logs_path, 'build_log.log')
     with TeePopen(packager_cmd, build_log_path) as process:
         retcode = process.wait()
+        if os.path.exists(build_output_path):
+            build_results = os.listdir(build_output_path)
+        else:
+            build_results = []
+
         if retcode == 0:
-            logging.info("Built successfully")
+            if len(build_results) != 0:
+                logging.info("Built successfully")
+            else:
+                logging.info("Success exit code, but no build artifacts => build failed")
         else:
             logging.info("Build failed")
-    return build_log_path, retcode == 0
+    return build_log_path, retcode == 0 and len(build_results) > 0
 
 
 def get_build_results_if_exists(s3_helper, s3_prefix):
@@ -159,7 +167,7 @@ if __name__ == "__main__":
                 log_url = 'https://s3.amazonaws.com/clickhouse-builds/' +  url.replace('+', '%2B').replace(' ', '%20')
             else:
                 build_urls.append('https://s3.amazonaws.com/clickhouse-builds/' + url.replace('+', '%2B').replace(' ', '%20'))
-        create_json_artifact(temp_path, build_name, log_url, build_urls, build_config, 0, True)
+        create_json_artifact(temp_path, build_name, log_url, build_urls, build_config, 0, len(build_urls) > 0)
         sys.exit(0)
 
     image_name = get_image_name(build_config)
@@ -203,7 +211,7 @@ if __name__ == "__main__":
         os.makedirs(build_clickhouse_log)
 
     start = time.time()
-    log_path, success = build_clickhouse(packager_cmd, build_clickhouse_log)
+    log_path, success = build_clickhouse(packager_cmd, build_clickhouse_log, build_output_path)
     elapsed = int(time.time() - start)
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {build_output_path}", shell=True)
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {ccache_path}", shell=True)

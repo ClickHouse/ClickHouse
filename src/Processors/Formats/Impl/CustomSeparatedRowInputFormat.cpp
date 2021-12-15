@@ -24,14 +24,14 @@ static FormatSettings updateFormatSettings(const FormatSettings & settings)
 
 CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
     const Block & header_,
-    ReadBuffer & in_,
+    ReadBuffer & in_buf_,
     const Params & params_,
     bool with_names_,
     bool with_types_,
     bool ignore_spaces_,
     const FormatSettings & format_settings_)
     : CustomSeparatedRowInputFormat(
-        header_, std::make_unique<PeekableReadBuffer>(in_), params_, with_names_, with_types_, ignore_spaces_, format_settings_)
+        header_, std::make_unique<PeekableReadBuffer>(in_buf_), params_, with_names_, with_types_, ignore_spaces_, format_settings_)
 {
 }
 
