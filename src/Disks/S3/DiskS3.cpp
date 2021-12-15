@@ -16,6 +16,7 @@
 #include <Common/createHardLink.h>
 #include <Common/quoteString.h>
 #include <Common/thread_local_rng.h>
+#include <Common/getRandomASCIIString.h>
 
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromS3.h>
@@ -246,7 +247,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
     auto metadata = readOrCreateMetaForWriting(path, mode);
 
     /// Path to store new S3 object.
-    auto s3_path = getRandomName();
+    auto s3_path = getRandomASCIIString();
 
     std::optional<ObjectMetadata> object_metadata;
     if (settings->send_metadata)
