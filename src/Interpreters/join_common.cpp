@@ -225,7 +225,13 @@ void removeColumnNullability(ColumnWithTypeAndName & column)
 
         if (column.column && column.column->isNullable())
         {
+            column.column = column.column->convertToFullColumnIfConst();
             const auto * nullable_col = checkAndGetColumn<ColumnNullable>(*column.column);
+            if (!nullable_col)
+            {
+                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' is expected to be nullable", column.dumpStructure());
+            }
+
             MutableColumnPtr mutable_column = nullable_col->getNestedColumn().cloneEmpty();
             insertFromNullableOrDefault(mutable_column, nullable_col);
             column.column = std::move(mutable_column);

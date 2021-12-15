@@ -34,11 +34,22 @@ struct TaskRuntimeData
 {
     TaskRuntimeData(ExecutableTaskPtr && task_, CurrentMetrics::Metric metric_)
         : task(std::move(task_))
-        , increment(std::move(metric_))
-    {}
+        , metric(metric_)
+    {
+        /// Increment and decrement a metric with sequentially consistent memory order
+        /// This is needed, because in unit test this metric is read from another thread
+        /// and some invariant is checked. With relaxed memory order we could read stale value
+        /// for this metric, that's why test can be failed.
+        CurrentMetrics::values[metric].fetch_add(1);
+    }
+
+    ~TaskRuntimeData()
+    {
+        CurrentMetrics::values[metric].fetch_sub(1);
+    }
 
     ExecutableTaskPtr task;
-    CurrentMetrics::Increment increment;
+    CurrentMetrics::Metric metric;
     std::atomic_bool is_currently_deleting{false};
     /// Actually autoreset=false is needed only for unit test
     /// where multiple threads could remove tasks corresponding to the same storage
