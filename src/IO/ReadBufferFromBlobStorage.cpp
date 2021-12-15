@@ -68,7 +68,7 @@ bool ReadBufferFromBlobStorage::nextImpl()
         data_capacity = internal_buffer.size();
     }
 
-    size_t to_read_bytes = std::min(total_size - offset, data_capacity);
+    size_t to_read_bytes = std::min(static_cast<size_t>(total_size - offset), data_capacity);
     size_t bytes_read = 0;
 
     size_t sleep_time_with_backoff_milliseconds = 100;
