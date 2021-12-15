@@ -189,7 +189,7 @@ if __name__ == "__main__":
         logging.info("cache was not fetched, will create empty dir")
         os.makedirs(ccache_path)
 
-    if build_config['package_type'] == "performance":
+    if build_config['package_type'] == "performance" and pr_info.number != 0:
         # because perf tests store some information about git commits
         subprocess.check_call(f"cd {repo_path} && git fetch origin master:master", shell=True)
 
