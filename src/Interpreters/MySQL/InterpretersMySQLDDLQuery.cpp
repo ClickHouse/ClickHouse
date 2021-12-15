@@ -20,6 +20,7 @@
 #include <Parsers/MySQL/ASTDeclareIndex.h>
 #include <Common/quoteString.h>
 #include <Common/assert_cast.h>
+#include <Common/getTableOverride.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -519,7 +520,7 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
     rewritten_query->set(rewritten_query->storage, storage);
     rewritten_query->set(rewritten_query->columns_list, columns);
 
-    if (auto table_override = ASTTableOverride::tryGetTableOverride(mapped_to_database, create_query.table))
+    if (auto table_override = tryGetTableOverride(mapped_to_database, create_query.table))
     {
         auto * override_ast = table_override->as<ASTTableOverride>();
         override_ast->applyToCreateTableQuery(rewritten_query.get());

@@ -1,5 +1,7 @@
 #include "PostgreSQLReplicationHandler.h"
 
+#include <Common/setThreadName.h>
+#include <Common/getTableOverride.h>
 #include <Parsers/ASTTableOverrides.h>
 #include <Processors/Transforms/PostgreSQLSource.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
@@ -8,7 +10,6 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
-#include <Common/setThreadName.h>
 #include <Interpreters/Context.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <boost/algorithm/string/trim.hpp>
@@ -281,8 +282,8 @@ ASTPtr PostgreSQLReplicationHandler::getCreateNestedTableQuery(StorageMaterializ
     if (!table_structure)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to get PostgreSQL table structure");
 
-    auto table_override = ASTTableOverride::tryGetTableOverride(current_database_name, table_name);
-    return storage->getCreateNestedTableQuery(std::move(table_structure), table_override->as<ASTTableOverride>());
+    auto table_override = tryGetTableOverride(current_database_name, table_name);
+    return storage->getCreateNestedTableQuery(std::move(table_structure), table_override ? table_override->as<ASTTableOverride>() : nullptr);
 }
 
 
@@ -300,8 +301,8 @@ StoragePtr PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection &
     query_str = fmt::format("SELECT * FROM {}", quoted_name);
     LOG_DEBUG(log, "Loading PostgreSQL table {}.{}", postgres_database, quoted_name);
 
-    auto table_override = ASTTableOverride::tryGetTableOverride(current_database_name, table_name);
-    materialized_storage->createNestedIfNeeded(fetchTableStructure(*tx, table_name), table_override->as<ASTTableOverride>());
+    auto table_override = tryGetTableOverride(current_database_name, table_name);
+    materialized_storage->createNestedIfNeeded(fetchTableStructure(*tx, table_name), table_override ? table_override->as<ASTTableOverride>() : nullptr);
     auto nested_storage = materialized_storage->getNested();
 
     auto insert = std::make_shared<ASTInsertQuery>();

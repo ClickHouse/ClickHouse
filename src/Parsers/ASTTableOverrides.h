@@ -27,8 +27,6 @@ public:
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
     void applyToCreateTableQuery(ASTCreateQuery * create_query) const;
-
-    static ASTPtr tryGetTableOverride(const String & mapped_database, const String & table);
 };
 
 /// List of table overrides, for example:

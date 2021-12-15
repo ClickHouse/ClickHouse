@@ -582,9 +582,9 @@ def test_table_override(started_cluster):
     expected = "CREATE TABLE test_database.table_override\\n(\\n    `key` Int32,\\n    `value` UUID,\\n    `_sign` Int8() MATERIALIZED 1,\\n    `_version` UInt64() MATERIALIZED 1\\n)\\nENGINE = ReplacingMergeTree(_version)\\nORDER BY tuple(key)"
     assert(result.strip() == expected)
     time.sleep(5)
-    result = instance.query(f"select * from {materialized_database}.{table_name} order by key")
+    query = f"select * from {materialized_database}.{table_name} order by key"
     expected = instance.query(f"select * from {table_name} order by key")
-    assert(result == expected)
+    assert_eq_with_retry(instance, query, expected)
     drop_materialized_db()
     drop_postgres_table(cursor, table_name)
 

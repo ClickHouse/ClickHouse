@@ -2,29 +2,37 @@
 
 #if USE_LIBPQXX
 #include <base/logger_useful.h>
+
 #include <Common/Macros.h>
 #include <Common/parseAddress.h>
 #include <Common/assert_cast.h>
+
 #include <Core/Settings.h>
+#include <Core/PostgreSQL/Connection.h>
+
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
+
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
+
 #include <Processors/Transforms/FilterTransform.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <QueryPipeline/Pipe.h>
+
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
+
 #include <Storages/StorageFactory.h>
 #include <Storages/ReadFinalForExternalReplicaStorage.h>
 #include <Storages/StoragePostgreSQL.h>
-#include <Core/PostgreSQL/Connection.h>
+
+#include <QueryPipeline/Pipe.h>
 
 
 namespace DB
@@ -438,7 +446,6 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
 
         if (table_override && table_override->columns)
         {
-            table_override->applyToCreateTableQuery(create_table_query.get());
             if (table_override->columns)
             {
                 auto children = table_override->columns->children;
