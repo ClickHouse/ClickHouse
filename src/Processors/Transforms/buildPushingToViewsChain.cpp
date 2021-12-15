@@ -397,8 +397,6 @@ static void process(Block & block, ViewRuntimeData & view, const ViewsData & vie
     ///  but it will contain single block (that is INSERT-ed into main table).
     /// InterpreterSelectQuery will do processing of alias columns.
     auto local_context = Context::createCopy(context);
-    /// Remove the query context to avoid caching and reusing the result of scalar subqueries between runs with different blocks
-    local_context->setQueryContext(nullptr);
     local_context->addViewSource(StorageValues::create(
         views_data.source_storage_id,
         views_data.source_metadata_snapshot->getColumns(),
