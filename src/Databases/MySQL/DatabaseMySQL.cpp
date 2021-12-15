@@ -65,7 +65,7 @@ DatabaseMySQL::DatabaseMySQL(
 {
     try
     {
-        /// Test database is working fine and fetch tables.
+        /// Test that the database is working fine; it will also fetch tables.
         empty();
     }
     catch (...)
