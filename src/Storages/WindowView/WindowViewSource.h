@@ -11,83 +11,109 @@ class WindowViewSource : public SourceWithProgress
 {
 public:
     WindowViewSource(
-        StorageWindowView & storage_,
+        std::shared_ptr<StorageWindowView> storage_,
+        const bool is_events_,
+        String window_view_timezone_,
         const bool has_limit_,
         const UInt64 limit_,
         const UInt64 heartbeat_interval_sec_)
-        : SourceWithProgress(storage_.getHeader())
+        : SourceWithProgress(
+            is_events_ ? Block(
+                {ColumnWithTypeAndName(ColumnUInt32::create(), std::make_shared<DataTypeDateTime>(window_view_timezone_), "watermark")})
+                       : storage_->getHeader())
         , storage(storage_)
+        , is_events(is_events_)
+        , window_view_timezone(window_view_timezone_)
         , has_limit(has_limit_)
         , limit(limit_)
-        , heartbeat_interval_sec(heartbeat_interval_sec_) {}
+        , heartbeat_interval_sec(heartbeat_interval_sec_)
+    {
+        if (is_events)
+            header.insert(
+                ColumnWithTypeAndName(ColumnUInt32::create(), std::make_shared<DataTypeDateTime>(window_view_timezone_), "watermark"));
+        else
+            header = storage->getHeader();
+    }
 
     String getName() const override { return "WindowViewSource"; }
 
-    void addBlock(Block block_)
+    void addBlock(Block block_, UInt32 watermark)
     {
         std::lock_guard lock(blocks_mutex);
-        blocks.push_back(std::move(block_));
+        blocks_with_watermark.push_back({std::move(block_), watermark});
     }
 
 protected:
-    Block getHeader() const { return storage.getHeader(); }
+    Block getHeader() const { return header; }
 
     Chunk generate() override
     {
-        auto block = generateImpl();
-        return Chunk(block.getColumns(), block.rows());
+        Block block;
+        UInt32 watermark;
+        std::tie(block, watermark) = generateImpl();
+        if (is_events)
+        {
+            return Chunk(
+                {DataTypeDateTime(window_view_timezone).createColumnConst(block.rows(), watermark)->convertToFullColumnIfConst()},
+                block.rows());
+        }
+        else
+        {
+            return Chunk(block.getColumns(), block.rows());
+        }
     }
 
-    Block generateImpl()
+    std::pair<Block, UInt32> generateImpl()
     {
-        Block res;
-
         if (has_limit && num_updates == static_cast<Int64>(limit))
-            return Block();
+            return {Block(), 0};
 
-        if (isCancelled() || storage.shutdown_called)
-            return Block();
+        if (isCancelled() || storage->shutdown_called)
+            return {Block(), 0};
 
         std::unique_lock lock(blocks_mutex);
-        if (blocks.empty())
+        if (blocks_with_watermark.empty())
         {
             if (!end_of_blocks)
             {
                 end_of_blocks = true;
                 num_updates += 1;
-                return getHeader();
+                return {getHeader(), 0};
             }
 
-            storage.fire_condition.wait_for(lock, std::chrono::seconds(heartbeat_interval_sec));
+            storage->fire_condition.wait_for(lock, std::chrono::seconds(heartbeat_interval_sec));
 
-            if (isCancelled() || storage.shutdown_called)
+            if (isCancelled() || storage->shutdown_called)
             {
-                return Block();
+                return {Block(), 0};
             }
 
-            if (blocks.empty())
-                return getHeader();
+            if (blocks_with_watermark.empty())
+                return {getHeader(), 0};
             else
             {
                 end_of_blocks = false;
-                res = blocks.front();
-                blocks.pop_front();
+                auto res = blocks_with_watermark.front();
+                blocks_with_watermark.pop_front();
                 return res;
             }
         }
         else
         {
-            res = blocks.front();
-            blocks.pop_front();
+            auto res = blocks_with_watermark.front();
+            blocks_with_watermark.pop_front();
             return res;
         }
     }
 
 private:
-    StorageWindowView & storage;
+    std::shared_ptr<StorageWindowView> storage;
 
-    BlocksList blocks;
+    std::list<std::pair<Block, UInt32>> blocks_with_watermark;
 
+    Block header;
+    const bool is_events;
+    String window_view_timezone;
     const bool has_limit;
     const UInt64 limit;
     Int64 num_updates = -1;

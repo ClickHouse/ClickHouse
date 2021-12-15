@@ -27,7 +27,7 @@ class BuildResult():
         self.with_coverage = with_coverage
 
 def group_by_artifacts(build_urls):
-    groups = {'deb': [], 'binary': [], 'tgz': [], 'rpm': [], 'preformance': []}
+    groups = {'deb': [], 'binary': [], 'tgz': [], 'rpm': [], 'performance': []}
     for url in build_urls:
         if url.endswith('performance.tgz'):
             groups['performance'].append(url)
@@ -123,6 +123,9 @@ if __name__ == "__main__":
         build_logs += build_logs_url
 
     logging.info("Totally got %s results", len(build_results))
+    if len(build_results) == 0:
+        logging.info("No builds, failing check")
+        sys.exit(1)
 
     s3_helper = S3Helper('https://s3.amazonaws.com')
 

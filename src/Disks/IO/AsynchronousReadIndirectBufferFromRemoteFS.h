@@ -1,9 +1,6 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#endif
-
 #include <IO/ReadBufferFromFile.h>
 #include <IO/AsynchronousReader.h>
 #include <utility>

@@ -141,6 +141,47 @@ class PRInfo:
                 return True
         return False
 
+    def can_skip_builds_and_use_version_from_master(self):
+        if 'force tests' in self.labels:
+            return False
+
+        if self.changed_files is None or not self.changed_files:
+            return False
+
+        for f in self.changed_files:
+            if (not f.startswith('tests/queries')
+                or not f.startswith('tests/integration')
+                or not f.startswith('tests/performance')):
+                return False
+
+        return True
+
+    def can_skip_integration_tests(self):
+        if 'force tests' in self.labels:
+            return False
+
+        if self.changed_files is None or not self.changed_files:
+            return False
+
+        for f in self.changed_files:
+            if not f.startswith('tests/queries') or not f.startswith('tests/performance'):
+                return False
+
+        return True
+
+    def can_skip_functional_tests(self):
+        if 'force tests' in self.labels:
+            return False
+
+        if self.changed_files is None or not self.changed_files:
+            return False
+
+        for f in self.changed_files:
+            if not f.startswith('tests/integration') or not f.startswith('tests/performance'):
+                return False
+
+        return True
+
 
 class FakePRInfo:
     def __init__(self):

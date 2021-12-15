@@ -184,6 +184,15 @@ inline void assertChar(char symbol, ReadBuffer & buf)
     }
 }
 
+inline bool checkCharCaseInsensitive(char c, ReadBuffer & buf)
+{
+    char a;
+    if (!buf.peek(a) || !equalsCaseInsensitive(a, c))
+        return false;
+    buf.ignore();
+    return true;
+}
+
 inline void assertString(const String & s, ReadBuffer & buf)
 {
     assertString(s.c_str(), buf);
@@ -1374,5 +1383,7 @@ struct PcgDeserializer
         rng.state_ = state;
     }
 };
+
+void readQuotedFieldIntoString(String & s, ReadBuffer & buf);
 
 }
