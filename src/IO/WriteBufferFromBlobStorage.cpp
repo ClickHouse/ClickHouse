@@ -6,6 +6,7 @@
 
 #include <IO/WriteBufferFromBlobStorage.h>
 #include <Disks/RemoteDisksCommon.h>
+#include <Common/getRandomASCIIString.h>
 
 
 namespace DB
@@ -42,7 +43,7 @@ void WriteBufferFromBlobStorage::nextImpl()
     {
         auto part_len = std::min(len - read, max_single_part_upload_size);
 
-        auto block_id = getRandomName(64);
+        auto block_id = getRandomASCIIString(64);
         block_ids.push_back(block_id);
 
         Azure::Core::IO::MemoryBodyStream tmp_buffer(reinterpret_cast<uint8_t *>(buffer_begin + read), part_len);
