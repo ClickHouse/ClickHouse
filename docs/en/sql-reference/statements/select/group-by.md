@@ -206,6 +206,9 @@ This extra row is only produced in `JSON*`, `TabSeparated*`, and `Pretty*` forma
 -   In `Pretty*` formats, the row is output as a separate table after the main result.
 -   In the other formats it is not available.
 
+!!! note "Note"
+    totals is output in the results of `SELECT` queries, and is not output in `INSERT INTO ... SELECT`. 
+
 `WITH TOTALS` can be run in different ways when [HAVING](../../../sql-reference/statements/select/having.md) is present. The behavior depends on the `totals_mode` setting.
 
 ### Configuring Totals Processing {#configuring-totals-processing}
