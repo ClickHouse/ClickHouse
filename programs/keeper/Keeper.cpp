@@ -22,10 +22,8 @@
 #include <pwd.h>
 #include <Coordination/FourLetterCommand.h>
 
-#if !defined(ARCADIA_BUILD)
-#   include "config_core.h"
-#   include "Common/config_version.h"
-#endif
+#include "config_core.h"
+#include "Common/config_version.h"
 
 #if USE_SSL
 #    include <Poco/Net/Context.h>

@@ -15,6 +15,7 @@ from commit_status_helper import post_commit_status, get_commit
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
 from rerun_helper import RerunHelper
+from tee_popen import TeePopen
 
 
 NAME = "Docs Check (actions)"
@@ -57,17 +58,16 @@ if __name__ == "__main__":
 
     run_log_path = os.path.join(test_output, 'runlog.log')
 
-    with open(run_log_path, 'w', encoding='utf-8') as log:
-        with subprocess.Popen(cmd, shell=True, stderr=log, stdout=log) as process:
-            retcode = process.wait()
-            if retcode == 0:
-                logging.info("Run successfully")
-                status = "success"
-                description = "Docs check passed"
-            else:
-                description = "Docs check failed (non zero exit code)"
-                status = "failure"
-                logging.info("Run failed")
+    with TeePopen(cmd, run_log_path) as process:
+        retcode = process.wait()
+        if retcode == 0:
+            logging.info("Run successfully")
+            status = "success"
+            description = "Docs check passed"
+        else:
+            description = "Docs check failed (non zero exit code)"
+            status = "failure"
+            logging.info("Run failed")
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
     files = os.listdir(test_output)

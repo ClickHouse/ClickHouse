@@ -117,8 +117,8 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
 
     data->rethrowExceptionIfHas();
 
-    bool is_execution_finished = lazy_format ? lazy_format->isFinished()
-                                             : data->is_finished.load();
+    bool is_execution_finished
+        = !data->executor->checkTimeLimitSoft() || lazy_format ? lazy_format->isFinished() : data->is_finished.load();
 
     if (is_execution_finished)
     {
