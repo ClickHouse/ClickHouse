@@ -182,11 +182,6 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
         res = std::make_shared<Entry>(*this, process_it);
 
         ProcessListForUser & user_process_list = user_to_queries[client_info.current_user];
-        {
-            BlockQueryIfMemoryLimit block_query{user_process_list.user_overcommit_tracker};
-            user_process_list.queries.emplace(client_info.current_query_id, &res->get());
-        }
-
         process_it->setUserProcessList(&user_process_list);
 
         /// Track memory usage for all simultaneously running queries from single user.
@@ -223,6 +218,11 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
             ///  since allocation and deallocation could happen in different threads
 
             process_it->thread_group = std::move(thread_group);
+        }
+
+        {
+            BlockQueryIfMemoryLimit block_query{user_process_list.user_overcommit_tracker};
+            user_process_list.queries.emplace(client_info.current_query_id, &res->get());
         }
 
         if (!user_process_list.user_throttler)
