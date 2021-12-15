@@ -31,14 +31,17 @@ public:
 
     String getName() const override { return "RegexpRowInputFormat"; }
     void resetParser() override;
+    void setReadBuffer(ReadBuffer & in_) override;
 
 private:
+    RegexpRowInputFormat(std::unique_ptr<PeekableReadBuffer> buf_, const Block & header_, Params params_, const FormatSettings & format_settings_);
+
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 
     bool readField(size_t index, MutableColumns & columns);
     void readFieldsFromMatch(MutableColumns & columns, RowReadExtension & ext);
 
-    PeekableReadBuffer buf;
+    std::unique_ptr<PeekableReadBuffer> buf;
     const FormatSettings format_settings;
     const EscapingRule escaping_rule;
 

@@ -193,7 +193,7 @@ function run_tests
     then
         # Run only explicitly specified tests, if any.
         # shellcheck disable=SC2010
-        test_files=$(ls "$test_prefix" | grep "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}")
+        test_files=($(ls "$test_prefix" | grep "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}"))
     elif [ "$PR_TO_TEST" -ne 0 ] \
         && [ "$(wc -l < changed-test-definitions.txt)" -gt 0 ] \
         && [ "$(wc -l < other-changed-files.txt)" -eq 0 ]
@@ -201,10 +201,26 @@ function run_tests
         # If only the perf tests were changed in the PR, we will run only these
         # tests. The lists of changed files are prepared in entrypoint.sh because
         # it has the repository.
-        test_files=$(sed "s/tests\/performance/${test_prefix//\//\\/}/" changed-test-definitions.txt)
+        test_files=($(sed "s/tests\/performance/${test_prefix//\//\\/}/" changed-test-definitions.txt))
     else
         # The default -- run all tests found in the test dir.
-        test_files=$(ls "$test_prefix"/*.xml)
+        test_files=($(ls "$test_prefix"/*.xml))
+    fi
+
+    # We split perf tests into multiple checks to make them faster
+    if [ -v CHPC_TEST_RUN_BY_HASH_TOTAL ]; then
+        # filter tests array in bash https://stackoverflow.com/a/40375567
+        for index in "${!test_files[@]}"; do
+            # sorry for this, just calculating hash(test_name) % total_tests_group == my_test_group_num
+            test_hash_result=$(echo test_files[$index] | perl -ne 'use Digest::MD5 qw(md5); print unpack('Q', md5($_)) % $ENV{CHPC_TEST_RUN_BY_HASH_TOTAL} == $ENV{CHPC_TEST_RUN_BY_HASH_NUM};')
+            # BTW, for some reason when hash(test_name) % total_tests_group != my_test_group_num perl outputs nothing, not zero
+            if [ "$test_hash_result" != "1" ]; then
+                # deleting element from array
+                unset -v 'test_files[$index]'
+            fi
+        done
+        # to have sequential indexes...
+        test_files=("${test_files[@]}")
     fi
 
     # For PRs w/o changes in test definitons, test only a subset of queries,
@@ -212,21 +228,26 @@ function run_tests
     # already set, keep those values.
     #
     # NOTE: too high CHPC_RUNS/CHPC_MAX_QUERIES may hit internal CI timeout.
-    if [ "$PR_TO_TEST" -ne 0 ] && [ "$(wc -l < changed-test-definitions.txt)" -eq 0 ]
-    then
-        CHPC_RUNS=${CHPC_RUNS:-7}
-        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-10}
-    else
-        CHPC_RUNS=${CHPC_RUNS:-13}
-        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-0}
-    fi
+    # NOTE: Currently we disabled complete run even for master branch
+    #if [ "$PR_TO_TEST" -ne 0 ] && [ "$(wc -l < changed-test-definitions.txt)" -eq 0 ]
+    #then
+    #    CHPC_RUNS=${CHPC_RUNS:-7}
+    #    CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-10}
+    #else
+    #    CHPC_RUNS=${CHPC_RUNS:-13}
+    #    CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-0}
+    #fi
+
+    CHPC_RUNS=${CHPC_RUNS:-7}
+    CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-10}
+
     export CHPC_RUNS
     export CHPC_MAX_QUERIES
 
     # Determine which concurrent benchmarks to run. For now, the only test
     # we run as a concurrent benchmark is 'website'. Run it as benchmark if we
     # are also going to run it as a normal test.
-    for test in $test_files; do echo "$test"; done | sed -n '/website/p' > benchmarks-to-run.txt
+    for test in ${test_files[@]}; do echo "$test"; done | sed -n '/website/p' > benchmarks-to-run.txt
 
     # Delete old report files.
     for x in {test-times,wall-clock-times}.tsv
@@ -235,8 +256,8 @@ function run_tests
         touch "$x"
     done
 
-    # Randomize test order.
-    test_files=$(for f in $test_files; do echo "$f"; done | sort -R)
+    # Randomize test order. BTW, it's not an array no more.
+    test_files=$(for f in ${test_files[@]}; do echo "$f"; done | sort -R)
 
     # Limit profiling time to 10 minutes, not to run for too long.
     profile_seconds_left=600
@@ -524,7 +545,9 @@ unset IFS
 # all nodes.
 numactl --show
 numactl --cpunodebind=all --membind=all numactl --show
-numactl --cpunodebind=all --membind=all parallel --joblog analyze/parallel-log.txt --null < analyze/commands.txt 2>> analyze/errors.log
+# Use less jobs to avoid OOM. Some queries can consume 8+ GB of memory.
+jobs_count=$(($(grep -c ^processor /proc/cpuinfo) / 3))
+numactl --cpunodebind=all --membind=all parallel --jobs  $jobs_count --joblog analyze/parallel-log.txt --null < analyze/commands.txt 2>> analyze/errors.log
 
 clickhouse-local --query "
 -- Join the metric names back to the metric statistics we've calculated, and make
