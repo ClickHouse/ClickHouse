@@ -386,7 +386,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             query.setFinal();
 
         /// Save scalar sub queries's results in the query context
-        if (!options.only_analyze && context->hasQueryContext())
+        /// But discard them if the Storage has been modified
+        /// In an ideal situation we would only discard the scalars affected by the storage change
+        if (!options.only_analyze && context->hasQueryContext() && !context->getViewSource())
             for (const auto & it : syntax_analyzer_result->getScalars())
                 context->getQueryContext()->addScalar(it.first, it.second);
 
