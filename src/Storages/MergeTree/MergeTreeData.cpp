@@ -224,7 +224,6 @@ MergeTreeData::MergeTreeData(
     {
         try
         {
-
             checkPartitionKeyAndInitMinMax(metadata_.partition_key);
             setProperties(metadata_, metadata_, attach);
             if (minmax_idx_date_column_pos == -1)
