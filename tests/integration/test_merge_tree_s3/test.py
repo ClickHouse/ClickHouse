@@ -456,3 +456,12 @@ def test_s3_disk_reads_on_unstable_connection(cluster, node_name):
     for i in range(30):
         print(f"Read sequence {i}")
         assert node.query("SELECT sum(id) FROM s3_test").splitlines() == ["40499995500000"]
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_lazy_seek_optimization_for_async_read(cluster, node_name):
+    node = cluster.instances[node_name]
+    node.query("DROP TABLE IF EXISTS test")
+    node.query("CREATE TABLE test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3';")
+    node.query("INSERT INTO test SELECT * FROM generateRandom('key UInt32, value String') LIMIT 100000000")
+    assert int(node.query("SELECT count() FROM test")) == 100000000
