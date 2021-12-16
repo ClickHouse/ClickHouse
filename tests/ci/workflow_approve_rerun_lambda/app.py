@@ -61,6 +61,7 @@ TRUSTED_CONTRIBUTORS = {e.lower() for e in [
     "bharatnc",     # Newbie, but already with many contributions.
     "bobrik",       # Seasoned contributor, CloundFlare
     "BohuTANG",
+    "cwurm",        # Employee
     "damozhaeva",   # DOCSUP
     "den-crane",
     "gyuton",       # DOCSUP
