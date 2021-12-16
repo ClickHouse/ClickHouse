@@ -14,11 +14,11 @@
 namespace DB
 {
 
-class ReadBufferFromBlobStorage : public SeekableReadBuffer
+class ReadBufferFromAzureBlobStorage : public SeekableReadBuffer
 {
 public:
 
-    explicit ReadBufferFromBlobStorage(
+    explicit ReadBufferFromAzureBlobStorage(
         std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
         const String & path_,
         size_t max_single_read_retries_,
@@ -55,7 +55,7 @@ private:
     char * data_ptr;
     size_t data_capacity;
 
-    Poco::Logger * log = &Poco::Logger::get("ReadBufferFromBlobStorage");
+    Poco::Logger * log = &Poco::Logger::get("ReadBufferFromAzureBlobStorage");
 };
 
 }

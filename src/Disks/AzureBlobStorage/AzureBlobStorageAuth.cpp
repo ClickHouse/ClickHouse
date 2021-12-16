@@ -1,4 +1,4 @@
-#include <Disks/BlobStorage/BlobStorageAuth.h>
+#include <Disks/AzureBlobStorage/AzureBlobStorageAuth.h>
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -17,7 +17,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-struct BlobStorageEndpoint
+struct AzureBlobStorageEndpoint
 {
     const String storage_account_url;
     const String container_name;
@@ -41,18 +41,18 @@ void validateContainerName(const String & container_name)
     auto len = container_name.length();
     if (len < 3 || len > 64)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Blob Storage container name is not valid, should have length between 3 and 64, but has length: {}", len);
+            "AzureBlob Storage container name is not valid, should have length between 3 and 64, but has length: {}", len);
 
     const auto * container_name_pattern_str = R"([a-z][a-z0-9-]+)";
     static const RE2 container_name_pattern(container_name_pattern_str);
 
     if (!re2::RE2::FullMatch(container_name, container_name_pattern))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Blob Storage container name is not valid, should follow the format: {}, got: {}", container_name_pattern_str, container_name);
+            "AzureBlob Storage container name is not valid, should follow the format: {}, got: {}", container_name_pattern_str, container_name);
 }
 
 
-BlobStorageEndpoint processBlobStorageEndpoint(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+AzureBlobStorageEndpoint processAzureBlobStorageEndpoint(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
     String storage_account_url = config.getString(config_prefix + ".storage_account_url");
     validateStorageAccountUrl(storage_account_url);
@@ -86,7 +86,7 @@ std::shared_ptr<BlobContainerClient> getClientWithConnectionString(
 
 
 template <class T>
-std::shared_ptr<T> getBlobStorageClientWithAuth(
+std::shared_ptr<T> getAzureBlobStorageClientWithAuth(
     const String & url, const String & container_name, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
     if (config.has(config_prefix + ".connection_string"))
@@ -109,19 +109,19 @@ std::shared_ptr<T> getBlobStorageClientWithAuth(
 }
 
 
-std::shared_ptr<BlobContainerClient> getBlobContainerClient(
+std::shared_ptr<BlobContainerClient> getAzureBlobContainerClient(
     const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
-    auto endpoint = processBlobStorageEndpoint(config, config_prefix);
+    auto endpoint = processAzureBlobStorageEndpoint(config, config_prefix);
     auto container_name = endpoint.container_name;
     auto final_url = endpoint.storage_account_url
         + (endpoint.storage_account_url.back() == '/' ? "" : "/")
         + container_name;
 
     if (endpoint.container_already_exists.value_or(false))
-        return getBlobStorageClientWithAuth<BlobContainerClient>(final_url, container_name, config, config_prefix);
+        return getAzureBlobStorageClientWithAuth<BlobContainerClient>(final_url, container_name, config, config_prefix);
 
-    auto blob_service_client = getBlobStorageClientWithAuth<BlobServiceClient>(endpoint.storage_account_url, container_name, config, config_prefix);
+    auto blob_service_client = getAzureBlobStorageClientWithAuth<BlobServiceClient>(endpoint.storage_account_url, container_name, config, config_prefix);
 
     if (!endpoint.container_already_exists.has_value())
     {
@@ -132,7 +132,7 @@ std::shared_ptr<BlobContainerClient> getBlobContainerClient(
         for (const auto & blob_container : blob_containers)
         {
             if (blob_container.Name == endpoint.container_name)
-                return getBlobStorageClientWithAuth<BlobContainerClient>(final_url, container_name, config, config_prefix);
+                return getAzureBlobStorageClientWithAuth<BlobContainerClient>(final_url, container_name, config, config_prefix);
         }
     }
 

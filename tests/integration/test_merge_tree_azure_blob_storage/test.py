@@ -12,7 +12,7 @@ CONFIG_PATH = os.path.join(SCRIPT_DIR, './{}/node/configs/config.d/storage_conf.
 
 NODE_NAME = "node"
 TABLE_NAME = "blob_storage_table"
-BLOB_STORAGE_DISK = "blob_storage_disk"
+AZURE_BLOB_STORAGE_DISK = "blob_storage_disk"
 LOCAL_DISK = "hdd"
 CONTAINER_NAME = "cont"
 
@@ -196,7 +196,7 @@ def test_move_partition_to_another_disk(cluster):
     node.query(f"ALTER TABLE {TABLE_NAME} MOVE PARTITION '2020-01-04' TO DISK '{LOCAL_DISK}'")
     assert node.query(f"SELECT count(*) FROM {TABLE_NAME} FORMAT Values") == "(8192)"
 
-    node.query(f"ALTER TABLE {TABLE_NAME} MOVE PARTITION '2020-01-04' TO DISK '{BLOB_STORAGE_DISK}'")
+    node.query(f"ALTER TABLE {TABLE_NAME} MOVE PARTITION '2020-01-04' TO DISK '{AZURE_BLOB_STORAGE_DISK}'")
     assert node.query(f"SELECT count(*) FROM {TABLE_NAME} FORMAT Values") == "(8192)"
 
 
@@ -327,7 +327,7 @@ def test_restart_during_load(cluster):
     def restart_disk():
         for iii in range(0, 2):
             logging.info(f"Restarting disk, attempt {iii}")
-            node.query(f"SYSTEM RESTART DISK {BLOB_STORAGE_DISK}")
+            node.query(f"SYSTEM RESTART DISK {AZURE_BLOB_STORAGE_DISK}")
             logging.info(f"Disk restarted, attempt {iii}")
             time.sleep(0.5)
 
