@@ -12,7 +12,7 @@
 namespace DB
 {
 
-std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> getBlobContainerClient(
+std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> getAzureBlobContainerClient(
     const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 
 }
