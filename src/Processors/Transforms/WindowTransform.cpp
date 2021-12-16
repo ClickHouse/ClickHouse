@@ -952,7 +952,6 @@ void WindowTransform::updateAggregationState()
             auto * columns = ws.argument_columns.data();
             // Removing arena.get() from the loop makes it faster somehow...
             auto * arena_ptr = arena.get();
-
             for (auto row = first_row; row < past_the_end_row; ++row)
             {
                 a->add(buf, columns, row, arena_ptr);
