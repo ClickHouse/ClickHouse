@@ -11,6 +11,8 @@ on: # yamllint disable-line rule:truthy
       - 'website/**'
       - 'benchmark/**'
       - 'docker/**'
+      - '.github/**'
+  workflow_dispatch:
 jobs:
   DockerHubPush:
     runs-on: [self-hosted, style-checker]
@@ -30,14 +32,6 @@ jobs:
     needs: DockerHubPush
     runs-on: [self-hosted, func-tester]
     steps:
-      - name: Set envs
-        run: |
-          cat >> "$GITHUB_ENV" << 'EOF'
-          TEMP_PATH=${{runner.temp}}/docs_release
-          REPO_COPY=${{runner.temp}}/docs_release/ClickHouse
-          CLOUDFLARE_TOKEN=${{secrets.CLOUDFLARE}}
-          ROBOT_CLICKHOUSE_SSH_KEY=${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
-          EOF
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Download changed images
@@ -46,7 +40,14 @@ jobs:
           name: changed_images
           path: ${{ env.TEMP_PATH }}
       - name: Docs Release
+        env:
+          TEMP_PATH: ${{runner.temp}}/docs_release
+          REPO_COPY: ${{runner.temp}}/docs_release/ClickHouse
+          CLOUDFLARE_TOKEN: ${{secrets.CLOUDFLARE}}
+          ROBOT_CLICKHOUSE_SSH_KEY: ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
         run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci
           python3 docs_release.py
