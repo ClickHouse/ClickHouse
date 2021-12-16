@@ -614,7 +614,7 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
                 value.stat.mzxid = zxid;
                 value.stat.mtime = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
                 value.stat.dataLength = request.data.length();
-                value.size_bytes += request.data.size() - value.data.size();
+                value.size_bytes = value.size_bytes + request.data.size() - value.data.size();
                 value.data = request.data;
             });
 
