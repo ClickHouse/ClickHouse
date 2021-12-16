@@ -52,7 +52,7 @@ In contrast to ZooKeeper, there are no issues with zxid overflow or packet sizes
 
 When using the table engines `File`, `URL`, and `HDFS` ClickHouse now supports partitions. When creating a table you can specify the partition key using the `PARTITION BY` clause e.g. `CREATE TABLE hits_files (...) ENGINE = File(TabSeparated) PARTITION BY toYYYYMM(EventDate)`.
 
-Similarly, when exporting data from ClickHouse using the `file`, `url`, and `hdfs` table functions you can now specify that the data is to be partitioned into multiple files using a `PARTITION BY` clause. For example, `INSERT INTO TABLE FUNCTION file('path/hits_{_partition_id}', 'TSV', '&lt;table_format>') PARTITION BY toYYYYMM(EventDate) VALUES &lt;values>` will create as many files as there are unique months in the dataset.
+Similarly, when exporting data from ClickHouse using the `file`, `url`, and `hdfs` table functions you can now specify that the data is to be partitioned into multiple files using a `PARTITION BY` clause. For example, `INSERT INTO TABLE FUNCTION file('path/hits_{_partition_id}', 'TSV', 'columns...') PARTITION BY toYYYYMM(EventDate) VALUES ...` will create as many files as there are unique months in the dataset.
 
 The `s3` table function has supported partitioned writes since ClickHouse 21.10.
 
