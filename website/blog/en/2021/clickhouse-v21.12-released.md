@@ -155,6 +155,8 @@ ORDER BY EventDate WITH FILL STEP INTERVAL 1 MONTH
 
 `INTERVAL` is a standard SQL operator, you can use SECOND, MINUTE, HOUR, DAY, WEEK, MONTH, QUARTER and YEAR.
 
+This is implemented by **Anton Popov** who is the author of "WITH FILL" feature.
+
 **How does this help you?**
 
 It allows to avoid postprocessing step for your reports.
@@ -182,6 +184,8 @@ Since version 21.12 we introduce support for using parameters for tables and dat
 SELECT uniq(user_id) FROM {tbl:Identifier}
 ```
 
+Identifier parameters also work for CREATE, DROP and all DDL queries. This is implemented by **Nikolai Degterinskiy**.
+
 **How does this help you?**
 
 Let ClickHouse do the heavy-lifting and keep your scripts safe and secure.
@@ -189,7 +193,7 @@ Let ClickHouse do the heavy-lifting and keep your scripts safe and secure.
 
 ## Bool Data Type
 
-This feature is experimental in version 21.12.
+This feature is experimental in version 21.12. It is implemented by **Kevin Wan (MaxWk)** on top of initial work by **hczhcz** and reviewed by **Pavel Kruglov**.
 
 ClickHouse now natively supports a `Bool` data type. It allows to represent values as "true"/"false" during data import and export in text formats. It can also be adjusted to anything else using the settings `bool_true_representation` and `bool_false_representation` (for example, "yes" and "no").
 
