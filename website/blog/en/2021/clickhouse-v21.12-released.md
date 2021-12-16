@@ -1,8 +1,8 @@
 ---
-title: 'What's New in ClickHouse 21.12'
+title: 'What''s New in ClickHouse 21.12'
 image: 'https://blog-images.clickhouse.com/en/2021/clickhouse-v21-12/featured.jpg'
 date: '2021-12-16'
-author: '[Alexey Milovidov](https://github.com/alexey-milovidov)', '[Christoph Wurm](https://github.com/cwurm)'
+author: '[Alexey Milovidov](https://github.com/alexey-milovidov), [Christoph Wurm](https://github.com/cwurm)'
 tags: ['company', 'community']
 ---
 
@@ -258,7 +258,7 @@ The expression is checked and the result (true/false) is written as an index for
 
 **How does this help you?**
 
-Especially in large ClickHouse deployments with many complex tables it can be hard for users to always be up to date on the best way to query a given dataset. Constraints can help optimize queries without having to change the query structure itself. They can also make it easier to make changes to tables. 
+Especially in large ClickHouse deployments with many complex tables it can be hard for users to always be up to date on the best way to query a given dataset. Constraints can help optimize queries without having to change the query structure itself. They can also make it easier to make changes to tables.
 
 For example, let's say you have a table containing web requests and it includes a URL column that contains the full URL of each request. Many times, users will want to know the top level domain (.com, .co.uk, etc.), something ClickHouse provides the `topLevelDomain` function to calculate. If you discover that many people are using this function you might decide to create a new materialized column that pre-calculates the top level domain for each record.
 
