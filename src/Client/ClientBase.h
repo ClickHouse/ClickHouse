@@ -4,6 +4,7 @@
 #include <Common/InterruptListener.h>
 #include <Common/ShellCommand.h>
 #include <Common/Stopwatch.h>
+#include "Interpreters/Context_fwd.h"
 #include <Core/ExternalTable.h>
 #include <Poco/Util/Application.h>
 #include <Interpreters/Context.h>
@@ -37,7 +38,7 @@ void interruptSignalHandler(int signum);
 
 class InternalTextLogs;
 
-class ClientBase : public Poco::Util::Application
+class ClientBase : public Poco::Util::Application, public IHints<2, ClientBase>
 {
 
 public:
@@ -47,6 +48,7 @@ public:
     ~ClientBase() override;
 
     void init(int argc, char ** argv);
+    std::vector<String> getAllRegisteredNames() const override { return cmd_options; }
 
 protected:
     void runInteractive();
@@ -168,6 +170,7 @@ protected:
 
     /// Settings specified via command line args
     Settings cmd_settings;
+    std::vector<String> cmd_options;
 
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;

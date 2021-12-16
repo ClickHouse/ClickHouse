@@ -1635,7 +1635,14 @@ void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, 
     /// Check unrecognized options without positional options.
     auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::exclude_positional);
     if (!unrecognized_options.empty())
+    {
+        auto hints = this->getHints(unrecognized_options[0]);
+
+        if (!hints.empty())
+           throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'. Maybe you meant {}", unrecognized_options[0], toString(hints)); 
+
         throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[0]);
+    }
 
     /// Check positional options (options after ' -- ', ex: clickhouse-client -- <options>).
     unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
@@ -1713,6 +1720,17 @@ void ClientBase::init(int argc, char ** argv)
     ;
 
     addOptions(options_description);
+
+    auto getter = [](const auto & op) {
+        String op_long_name = op->long_name();
+        return "--" + String(op_long_name);
+    };
+
+    const auto & main_options = options_description.main_description->options();
+    const auto & external_options = options_description.external_description->options();
+    std::transform(main_options.begin(), main_options.end(), std::back_inserter(cmd_options), getter);
+    std::transform(external_options.begin(), external_options.end(), std::back_inserter(cmd_options), getter);
+
     parseAndCheckOptions(options_description, options, common_arguments);
     po::notify(options);
 
