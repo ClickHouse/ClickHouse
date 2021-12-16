@@ -200,7 +200,7 @@ Also it simplifies data ingestion from various text sources.
 
 ## Query Optimizations With Table Constraints
 
-This feature is [contributed](https://github.com/ClickHouse/ClickHouse/pull/18787) by **Nikita Vasilev**. Nikita is one of the most notable ClickHouse contributors. He started in 2019 by introducing data skipping indices into ClickHouse, then continued in 2020 with SSD-optimized key-value dictionaries and now contributed with the new advancements in the query optimizer. This feature is reviewed by **Anton Popov**.
+This feature is [contributed](https://github.com/ClickHouse/ClickHouse/pull/18787) by **Nikita Vasilev**. Nikita is one of the most notable ClickHouse contributors. He started in 2019 by introducing data skipping indices into ClickHouse, then continued in 2020 with SSD-optimized key-value dictionaries and now contributed the new advancements in the query optimizer. This feature is reviewed by **Anton Popov**.
 
 So, what optimizations? ClickHouse already allows to specify constraints for tables:
 
