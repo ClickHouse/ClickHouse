@@ -233,7 +233,7 @@ private:
         ContextPtr context_,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns
-    );
+    , const String & comment);
 };
 
 }
