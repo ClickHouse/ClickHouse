@@ -19,7 +19,6 @@ jobs:
     steps:
       - name: Clear repository
         run: |
-          ls -la $GITHUB_WORKSPACE
           sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2

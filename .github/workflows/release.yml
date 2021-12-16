@@ -19,7 +19,7 @@ jobs:
     steps:
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Images check
@@ -37,7 +37,7 @@ jobs:
     steps:
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Download changed images
