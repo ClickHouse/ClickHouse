@@ -126,7 +126,8 @@ public:
         ContextPtr context_,
         const String & query_,
         const ClientInfo & client_info_,
-        QueryPriorities::Handle && priority_handle_);
+        QueryPriorities::Handle && priority_handle_,
+        ThreadGroupStatusPtr && thread_group_);
 
     ~QueryStatus();
 
