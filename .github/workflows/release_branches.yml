@@ -2,10 +2,10 @@ name: ReleaseCI
 on: # yamllint disable-line rule:truthy
   push:
     branches:
-      - '21.**'
-      - '22.**'
-      - '23.**'
-      - '24.**'
+      - '21.[1-9][1-9]'
+      - '22.[1-9][1-9]'
+      - '23.[1-9][1-9]'
+      - '24.[1-9][1-9]'
 jobs:
   DockerHubPush:
     runs-on: [self-hosted, style-checker]
