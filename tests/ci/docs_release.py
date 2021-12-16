@@ -2,7 +2,6 @@
 import logging
 import subprocess
 import os
-import sys
 
 from github import Github
 
