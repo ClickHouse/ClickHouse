@@ -72,7 +72,7 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
@@ -113,7 +113,7 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
@@ -154,7 +154,7 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
@@ -195,7 +195,7 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
