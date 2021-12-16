@@ -43,7 +43,7 @@ ClickHouse Keeper development started in Sep 2020, more than a year ago. It was 
 
 ClickHouse Keeper is a drop-in replacement for ZooKeeper. It implements the ZooKeeper wire protocol and data model, but does it better.
 
-In contrast to ZooKeeper, there are no issues with zxid overflow or packet sizes. It has better memory usage and it does not require JVM tuning (because it does not use the JVM). Logs and snapshots are compressed (by about 10x typically) and checksummed. It can run as a separate process or directly inside clickhouse-server. You can use it with ClickHouse or with your Kafka and Hadoop as well.
+In contrast to ZooKeeper, there are no issues with zxid overflow or packet sizes. It has better memory usage and it does not require JVM tuning (because it does not use the JVM). Logs and snapshots are compressed (by about 10x typically) and checksummed. It can run as a separate process or directly inside clickhouse-server. You can use it with ClickHouse or with your Kafkas and Hadoops as well.
 
 [More info](http://presentations.clickhouse.tech/meetup54/keeper.pdf).
 
