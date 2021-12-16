@@ -17,6 +17,9 @@ jobs:
   CheckLabels:
     runs-on: [self-hosted, style-checker]
     steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Labels check
@@ -27,6 +30,9 @@ jobs:
     needs: CheckLabels
     runs-on: [self-hosted, style-checker]
     steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Images check
@@ -42,16 +48,22 @@ jobs:
     needs: DockerHubPush
     runs-on: [self-hosted, style-checker]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{ runner.temp }}/style_check
+          EOF
       - name: Download changed images
         uses: actions/download-artifact@v2
         with:
           name: changed_images
-          path: ${{ runner.temp }}/style_check
+          path: ${{ env.TEMP_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Style Check
-        env:
-          TEMP_PATH: ${{ runner.temp }}/style_check
         run: |
           cd $GITHUB_WORKSPACE/tests/ci
           python3 style_check.py
@@ -65,13 +77,19 @@ jobs:
     needs: DockerHubPush
     runs-on: [self-hosted, builder]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/fasttest
+          REPO_COPY=${{runner.temp}}/fasttest/ClickHouse
+          CACHES_PATH=${{runner.temp}}/../ccaches
+          EOF
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Fast Test
-        env:
-          TEMP_PATH: ${{runner.temp}}/fasttest
-          REPO_COPY: ${{runner.temp}}/fasttest/ClickHouse
-          CACHES_PATH: ${{runner.temp}}/../ccaches
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -82,19 +100,25 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   PVSCheck:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, func-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/pvs_check
+          REPO_COPY=${{runner.temp}}/pvs_check/ClickHouse
+          EOF
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
       - name: PVS Check
-        env:
-          TEMP_PATH: ${{runner.temp}}/pvs_check
-          REPO_COPY: ${{runner.temp}}/pvs_check/ClickHouse
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -110,17 +134,23 @@ jobs:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, style-checker]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/compatibility_check
+          REPO_COPY=${{runner.temp}}/compatibility_check/ClickHouse
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          EOF
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
       - name: CompatibilityCheck
-        env:
-          TEMP_PATH: ${{runner.temp}}/compatibility_check
-          REPO_COPY: ${{runner.temp}}/compatibility_check/ClickHouse
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -136,17 +166,23 @@ jobs:
     needs: [BuilderDebSplitted]
     runs-on: [self-hosted, style-checker]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/split_build_check
+          REPO_COPY=${{runner.temp}}/split_build_check/ClickHouse
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          EOF
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
       - name: Split build check
-        env:
-          TEMP_PATH: ${{runner.temp}}/split_build_check
-          REPO_COPY: ${{runner.temp}}/split_build_check/ClickHouse
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -165,24 +201,30 @@ jobs:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/build_check
+          IMAGES_PATH=${{runner.temp}}/images_path
+          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH=${{runner.temp}}/../ccaches
+          CHECK_NAME=ClickHouse build check (actions)
+          BUILD_NAME=package_release
+          EOF
       - name: Download changed images
         uses: actions/download-artifact@v2
         with:
           name: changed_images
-          path: ${{ runner.temp }}/images_path
+          path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
-        env:
-          TEMP_PATH: ${{runner.temp}}/build_check
-          IMAGES_PATH: ${{runner.temp}}/images_path
-          REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH: ${{runner.temp}}/../ccaches
-          CHECK_NAME: 'ClickHouse build check (actions)'
-          BUILD_NAME: 'package_release'
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -192,7 +234,7 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
-          path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
       - name: Cleanup
         if: always()
         run: |
@@ -203,24 +245,30 @@ jobs:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/build_check
+          IMAGES_PATH=${{runner.temp}}/images_path
+          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH=${{runner.temp}}/../ccaches
+          CHECK_NAME=ClickHouse build check (actions)
+          BUILD_NAME=performance
+          EOF
       - name: Download changed images
         uses: actions/download-artifact@v2
         with:
           name: changed_images
-          path: ${{ runner.temp }}/images_path
+          path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
-        env:
-          TEMP_PATH: ${{runner.temp}}/build_check
-          IMAGES_PATH: ${{runner.temp}}/images_path
-          REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH: ${{runner.temp}}/../ccaches
-          CHECK_NAME: 'ClickHouse build check (actions)'
-          BUILD_NAME: 'performance'
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -230,35 +278,41 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
-          path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
       - name: Cleanup
         if: always()
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderBinRelease:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/build_check
+          IMAGES_PATH=${{runner.temp}}/images_path
+          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH=${{runner.temp}}/../ccaches
+          CHECK_NAME=ClickHouse build check (actions)
+          BUILD_NAME=binary_release
+          EOF
       - name: Download changed images
         uses: actions/download-artifact@v2
         with:
           name: changed_images
-          path: ${{ runner.temp }}/images_path
+          path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
-        env:
-          TEMP_PATH: ${{runner.temp}}/build_check
-          IMAGES_PATH: ${{runner.temp}}/images_path
-          REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH: ${{runner.temp}}/../ccaches
-          CHECK_NAME: 'ClickHouse build check (actions)'
-          BUILD_NAME: 'binary_release'
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -268,35 +322,41 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
-          path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
       - name: Cleanup
         if: always()
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderDebAsan:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/build_check
+          IMAGES_PATH=${{runner.temp}}/images_path
+          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH=${{runner.temp}}/../ccaches
+          CHECK_NAME=ClickHouse build check (actions)
+          BUILD_NAME=package_asan
+          EOF
       - name: Download changed images
         uses: actions/download-artifact@v2
         with:
           name: changed_images
-          path: ${{ runner.temp }}/images_path
+          path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
-        env:
-          TEMP_PATH: ${{runner.temp}}/build_check
-          IMAGES_PATH: ${{runner.temp}}/images_path
-          REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH: ${{runner.temp}}/../ccaches
-          CHECK_NAME: 'ClickHouse build check (actions)'
-          BUILD_NAME: 'package_asan'
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -306,35 +366,41 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
-          path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
       - name: Cleanup
         if: always()
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderDebUBsan:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/build_check
+          IMAGES_PATH=${{runner.temp}}/images_path
+          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH=${{runner.temp}}/../ccaches
+          CHECK_NAME=ClickHouse build check (actions)
+          BUILD_NAME=package_ubsan
+          EOF
       - name: Download changed images
         uses: actions/download-artifact@v2
         with:
           name: changed_images
-          path: ${{ runner.temp }}/images_path
+          path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
-        env:
-          TEMP_PATH: ${{runner.temp}}/build_check
-          IMAGES_PATH: ${{runner.temp}}/images_path
-          REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH: ${{runner.temp}}/../ccaches
-          CHECK_NAME: 'ClickHouse build check (actions)'
-          BUILD_NAME: 'package_ubsan'
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -344,35 +410,41 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
-          path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
       - name: Cleanup
         if: always()
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderDebTsan:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/build_check
+          IMAGES_PATH=${{runner.temp}}/images_path
+          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH=${{runner.temp}}/../ccaches
+          CHECK_NAME=ClickHouse build check (actions)
+          BUILD_NAME=package_tsan
+          EOF
       - name: Download changed images
         uses: actions/download-artifact@v2
         with:
           name: changed_images
-          path: ${{ runner.temp }}/images_path
+          path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
-        env:
-          TEMP_PATH: ${{runner.temp}}/build_check
-          IMAGES_PATH: ${{runner.temp}}/images_path
-          REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH: ${{runner.temp}}/../ccaches
-          CHECK_NAME: 'ClickHouse build check (actions)'
-          BUILD_NAME: 'package_tsan'
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -382,35 +454,41 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
-          path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
       - name: Cleanup
         if: always()
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderDebMsan:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/build_check
+          IMAGES_PATH=${{runner.temp}}/images_path
+          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH=${{runner.temp}}/../ccaches
+          CHECK_NAME=ClickHouse build check (actions)
+          BUILD_NAME=package_msan
+          EOF
       - name: Download changed images
         uses: actions/download-artifact@v2
         with:
           name: changed_images
-          path: ${{ runner.temp }}/images_path
+          path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
-        env:
-          TEMP_PATH: ${{runner.temp}}/build_check
-          IMAGES_PATH: ${{runner.temp}}/images_path
-          REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH: ${{runner.temp}}/../ccaches
-          CHECK_NAME: 'ClickHouse build check (actions)'
-          BUILD_NAME: 'package_msan'
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -420,35 +498,41 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
-          path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
       - name: Cleanup
         if: always()
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderDebDebug:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/build_check
+          IMAGES_PATH=${{runner.temp}}/images_path
+          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH=${{runner.temp}}/../ccaches
+          CHECK_NAME=ClickHouse build check (actions)
+          BUILD_NAME=package_debug
+          EOF
       - name: Download changed images
         uses: actions/download-artifact@v2
         with:
           name: changed_images
-          path: ${{ runner.temp }}/images_path
+          path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
-        env:
-          TEMP_PATH: ${{runner.temp}}/build_check
-          IMAGES_PATH: ${{runner.temp}}/images_path
-          REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH: ${{runner.temp}}/../ccaches
-          CHECK_NAME: 'ClickHouse build check (actions)'
-          BUILD_NAME: 'package_debug'
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -458,13 +542,13 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
-          path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
       - name: Cleanup
         if: always()
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
 ##########################################################################################
 ##################################### SPECIAL BUILDS #####################################
 ##########################################################################################
@@ -472,24 +556,30 @@ jobs:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/build_check
+          IMAGES_PATH=${{runner.temp}}/images_path
+          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH=${{runner.temp}}/../ccaches
+          CHECK_NAME=ClickHouse build check (actions)
+          BUILD_NAME=binary_splitted
+          EOF
       - name: Download changed images
         uses: actions/download-artifact@v2
         with:
           name: changed_images
-          path: ${{ runner.temp }}/images_path
+          path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
-        env:
-          TEMP_PATH: ${{runner.temp}}/build_check
-          IMAGES_PATH: ${{runner.temp}}/images_path
-          REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH: ${{runner.temp}}/../ccaches
-          CHECK_NAME: 'ClickHouse build check (actions)'
-          BUILD_NAME: 'binary_splitted'
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -499,35 +589,41 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
-          path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
       - name: Cleanup
         if: always()
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderBinTidy:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/build_check
+          IMAGES_PATH=${{runner.temp}}/images_path
+          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH=${{runner.temp}}/../ccaches
+          CHECK_NAME=ClickHouse build check (actions)
+          BUILD_NAME=binary_tidy
+          EOF
       - name: Download changed images
         uses: actions/download-artifact@v2
         with:
           name: changed_images
-          path: ${{ runner.temp }}/images_path
+          path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
-        env:
-          TEMP_PATH: ${{runner.temp}}/build_check
-          IMAGES_PATH: ${{runner.temp}}/images_path
-          REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH: ${{runner.temp}}/../ccaches
-          CHECK_NAME: 'ClickHouse build check (actions)'
-          BUILD_NAME: 'binary_tidy'
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -537,35 +633,41 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
-          path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
       - name: Cleanup
         if: always()
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderBinDarwin:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/build_check
+          IMAGES_PATH=${{runner.temp}}/images_path
+          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH=${{runner.temp}}/../ccaches
+          CHECK_NAME=ClickHouse build check (actions)
+          BUILD_NAME=binary_darwin
+          EOF
       - name: Download changed images
         uses: actions/download-artifact@v2
         with:
           name: changed_images
-          path: ${{ runner.temp }}/images_path
+          path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
-        env:
-          TEMP_PATH: ${{runner.temp}}/build_check
-          IMAGES_PATH: ${{runner.temp}}/images_path
-          REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH: ${{runner.temp}}/../ccaches
-          CHECK_NAME: 'ClickHouse build check (actions)'
-          BUILD_NAME: 'binary_darwin'
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -575,35 +677,41 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
-          path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
       - name: Cleanup
         if: always()
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderBinAarch64:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/build_check
+          IMAGES_PATH=${{runner.temp}}/images_path
+          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH=${{runner.temp}}/../ccaches
+          CHECK_NAME=ClickHouse build check (actions)
+          BUILD_NAME=binary_aarch64
+          EOF
       - name: Download changed images
         uses: actions/download-artifact@v2
         with:
           name: changed_images
-          path: ${{ runner.temp }}/images_path
+          path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
-        env:
-          TEMP_PATH: ${{runner.temp}}/build_check
-          IMAGES_PATH: ${{runner.temp}}/images_path
-          REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH: ${{runner.temp}}/../ccaches
-          CHECK_NAME: 'ClickHouse build check (actions)'
-          BUILD_NAME: 'binary_aarch64'
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -613,35 +721,41 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
-          path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
       - name: Cleanup
         if: always()
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderBinFreeBSD:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/build_check
+          IMAGES_PATH=${{runner.temp}}/images_path
+          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH=${{runner.temp}}/../ccaches
+          CHECK_NAME=ClickHouse build check (actions)
+          BUILD_NAME=binary_freebsd
+          EOF
       - name: Download changed images
         uses: actions/download-artifact@v2
         with:
           name: changed_images
-          path: ${{ runner.temp }}/images_path
+          path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
-        env:
-          TEMP_PATH: ${{runner.temp}}/build_check
-          IMAGES_PATH: ${{runner.temp}}/images_path
-          REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH: ${{runner.temp}}/../ccaches
-          CHECK_NAME: 'ClickHouse build check (actions)'
-          BUILD_NAME: 'binary_freebsd'
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -651,35 +765,41 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
-          path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
       - name: Cleanup
         if: always()
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderBinDarwinAarch64:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/build_check
+          IMAGES_PATH=${{runner.temp}}/images_path
+          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH=${{runner.temp}}/../ccaches
+          CHECK_NAME=ClickHouse build check (actions)
+          BUILD_NAME=binary_darwin_aarch64
+          EOF
       - name: Download changed images
         uses: actions/download-artifact@v2
         with:
           name: changed_images
-          path: ${{ runner.temp }}/images_path
+          path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
-        env:
-          TEMP_PATH: ${{runner.temp}}/build_check
-          IMAGES_PATH: ${{runner.temp}}/images_path
-          REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH: ${{runner.temp}}/../ccaches
-          CHECK_NAME: 'ClickHouse build check (actions)'
-          BUILD_NAME: 'binary_darwin_aarch64'
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -689,35 +809,41 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
-          path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
       - name: Cleanup
         if: always()
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderBinPPC64:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/build_check
+          IMAGES_PATH=${{runner.temp}}/images_path
+          REPO_COPY=${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH=${{runner.temp}}/../ccaches
+          CHECK_NAME=ClickHouse build check (actions)
+          BUILD_NAME=binary_ppc64le
+          EOF
       - name: Download changed images
         uses: actions/download-artifact@v2
         with:
           name: changed_images
-          path: ${{ runner.temp }}/images_path
+          path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
-        env:
-          TEMP_PATH: ${{runner.temp}}/build_check
-          IMAGES_PATH: ${{runner.temp}}/images_path
-          REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
-          CACHES_PATH: ${{runner.temp}}/../ccaches
-          CHECK_NAME: 'ClickHouse build check (actions)'
-          BUILD_NAME: 'binary_ppc64le'
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -727,13 +853,13 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
-          path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
+          path: ${{ env.TEMP_PATH }}/${{ env.BUILD_NAME }}.json
       - name: Cleanup
         if: always()
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
 ############################################################################################
 ##################################### BUILD REPORTER #######################################
 ############################################################################################
@@ -749,17 +875,23 @@ jobs:
     runs-on: [self-hosted, style-checker]
     if: always()
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/report_check
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=ClickHouse build check (actions)
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Report Builder
-        env:
-          TEMP_PATH: ${{runner.temp}}/report_check
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'ClickHouse build check (actions)'
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -783,17 +915,23 @@ jobs:
     runs-on: [self-hosted, style-checker]
     if: always()
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/report_check
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=ClickHouse special build check (actions)
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Report Builder
-        env:
-          TEMP_PATH: ${{runner.temp}}/report_check
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'ClickHouse special build check (actions)'
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -812,19 +950,25 @@ jobs:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, func-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateless_release
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateless tests (release, actions)
+          REPO_COPY=${{runner.temp}}/stateless_release/ClickHouse
+          KILL_TIMEOUT=10800
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
-        env:
-          TEMP_PATH: ${{runner.temp}}/stateless_release
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stateless tests (release, actions)'
-          REPO_COPY: ${{runner.temp}}/stateless_release/ClickHouse
-          KILL_TIMEOUT: 10800
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -841,21 +985,27 @@ jobs:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, func-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateless_database_replicated
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateless tests (release, DatabaseReplicated, actions)
+          REPO_COPY=${{runner.temp}}/stateless_database_replicated/ClickHouse
+          KILL_TIMEOUT=10800
+          RUN_BY_HASH_NUM=0
+          RUN_BY_HASH_TOTAL=2
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
-        env:
-          TEMP_PATH: ${{runner.temp}}/stateless_database_replicated
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stateless tests (release, DatabaseReplicated, actions)'
-          REPO_COPY: ${{runner.temp}}/stateless_database_replicated/ClickHouse
-          KILL_TIMEOUT: 10800
-          RUN_BY_HASH_NUM: 0
-          RUN_BY_HASH_TOTAL: 2
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -872,21 +1022,27 @@ jobs:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, func-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateless_database_replicated
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateless tests (release, DatabaseReplicated, actions)
+          REPO_COPY=${{runner.temp}}/stateless_database_replicated/ClickHouse
+          KILL_TIMEOUT=10800
+          RUN_BY_HASH_NUM=1
+          RUN_BY_HASH_TOTAL=2
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
-        env:
-          TEMP_PATH: ${{runner.temp}}/stateless_database_replicated
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stateless tests (release, DatabaseReplicated, actions)'
-          REPO_COPY: ${{runner.temp}}/stateless_database_replicated/ClickHouse
-          KILL_TIMEOUT: 10800
-          RUN_BY_HASH_NUM: 1
-          RUN_BY_HASH_TOTAL: 2
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -903,19 +1059,25 @@ jobs:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, func-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateless_wide_parts
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateless tests (release, wide parts enabled, actions)
+          REPO_COPY=${{runner.temp}}/stateless_wide_parts/ClickHouse
+          KILL_TIMEOUT=10800
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
-        env:
-          TEMP_PATH: ${{runner.temp}}/stateless_wide_parts
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stateless tests (release, wide parts enabled, actions)'
-          REPO_COPY: ${{runner.temp}}/stateless_wide_parts/ClickHouse
-          KILL_TIMEOUT: 10800
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -932,21 +1094,27 @@ jobs:
     needs: [BuilderDebAsan]
     runs-on: [self-hosted, func-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateless_debug
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateless tests (address, actions)
+          REPO_COPY=${{runner.temp}}/stateless_debug/ClickHouse
+          KILL_TIMEOUT=10800
+          RUN_BY_HASH_NUM=0
+          RUN_BY_HASH_TOTAL=2
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
-        env:
-          TEMP_PATH: ${{runner.temp}}/stateless_debug
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stateless tests (address, actions)'
-          REPO_COPY: ${{runner.temp}}/stateless_debug/ClickHouse
-          KILL_TIMEOUT: 10800
-          RUN_BY_HASH_NUM: 0
-          RUN_BY_HASH_TOTAL: 2
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -963,21 +1131,27 @@ jobs:
     needs: [BuilderDebAsan]
     runs-on: [self-hosted, func-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateless_debug
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateless tests (address, actions)
+          REPO_COPY=${{runner.temp}}/stateless_debug/ClickHouse
+          KILL_TIMEOUT=10800
+          RUN_BY_HASH_NUM=1
+          RUN_BY_HASH_TOTAL=2
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
-        env:
-          TEMP_PATH: ${{runner.temp}}/stateless_debug
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stateless tests (address, actions)'
-          REPO_COPY: ${{runner.temp}}/stateless_debug/ClickHouse
-          KILL_TIMEOUT: 10800
-          RUN_BY_HASH_NUM: 1
-          RUN_BY_HASH_TOTAL: 2
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -994,21 +1168,27 @@ jobs:
     needs: [BuilderDebTsan]
     runs-on: [self-hosted, func-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateless_tsan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateless tests (thread, actions)
+          REPO_COPY=${{runner.temp}}/stateless_tsan/ClickHouse
+          KILL_TIMEOUT=10800
+          RUN_BY_HASH_NUM=0
+          RUN_BY_HASH_TOTAL=3
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
-        env:
-          TEMP_PATH: ${{runner.temp}}/stateless_tsan
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stateless tests (thread, actions)'
-          REPO_COPY: ${{runner.temp}}/stateless_tsan/ClickHouse
-          KILL_TIMEOUT: 10800
-          RUN_BY_HASH_NUM: 0
-          RUN_BY_HASH_TOTAL: 3
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1025,21 +1205,27 @@ jobs:
     needs: [BuilderDebTsan]
     runs-on: [self-hosted, func-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateless_tsan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateless tests (thread, actions)
+          REPO_COPY=${{runner.temp}}/stateless_tsan/ClickHouse
+          KILL_TIMEOUT=10800
+          RUN_BY_HASH_NUM=1
+          RUN_BY_HASH_TOTAL=3
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
-        env:
-          TEMP_PATH: ${{runner.temp}}/stateless_tsan
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stateless tests (thread, actions)'
-          REPO_COPY: ${{runner.temp}}/stateless_tsan/ClickHouse
-          KILL_TIMEOUT: 10800
-          RUN_BY_HASH_NUM: 1
-          RUN_BY_HASH_TOTAL: 3
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1056,21 +1242,27 @@ jobs:
     needs: [BuilderDebTsan]
     runs-on: [self-hosted, func-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateless_tsan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateless tests (thread, actions)
+          REPO_COPY=${{runner.temp}}/stateless_tsan/ClickHouse
+          KILL_TIMEOUT=10800
+          RUN_BY_HASH_NUM=2
+          RUN_BY_HASH_TOTAL=3
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
-        env:
-          TEMP_PATH: ${{runner.temp}}/stateless_tsan
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stateless tests (thread, actions)'
-          REPO_COPY: ${{runner.temp}}/stateless_tsan/ClickHouse
-          KILL_TIMEOUT: 10800
-          RUN_BY_HASH_NUM: 2
-          RUN_BY_HASH_TOTAL: 3
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1087,19 +1279,25 @@ jobs:
     needs: [BuilderDebUBsan]
     runs-on: [self-hosted, func-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateless_ubsan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateless tests (ubsan, actions)
+          REPO_COPY=${{runner.temp}}/stateless_ubsan/ClickHouse
+          KILL_TIMEOUT=10800
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
-        env:
-          TEMP_PATH: ${{runner.temp}}/stateless_ubsan
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stateless tests (ubsan, actions)'
-          REPO_COPY: ${{runner.temp}}/stateless_ubsan/ClickHouse
-          KILL_TIMEOUT: 10800
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1116,21 +1314,27 @@ jobs:
     needs: [BuilderDebMsan]
     runs-on: [self-hosted, func-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateless_memory
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateless tests (memory, actions)
+          REPO_COPY=${{runner.temp}}/stateless_memory/ClickHouse
+          KILL_TIMEOUT=10800
+          RUN_BY_HASH_NUM=0
+          RUN_BY_HASH_TOTAL=3
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
-        env:
-          TEMP_PATH: ${{runner.temp}}/stateless_memory
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stateless tests (memory, actions)'
-          REPO_COPY: ${{runner.temp}}/stateless_memory/ClickHouse
-          KILL_TIMEOUT: 10800
-          RUN_BY_HASH_NUM: 0
-          RUN_BY_HASH_TOTAL: 3
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1147,21 +1351,27 @@ jobs:
     needs: [BuilderDebMsan]
     runs-on: [self-hosted, func-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateless_memory
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateless tests (memory, actions)
+          REPO_COPY=${{runner.temp}}/stateless_memory/ClickHouse
+          KILL_TIMEOUT=10800
+          RUN_BY_HASH_NUM=1
+          RUN_BY_HASH_TOTAL=3
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
-        env:
-          TEMP_PATH: ${{runner.temp}}/stateless_memory
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stateless tests (memory, actions)'
-          REPO_COPY: ${{runner.temp}}/stateless_memory/ClickHouse
-          KILL_TIMEOUT: 10800
-          RUN_BY_HASH_NUM: 1
-          RUN_BY_HASH_TOTAL: 3
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1178,21 +1388,27 @@ jobs:
     needs: [BuilderDebMsan]
     runs-on: [self-hosted, func-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateless_memory
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateless tests (memory, actions)
+          REPO_COPY=${{runner.temp}}/stateless_memory/ClickHouse
+          KILL_TIMEOUT=10800
+          RUN_BY_HASH_NUM=2
+          RUN_BY_HASH_TOTAL=3
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
-        env:
-          TEMP_PATH: ${{runner.temp}}/stateless_memory
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stateless tests (memory, actions)'
-          REPO_COPY: ${{runner.temp}}/stateless_memory/ClickHouse
-          KILL_TIMEOUT: 10800
-          RUN_BY_HASH_NUM: 2
-          RUN_BY_HASH_TOTAL: 3
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1209,21 +1425,27 @@ jobs:
     needs: [BuilderDebDebug]
     runs-on: [self-hosted, func-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateless_debug
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateless tests (debug, actions)
+          REPO_COPY=${{runner.temp}}/stateless_debug/ClickHouse
+          KILL_TIMEOUT=10800
+          RUN_BY_HASH_NUM=0
+          RUN_BY_HASH_TOTAL=3
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
-        env:
-          TEMP_PATH: ${{runner.temp}}/stateless_debug
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stateless tests (debug, actions)'
-          REPO_COPY: ${{runner.temp}}/stateless_debug/ClickHouse
-          KILL_TIMEOUT: 10800
-          RUN_BY_HASH_NUM: 0
-          RUN_BY_HASH_TOTAL: 3
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1240,21 +1462,27 @@ jobs:
     needs: [BuilderDebDebug]
     runs-on: [self-hosted, func-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateless_debug
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateless tests (debug, actions)
+          REPO_COPY=${{runner.temp}}/stateless_debug/ClickHouse
+          KILL_TIMEOUT=10800
+          RUN_BY_HASH_NUM=1
+          RUN_BY_HASH_TOTAL=3
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
-        env:
-          TEMP_PATH: ${{runner.temp}}/stateless_debug
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stateless tests (debug, actions)'
-          REPO_COPY: ${{runner.temp}}/stateless_debug/ClickHouse
-          KILL_TIMEOUT: 10800
-          RUN_BY_HASH_NUM: 1
-          RUN_BY_HASH_TOTAL: 3
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1271,21 +1499,27 @@ jobs:
     needs: [BuilderDebDebug]
     runs-on: [self-hosted, func-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateless_debug
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateless tests (debug, actions)
+          REPO_COPY=${{runner.temp}}/stateless_debug/ClickHouse
+          KILL_TIMEOUT=10800
+          RUN_BY_HASH_NUM=2
+          RUN_BY_HASH_TOTAL=3
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
-        env:
-          TEMP_PATH: ${{runner.temp}}/stateless_debug
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stateless tests (debug, actions)'
-          REPO_COPY: ${{runner.temp}}/stateless_debug/ClickHouse
-          KILL_TIMEOUT: 10800
-          RUN_BY_HASH_NUM: 2
-          RUN_BY_HASH_TOTAL: 3
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1302,19 +1536,25 @@ jobs:
     needs: [BuilderDebAsan]
     runs-on: [self-hosted, func-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateless_flaky_asan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateless tests flaky check (address, actions)
+          REPO_COPY=${{runner.temp}}/stateless_flaky_asan/ClickHouse
+          KILL_TIMEOUT=3600
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
-        env:
-          TEMP_PATH: ${{runner.temp}}/stateless_flaky_asan
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stateless tests flaky check (address, actions)'
-          REPO_COPY: ${{runner.temp}}/stateless_flaky_asan/ClickHouse
-          KILL_TIMEOUT: 3600
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1334,19 +1574,25 @@ jobs:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, func-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateful_release
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateful tests (release, actions)
+          REPO_COPY=${{runner.temp}}/stateful_release/ClickHouse
+          KILL_TIMEOUT=3600
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
-        env:
-          TEMP_PATH: ${{runner.temp}}/stateful_release
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stateful tests (release, actions)'
-          REPO_COPY: ${{runner.temp}}/stateful_release/ClickHouse
-          KILL_TIMEOUT: 3600
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1363,19 +1609,25 @@ jobs:
     needs: [BuilderDebAsan]
     runs-on: [self-hosted, func-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateful_debug
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateful tests (address, actions)
+          REPO_COPY=${{runner.temp}}/stateful_debug/ClickHouse
+          KILL_TIMEOUT=3600
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
-        env:
-          TEMP_PATH: ${{runner.temp}}/stateful_debug
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stateful tests (address, actions)'
-          REPO_COPY: ${{runner.temp}}/stateful_debug/ClickHouse
-          KILL_TIMEOUT: 3600
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1392,19 +1644,25 @@ jobs:
     needs: [BuilderDebTsan]
     runs-on: [self-hosted, func-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateful_tsan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateful tests (thread, actions)
+          REPO_COPY=${{runner.temp}}/stateful_tsan/ClickHouse
+          KILL_TIMEOUT=3600
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
-        env:
-          TEMP_PATH: ${{runner.temp}}/stateful_tsan
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stateful tests (thread, actions)'
-          REPO_COPY: ${{runner.temp}}/stateful_tsan/ClickHouse
-          KILL_TIMEOUT: 3600
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1421,19 +1679,25 @@ jobs:
     needs: [BuilderDebMsan]
     runs-on: [self-hosted, func-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateful_msan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateful tests (memory, actions)
+          REPO_COPY=${{runner.temp}}/stateful_msan/ClickHouse
+          KILL_TIMEOUT=3600
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
-        env:
-          TEMP_PATH: ${{runner.temp}}/stateful_msan
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stateful tests (memory, actions)'
-          REPO_COPY: ${{runner.temp}}/stateful_msan/ClickHouse
-          KILL_TIMEOUT: 3600
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1450,19 +1714,25 @@ jobs:
     needs: [BuilderDebUBsan]
     runs-on: [self-hosted, func-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateful_ubsan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateful tests (ubsan, actions)
+          REPO_COPY=${{runner.temp}}/stateful_ubsan/ClickHouse
+          KILL_TIMEOUT=3600
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
-        env:
-          TEMP_PATH: ${{runner.temp}}/stateful_ubsan
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stateful tests (ubsan, actions)'
-          REPO_COPY: ${{runner.temp}}/stateful_ubsan/ClickHouse
-          KILL_TIMEOUT: 3600
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1479,19 +1749,25 @@ jobs:
     needs: [BuilderDebDebug]
     runs-on: [self-hosted, func-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateful_debug
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateful tests (debug, actions)
+          REPO_COPY=${{runner.temp}}/stateful_debug/ClickHouse
+          KILL_TIMEOUT=3600
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
-        env:
-          TEMP_PATH: ${{runner.temp}}/stateful_debug
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stateful tests (debug, actions)'
-          REPO_COPY: ${{runner.temp}}/stateful_debug/ClickHouse
-          KILL_TIMEOUT: 3600
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1511,18 +1787,24 @@ jobs:
     needs: [BuilderDebAsan]
     runs-on: [self-hosted, stress-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stress_thread
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stress test (address, actions)
+          REPO_COPY=${{runner.temp}}/stress_thread/ClickHouse
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Stress test
-        env:
-          TEMP_PATH: ${{runner.temp}}/stress_thread
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stress test (address, actions)'
-          REPO_COPY: ${{runner.temp}}/stress_thread/ClickHouse
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1543,18 +1825,24 @@ jobs:
     # but such servers almost unavailable as spot instances.
     runs-on: [self-hosted, func-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stress_thread
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stress test (thread, actions)
+          REPO_COPY=${{runner.temp}}/stress_thread/ClickHouse
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Stress test
-        env:
-          TEMP_PATH: ${{runner.temp}}/stress_thread
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stress test (thread, actions)'
-          REPO_COPY: ${{runner.temp}}/stress_thread/ClickHouse
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1571,18 +1859,24 @@ jobs:
     needs: [BuilderDebMsan]
     runs-on: [self-hosted, stress-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stress_memory
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stress test (memory, actions)
+          REPO_COPY=${{runner.temp}}/stress_memory/ClickHouse
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Stress test
-        env:
-          TEMP_PATH: ${{runner.temp}}/stress_memory
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stress test (memory, actions)'
-          REPO_COPY: ${{runner.temp}}/stress_memory/ClickHouse
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1599,18 +1893,24 @@ jobs:
     needs: [BuilderDebUBsan]
     runs-on: [self-hosted, stress-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stress_undefined
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stress test (undefined, actions)
+          REPO_COPY=${{runner.temp}}/stress_undefined/ClickHouse
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Stress test
-        env:
-          TEMP_PATH: ${{runner.temp}}/stress_undefined
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stress test (undefined, actions)'
-          REPO_COPY: ${{runner.temp}}/stress_undefined/ClickHouse
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1627,18 +1927,24 @@ jobs:
     needs: [BuilderDebDebug]
     runs-on: [self-hosted, stress-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stress_debug
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stress test (debug, actions)
+          REPO_COPY=${{runner.temp}}/stress_debug/ClickHouse
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Stress test
-        env:
-          TEMP_PATH: ${{runner.temp}}/stress_debug
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stress test (debug, actions)'
-          REPO_COPY: ${{runner.temp}}/stress_debug/ClickHouse
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1658,18 +1964,24 @@ jobs:
     needs: [BuilderDebAsan]
     runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/ast_fuzzer_asan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=AST fuzzer (ASan, actions)
+          REPO_COPY=${{runner.temp}}/ast_fuzzer_asan/ClickHouse
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Fuzzer
-        env:
-          TEMP_PATH: ${{runner.temp}}/ast_fuzzer_asan
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'AST fuzzer (ASan, actions)'
-          REPO_COPY: ${{runner.temp}}/ast_fuzzer_asan/ClickHouse
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1686,18 +1998,24 @@ jobs:
     needs: [BuilderDebTsan]
     runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/ast_fuzzer_tsan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=AST fuzzer (TSan, actions)
+          REPO_COPY=${{runner.temp}}/ast_fuzzer_tsan/ClickHouse
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Fuzzer
-        env:
-          TEMP_PATH: ${{runner.temp}}/ast_fuzzer_tsan
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'AST fuzzer (TSan, actions)'
-          REPO_COPY: ${{runner.temp}}/ast_fuzzer_tsan/ClickHouse
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1714,18 +2032,24 @@ jobs:
     needs: [BuilderDebUBsan]
     runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/ast_fuzzer_ubsan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=AST fuzzer (UBSan, actions)
+          REPO_COPY=${{runner.temp}}/ast_fuzzer_ubsan/ClickHouse
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Fuzzer
-        env:
-          TEMP_PATH: ${{runner.temp}}/ast_fuzzer_ubsan
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'AST fuzzer (UBSan, actions)'
-          REPO_COPY: ${{runner.temp}}/ast_fuzzer_ubsan/ClickHouse
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1742,18 +2066,24 @@ jobs:
     needs: [BuilderDebMsan]
     runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/ast_fuzzer_msan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=AST fuzzer (MSan, actions)
+          REPO_COPY=${{runner.temp}}/ast_fuzzer_msan/ClickHouse
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Fuzzer
-        env:
-          TEMP_PATH: ${{runner.temp}}/ast_fuzzer_msan
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'AST fuzzer (MSan, actions)'
-          REPO_COPY: ${{runner.temp}}/ast_fuzzer_msan/ClickHouse
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1770,18 +2100,24 @@ jobs:
     needs: [BuilderDebDebug]
     runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/ast_fuzzer_debug
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=AST fuzzer (debug, actions)
+          REPO_COPY=${{runner.temp}}/ast_fuzzer_debug/ClickHouse
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Fuzzer
-        env:
-          TEMP_PATH: ${{runner.temp}}/ast_fuzzer_debug
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'AST fuzzer (debug, actions)'
-          REPO_COPY: ${{runner.temp}}/ast_fuzzer_debug/ClickHouse
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1801,20 +2137,26 @@ jobs:
     needs: [BuilderDebAsan]
     runs-on: [self-hosted, stress-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/integration_tests_asan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Integration tests (asan, actions)
+          REPO_COPY=${{runner.temp}}/integration_tests_asan/ClickHouse
+          RUN_BY_HASH_NUM=0
+          RUN_BY_HASH_TOTAL=3
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
-        env:
-          TEMP_PATH: ${{runner.temp}}/integration_tests_asan
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Integration tests (asan, actions)'
-          REPO_COPY: ${{runner.temp}}/integration_tests_asan/ClickHouse
-          RUN_BY_HASH_NUM: 0
-          RUN_BY_HASH_TOTAL: 3
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1831,20 +2173,26 @@ jobs:
     needs: [BuilderDebAsan]
     runs-on: [self-hosted, stress-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/integration_tests_asan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Integration tests (asan, actions)
+          REPO_COPY=${{runner.temp}}/integration_tests_asan/ClickHouse
+          RUN_BY_HASH_NUM=1
+          RUN_BY_HASH_TOTAL=3
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
-        env:
-          TEMP_PATH: ${{runner.temp}}/integration_tests_asan
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Integration tests (asan, actions)'
-          REPO_COPY: ${{runner.temp}}/integration_tests_asan/ClickHouse
-          RUN_BY_HASH_NUM: 1
-          RUN_BY_HASH_TOTAL: 3
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1861,20 +2209,26 @@ jobs:
     needs: [BuilderDebAsan]
     runs-on: [self-hosted, stress-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/integration_tests_asan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Integration tests (asan, actions)
+          REPO_COPY=${{runner.temp}}/integration_tests_asan/ClickHouse
+          RUN_BY_HASH_NUM=2
+          RUN_BY_HASH_TOTAL=3
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
-        env:
-          TEMP_PATH: ${{runner.temp}}/integration_tests_asan
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Integration tests (asan, actions)'
-          REPO_COPY: ${{runner.temp}}/integration_tests_asan/ClickHouse
-          RUN_BY_HASH_NUM: 2
-          RUN_BY_HASH_TOTAL: 3
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1891,20 +2245,26 @@ jobs:
     needs: [BuilderDebTsan]
     runs-on: [self-hosted, stress-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/integration_tests_tsan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Integration tests (thread, actions)
+          REPO_COPY=${{runner.temp}}/integration_tests_tsan/ClickHouse
+          RUN_BY_HASH_NUM=0
+          RUN_BY_HASH_TOTAL=4
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
-        env:
-          TEMP_PATH: ${{runner.temp}}/integration_tests_tsan
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Integration tests (thread, actions)'
-          REPO_COPY: ${{runner.temp}}/integration_tests_tsan/ClickHouse
-          RUN_BY_HASH_NUM: 0
-          RUN_BY_HASH_TOTAL: 4
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1921,20 +2281,26 @@ jobs:
     needs: [BuilderDebTsan]
     runs-on: [self-hosted, stress-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/integration_tests_tsan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Integration tests (thread, actions)
+          REPO_COPY=${{runner.temp}}/integration_tests_tsan/ClickHouse
+          RUN_BY_HASH_NUM=1
+          RUN_BY_HASH_TOTAL=4
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
-        env:
-          TEMP_PATH: ${{runner.temp}}/integration_tests_tsan
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Integration tests (thread, actions)'
-          REPO_COPY: ${{runner.temp}}/integration_tests_tsan/ClickHouse
-          RUN_BY_HASH_NUM: 1
-          RUN_BY_HASH_TOTAL: 4
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1951,20 +2317,26 @@ jobs:
     needs: [BuilderDebTsan]
     runs-on: [self-hosted, stress-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/integration_tests_tsan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Integration tests (thread, actions)
+          REPO_COPY=${{runner.temp}}/integration_tests_tsan/ClickHouse
+          RUN_BY_HASH_NUM=2
+          RUN_BY_HASH_TOTAL=4
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
-        env:
-          TEMP_PATH: ${{runner.temp}}/integration_tests_tsan
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Integration tests (thread, actions)'
-          REPO_COPY: ${{runner.temp}}/integration_tests_tsan/ClickHouse
-          RUN_BY_HASH_NUM: 2
-          RUN_BY_HASH_TOTAL: 4
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1981,20 +2353,26 @@ jobs:
     needs: [BuilderDebTsan]
     runs-on: [self-hosted, stress-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/integration_tests_tsan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Integration tests (thread, actions)
+          REPO_COPY=${{runner.temp}}/integration_tests_tsan/ClickHouse
+          RUN_BY_HASH_NUM=3
+          RUN_BY_HASH_TOTAL=4
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
-        env:
-          TEMP_PATH: ${{runner.temp}}/integration_tests_tsan
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Integration tests (thread, actions)'
-          REPO_COPY: ${{runner.temp}}/integration_tests_tsan/ClickHouse
-          RUN_BY_HASH_NUM: 3
-          RUN_BY_HASH_TOTAL: 4
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -2011,20 +2389,26 @@ jobs:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/integration_tests_release
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Integration tests (release, actions)
+          REPO_COPY=${{runner.temp}}/integration_tests_release/ClickHouse
+          RUN_BY_HASH_NUM=0
+          RUN_BY_HASH_TOTAL=2
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
-        env:
-          TEMP_PATH: ${{runner.temp}}/integration_tests_release
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Integration tests (release, actions)'
-          REPO_COPY: ${{runner.temp}}/integration_tests_release/ClickHouse
-          RUN_BY_HASH_NUM: 0
-          RUN_BY_HASH_TOTAL: 2
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -2041,20 +2425,26 @@ jobs:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/integration_tests_release
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Integration tests (release, actions)
+          REPO_COPY=${{runner.temp}}/integration_tests_release/ClickHouse
+          RUN_BY_HASH_NUM=1
+          RUN_BY_HASH_TOTAL=2
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
-        env:
-          TEMP_PATH: ${{runner.temp}}/integration_tests_release
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Integration tests (release, actions)'
-          REPO_COPY: ${{runner.temp}}/integration_tests_release/ClickHouse
-          RUN_BY_HASH_NUM: 1
-          RUN_BY_HASH_TOTAL: 2
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -2071,18 +2461,24 @@ jobs:
     needs: [BuilderDebAsan]
     runs-on: [self-hosted, stress-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/integration_tests_asan_flaky_check
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Integration tests flaky check (asan, actions)
+          REPO_COPY=${{runner.temp}}/integration_tests_asan_flaky_check/ClickHouse
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
-        env:
-          TEMP_PATH: ${{runner.temp}}/integration_tests_asan_flaky_check
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Integration tests flaky check (asan, actions)'
-          REPO_COPY: ${{runner.temp}}/integration_tests_asan_flaky_check/ClickHouse
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -2102,18 +2498,24 @@ jobs:
     needs: [BuilderDebAsan]
     runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/unit_tests_asan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Unit tests (asan, actions)
+          REPO_COPY=${{runner.temp}}/unit_tests_asan/ClickHouse
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Unit test
-        env:
-          TEMP_PATH: ${{runner.temp}}/unit_tests_asan
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Unit tests (asan, actions)'
-          REPO_COPY: ${{runner.temp}}/unit_tests_asan/ClickHouse
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -2130,18 +2532,24 @@ jobs:
     needs: [BuilderBinRelease]
     runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/unit_tests_asan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Unit tests (release-clang, actions)
+          REPO_COPY=${{runner.temp}}/unit_tests_asan/ClickHouse
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Unit test
-        env:
-          TEMP_PATH: ${{runner.temp}}/unit_tests_asan
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Unit tests (release-clang, actions)'
-          REPO_COPY: ${{runner.temp}}/unit_tests_asan/ClickHouse
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -2158,18 +2566,24 @@ jobs:
     needs: [BuilderDebTsan]
     runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/unit_tests_tsan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Unit tests (tsan, actions)
+          REPO_COPY=${{runner.temp}}/unit_tests_tsan/ClickHouse
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Unit test
-        env:
-          TEMP_PATH: ${{runner.temp}}/unit_tests_tsan
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Unit tests (tsan, actions)'
-          REPO_COPY: ${{runner.temp}}/unit_tests_tsan/ClickHouse
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -2186,18 +2600,24 @@ jobs:
     needs: [BuilderDebMsan]
     runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/unit_tests_msan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Unit tests (msan, actions)
+          REPO_COPY=${{runner.temp}}/unit_tests_msan/ClickHouse
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Unit test
-        env:
-          TEMP_PATH: ${{runner.temp}}/unit_tests_msan
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Unit tests (msan, actions)'
-          REPO_COPY: ${{runner.temp}}/unit_tests_msan/ClickHouse
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -2214,18 +2634,24 @@ jobs:
     needs: [BuilderDebUBsan]
     runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/unit_tests_ubsan
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Unit tests (ubsan, actions)
+          REPO_COPY=${{runner.temp}}/unit_tests_ubsan/ClickHouse
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Unit test
-        env:
-          TEMP_PATH: ${{runner.temp}}/unit_tests_ubsan
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Unit tests (ubsan, actions)'
-          REPO_COPY: ${{runner.temp}}/unit_tests_ubsan/ClickHouse
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -2245,20 +2671,26 @@ jobs:
     needs: [BuilderPerformance]
     runs-on: [self-hosted, stress-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/performance_comparison
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Performance Comparison (actions)
+          REPO_COPY=${{runner.temp}}/performance_comparison/ClickHouse
+          RUN_BY_HASH_NUM=0
+          RUN_BY_HASH_TOTAL=4
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Performance Comparison
-        env:
-          TEMP_PATH: ${{runner.temp}}/performance_comparison
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Performance Comparison (actions)'
-          REPO_COPY: ${{runner.temp}}/performance_comparison/ClickHouse
-          RUN_BY_HASH_NUM: 0
-          RUN_BY_HASH_TOTAL: 4
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -2275,20 +2707,26 @@ jobs:
     needs: [BuilderPerformance]
     runs-on: [self-hosted, stress-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/performance_comparison
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Performance Comparison (actions)
+          REPO_COPY=${{runner.temp}}/performance_comparison/ClickHouse
+          RUN_BY_HASH_NUM=1
+          RUN_BY_HASH_TOTAL=4
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Performance Comparison
-        env:
-          TEMP_PATH: ${{runner.temp}}/performance_comparison
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Performance Comparison (actions)'
-          REPO_COPY: ${{runner.temp}}/performance_comparison/ClickHouse
-          RUN_BY_HASH_NUM: 1
-          RUN_BY_HASH_TOTAL: 4
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -2305,20 +2743,26 @@ jobs:
     needs: [BuilderPerformance]
     runs-on: [self-hosted, stress-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/performance_comparison
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Performance Comparison (actions)
+          REPO_COPY=${{runner.temp}}/performance_comparison/ClickHouse
+          RUN_BY_HASH_NUM=2
+          RUN_BY_HASH_TOTAL=4
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Performance Comparison
-        env:
-          TEMP_PATH: ${{runner.temp}}/performance_comparison
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Performance Comparison (actions)'
-          REPO_COPY: ${{runner.temp}}/performance_comparison/ClickHouse
-          RUN_BY_HASH_NUM: 2
-          RUN_BY_HASH_TOTAL: 4
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -2335,20 +2779,26 @@ jobs:
     needs: [BuilderPerformance]
     runs-on: [self-hosted, stress-tester]
     steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/performance_comparison
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Performance Comparison (actions)
+          REPO_COPY=${{runner.temp}}/performance_comparison/ClickHouse
+          RUN_BY_HASH_NUM=3
+          RUN_BY_HASH_TOTAL=4
+          EOF
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{runner.temp}}/reports_dir
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Performance Comparison
-        env:
-          TEMP_PATH: ${{runner.temp}}/performance_comparison
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Performance Comparison (actions)'
-          REPO_COPY: ${{runner.temp}}/performance_comparison/ClickHouse
-          RUN_BY_HASH_NUM: 3
-          RUN_BY_HASH_TOTAL: 4
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -2424,6 +2874,9 @@ jobs:
       - IntegrationTestsFlakyCheck
     runs-on: [self-hosted, style-checker]
     steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Finish label

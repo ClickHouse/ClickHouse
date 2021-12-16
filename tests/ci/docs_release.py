@@ -2,7 +2,6 @@
 import logging
 import subprocess
 import os
-import sys
 
 from github import Github
 
@@ -25,13 +24,6 @@ if __name__ == "__main__":
     pr_info = PRInfo(get_event(), need_changed_files=True)
 
     gh = Github(get_best_robot_token())
-    if not pr_info.has_changes_in_documentation():
-        logging.info ("No changes in documentation")
-        commit = get_commit(gh, pr_info.sha)
-        commit.create_status(context=NAME, description="No changes in docs", state="success")
-        sys.exit(0)
-
-    logging.info("Has changes in docs")
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
