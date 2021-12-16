@@ -179,9 +179,10 @@ CI_CONFIG = {
             "binary_tidy",
             "binary_splitted",
             "binary_darwin",
-            "binary_arrach64",
+            "binary_aarch64",
             "binary_freebsd",
-            "binary_darwin_aarch64"
+            "binary_darwin_aarch64",
+            "binary_ppc64le",
         ],
     },
     "tests_config": {
@@ -316,6 +317,9 @@ CI_CONFIG = {
         },
         "ClickHouse Keeper Jepsen (actions)": {
             "required_build": "binary_release",
+        },
+        "Performance Comparison (actions)": {
+            "required_build": "performance",
         }
     }
 }

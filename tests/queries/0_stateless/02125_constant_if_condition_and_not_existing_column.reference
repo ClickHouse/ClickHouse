@@ -8,3 +8,7 @@
 42
 42
 42
+SELECT
+    x,
+    concat(x, \'_\')
+FROM test
