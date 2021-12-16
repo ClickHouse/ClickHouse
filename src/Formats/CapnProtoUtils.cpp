@@ -489,8 +489,6 @@ static DataTypePtr getDataTypeFromCapnProtoType(const capnp::Type & capnp_type)
         case capnp::schema::Type::STRUCT:
         {
             auto struct_schema = capnp_type.asStruct();
-            if (checkIfStructContainsUnnamedUnion(struct_schema))
-                throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Unnamed union is not supported");
 
             /// Check if it can be Nullable.
             if (checkIfStructIsNamedUnion(struct_schema))
@@ -505,6 +503,9 @@ static DataTypePtr getDataTypeFromCapnProtoType(const capnp::Type & capnp_type)
                 auto nested_type = getDataTypeFromCapnProtoType(value_type);
                 return std::make_shared<DataTypeNullable>(nested_type);
             }
+
+            if (checkIfStructContainsUnnamedUnion(struct_schema))
+                throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Unnamed union is not supported");
 
             /// Treat Struct as Tuple.
             DataTypes nested_types;

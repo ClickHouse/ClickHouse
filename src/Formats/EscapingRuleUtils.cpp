@@ -290,8 +290,10 @@ DataTypePtr determineDataTypeByEscapingRule(const String & field, const FormatSe
         case FormatSettings::EscapingRule::JSON:
         {
             Poco::JSON::Parser parser;
-            Poco::Dynamic::Var var = parser.parse(field);
-            return getDataTypeFromJSONField(var);
+            String json = "{\"field\" : " + field + "}";
+            auto var = parser.parse(json);
+            Poco::JSON::Object::Ptr object = var.extract<Poco::JSON::Object::Ptr>();
+            return getDataTypeFromJSONField(object->get("field"));
         }
         case FormatSettings::EscapingRule::CSV:
         {

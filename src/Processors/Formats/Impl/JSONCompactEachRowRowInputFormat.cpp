@@ -188,6 +188,7 @@ JSONCompactEachRowRowSchemaReader::JSONCompactEachRowRowSchemaReader(ReadBuffer 
 
 DataTypes JSONCompactEachRowRowSchemaReader::readRowAndGetDataTypes()
 {
+    skipWhitespaceIfAny(in);
     if (in.eof())
         return {};
 
