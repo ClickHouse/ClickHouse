@@ -267,6 +267,8 @@ When reading large files in `Parquet`, `ORC`, and `Arrow` format using the `s3`,
 
 `Parquet`, `ORC`, and `Arrow` are column-oriented formats (quite similar to ClickHouse Native format) and now we can read only requested columns even if they are being read from remote HTTP server with the `url` table function (range requests will be performed to skip unneeded data).
 
+This feature is implemented by **Kseniia Sumarokova**.
+
 **How does this help our ClickHouse Users?**
 
 In previous versions, when reading files in Arrow-based formats from remote locations with the `s3`, `url`, and `hdfs` table functions, ClickHouse would always read the entire file into memory. This works well when the files are small but will cause excessive memory usage or not work at all when the files are large. With this change, ClickHouse will read large files in chunks to keep memory usage in check and is now able to read even very large files.
