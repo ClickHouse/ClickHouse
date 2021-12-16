@@ -35,6 +35,17 @@ jobs:
     needs: DockerHubPush
     runs-on: [self-hosted, func-tester]
     steps:
+      - name: Set envs
+        # https://docs.github.com/en/actions/learn-github-actions/workflow-commands-for-github-actions#multiline-strings
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/docs_release
+          REPO_COPY=${{runner.temp}}/docs_release/ClickHouse
+          CLOUDFLARE_TOKEN=${{secrets.CLOUDFLARE}}
+          ROBOT_CLICKHOUSE_SSH_KEY<<RCSK
+          ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
+          RCSK
+          EOF
       - name: Clear repository
         run: |
           sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
@@ -46,11 +57,6 @@ jobs:
           name: changed_images
           path: ${{ env.TEMP_PATH }}
       - name: Docs Release
-        env:
-          TEMP_PATH: ${{runner.temp}}/docs_release
-          REPO_COPY: ${{runner.temp}}/docs_release/ClickHouse
-          CLOUDFLARE_TOKEN: ${{secrets.CLOUDFLARE}}
-          ROBOT_CLICKHOUSE_SSH_KEY: ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
