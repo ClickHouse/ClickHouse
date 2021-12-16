@@ -108,7 +108,8 @@ protected:
         ContextPtr local_context,
         const ASTCreateQuery & query,
         const ColumnsDescription & columns_,
-        bool attach_);
+        bool attach_,
+        const String & comment);
 };
 
 }
