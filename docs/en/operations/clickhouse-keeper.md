@@ -102,6 +102,14 @@ Examples of configuration for quorum with three nodes can be found in [integrati
 </keeper_server>
 ```
 
+## How to run
+
+ClickHouse Keeper is bundled into the ClickHouse server package, just add configuration of `<keeper_server>` and start ClickHouse server as always. If you want to run standalone ClickHouse Keeper you can start it in a similar way with:
+
+```bash
+clickhouse-keeper --config /etc/your_path_to_config/config.xml --daemon
+```
+
 ## Four Letter Word Commands
 
 ClickHouse Keeper also provides 4lw commands which are almost the same with Zookeeper. Each command is composed of four letters such as `mntr`, `stat` etc. There are some more interesting commands: `stat` gives some general information about the server and connected clients, while `srvr` and `cons` give extended details on server and connections respectively.  
@@ -286,14 +294,6 @@ Sessions dump (2):
 Sessions with Ephemerals (1):
 0x0000000000000001
  /clickhouse/task_queue/ddl
-```
-
-## How to run
-
-ClickHouse Keeper is bundled into the ClickHouse server package, just add configuration of `<keeper_server>` and start ClickHouse server as always. If you want to run standalone ClickHouse Keeper you can start it in a similar way with:
-
-```bash
-clickhouse-keeper --config /etc/your_path_to_config/config.xml --daemon
 ```
 
 ## [experimental] Migration from ZooKeeper
