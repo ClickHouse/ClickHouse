@@ -14,6 +14,9 @@ jobs:
   CheckLabels:
     runs-on: [self-hosted, style-checker]
     steps:
+      - name: Clear repository
+        run: |
+          sudo rm -rf $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Labels check
@@ -24,6 +27,9 @@ jobs:
     needs: CheckLabels
     runs-on: [self-hosted, style-checker]
     steps:
+      - name: Clear repository
+        run: |
+          sudo rm -rf $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Images check
@@ -50,6 +56,9 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.TEMP_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -rf $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Docs Check
