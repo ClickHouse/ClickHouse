@@ -12,7 +12,11 @@ SYSTEM FLUSH LOGS;
 
 SELECT base64Decode(base64Encode(normalizeQuery(query)))
     FROM system.query_log
+<<<<<<< HEAD
     WHERE type = 'QueryFinish' AND log_comment = 'ad15a651' AND current_database = currentDatabase()
+=======
+    WHERE type = 'QueryFinish' AND log_comment = 'ad15a651'
+>>>>>>> e4cab544ab (Fix fast test)
     GROUP BY normalizeQuery(query)
     ORDER BY normalizeQuery(query);
 
