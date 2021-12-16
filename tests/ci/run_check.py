@@ -34,6 +34,7 @@ TRUSTED_CONTRIBUTORS = {e.lower() for e in [
     "bobrik",       # Seasoned contributor, CloundFlare
     "BohuTANG",
     "codyrobert",   # Flickerbox engineer
+    "cwurm",        # Employee
     "damozhaeva",   # DOCSUP
     "den-crane",
     "flickerbox-tom", # Flickerbox
