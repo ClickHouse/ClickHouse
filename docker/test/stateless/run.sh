@@ -96,6 +96,13 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('8')
     fi
 
+    if [[ -n "$RUN_BY_HASH_NUM" ]] && [[ -n "$RUN_BY_HASH_TOTAL" ]]; then
+        ADDITIONAL_OPTIONS+=('--run-by-hash-num')
+        ADDITIONAL_OPTIONS+=("$RUN_BY_HASH_NUM")
+        ADDITIONAL_OPTIONS+=('--run-by-hash-total')
+        ADDITIONAL_OPTIONS+=("$RUN_BY_HASH_TOTAL")
+    fi
+
     set +e
     clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
             --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
@@ -108,7 +115,12 @@ export -f run_tests
 
 timeout "$MAX_RUN_TIME" bash -c run_tests ||:
 
-./process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
+echo "Files in current directory"
+ls -la ./
+echo "Files in root directory"
+ls -la /
+
+/process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
 
 clickhouse-client -q "system flush logs" ||:
 
