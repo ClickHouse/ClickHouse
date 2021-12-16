@@ -93,6 +93,8 @@ INSERT INTO my_table FROM INFILE '*.csv.gz' FORMAT CSV
 Glob patterns support `*`, `?` and `{n..m}` with `{1..10}` or (aligned) `{01..10}` forms.
 This query will be automatically parallelized, it will also automatically detect compression format from file extension and decompress transparently.
 
+This improvement is done by **Arthur Filatenkov**.
+
 **How does this help you?**
 
 Now you don't have to recall how to write parallel for loop in your command line shell. clickhouse-client will do everything for you, it works intuitively and fast.
