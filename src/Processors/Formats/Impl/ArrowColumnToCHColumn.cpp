@@ -239,10 +239,8 @@ static ColumnWithTypeAndName readColumnWithTimestampData(std::shared_ptr<arrow::
 }
 
 template <typename DecimalType, typename DecimalArray>
-static ColumnWithTypeAndName readColumnWithDecimalData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
+static ColumnWithTypeAndName readColumnWithDecimalDataImpl(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name, DataTypePtr internal_type)
 {
-    const auto * arrow_decimal_type = static_cast<arrow::DecimalType *>(arrow_column->type().get());
-    auto internal_type = std::make_shared<DataTypeDecimal<DecimalType>>(arrow_decimal_type->precision(), arrow_decimal_type->scale());
     auto internal_column = internal_type->createColumn();
     auto & column = assert_cast<ColumnDecimal<DecimalType> &>(*internal_column);
     auto & column_data = column.getData();
@@ -257,6 +255,21 @@ static ColumnWithTypeAndName readColumnWithDecimalData(std::shared_ptr<arrow::Ch
         }
     }
     return {std::move(internal_column), std::move(internal_type), column_name};
+}
+
+template <typename DecimalArray>
+static ColumnWithTypeAndName readColumnWithDecimalData(std::shared_ptr<arrow::ChunkedArray> & arrow_column, const String & column_name)
+{
+    const auto * arrow_decimal_type = static_cast<arrow::DecimalType *>(arrow_column->type().get());
+    size_t precision = arrow_decimal_type->precision();
+    auto internal_type = createDecimal<DataTypeDecimal>(precision, arrow_decimal_type->scale());
+    if (precision <= DecimalUtils::max_precision<Decimal32>)
+        return readColumnWithDecimalDataImpl<Decimal32, DecimalArray>(arrow_column, column_name, internal_type);
+    else if (precision <= DecimalUtils::max_precision<Decimal64>)
+        return readColumnWithDecimalDataImpl<Decimal64, DecimalArray>(arrow_column, column_name, internal_type);
+    else if (precision <= DecimalUtils::max_precision<Decimal128>)
+        return readColumnWithDecimalDataImpl<Decimal128, DecimalArray>(arrow_column, column_name, internal_type);
+    return readColumnWithDecimalDataImpl<Decimal256, DecimalArray>(arrow_column, column_name, internal_type);
 }
 
 /// Creates a null bytemap from arrow's null bitmap
@@ -373,9 +386,9 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         case arrow::Type::TIMESTAMP:
             return readColumnWithTimestampData(arrow_column, column_name);
         case arrow::Type::DECIMAL128:
-            return readColumnWithDecimalData<Decimal128, arrow::Decimal128Array>(arrow_column, column_name);
+            return readColumnWithDecimalData<arrow::Decimal128Array>(arrow_column, column_name);
         case arrow::Type::DECIMAL256:
-            return readColumnWithDecimalData<Decimal256, arrow::Decimal256Array>(arrow_column, column_name);
+            return readColumnWithDecimalData<arrow::Decimal256Array>(arrow_column, column_name);
         case arrow::Type::MAP:
         {
             auto arrow_nested_column = getNestedArrowColumn(arrow_column);

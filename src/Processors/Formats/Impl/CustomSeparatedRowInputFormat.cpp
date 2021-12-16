@@ -84,7 +84,7 @@ void CustomSeparatedRowInputFormat::syncAfterError()
 void CustomSeparatedRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
     buf = std::make_unique<PeekableReadBuffer>(in_);
-    RowInputFormatWithNamesAndTypes::setReadBuffer(in_);
+    RowInputFormatWithNamesAndTypes::setReadBuffer(*buf);
 }
 
 CustomSeparatedFormatReader::CustomSeparatedFormatReader(

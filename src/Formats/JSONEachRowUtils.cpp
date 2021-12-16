@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeMap.h>
 #include <Poco/JSON/Parser.h>
 
 #include <base/find_symbols.h>
@@ -215,6 +216,25 @@ DataTypePtr getDataTypeFromJSONField(const Poco::Dynamic::Var & field)
             return std::make_shared<DataTypeTuple>(nested_data_types);
 
         return std::make_shared<DataTypeArray>(nested_data_types.back());
+    }
+
+    if (field.type() == typeid(Poco::JSON::Object::Ptr))
+    {
+        Poco::JSON::Object::Ptr object = field.extract<Poco::JSON::Object::Ptr>();
+        auto names = object->getNames();
+        DataTypePtr value_type;
+        for (const auto & name : names)
+        {
+            auto type = getDataTypeFromJSONField(object->get(name));
+            if (!type)
+                return nullptr;
+
+            if (value_type && value_type->getName() != type->getName())
+                return nullptr;
+
+            value_type = type;
+        }
+        return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), value_type);
     }
 
     throw Exception{ErrorCodes::INCORRECT_DATA, "Unexpected JSON type {}", field.type().name()};

@@ -3019,10 +3019,8 @@ namespace
                             {
                                 std::vector<std::string_view> column_names_used;
                                 column_names_used.reserve(used_column_indices_in_nested.size());
-
                                 for (size_t i : used_column_indices_in_nested)
                                     column_names_used.emplace_back(nested_column_names[i]);
-
                                 auto field_serializer = std::make_unique<ProtobufSerializerFlattenedNestedAsArrayOfNestedMessages>(
                                     std::move(column_names_used), field_descriptor, std::move(nested_message_serializer), get_root_desc_function);
                                 transformColumnIndices(used_column_indices_in_nested, nested_column_indices);
@@ -3247,6 +3245,13 @@ namespace
 
     NameAndTypePair getNameAndDataTypeFromField(const google::protobuf::FieldDescriptor * field_descriptor, bool allow_repeat = true)
     {
+        if (allow_repeat && field_descriptor->is_map())
+        {
+            auto name_and_type = getNameAndDataTypeFromField(field_descriptor, false);
+            const auto * tuple_type = assert_cast<const DataTypeTuple *>(name_and_type.type.get());
+            return {name_and_type.name, std::make_shared<DataTypeMap>(tuple_type->getElements())};
+        }
+
         if (allow_repeat && field_descriptor->is_repeated())
         {
             auto name_and_type = getNameAndDataTypeFromField(field_descriptor, false);
