@@ -155,7 +155,7 @@ ORDER BY EventDate WITH FILL STEP INTERVAL 1 MONTH
 
 **How does this help you?**
 
-It allows to avoid preprocessing step for your reports.
+It allows to avoid postprocessing step for your reports.
 
 
 ## Add Support For "Identifier" Table and Database Query Parameters
