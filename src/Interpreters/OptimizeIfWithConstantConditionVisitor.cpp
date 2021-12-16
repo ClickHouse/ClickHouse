@@ -5,6 +5,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
 #include <IO/WriteHelpers.h>
+#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -16,6 +17,9 @@ namespace ErrorCodes
 
 static bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & value)
 {
+    const auto * log = &Poco::Logger::get("tryExtractConstValueFromCondition");
+    LOG_TRACE(log, "{}", condition->dumpTree());
+
     /// numeric constant in condition
     if (const auto * literal = condition->as<ASTLiteral>())
     {
