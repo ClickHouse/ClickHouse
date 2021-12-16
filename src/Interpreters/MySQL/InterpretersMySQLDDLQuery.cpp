@@ -440,7 +440,7 @@ static ASTPtr tryGetTableOverride(const String & mapped_database, const String &
     if (auto database_ptr = DatabaseCatalog::instance().tryGetDatabase(mapped_database))
     {
         auto create_query = database_ptr->getCreateDatabaseQuery();
-        if (auto create_database_query = create_query->as<ASTCreateQuery>())
+        if (auto * create_database_query = create_query->as<ASTCreateQuery>())
         {
             if (create_database_query->table_overrides)
             {
@@ -537,8 +537,8 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
 
     if (auto table_override = tryGetTableOverride(mapped_to_database, create_query.table))
     {
-        auto override = table_override->as<ASTTableOverride>();
-        override->applyToCreateTableQuery(rewritten_query.get());
+        auto * override_ast = table_override->as<ASTTableOverride>();
+        override_ast->applyToCreateTableQuery(rewritten_query.get());
     }
 
     return ASTs{rewritten_query};
