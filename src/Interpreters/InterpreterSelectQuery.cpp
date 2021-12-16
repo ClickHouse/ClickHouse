@@ -77,6 +77,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
+#include "Parsers/queryToString.h"
 #include <base/map.h>
 #include <base/scope_guard_safe.h>
 #include <memory>
@@ -1083,6 +1084,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
         if (expressions.first_stage)
         {
+            std::cerr << "######### first stage for " << queryToString(getSelectQuery()) << std::endl;
             // If there is a storage that supports prewhere, this will always be nullptr
             // Thus, we don't actually need to check if projection is active.
             if (!query_info.projection && expressions.filter_info)
@@ -1202,6 +1204,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                 // now, on shard (first_stage).
                 if (query_analyzer->hasWindow())
                 {
+                    std::cerr << "############# add window " << expressions.before_window->dumpDAG() << std::endl;
                     executeExpression(query_plan, expressions.before_window, "Before window functions");
                 }
                 else
