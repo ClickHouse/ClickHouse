@@ -54,6 +54,7 @@ Internal coordination settings are located in `<keeper_server>.<coordination_set
 -    `auto_forwarding` — Allow to forward write requests from followers to the leader (default: true).
 -    `shutdown_timeout` — Wait to finish internal connections and shutdown (ms) (default: 5000).
 -    `startup_timeout` — If the server doesn't connect to other quorum participants in the specified timeout it will terminate (ms) (default: 30000).
+-    `four_letter_word_white_list` — White list of 4lw commands (default: "conf,cons,crst,envi,ruok,srst,srvr,stat,wchc,wchs,dirs,mntr,isro").
 
 Quorum configuration is located in `<keeper_server>.<raft_configuration>` section and contain servers description.
 
