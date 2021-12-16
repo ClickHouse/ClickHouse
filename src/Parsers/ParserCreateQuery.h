@@ -385,6 +385,20 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserTableOverrideDeclaration : public IParserBase
+{
+protected:
+    const char * getName() const override { return "table override declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+class ParserTableOverridesDeclarationList : public IParserBase
+{
+protected:
+    const char * getName() const override { return "table overrides declaration list"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 /// CREATE|ATTACH DATABASE db [ENGINE = engine]
 class ParserCreateDatabaseQuery : public IParserBase
 {

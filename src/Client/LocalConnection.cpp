@@ -424,6 +424,11 @@ void LocalConnection::sendExternalTablesData(ExternalTablesData &)
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
+void LocalConnection::sendMergeTreeReadTaskResponse(const PartitionReadResponse &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
+}
+
 ServerConnectionPtr LocalConnection::createConnection(const ConnectionParameters &, ContextPtr current_context, bool send_progress)
 {
     return std::make_unique<LocalConnection>(current_context, send_progress);

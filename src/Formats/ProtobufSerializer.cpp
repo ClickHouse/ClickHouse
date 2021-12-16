@@ -28,6 +28,7 @@
 #   include <DataTypes/Serializations/SerializationFixedString.h>
 #   include <Formats/ProtobufReader.h>
 #   include <Formats/ProtobufWriter.h>
+#   include <Formats/RowInputMissingColumnsFiller.h>
 #   include <IO/Operators.h>
 #   include <IO/ReadBufferFromString.h>
 #   include <IO/ReadHelpers.h>
@@ -859,7 +860,7 @@ namespace
         template <typename NumberType>
         void toStringAppend(NumberType value, PaddedPODArray<UInt8> & str)
         {
-            WriteBufferFromVector buf{str, WriteBufferFromVector<PaddedPODArray<UInt8>>::AppendModeTag{}};
+            WriteBufferFromVector buf{str, AppendModeTag{}};
             writeText(value, buf);
         }
 
@@ -2147,9 +2148,11 @@ namespace
             std::vector<FieldDesc> && field_descs_,
             const FieldDescriptor * parent_field_descriptor_,
             bool with_length_delimiter_,
+            std::unique_ptr<RowInputMissingColumnsFiller> missing_columns_filler_,
             const ProtobufReaderOrWriter & reader_or_writer_)
             : parent_field_descriptor(parent_field_descriptor_)
             , with_length_delimiter(with_length_delimiter_)
+            , missing_columns_filler(std::move(missing_columns_filler_))
             , should_skip_if_empty(parent_field_descriptor ? shouldSkipZeroOrEmpty(*parent_field_descriptor) : false)
             , reader(reader_or_writer_.reader)
             , writer(reader_or_writer_.writer)
@@ -2170,8 +2173,6 @@ namespace
             if (!num_columns_)
                 wrongNumberOfColumns(num_columns_, ">0");
 
-            columns.assign(columns_, columns_ + num_columns_);
-
             std::vector<ColumnPtr> field_columns;
             for (const FieldInfo & info : field_infos)
             {
@@ -2188,13 +2189,17 @@ namespace
 
             if (reader)
             {
-                missing_column_indices.resize(num_columns_);
-                for (size_t column_index : collections::range(num_columns_))
-                    missing_column_indices[column_index] = column_index;
-                for (const auto & field_info : field_infos)
-                    for (size_t column_index : field_info.column_indices)
-                        missing_column_indices[column_index] = static_cast<size_t>(-1);
-                boost::range::remove_erase(missing_column_indices, static_cast<size_t>(-1));
+                mutable_columns.resize(num_columns_);
+                for (size_t i : collections::range(num_columns_))
+                    mutable_columns[i] = columns_[i]->assumeMutable();
+
+                std::vector<UInt8> column_is_missing;
+                column_is_missing.resize(num_columns_, true);
+                for (const FieldInfo & info : field_infos)
+                    for (size_t i : info.column_indices)
+                        column_is_missing[i] = false;
+
+                has_missing_columns = (std::find(column_is_missing.begin(), column_is_missing.end(), true) != column_is_missing.end());
             }
         }
 
@@ -2243,7 +2248,7 @@ namespace
             {
                 last_field_index = 0;
                 last_field_tag = field_infos[0].field_tag;
-                size_t old_size = columns.empty() ? 0 : columns[0]->size();
+                size_t old_size = mutable_columns.empty() ? 0 : mutable_columns[0]->size();
 
                 try
                 {
@@ -2268,10 +2273,10 @@ namespace
                 }
                 catch (...)
                 {
-                    for (auto & column : columns)
+                    for (auto & column : mutable_columns)
                     {
                         if (column->size() > old_size)
-                            column->assumeMutableRef().popBack(column->size() - old_size);
+                            column->popBack(column->size() - old_size);
                     }
                     throw;
                 }
@@ -2302,10 +2307,9 @@ namespace
             if (parent_field_descriptor)
                 out << " field " << quoteString(parent_field_descriptor->full_name()) << " (" << parent_field_descriptor->type_name() << ")";
 
-            for (size_t i = 0; i != field_infos.size(); ++i)
+            for (const auto & field_info : field_infos)
             {
                 out << "\n";
-                const auto & field_info = field_infos[i];
                 writeIndent(out, indent + 1) << "Columns #";
                 for (size_t j = 0; j != field_info.column_indices.size(); ++j)
                 {
@@ -2342,13 +2346,8 @@ namespace
 
         void addDefaultsToMissingColumns(size_t row_num)
         {
-            for (size_t column_index : missing_column_indices)
-            {
-                auto & column = columns[column_index];
-                size_t old_size = column->size();
-                if (row_num >= old_size)
-                    column->assumeMutableRef().insertDefault();
-            }
+            if (has_missing_columns)
+                missing_columns_filler->addDefaults(mutable_columns, row_num);
         }
 
         struct FieldInfo
@@ -2374,13 +2373,14 @@ namespace
 
         const FieldDescriptor * const parent_field_descriptor;
         const bool with_length_delimiter;
+        const std::unique_ptr<RowInputMissingColumnsFiller> missing_columns_filler;
         const bool should_skip_if_empty;
         ProtobufReader * const reader;
         ProtobufWriter * const writer;
         std::vector<FieldInfo> field_infos;
         std::unordered_map<int, size_t> field_index_by_field_tag;
-        Columns columns;
-        std::vector<size_t> missing_column_indices;
+        MutableColumns mutable_columns;
+        bool has_missing_columns = false;
         int last_field_tag = 0;
         size_t last_field_index = static_cast<size_t>(-1);
     };
@@ -2626,7 +2626,8 @@ namespace
                 with_length_delimiter,
                 /* parent_field_descriptor = */ nullptr,
                 used_column_indices,
-                /* columns_are_reordered_outside = */ false);
+                /* columns_are_reordered_outside = */ false,
+                /* check_nested_while_filling_missing_columns = */ true);
 
             if (!message_serializer)
             {
@@ -2813,7 +2814,8 @@ namespace
             bool with_length_delimiter,
             const FieldDescriptor * parent_field_descriptor,
             std::vector<size_t> & used_column_indices,
-            bool columns_are_reordered_outside)
+            bool columns_are_reordered_outside,
+            bool check_nested_while_filling_missing_columns)
         {
             std::vector<std::string_view> column_names_sv;
             column_names_sv.reserve(num_columns);
@@ -2828,7 +2830,8 @@ namespace
                 with_length_delimiter,
                 parent_field_descriptor,
                 used_column_indices,
-                columns_are_reordered_outside);
+                columns_are_reordered_outside,
+                check_nested_while_filling_missing_columns);
         }
 
         std::unique_ptr<ProtobufSerializerMessage> buildMessageSerializerImpl(
@@ -2839,7 +2842,8 @@ namespace
             bool with_length_delimiter,
             const FieldDescriptor * parent_field_descriptor,
             std::vector<size_t> & used_column_indices,
-            bool columns_are_reordered_outside)
+            bool columns_are_reordered_outside,
+            bool check_nested_while_filling_missing_columns)
         {
             std::vector<ProtobufSerializerMessage::FieldDesc> field_descs;
             boost::container::flat_map<const FieldDescriptor *, std::string_view> field_descriptors_in_use;
@@ -2962,7 +2966,8 @@ namespace
                                 /* with_length_delimiter = */ false,
                                 field_descriptor,
                                 used_column_indices_in_nested,
-                                /* columns_are_reordered_outside = */ true);
+                                /* columns_are_reordered_outside = */ true,
+                                /* check_nested_while_filling_missing_columns = */ false);
 
                             /// `columns_are_reordered_outside` is true because column indices are
                             /// going to be transformed and then written to the outer message,
@@ -3001,7 +3006,8 @@ namespace
                                 /* with_length_delimiter = */ false,
                                 field_descriptor,
                                 used_column_indices_in_nested,
-                                /* columns_are_reordered_outside = */ true);
+                                /* columns_are_reordered_outside = */ true,
+                                /* check_nested_while_filling_missing_columns = */ false);
 
                             /// `columns_are_reordered_outside` is true because column indices are
                             /// going to be transformed and then written to the outer message,
@@ -3010,8 +3016,11 @@ namespace
                             if (nested_message_serializer)
                             {
                                 std::vector<std::string_view> column_names_used;
+                                column_names_used.reserve(used_column_indices_in_nested.size());
+
                                 for (size_t i : used_column_indices_in_nested)
                                     column_names_used.emplace_back(nested_column_names[i]);
+
                                 auto field_serializer = std::make_unique<ProtobufSerializerFlattenedNestedAsArrayOfNestedMessages>(
                                     std::move(column_names_used), field_descriptor, std::move(nested_message_serializer), get_root_desc_function);
                                 transformColumnIndices(used_column_indices_in_nested, nested_column_indices);
@@ -3040,8 +3049,18 @@ namespace
             if (field_descs.empty())
                 return nullptr;
 
+            std::unique_ptr<RowInputMissingColumnsFiller> missing_columns_filler;
+            if (reader_or_writer.reader)
+            {
+                if (check_nested_while_filling_missing_columns)
+                    missing_columns_filler = std::make_unique<RowInputMissingColumnsFiller>(num_columns, column_names, data_types);
+                else
+                    missing_columns_filler = std::make_unique<RowInputMissingColumnsFiller>();
+            }
+
             return std::make_unique<ProtobufSerializerMessage>(
-                std::move(field_descs), parent_field_descriptor, with_length_delimiter, reader_or_writer);
+                std::move(field_descs), parent_field_descriptor, with_length_delimiter,
+                std::move(missing_columns_filler), reader_or_writer);
         }
 
         /// Builds a serializer for one-to-one match:
@@ -3147,7 +3166,8 @@ namespace
                             /* with_length_delimiter = */ false,
                             &field_descriptor,
                             used_column_indices,
-                            /* columns_are_reordered_outside = */ false);
+                            /* columns_are_reordered_outside = */ false,
+                            /* check_nested_while_filling_missing_columns = */ false);
 
                         if (!message_serializer)
                         {

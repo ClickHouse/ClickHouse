@@ -230,8 +230,10 @@ StorageURLSink::StorageURLSink(
     const String & http_method)
     : SinkToStorage(sample_block)
 {
+    std::string content_type = FormatFactory::instance().getContentType(format, context, format_settings);
+
     write_buf = wrapWriteBufferWithCompressionMethod(
-            std::make_unique<WriteBufferFromHTTP>(Poco::URI(uri), http_method, timeouts),
+            std::make_unique<WriteBufferFromHTTP>(Poco::URI(uri), http_method, content_type, timeouts),
             compression_method, 3);
     writer = FormatFactory::instance().getOutputFormat(format, *write_buf, sample_block,
         context, {} /* write callback */, format_settings);

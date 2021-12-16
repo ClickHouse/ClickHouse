@@ -21,7 +21,7 @@ DO_NOT_TEST_LABEL = "do not test"
 # Individual trusted contirbutors who are not in any trusted organization.
 # Can be changed in runtime: we will append users that we learned to be in
 # a trusted org, to save GitHub API calls.
-TRUSTED_CONTRIBUTORS = {
+TRUSTED_CONTRIBUTORS = {e.lower() for e in [
     "achimbab",
     "adevyatova ",  # DOCSUP
     "Algunenano",   # Raúl Marín, Tinybird
@@ -34,6 +34,7 @@ TRUSTED_CONTRIBUTORS = {
     "bobrik",       # Seasoned contributor, CloundFlare
     "BohuTANG",
     "codyrobert",   # Flickerbox engineer
+    "cwurm",        # Employee
     "damozhaeva",   # DOCSUP
     "den-crane",
     "flickerbox-tom", # Flickerbox
@@ -64,12 +65,12 @@ TRUSTED_CONTRIBUTORS = {
     "vdimir",       # Employee
     "vzakaznikov",
     "YiuRULE",
-    "zlobober"      # Developer of YT
-}
+    "zlobober",     # Developer of YT
+]}
 
 
 def pr_is_by_trusted_user(pr_user_login, pr_user_orgs):
-    if pr_user_login in TRUSTED_CONTRIBUTORS:
+    if pr_user_login.lower() in TRUSTED_CONTRIBUTORS:
         logging.info("User '%s' is trusted", pr_user_login)
         return True
 
