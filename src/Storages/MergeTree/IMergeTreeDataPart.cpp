@@ -417,48 +417,59 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns)
 
 void IMergeTreeDataPart::removeIfNeeded()
 {
-    if (state == State::DeleteOnDestroy || is_temp)
+    if (!is_temp && state != State::DeleteOnDestroy)
+        return;
+
+    try
     {
-        try
-        {
-            auto path = getFullRelativePath();
+        auto path = getFullRelativePath();
 
-            if (!volume->getDisk()->exists(path))
+        if (!volume->getDisk()->exists(path))
+            return;
+
+        if (is_temp)
+        {
+            String file_name = fileName(relative_path);
+
+            if (file_name.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "relative_path {} of part {} is invalid or not set", relative_path, name);
+
+            if (!startsWith(file_name, "tmp") && !endsWith(file_name, ".tmp_proj"))
+            {
+                LOG_ERROR(
+                    storage.log,
+                    "~DataPart() should remove part {} but its name doesn't start with \"tmp\" or end with \".tmp_proj\". Too "
+                    "suspicious, keeping the part.",
+                    path);
                 return;
-
-            if (is_temp)
-            {
-                String file_name = fileName(relative_path);
-
-                if (file_name.empty())
-                    throw Exception("relative_path " + relative_path + " of part " + name + " is invalid or not set", ErrorCodes::LOGICAL_ERROR);
-
-                if (!startsWith(file_name, "tmp"))
-                {
-                    LOG_ERROR(storage.log, "~DataPart() should remove part {} but its name doesn't start with tmp. Too suspicious, keeping the part.", path);
-                    return;
-                }
-            }
-
-            if (parent_part)
-            {
-                std::optional<bool> keep_shared_data = keepSharedDataInDecoupledStorage();
-                if (!keep_shared_data.has_value())
-                    return;
-                projectionRemove(parent_part->getFullRelativePath(), *keep_shared_data);
-            }
-            else
-                remove();
-
-            if (state == State::DeleteOnDestroy)
-            {
-                LOG_TRACE(storage.log, "Removed part from old location {}", path);
             }
         }
-        catch (...)
+
+        if (parent_part)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
+            std::optional<bool> keep_shared_data = keepSharedDataInDecoupledStorage();
+            if (!keep_shared_data.has_value())
+                return;
+            projectionRemove(parent_part->getFullRelativePath(), *keep_shared_data);
         }
+        else
+            remove();
+
+        if (state == State::DeleteOnDestroy)
+        {
+            LOG_TRACE(storage.log, "Removed part from old location {}", path);
+        }
+    }
+    catch (...)
+    {
+        /// FIXME If part it temporary, then directory will not be removed for 1 day (temporary_directories_lifetime).
+        /// If it's tmp_merge_<part_name> or tmp_fetch_<part_name>,
+        /// then all future attempts to execute part producing operation will fail with "directory already exists".
+        /// Seems like it's especially important for remote disks, because removal may fail due to network issues.
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        assert(!is_temp);
+        assert(state != State::DeleteOnDestroy);
+        assert(state != State::Temporary);
     }
 }
 
@@ -1162,14 +1173,17 @@ void IMergeTreeDataPart::remove() const
       * And a race condition can happen that will lead to "File not found" error here.
       */
 
+    /// NOTE We rename part to delete_tmp_<relative_path> instead of delete_tmp_<name> to avoid race condition
+    /// when we try to remove two parts with the same name, but different relative paths,
+    /// for example all_1_2_1 (in Deleting state) and tmp_merge_all_1_2_1 (in Temporary state).
     fs::path from = fs::path(storage.relative_data_path) / relative_path;
-    fs::path to = fs::path(storage.relative_data_path) / ("delete_tmp_" + name);
+    fs::path to = fs::path(storage.relative_data_path) / ("delete_tmp_" + relative_path);
     // TODO directory delete_tmp_<name> is never removed if server crashes before returning from this function
 
     auto disk = volume->getDisk();
     if (disk->exists(to))
     {
-        LOG_WARNING(storage.log, "Directory {} (to which part must be renamed before removing) already exists. Most likely this is due to unclean restart. Removing it.", fullPath(disk, to));
+        LOG_WARNING(storage.log, "Directory {} (to which part must be renamed before removing) already exists. Most likely this is due to unclean restart or race condition. Removing it.", fullPath(disk, to));
         try
         {
             disk->removeSharedRecursive(fs::path(to) / "", *keep_shared_data);
