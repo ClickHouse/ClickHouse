@@ -11,6 +11,7 @@ on: # yamllint disable-line rule:truthy
       - 'website/**'
       - 'benchmark/**'
       - 'docker/**'
+      - '.github/**'
     workflow_dispatch:
 jobs:
   DockerHubPush:
