@@ -49,10 +49,13 @@ public:
         size_t ignore = 0;
     };
 
+    /// 1. size
     /// Less than requested amount of data can be returned.
     /// If size is zero - the file has ended.
     /// (for example, EINTR must be handled by implementation automatically)
-    using Result = size_t;
+    /// 2. offset
+    /// Optional. Useful when implementation needs to do ignore().
+    using Result = std::pair<size_t, size_t>;
 
     /// Submit request and obtain a handle. This method don't perform any waits.
     /// If this method did not throw, the caller must wait for the result with 'wait' method
