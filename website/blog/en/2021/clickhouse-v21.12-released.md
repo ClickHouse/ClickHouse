@@ -261,7 +261,7 @@ ClickHouse combines fast query engine and efficient data storage. It also allows
 
 When reading large files in `Parquet`, `ORC`, and `Arrow` format using the `s3`, `url`, and `hdfs` table functions, ClickHouse will now automatically choose whether to read the entire file at once or read parts of it incrementally. This is now enabled by default and the setting `remote_read_min_bytes_for_seek` controls when to switch from reading it all to reading in chunks. The default is 1MiB.
 
-`Parquet`, `ORC`, and `Arrow` are column-oriented formats (quite similar to ClickHouse Native format) and now we can read only requested columns even if they are being read from remote HTTP server with the `url` table function (range requests will be performed).
+`Parquet`, `ORC`, and `Arrow` are column-oriented formats (quite similar to ClickHouse Native format) and now we can read only requested columns even if they are being read from remote HTTP server with the `url` table function (range requests will be performed to skip unneeded data).
 
 **How does this help our ClickHouse Users?**
 
