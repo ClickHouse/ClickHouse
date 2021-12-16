@@ -228,10 +228,10 @@ The query can be automatically rewritten to:
 SELECT count() FROM hits WHERE Domain = 'ghe.clickhouse.tech'
 ```
 
-because `Domain` column is smaller, more compressable, will be faster to read and it does not require calculation of domain.
+because `Domain` column is smaller, more compressable, will be faster to read and it does not require calculation of the domain from URL.
 The only thing you need is to enable the `optimize_using_constraints` and `optimize_substitute_columns` settings.
 
-As a bonus, new type of constraints are introduced: `ASSUME`.
+As a bonus, new type of constraints is introduced: `ASSUME`.
 
 ```
 CONSTRAINT my_constraint ASSUME Domain = domainWithoutWWW(URL)
