@@ -37,9 +37,13 @@ public:
 
     void setReadUntilPosition(size_t position) override;
 
-    size_t readInto(char * data, size_t size, size_t offset, size_t ignore = 0);
+    std::pair<size_t, size_t> readInto(char * data, size_t size, size_t offset, size_t ignore = 0);
 
     size_t getFileSize() const;
+
+    size_t offset() const { return file_offset_of_buffer_end; }
+
+    bool initialized() const { return current_buf != nullptr; }
 
 protected:
     virtual SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t read_until_position) const = 0;
@@ -57,7 +61,7 @@ private:
 
     size_t current_buf_idx = 0;
 
-    size_t absolute_position = 0;
+    size_t file_offset_of_buffer_end = 0;
 
     size_t bytes_to_ignore = 0;
 

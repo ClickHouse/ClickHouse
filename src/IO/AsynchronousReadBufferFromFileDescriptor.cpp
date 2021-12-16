@@ -65,11 +65,11 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     {
         /// Read request already in flight. Wait for its completion.
 
-        size_t size = 0;
+        size_t size = 0, offset = 0;
         {
             Stopwatch watch;
             CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
-            size = prefetch_future.get();
+            std::tie(size, offset) = prefetch_future.get();
             ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
         }
 
@@ -90,7 +90,7 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     {
         /// No pending request. Do synchronous read.
 
-        auto size = readInto(memory.data(), memory.size()).get();
+        auto [size, offset] = readInto(memory.data(), memory.size()).get();
         file_offset_of_buffer_end += size;
 
         if (size)
@@ -201,4 +201,3 @@ void AsynchronousReadBufferFromFileDescriptor::rewind()
 }
 
 }
-
