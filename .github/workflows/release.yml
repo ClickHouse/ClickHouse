@@ -12,7 +12,7 @@ on: # yamllint disable-line rule:truthy
       - 'benchmark/**'
       - 'docker/**'
       - '.github/**'
-    workflow_dispatch:
+  workflow_dispatch:
 jobs:
   DockerHubPush:
     runs-on: [self-hosted, style-checker]
