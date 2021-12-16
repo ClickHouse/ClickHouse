@@ -22,7 +22,7 @@ while true; do
         sudo -u ubuntu ./config.sh remove --token $RUNNER_TOKEN ||:
 
         echo "Going to configure runner"
-        sudo -u ubuntu ./config.sh --url $RUNNER_URL --token $RUNNER_TOKEN --name $INSTANCE_ID --runnergroup Default --labels 'self-hosted,Linux,X64,stress-tester' --work _work
+        sudo -u ubuntu ./config.sh --url $RUNNER_URL --token $RUNNER_TOKEN --name $INSTANCE_ID --runnergroup Default --labels 'self-hosted,Linux,X64,fuzzer-unit-tester' --work _work
 
         echo "Run"
         sudo -u ubuntu ./run.sh &
