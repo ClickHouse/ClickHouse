@@ -1639,7 +1639,7 @@ void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, 
         auto hints = this->getHints(unrecognized_options[0]);
         if (!hints.empty())
             throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'. Maybe you meant {}", unrecognized_options[0], toString(hints));
- 
+
         throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[0]);
     }
 
