@@ -19,14 +19,14 @@ TEST(SplitName, forward)
 
 TEST(SplitName, reverse)
 {
-    ASSERT_EQ(Nested::splitName(String("abc", true)), (std::pair<std::string, std::string>{"abc", ""}));
-    ASSERT_EQ(Nested::splitName(String("a.b", true)), (std::pair<std::string, std::string>{"a", "b"}));
-    ASSERT_EQ(Nested::splitName(String("a.b.c", true)), (std::pair<std::string, std::string>{"a.b", "c"}));
-    ASSERT_EQ(Nested::splitName(String("a.1", true)), (std::pair<std::string, std::string>{"a", "1"}));
-    ASSERT_EQ(Nested::splitName(String("a.1a.b", true)), (std::pair<std::string, std::string>{"a.1a", "b"}));
-    ASSERT_EQ(Nested::splitName(String("1a.b", true)), (std::pair<std::string, std::string>{"1a", "b"}));
-    ASSERT_EQ(Nested::splitName(String("a.b1.b2", true)), (std::pair<std::string, std::string>{"a.b1", "b2"}));
-    ASSERT_EQ(Nested::splitName(String("a.b1.2a.3a", true)), (std::pair<std::string, std::string>{"a.b1.2a", "3a"}));
-    ASSERT_EQ(Nested::splitName(String("a.b1.b2.b3", true)), (std::pair<std::string, std::string>{"a.b1.b2", "b3"}));
-    ASSERT_EQ(Nested::splitName(String("..", true)), (std::pair<std::string, std::string>{"..", ""}));
+    ASSERT_EQ(Nested::splitName(String("abc"), true), (std::pair<std::string, std::string>{"abc", ""}));
+    ASSERT_EQ(Nested::splitName(String("a.b"), true), (std::pair<std::string, std::string>{"a", "b"}));
+    ASSERT_EQ(Nested::splitName(String("a.b.c"), true), (std::pair<std::string, std::string>{"a.b", "c"}));
+    ASSERT_EQ(Nested::splitName(String("a.1"), true), (std::pair<std::string, std::string>{"a", "1"}));
+    ASSERT_EQ(Nested::splitName(String("a.1a.b"), true), (std::pair<std::string, std::string>{"a.1a", "b"}));
+    ASSERT_EQ(Nested::splitName(String("1a.b"), true), (std::pair<std::string, std::string>{"1a", "b"}));
+    ASSERT_EQ(Nested::splitName(String("a.b1.b2"), true), (std::pair<std::string, std::string>{"a.b1", "b2"}));
+    ASSERT_EQ(Nested::splitName(String("a.b1.2a.3a"), true), (std::pair<std::string, std::string>{"a.b1.2a", "3a"}));
+    ASSERT_EQ(Nested::splitName(String("a.b1.b2.b3"), true), (std::pair<std::string, std::string>{"a.b1.b2", "b3"}));
+    ASSERT_EQ(Nested::splitName(String(".."), true), (std::pair<std::string, std::string>{"..", ""}));
 }
