@@ -60,6 +60,8 @@ def wait_for_active_parts(node, num_expected_parts, table_name, timeout=30):
     assert num_parts == num_expected_parts
 
 
+# Result of `get_large_objects_count` can be changed in other tests, so run this case at the beginning
+@pytest.mark.order(0)
 @pytest.mark.parametrize(
     "policy", ["s3"]
 )
