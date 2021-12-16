@@ -11,6 +11,7 @@ on: # yamllint disable-line rule:truthy
       - 'website/**'
       - 'benchmark/**'
       - 'docker/**'
+    workflow_dispatch:
 jobs:
   DockerHubPush:
     runs-on: [self-hosted, style-checker]
@@ -44,6 +45,8 @@ jobs:
           CLOUDFLARE_TOKEN: ${{secrets.CLOUDFLARE}}
           ROBOT_CLICKHOUSE_SSH_KEY: ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
         run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci
           python3 docs_release.py
