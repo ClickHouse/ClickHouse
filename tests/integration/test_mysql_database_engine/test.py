@@ -432,7 +432,7 @@ def test_restart_server(started_cluster):
     with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', started_cluster.mysql_ip, started_cluster.mysql_port)) as mysql_node:
         mysql_node.query("DROP DATABASE IF EXISTS test_restart")
         clickhouse_node.query("DROP DATABASE IF EXISTS test_restart")
-        clickhouse_node.query_and_get_error("CREATE DATABASE test_restart ENGINE = MySQL('mysql57:3306', 'test_database', 'root', 'clickhouse')")
+        clickhouse_node.query_and_get_error("CREATE DATABASE test_restart ENGINE = MySQL('mysql57:3306', 'test_restart', 'root', 'clickhouse')")
         assert 'test_restart' not in clickhouse_node.query('SHOW DATABASES')
 
         mysql_node.query("CREATE DATABASE test_restart DEFAULT CHARACTER SET 'utf8'")
