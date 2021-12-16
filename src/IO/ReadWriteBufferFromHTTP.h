@@ -427,7 +427,7 @@ namespace detail
                     LOG_ERROR(log,
                               "HTTP request to `{}` failed at try {}/{} with bytes read: {}/{}. "
                               "Error: {}. (Current backoff wait is {}/{} ms)",
-                              uri.toString(), i, settings.http_max_tries,
+                              uri.toString(), i + 1, settings.http_max_tries,
                               getOffset(), read_range.end ? toString(*read_range.end) : "unknown",
                               e.displayText(),
                               milliseconds_to_wait, settings.http_retry_max_backoff_ms);
