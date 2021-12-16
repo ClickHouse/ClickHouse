@@ -77,6 +77,7 @@ RUN python3 -m pip install \
     psycopg2-binary==2.8.6 \
     pymongo==3.11.0 \
     pytest \
+    pytest-order==1.0.0 \
     pytest-timeout \
     pytest-xdist \
     pytest-repeat \
