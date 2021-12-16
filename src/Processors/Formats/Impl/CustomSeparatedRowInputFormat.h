@@ -25,7 +25,7 @@ public:
 private:
     CustomSeparatedRowInputFormat(
         const Block & header_,
-        std::unique_ptr<PeekableReadBuffer> in_,
+        std::unique_ptr<PeekableReadBuffer> in_buf_,
         const Params & params_,
         bool with_names_, bool with_types_, bool ignore_spaces_, const FormatSettings & format_settings_);
     using EscapingRule = FormatSettings::EscapingRule;
