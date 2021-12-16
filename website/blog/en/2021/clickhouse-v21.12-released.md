@@ -151,7 +151,7 @@ Since ClickHouse version 21.12 you can do it like this:
 ORDER BY EventDate WITH FILL STEP INTERVAL 1 MONTH
 ```
 
-`INTERVAL` is the standard SQL operator, you can use SECOND, MINUTE, HOUR, DAY, WEEK, MONTH, QUARTER and YEAR.
+`INTERVAL` is a standard SQL operator, you can use SECOND, MINUTE, HOUR, DAY, WEEK, MONTH, QUARTER and YEAR.
 
 **How does this help you?**
 
