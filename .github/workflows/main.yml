@@ -19,7 +19,8 @@ jobs:
     steps:
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          ls -la $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Labels check
@@ -32,7 +33,7 @@ jobs:
     steps:
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Images check
@@ -60,7 +61,7 @@ jobs:
           path: ${{ env.TEMP_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Style Check
@@ -86,7 +87,7 @@ jobs:
           EOF
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Fast Test
@@ -113,7 +114,7 @@ jobs:
           EOF
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -143,7 +144,7 @@ jobs:
           EOF
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Download json reports
@@ -175,7 +176,7 @@ jobs:
           EOF
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Download json reports
@@ -218,7 +219,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -262,7 +263,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -306,7 +307,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -350,7 +351,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -394,7 +395,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -438,7 +439,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -482,7 +483,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -526,7 +527,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -573,7 +574,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -617,7 +618,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -661,7 +662,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -705,7 +706,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -749,7 +750,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -793,7 +794,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -837,7 +838,7 @@ jobs:
           path: ${{ env.IMAGES_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
@@ -888,7 +889,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Report Builder
@@ -928,7 +929,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Report Builder
@@ -965,7 +966,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -1002,7 +1003,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -1039,7 +1040,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -1074,7 +1075,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -1111,7 +1112,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -1148,7 +1149,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -1185,7 +1186,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -1222,7 +1223,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -1259,7 +1260,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -1294,7 +1295,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -1331,7 +1332,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -1368,7 +1369,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -1405,7 +1406,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -1442,7 +1443,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -1479,7 +1480,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -1516,7 +1517,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -1551,7 +1552,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -1589,7 +1590,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -1624,7 +1625,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -1659,7 +1660,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -1694,7 +1695,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -1729,7 +1730,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -1764,7 +1765,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -1801,7 +1802,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Stress test
@@ -1839,7 +1840,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Stress test
@@ -1873,7 +1874,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Stress test
@@ -1907,7 +1908,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Stress test
@@ -1941,7 +1942,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Stress test
@@ -1978,7 +1979,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Fuzzer
@@ -2012,7 +2013,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Fuzzer
@@ -2046,7 +2047,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Fuzzer
@@ -2080,7 +2081,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Fuzzer
@@ -2114,7 +2115,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Fuzzer
@@ -2153,7 +2154,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
@@ -2189,7 +2190,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
@@ -2225,7 +2226,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
@@ -2261,7 +2262,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
@@ -2297,7 +2298,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
@@ -2333,7 +2334,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
@@ -2369,7 +2370,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
@@ -2405,7 +2406,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
@@ -2441,7 +2442,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
@@ -2475,7 +2476,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
@@ -2512,7 +2513,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Unit test
@@ -2546,7 +2547,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Unit test
@@ -2580,7 +2581,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Unit test
@@ -2614,7 +2615,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Unit test
@@ -2648,7 +2649,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Unit test
@@ -2687,7 +2688,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Performance Comparison
@@ -2723,7 +2724,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Performance Comparison
@@ -2759,7 +2760,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Performance Comparison
@@ -2795,7 +2796,7 @@ jobs:
           path: ${{ env.REPORTS_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Performance Comparison
@@ -2876,7 +2877,7 @@ jobs:
     steps:
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Finish label
