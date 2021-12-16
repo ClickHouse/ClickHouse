@@ -11,4 +11,6 @@ select if(toUInt8(1), 42, y) from test;
 select if(toInt8(1), 42, y) from test;
 select if(toUInt8(toUInt8(0)), y, 42) from test;
 select if(cast(cast(0, 'UInt8'), 'UInt8'), y, 42) from test;
+select if(cast('0', 'UInt8'), y, 42) from test;
+select if(_CAST(0, 'UInt8'), y, 42) from test;
 drop table if exists t;
