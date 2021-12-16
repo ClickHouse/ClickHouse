@@ -553,6 +553,12 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 stages.emplace_back(context);
 
             const auto & column = columns_desc.get(command.column_name);
+
+            if (!column.default_desc.expression)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot materialize column `{}` because it doesn't have default expression", column.name);
+
             auto materialized_column = makeASTFunction(
                 "_CAST", column.default_desc.expression->clone(), std::make_shared<ASTLiteral>(column.type->getName()));
 
