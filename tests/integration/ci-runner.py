@@ -10,6 +10,8 @@ from collections import defaultdict
 import random
 import json
 import csv
+# for crc32
+import zlib
 
 
 MAX_RETRY = 3
@@ -25,6 +27,9 @@ MAX_TIME_SECONDS = 3600
 
 MAX_TIME_IN_SANDBOX = 20 * 60   # 20 minutes
 TASK_TIMEOUT = 8 * 60 * 60      # 8 hours
+
+def stringhash(s):
+    return zlib.crc32(s.encode('utf-8'))
 
 def get_tests_to_run(pr_info):
     result = set([])
@@ -177,8 +182,18 @@ class ClickhouseIntegrationTestsRunner:
         self.image_versions = self.params['docker_images_with_versions']
         self.shuffle_groups = self.params['shuffle_test_groups']
         self.flaky_check = 'flaky check' in self.params['context_name']
+        # if use_tmpfs is not set we assume it to be true, otherwise check
+        self.use_tmpfs = 'use_tmpfs' not in self.params or self.params['use_tmpfs']
+        self.disable_net_host = 'disable_net_host' in self.params and self.params['disable_net_host']
         self.start_time = time.time()
         self.soft_deadline_time = self.start_time + (TASK_TIMEOUT - MAX_TIME_IN_SANDBOX)
+
+        if 'run_by_hash_total' in self.params:
+            self.run_by_hash_total = self.params['run_by_hash_total']
+            self.run_by_hash_num = self.params['run_by_hash_num']
+        else:
+            self.run_by_hash_total = 0
+            self.run_by_hash_num = 0
 
     def path(self):
         return self.result_path
@@ -257,15 +272,23 @@ class ClickhouseIntegrationTestsRunner:
     def _compress_logs(self, dir, relpaths, result_path):
         subprocess.check_call("tar czf {} -C {} {}".format(result_path, dir, ' '.join(relpaths)), shell=True)  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
 
+    def _get_runner_opts(self):
+        result = []
+        if self.use_tmpfs:
+            result.append("--tmpfs")
+        if self.disable_net_host:
+            result.append("--disable-net-host")
+        return " ".join(result)
+
     def _get_all_tests(self, repo_path):
         image_cmd = self._get_runner_image_cmd(repo_path)
         out_file = "all_tests.txt"
         out_file_full = "all_tests_full.txt"
         cmd = "cd {repo_path}/tests/integration && " \
-            "timeout -s 9 1h ./runner --tmpfs {image_cmd} ' --setup-plan' " \
+            "timeout -s 9 1h ./runner {runner_opts} {image_cmd} ' --setup-plan' " \
             "| tee {out_file_full} | grep '::' | sed 's/ (fixtures used:.*//g' | sed 's/^ *//g' | sed 's/ *$//g' " \
             "| grep -v 'SKIPPED' | sort -u  > {out_file}".format(
-                repo_path=repo_path, image_cmd=image_cmd, out_file=out_file, out_file_full=out_file_full)
+                repo_path=repo_path, runner_opts=self._get_runner_opts(), image_cmd=image_cmd, out_file=out_file, out_file_full=out_file_full)
 
         logging.info("Getting all tests with cmd '%s'", cmd)
         subprocess.check_call(cmd, shell=True)  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
@@ -435,8 +458,8 @@ class ClickhouseIntegrationTestsRunner:
 
             test_cmd = ' '.join([test for test in sorted(test_names)])
             parallel_cmd = " --parallel {} ".format(num_workers) if num_workers > 0 else ""
-            cmd = "cd {}/tests/integration && timeout -s 9 1h ./runner --tmpfs {} -t {} {} '-rfEp --run-id={} --color=no --durations=0 {}' | tee {}".format(
-                repo_path, image_cmd, test_cmd, parallel_cmd, i, _get_deselect_option(self.should_skip_tests()), info_path)
+            cmd = "cd {}/tests/integration && timeout -s 9 1h ./runner {} {} -t {} {} '-rfEp --run-id={} --color=no --durations=0 {}' | tee {}".format(
+                repo_path, self._get_runner_opts(), image_cmd, test_cmd, parallel_cmd, i, _get_deselect_option(self.should_skip_tests()), info_path)
 
             log_basename = test_group_str + "_" + str(i) + ".log"
             log_path = os.path.join(repo_path, "tests/integration", log_basename)
@@ -565,6 +588,15 @@ class ClickhouseIntegrationTestsRunner:
         self._install_clickhouse(build_path)
         logging.info("Dump iptables before run %s", subprocess.check_output("sudo iptables -L", shell=True))
         all_tests = self._get_all_tests(repo_path)
+
+        if self.run_by_hash_total != 0:
+            grouped_tests = self.group_test_by_file(all_tests)
+            all_filtered_by_hash_tests = []
+            for group, tests_in_group in grouped_tests.items():
+                if stringhash(group) % self.run_by_hash_total == self.run_by_hash_num:
+                    all_filtered_by_hash_tests += tests_in_group
+            all_tests = all_filtered_by_hash_tests
+
         parallel_skip_tests = self._get_parallel_tests_skip_list(repo_path)
         logging.info("Found %s tests first 3 %s", len(all_tests), ' '.join(all_tests[:3]))
         filtered_sequential_tests = list(filter(lambda test: test in all_tests, parallel_skip_tests))

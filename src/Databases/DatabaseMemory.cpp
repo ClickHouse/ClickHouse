@@ -5,6 +5,7 @@
 #include <Databases/DDLDependencyVisitor.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Storages/IStorage.h>
 #include <filesystem>
 
@@ -75,7 +76,7 @@ void DatabaseMemory::dropTable(
 ASTPtr DatabaseMemory::getCreateDatabaseQuery() const
 {
     auto create_query = std::make_shared<ASTCreateQuery>();
-    create_query->database = getDatabaseName();
+    create_query->setDatabase(getDatabaseName());
     create_query->set(create_query->storage, std::make_shared<ASTStorage>());
     create_query->storage->set(create_query->storage->engine, makeASTFunction(getEngineName()));
 
@@ -120,7 +121,7 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot alter: There is no metadata of table {}", table_id.getNameForLogs());
 
     applyMetadataChangesToCreateQuery(it->second, metadata);
-    TableNamesSet new_dependencies = getDependenciesSetFromCreateQuery(local_context->getGlobalContext(), it->second);
+    TableNamesSet new_dependencies = getDependenciesSetFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), it->second);
     DatabaseCatalog::instance().updateLoadingDependencies(table_id, std::move(new_dependencies));
 }
 

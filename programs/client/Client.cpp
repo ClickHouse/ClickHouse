@@ -20,9 +20,7 @@
 #include <base/argsToConfig.h>
 #include <base/find_symbols.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
+#include <Common/config_version.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <Common/TerminalSize.h>
@@ -705,16 +703,16 @@ bool Client::processWithFuzzing(const String & full_query)
             throw;
     }
 
+    if (!orig_ast)
+    {
+        // Can't continue after a parsing error
+        return true;
+    }
+
     // `USE db` should not be executed
     // since this will break every query after `DROP db`
     if (orig_ast->as<ASTUseQuery>())
     {
-        return true;
-    }
-
-    if (!orig_ast)
-    {
-        // Can't continue after a parsing error
         return true;
     }
 
@@ -1003,7 +1001,6 @@ void Client::addOptions(OptionsDescription & options_description)
         ("password", po::value<std::string>()->implicit_value("\n", ""), "password")
         ("ask-password", "ask-password")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
-        ("pager", po::value<std::string>(), "pager")
         ("testmode,T", "enable test hints in comments")
 
         ("max_client_network_bandwidth", po::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
@@ -1104,8 +1101,6 @@ void Client::processOptions(const OptionsDescription & options_description,
         config().setString("host", options["host"].as<std::string>());
     if (options.count("interleave-queries-file"))
         interleave_queries_files = options["interleave-queries-file"].as<std::vector<std::string>>();
-    if (options.count("pager"))
-        config().setString("pager", options["pager"].as<std::string>());
     if (options.count("port") && !options["port"].defaulted())
         config().setInt("port", options["port"].as<int>());
     if (options.count("secure"))

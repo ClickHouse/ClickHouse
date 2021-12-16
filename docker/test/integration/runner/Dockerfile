@@ -1,7 +1,9 @@
 # docker build -t clickhouse/integration-tests-runner .
 FROM ubuntu:20.04
 
-RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
+# ARG for quick switch to a given ubuntu mirror
+ARG apt_archive="http://archive.ubuntu.com"
+RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
@@ -19,7 +21,6 @@ RUN apt-get update \
     cgroupfs-mount \
     python3-pip \
     tzdata \
-    libreadline-dev \
     libicu-dev \
     bsdutils \
     curl \
@@ -74,7 +75,7 @@ RUN python3 -m pip install \
     minio \
     protobuf \
     psycopg2-binary==2.8.6 \
-    pymongo \
+    pymongo==3.11.0 \
     pytest \
     pytest-timeout \
     pytest-xdist \
@@ -84,7 +85,8 @@ RUN python3 -m pip install \
     tzlocal==2.1 \
     urllib3 \
     requests-kerberos \
-    pyhdfs
+    pyhdfs \
+    azure-storage-blob
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/

@@ -7,6 +7,7 @@
 #include <base/logger_useful.h>
 #include <amqpcpp.h>
 #include <uv.h>
+#include <boost/algorithm/string/split.hpp>
 #include <chrono>
 #include <thread>
 #include <atomic>

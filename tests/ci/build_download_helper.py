@@ -8,17 +8,17 @@ import time
 
 import requests
 
-from ci_config import CI_CONFIG, build_config_to_string
+from ci_config import CI_CONFIG
 
 DOWNLOAD_RETRIES_COUNT = 5
 
-def get_build_config_for_check(check_name):
-    return CI_CONFIG["tests_config"][check_name]['required_build_properties']
+def get_build_name_for_check(check_name):
+    return CI_CONFIG['tests_config'][check_name]['required_build']
 
-def get_build_urls(build_config_str, reports_path):
+def get_build_urls(build_name, reports_path):
     for root, _, files in os.walk(reports_path):
         for f in files:
-            if build_config_str in f :
+            if build_name in f :
                 logging.info("Found build report json %s", f)
                 with open(os.path.join(root, f), 'r', encoding='utf-8') as file_handler:
                     build_report = json.load(file_handler)
@@ -72,11 +72,8 @@ def download_builds(result_path, build_urls, filter_fn):
             dowload_build_with_progress(url, os.path.join(result_path, fname))
 
 def download_builds_filter(check_name, reports_path, result_path, filter_fn=lambda _: True):
-    build_config = get_build_config_for_check(check_name)
-    print(build_config)
-    build_config_str = build_config_to_string(build_config)
-    print(build_config_str)
-    urls = get_build_urls(build_config_str, reports_path)
+    build_name = get_build_name_for_check(check_name)
+    urls = get_build_urls(build_name, reports_path)
     print(urls)
 
     if not urls:
@@ -95,3 +92,6 @@ def download_unit_tests(check_name, reports_path, result_path):
 
 def download_clickhouse_binary(check_name, reports_path, result_path):
     download_builds_filter(check_name, reports_path, result_path, lambda x: x.endswith('clickhouse'))
+
+def download_performance_build(check_name, reports_path, result_path):
+    download_builds_filter(check_name, reports_path, result_path, lambda x: x.endswith('performance.tgz'))

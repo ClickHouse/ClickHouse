@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
 
 namespace DB
 {

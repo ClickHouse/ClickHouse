@@ -50,12 +50,12 @@ namespace
                 context,
                 force_restore);
 
-            database.attachTable(table_name, table, database.getTableDataPath(query));
+            database.attachTable(context, table_name, table, database.getTableDataPath(query));
         }
         catch (Exception & e)
         {
             e.addMessage(
-                "Cannot attach table " + backQuote(database_name) + "." + backQuote(query.table) + " from metadata file " + metadata_path
+                "Cannot attach table " + backQuote(database_name) + "." + backQuote(query.getTable()) + " from metadata file " + metadata_path
                 + " from query " + serializeAST(query));
             throw;
         }
@@ -168,7 +168,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
             if (ast)
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
-                create_query->database = database_name;
+                create_query->setDatabase(database_name);
 
                 if (fs::exists(full_path.string() + detached_suffix))
                 {
@@ -181,8 +181,8 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                     return;
                 }
 
-                TableNamesSet loading_dependencies = getDependenciesSetFromCreateQuery(getContext(), ast);
-                QualifiedTableName qualified_name{database_name, create_query->table};
+                QualifiedTableName qualified_name{database_name, create_query->getTable()};
+                TableNamesSet loading_dependencies = getDependenciesSetFromCreateQuery(getContext(), qualified_name, ast);
 
                 std::lock_guard lock{metadata.mutex};
                 metadata.parsed_tables[qualified_name] = ParsedTableMetadata{full_path.string(), ast};
@@ -297,7 +297,7 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
         out.close();
     }
 
-    TableNamesSet new_dependencies = getDependenciesSetFromCreateQuery(local_context->getGlobalContext(), ast);
+    TableNamesSet new_dependencies = getDependenciesSetFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast);
     DatabaseCatalog::instance().updateLoadingDependencies(table_id, std::move(new_dependencies));
 
     commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, local_context);

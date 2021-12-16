@@ -20,11 +20,10 @@
 #include <Poco/Environment.h>
 #include <sys/stat.h>
 #include <pwd.h>
+#include <Coordination/FourLetterCommand.h>
 
-#if !defined(ARCADIA_BUILD)
-#   include "config_core.h"
-#   include "Common/config_version.h"
-#endif
+#include "config_core.h"
+#include "Common/config_version.h"
 
 #if USE_SSL
 #    include <Poco/Net/Context.h>
@@ -367,6 +366,8 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 
     /// Initialize keeper RAFT. Do nothing if no keeper_server in config.
     global_context->initializeKeeperDispatcher(/* start_async = */false);
+    FourLetterCommandFactory::registerCommands(*global_context->getKeeperDispatcher());
+
     for (const auto & listen_host : listen_hosts)
     {
         /// TCP Keeper
