@@ -950,15 +950,8 @@ void WindowTransform::updateAggregationState()
             // We should add an addBatch analog that can accept a starting offset.
             // For now, add the values one by one.
             auto * columns = ws.argument_columns.data();
-            for (size_t i = 0; i < ws.argument_column_indices.size(); ++i)
-                std::cerr << "====== " << reinterpret_cast<const void *>(columns[i]) << ' ' << columns[i]->getName() << std::endl;
             // Removing arena.get() from the loop makes it faster somehow...
             auto * arena_ptr = arena.get();
-            std::cerr << "----- " << reinterpret_cast<const void *>(arena_ptr) << ' '
-                                 << reinterpret_cast<const void *>(a) << ' '
-                                 << reinterpret_cast<const void *>(buf) << std::endl;
-            for (const auto & t : a->getArgumentTypes())
-                std::cerr << "... " << t->getName() << std::endl;
 
             for (auto row = first_row; row < past_the_end_row; ++row)
             {
