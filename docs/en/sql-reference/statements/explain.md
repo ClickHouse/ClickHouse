@@ -10,7 +10,12 @@ Shows the execution plan of a statement.
 Syntax:
 
 ```sql
-EXPLAIN [AST | SYNTAX | PLAN | PIPELINE] [setting = value, ...] SELECT ... [FORMAT ...]
+EXPLAIN [AST | SYNTAX | PLAN | PIPELINE | TABLE OVERRIDE] [setting = value, ...]
+    [
+      SELECT ... |
+      tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
+    ]
+    [FORMAT ...]
 ```
 
 Example:
@@ -411,5 +416,38 @@ Result:
 │ default  │ ttt   │     1 │  128 │     8 │
 └──────────┴───────┴───────┴──────┴───────┘
 ```
+
+### EXPLAIN TABLE OVERRIDE {#explain-table-override}
+
+Shows the result of a table override on a table schema accessed through a table function.
+Also does some validation, throwing an exception if the override would have caused some kind of failure.
+
+**Example**
+
+Assume you have a remote MySQL table like this:
+
+```sql
+CREATE TABLE db.tbl (
+    id INT PRIMARY KEY,
+    created DATETIME DEFAULT now()
+)
+```
+
+```sql
+EXPLAIN TABLE OVERRIDE mysql('127.0.0.1:3306', 'db', 'tbl', 'root', 'clickhouse')
+PARTITION BY toYYYYMM(assumeNotNull(created))
+```
+
+Result:
+
+```text
+┌─explain─────────────────────────────────────────────────┐
+│ PARTITION BY uses columns: `created` Nullable(DateTime) │
+└─────────────────────────────────────────────────────────┘
+```
+
+!!! note "Note"
+    The validation is not complete, so a successfull query does not guarantee that the override would
+    not cause issues.
 
 [Оriginal article](https://clickhouse.com/docs/en/sql-reference/statements/explain/) <!--hide-->
