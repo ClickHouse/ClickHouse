@@ -354,24 +354,29 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
 
                     for (ssize_t j = 0; j < ssize_t(group_elements_ast.size()); ++j)
                     {
+                        ssize_t group_size = group_elements_ast.size();
                         const auto & column_name = group_elements_ast[j]->getColumnName();
                         const auto * node = temp_actions->tryFindInIndex(column_name);
                         if (!node)
                             throw Exception("Unknown identifier (in GROUP BY): " + column_name, ErrorCodes::UNKNOWN_IDENTIFIER);
 
-                        /// Constant expressions have non-null column pointer at this stage.
-                        if (node->column && isColumnConst(*node->column))
+                        /// Only removes constant keys if it's an initiator or distributed_group_by_no_merge is enabled.
+                        if (getContext()->getClientInfo().distributed_depth == 0 || settings.distributed_group_by_no_merge > 0)
                         {
-                            /// But don't remove last key column if no aggregate functions, otherwise aggregation will not work.
-                            if (!aggregate_descriptions.empty() || size > 1)
+                            /// Constant expressions have non-null column pointer at this stage.
+                            if (node->column && isColumnConst(*node->column))
                             {
-                                if (j + 1 < static_cast<ssize_t>(size))
-                                    group_asts[i] = std::move(group_asts.back());
+                                /// But don't remove last key column if no aggregate functions, otherwise aggregation will not work.
+                                if (!aggregate_descriptions.empty() || group_size > 1)
+                                {
+                                    if (j + 1 < static_cast<ssize_t>(group_size))
+                                        group_elements_ast[j] = std::move(group_elements_ast.back());
 
-                                group_asts.pop_back();
+                                    group_elements_ast.pop_back();
 
-                                --j;
-                                continue;
+                                    --j;
+                                    continue;
+                                }
                             }
                         }
 
