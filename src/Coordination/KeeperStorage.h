@@ -35,9 +35,22 @@ public:
         Coordination::Stat stat{};
         int32_t seq_num = 0;
         ChildrenSet children{};
+        uint64_t size_bytes; // save size to avoid calculate every time
 
+        Node()
+        {
+            size_bytes = sizeof(size_bytes);
+            size_bytes += data.size();
+            size_bytes += sizeof(acl_id);
+            size_bytes += sizeof(is_sequental);
+            size_bytes += sizeof(stat);
+            size_bytes += sizeof(seq_num);
+        }
         /// Object memory size
-        uint64_t sizeInBytes() const;
+        uint64_t sizeInBytes() const
+        {
+            return size_bytes;
+        }
     };
 
     struct ResponseForSession

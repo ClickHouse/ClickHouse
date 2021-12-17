@@ -53,7 +53,9 @@ usermod -aG docker ubuntu
 cat <<EOT > /etc/docker/daemon.json
 {
   "ipv6": true,
-  "fixed-cidr-v6": "2001:db8:1::/64"
+  "fixed-cidr-v6": "2001:db8:1::/64",
+  "insecure-registries" : ["dockerhub-proxy.dockerhub-proxy-zone:5000"],
+  "registry-mirrors" : ["http://dockerhub-proxy.dockerhub-proxy-zone:5000"]
 }
 EOT
 

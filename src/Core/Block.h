@@ -193,6 +193,8 @@ void assertCompatibleHeader(const Block & actual, const Block & desired, const s
 /// Calculate difference in structure of blocks and write description into output strings. NOTE It doesn't compare values of constant columns.
 void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out_lhs_diff, std::string & out_rhs_diff);
 
+void convertToFullIfSparse(Block & block);
+
 /// Helps in-memory storages to extract columns from block.
 /// Properly handles cases, when column is a subcolumn and when it is compressed.
 ColumnPtr getColumnFromBlock(const Block & block, const NameAndTypePair & column);
