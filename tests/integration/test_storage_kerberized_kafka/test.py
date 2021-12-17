@@ -97,6 +97,9 @@ def test_kafka_json_as_string(kafka_cluster):
     assert instance.contains_in_log("Parsing of message (topic: kafka_json_as_string, partition: 0, offset: 1) return no rows")
 
 def test_kafka_json_as_string_no_kdc(kafka_cluster):
+    # When the test is run alone (not preceded by any other kerberized kafka test),
+    # we need a ticket to
+    # assert instance.contains_in_log("Ticket expired")
     instance.query('''
         CREATE TABLE test.kafka_no_kdc_warm_up (field String)
             ENGINE = Kafka
