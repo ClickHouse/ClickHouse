@@ -25,15 +25,6 @@ static bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & v
             value = literal->value.get<Int64>();
             return true;
         }
-        else if (literal->value.getType() == Field::Types::String)
-        {
-            auto str = literal->value.get<std::string>();
-            if (str == "0" || str == "1")
-            {
-                value = str[0] - '0';
-                return true;
-            }
-        }
     }
 
     /// cast of numeric constant in condition to UInt8
