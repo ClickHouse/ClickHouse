@@ -143,27 +143,17 @@ public:
 
     const Node * findBestMatch(const Path & path) const
     {
-        if (!root)
-            return nullptr;
+        return findImpl(path, false);
+    }
 
-        auto parts = path.getParts();
-        const Node * current_node = root.get();
-
-        for (const auto & part : parts)
-        {
-            auto it = current_node->children.find(part);
-            if (it == current_node->children.end())
-                return current_node;
-
-            current_node = it->second.get();
-        }
-
-        return current_node;
+    const Node * findExact(const Path & path) const
+    {
+        return findImpl(path, true);
     }
 
     const Leaf * findLeaf(const Path & path) const
     {
-        return typeid_cast<const Leaf *>(findBestMatch(path));
+        return typeid_cast<const Leaf *>(findExact(path));
     }
 
     using LeafPredicate = std::function<bool(const Leaf &)>;
@@ -210,6 +200,27 @@ public:
     const_iterator end() const { return leaves.end(); }
 
 private:
+    const Node * findImpl(const Path & path, bool find_exact) const
+    {
+        if (!root)
+            return nullptr;
+
+        auto parts = path.getParts();
+        const Node * current_node = root.get();
+
+        for (const auto & part : parts)
+        {
+            auto it = current_node->children.find(part);
+            if (it == current_node->children.end())
+                return find_exact ? nullptr : current_node;
+
+            current_node = it->second.get();
+        }
+
+        return current_node;
+
+    }
+
     NodePtr root;
     Leaves leaves;
 };

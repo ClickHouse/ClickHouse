@@ -111,22 +111,25 @@ void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader &
     assert(paths.size() == values.size());
 
     HashSet<StringRef, StringRefHash> paths_set;
-    for (const auto & path : paths)
-        paths_set.insert(path.getPath());
-
-    if (paths.size() != paths_set.size())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Object has ambiguous paths");
-
     size_t column_size = column_object.size();
+
     for (size_t i = 0; i < paths.size(); ++i)
     {
+        auto field_info = getFieldInfo(values[i]);
+        if (isNothing(field_info.scalar_type))
+            continue;
+
+        if (!paths_set.insert(paths[i].getPath()).second)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Object has ambiguous path: {}", paths[i].getPath());
+
         if (!column_object.hasSubcolumn(paths[i]))
             column_object.addSubcolumn(paths[i], column_size);
 
         auto & subcolumn = column_object.getSubcolumn(paths[i]);
         assert(subcolumn.size() == column_size);
 
-        subcolumn.insert(std::move(values[i]));
+        subcolumn.insert(std::move(values[i]), std::move(field_info));
     }
 
     const auto & subcolumns = column_object.getSubcolumns();
@@ -139,6 +142,8 @@ void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader &
                 entry->column.insertDefault();
         }
     }
+
+    column_object.incrementNumRows();
 }
 
 template <typename Parser>
@@ -240,8 +245,6 @@ void SerializationObject<Parser>::serializeBinaryBulkWithMultipleStreams(
         }
 
         settings.path.back() = Substream::ObjectElement;
-        settings.path.back().object_key_name = entry->path.getPath();
-
         if (auto * stream = settings.getter(settings.path))
         {
             auto serialization = type->getDefaultSerialization();
