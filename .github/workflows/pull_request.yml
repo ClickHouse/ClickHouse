@@ -928,8 +928,8 @@ jobs:
   BuilderReport:
     needs:
       - BuilderDebRelease
-      - BuilderBinRelease
       - BuilderDebAarch64
+      - BuilderBinRelease
       - BuilderDebAsan
       - BuilderDebTsan
       - BuilderDebUBsan
