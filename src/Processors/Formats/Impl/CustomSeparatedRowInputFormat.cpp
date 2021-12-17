@@ -24,14 +24,27 @@ static FormatSettings updateFormatSettings(const FormatSettings & settings)
 
 CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
     const Block & header_,
-    ReadBuffer & in_,
+    ReadBuffer & in_buf_,
     const Params & params_,
     bool with_names_,
     bool with_types_,
     bool ignore_spaces_,
     const FormatSettings & format_settings_)
-    : RowInputFormatWithNamesAndTypes(header_, buf, params_, with_names_, with_types_, updateFormatSettings(format_settings_))
-    , buf(in_)
+    : CustomSeparatedRowInputFormat(
+        header_, std::make_unique<PeekableReadBuffer>(in_buf_), params_, with_names_, with_types_, ignore_spaces_, format_settings_)
+{
+}
+
+CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
+    const Block & header_,
+    std::unique_ptr<PeekableReadBuffer> buf_,
+    const Params & params_,
+    bool with_names_,
+    bool with_types_,
+    bool ignore_spaces_,
+    const FormatSettings & format_settings_)
+    : RowInputFormatWithNamesAndTypes(header_, *buf_, params_, with_names_, with_types_, updateFormatSettings(format_settings_))
+    , buf(std::move(buf_))
     , ignore_spaces(ignore_spaces_)
     , escaping_rule(format_settings_.custom.escaping_rule)
 {
@@ -51,57 +64,57 @@ CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
 void CustomSeparatedRowInputFormat::skipPrefixBeforeHeader()
 {
     skipSpaces();
-    assertString(format_settings.custom.result_before_delimiter, buf);
+    assertString(format_settings.custom.result_before_delimiter, *buf);
 }
 
 void CustomSeparatedRowInputFormat::skipRowStartDelimiter()
 {
     skipSpaces();
-    assertString(format_settings.custom.row_before_delimiter, buf);
+    assertString(format_settings.custom.row_before_delimiter, *buf);
 }
 
 void CustomSeparatedRowInputFormat::skipFieldDelimiter()
 {
     skipSpaces();
-    assertString(format_settings.custom.field_delimiter, buf);
+    assertString(format_settings.custom.field_delimiter, *buf);
 }
 
 void CustomSeparatedRowInputFormat::skipRowEndDelimiter()
 {
     skipSpaces();
-    assertString(format_settings.custom.row_after_delimiter, buf);
+    assertString(format_settings.custom.row_after_delimiter, *buf);
 }
 
 void CustomSeparatedRowInputFormat::skipRowBetweenDelimiter()
 {
     skipSpaces();
-    assertString(format_settings.custom.row_between_delimiter, buf);
+    assertString(format_settings.custom.row_between_delimiter, *buf);
 }
 
 void CustomSeparatedRowInputFormat::skipField()
 {
     skipSpaces();
-    skipFieldByEscapingRule(buf, escaping_rule, format_settings);
+    skipFieldByEscapingRule(*buf, escaping_rule, format_settings);
 }
 
 bool CustomSeparatedRowInputFormat::checkEndOfRow()
 {
-    PeekableReadBufferCheckpoint checkpoint{buf, true};
+    PeekableReadBufferCheckpoint checkpoint{*buf, true};
 
     skipSpaces();
-    if (!checkString(format_settings.custom.row_after_delimiter, buf))
+    if (!checkString(format_settings.custom.row_after_delimiter, *buf))
         return false;
 
     skipSpaces();
 
     /// At the end of row after row_after_delimiter we expect result_after_delimiter or row_between_delimiter.
 
-    if (checkString(format_settings.custom.row_between_delimiter, buf))
+    if (checkString(format_settings.custom.row_between_delimiter, *buf))
         return true;
 
-    buf.rollbackToCheckpoint();
+    buf->rollbackToCheckpoint();
     skipSpaces();
-    buf.ignore(format_settings.custom.row_after_delimiter.size());
+    buf->ignore(format_settings.custom.row_after_delimiter.size());
     return checkForSuffixImpl(true);
 }
 
@@ -114,7 +127,7 @@ std::vector<String> CustomSeparatedRowInputFormat::readHeaderRow()
         if (!values.empty())
             skipFieldDelimiter();
         skipSpaces();
-        values.push_back(readStringByEscapingRule(buf, escaping_rule, format_settings));
+        values.push_back(readStringByEscapingRule(*buf, escaping_rule, format_settings));
     }
     while (!checkEndOfRow());
 
@@ -138,7 +151,7 @@ void CustomSeparatedRowInputFormat::skipHeaderRow()
 bool CustomSeparatedRowInputFormat::readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool, const String &)
 {
     skipSpaces();
-    return deserializeFieldByEscapingRule(type, serialization, column, buf, escaping_rule, format_settings);
+    return deserializeFieldByEscapingRule(type, serialization, column, *buf, escaping_rule, format_settings);
 }
 
 bool CustomSeparatedRowInputFormat::checkForSuffixImpl(bool check_eof)
@@ -149,16 +162,16 @@ bool CustomSeparatedRowInputFormat::checkForSuffixImpl(bool check_eof)
         if (!check_eof)
             return false;
 
-        return buf.eof();
+        return buf->eof();
     }
 
-    if (unlikely(checkString(format_settings.custom.result_after_delimiter, buf)))
+    if (unlikely(checkString(format_settings.custom.result_after_delimiter, *buf)))
     {
         skipSpaces();
         if (!check_eof)
             return true;
 
-        if (buf.eof())
+        if (buf->eof())
             return true;
     }
     return false;
@@ -166,25 +179,25 @@ bool CustomSeparatedRowInputFormat::checkForSuffixImpl(bool check_eof)
 
 bool CustomSeparatedRowInputFormat::tryParseSuffixWithDiagnosticInfo(WriteBuffer & out)
 {
-    PeekableReadBufferCheckpoint checkpoint{buf};
+    PeekableReadBufferCheckpoint checkpoint{*buf};
     if (checkForSuffixImpl(false))
     {
-        if (buf.eof())
+        if (buf->eof())
             out << "<End of stream>\n";
         else
             out << " There is some data after suffix\n";
         return false;
     }
-    buf.rollbackToCheckpoint();
+    buf->rollbackToCheckpoint();
     return true;
 }
 
 bool CustomSeparatedRowInputFormat::checkForSuffix()
 {
-    PeekableReadBufferCheckpoint checkpoint{buf};
+    PeekableReadBufferCheckpoint checkpoint{*buf};
     if (checkForSuffixImpl(true))
         return true;
-    buf.rollbackToCheckpoint();
+    buf->rollbackToCheckpoint();
     return false;
 }
 
@@ -196,37 +209,43 @@ bool CustomSeparatedRowInputFormat::allowSyncAfterError() const
 
 void CustomSeparatedRowInputFormat::syncAfterError()
 {
-    skipToNextRowOrEof(buf, format_settings.custom.row_after_delimiter, format_settings.custom.row_between_delimiter, ignore_spaces);
-    end_of_stream = buf.eof();
-    /// It can happen that buf.position() is not at the beginning of row
+    skipToNextRowOrEof(*buf, format_settings.custom.row_after_delimiter, format_settings.custom.row_between_delimiter, ignore_spaces);
+    end_of_stream = buf->eof();
+    /// It can happen that buf->position() is not at the beginning of row
     /// if some delimiters is similar to row_format.delimiters.back() and row_between_delimiter.
     /// It will cause another parsing error.
 }
 
 bool CustomSeparatedRowInputFormat::parseRowStartWithDiagnosticInfo(WriteBuffer & out)
 {
-    return parseDelimiterWithDiagnosticInfo(out, buf, format_settings.custom.row_before_delimiter, "delimiter before first firld", ignore_spaces);
+    return parseDelimiterWithDiagnosticInfo(out, *buf, format_settings.custom.row_before_delimiter, "delimiter before first field", ignore_spaces);
 }
 
 bool CustomSeparatedRowInputFormat::parseFieldDelimiterWithDiagnosticInfo(WriteBuffer & out)
 {
-    return parseDelimiterWithDiagnosticInfo(out, buf, format_settings.custom.field_delimiter, "delimiter between fields", ignore_spaces);
+    return parseDelimiterWithDiagnosticInfo(out, *buf, format_settings.custom.field_delimiter, "delimiter between fields", ignore_spaces);
 }
 
 bool CustomSeparatedRowInputFormat::parseRowEndWithDiagnosticInfo(WriteBuffer & out)
 {
-    return parseDelimiterWithDiagnosticInfo(out, buf, format_settings.custom.row_after_delimiter, "delimiter after last field", ignore_spaces);
+    return parseDelimiterWithDiagnosticInfo(out, *buf, format_settings.custom.row_after_delimiter, "delimiter after last field", ignore_spaces);
 }
 
 bool CustomSeparatedRowInputFormat::parseRowBetweenDelimiterWithDiagnosticInfo(WriteBuffer & out)
 {
-    return parseDelimiterWithDiagnosticInfo(out, buf, format_settings.custom.row_between_delimiter, "delimiter between rows", ignore_spaces);
+    return parseDelimiterWithDiagnosticInfo(out, *buf, format_settings.custom.row_between_delimiter, "delimiter between rows", ignore_spaces);
 }
 
 void CustomSeparatedRowInputFormat::resetParser()
 {
     RowInputFormatWithNamesAndTypes::resetParser();
-    buf.reset();
+    buf->reset();
+}
+
+void CustomSeparatedRowInputFormat::setReadBuffer(ReadBuffer & in_)
+{
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    IInputFormat::setReadBuffer(*buf);
 }
 
 void registerInputFormatCustomSeparated(FormatFactory & factory)

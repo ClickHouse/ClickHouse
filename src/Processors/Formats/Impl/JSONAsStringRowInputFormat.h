@@ -19,8 +19,11 @@ public:
     JSONAsRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_);
 
     void resetParser() override;
+    void setReadBuffer(ReadBuffer & in_) override;
 
 private:
+    JSONAsRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_);
+
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 
     void readPrefix() override;
@@ -28,7 +31,7 @@ private:
 
 protected:
     virtual void readJSONObject(IColumn & column) = 0;
-    PeekableReadBuffer buf;
+    std::unique_ptr<PeekableReadBuffer> buf;
 
 private:
     /// This flag is needed to know if data is in square brackets.

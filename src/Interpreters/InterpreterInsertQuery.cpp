@@ -197,6 +197,9 @@ Chain InterpreterInsertQuery::buildChainImpl(
     /// We create a pipeline of several streams, into which we will write data.
     Chain out;
 
+    /// Keep a reference to the context to make sure it stays alive until the chain is executed and destroyed
+    out.addInterpreterContext(context_ptr);
+
     /// NOTE: we explicitly ignore bound materialized views when inserting into Kafka Storage.
     ///       Otherwise we'll get duplicates when MV reads same rows again from Kafka.
     if (table->noPushingToViews() && !no_destination)
@@ -381,13 +384,6 @@ BlockIO InterpreterInsertQuery::execute()
 
     BlockIO res;
 
-    res.pipeline.addStorageHolder(table);
-    if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
-    {
-        if (auto inner_table = mv->tryGetTargetTable())
-            res.pipeline.addStorageHolder(inner_table);
-    }
-
     /// What type of query: INSERT or INSERT SELECT or INSERT WATCH?
     if (is_distributed_insert_select)
     {
@@ -407,6 +403,8 @@ BlockIO InterpreterInsertQuery::execute()
             return std::make_shared<ExpressionTransform>(in_header, actions);
         });
 
+        /// We need to convert Sparse columns to full, because it's destination storage
+        /// may not support it may have different settings for applying Sparse serialization.
         pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
         {
             return std::make_shared<MaterializingTransform>(in_header);
@@ -449,6 +447,13 @@ BlockIO InterpreterInsertQuery::execute()
             auto pipe = getSourceFromASTInsertQuery(query_ptr, true, query_sample_block, getContext(), nullptr);
             res.pipeline.complete(std::move(pipe));
         }
+    }
+
+    res.pipeline.addStorageHolder(table);
+    if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
+    {
+        if (auto inner_table = mv->tryGetTargetTable())
+            res.pipeline.addStorageHolder(inner_table);
     }
 
     return res;

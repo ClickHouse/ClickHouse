@@ -280,6 +280,7 @@ void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
         value_dim = column_dim;
 
     if (value_dim != column_dim)
+        throw Exception(ErrorCodes::NUMBER_OF_DIMENSIONS_MISMATHED,
             "Dimension of types mismatched between inserted value and column. "
             "Dimension of value: {}. Dimension of column: {}",
              value_dim, column_dim);

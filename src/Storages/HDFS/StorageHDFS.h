@@ -38,7 +38,14 @@ public:
 
     bool supportsPartitionBy() const override { return true; }
 
+    /// Check if the format is column-oriented.
+    /// Is is useful because column oriented formats could effectively skip unknown columns
+    /// So we can create a header of only required columns in read method and ask
+    /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
+    bool isColumnOriented() const;
+
 protected:
+    friend class HDFSSource;
     StorageHDFS(
         const String & uri_,
         const StorageID & table_id_,
