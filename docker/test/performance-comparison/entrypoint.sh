@@ -11,6 +11,12 @@ if [[ $S3_URL == *"s3.amazonaws.com"* ]]; then
     COMMON_BUILD_PREFIX=""
 fi
 
+function curl_with_retry
+{
+    for i in 1 2 3 4; do curl --fail --head "$1" && return 0 || sleep 0.5; done
+    return 1
+}
+
 # Use the packaged repository to find the revision we will compare to.
 function find_reference_sha
 {
@@ -55,7 +61,7 @@ function find_reference_sha
                                )
         for path in "${urls_to_try[@]}"
         do
-            if curl --fail --retry 5 --retry-delay 1 --retry-max-time 15 --head "$path"
+            if curl_with_retry "$path"
             then
                 found="$path"
                 break
@@ -76,7 +82,7 @@ chmod 777 workspace output
 cd workspace
 
 # Download the package for the version we are going to test.
-if curl --fail --retry 5 --retry-delay 1 --retry-max-time 15 --head "$S3_URL/$PR_TO_TEST/$SHA_TO_TEST$COMMON_BUILD_PREFIX/performance/performance.tgz"
+if curl_with_retry "$S3_URL/$PR_TO_TEST/$SHA_TO_TEST$COMMON_BUILD_PREFIX/performance/performance.tgz"
 then
     right_path="$S3_URL/$PR_TO_TEST/$SHA_TO_TEST$COMMON_BUILD_PREFIX/performance/performance.tgz"
 fi
