@@ -1725,10 +1725,17 @@ void ClientBase::init(int argc, char ** argv)
         return "--" + String(op_long_name);
     };
 
-    const auto & main_options = options_description.main_description->options();
-    const auto & external_options = options_description.external_description->options();
-    std::transform(main_options.begin(), main_options.end(), std::back_inserter(cmd_options), getter);
-    std::transform(external_options.begin(), external_options.end(), std::back_inserter(cmd_options), getter);
+    if (options_description.main_description)
+    {
+        const auto & main_options = options_description.main_description->options();
+        std::transform(main_options.begin(), main_options.end(), std::back_inserter(cmd_options), getter);
+    }
+
+    if (options_description.external_description)
+    {
+        const auto & external_options = options_description.external_description->options();
+        std::transform(external_options.begin(), external_options.end(), std::back_inserter(cmd_options), getter);
+    }
 
     parseAndCheckOptions(options_description, options, common_arguments);
     po::notify(options);
