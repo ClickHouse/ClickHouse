@@ -206,8 +206,8 @@ def test_table_manipulations(cluster):
 
     renamed_table = TABLE_NAME + "_renamed"
 
-    node.query(f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-03', 4096)}")
-    node.query(f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-04', 4096)}")
+    node.query_with_retry(f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-03', 4096)}")
+    node.query_with_retry(f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-04', 4096)}")
 
     node.query(f"RENAME TABLE {TABLE_NAME} TO {renamed_table}")
     assert node.query(f"SELECT count(*) FROM {renamed_table} FORMAT Values") == "(8192)"
