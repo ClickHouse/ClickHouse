@@ -1,4 +1,4 @@
-# merge_tree_settings 系统表 {#system-merge_tree_settings}
+# system.merge_tree_settings {#system-merge_tree_settings}
 
 包含 `MergeTree` 表的配置信息。
 
