@@ -15,7 +15,13 @@ fi
 # current curl version options.
 function curl_with_retry
 {
-    for i in 1 2 3 4; do curl --fail --head "$1" && return 0 || sleep 0.5; done
+    for _ in 1 2 3 4; do
+        if curl --fail --head "$1";then
+            return 0
+        else
+            sleep 0.5
+        fi
+    done
     return 1
 }
 
