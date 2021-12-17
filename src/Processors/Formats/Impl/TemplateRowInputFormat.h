@@ -25,6 +25,11 @@ public:
     void resetParser() override;
 
 private:
+    TemplateRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, const Params & params_,
+                           FormatSettings settings_, bool ignore_spaces_,
+                           ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_,
+                           std::string row_between_delimiter);
+
     bool readRow(MutableColumns & columns, RowReadExtension & extra) override;
 
     void readPrefix() override;
@@ -36,7 +41,7 @@ private:
         const SerializationPtr & serialization, IColumn & column, size_t file_column);
 
     void skipField(EscapingRule escaping_rule);
-    inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(buf); }
+    inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(*buf); }
 
     template <typename ReturnType = void>
     ReturnType tryReadPrefixOrSuffix(size_t & input_part_beg, size_t input_part_end);
@@ -48,7 +53,9 @@ private:
 
     bool isGarbageAfterField(size_t after_col_idx, ReadBuffer::Position pos) override;
 
-    PeekableReadBuffer buf;
+    void setReadBuffer(ReadBuffer & in_) override;
+
+    std::unique_ptr<PeekableReadBuffer> buf;
     const DataTypes data_types;
 
     FormatSettings settings;
