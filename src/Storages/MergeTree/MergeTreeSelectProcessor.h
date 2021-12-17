@@ -31,17 +31,16 @@ public:
         const MergeTreeReaderSettings & reader_settings,
         const Names & virt_column_names = {},
         size_t part_index_in_query_ = 0,
-        bool has_limit_below_one_block_ = false);
+        bool has_limit_below_one_block_ = false,
+        std::optional<ParallelReadingExtension> extension_ = {});
 
     ~MergeTreeSelectProcessor() override;
 
-    /// Closes readers and unlock part locks
-    void finish();
-
 protected:
     /// Defer initialization from constructor, because it may be heavy
-    /// and it's better to do it lazily in `getNewTask`, which is executing in parallel.
+    /// and it's better to do it lazily in `getNewTaskImpl`, which is executing in parallel.
     void initializeReaders();
+    void finish() override final;
 
     /// Used by Task
     Names required_columns;
