@@ -16,9 +16,10 @@ struct Settings;
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int LOGICAL_ERROR;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 
@@ -42,19 +43,22 @@ class AggregateFunctionTopKDateTime : public AggregateFunctionTopK<DataTypeDateT
 
 
 template <bool is_weighted>
-static IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_type, UInt64 threshold, UInt64 load_factor, const Array & params)
+static IAggregateFunction * createWithExtraTypes(const DataTypes & argument_types, UInt64 threshold, UInt64 load_factor, const Array & params)
 {
-    WhichDataType which(argument_type);
+    if (argument_types.empty())
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Got empty arguments list");
+
+    WhichDataType which(argument_types[0]);
     if (which.idx == TypeIndex::Date)
-        return new AggregateFunctionTopKDate<is_weighted>(threshold, load_factor, {argument_type}, params);
+        return new AggregateFunctionTopKDate<is_weighted>(threshold, load_factor, argument_types, params);
     if (which.idx == TypeIndex::DateTime)
-        return new AggregateFunctionTopKDateTime<is_weighted>(threshold, load_factor, {argument_type}, params);
+        return new AggregateFunctionTopKDateTime<is_weighted>(threshold, load_factor, argument_types, params);
 
     /// Check that we can use plain version of AggregateFunctionTopKGeneric
-    if (argument_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
-        return new AggregateFunctionTopKGeneric<true, is_weighted>(threshold, load_factor, argument_type, params);
+    if (argument_types[0]->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
+        return new AggregateFunctionTopKGeneric<true, is_weighted>(threshold, load_factor, argument_types, params);
     else
-        return new AggregateFunctionTopKGeneric<false, is_weighted>(threshold, load_factor, argument_type, params);
+        return new AggregateFunctionTopKGeneric<false, is_weighted>(threshold, load_factor, argument_types, params);
 }
 
 
@@ -106,7 +110,7 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
         *argument_types[0], threshold, load_factor, argument_types, params));
 
     if (!res)
-        res = AggregateFunctionPtr(createWithExtraTypes<is_weighted>(argument_types[0], threshold, load_factor, params));
+        res = AggregateFunctionPtr(createWithExtraTypes<is_weighted>(argument_types, threshold, load_factor, params));
 
     if (!res)
         throw Exception("Illegal type " + argument_types[0]->getName() +
