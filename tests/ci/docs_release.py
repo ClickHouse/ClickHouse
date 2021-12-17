@@ -5,8 +5,9 @@ import os
 
 from github import Github
 
+from env_helper import TEMP_PATH, REPO_COPY, CLOUDFLARE_TOKEN
 from s3_helper import S3Helper
-from pr_info import PRInfo, get_event
+from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 from ssh import SSHKey
 from upload_result_helper import upload_results
@@ -18,10 +19,10 @@ NAME = "Docs Release (actions)"
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
-    temp_path = os.path.join(os.getenv("TEMP_PATH"))
-    repo_path = os.path.join(os.getenv("REPO_COPY"))
+    temp_path = TEMP_PATH
+    repo_path = REPO_COPY
 
-    pr_info = PRInfo(get_event(), need_changed_files=True)
+    pr_info = PRInfo(need_changed_files=True)
 
     gh = Github(get_best_robot_token())
 
@@ -34,7 +35,7 @@ if __name__ == "__main__":
     if not os.path.exists(test_output):
         os.makedirs(test_output)
 
-    token = os.getenv('CLOUDFLARE_TOKEN')
+    token = CLOUDFLARE_TOKEN
     cmd = "docker run --cap-add=SYS_PTRACE --volume=$SSH_AUTH_SOCK:/ssh-agent -e SSH_AUTH_SOCK=/ssh-agent " \
           f"-e CLOUDFLARE_TOKEN={token} --volume={repo_path}:/repo_path --volume={test_output}:/output_path {docker_image}"
 
