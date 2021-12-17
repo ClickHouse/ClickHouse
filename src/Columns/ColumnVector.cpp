@@ -502,6 +502,24 @@ ColumnPtr ColumnVector<T>::compress() const
         });
 }
 
+template <typename T>
+ColumnPtr ColumnVector<T>::createWithOffsets(const IColumn::Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const
+{
+    if (offsets.size() + shift != size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Incompatible sizes of offsets ({}), shift ({}) and size of column {}", offsets.size(), shift, size());
+
+    auto res = this->create();
+    auto & res_data = res->getData();
+
+    T default_value = safeGet<T>(default_field);
+    res_data.resize_fill(total_rows, default_value);
+    for (size_t i = 0; i < offsets.size(); ++i)
+        res_data[offsets[i]] = data[i + shift];
+
+    return res;
+}
+
 /// Explicit template instantiations - to avoid code bloat in headers.
 template class ColumnVector<UInt8>;
 template class ColumnVector<UInt16>;
