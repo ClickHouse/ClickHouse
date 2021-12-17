@@ -182,6 +182,13 @@ StringRef ColumnArray::getDataAt(size_t n) const
 }
 
 
+bool ColumnArray::isDefaultAt(size_t n) const
+{
+    const auto & offsets_data = getOffsets();
+    return offsets_data[n] == offsets_data[static_cast<ssize_t>(n) - 1];
+}
+
+
 void ColumnArray::insertData(const char * pos, size_t length)
 {
     /** Similarly - only for arrays of fixed length values.
@@ -576,7 +583,8 @@ void ColumnArray::expand(const IColumn::Filter & mask, bool inverted)
     }
 
     if (from != -1)
-        throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);}
+        throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);
+}
 
 template <typename T>
 ColumnPtr ColumnArray::filterNumber(const Filter & filt, ssize_t result_size_hint) const
@@ -866,6 +874,16 @@ ColumnPtr ColumnArray::compress() const
         {
             return ColumnArray::create(data_compressed->decompress(), offsets_compressed->decompress());
         });
+}
+
+double ColumnArray::getRatioOfDefaultRows(double sample_ratio) const
+{
+    return getRatioOfDefaultRowsImpl<ColumnArray>(sample_ratio);
+}
+
+void ColumnArray::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
+{
+    return getIndicesOfNonDefaultRowsImpl<ColumnArray>(indices, from, limit);
 }
 
 

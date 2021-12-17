@@ -508,6 +508,9 @@ void StorageMergeTree::waitForMutation(Int64 version, const String & file_name)
 
 void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context)
 {
+    /// Validate partition IDs (if any) before starting mutation
+    getPartitionIdsAffectedByCommands(commands, query_context);
+
     String mutation_file_name;
     Int64 version = startMutation(commands, mutation_file_name);
 
@@ -898,6 +901,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
         auto commands = MutationCommands::create();
 
         size_t current_ast_elements = 0;
+        auto last_mutation_to_apply = mutations_end_it;
         for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
         {
             size_t commands_size = 0;
@@ -934,7 +938,8 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
                     MergeTreeMutationEntry & entry = it->second;
                     entry.latest_fail_time = time(nullptr);
                     entry.latest_fail_reason = getCurrentExceptionMessage(false);
-                    continue;
+                    /// NOTE we should not skip mutations, because exception may be retryable (e.g. MEMORY_LIMIT_EXCEEDED)
+                    break;
                 }
             }
 
@@ -943,8 +948,10 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
 
             current_ast_elements += commands_size;
             commands->insert(commands->end(), it->second.commands.begin(), it->second.commands.end());
+            last_mutation_to_apply = it;
         }
 
+        assert(commands->empty() == (last_mutation_to_apply == mutations_end_it));
         if (!commands->empty())
         {
             bool is_partition_affected = false;
@@ -969,13 +976,13 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
                 /// Shall not create a new part, but will do that later if mutation with higher version appear.
                 /// This is needed in order to not produce excessive mutations of non-related parts.
                 auto block_range = std::make_pair(part->info.min_block, part->info.max_block);
-                updated_version_by_block_range[block_range] = current_mutations_by_version.rbegin()->first;
+                updated_version_by_block_range[block_range] = last_mutation_to_apply->first;
                 were_some_mutations_for_some_parts_skipped = true;
                 continue;
             }
 
             auto new_part_info = part->info;
-            new_part_info.mutation = current_mutations_by_version.rbegin()->first;
+            new_part_info.mutation = last_mutation_to_apply->first;
 
             future_part->parts.push_back(part);
             future_part->part_info = new_part_info;

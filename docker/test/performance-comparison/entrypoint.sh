@@ -55,7 +55,7 @@ function find_reference_sha
                                )
         for path in "${urls_to_try[@]}"
         do
-            if curl --fail --retry-all-errors --retry 5 --retry-delay 1 --retry-max-time 15 --head "$path"
+            if curl --fail --retry 5 --retry-delay 1 --retry-max-time 15 --head "$path"
             then
                 found="$path"
                 break
@@ -76,7 +76,7 @@ chmod 777 workspace output
 cd workspace
 
 # Download the package for the version we are going to test.
-if curl --fail --retry-all-errors --retry 5 --retry-delay 1 --retry-max-time 15 --head "$S3_URL/$PR_TO_TEST/$SHA_TO_TEST$COMMON_BUILD_PREFIX/performance/performance.tgz"
+if curl --fail --retry 5 --retry-delay 1 --retry-max-time 15 --head "$S3_URL/$PR_TO_TEST/$SHA_TO_TEST$COMMON_BUILD_PREFIX/performance/performance.tgz"
 then
     right_path="$S3_URL/$PR_TO_TEST/$SHA_TO_TEST$COMMON_BUILD_PREFIX/performance/performance.tgz"
 fi

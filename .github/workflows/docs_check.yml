@@ -1,4 +1,9 @@
 name: DocsCheck
+
+env:
+  # Force the stdout and stderr streams to be unbuffered
+  PYTHONUNBUFFERED: 1
+
 on: # yamllint disable-line rule:truthy
   pull_request:
     types:
@@ -14,6 +19,9 @@ jobs:
   CheckLabels:
     runs-on: [self-hosted, style-checker]
     steps:
+      - name: Clear repository
+        run: |
+          sudo rm -rf $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Labels check
@@ -24,6 +32,9 @@ jobs:
     needs: CheckLabels
     runs-on: [self-hosted, style-checker]
     steps:
+      - name: Clear repository
+        run: |
+          sudo rm -rf $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Images check
@@ -50,6 +61,9 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.TEMP_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -rf $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Docs Check

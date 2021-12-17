@@ -177,7 +177,7 @@ bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
     /// Remember the columns we will work with
     for (size_t i = 0; i < keys_size; ++i)
     {
-        materialized_columns.emplace_back(columns.at(i).column->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality());
+        materialized_columns.emplace_back(columns.at(i).column->convertToFullIfNeeded());
         key_columns.emplace_back(materialized_columns.back().get());
     }
 
