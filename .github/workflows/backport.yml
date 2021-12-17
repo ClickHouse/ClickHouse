@@ -1,4 +1,9 @@
 name: CherryPick
+
+env:
+  # Force the stdout and stderr streams to be unbuffered
+  PYTHONUNBUFFERED: 1
+
 concurrency:
   group: cherry-pick
 on: # yamllint disable-line rule:truthy
