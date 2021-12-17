@@ -31,6 +31,7 @@ class StorageMergeTree final : public shared_ptr_helper<StorageMergeTree>, publi
     friend struct shared_ptr_helper<StorageMergeTree>;
 public:
     void startup() override;
+    void flush() override;
     void shutdown() override;
     ~StorageMergeTree() override;
 

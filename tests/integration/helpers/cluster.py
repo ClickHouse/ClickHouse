@@ -1101,15 +1101,13 @@ class ClickHouseCluster:
                 info = self.mysql_client_container.client.api.inspect_container(self.mysql_client_container.name)
                 if info['State']['Health']['Status'] == 'healthy':
                     logging.debug("Mysql Client Container Started")
-                    break
+                    return
                 time.sleep(1)
-
-                return
             except Exception as ex:
                 errors += [str(ex)]
                 time.sleep(1)
 
-        run_and_check(['docker-compose', 'ps', '--services', '--all'])
+        run_and_check(['docker', 'ps', '--all'])
         logging.error("Can't connect to MySQL Client:{}".format(errors))
         raise Exception("Cannot wait MySQL Client container")
 
