@@ -729,7 +729,6 @@ void LocalServer::printHelpMessage([[maybe_unused]] const OptionsDescription & o
 void LocalServer::addOptions(OptionsDescription & options_description)
 {
     options_description.main_description->add_options()
-        ("database,d", po::value<std::string>(), "database")
         ("table,N", po::value<std::string>(), "name of the initial table")
 
         /// If structure argument is omitted then initial query is not generated
