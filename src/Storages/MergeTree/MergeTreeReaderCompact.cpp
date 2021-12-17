@@ -54,7 +54,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         {
             auto column_from_part = getColumnFromPart(*name_and_type);
 
-            auto position = data_part->getColumnPosition(column_from_part.name);
+            auto position = data_part->getColumnPosition(column_from_part.getNameInStorage());
             if (!position && typeid_cast<const DataTypeArray *>(column_from_part.type.get()))
             {
                 /// If array of Nested column is missing in part,
@@ -140,8 +140,12 @@ size_t MergeTreeReaderCompact::readRows(
         if (!column_positions[i])
             continue;
 
+        auto column_from_part = getColumnFromPart(*column_it);
         if (res_columns[i] == nullptr)
-            res_columns[i] = getColumnFromPart(*column_it).type->createColumn();
+        {
+            auto serialization = data_part->getSerialization(column_from_part);
+            res_columns[i] = column_from_part.type->createColumn(*serialization);
+        }
     }
 
     while (read_rows < max_rows_to_read)
@@ -220,9 +224,11 @@ void MergeTreeReaderCompact::readData(
     if (name_and_type.isSubcolumn())
     {
         const auto & type_in_storage = name_and_type.getTypeInStorage();
-        ColumnPtr temp_column = type_in_storage->createColumn();
+        const auto & name_in_storage = name_and_type.getNameInStorage();
 
-        auto serialization = type_in_storage->getDefaultSerialization();
+        auto serialization = data_part->getSerialization(NameAndTypePair{name_in_storage, type_in_storage});
+        ColumnPtr temp_column = type_in_storage->createColumn(*serialization);
+
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
         serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state, nullptr);
 
@@ -236,7 +242,7 @@ void MergeTreeReaderCompact::readData(
     }
     else
     {
-        auto serialization = type->getDefaultSerialization();
+        auto serialization = data_part->getSerialization(name_and_type);
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
         serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state, nullptr);
     }

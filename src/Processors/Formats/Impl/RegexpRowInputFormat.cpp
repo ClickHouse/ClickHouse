@@ -14,10 +14,15 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+RegexpRowInputFormat::RegexpRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
+    : RegexpRowInputFormat(std::make_unique<PeekableReadBuffer>(in_), header_, params_, format_settings_)
+{
+}
+
 RegexpRowInputFormat::RegexpRowInputFormat(
-        ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
-        : IRowInputFormat(header_, buf, std::move(params_))
-        , buf(in_)
+        std::unique_ptr<PeekableReadBuffer> buf_, const Block & header_, Params params_, const FormatSettings & format_settings_)
+        : IRowInputFormat(header_, *buf_, std::move(params_))
+        , buf(std::move(buf_))
         , format_settings(format_settings_)
         , escaping_rule(format_settings_.regexp.escaping_rule)
         , regexp(format_settings_.regexp.regexp)
@@ -39,7 +44,7 @@ RegexpRowInputFormat::RegexpRowInputFormat(
 void RegexpRowInputFormat::resetParser()
 {
     IRowInputFormat::resetParser();
-    buf.reset();
+    buf->reset();
 }
 
 bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
@@ -71,43 +76,49 @@ void RegexpRowInputFormat::readFieldsFromMatch(MutableColumns & columns, RowRead
 
 bool RegexpRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
-    if (buf.eof())
+    if (buf->eof())
         return false;
 
-    PeekableReadBufferCheckpoint checkpoint{buf};
+    PeekableReadBufferCheckpoint checkpoint{*buf};
 
     size_t line_size = 0;
 
     do
     {
-        char * pos = find_first_symbols<'\n', '\r'>(buf.position(), buf.buffer().end());
-        line_size += pos - buf.position();
-        buf.position() = pos;
-    } while (buf.position() == buf.buffer().end() && !buf.eof());
+        char * pos = find_first_symbols<'\n', '\r'>(buf->position(), buf->buffer().end());
+        line_size += pos - buf->position();
+        buf->position() = pos;
+    } while (buf->position() == buf->buffer().end() && !buf->eof());
 
-    buf.makeContinuousMemoryFromCheckpointToPos();
-    buf.rollbackToCheckpoint();
+    buf->makeContinuousMemoryFromCheckpointToPos();
+    buf->rollbackToCheckpoint();
 
-    bool match = RE2::FullMatchN(re2::StringPiece(buf.position(), line_size), regexp, re2_arguments_ptrs.data(), re2_arguments_ptrs.size());
+    bool match = RE2::FullMatchN(re2::StringPiece(buf->position(), line_size), regexp, re2_arguments_ptrs.data(), re2_arguments_ptrs.size());
     bool read_line = true;
 
     if (!match)
     {
         if (!format_settings.regexp.skip_unmatched)
-            throw Exception("Line \"" + std::string(buf.position(), line_size) + "\" doesn't match the regexp.", ErrorCodes::INCORRECT_DATA);
+            throw Exception("Line \"" + std::string(buf->position(), line_size) + "\" doesn't match the regexp.", ErrorCodes::INCORRECT_DATA);
         read_line = false;
     }
 
     if (read_line)
         readFieldsFromMatch(columns, ext);
 
-    buf.position() += line_size;
+    buf->position() += line_size;
 
-    checkChar('\r', buf);
-    if (!buf.eof() && !checkChar('\n', buf))
+    checkChar('\r', *buf);
+    if (!buf->eof() && !checkChar('\n', *buf))
         throw Exception("No \\n after \\r at the end of line.", ErrorCodes::INCORRECT_DATA);
 
     return true;
+}
+
+void RegexpRowInputFormat::setReadBuffer(ReadBuffer & in_)
+{
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    IInputFormat::setReadBuffer(*buf);
 }
 
 void registerInputFormatRegexp(FormatFactory & factory)
