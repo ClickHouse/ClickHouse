@@ -11,6 +11,8 @@ if [[ $S3_URL == *"s3.amazonaws.com"* ]]; then
     COMMON_BUILD_PREFIX=""
 fi
 
+# Sometimes AWS responde with DNS error and it's impossible to retry it with
+# current curl version options.
 function curl_with_retry
 {
     for i in 1 2 3 4; do curl --fail --head "$1" && return 0 || sleep 0.5; done
