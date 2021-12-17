@@ -4,7 +4,7 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
-#include <IO/WriteBufferFromBlobStorage.h>
+#include <IO/WriteBufferFromAzureBlobStorage.h>
 #include <Disks/RemoteDisksCommon.h>
 #include <Common/getRandomASCIIString.h>
 
@@ -12,7 +12,7 @@
 namespace DB
 {
 
-WriteBufferFromBlobStorage::WriteBufferFromBlobStorage(
+WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     const String & blob_path_,
     size_t max_single_part_upload_size_,
@@ -23,13 +23,13 @@ WriteBufferFromBlobStorage::WriteBufferFromBlobStorage(
     blob_path(blob_path_) {}
 
 
-WriteBufferFromBlobStorage::~WriteBufferFromBlobStorage()
+WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
 {
     finalize();
 }
 
 
-void WriteBufferFromBlobStorage::nextImpl()
+void WriteBufferFromAzureBlobStorage::nextImpl()
 {
     if (!offset())
         return;
@@ -54,7 +54,7 @@ void WriteBufferFromBlobStorage::nextImpl()
 }
 
 
-void WriteBufferFromBlobStorage::finalizeImpl()
+void WriteBufferFromAzureBlobStorage::finalizeImpl()
 {
     next();
 

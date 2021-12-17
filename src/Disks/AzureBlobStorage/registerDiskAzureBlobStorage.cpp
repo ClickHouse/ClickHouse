@@ -9,8 +9,8 @@
 #include <Disks/DiskRestartProxy.h>
 #include <Disks/DiskCacheWrapper.h>
 #include <Disks/RemoteDisksCommon.h>
-#include <Disks/BlobStorage/DiskBlobStorage.h>
-#include <Disks/BlobStorage/BlobStorageAuth.h>
+#include <Disks/AzureBlobStorage/DiskAzureBlobStorage.h>
+#include <Disks/AzureBlobStorage/AzureBlobStorageAuth.h>
 
 
 namespace DB
@@ -62,9 +62,9 @@ void checkRemoveAccess(IDisk & disk)
 }
 
 
-std::unique_ptr<DiskBlobStorageSettings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr /*context*/)
+std::unique_ptr<DiskAzureBlobStorageSettings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr /*context*/)
 {
-    return std::make_unique<DiskBlobStorageSettings>(
+    return std::make_unique<DiskAzureBlobStorageSettings>(
         config.getUInt64(config_prefix + ".max_single_part_upload_size", 100 * 1024 * 1024),
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
         config.getInt(config_prefix + ".max_single_read_retries", 3),
@@ -74,7 +74,7 @@ std::unique_ptr<DiskBlobStorageSettings> getSettings(const Poco::Util::AbstractC
 }
 
 
-void registerDiskBlobStorage(DiskFactory & factory)
+void registerDiskAzureBlobStorage(DiskFactory & factory)
 {
     auto creator = [](
         const String & name,
@@ -85,33 +85,33 @@ void registerDiskBlobStorage(DiskFactory & factory)
     {
         auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
 
-        std::shared_ptr<IDisk> blob_storage_disk = std::make_shared<DiskBlobStorage>(
+        std::shared_ptr<IDisk> azure_blob_storage_disk = std::make_shared<DiskAzureBlobStorage>(
             name,
             metadata_disk,
-            getBlobContainerClient(config, config_prefix),
+            getAzureBlobContainerClient(config, config_prefix),
             getSettings(config, config_prefix, context),
             getSettings
         );
 
         if (!config.getBool(config_prefix + ".skip_access_check", false))
         {
-            checkWriteAccess(*blob_storage_disk);
-            checkReadAccess(*blob_storage_disk);
-            checkReadWithOffset(*blob_storage_disk);
-            checkRemoveAccess(*blob_storage_disk);
+            checkWriteAccess(*azure_blob_storage_disk);
+            checkReadAccess(*azure_blob_storage_disk);
+            checkReadWithOffset(*azure_blob_storage_disk);
+            checkRemoveAccess(*azure_blob_storage_disk);
         }
 
-        blob_storage_disk->startup();
+        azure_blob_storage_disk->startup();
 
         if (config.getBool(config_prefix + ".cache_enabled", true))
         {
             String cache_path = config.getString(config_prefix + ".cache_path", context->getPath() + "disks/" + name + "/cache/");
-            blob_storage_disk = wrapWithCache(blob_storage_disk, "blob-storage-cache", cache_path, metadata_path);
+            azure_blob_storage_disk = wrapWithCache(azure_blob_storage_disk, "azure-blob-storage-cache", cache_path, metadata_path);
         }
 
-        return std::make_shared<DiskRestartProxy>(blob_storage_disk);
+        return std::make_shared<DiskRestartProxy>(azure_blob_storage_disk);
     };
-    factory.registerDiskType("blob_storage", creator);
+    factory.registerDiskType("azure_blob_storage", creator);
 }
 
 }
@@ -121,7 +121,7 @@ void registerDiskBlobStorage(DiskFactory & factory)
 namespace DB
 {
 
-void registerDiskBlobStorage(DiskFactory &) {}
+void registerDiskAzureBlobStorage(DiskFactory &) {}
 
 }
 

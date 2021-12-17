@@ -1,14 +1,12 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#endif
 
 #if USE_AZURE_BLOB_STORAGE
 
 #include <Disks/IDiskRemote.h>
-#include <IO/ReadBufferFromBlobStorage.h>
-#include <IO/WriteBufferFromBlobStorage.h>
+#include <IO/ReadBufferFromAzureBlobStorage.h>
+#include <IO/WriteBufferFromAzureBlobStorage.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 
 #include <azure/identity/managed_identity_credential.hpp>
@@ -18,9 +16,9 @@
 namespace DB
 {
 
-struct DiskBlobStorageSettings final
+struct DiskAzureBlobStorageSettings final
 {
-    DiskBlobStorageSettings(
+    DiskAzureBlobStorageSettings(
         UInt64 max_single_part_upload_size_,
         UInt64 min_bytes_for_seek_,
         int max_single_read_retries,
@@ -35,14 +33,14 @@ struct DiskBlobStorageSettings final
 };
 
 
-class DiskBlobStorage final : public IDiskRemote
+class DiskAzureBlobStorage final : public IDiskRemote
 {
 public:
 
-    using SettingsPtr = std::unique_ptr<DiskBlobStorageSettings>;
+    using SettingsPtr = std::unique_ptr<DiskAzureBlobStorageSettings>;
     using GetDiskSettings = std::function<SettingsPtr(const Poco::Util::AbstractConfiguration &, const String, ContextPtr)>;
 
-    DiskBlobStorage(
+    DiskAzureBlobStorage(
         const String & name_,
         DiskPtr metadata_disk_,
         std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
@@ -78,7 +76,7 @@ private:
     /// client used to access the files in the Blob Storage cloud
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
 
-    MultiVersion<DiskBlobStorageSettings> current_settings;
+    MultiVersion<DiskAzureBlobStorageSettings> current_settings;
     /// Gets disk settings from context.
     GetDiskSettings settings_getter;
 };

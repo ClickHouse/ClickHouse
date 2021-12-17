@@ -1,4 +1,4 @@
-#include <Disks/BlobStorage/DiskBlobStorage.h>
+#include <Disks/AzureBlobStorage/DiskAzureBlobStorage.h>
 
 #if USE_AZURE_BLOB_STORAGE
 
@@ -15,11 +15,11 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BLOB_STORAGE_ERROR;
+    extern const int AZURE_BLOB_STORAGE_ERROR;
 }
 
 
-DiskBlobStorageSettings::DiskBlobStorageSettings(
+DiskAzureBlobStorageSettings::DiskAzureBlobStorageSettings(
     UInt64 max_single_part_upload_size_,
     UInt64 min_bytes_for_seek_,
     int max_single_read_retries_,
@@ -32,11 +32,11 @@ DiskBlobStorageSettings::DiskBlobStorageSettings(
     thread_pool_size(thread_pool_size_) {}
 
 
-class BlobStoragePathKeeper : public RemoteFSPathKeeper
+class AzureBlobStoragePathKeeper : public RemoteFSPathKeeper
 {
 public:
     /// RemoteFSPathKeeper constructed with a placeholder argument for chunk_limit, it is unused in this class
-    BlobStoragePathKeeper() : RemoteFSPathKeeper(1000) {}
+    AzureBlobStoragePathKeeper() : RemoteFSPathKeeper(1000) {}
 
     void addPath(const String & path) override
     {
@@ -47,19 +47,19 @@ public:
 };
 
 
-DiskBlobStorage::DiskBlobStorage(
+DiskAzureBlobStorage::DiskAzureBlobStorage(
     const String & name_,
     DiskPtr metadata_disk_,
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     SettingsPtr settings_,
     GetDiskSettings settings_getter_) :
-    IDiskRemote(name_, "", metadata_disk_, "DiskBlobStorage", settings_->thread_pool_size),
+    IDiskRemote(name_, "", metadata_disk_, "DiskAzureBlobStorage", settings_->thread_pool_size),
     blob_container_client(blob_container_client_),
     current_settings(std::move(settings_)),
     settings_getter(settings_getter_) {}
 
 
-std::unique_ptr<ReadBufferFromFileBase> DiskBlobStorage::readFile(
+std::unique_ptr<ReadBufferFromFileBase> DiskAzureBlobStorage::readFile(
     const String & path,
     const ReadSettings & read_settings,
     std::optional<size_t> /*estimated_size*/) const
@@ -71,7 +71,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskBlobStorage::readFile(
 
     bool threadpool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
 
-    auto reader_impl = std::make_unique<ReadBufferFromBlobStorageGather>(
+    auto reader_impl = std::make_unique<ReadBufferFromAzureBlobStorageGather>(
         path, blob_container_client, metadata, settings->max_single_read_retries,
         settings->max_single_download_retries, read_settings, threadpool_read);
 
@@ -88,7 +88,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskBlobStorage::readFile(
 }
 
 
-std::unique_ptr<WriteBufferFromFileBase> DiskBlobStorage::writeFile(
+std::unique_ptr<WriteBufferFromFileBase> DiskAzureBlobStorage::writeFile(
     const String & path,
     size_t buf_size,
     WriteMode mode)
@@ -96,38 +96,38 @@ std::unique_ptr<WriteBufferFromFileBase> DiskBlobStorage::writeFile(
     auto metadata = readOrCreateMetaForWriting(path, mode);
     auto blob_path = path + "_" + getRandomASCIIString(8); /// NOTE: path contains the tmp_* prefix in the blob name
 
-    LOG_TRACE(log, "{} to file by path: {}. Blob Storage path: {}",
+    LOG_TRACE(log, "{} to file by path: {}. AzureBlob Storage path: {}",
         mode == WriteMode::Rewrite ? "Write" : "Append", backQuote(metadata_disk->getPath() + path), blob_path);
 
-    auto buffer = std::make_unique<WriteBufferFromBlobStorage>(
+    auto buffer = std::make_unique<WriteBufferFromAzureBlobStorage>(
         blob_container_client,
         blob_path,
         current_settings.get()->max_single_part_upload_size,
         buf_size);
 
-    return std::make_unique<WriteIndirectBufferFromRemoteFS<WriteBufferFromBlobStorage>>(std::move(buffer), std::move(metadata), blob_path);
+    return std::make_unique<WriteIndirectBufferFromRemoteFS<WriteBufferFromAzureBlobStorage>>(std::move(buffer), std::move(metadata), blob_path);
 }
 
 
-DiskType DiskBlobStorage::getType() const
+DiskType DiskAzureBlobStorage::getType() const
 {
-    return DiskType::BlobStorage;
+    return DiskType::AzureBlobStorage;
 }
 
 
-bool DiskBlobStorage::isRemote() const
-{
-    return true;
-}
-
-
-bool DiskBlobStorage::supportZeroCopyReplication() const
+bool DiskAzureBlobStorage::isRemote() const
 {
     return true;
 }
 
 
-bool DiskBlobStorage::checkUniqueId(const String & id) const
+bool DiskAzureBlobStorage::supportZeroCopyReplication() const
+{
+    return true;
+}
+
+
+bool DiskAzureBlobStorage::checkUniqueId(const String & id) const
 {
     Azure::Storage::Blobs::ListBlobsOptions blobs_list_options;
     blobs_list_options.Prefix = id;
@@ -146,9 +146,9 @@ bool DiskBlobStorage::checkUniqueId(const String & id) const
 }
 
 
-void DiskBlobStorage::removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper)
+void DiskAzureBlobStorage::removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper)
 {
-    auto * paths_keeper = dynamic_cast<BlobStoragePathKeeper *>(fs_paths_keeper.get());
+    auto * paths_keeper = dynamic_cast<AzureBlobStoragePathKeeper *>(fs_paths_keeper.get());
 
     if (paths_keeper)
     {
@@ -158,7 +158,7 @@ void DiskBlobStorage::removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper)
             {
                 auto delete_info = blob_container_client->DeleteBlob(path);
                 if (!delete_info.Value.Deleted)
-                    throw Exception(ErrorCodes::BLOB_STORAGE_ERROR, "Failed to delete file in Blob Storage: {}", path);
+                    throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Failed to delete file in AzureBlob Storage: {}", path);
             }
             catch (const Azure::Storage::StorageException& e)
             {
@@ -170,13 +170,13 @@ void DiskBlobStorage::removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper)
 }
 
 
-RemoteFSPathKeeperPtr DiskBlobStorage::createFSPathKeeper() const
+RemoteFSPathKeeperPtr DiskAzureBlobStorage::createFSPathKeeper() const
 {
-    return std::make_shared<BlobStoragePathKeeper>();
+    return std::make_shared<AzureBlobStoragePathKeeper>();
 }
 
 
-void DiskBlobStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String &, const DisksMap &)
+void DiskAzureBlobStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String &, const DisksMap &)
 {
     auto new_settings = settings_getter(config, "storage_configuration.disks." + name, context);
 

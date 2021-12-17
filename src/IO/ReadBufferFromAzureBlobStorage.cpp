@@ -4,7 +4,7 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
-#include <IO/ReadBufferFromBlobStorage.h>
+#include <IO/ReadBufferFromAzureBlobStorage.h>
 #include <IO/ReadBufferFromString.h>
 #include <base/logger_useful.h>
 #include <base/sleep.h>
@@ -22,7 +22,7 @@ namespace ErrorCodes
 }
 
 
-ReadBufferFromBlobStorage::ReadBufferFromBlobStorage(
+ReadBufferFromAzureBlobStorage::ReadBufferFromAzureBlobStorage(
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     const String & path_,
     size_t max_single_read_retries_,
@@ -48,7 +48,7 @@ ReadBufferFromBlobStorage::ReadBufferFromBlobStorage(
 }
 
 
-bool ReadBufferFromBlobStorage::nextImpl()
+bool ReadBufferFromAzureBlobStorage::nextImpl()
 {
     if (read_until_position)
     {
@@ -102,7 +102,7 @@ bool ReadBufferFromBlobStorage::nextImpl()
 }
 
 
-off_t ReadBufferFromBlobStorage::seek(off_t offset_, int whence)
+off_t ReadBufferFromAzureBlobStorage::seek(off_t offset_, int whence)
 {
     if (initialized)
         throw Exception("Seek is allowed only before first read attempt from the buffer.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
@@ -119,13 +119,13 @@ off_t ReadBufferFromBlobStorage::seek(off_t offset_, int whence)
 }
 
 
-off_t ReadBufferFromBlobStorage::getPosition()
+off_t ReadBufferFromAzureBlobStorage::getPosition()
 {
     return offset - available();
 }
 
 
-void ReadBufferFromBlobStorage::initialize()
+void ReadBufferFromAzureBlobStorage::initialize()
 {
     if (initialized)
         return;
