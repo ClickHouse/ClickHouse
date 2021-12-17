@@ -13,7 +13,7 @@ int64_t getStringColumnTotalSize(int ordinal, SparkRowInfo & spark_row_info)
     for (int64_t i = 0; i < spark_row_info.getNumRows(); i++)
     {
         reader.pointTo(reinterpret_cast<int64_t>(spark_row_info.getBufferAddress() + spark_row_info.getOffsets()[i]), spark_row_info.getLengths()[i]);
-        size += reader.getStringSize(ordinal);
+        size += (reader.getStringSize(ordinal) + 1);
     }
     return size;
 }
