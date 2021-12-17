@@ -68,6 +68,7 @@ public:
 
     Field operator[](size_t n) const override { return (*getNestedColumn())[n]; }
     void get(size_t n, Field & res) const override { getNestedColumn()->get(n, res); }
+    bool isDefaultAt(size_t n) const override { return n == 0; }
     StringRef getDataAt(size_t n) const override { return getNestedColumn()->getDataAt(n); }
     StringRef getDataAtWithTerminatingZero(size_t n) const override
     {
@@ -120,6 +121,16 @@ public:
         if (auto rhs_concrete = typeid_cast<const ColumnUnique *>(&rhs))
             return column_holder->structureEquals(*rhs_concrete->column_holder);
         return false;
+    }
+
+    double getRatioOfDefaultRows(double) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getRatioOfDefaultRows' not implemented for ColumnUnique");
+    }
+
+    void getIndicesOfNonDefaultRows(IColumn::Offsets &, size_t, size_t) const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getIndicesOfNonDefaultRows' not implemented for ColumnUnique");
     }
 
     const UInt64 * tryGetSavedHash() const override { return reverse_index.tryGetSavedHash(); }
