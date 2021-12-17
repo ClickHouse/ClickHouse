@@ -46,7 +46,7 @@ static std::string numberFromHost(const std::string & s)
 {
     for (size_t i = 0; i < s.size(); ++i)
     {
-        std::string res = "";
+        std::string res;
         size_t j = i;
         while (j < s.size() && isNumericASCII(s[j]))
             res += s[j++];
