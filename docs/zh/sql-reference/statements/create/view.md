@@ -250,28 +250,28 @@ Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table defa
     `set allow_experimental_window_view = 1`。
 
 ``` sql
-CREATE WINDOW VIEW [IF NOT EXISTS] [db.]table_name [TO [db.]table_name] [ENGINE = engine] [WATERMARK = strategy] [ALLOWED_LATENESS = interval_function] AS SELECT ... GROUP BY window_view_function
+CREATE WINDOW VIEW [IF NOT EXISTS] [db.]table_name [TO [db.]table_name] [ENGINE = engine] [WATERMARK = strategy] [ALLOWED_LATENESS = interval_function] AS SELECT ... GROUP BY time_window_function
 ```
 
 Window view可以通过时间窗口聚合数据，并在满足窗口触发条件时自动触发对应窗口计算。其通过将计算状态保存降低处理延迟，支持将处理结果输出至目标表或通过`WATCH`语句输出至终端。
 
 创建window view的方式和创建物化视图类似。Window view使用默认为`AggregatingMergeTree`的内部存储引擎存储计算中间状态。
 
-### Window View 函数{#window-view-han-shu}
+### 时间窗口函数 {#window-view-shi-jian-chuang-kou-han-shu}
 
-[Window view函数](../../functions/window-view-functions.md)用于获取窗口的起始和结束时间。Window view需要和window view函数配合使用。
+[时间窗口函数](../../functions/time-window-functions.md)用于获取窗口的起始和结束时间。Window view需要和时间窗口函数配合使用。
 
-### 时间属性{#window-view-shi-jian-shu-xing}
+### 时间属性 {#window-view-shi-jian-shu-xing}
 
 Window view 支持**处理时间**和**事件时间**两种时间类型。
 
-**处理时间**为默认时间类型，该模式下window view使用本地机器时间计算窗口数据。“处理时间”时间类型计算简单，但具有不确定性。该模式下时间可以为window view函数的第一个参数`time_attr`，或通过函数`now()`使用当前机器时间。下面的例子展示了使用“处理时间”创建的window view的例子。
+**处理时间**为默认时间类型，该模式下window view使用本地机器时间计算窗口数据。“处理时间”时间类型计算简单，但具有不确定性。该模式下时间可以为时间窗口函数的第一个参数`time_attr`，或通过函数`now()`使用当前机器时间。下面的例子展示了使用“处理时间”创建window view的例子。
 
 ``` sql
 CREATE WINDOW VIEW wv AS SELECT count(number), tumbleStart(w_id) as w_start from date GROUP BY tumble(now(), INTERVAL '5' SECOND) as w_id
 ```
 
-**事件时间** 是事件真实发生的时间，该时间往往在事件发生时便嵌入数据记录。事件时间处理提供较高的确定性，可以处理乱序数据以及迟到数据。Window view 通过水位线(`WATERMARK`)启用事件时间处理。
+**事件时间** 是事件真实发生的时间，该时间往往在事件发生时便嵌入数据记录。事件时间处理提供较高的确定性，可以处理乱序数据以及迟到数据。Window view通过水位线(`WATERMARK`)启用事件时间处理。
 
 Window view提供如下三种水位线策略：
 
@@ -295,7 +295,7 @@ CREATE WINDOW VIEW test.wv TO test.dst WATERMARK=ASCENDING ALLOWED_LATENESS=INTE
 
 需要注意的是，迟到消息需要更新之前的处理结果。与在窗口结束时触发不同，迟到消息到达时window view会立即触发计算。因此，会导致同一个窗口输出多次计算结果。用户需要注意这种情况，并消除重复结果。
 
-### 新窗口监控{#window-view-xin-chuang-kou-jian-kong}
+### 新窗口监控 {#window-view-xin-chuang-kou-jian-kong}
 
 Window view可以通过`WATCH`语句将处理结果推送至终端，或通过`TO`语句将结果推送至数据表。
 
@@ -305,12 +305,12 @@ WATCH [db.]name [LIMIT n]
 
 `WATCH`语句和`LIVE VIEW`中的类似。支持设置`LIMIT`参数，输出消息数目达到`LIMIT`限制时结束查询。
 
-### 设置{#window-view-she-zhi}
+### 设置 {#window-view-she-zhi}
 
 - `window_view_clean_interval`: window view清除过期数据间隔(单位为秒)。系统会定期清除过期数据，尚未触发的窗口数据不会被清除。
 - `window_view_heartbeat_interval`: 用于判断watch查询活跃的心跳时间间隔。
 
-### 示例{#window-view-shi-li}
+### 示例 {#window-view-shi-li}
 
 假设我们需要每10秒统计一次`data`表中的点击日志，且`data`表的结构如下：
 
@@ -352,7 +352,7 @@ CREATE WINDOW VIEW wv TO dst AS SELECT count(id), tumbleStart(w_id) as window_st
 
 ClickHouse测试中提供了更多的示例(以`*window_view*`命名)。
 
-### Window View 使用场景{#window-view-shi-yong-chang-jing}
+### Window View 使用场景 {#window-view-shi-yong-chang-jing}
 
 Window view 在以下场景有用：
 

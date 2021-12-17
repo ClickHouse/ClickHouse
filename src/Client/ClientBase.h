@@ -78,9 +78,6 @@ protected:
         String & query_to_execute, ASTPtr & parsed_query, const String & all_queries_text,
         std::optional<Exception> & current_exception);
 
-    /// For non-interactive multi-query mode get queries text prefix.
-    virtual String getQueryTextPrefix() { return ""; }
-
     static void clearTerminal();
     void showClientVersion();
 
@@ -100,9 +97,10 @@ protected:
                                 const std::vector<Arguments> & external_tables_arguments) = 0;
     virtual void processConfig() = 0;
 
-private:
+protected:
     bool processQueryText(const String & text);
 
+private:
     void receiveResult(ASTPtr parsed_query);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled);
     void receiveLogs(ASTPtr parsed_query);

@@ -1,5 +1,0 @@
-CREATE TEMPORARY TABLE t (x DateTime);
-INSERT INTO t VALUES (now());
-SYSTEM SUSPEND FOR 1 SECOND;
-INSERT INTO t VALUES (now());
-SELECT max(x) - min(x) >= 1 FROM t;

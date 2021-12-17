@@ -23,9 +23,10 @@ SUSPICIOUS_PATTERNS = [
 ]
 
 MAX_RETRY = 5
+MAX_WORKFLOW_RERUN = 5
 
 WorkflowDescription = namedtuple('WorkflowDescription',
-                                 ['name', 'action', 'run_id', 'event', 'workflow_id', 'conclusion', 'status',
+                                 ['name', 'action', 'run_id', 'event', 'workflow_id', 'conclusion', 'status', 'api_url',
                                   'fork_owner_login', 'fork_branch', 'rerun_url', 'jobs_url', 'attempt', 'url'])
 
 TRUSTED_WORKFLOW_IDS = {
@@ -42,12 +43,13 @@ NEED_RERUN_WORKFLOWS = {
     13241696, # PR
     15834118, # Docs
     15522500, # MasterCI
+    15516108, # ReleaseCI
 }
 
 # Individual trusted contirbutors who are not in any trusted organization.
 # Can be changed in runtime: we will append users that we learned to be in
 # a trusted org, to save GitHub API calls.
-TRUSTED_CONTRIBUTORS = {
+TRUSTED_CONTRIBUTORS = {e.lower() for e in [
     "achimbab",
     "adevyatova ",  # DOCSUP
     "Algunenano",   # Raúl Marín, Tinybird
@@ -59,6 +61,7 @@ TRUSTED_CONTRIBUTORS = {
     "bharatnc",     # Newbie, but already with many contributions.
     "bobrik",       # Seasoned contributor, CloundFlare
     "BohuTANG",
+    "cwurm",        # Employee
     "damozhaeva",   # DOCSUP
     "den-crane",
     "gyuton",       # DOCSUP
@@ -87,8 +90,8 @@ TRUSTED_CONTRIBUTORS = {
     "vdimir",       # Employee
     "vzakaznikov",
     "YiuRULE",
-    "zlobober"      # Developer of YT
-}
+    "zlobober",     # Developer of YT
+]}
 
 
 def get_installation_id(jwt_token):
@@ -125,7 +128,7 @@ def get_key_and_app_from_aws():
 
 
 def is_trusted_contributor(pr_user_login, pr_user_orgs):
-    if pr_user_login in TRUSTED_CONTRIBUTORS:
+    if pr_user_login.lower() in TRUSTED_CONTRIBUTORS:
         print(f"User '{pr_user_login}' is trusted")
         return True
 
@@ -192,6 +195,7 @@ def get_workflow_description_from_event(event):
     jobs_url = event['workflow_run']['jobs_url']
     rerun_url = event['workflow_run']['rerun_url']
     url = event['workflow_run']['html_url']
+    api_url = event['workflow_run']['url']
     return WorkflowDescription(
         name=name,
         action=action,
@@ -205,7 +209,8 @@ def get_workflow_description_from_event(event):
         status=status,
         jobs_url=jobs_url,
         rerun_url=rerun_url,
-        url=url
+        url=url,
+        api_url=api_url
     )
 
 def get_pr_author_and_orgs(pull_request):
@@ -273,15 +278,29 @@ def get_token_from_aws():
     installation_id = get_installation_id(encoded_jwt)
     return get_access_token(encoded_jwt, installation_id)
 
+def get_workflow_jobs(workflow_description):
+    jobs_url = workflow_description.api_url + f"/attempts/{workflow_description.attempt}/jobs"
+    jobs = []
+    i = 1
+    while True:
+        got_jobs = _exec_get_with_retry(jobs_url + f"?page={i}")
+        if len(got_jobs['jobs']) == 0:
+            break
+
+        jobs += got_jobs['jobs']
+        i += 1
+
+    return jobs
+
 def check_need_to_rerun(workflow_description):
-    if workflow_description.attempt >= 2:
+    if workflow_description.attempt >= MAX_WORKFLOW_RERUN:
         print("Not going to rerun workflow because it's already tried more than two times")
         return False
     print("Going to check jobs")
 
-    jobs = _exec_get_with_retry(workflow_description.jobs_url + "?per_page=100")
-    print("Got jobs", len(jobs['jobs']))
-    for job in jobs['jobs']:
+    jobs = get_workflow_jobs(workflow_description)
+    print("Got jobs", len(jobs))
+    for job in jobs:
         if job['conclusion'] not in ('success', 'skipped'):
             print("Job", job['name'], "failed, checking steps")
             for step in job['steps']:

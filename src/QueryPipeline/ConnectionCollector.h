@@ -17,7 +17,7 @@ public:
     static ConnectionCollector & init(ContextMutablePtr global_context_, size_t max_threads);
     static std::shared_ptr<IConnections>
     enqueueConnectionCleanup(const ConnectionPoolWithFailoverPtr & pool, std::shared_ptr<IConnections> connections) noexcept;
-    static void drainConnections(IConnections & connections) noexcept;
+    static void drainConnections(IConnections & connections, bool throw_error);
 
 private:
     explicit ConnectionCollector(ContextMutablePtr global_context_, size_t max_threads);

@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsWindow.h>
+#include <Functions/FunctionsTimeWindow.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -93,7 +93,7 @@ namespace
                     temp_node->setAlias("");
                     if (startsWith(t->arguments->children[0]->getColumnName(), "toDateTime"))
                         throw Exception(
-                            "The first argument of window function should not be a constant value.",
+                            "The first argument of time window function should not be a constant value.",
                             ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
                     if (!data.window_function)
                     {
@@ -108,7 +108,7 @@ namespace
                     else
                     {
                         if (serializeAST(*temp_node) != data.serialized_window_function)
-                            throw Exception("WINDOW VIEW only support ONE WINDOW FUNCTION", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
+                            throw Exception("WINDOW VIEW only support ONE TIME WINDOW FUNCTION", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
                         t->name = "windowID";
                     }
                 }
@@ -116,7 +116,7 @@ namespace
         }
     };
 
-    /// Replace windowID node name with either tumble or hop.
+    /// Replace windowID node name with either tumble or hop
     struct ReplaceWindowIdMatcher
     {
     public:
@@ -527,7 +527,7 @@ inline void StorageWindowView::fire(UInt32 watermark)
         for (auto & watch_stream : watch_streams)
         {
             if (auto watch_stream_ptr = watch_stream.lock())
-                watch_stream_ptr->addBlock(block);
+                watch_stream_ptr->addBlock(block, watermark);
         }
     }
     if (!target_table_id.empty())
@@ -910,7 +910,11 @@ Pipe StorageWindowView::watch(
     }
 
     auto reader = std::make_shared<WindowViewSource>(
-        *this, has_limit, limit,
+        std::static_pointer_cast<StorageWindowView>(shared_from_this()),
+        query.is_watch_events,
+        window_view_timezone,
+        has_limit,
+        limit,
         local_context->getSettingsRef().window_view_heartbeat_interval.totalSeconds());
 
     std::lock_guard lock(fire_signal_mutex);
@@ -1042,14 +1046,14 @@ ASTPtr StorageWindowView::innerQueryParser(const ASTSelectQuery & query)
 
     if (!query_info_data.is_tumble && !query_info_data.is_hop)
         throw Exception(ErrorCodes::INCORRECT_QUERY,
-                        "WINDOW FUNCTION is not specified for {}", getName());
+                        "TIME WINDOW FUNCTION is not specified for {}", getName());
 
     window_id_name = query_info_data.window_id_name;
     window_id_alias = query_info_data.window_id_alias;
     timestamp_column_name = query_info_data.timestamp_column_name;
     is_tumble = query_info_data.is_tumble;
 
-    // Parse window function
+    // Parse time window function
     ASTFunction & window_function = typeid_cast<ASTFunction &>(*query_info_data.window_function);
     const auto & arguments = window_function.arguments->children;
     extractWindowArgument(
@@ -1077,7 +1081,8 @@ ASTPtr StorageWindowView::innerQueryParser(const ASTSelectQuery & query)
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal column #{} of time zone argument of function, must be constant string",
                 time_zone_arg_num);
-        time_zone = &DateLUT::instance(time_zone_ast->value.safeGet<String>());
+        window_view_timezone = time_zone_ast->value.safeGet<String>();
+        time_zone = &DateLUT::instance(window_view_timezone);
     }
     else
         time_zone = &DateLUT::instance();
@@ -1354,9 +1359,12 @@ Block & StorageWindowView::getHeader() const
         sample_block = InterpreterSelectQuery(
             select_query->clone(), window_view_context, getParentStorage(), nullptr,
             SelectQueryOptions(QueryProcessingStage::Complete)).getSampleBlock();
-
+        /// convert all columns to full columns
+        /// in case some of them are constant
         for (size_t i = 0; i < sample_block.columns(); ++i)
+        {
             sample_block.safeGetByPosition(i).column = sample_block.safeGetByPosition(i).column->convertToFullColumnIfConst();
+        }
     }
     return sample_block;
 }
