@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/shared_ptr_helper.h>
+#include <base/UUID.h>
 #include <atomic>
 #include <pcg_random.hpp>
 #include <Storages/IStorage.h>
@@ -243,7 +244,7 @@ public:
     /// Unlock shared data part in zookeeper by part id
     /// Return true if data unlocked
     /// Return false if data is still used by another node
-    static bool unlockSharedDataById(String id, const String & part_name, const String & replica_name_,
+    static bool unlockSharedDataById(String id, const String & table_uuid, const String & part_name, const String & replica_name_,
         DiskPtr disk, zkutil::ZooKeeperPtr zookeeper_, const MergeTreeSettings & settings, Poco::Logger * logger,
         const String & zookeeper_path_old);
 
@@ -276,6 +277,8 @@ public:
 
     virtual String getZooKeeperName() const override { return zookeeper_name; }
     virtual String getZooKeeperPath() const override { return zookeeper_path; }
+
+    virtual String getTableUniqID() const override;
 
 private:
     std::atomic_bool are_restoring_replica {false};
@@ -741,7 +744,8 @@ private:
     PartitionBlockNumbersHolder allocateBlockNumbersInAffectedPartitions(
         const MutationCommands & commands, ContextPtr query_context, const zkutil::ZooKeeperPtr & zookeeper) const;
 
-    static Strings getZeroCopyRootPath(const MergeTreeSettings & settings, const String & zookeeper_path_old);
+    static Strings getZeroCopyPartPath(const MergeTreeSettings & settings, DiskType disk_type, const String & table_uuid,
+        const String & part_name, const String & zookeeper_path_old);
 
     /// Upgrave zero-copy version
     /// version 1 - lock for shared part inside table node in ZooKeeper
@@ -772,6 +776,10 @@ protected:
         std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag,
         bool allow_renaming_);
+
+    /// Global ID, synced via ZooKeeper between replicas
+    /// mutable because can getted from ZooKeeper when required
+    mutable UUID table_global_id;
 };
 
 String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info);

@@ -80,6 +80,8 @@ public:
         size_t buf_size,
         WriteMode mode) override { return delegate->writeMetaFile(path, buf_size, mode); }
 
+    void removeMetaFileIfExists(const String & path) override { delegate->removeMetaFileIfExists(path); }
+
     UInt32 getRefCount(const String & path) const override { return delegate->getRefCount(path); }
 
 protected:

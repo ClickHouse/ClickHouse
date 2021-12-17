@@ -104,4 +104,10 @@ std::unique_ptr<WriteBufferFromFileBase> IDisk::writeMetaFile(
     return writeFile(path, buf_size, mode);
 }
 
+void IDisk::removeMetaFileIfExists(const String & path)
+{
+    LOG_TRACE(&Poco::Logger::get("IDisk"), "Remove local metafile: {}", path);
+    removeFileIfExists(path);
+}
+
 }

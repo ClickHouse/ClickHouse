@@ -1184,7 +1184,7 @@ private:
     /// Check shared data usage on other replicas for detached/freezed part
     /// Remove local files and remote files if needed
     bool removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name);
-    bool removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name,
+    bool removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name, const String & table_uuid,
         const String & zookeeper_name, const String & replica_name, const String & zookeeper_path, bool is_replicated);
 };
 

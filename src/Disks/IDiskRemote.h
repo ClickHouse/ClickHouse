@@ -146,6 +146,9 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         WriteMode mode = WriteMode::Rewrite) override;
 
+    virtual void removeMetaFileIfExists(
+        const String & path) override;
+
     UInt32 getRefCount(const String & path) const override;
 
 protected:

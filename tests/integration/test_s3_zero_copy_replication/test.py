@@ -270,6 +270,7 @@ def test_s3_zero_copy_with_ttl_delete(cluster, large_data, iterations):
 
 
 def wait_mutations(node, table, seconds):
+    time.sleep(1)
     while seconds > 0:
         seconds -= 1
         mutations = node.query(f"SELECT count() FROM system.mutations WHERE table='{table}' AND is_done=0")

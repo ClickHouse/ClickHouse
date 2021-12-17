@@ -263,6 +263,8 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         WriteMode mode = WriteMode::Rewrite);
 
+    virtual void removeMetaFileIfExists(const String & path);
+
     /// Return reference count for remote FS.
     /// Overridden in IDiskRemote.
     virtual UInt32 getRefCount(const String &) const { return 0; }

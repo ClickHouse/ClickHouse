@@ -519,6 +519,12 @@ std::unique_ptr<WriteBufferFromFileBase> IDiskRemote::writeMetaFile(
     return metadata_disk->writeFile(path, buf_size, mode);
 }
 
+void IDiskRemote::removeMetaFileIfExists(const String & path)
+{
+    LOG_TRACE(log, "Remove metafile: {}", path);
+    return metadata_disk->removeFileIfExists(path);
+}
+
 UInt32 IDiskRemote::getRefCount(const String & path) const
 {
     auto meta = readMeta(path);

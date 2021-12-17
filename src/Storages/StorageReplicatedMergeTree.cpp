@@ -7124,6 +7124,42 @@ std::unique_ptr<MergeTreeSettings> StorageReplicatedMergeTree::getDefaultSetting
 }
 
 
+String StorageReplicatedMergeTree::getTableUniqID() const
+{
+    if (table_global_id == UUIDHelpers::Nil)
+    {
+        zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
+        String zookeeper_table_id_path = fs::path(zookeeper_path) / "table_id";
+        String id;
+        if (!zookeeper->tryGet(zookeeper_table_id_path, id))
+        {
+            UUID table_id_candidate;
+            auto storage_id = getStorageID();
+            if (storage_id.uuid != UUIDHelpers::Nil)
+                table_id_candidate = storage_id.uuid;
+            else
+                table_id_candidate = UUIDHelpers::generateV4();
+
+            id = toString(table_id_candidate);
+
+            auto code = zookeeper->tryCreate(zookeeper_table_id_path, id, zkutil::CreateMode::Persistent);
+            if (code == Coordination::Error::ZNODEEXISTS)
+            { /// Other replica create node early
+                id = zookeeper->get(zookeeper_table_id_path);
+            }
+            else if (code != Coordination::Error::ZOK)
+            {
+                throw zkutil::KeeperException(code, zookeeper_table_id_path);
+            }
+        }
+
+        table_global_id = parseFromString<UUID>(id);
+    }
+
+    return toString(table_global_id);
+}
+
+
 void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part) const
 {
     if (!part.volume)
@@ -7131,7 +7167,6 @@ void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part)
     DiskPtr disk = part.volume->getDisk();
     if (!disk || !disk->supportZeroCopyReplication())
         return;
-    String zero_copy = fmt::format("zero_copy_{}", toString(disk->getType()));
 
     zkutil::ZooKeeperPtr zookeeper = tryGetZooKeeper();
     if (!zookeeper)
@@ -7140,10 +7175,11 @@ void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part)
     String id = part.getUniqueId();
     boost::replace_all(id, "/", "_");
 
-    Strings zc_zookeeper_paths = getZeroCopyRootPath(*getDefaultSettings(), is_zero_copy_in_compatible_mode ? zookeeper_path : "");
+    Strings zc_zookeeper_paths = getZeroCopyPartPath(*getDefaultSettings(), disk->getType(), getTableUniqID(),
+        part.name, is_zero_copy_in_compatible_mode ? zookeeper_path : "");
     for (const auto & zc_zookeeper_path : zc_zookeeper_paths)
     {
-        String zookeeper_node = fs::path(zc_zookeeper_path) / zero_copy / "shared" / part.name / id / replica_name;
+        String zookeeper_node = fs::path(zc_zookeeper_path) / id / replica_name;
 
         LOG_TRACE(log, "Set zookeeper lock {}", zookeeper_node);
         createZeroCopyLockNode(zookeeper, zookeeper_node);
@@ -7173,27 +7209,24 @@ bool StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & par
     if (ref_count > 0) /// Keep part shard info for frozen backups
         return false;
 
-    return unlockSharedDataById(part.getUniqueId(), name, replica_name, disk, zookeeper, *getDefaultSettings(), log,
+    return unlockSharedDataById(part.getUniqueId(), getTableUniqID(), name, replica_name, disk, zookeeper, *getDefaultSettings(), log,
         is_zero_copy_in_compatible_mode ? zookeeper_path : String(""));
 }
 
 
-bool StorageReplicatedMergeTree::unlockSharedDataById(String id, const String & part_name,
+bool StorageReplicatedMergeTree::unlockSharedDataById(String id, const String & table_uuid, const String & part_name,
         const String & replica_name_, DiskPtr disk, zkutil::ZooKeeperPtr zookeeper_ptr, const MergeTreeSettings & settings,
         Poco::Logger * logger, const String & zookeeper_path_old)
 {
     boost::replace_all(id, "/", "_");
 
-    String zero_copy = fmt::format("zero_copy_{}", toString(disk->getType()));
-
-    Strings zc_zookeeper_paths = getZeroCopyRootPath(settings, zookeeper_path_old);
+    Strings zc_zookeeper_paths = getZeroCopyPartPath(settings, disk->getType(), table_uuid, part_name, zookeeper_path_old);
 
     bool res = true;
 
     for (const auto & zc_zookeeper_path : zc_zookeeper_paths)
     {
-        String zookeeper_part_node = fs::path(zc_zookeeper_path) / zero_copy / "shared" / part_name;
-        String zookeeper_part_uniq_node = fs::path(zookeeper_part_node) / id;
+        String zookeeper_part_uniq_node = fs::path(zc_zookeeper_path) / id;
         String zookeeper_node = fs::path(zookeeper_part_uniq_node) / replica_name_;
 
         LOG_TRACE(logger, "Remove zookeeper lock {}", zookeeper_node);
@@ -7210,15 +7243,28 @@ bool StorageReplicatedMergeTree::unlockSharedDataById(String id, const String & 
             continue;
         }
 
-        zookeeper_ptr->tryRemove(zookeeper_part_uniq_node);
+        auto e = zookeeper_ptr->tryRemove(zookeeper_part_uniq_node);
+
+        LOG_TRACE(logger, "Remove parent zookeeper lock {} : {}", zookeeper_part_uniq_node, e != Coordination::Error::ZNOTEMPTY);
 
         /// Even when we have lock with same part name, but with different uniq, we can remove files on S3
         children.clear();
+        String zookeeper_part_node = fs::path(zookeeper_part_uniq_node).parent_path();
         zookeeper_ptr->tryGetChildren(zookeeper_part_node, children);
         if (children.empty())
         {
             /// Cleanup after last uniq removing
-            zookeeper_ptr->tryRemove(zookeeper_part_node);
+            e = zookeeper_ptr->tryRemove(zookeeper_part_node);
+
+            LOG_TRACE(logger, "Remove parent zookeeper lock {} : {}", zookeeper_part_node, e != Coordination::Error::ZNOTEMPTY);
+        }
+        else
+        {
+            LOG_TRACE(logger, "Can't remove parent zookeeper lock {} : {}", zookeeper_part_node, children.size());
+            for (auto & c : children)
+            {
+                LOG_TRACE(logger, "Child node {}", c);
+            }
         }
     }
 
@@ -7255,22 +7301,19 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
     if (!zookeeper)
         return best_replica;
 
-    String zero_copy = fmt::format("zero_copy_{}", toString(disk_type));
-
-    Strings zc_zookeeper_paths = getZeroCopyRootPath(*getDefaultSettings(), is_zero_copy_in_compatible_mode ? zookeeper_path : "");
+    Strings zc_zookeeper_paths = getZeroCopyPartPath(*getDefaultSettings(), disk_type, getTableUniqID(), part.name,
+            is_zero_copy_in_compatible_mode ? zookeeper_path : "");
 
     std::set<String> replicas;
 
     for (const auto & zc_zookeeper_path : zc_zookeeper_paths)
     {
-        String zookeeper_part_node = fs::path(zc_zookeeper_path) / zero_copy / "shared" / part.name;
-
         Strings ids;
-        zookeeper->tryGetChildren(zookeeper_part_node, ids);
+        zookeeper->tryGetChildren(zc_zookeeper_path, ids);
 
         for (const auto & id : ids)
         {
-            String zookeeper_part_uniq_node = fs::path(zookeeper_part_node) / id;
+            String zookeeper_part_uniq_node = fs::path(zc_zookeeper_path) / id;
             Strings id_replicas;
             zookeeper->tryGetChildren(zookeeper_part_uniq_node, id_replicas);
             LOG_TRACE(log, "Found zookeper replicas for {}: {}", zookeeper_part_uniq_node, id_replicas.size());
@@ -7329,13 +7372,20 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
 }
 
 
-Strings StorageReplicatedMergeTree::getZeroCopyRootPath(const MergeTreeSettings & settings, const String & zookeeper_path_old)
+Strings StorageReplicatedMergeTree::getZeroCopyPartPath(const MergeTreeSettings & settings, DiskType disk_type, const String & table_uuid,
+    const String & part_name, const String & zookeeper_path_old)
 {
     Strings res;
 
-    res.push_back(settings.remote_fs_zero_copy_zookeeper_path);
-    if (!zookeeper_path_old.empty()) /// Compatibility mode for cluster with old and new versions
-        res.push_back(zookeeper_path_old);
+    String zero_copy = fmt::format("zero_copy_{}", toString(disk_type));
+
+    String new_path = fs::path(settings.remote_fs_zero_copy_zookeeper_path.toString()) / zero_copy / table_uuid / part_name;
+    res.push_back(new_path);
+    if (!zookeeper_path_old.empty())
+    { /// Compatibility mode for cluster with old and new versions
+        String old_path = fs::path(zookeeper_path_old) / zero_copy / "shared" / part_name;
+        res.push_back(old_path);
+    }
 
     return res;
 }
@@ -7610,7 +7660,7 @@ void StorageReplicatedMergeTree::convertZeroCopySchema()
 
         auto shard_root_v1 = fs::path(zookeeper_path) / zero_copy / "shared";
         auto shard_root_v2 = fs::path(getDefaultSettings()->remote_fs_zero_copy_zookeeper_path.toString())
-            / zero_copy / "shared";
+            / zero_copy / getTableUniqID();
 
         auto old_shard_root = revert_to_version == 1 ? shard_root_v2 : shard_root_v1;
         auto new_shard_root = revert_to_version == 1 ? shard_root_v1 : shard_root_v2;
