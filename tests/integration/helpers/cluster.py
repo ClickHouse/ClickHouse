@@ -1115,15 +1115,13 @@ class ClickHouseCluster:
                 info = self.mysql_client_container.client.api.inspect_container(self.mysql_client_container.name)
                 if info['State']['Health']['Status'] == 'healthy':
                     logging.debug("Mysql Client Container Started")
-                    break
+                    return
                 time.sleep(1)
-
-                return
             except Exception as ex:
                 errors += [str(ex)]
                 time.sleep(1)
 
-        run_and_check(['docker-compose', 'ps', '--services', '--all'])
+        run_and_check(['docker', 'ps', '--all'])
         logging.error("Can't connect to MySQL Client:{}".format(errors))
         raise Exception("Cannot wait MySQL Client container")
 
@@ -2178,7 +2176,7 @@ class ClickHouseInstance:
     def wait_start(self, start_wait_sec):
         start_time = time.time()
         last_err = None
-        while time.time() <= start_time + start_wait_sec:
+        while True:
             try:
                 pid = self.get_process_pid("clickhouse")
                 if pid is None:
@@ -2192,6 +2190,8 @@ class ClickHouseInstance:
                     logging.warning(f"ERROR {err}")
                 else:
                     raise Exception("ClickHouse server is not running. Check logs.")
+            if time.time() > start_time + start_wait_sec:
+                break
         logging.error(f"No time left to start. But process is still running. Will dump threads.")
         ps_clickhouse = self.exec_in_container(["bash", "-c", "ps -C clickhouse"], nothrow=True, user='root')
         logging.info(f"PS RESULT:\n{ps_clickhouse}")
