@@ -99,7 +99,28 @@ def get_ids(zookeeper, zk_path):
     return ids
 
 
+def get_ids_new(zookeeper, zk_path):
+    ids = []
+
+    try:
+        zk_tables = zookeeper.get_children(zk_path)
+        for zk_table in zk_tables:
+            zk_nodes = zookeeper.get_children(zk_path + "/" + zk_table)
+            for zk_node in zk_nodes:
+                part_ids = zookeeper.get_children(zk_path + "/" + zk_table + "/" + zk_node)
+                assert len(part_ids) == 1
+                ids += part_ids
+    except kazoo.exceptions.NoNodeError:
+        ids = []
+        pass
+
+    ids = list(set(ids))
+    ids.sort()
+    return ids
+
+
 def wait_mutations(node, table, seconds):
+    time.sleep(1)
     while seconds > 0:
         seconds -= 1
         mutations = node.query(f"SELECT count() FROM system.mutations WHERE table='{table}' AND is_done=0")
@@ -134,22 +155,22 @@ def test_s3_zero_copy_version_upgrade(cluster):
     wait_for_count_in_table(node2, "convert_test", 3, 10)
 
     zk_old_path = "/clickhouse/tables/convert_test/zero_copy_s3/shared"
-    zk_path = "/clickhouse/zero_copy/zero_copy_s3/shared"
+    zk_path = "/clickhouse/zero_copy/zero_copy_s3"
 
     part_ids = get_ids(zookeeper, zk_old_path)
     assert len(part_ids) == 3
 
-    ids = get_ids(zookeeper, zk_path)
+    ids = get_ids_new(zookeeper, zk_path)
     assert len(ids) == 0
 
     node1.restart_with_latest_version()
-    ids = get_ids(zookeeper, zk_path)
+    ids = get_ids_new(zookeeper, zk_path)
     assert ids == part_ids
     old_ids = get_ids(zookeeper, zk_old_path)
     assert old_ids == part_ids
 
     node1.restart_clickhouse()
-    ids = get_ids(zookeeper, zk_path)
+    ids = get_ids_new(zookeeper, zk_path)
     assert ids == part_ids
     old_ids = get_ids(zookeeper, zk_old_path)
     assert old_ids == part_ids
@@ -161,7 +182,7 @@ def test_s3_zero_copy_version_upgrade(cluster):
     wait_for_count_in_table(node1, "convert_test", 5, 10)
     wait_for_count_in_table(node2, "convert_test", 5, 10)
 
-    part_ids = get_ids(zookeeper, zk_path)
+    part_ids = get_ids_new(zookeeper, zk_path)
     assert len(part_ids) == 5
     old_ids = get_ids(zookeeper, zk_old_path)
     assert old_ids == part_ids
@@ -177,17 +198,17 @@ def test_s3_zero_copy_version_upgrade(cluster):
     wait_mutations(node1, "convert_test", 10)
     wait_mutations(node2, "convert_test", 10)
 
-    part_ids = get_ids(zookeeper, zk_path)
+    part_ids = get_ids_new(zookeeper, zk_path)
     assert len(part_ids) == 4
 
     node1.query("ALTER TABLE convert_test DROP DETACHED PARTITION 'convert_part_2'", settings={"allow_drop_detached": 1})
     wait_mutations(node1, "convert_test", 10)
 
-    part_ids = get_ids(zookeeper, zk_path)
+    part_ids = get_ids_new(zookeeper, zk_path)
     assert len(part_ids) == 3
 
     node2.restart_with_latest_version()
-    ids = get_ids(zookeeper, zk_path)
+    ids = get_ids_new(zookeeper, zk_path)
     assert ids == part_ids
     old_ids = get_ids(zookeeper, zk_old_path)
     assert len(old_ids) == 0

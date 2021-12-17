@@ -62,6 +62,7 @@
 
 #include <boost/range/adaptor/filtered.hpp>
 #include <boost/algorithm/string/join.hpp>
+#include <boost/algorithm/string/replace.hpp>
 
 #include <base/insertAtEnd.h>
 #include <base/scope_guard_safe.h>
@@ -3873,11 +3874,12 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr
     String replica_name = getReplicaName();
     String zookeeper_name = getZooKeeperName();
     String zookeeper_path = getZooKeeperPath();
+    String table_uuid = getTableUniqID();
 
     for (auto & [old_name, new_name, disk] : renamed_parts.old_and_new_names)
     {
         bool keep_shared = removeSharedDetachedPart(disk, fs::path(relative_data_path) / "detached" / new_name / "", old_name,
-            zookeeper_name, replica_name, zookeeper_path, supportsReplication());
+            table_uuid, zookeeper_name, replica_name, zookeeper_path, supportsReplication());
         LOG_DEBUG(log, "Dropped detached part {}, keep shared data: {}", old_name, keep_shared);
         old_name.clear();
     }
@@ -5124,6 +5126,7 @@ public:
         is_remote = part.storage.isRemote();
         replica_name = part.storage.getReplicaName();
         zookeeper_name = part.storage.getZooKeeperName();
+        table_uuid = part.storage.getTableUniqID();
     }
 
     void save(DiskPtr disk, const String & path) const
@@ -5139,6 +5142,8 @@ public:
         writeString(replica_name, *buffer);
         buffer->write("\n", 1);
         writeString(zookeeper_name, *buffer);
+        buffer->write("\n", 1);
+        writeString(table_uuid, *buffer);
         buffer->write("\n", 1);
     }
 
@@ -5163,12 +5168,14 @@ public:
         DB::assertChar('\n', *buffer);
         readString(zookeeper_name, *buffer);
         DB::assertChar('\n', *buffer);
+        readString(table_uuid, *buffer);
+        DB::assertChar('\n', *buffer);
         return true;
     }
 
-    void clean(DiskPtr disk, const String & path)
+    static void clean(DiskPtr disk, const String & path)
     {
-        disk->removeFileIfExists(getFileName(path));
+        disk->removeMetaFileIfExists(getFileName(path));
     }
 
 private:
@@ -5183,6 +5190,7 @@ public:
     bool is_remote;
     String replica_name;
     String zookeeper_name;
+    String table_uuid;
 };
 
 PartitionCommandsResultInfo MergeTreeData::freezePartition(
@@ -5300,8 +5308,11 @@ bool MergeTreeData::removeSharedDetachedPart(DiskPtr disk, const String & path, 
     {
         FreezeMetaData meta;
         if (meta.load(disk, path))
-            return removeSharedDetachedPart(disk, path, part_name, meta.zookeeper_name, meta.replica_name,
+        {
+            FreezeMetaData::clean(disk, path);
+            return removeSharedDetachedPart(disk, path, part_name, meta.table_uuid, meta.zookeeper_name, meta.replica_name,
                     "", meta.is_replicated);
+        }
     }
 
     disk->removeSharedRecursive(path, keep_shared);
@@ -5309,7 +5320,7 @@ bool MergeTreeData::removeSharedDetachedPart(DiskPtr disk, const String & path, 
     return keep_shared;
 }
 
-bool MergeTreeData::removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name,
+bool MergeTreeData::removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name, const String & table_uuid,
     const String & zookeeper_name, const String & replica_name, const String & zookeeper_path, bool is_replicated)
 {
     bool keep_shared = false;
@@ -5346,7 +5357,7 @@ bool MergeTreeData::removeSharedDetachedPart(DiskPtr disk, const String & path, 
                 if (ref_count == 0)
                 {
                     String id = disk->getUniqueId(checksums);
-                    keep_shared = !StorageReplicatedMergeTree::unlockSharedDataById(id, part_name,
+                    keep_shared = !StorageReplicatedMergeTree::unlockSharedDataById(id, table_uuid, part_name,
                         replica_name, disk, zookeeper, getContext()->getReplicatedMergeTreeSettings(), log,
                         zookeeper_path);
                 }
