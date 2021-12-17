@@ -8,7 +8,6 @@
 #include <Common/setThreadName.h>
 
 #include <IO/SeekableReadBuffer.h>
-#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 
 #include <future>
 #include <iostream>
@@ -28,7 +27,7 @@ namespace CurrentMetrics
 namespace DB
 {
 
-std::pair<size_t, size_t> ThreadPoolRemoteFSReader::RemoteFSFileDescriptor::readInto(char * data, size_t size, size_t offset, size_t ignore)
+ReadBufferFromRemoteFSGather::ReadResult ThreadPoolRemoteFSReader::RemoteFSFileDescriptor::readInto(char * data, size_t size, size_t offset, size_t ignore)
 {
     return reader->readInto(data, size, offset, ignore);
 }
@@ -55,7 +54,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
         ProfileEvents::increment(ProfileEvents::RemoteFSReadMicroseconds, watch.elapsedMicroseconds());
         ProfileEvents::increment(ProfileEvents::RemoteFSReadBytes, bytes_read);
 
-        return std::make_pair(bytes_read, offset);
+        return Result{ .size = bytes_read, .offset = offset };
     });
 
     auto future = task->get_future();

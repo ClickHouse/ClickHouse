@@ -463,5 +463,5 @@ def test_lazy_seek_optimization_for_async_read(cluster, node_name):
     node = cluster.instances[node_name]
     node.query("DROP TABLE IF EXISTS test")
     node.query("CREATE TABLE test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3';")
-    node.query("INSERT INTO test SELECT * FROM generateRandom('key UInt32, value String') LIMIT 100000000")
-    assert int(node.query("SELECT count() FROM test")) == 100000000
+    node.query("INSERT INTO test SELECT * FROM generateRandom('key UInt32, value String') LIMIT 20000")
+    node.query("SELECT * FROM test WHERE value LIKE '%abc%' ORDER BY value LIMIT 10")

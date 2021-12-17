@@ -37,7 +37,13 @@ public:
 
     void setReadUntilPosition(size_t position) override;
 
-    std::pair<size_t, size_t> readInto(char * data, size_t size, size_t offset, size_t ignore = 0);
+    struct ReadResult
+    {
+        size_t size = 0;
+        size_t offset = 0;
+    };
+
+    ReadResult readInto(char * data, size_t size, size_t offset, size_t ignore = 0);
 
     size_t getFileSize() const;
 

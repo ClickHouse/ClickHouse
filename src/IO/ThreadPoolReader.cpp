@@ -219,7 +219,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
         ProfileEvents::increment(ProfileEvents::ThreadPoolReaderPageCacheMissElapsedMicroseconds, watch.elapsedMicroseconds());
         ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
 
-        return std::make_pair(bytes_read, static_cast<size_t>(0));
+        return Result{ .size = bytes_read, .offset = 0 };
     });
 
     auto future = task->get_future();
