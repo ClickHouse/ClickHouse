@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-import os
 import sys
 import logging
 from github import Github
-from pr_info import PRInfo, get_event
+
+from env_helper import GITHUB_RUN_ID, GITHUB_REPOSITORY, GITHUB_SERVER_URL
+from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 from commit_status_helper import get_commit
 
@@ -66,6 +67,7 @@ TRUSTED_CONTRIBUTORS = {e.lower() for e in [
     "vzakaznikov",
     "YiuRULE",
     "zlobober",     # Developer of YT
+    "ilejn",        # Arenadata, responsible for Kerberized Kafka
 ]}
 
 
@@ -103,14 +105,15 @@ def should_run_checks_for_pr(pr_info):
 
     return True, "No special conditions apply"
 
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
-    pr_info = PRInfo(get_event(), need_orgs=True)
+    pr_info = PRInfo(need_orgs=True)
     can_run, description = should_run_checks_for_pr(pr_info)
     gh = Github(get_best_robot_token())
     commit = get_commit(gh, pr_info.sha)
-    url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
+    url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID}"
     if not can_run:
         print("::notice ::Cannot run")
         commit.create_status(context=NAME, description=description, state="failure", target_url=url)
