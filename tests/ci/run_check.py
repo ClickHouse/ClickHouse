@@ -66,6 +66,7 @@ TRUSTED_CONTRIBUTORS = {e.lower() for e in [
     "vzakaznikov",
     "YiuRULE",
     "zlobober",     # Developer of YT
+    "ilejn",        # Arenadata, responsible for Kerberized Kafka
 ]}
 
 
