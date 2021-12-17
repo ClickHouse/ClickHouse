@@ -4,6 +4,8 @@
 #include <mysql/mysql.h>
 #endif
 #include <mysqlxx/Row.h>
+
+
 namespace mysqlxx
 {
 
