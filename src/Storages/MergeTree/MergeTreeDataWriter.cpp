@@ -359,7 +359,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(
     if (data.storage_settings.get()->assign_part_uuids)
         new_data_part->uuid = UUIDHelpers::generateV4();
 
-    new_data_part->setColumns(columns);
+    const auto & data_settings = data.getSettings();
+
+    SerializationInfo::Settings settings{data_settings->ratio_of_defaults_for_sparse_serialization, true};
+    SerializationInfoByName infos(columns, settings);
+    infos.add(block);
+
+    new_data_part->setColumns(columns, infos);
     new_data_part->rows_count = block.rows();
     new_data_part->partition = std::move(partition);
     new_data_part->minmax_idx = std::move(minmax_idx);
@@ -407,8 +413,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(
     auto compression_codec = data.getContext()->chooseCompressionCodec(0, 0);
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
-    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);
-    bool sync_on_insert = data.getSettings()->fsync_after_insert;
+    MergedBlockOutputStream out(new_data_part, metadata_snapshot,columns,
+        index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);
+
+    bool sync_on_insert = data_settings->fsync_after_insert;
 
     out.writeWithPermutation(block, perm_ptr);
 
@@ -450,7 +458,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     new_data_part->is_temp = is_temp;
 
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
-    new_data_part->setColumns(columns);
+    SerializationInfo::Settings settings{data.getSettings()->ratio_of_defaults_for_sparse_serialization, true};
+    SerializationInfoByName infos(columns, settings);
+    infos.add(block);
+
+    new_data_part->setColumns(columns, infos);
 
     if (new_data_part->isStoredOnDisk())
     {
