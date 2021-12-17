@@ -747,6 +747,7 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     if (!select_p.parse(pos, select, expected))
         return false;
 
+    auto comment = parseComment(pos, expected);
 
     auto query = std::make_shared<ASTCreateQuery>();
     node = query;
@@ -780,6 +781,9 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
     if (live_view_periodic_refresh)
         query->live_view_periodic_refresh.emplace(live_view_periodic_refresh->as<ASTLiteral &>().value.safeGet<UInt64>());
+
+    if (comment)
+        query->set(query->comment, comment);
 
     return true;
 }
