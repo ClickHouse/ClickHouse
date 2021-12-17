@@ -865,3 +865,23 @@ def test_insert_with_path_with_globs(started_cluster):
 
     table_function_3 = f"s3('http://minio1:9001/root/test_parquet*', 'minio', 'minio123', 'Parquet', 'a Int32, b String')"
     instance.query_and_get_error(f"insert into table function {table_function_3} SELECT number, randomString(100) FROM numbers(500)")
+
+
+def test_s3_schema_inference(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+
+    instance.query(f"insert into table function s3(s3_parquet, structure='a Int32, b String', format='Parquet') select number, randomString(100) from numbers(5000000)")
+    result = instance.query(f"desc s3(s3_parquet, format='Parquet')")
+    assert result == "a\tInt32\t\t\t\t\t\nb\tString\t\t\t\t\t\n"
+
+    result = instance.query(f"select count(*) from s3(s3_parquet, format='Parquet')")
+    assert(int(result) == 5000000)
+
+    instance.query(f"create table schema_inference engine=S3(s3_parquet, format='Parquet')")
+    result = instance.query(f"desc schema_inference")
+    assert result == "a\tInt32\t\t\t\t\t\nb\tString\t\t\t\t\t\n"
+
+    result = instance.query(f"select count(*) from schema_inference")
+    assert(int(result) == 5000000)
+

@@ -22,7 +22,7 @@ ColumnsDescription readSchemaFromFormat(const String & format_name, const std::o
 /// - Type -> Nullable(type)
 /// - Array(Type) -> Array(Nullable(Type))
 /// - Tuple(Type1, ..., TypeN) -> Tuple(Nullable(Type1), ..., Nullable(TypeN))
-/// - Map(KeyType, ValueType) -> Map(Nullable(KeyType), Nullable(ValueType))
+/// - Map(KeyType, ValueType) -> Map(KeyType, Nullable(ValueType))
 /// - LowCardinality(Type) -> LowCardinality(Nullable(Type))
 /// If type is Nothing or one of the nested types is Nothing, return nullptr.
 DataTypePtr generalizeDataType(DataTypePtr type);

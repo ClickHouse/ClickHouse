@@ -3,7 +3,6 @@
 
 #if USE_AWS_S3
 
-#include <Columns/ColumnString.h>
 #include <Common/isValidUTF8.h>
 
 #include <Functions/FunctionsConversion.h>
@@ -25,7 +24,6 @@
 
 #include <IO/ReadBufferFromS3.h>
 #include <IO/WriteBufferFromS3.h>
-#include <IO/WriteHelpers.h>
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
@@ -757,7 +755,7 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
                 format);
 
         return wrapReadBufferWithCompressionMethod(
-            std::make_unique<ReadBufferFromS3>(client_auth.client, client_auth.uri.bucket, current_key, max_single_read_retries, ctx->getReadSettings(), DBMS_DEFAULT_BUFFER_SIZE),
+            std::make_unique<ReadBufferFromS3>(client_auth.client, client_auth.uri.bucket, current_key, max_single_read_retries, ctx->getReadSettings()),
             chooseCompressionMethod(current_key, compression_method));
     };
 
@@ -832,6 +830,7 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
     {
         .supports_settings = true,
         .supports_sort_order = true, // for partition by
+        .supports_schema_inference = true,
         .source_access_type = AccessType::S3,
     });
 }
