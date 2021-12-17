@@ -17,17 +17,17 @@
 namespace DB
 {
 
-class WriteBufferFromBlobStorage : public BufferWithOwnMemory<WriteBuffer>
+class WriteBufferFromAzureBlobStorage : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
 
-    explicit WriteBufferFromBlobStorage(
+    explicit WriteBufferFromAzureBlobStorage(
         std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
         const String & blob_path_,
         size_t max_single_part_upload_size_,
         size_t buf_size_);
 
-    ~WriteBufferFromBlobStorage() override;
+    ~WriteBufferFromAzureBlobStorage() override;
 
     void nextImpl() override;
 
