@@ -65,11 +65,12 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     {
         /// Read request already in flight. Wait for its completion.
 
-        size_t size = 0, offset = 0;
+        size_t size = 0;
         {
             Stopwatch watch;
             CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
-            std::tie(size, offset) = prefetch_future.get();
+            auto result = prefetch_future.get();
+            size = result.size;
             ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
         }
 

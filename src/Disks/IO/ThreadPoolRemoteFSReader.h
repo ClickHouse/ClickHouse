@@ -3,12 +3,12 @@
 #include <IO/AsynchronousReader.h>
 #include <IO/SeekableReadBuffer.h>
 #include <Common/ThreadPool.h>
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IDiskRemote.h>
 
 
 namespace DB
 {
-class ReadBufferFromRemoteFSGather;
 
 class ThreadPoolRemoteFSReader : public IAsynchronousReader
 {
@@ -30,7 +30,7 @@ struct ThreadPoolRemoteFSReader::RemoteFSFileDescriptor : public IFileDescriptor
 public:
     explicit RemoteFSFileDescriptor(std::shared_ptr<ReadBufferFromRemoteFSGather> reader_) : reader(reader_) {}
 
-    std::pair<size_t, size_t> readInto(char * data, size_t size, size_t offset, size_t ignore = 0);
+    ReadBufferFromRemoteFSGather::ReadResult readInto(char * data, size_t size, size_t offset, size_t ignore = 0);
 
 private:
     std::shared_ptr<ReadBufferFromRemoteFSGather> reader;

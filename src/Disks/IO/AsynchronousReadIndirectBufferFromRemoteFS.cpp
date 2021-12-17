@@ -154,9 +154,11 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
         CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
         Stopwatch watch;
         {
-            size_t offset;
-            std::tie(size, offset) = prefetch_future.get();
-            assert(offset < working_buffer.size());
+            auto result = prefetch_future.get();
+            size = result.size;
+            auto offset = result.offset;
+            assert(offset < size);
+
             if (size)
             {
                 memory.swap(prefetch_buffer);
@@ -173,9 +175,10 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     else
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSUnprefetchedReads);
-        size_t offset;
-        std::tie(size, offset) = readInto(memory.data(), memory.size()).get();
-        assert(offset < working_buffer.size());
+        auto result = readInto(memory.data(), memory.size()).get();
+        size = result.size;
+        auto offset = result.offset;
+        assert(offset < size);
 
         if (size)
         {
