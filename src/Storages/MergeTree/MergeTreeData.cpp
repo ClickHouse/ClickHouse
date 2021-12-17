@@ -29,6 +29,8 @@
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -1524,6 +1526,24 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
             part_log->add(part_log_elem);
         }
     }
+}
+
+void MergeTreeData::flushAllInMemoryPartsIfNeeded()
+{
+    if (getSettings()->in_memory_parts_enable_wal)
+        return;
+
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    DataPartsVector parts = getDataPartsVector();
+    for (const auto & part : parts)
+    {
+        if (auto part_in_memory = asInMemoryPart(part))
+        {
+            const auto & storage_relative_path = part_in_memory->storage.relative_data_path;
+            part_in_memory->flushToDisk(storage_relative_path, part_in_memory->relative_path, metadata_snapshot);
+        }
+    }
+
 }
 
 size_t MergeTreeData::clearOldPartsFromFilesystem(bool force)
@@ -3164,7 +3184,7 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const Data
     for (const auto & column : part->getColumns())
     {
         ColumnSize & total_column_size = column_sizes[column.name];
-        ColumnSize part_column_size = part->getColumnSize(column.name, *column.type);
+        ColumnSize part_column_size = part->getColumnSize(column.name);
         total_column_size.add(part_column_size);
     }
 
@@ -3182,7 +3202,7 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
     for (const auto & column : part->getColumns())
     {
         ColumnSize & total_column_size = column_sizes[column.name];
-        ColumnSize part_column_size = part->getColumnSize(column.name, *column.type);
+        ColumnSize part_column_size = part->getColumnSize(column.name);
 
         auto log_subtract = [&](size_t & from, size_t value, const char * field)
         {
@@ -3649,56 +3669,54 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     /// Re-parse partition key fields using the information about expected field types.
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    size_t fields_count = metadata_snapshot->getPartitionKey().sample_block.columns();
+    const Block & key_sample_block = metadata_snapshot->getPartitionKey().sample_block;
+    size_t fields_count = key_sample_block.columns();
     if (partition_ast.fields_count != fields_count)
-        throw Exception(
-            "Wrong number of fields in the partition expression: " + toString(partition_ast.fields_count) +
-            ", must be: " + toString(fields_count),
-            ErrorCodes::INVALID_PARTITION_VALUE);
+        throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+                        "Wrong number of fields in the partition expression: {}, must be: {}",
+                        partition_ast.fields_count, fields_count);
 
-    if (auto * f = partition_ast.value->as<ASTFunction>())
-    {
-        assert(f->name == "tuple");
-        if (f->arguments && !f->arguments->as<ASTExpressionList>()->children.empty())
-        {
-            ASTPtr query = partition_ast.value->clone();
-            auto syntax_analyzer_result
-                = TreeRewriter(local_context)
-                      .analyze(query, metadata_snapshot->getPartitionKey().sample_block.getNamesAndTypesList(), {}, {}, false, false);
-            auto actions = ExpressionAnalyzer(query, syntax_analyzer_result, local_context).getActions(true);
-            if (actions->hasArrayJoin())
-                throw Exception("The partition expression cannot contain array joins", ErrorCodes::INVALID_PARTITION_VALUE);
-        }
-    }
-
-    const FormatSettings format_settings;
     Row partition_row(fields_count);
-
-    if (fields_count)
+    if (fields_count == 0)
     {
-        ConcatReadBuffer buf;
-        buf.appendBuffer(std::make_unique<ReadBufferFromMemory>("(", 1));
-        buf.appendBuffer(std::make_unique<ReadBufferFromMemory>(partition_ast.fields_str.data(), partition_ast.fields_str.size()));
-        buf.appendBuffer(std::make_unique<ReadBufferFromMemory>(")", 1));
+        /// Function tuple(...) requires at least one argument, so empty key is a special case
+        assert(!partition_ast.fields_count);
+        assert(typeid_cast<ASTFunction *>(partition_ast.value.get()));
+        assert(partition_ast.value->as<ASTFunction>()->name == "tuple");
+        assert(partition_ast.value->as<ASTFunction>()->arguments);
+        bool empty_tuple = partition_ast.value->as<ASTFunction>()->arguments->children.empty();
+        if (!empty_tuple)
+            throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition key is empty, expected 'tuple()' as partition key");
+    }
+    else if (fields_count == 1)
+    {
+        ASTPtr partition_value_ast = partition_ast.value;
+        if (auto * tuple = partition_value_ast->as<ASTFunction>())
+        {
+            assert(tuple->name == "tuple");
+            assert(tuple->arguments);
+            assert(tuple->arguments->children.size() == 1);
+            partition_value_ast = tuple->arguments->children[0];
+        }
+        /// Simple partition key, need to evaluate and cast
+        Field partition_key_value = evaluateConstantExpression(partition_value_ast, local_context).first;
+        partition_row[0] = convertFieldToTypeOrThrow(partition_key_value, *key_sample_block.getByPosition(0).type);
+    }
+    else
+    {
+        /// Complex key, need to evaluate, untuple and cast
+        Field partition_key_value = evaluateConstantExpression(partition_ast.value, local_context).first;
+        if (partition_key_value.getType() != Field::Types::Tuple)
+            throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+                            "Expected tuple for complex partition key, got {}", partition_key_value.getTypeName());
 
-        auto input_format = local_context->getInputFormat(
-            "Values",
-            buf,
-            metadata_snapshot->getPartitionKey().sample_block,
-            local_context->getSettingsRef().max_block_size);
-        QueryPipeline pipeline(std::move(input_format));
-        PullingPipelineExecutor executor(pipeline);
-
-        Block block;
-        executor.pull(block);
-
-        if (!block || !block.rows())
-            throw Exception(
-                "Could not parse partition value: `" + partition_ast.fields_str + "`",
-                ErrorCodes::INVALID_PARTITION_VALUE);
+        const Tuple & tuple = partition_key_value.get<Tuple>();
+        if (tuple.size() != fields_count)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Wrong number of fields in the partition expression: {}, must be: {}", tuple.size(), fields_count);
 
         for (size_t i = 0; i < fields_count; ++i)
-            block.getByPosition(i).column->get(0, partition_row[i]);
+            partition_row[i] = convertFieldToTypeOrThrow(tuple[i], *key_sample_block.getByPosition(i).type);
     }
 
     MergeTreePartition partition(std::move(partition_row));
@@ -3710,11 +3728,10 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         if (existing_part_in_partition && existing_part_in_partition->partition.value != partition.value)
         {
             WriteBufferFromOwnString buf;
-            writeCString("Parsed partition value: ", buf);
-            partition.serializeText(*this, buf, format_settings);
-            writeCString(" doesn't match partition value for an existing part with the same partition ID: ", buf);
-            writeString(existing_part_in_partition->name, buf);
-            throw Exception(buf.str(), ErrorCodes::INVALID_PARTITION_VALUE);
+            partition.serializeText(*this, buf, FormatSettings{});
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Parsed partition value: {} "
+                            "doesn't match partition value for an existing part with the same partition ID: {}",
+                            buf.str(), existing_part_in_partition->name);
         }
     }
 
@@ -3727,6 +3744,27 @@ std::unordered_set<String> MergeTreeData::getPartitionIDsFromQuery(const ASTs & 
     for (const auto & ast : asts)
         partition_ids.emplace(getPartitionIDFromQuery(ast, local_context));
     return partition_ids;
+}
+
+std::set<String> MergeTreeData::getPartitionIdsAffectedByCommands(
+    const MutationCommands & commands, ContextPtr query_context) const
+{
+    std::set<String> affected_partition_ids;
+
+    for (const auto & command : commands)
+    {
+        if (!command.partition)
+        {
+            affected_partition_ids.clear();
+            break;
+        }
+
+        affected_partition_ids.insert(
+            getPartitionIDFromQuery(command.partition, query_context)
+        );
+    }
+
+    return affected_partition_ids;
 }
 
 

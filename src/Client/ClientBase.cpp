@@ -1415,18 +1415,12 @@ void ClientBase::runInteractive()
         highlight_callback = highlight;
 
     ReplxxLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters, highlight_callback);
-
-#elif defined(USE_READLINE) && USE_READLINE
-    ReadlineLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters);
 #else
     LineReader lr(history_file, config().has("multiline"), query_extenders, query_delimiters);
 #endif
 
-    /// Enable bracketed-paste-mode only when multiquery is enabled and multiline is
-    ///  disabled, so that we are able to paste and execute multiline queries in a whole
-    ///  instead of erroring out, while be less intrusive.
-    if (config().has("multiquery") && !config().has("multiline"))
-        lr.enableBracketedPaste();
+    /// Enable bracketed-paste-mode so that we are able to paste multiline queries as a whole.
+    lr.enableBracketedPaste();
 
     do
     {
@@ -1498,17 +1492,14 @@ void ClientBase::runNonInteractive()
     {
         auto process_multi_query_from_file = [&](const String & file)
         {
-            auto text = getQueryTextPrefix();
             String queries_from_file;
 
             ReadBufferFromFile in(file);
             readStringUntilEOF(queries_from_file, in);
 
-            text += queries_from_file;
-            return executeMultiQuery(text);
+            return executeMultiQuery(queries_from_file);
         };
 
-        /// Read all queries into `text`.
         for (const auto & queries_file : queries_files)
         {
             for (const auto & interleave_file : interleave_queries_files)
@@ -1523,9 +1514,6 @@ void ClientBase::runNonInteractive()
     }
 
     String text;
-    if (is_multiquery)
-        text = getQueryTextPrefix();
-
     if (config().has("query"))
     {
         text += config().getRawString("query"); /// Poco configuration should not process substitutions in form of ${...} inside query.

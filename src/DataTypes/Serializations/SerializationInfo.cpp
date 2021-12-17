@@ -119,7 +119,7 @@ void SerializationInfo::fromJSON(const Poco::JSON::Object & object)
 ISerialization::Kind SerializationInfo::chooseKind(const Data & data, const Settings & settings)
 {
     double ratio = data.num_rows ? std::min(static_cast<double>(data.num_defaults) / data.num_rows, 1.0) : 0.0;
-    return ratio > settings.ratio_for_sparse ? ISerialization::Kind::SPARSE : ISerialization::Kind::DEFAULT;
+    return ratio > settings.ratio_of_defaults_for_sparse ? ISerialization::Kind::SPARSE : ISerialization::Kind::DEFAULT;
 }
 
 SerializationInfoByName::SerializationInfoByName(
@@ -158,7 +158,7 @@ void SerializationInfoByName::add(const SerializationInfoByName & other)
     }
 }
 
-void SerializationInfoByName::writeText(WriteBuffer & out) const
+void SerializationInfoByName::writeJSON(WriteBuffer & out) const
 {
     Poco::JSON::Object object;
     object.set(KEY_VERSION, SERIALIZATION_INFO_VERSION);
@@ -180,13 +180,21 @@ void SerializationInfoByName::writeText(WriteBuffer & out) const
     return writeString(oss.str(), out);
 }
 
-void SerializationInfoByName::readText(ReadBuffer & in)
+void SerializationInfoByName::readJSON(ReadBuffer & in)
 {
     String json_str;
     readString(json_str, in);
 
     Poco::JSON::Parser parser;
     auto object = parser.parse(json_str).extract<Poco::JSON::Object::Ptr>();
+
+    if (!object->has(KEY_VERSION))
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Missed version of serialization infos");
+
+    if (object->getValue<size_t>(KEY_VERSION) > SERIALIZATION_INFO_VERSION)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Unknown version of serialization infos ({}). Should be less or equal than {}",
+            object->getValue<size_t>(KEY_VERSION), SERIALIZATION_INFO_VERSION);
 
     if (object->has(KEY_COLUMNS))
     {

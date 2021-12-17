@@ -104,7 +104,7 @@ public:
 
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// Otherwise return information about column size on disk.
-    ColumnSize getColumnSize(const String & column_name, const IDataType & /* type */) const;
+    ColumnSize getColumnSize(const String & column_name) const;
 
     /// NOTE: Returns zeros if secondary indexes are not found in checksums.
     /// Otherwise return information about secondary index size on disk.
@@ -201,6 +201,7 @@ public:
     mutable std::atomic<time_t> remove_time { std::numeric_limits<time_t>::max() };
 
     /// If true, the destructor will delete the directory with the part.
+    /// FIXME Why do we need this flag? What's difference from Temporary and DeleteOnDestroy state? Can we get rid of this?
     bool is_temp = false;
 
     /// If true it means that there are no ZooKeeper node for this part, so it should be deleted only from filesystem
@@ -360,7 +361,7 @@ public:
     /// Calculate column and secondary indices sizes on disk.
     void calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
-    String getRelativePathForPrefix(const String & prefix) const;
+    String getRelativePathForPrefix(const String & prefix, bool detached = false) const;
 
     bool isProjectionPart() const { return parent_part != nullptr; }
 
@@ -393,7 +394,10 @@ public:
 
     static inline constexpr auto UUID_FILE_NAME = "uuid.txt";
 
-    static inline constexpr auto SERIALIZATION_FILE_NAME = "serialization.txt";
+    /// File that contains information about kinds of serialization of columns
+    /// and information that helps to choose kind of serialization later during merging
+    /// (number of rows, number of rows with default values, etc).
+    static inline constexpr auto SERIALIZATION_FILE_NAME = "serialization.json";
 
     /// Checks that all TTLs (table min/max, column ttls, so on) for part
     /// calculated. Part without calculated TTL may exist if TTL was added after
@@ -447,9 +451,8 @@ private:
     /// In compact parts order of columns is necessary
     NameToNumber column_name_to_position;
 
+    /// Map from name of column to its serialization info.
     SerializationInfoByName serialization_infos;
-
-    SerializationByName serializations;
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();

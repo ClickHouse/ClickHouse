@@ -20,7 +20,7 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     {
         SerializationInfo::Settings info_settings =
         {
-            .ratio_for_sparse = storage.getSettings()->ratio_of_defaults_for_sparse_serialization,
+            .ratio_of_defaults_for_sparse = storage.getSettings()->ratio_of_defaults_for_sparse_serialization,
             .choose_kind = false,
         };
 

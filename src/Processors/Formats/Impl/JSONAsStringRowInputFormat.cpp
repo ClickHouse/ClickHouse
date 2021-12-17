@@ -14,9 +14,11 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-JSONAsRowInputFormat::JSONAsRowInputFormat(
-    const Block & header_, ReadBuffer & in_, Params params_)
-    : IRowInputFormat(header_, buf, std::move(params_)), buf(in_)
+JSONAsRowInputFormat::JSONAsRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_)
+    : JSONAsRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_) {}
+
+JSONAsRowInputFormat::JSONAsRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_) :
+    IRowInputFormat(header_, *buf_, std::move(params_)), buf(std::move(buf_))
 {
     if (header_.columns() > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -27,36 +29,36 @@ JSONAsRowInputFormat::JSONAsRowInputFormat(
 void JSONAsRowInputFormat::resetParser()
 {
     IRowInputFormat::resetParser();
-    buf.reset();
+    buf->reset();
 }
 
 void JSONAsRowInputFormat::readPrefix()
 {
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
-    skipBOMIfExists(buf);
+    skipBOMIfExists(*buf);
 
-    skipWhitespaceIfAny(buf);
-    if (!buf.eof() && *buf.position() == '[')
+    skipWhitespaceIfAny(*buf);
+    if (!buf->eof() && *buf->position() == '[')
     {
-        ++buf.position();
+        ++buf->position();
         data_in_square_brackets = true;
     }
 }
 
 void JSONAsRowInputFormat::readSuffix()
 {
-    skipWhitespaceIfAny(buf);
+    skipWhitespaceIfAny(*buf);
     if (data_in_square_brackets)
     {
-        assertChar(']', buf);
-        skipWhitespaceIfAny(buf);
+        assertChar(']', *buf);
+        skipWhitespaceIfAny(*buf);
     }
-    if (!buf.eof() && *buf.position() == ';')
+    if (!buf->eof() && *buf->position() == ';')
     {
-        ++buf.position();
-        skipWhitespaceIfAny(buf);
+        ++buf->position();
+        skipWhitespaceIfAny(*buf);
     }
-    assertEOF(buf);
+    assertEOF(*buf);
 }
 
 bool JSONAsRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
@@ -67,30 +69,36 @@ bool JSONAsRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
     if (!allow_new_rows)
         return false;
 
-    skipWhitespaceIfAny(buf);
-    if (!buf.eof())
+    skipWhitespaceIfAny(*buf);
+    if (!buf->eof())
     {
-        if (!data_in_square_brackets && *buf.position() == ';')
+        if (!data_in_square_brackets && *buf->position() == ';')
         {
             /// ';' means the end of query, but it cannot be before ']'.
             return allow_new_rows = false;
         }
-        else if (data_in_square_brackets && *buf.position() == ']')
+        else if (data_in_square_brackets && *buf->position() == ']')
         {
             /// ']' means the end of query.
             return allow_new_rows = false;
         }
     }
 
-    if (!buf.eof())
+    if (!buf->eof())
         readJSONObject(*columns[0]);
 
-    skipWhitespaceIfAny(buf);
-    if (!buf.eof() && *buf.position() == ',')
-        ++buf.position();
-    skipWhitespaceIfAny(buf);
+    skipWhitespaceIfAny(*buf);
+    if (!buf->eof() && *buf->position() == ',')
+        ++buf->position();
+    skipWhitespaceIfAny(*buf);
 
-    return !buf.eof();
+    return !buf->eof();
+}
+
+void JSONAsRowInputFormat::setReadBuffer(ReadBuffer & in_)
+{
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    IInputFormat::setReadBuffer(*buf);
 }
 
 
@@ -106,79 +114,79 @@ JSONAsStringRowInputFormat::JSONAsStringRowInputFormat(
 
 void JSONAsStringRowInputFormat::readJSONObject(IColumn & column)
 {
-    PeekableReadBufferCheckpoint checkpoint{buf};
+    PeekableReadBufferCheckpoint checkpoint{*buf};
     size_t balance = 0;
     bool quotes = false;
 
-    if (*buf.position() != '{')
+    if (*buf->position() != '{')
         throw Exception("JSON object must begin with '{'.", ErrorCodes::INCORRECT_DATA);
 
-    ++buf.position();
+    ++buf->position();
     ++balance;
 
     char * pos;
 
     while (balance)
     {
-        if (buf.eof())
+        if (buf->eof())
             throw Exception("Unexpected end of file while parsing JSON object.", ErrorCodes::INCORRECT_DATA);
 
         if (quotes)
         {
-            pos = find_first_symbols<'"', '\\'>(buf.position(), buf.buffer().end());
-            buf.position() = pos;
-            if (buf.position() == buf.buffer().end())
+            pos = find_first_symbols<'"', '\\'>(buf->position(), buf->buffer().end());
+            buf->position() = pos;
+            if (buf->position() == buf->buffer().end())
                 continue;
-            if (*buf.position() == '"')
+            if (*buf->position() == '"')
             {
                 quotes = false;
-                ++buf.position();
+                ++buf->position();
             }
-            else if (*buf.position() == '\\')
+            else if (*buf->position() == '\\')
             {
-                ++buf.position();
-                if (!buf.eof())
+                ++buf->position();
+                if (!buf->eof())
                 {
-                    ++buf.position();
+                    ++buf->position();
                 }
             }
         }
         else
         {
-            pos = find_first_symbols<'"', '{', '}', '\\'>(buf.position(), buf.buffer().end());
-            buf.position() = pos;
-            if (buf.position() == buf.buffer().end())
+            pos = find_first_symbols<'"', '{', '}', '\\'>(buf->position(), buf->buffer().end());
+            buf->position() = pos;
+            if (buf->position() == buf->buffer().end())
                 continue;
-            if (*buf.position() == '{')
+            if (*buf->position() == '{')
             {
                 ++balance;
-                ++buf.position();
+                ++buf->position();
             }
-            else if (*buf.position() == '}')
+            else if (*buf->position() == '}')
             {
                 --balance;
-                ++buf.position();
+                ++buf->position();
             }
-            else if (*buf.position() == '\\')
+            else if (*buf->position() == '\\')
             {
-                ++buf.position();
-                if (!buf.eof())
+                ++buf->position();
+                if (!buf->eof())
                 {
-                    ++buf.position();
+                    ++buf->position();
                 }
             }
-            else if (*buf.position() == '"')
+            else if (*buf->position() == '"')
             {
                 quotes = true;
-                ++buf.position();
+                ++buf->position();
             }
         }
     }
-    buf.makeContinuousMemoryFromCheckpointToPos();
-    char * end = buf.position();
-    buf.rollbackToCheckpoint();
-    column.insertData(buf.position(), end - buf.position());
-    buf.position() = end;
+    buf->makeContinuousMemoryFromCheckpointToPos();
+    char * end = buf->position();
+    buf->rollbackToCheckpoint();
+    column.insertData(buf->position(), end - buf->position());
+    buf->position() = end;
 }
 
 
@@ -195,7 +203,7 @@ JSONAsObjectRowInputFormat::JSONAsObjectRowInputFormat(
 
 void JSONAsObjectRowInputFormat::readJSONObject(IColumn & column)
 {
-    serializations[0]->deserializeTextJSON(column, buf, format_settings);
+    serializations[0]->deserializeTextJSON(column, *buf, format_settings);
 }
 
 void registerInputFormatJSONAsString(FormatFactory & factory)

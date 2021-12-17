@@ -238,6 +238,8 @@ def create_table_like_with_materialize_mysql_database(clickhouse_node, mysql_nod
     clickhouse_node.query(
         f"CREATE DATABASE create_like ENGINE = MaterializeMySQL('{service_name}:3306', 'create_like', 'root', 'clickhouse')")
     mysql_node.query("CREATE TABLE create_like.t2 LIKE create_like.t1")
+    check_query(clickhouse_node, "SHOW TABLES FROM create_like", "t1\nt2\n")
+
     mysql_node.query("USE create_like")
     mysql_node.query("CREATE TABLE t3 LIKE create_like2.t1")
     mysql_node.query("CREATE TABLE t4 LIKE t1")
@@ -1051,3 +1053,22 @@ def table_table(clickhouse_node, mysql_node, service_name):
 
     mysql_node.query("DROP DATABASE table_test")
     clickhouse_node.query("DROP DATABASE table_test")
+
+def table_overrides(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS table_overrides")
+    clickhouse_node.query("DROP DATABASE IF EXISTS table_overrides")
+    mysql_node.query("CREATE DATABASE table_overrides")
+    mysql_node.query("CREATE TABLE table_overrides.t1 (sensor_id INT UNSIGNED, timestamp DATETIME, temperature FLOAT, PRIMARY KEY(timestamp, sensor_id))")
+    for id in range(10):
+        mysql_node.query("BEGIN")
+        for day in range(100):
+            mysql_node.query(f"INSERT INTO table_overrides.t1 VALUES({id}, TIMESTAMP('2021-01-01') + INTERVAL {day} DAY, (RAND()*20)+20)")
+        mysql_node.query("COMMIT")
+    clickhouse_node.query(f"""
+        CREATE DATABASE table_overrides ENGINE=MaterializeMySQL('{service_name}:3306', 'table_overrides', 'root', 'clickhouse')
+        TABLE OVERRIDE t1 (COLUMNS (sensor_id UInt64))
+    """)
+    check_query(clickhouse_node, "SELECT count() FROM table_overrides.t1", "1000\n")
+    check_query(clickhouse_node, "SELECT type FROM system.columns WHERE database = 'table_overrides' AND table = 't1' AND name = 'sensor_id'", "UInt64\n")
+    clickhouse_node.query("DROP DATABASE IF EXISTS table_overrides")
+    mysql_node.query("DROP DATABASE IF EXISTS table_overrides")
