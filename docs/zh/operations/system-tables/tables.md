@@ -56,7 +56,7 @@
 -   `lifetime_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - 服务启动后插入的总字节数(只针对 `Buffer` 表）。
 
 
--   `comment` ([String](../../sql-reference/data-types/string.md)) - 表的注释.
+-   `comment` ([String](../../sql-reference/data-types/string.md)) - 表的注释。
 
 -   `has_own_data` ([UInt8](../../sql-reference/data-types/int-uint.md)) — 标志，表示表本身是否在磁盘上存储数据，或者访问其他来源。 
 
