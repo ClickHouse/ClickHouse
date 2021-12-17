@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <Common/config.h>
 #include "config_core.h"
 
 #if USE_NURAFT
@@ -15,7 +14,6 @@
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Exception.h>

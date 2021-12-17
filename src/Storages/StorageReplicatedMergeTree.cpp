@@ -1373,9 +1373,6 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
         const auto storage_settings_ptr = getSettings();
         String part_path = fs::path(replica_path) / "parts" / part_name;
 
-        //ops.emplace_back(zkutil::makeCheckRequest(
-        //    zookeeper_path + "/columns", expected_columns_version));
-
         if (storage_settings_ptr->use_minimalistic_part_header_in_zookeeper)
         {
             ops.emplace_back(zkutil::makeCreateRequest(
@@ -1421,6 +1418,7 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
             Coordination::Requests new_ops;
             for (const String & part_path : absent_part_paths_on_replicas)
             {
+                /// NOTE Create request may fail with ZNONODE if replica is being dropped, we will throw an exception
                 new_ops.emplace_back(zkutil::makeCreateRequest(part_path, "", zkutil::CreateMode::Persistent));
                 new_ops.emplace_back(zkutil::makeRemoveRequest(part_path, -1));
             }
@@ -4531,28 +4529,6 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     zookeeper->createOrUpdate(fs::path(replica_path) / "metadata_version", std::to_string(metadata_version), zkutil::CreateMode::Persistent);
 
     return true;
-}
-
-
-std::set<String> StorageReplicatedMergeTree::getPartitionIdsAffectedByCommands(
-    const MutationCommands & commands, ContextPtr query_context) const
-{
-    std::set<String> affected_partition_ids;
-
-    for (const auto & command : commands)
-    {
-        if (!command.partition)
-        {
-            affected_partition_ids.clear();
-            break;
-        }
-
-        affected_partition_ids.insert(
-            getPartitionIDFromQuery(command.partition, query_context)
-        );
-    }
-
-    return affected_partition_ids;
 }
 
 
