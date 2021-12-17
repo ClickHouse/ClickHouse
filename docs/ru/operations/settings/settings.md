@@ -739,9 +739,20 @@ ClickHouse может парсить только базовый формат `Y
 
 Возможные значения:
 
--   Любое положительное целое число.
+-   Положительное целое число.
 
-Значение по умолчанию: 163840.
+Значение по умолчанию: `163840`.
+
+
+## merge_tree_min_rows_for_concurrent_read_for_remote_filesystem {#merge-tree-min-rows-for-concurrent-read-for-remote-filesystem}
+
+Если из одного файла считывается указанное количество строк, движок [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) может выполнять параллельное чтение из удаленной файловой системы.
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `163840`.
 
 ## merge_tree_min_bytes_for_concurrent_read {#setting-merge-tree-min-bytes-for-concurrent-read}
 
@@ -751,7 +762,18 @@ ClickHouse может парсить только базовый формат `Y
 
 -   Положительное целое число.
 
-Значение по умолчанию: 251658240.
+Значение по умолчанию: `251658240`.
+
+
+## merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem {#merge-tree-min-bytes-for-concurrent-read-for-remote-filesystem}
+
+Если из одного файла считывается указанное число байтов, движок [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) может выполнять параллельное чтение из удаленной файловой системы.
+
+Возможное значение:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `251658240`.
 
 ## merge_tree_min_rows_for_seek {#setting-merge-tree-min-rows-for-seek}
 
