@@ -4,8 +4,6 @@
 #include <mysql/mysql.h>
 #endif
 #include <mysqlxx/Row.h>
-
-
 namespace mysqlxx
 {
 
@@ -19,6 +17,14 @@ Value Row::operator[] (const char * name) const
             return operator[](i);
 
     throw Exception(std::string("Unknown column ") + name);
+}
+
+enum enum_field_types Row::getFieldType(size_t i)
+{
+    if (i >= res->getNumFields())
+        throw Exception(std::string("Array Index Overflow"));
+    MYSQL_FIELDS fields = res->getFields();
+    return fields[i].type;
 }
 
 }

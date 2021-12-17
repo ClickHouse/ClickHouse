@@ -230,6 +230,7 @@ namespace MySQLReplication
                     pos += 2;
                     break;
                 }
+                case MYSQL_TYPE_BIT:
                 case MYSQL_TYPE_VARCHAR:
                 case MYSQL_TYPE_VAR_STRING: {
                     /// Little-Endian
@@ -582,6 +583,19 @@ namespace MySQLReplication
                             payload.readStrict(reinterpret_cast<char *>(&val), 2);
                             row.push_back(Field{UInt16{val}});
                         }
+                        break;
+                    }
+                    case MYSQL_TYPE_BIT:
+                    {
+                        UInt32 bits = ((meta >> 8) * 8) + (meta & 0xff);
+                        UInt32 size = (bits + 7) / 8;
+
+                        Bitmap bitmap_value;
+                        String byte_buffer;
+                        byte_buffer.resize(size);
+                        readBigEndianStrict(payload, reinterpret_cast<char *>(byte_buffer.data()), size);
+                        readBitmapFromStr(byte_buffer.c_str(), bitmap_value, size);
+                        row.push_back(Field{UInt64{bitmap_value.to_ulong()}});
                         break;
                     }
                     case MYSQL_TYPE_VARCHAR:

@@ -1072,3 +1072,68 @@ def table_overrides(clickhouse_node, mysql_node, service_name):
     check_query(clickhouse_node, "SELECT type FROM system.columns WHERE database = 'table_overrides' AND table = 't1' AND name = 'sensor_id'", "UInt64\n")
     clickhouse_node.query("DROP DATABASE IF EXISTS table_overrides")
     mysql_node.query("DROP DATABASE IF EXISTS table_overrides")
+
+def materialized_database_support_all_kinds_of_mysql_datatype(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS test_database_datatype")
+    clickhouse_node.query("DROP DATABASE IF EXISTS test_database_datatype")
+    mysql_node.query("CREATE DATABASE test_database_datatype DEFAULT CHARACTER SET 'utf8'")
+    mysql_node.query(""" 
+       CREATE TABLE test_database_datatype.t1 (
+            `v1` int(10) unsigned  AUTO_INCREMENT,
+            `v2` TINYINT,
+            `v3` SMALLINT,
+            `v4` BIGINT,
+            `v5` int,
+            `v6` TINYINT unsigned,
+            `v7` SMALLINT unsigned,
+            `v8` BIGINT unsigned,
+            `v9` FLOAT,
+            `v10` FLOAT unsigned,
+            `v11` DOUBLE,
+            `v12` DOUBLE unsigned,
+            `v13` DECIMAL(5,4),
+            `v14` date,
+            `v15` TEXT,
+            `v16` varchar(100) ,
+            `v17` BLOB,
+            `v18` datetime DEFAULT CURRENT_TIMESTAMP,
+            `v19` datetime(6) DEFAULT CURRENT_TIMESTAMP(6),
+            `v20` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            `v21` TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6),
+            /* todo support */
+            # `v22` YEAR,
+            # `v23` TIME,
+            # `v24` TIME(3),
+            # `v25` GEOMETRY,
+            `v26` bit(4),
+            # `v27` JSON DEFAULT NULL,
+            # `v28` set('a', 'c', 'f', 'd', 'e', 'b'),
+            `v29` mediumint(4) unsigned NOT NULL DEFAULT '0',
+            `v30` varbinary(255) DEFAULT NULL COMMENT 'varbinary support',
+            `v31`  binary(200) DEFAULT NULL,
+            `v32`  ENUM('RED','GREEN','BLUE'), 
+            PRIMARY KEY (`v1`)
+        ) ENGINE=InnoDB;
+        """)
+
+    mysql_node.query("""
+        INSERT INTO test_database_datatype.t1 (v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v26, v29, v30, v31, v32) values 
+        (1, 11, 9223372036854775807, -1,  1, 11, 18446744073709551615, -1.1,  1.1, -1.111, 1.111, 1.1111, '2021-10-06', 'text', 'varchar', 'BLOB', '2021-10-06 18:32:57',  '2021-10-06 18:32:57.482786', '2021-10-06 18:32:57', '2021-10-06 18:32:57.482786', b'1010', 11, 'varbinary', 'binary', 'RED');
+        """)
+    clickhouse_node.query(
+        "CREATE DATABASE test_database_datatype ENGINE = MaterializeMySQL('{}:3306', 'test_database_datatype', 'root', 'clickhouse')".format(
+            service_name))
+
+    assert "test_database_datatype" in clickhouse_node.query("SHOW DATABASES")
+    # full synchronization check
+    check_query(clickhouse_node, "SELECT v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v26, v29, v30, v32 FROM test_database_datatype.t1 FORMAT TSV",
+                "1\t1\t11\t9223372036854775807\t-1\t1\t11\t18446744073709551615\t-1.1\t1.1\t-1.111\t1.111\t1.1111\t2021-10-06\ttext\tvarchar\tBLOB\t2021-10-06 18:32:57\t2021-10-06 18:32:57.482786\t2021-10-06 18:32:57\t2021-10-06 18:32:57.482786\t10\t11\tvarbinary\tRED\n")
+
+    mysql_node.query("""
+            INSERT INTO test_database_datatype.t1 (v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v26, v29, v30, v31, v32) values 
+            (2, 22, 9223372036854775807, -2,  2, 22, 18446744073709551615, -2.2,  2.2, -2.22, 2.222, 2.2222, '2021-10-07', 'text', 'varchar', 'BLOB',  '2021-10-07 18:32:57',  '2021-10-07 18:32:57.482786', '2021-10-07 18:32:57', '2021-10-07 18:32:57.482786', b'1011', 22, 'varbinary', 'binary', 'GREEN' );
+            """)
+    # increment synchronization check
+    check_query(clickhouse_node, "SELECT v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v26, v29, v30, v32 FROM   test_database_datatype.t1 ORDER BY v1 FORMAT TSV",
+                "1\t1\t11\t9223372036854775807\t-1\t1\t11\t18446744073709551615\t-1.1\t1.1\t-1.111\t1.111\t1.1111\t2021-10-06\ttext\tvarchar\tBLOB\t2021-10-06 18:32:57\t2021-10-06 18:32:57.482786\t2021-10-06 18:32:57\t2021-10-06 18:32:57.482786\t10\t11\tvarbinary\tRED\n" +
+                "2\t2\t22\t9223372036854775807\t-2\t2\t22\t18446744073709551615\t-2.2\t2.2\t-2.22\t2.222\t2.2222\t2021-10-07\ttext\tvarchar\tBLOB\t2021-10-07 18:32:57\t2021-10-07 18:32:57.482786\t2021-10-07 18:32:57\t2021-10-07 18:32:57.482786\t11\t22\tvarbinary\tGREEN\n")
