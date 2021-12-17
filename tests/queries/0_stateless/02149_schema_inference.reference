@@ -158,3 +158,13 @@ column_3	Array(Tuple(Array(Nullable(Float64)), Nullable(String)))
 42.42	Some string 1	[([1,2,3],'String 1'),([1],'String 1')]
 42	Some string 2	[([],'String 2'),([],'String 2')]
 \N	Some string 3	[([1,2,3],'String 3'),([1],'String 3')]
+MsgPack
+column_1	Nullable(Int64)					
+column_2	Nullable(Int64)					
+column_3	Nullable(Float32)					
+column_4	Nullable(String)					
+column_5	Array(Array(Nullable(Int64)))					
+column_6	Map(Int64, Array(Nullable(Int64)))					
+\N	0	0	Str: 0	[[0,1],[0]]	{0:[0,1]}
+1	\N	1	Str: 1	[[1,2],[1]]	{1:[1,2]}
+\N	2	2	Str: 2	[[2,3],[2]]	{2:[2,3]}

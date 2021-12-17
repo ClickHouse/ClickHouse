@@ -418,8 +418,7 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
 {
     switch (object.type)
     {
-        case msgpack::type::object_type::POSITIVE_INTEGER:
-            return makeNullable(std::make_shared<DataTypeUInt64>());
+        case msgpack::type::object_type::POSITIVE_INTEGER: [[fallthrough]];
         case msgpack::type::object_type::NEGATIVE_INTEGER:
             return makeNullable(std::make_shared<DataTypeInt64>());
         case msgpack::type::object_type::FLOAT32:
@@ -447,8 +446,8 @@ DataTypePtr MsgPackSchemaReader::getDataType(const msgpack::object & object)
             msgpack::object_map object_map = object.via.map;
             if (object_map.size)
             {
-                auto key_type = getDataType(object_map.ptr[0].key);
-                auto value_type = getDataType(object_map.ptr[1].val);
+                auto key_type = removeNullable(getDataType(object_map.ptr[0].key));
+                auto value_type = getDataType(object_map.ptr[0].val);
                 if (key_type && value_type)
                     return std::make_shared<DataTypeMap>(key_type, value_type);
             }

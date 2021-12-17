@@ -94,7 +94,7 @@ DataTypePtr generalizeDataType(DataTypePtr type)
     if (which.isMap())
     {
         const auto * map_type = assert_cast<const DataTypeMap *>(type.get());
-        auto key_type = generalizeDataType(map_type->getKeyType());
+        auto key_type = removeNullable(generalizeDataType(map_type->getKeyType()));
         auto value_type = generalizeDataType(map_type->getValueType());
         return key_type && value_type ? std::make_shared<DataTypeMap>(key_type, value_type) : nullptr;
     }
