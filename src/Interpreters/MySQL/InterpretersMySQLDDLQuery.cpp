@@ -20,7 +20,7 @@
 #include <Parsers/MySQL/ASTDeclareIndex.h>
 #include <Common/quoteString.h>
 #include <Common/assert_cast.h>
-#include <Common/getTableOverride.h>
+#include <Interpreters/getTableOverride.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
