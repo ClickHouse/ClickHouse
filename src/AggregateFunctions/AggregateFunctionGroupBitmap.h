@@ -55,7 +55,7 @@ template <typename T, typename Data, typename Policy>
 class AggregateFunctionBitmapL2 final : public IAggregateFunctionDataHelper<Data, AggregateFunctionBitmapL2<T, Data, Policy>>
 {
 private:
-    static constexpr auto STATE_VERSION_1_MIN_REVISION = 54454;
+    static constexpr auto STATE_VERSION_1_MIN_REVISION = 54455;
 public:
     AggregateFunctionBitmapL2(const DataTypePtr & type)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionBitmapL2<T, Data, Policy>>({type}, {})
