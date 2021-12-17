@@ -18,6 +18,16 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+struct FieldInfo
+{
+    DataTypePtr scalar_type;
+    bool have_nulls;
+    bool need_convert;
+    size_t num_dimensions;
+};
+
+FieldInfo getFieldInfo(const Field & field);
+
 class ColumnObject final : public COWHelper<IColumn, ColumnObject>
 {
 public:
@@ -37,6 +47,8 @@ public:
         void checkTypes() const;
 
         void insert(Field field);
+        void insert(Field field, FieldInfo info);
+
         void insertDefault();
         void insertManyDefaults(size_t length);
         void insertRangeFrom(const Subcolumn & src, size_t start, size_t length);
@@ -65,8 +77,10 @@ public:
 
 private:
     // SubcolumnsMap subcolumns;
+    const bool is_nullable;
+
     SubcolumnsTree subcolumns;
-    bool is_nullable;
+    size_t num_rows;
 
 public:
     static constexpr auto COLUMN_NAME_DUMMY = "_dummy";
@@ -80,6 +94,8 @@ public:
 
     const Subcolumn & getSubcolumn(const Path & key) const;
     Subcolumn & getSubcolumn(const Path & key);
+
+    void incrementNumRows() { ++num_rows; }
 
     void addSubcolumn(const Path & key, size_t new_size, bool check_size = false);
     void addSubcolumn(const Path & key, MutableColumnPtr && subcolumn, bool check_size = false);

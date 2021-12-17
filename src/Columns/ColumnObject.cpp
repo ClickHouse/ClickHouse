@@ -185,6 +185,20 @@ private:
 
 }
 
+FieldInfo getFieldInfo(const Field & field)
+{
+    FieldVisitorToScalarType to_scalar_type_visitor;
+    applyVisitor(to_scalar_type_visitor, field);
+
+    return
+    {
+        to_scalar_type_visitor.getScalarType(),
+        to_scalar_type_visitor.haveNulls(),
+        to_scalar_type_visitor.needConvertField(),
+        applyVisitor(FieldVisitorToNumberOfDimensions(), field),
+    };
+}
+
 ColumnObject::Subcolumn::Subcolumn(MutableColumnPtr && data_, bool is_nullable_)
     : least_common_type(getDataTypeByColumn(*data_))
     , is_nullable(is_nullable_)
@@ -242,19 +256,22 @@ void ColumnObject::Subcolumn::checkTypes() const
 
 void ColumnObject::Subcolumn::insert(Field field)
 {
-    FieldVisitorToScalarType to_scalar_type_visitor;
-    applyVisitor(to_scalar_type_visitor, field);
+    auto info = getFieldInfo(field);
+    insert(std::move(field), std::move(info));
+}
 
-    auto base_type = to_scalar_type_visitor.getScalarType();
+void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
+{
+    auto base_type = info.scalar_type;
 
-    if (isNothing(base_type) && (!is_nullable || !to_scalar_type_visitor.haveNulls()))
+    if (isNothing(base_type) && (!is_nullable || !info.have_nulls))
     {
         insertDefault();
         return;
     }
 
     auto column_dim = getNumberOfDimensions(*least_common_type);
-    auto value_dim = applyVisitor(FieldVisitorToNumberOfDimensions(), field);
+    auto value_dim = info.num_dimensions;
 
     if (isNothing(least_common_type))
         column_dim = value_dim;
@@ -263,7 +280,6 @@ void ColumnObject::Subcolumn::insert(Field field)
         value_dim = column_dim;
 
     if (value_dim != column_dim)
-        throw Exception(ErrorCodes::NUMBER_OF_DIMENSIONS_MISMATHED,
             "Dimension of types mismatched between inserted value and column. "
             "Dimension of value: {}. Dimension of column: {}",
              value_dim, column_dim);
@@ -272,7 +288,7 @@ void ColumnObject::Subcolumn::insert(Field field)
         base_type = makeNullable(base_type);
 
     DataTypePtr value_type;
-    if (!is_nullable && to_scalar_type_visitor.haveNulls())
+    if (!is_nullable && info.have_nulls)
     {
         auto default_value = base_type->getDefault();
         value_type = createArrayOfType(base_type, value_dim);
@@ -301,7 +317,7 @@ void ColumnObject::Subcolumn::insert(Field field)
         }
     }
 
-    if (type_changed || to_scalar_type_visitor.needConvertField())
+    if (type_changed || info.need_convert)
     {
         auto converted_field = convertFieldToTypeOrThrow(std::move(field), *value_type);
         data.back()->insert(std::move(converted_field));
@@ -441,6 +457,7 @@ ColumnObject::Subcolumn ColumnObject::Subcolumn::recreateWithDefaultValues() con
 {
     Subcolumn new_subcolumn;
     new_subcolumn.least_common_type = least_common_type;
+    new_subcolumn.is_nullable = is_nullable;
     new_subcolumn.num_of_defaults_in_prefix = num_of_defaults_in_prefix;
     new_subcolumn.data.reserve(data.size());
 
@@ -470,12 +487,15 @@ const ColumnPtr & ColumnObject::Subcolumn::getFinalizedColumnPtr() const
 
 ColumnObject::ColumnObject(bool is_nullable_)
     : is_nullable(is_nullable_)
+    , num_rows(0)
 {
 }
 
 ColumnObject::ColumnObject(SubcolumnsTree && subcolumns_, bool is_nullable_)
-    : subcolumns(std::move(subcolumns_))
-    , is_nullable(is_nullable_)
+    : is_nullable(is_nullable_)
+    , subcolumns(std::move(subcolumns_))
+    , num_rows(subcolumns.empty() ? 0 : (*subcolumns.begin())->column.size())
+
 {
     checkConsistency();
 }
@@ -485,16 +505,13 @@ void ColumnObject::checkConsistency() const
     if (subcolumns.empty())
         return;
 
-    const auto & first_leaf = *subcolumns.begin();
-    size_t first_size = first_leaf->column.size();
-
     for (const auto & leaf : subcolumns)
     {
-        if (first_size != leaf->column.size())
+        if (num_rows != leaf->column.size())
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Sizes of subcolumns are inconsistent in ColumnObject."
-                " Subcolumn '{}' has {} rows, subcolumn '{}' has {} rows",
-                first_leaf->path.getPath(), first_size, leaf->path.getPath(), leaf->column.size());
+                " Subcolumn '{}' has {} rows, but expected size is {}",
+                leaf->path.getPath(), leaf->column.size(), num_rows);
         }
     }
 }
@@ -504,7 +521,7 @@ size_t ColumnObject::size() const
 #ifndef NDEBUG
     checkConsistency();
 #endif
-    return subcolumns.empty() ? 0 : (*subcolumns.begin())->column.size();
+    return num_rows;
 }
 
 MutableColumnPtr ColumnObject::cloneResized(size_t new_size) const
@@ -543,6 +560,7 @@ void ColumnObject::forEachSubcolumn(ColumnCallback callback)
 
 void ColumnObject::insert(const Field & field)
 {
+    ++num_rows;
     const auto & object = field.get<const Object &>();
 
     HashSet<StringRef, StringRefHash> inserted;
@@ -565,6 +583,7 @@ void ColumnObject::insert(const Field & field)
 
 void ColumnObject::insertDefault()
 {
+    ++num_rows;
     for (auto & entry : subcolumns)
         entry->column.insertDefault();
 }
@@ -596,6 +615,7 @@ void ColumnObject::get(size_t n, Field & res) const
 
 void ColumnObject::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
+    num_rows += length;
     const auto & src_object = assert_cast<const ColumnObject &>(src);
 
     for (auto & entry : subcolumns)
@@ -626,6 +646,7 @@ ColumnPtr ColumnObject::replicate(const Offsets & offsets) const
 
 void ColumnObject::popBack(size_t length)
 {
+    num_rows -= length;
     for (auto & entry : subcolumns)
         entry->column.popBack(length);
 }
@@ -653,12 +674,15 @@ bool ColumnObject::hasSubcolumn(const Path & key) const
 
 void ColumnObject::addSubcolumn(const Path & key, size_t new_size, bool check_size)
 {
+    if (num_rows == 0)
+        num_rows = new_size;
+
     if (check_size && new_size != size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Cannot add subcolumn '{}' with {} rows to ColumnObject with {} rows",
             key.getPath(), new_size, size());
 
-    bool inserted = false;
+    std::optional<bool> inserted;
     if (key.hasNested())
     {
         const auto * nested_node = subcolumns.findBestMatch(key);
@@ -668,22 +692,27 @@ void ColumnObject::addSubcolumn(const Path & key, size_t new_size, bool check_si
             assert(leaf);
 
             auto new_subcolumn = leaf->column.recreateWithDefaultValues();
-            if (new_subcolumn.size() == new_size + 1)
-                new_subcolumn.popBack(1);
+            if (new_subcolumn.size() > new_size)
+                new_subcolumn.popBack(new_subcolumn.size() - new_size);
+            else if (new_subcolumn.size() < new_size)
+                new_subcolumn.insertManyDefaults(new_size - new_subcolumn.size());
 
             inserted = subcolumns.add(key, new_subcolumn);
         }
     }
 
-    if (!inserted)
+    if (!inserted.has_value())
         inserted = subcolumns.add(key, Subcolumn(new_size, is_nullable));
 
-    if (!inserted)
+    if (!*inserted)
         throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Subcolumn '{}' already exists", key.getPath());
 }
 
 void ColumnObject::addSubcolumn(const Path & key, MutableColumnPtr && subcolumn, bool check_size)
 {
+    if (num_rows == 0)
+        num_rows = subcolumn->size();
+
     if (check_size && subcolumn->size() != size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Cannot add subcolumn '{}' with {} rows to ColumnObject with {} rows",
