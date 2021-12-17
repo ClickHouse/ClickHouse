@@ -7,11 +7,12 @@
 #include <DataTypes/DataTypeDateTime.h>
 
 
-#define TOP_K_MAX_SIZE 0xFFFFFF
+constexpr UInt64 TOP_K_MAX_SIZE = 0xFFFFFF;
 
 
 namespace DB
 {
+
 struct Settings;
 
 namespace ErrorCodes
@@ -82,28 +83,26 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
     if (!params.empty())
     {
         if (params.size() > 2)
-            throw Exception("Aggregate function " + name + " requires two parameters or less.",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                            "Aggregate function '{}' requires two parameters or less", name);
 
-        UInt64 k = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
         if (params.size() == 2)
         {
             load_factor = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[1]);
 
             if (load_factor < 1)
-                throw Exception("Too small parameter 'load_factor' for aggregate function " + name + ". Minimum: 1",
-                    ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                                "Too small parameter 'load_factor' for aggregate function '{}' (got {}, minimum is 1)", name, load_factor);
         }
 
-        if (k > TOP_K_MAX_SIZE || load_factor > TOP_K_MAX_SIZE || k * load_factor > TOP_K_MAX_SIZE)
-            throw Exception("Too large parameter(s) for aggregate function " + name + ". Maximum: " + toString(TOP_K_MAX_SIZE),
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        threshold = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), params[0]);
 
-        if (k == 0)
-            throw Exception("Parameter 0 is illegal for aggregate function " + name,
-                ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        if (threshold > TOP_K_MAX_SIZE || load_factor > TOP_K_MAX_SIZE || threshold * load_factor > TOP_K_MAX_SIZE)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                            "Too large parameter(s) for aggregate function '{}' (maximum is {})", name, toString(TOP_K_MAX_SIZE));
 
-        threshold = k;
+        if (threshold == 0)
+            throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Parameter 0 is illegal for aggregate function '{}'", name);
     }
 
     AggregateFunctionPtr res(createWithNumericType<AggregateFunctionTopK, is_weighted>(
@@ -113,9 +112,8 @@ AggregateFunctionPtr createAggregateFunctionTopK(const std::string & name, const
         res = AggregateFunctionPtr(createWithExtraTypes<is_weighted>(argument_types, threshold, load_factor, params));
 
     if (!res)
-        throw Exception("Illegal type " + argument_types[0]->getName() +
-            " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal type {} of argument for aggregate function '{}'", argument_types[0]->getName(), name);
     return res;
 }
 
