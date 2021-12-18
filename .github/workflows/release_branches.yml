@@ -1,15 +1,23 @@
 name: ReleaseCI
+
+env:
+  # Force the stdout and stderr streams to be unbuffered
+  PYTHONUNBUFFERED: 1
+
 on: # yamllint disable-line rule:truthy
   push:
     branches:
-      - '21.**'
-      - '22.**'
-      - '23.**'
-      - '24.**'
+      - '21.[1-9][1-9]'
+      - '22.[1-9][1-9]'
+      - '23.[1-9][1-9]'
+      - '24.[1-9][1-9]'
 jobs:
   DockerHubPush:
     runs-on: [self-hosted, style-checker]
     steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Images check
@@ -32,6 +40,9 @@ jobs:
           REPO_COPY=${{runner.temp}}/compatibility_check/ClickHouse
           REPORTS_PATH=${{runner.temp}}/reports_dir
           EOF
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Download json reports
@@ -72,10 +83,13 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
@@ -113,10 +127,13 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
@@ -154,10 +171,13 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
@@ -195,10 +215,13 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
@@ -236,10 +259,13 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
@@ -277,10 +303,13 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
@@ -323,6 +352,9 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Report Builder
@@ -357,6 +389,9 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -389,6 +424,9 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -421,6 +459,9 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -453,6 +494,9 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -485,6 +529,9 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -517,6 +564,9 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -552,6 +602,9 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -584,6 +637,9 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -616,6 +672,9 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -648,6 +707,9 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -680,6 +742,9 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -712,6 +777,9 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -746,6 +814,9 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Stress test
@@ -781,6 +852,9 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Stress test
@@ -812,6 +886,9 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Stress test
@@ -843,6 +920,9 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Stress test
@@ -874,6 +954,9 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Stress test
@@ -908,6 +991,9 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
@@ -939,6 +1025,9 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
@@ -970,6 +1059,9 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
@@ -1012,6 +1104,9 @@ jobs:
       - CompatibilityCheck
     runs-on: [self-hosted, style-checker]
     steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Finish label
