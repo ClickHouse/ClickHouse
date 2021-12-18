@@ -443,16 +443,16 @@ By default, the authentication is not used.
 
 This section contains the following parameters:
 
--   `user` — Username.
+-   `user` — User name.
 -   `password` — Password.
--   `allow_empty` — Allows connection of replicas without authentication as well as authenticated replicas. Default value: `false`.
--   `old` — Previous `user` and `password` used during credential rotation. Several `old` sections can be specified.
+-   `allow_empty` — If `true`, then other replicas are allowed to connect without authentication even if credentials are set. If `allow_empty` is `false`, then connections without authentication are refused. Default value: `false`.
+-   `old` — Contains old `user` and `password` used during credential rotation. Several `old` sections can be specified.
 
 **Credential Rotation**
 
-ClickHouse supports dynamic interserver credential rotation without the need of shutting down all replicas to update their configuration at once. Credentials can be changed in several steps.
+ClickHouse supports dynamic interserver credential rotation without the need of shutting down all replicas at the same time to update their configuration. Credentials can be changed in several steps.
 
-To enable authentication if it was not used before, set `interserver_http_credentials.allow_empty` to `true` and add credentials. This allows connections with authentication and without it. By default, `allow_empty` is set to `false` and unauthenticaded connections are refused if any credentials are specified in the configuration.
+To enable authentication, set `interserver_http_credentials.allow_empty` to `true` and add credentials. This allows connections with authentication and without it.
 
 ``` xml
 <interserver_http_credentials>
@@ -462,9 +462,9 @@ To enable authentication if it was not used before, set `interserver_http_creden
 </interserver_http_credentials>
 ```
 
-Then set `allow_empty` to `false` or remove this setting to require authentication with new credentials.
+After configuring all replicas set `allow_empty` to `false` or remove this setting. It makes authentication with new credentials mandatory.
 
-To change credentials, move previous user name and password to `interserver_http_credentials.old` section and update `username` and `password` with new values. At this step a server uses new credentials to connect to other replicas and accepts connections with new and old credentials. 
+To change existing credentials, move previous user name and password to `interserver_http_credentials.old` section and update `user` and `password` with new values. At this step a server uses new credentials to connect to other replicas and accepts connections with new or old credentials. 
 
 ``` xml
 <interserver_http_credentials>
