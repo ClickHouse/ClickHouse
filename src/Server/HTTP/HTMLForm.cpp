@@ -241,6 +241,9 @@ HTMLForm::MultipartReadBuffer::MultipartReadBuffer(ReadBuffer & in_, const std::
 
 bool HTMLForm::MultipartReadBuffer::skipToNextBoundary()
 {
+    if (in.eof())
+        return false;
+
     assert(working_buffer.empty() || eof());
     assert(boundary_hit);
 
