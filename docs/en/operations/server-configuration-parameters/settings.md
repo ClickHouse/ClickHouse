@@ -450,7 +450,7 @@ This section contains the following parameters:
 
 **Credential Rotation**
 
-ClickHouse supports dynamic interserver credential rotation without the need of shutting down all replicas at the same time to update their configuration. Credentials can be changed in several steps.
+ClickHouse supports dynamic interserver credential rotation without the need of stopping all replicas at the same time to update their configuration. Credentials can be changed in several steps.
 
 To enable authentication, set `interserver_http_credentials.allow_empty` to `true` and add credentials. This allows connections with authentication and without it.
 
@@ -464,7 +464,7 @@ To enable authentication, set `interserver_http_credentials.allow_empty` to `tru
 
 After configuring all replicas set `allow_empty` to `false` or remove this setting. It makes authentication with new credentials mandatory.
 
-To change existing credentials, move previous user name and password to `interserver_http_credentials.old` section and update `user` and `password` with new values. At this step a server uses new credentials to connect to other replicas and accepts connections with new or old credentials. 
+To change existing credentials, move the user name and the password to `interserver_http_credentials.old` section and update `user` and `password` with new values. At this step a server uses new credentials to connect to other replicas and accepts connections with new or old credentials. 
 
 ``` xml
 <interserver_http_credentials>
