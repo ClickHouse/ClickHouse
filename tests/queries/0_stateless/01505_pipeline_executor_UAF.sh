@@ -4,6 +4,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# In debug build abort_conf:true is set by default, disable it explicitly
+# to avoid "Number of CPUs is not deterministic" error from jemalloc.
+export MALLOC_CONF=abort_conf:false
+
 # Regression for UAF in ThreadPool.
 # (Triggered under TSAN)
 for _ in {1..10}; do
