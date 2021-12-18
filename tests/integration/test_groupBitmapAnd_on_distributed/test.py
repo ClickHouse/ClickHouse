@@ -34,11 +34,11 @@ def test_groupBitmapAnd_on_distributed_table(start_cluster):
         ENGINE = MergeTree()
         ORDER BY tuple()""".format(local_table_name))
 
-        node.query("""CREATE TABLE {0}
+        node.query("""CREATE TABLE {}
         (
             z AggregateFunction(groupBitmap, UInt32)
         )
-        ENGINE = Distributed('{1}', 'default', '{0}')""".format(distributed_table_name, cluster_name))
+        ENGINE = Distributed('{}', 'default', '{}')""".format(distributed_table_name, cluster_name, local_table_name))
     insert_data(node1, local_table_name)
 
     expected = "10"
@@ -60,11 +60,11 @@ def test_aggregate_function_versioning(start_cluster):
         ENGINE = MergeTree()
         ORDER BY tuple()""".format(local_table_name))
 
-        node.query("""CREATE TABLE {0}
+        node.query("""CREATE TABLE {}
         (
             z AggregateFunction(groupBitmap, UInt32)
         )
-        ENGINE = Distributed('{1}', 'default', '{0}')""".format(distributed_table_name, cluster_name))
+        ENGINE = Distributed('{}', 'default', '{}')""".format(distributed_table_name, cluster_name, local_table_name))
 
         node.query("""INSERT INTO {} VALUES
                 (bitmapBuild(cast([1,2,3,4,5,6,7,8,9,10] as Array(UInt32))));""".format(local_table_name))
