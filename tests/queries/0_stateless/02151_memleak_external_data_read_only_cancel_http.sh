@@ -7,12 +7,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -q "drop table if exists t_02151"
 $CLICKHOUSE_CLIENT -q "create table t_02151 (Path String) Engine=Null"
-$CLICKHOUSE_CLIENT -q "select '1' from numbers(10000000) format TSV" > t_02151.tsv
+export tsvfile=${CURDIR}/t_02151.tsv
+$CLICKHOUSE_CLIENT -q "select '1' from numbers(10000000) format TSV" > ${tsvfile}
 
 function test()
 {
     for _ in {1..1000}; do
-        ${CLICKHOUSE_CURL} -sS -F 's=@t_02151.tsv;' "${CLICKHOUSE_URL}&cancel_http_readonly_queries_on_client_close=1&readonly=1&s_structure=Path+String&query=SELECT+count()+FROM+t_02151+WHERE+(Path+in+s)" -o /dev/null;
+        ${CLICKHOUSE_CURL} -sS -F "s=@${tsvfile};" "${CLICKHOUSE_URL}&cancel_http_readonly_queries_on_client_close=1&readonly=1&s_structure=Path+String&query=SELECT+count()+FROM+t_02151+WHERE+(Path+in+s)" -o /dev/null;
     done
 }
 
