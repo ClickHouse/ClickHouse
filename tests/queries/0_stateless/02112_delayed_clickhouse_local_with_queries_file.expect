@@ -1,5 +1,5 @@
 #!/usr/bin/expect -f
-# Tags: no-parallel, no-fasttest
+# Tags: no-parallel
 
 log_user 0
 set timeout 20
