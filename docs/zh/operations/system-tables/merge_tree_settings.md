@@ -1,14 +1,14 @@
 # system.merge_tree_settings {#system-merge_tree_settings}
 
-包含 `MergeTree` 表的配置信息。
+包含 `MergeTree` 表的设置 (Setting) 信息。
 
 列:
 
--   `name` (String) — 配置名称.
--   `value` (String) — 配置的值.
--   `description` (String) — 配置描述.
--   `type` (String) — 配置类型 (执行特定的字符串值).
--   `changed` (UInt8) — 该设置是否在配置中明确定义或明确改变.
+-   `name` (String) — 设置名称。
+-   `value` (String) — 设置的值。
+-   `description` (String) — 设置描述。
+-   `type` (String) — 设置类型 (执行特定的字符串值)。
+-   `changed` (UInt8) — 该设置是否在配置中明确定义或是明确改变。
 
 
 **示例**
