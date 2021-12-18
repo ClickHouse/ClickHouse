@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 
 
-constexpr UInt64 TOP_K_MAX_SIZE = 0xFFFFFF;
+static inline constexpr UInt64 TOP_K_MAX_SIZE = 0xFFFFFF;
 
 
 namespace DB
