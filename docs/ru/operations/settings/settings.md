@@ -764,7 +764,6 @@ ClickHouse может парсить только базовый формат `Y
 
 Значение по умолчанию: `251658240`.
 
-
 ## merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem {#merge-tree-min-bytes-for-concurrent-read-for-remote-filesystem}
 
 Если из одного файла считывается указанное число байтов, движок [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) может выполнять параллельное чтение из удаленной файловой системы.
