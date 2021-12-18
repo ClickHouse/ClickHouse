@@ -24,7 +24,7 @@ def start_cluster():
 def test_groupBitmapAnd_on_distributed_table(start_cluster):
     local_table_name = "bitmap_column_expr_test"
     distributed_table_name = "bitmap_column_expr_test_dst"
-    cluster_name = "awsome_cluster"
+    cluster_name = "awesome_cluster"
 
     for node in (node1, node2):
         node.query("""CREATE TABLE {}
