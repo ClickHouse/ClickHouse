@@ -6,10 +6,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 ncpus="$(getconf _NPROCESSORS_ONLN)"
 
-# to hit possible issues even in unbundled builds:
-# (although likiley jemalloc will be compiled with NDEBUG there)
-export MALLOC_CONF=percpu_arena:percpu
-
 # Regression for:
 #
 #     $ taskset --cpu-list 8 ./clickhouse local -q 'select 1'
