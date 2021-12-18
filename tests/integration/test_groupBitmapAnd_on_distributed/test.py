@@ -47,7 +47,7 @@ def test_groupBitmapAnd_on_distributed_table(start_cluster):
         result = node.query("select groupBitmapAnd(z) FROM {};".format(distributed_table_name)).strip()
         assert(result == expected)
 
-def test_aggregate_function_versioning(start_cluster):
+def test_groupBitmapAnd_function_versioning(start_cluster):
     local_table_name = "bitmap_column_expr_versioning_test"
     distributed_table_name = "bitmap_column_expr_versioning_test_dst"
     cluster_name = "test_version_cluster"
@@ -76,7 +76,7 @@ def test_aggregate_function_versioning(start_cluster):
     assert(old_version_distributed_result == expected)
 
     result_from_old_to_new_version = node3.query("select groupBitmapAnd(z) FROM remote('node4', default.{})".format(local_table_name)).strip()
-    assert(result_from_old_to_new_version != expected)
+    assert(result_from_old_to_new_version == expected)
 
     result_from_new_to_old_version = node4.query("select groupBitmapAnd(z) FROM remote('node3', default.{})".format(local_table_name)).strip()
-    assert(result_from_new_to_old_version != expected)
+    assert(result_from_new_to_old_version == expected)
