@@ -1,10 +1,10 @@
 # system.tables {#system-tables}
 
-包含服务器知道的每个表的元数据。 [分离的](https://clickhouse.com/docs/zh/sql-reference/statements/detach/)表不在 `system.tables` 显示。
+包含服务器知道的每个表的元数据。 [分离的](../../sql-reference/statements/detach.md)表不在 `system.tables` 显示。
 
-[临时表](https://clickhouse.com/docs/zh/sql-reference/statements/create/table/#temporary-tables)只在创建它们的会话中的 `system.tables` 中才可见。它们的数据库字段显示为空，并且 `is_temporary` 标志显示为开启。
+[临时表](../../sql-reference/statements/create/table.md#temporary-tables)只在创建它们的会话中的 `system.tables` 中才可见。它们的数据库字段显示为空，并且 `is_temporary` 标志显示为开启。
 
-此表包含以下列（列类型显示在括号中):
+此表包含以下列 (列类型显示在括号中):
 
 -   `database` ([String](../../sql-reference/data-types/string.md)) — 表所在的数据库名。
 
@@ -22,7 +22,7 @@
 
 -   `dependencies_database` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - 数据库依赖关系。
 
--   `dependencies_table` （[Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))）- 表依赖关系 (基于当前表的 [物化视图](../../engines/table-engines/special/materializedview.md) 表）。
+-   `dependencies_table` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - 表依赖关系 (基于当前表的 [物化视图](../../engines/table-engines/special/materializedview.md) 表) 。
 
 -   `create_table_query` ([String](../../sql-reference/data-types/string.md)) - 用于创建表的 SQL 语句。
 
@@ -43,17 +43,17 @@
     -   [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes)
     -   [Distributed](../../engines/table-engines/special/distributed.md#distributed)
 
--   `total_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - 总行数，如果无法快速确定表中的确切行数，则行数返回为 `NULL`（包括底层 `Buffer` 表）。
+-   `total_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - 总行数，如果无法快速确定表中的确切行数，则行数返回为 `NULL` (包括底层 `Buffer` 表) 。
 
--   `total_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - 总字节数，如果无法快速确定存储表的确切字节数，则字节数返回为 `NULL` ( **不** 包括任何底层存储）。
+-   `total_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - 总字节数，如果无法快速确定存储表的确切字节数，则字节数返回为 `NULL` ( **不** 包括任何底层存储) 。
 
-    -   如果表将数据存在磁盘上，返回实际使用的磁盘空间（压缩后）。
+    -   如果表将数据存在磁盘上，返回实际使用的磁盘空间 (压缩后) 。
     -   如果表在内存中存储数据，返回在内存中使用的近似字节数。
 
--   `lifetime_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - 服务启动后插入的总行数(只针对 `Buffer` 表）。
+-   `lifetime_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - 服务启动后插入的总行数(只针对 `Buffer` 表) 。
 
 
--   `lifetime_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - 服务启动后插入的总字节数(只针对 `Buffer` 表）。
+-   `lifetime_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - 服务启动后插入的总字节数(只针对 `Buffer` 表) 。
 
 
 -   `comment` ([String](../../sql-reference/data-types/string.md)) - 表的注释。
