@@ -443,17 +443,45 @@ By default, the authentication is not used.
 
 This section contains the following parameters:
 
--   `user` — username.
--   `password` — password.
+-   `user` — Username.
+-   `password` — Password.
+-   `allow_empty` — Allows connection of replicas without authentication as well as authenticated replicas. Default value: `false`.
+-   `old` — Previous `user` and `password` used during credential rotation. Several `old` sections can be specified.
 
-**Example**
+**Credential Rotation**
+
+ClickHouse supports dynamic interserver credential rotation without the need of shutting down all replicas to update their configuration at once. Credentials can be changed in several steps.
+
+To enable authentication if it was not used before, set `interserver_http_credentials.allow_empty` to `true` and add credentials. This allows connections with authentication and without it. By default, `allow_empty` is set to `false` and unauthenticaded connections are refused if any credentials are specified in the configuration.
+
+``` xml
+<interserver_http_credentials>
+    <user>admin</user>
+    <password>111</password>
+    <allow_empty>true</allow_empty>
+</interserver_http_credentials>
+```
+
+Then set `allow_empty` to `false` or remove this setting to require authentication with new credentials.
+
+To change credentials, move previous user name and password to `interserver_http_credentials.old` section and update `username` and `password` with new values. At this step a server uses new credentials to connect to other replicas and accepts connections with new and old credentials. 
 
 ``` xml
 <interserver_http_credentials>
     <user>admin</user>
     <password>222</password>
+    <old>
+        <user>admin</user>
+        <password>111</password>
+    </old>
+    <old>
+        <user>temp</user>
+        <password>000</password>
+    </old>
 </interserver_http_credentials>
 ```
+
+When new credentials are applied to all replicas, old credentials may be removed.
 
 ## keep_alive_timeout {#keep-alive-timeout}
 
