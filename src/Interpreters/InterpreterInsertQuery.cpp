@@ -185,6 +185,9 @@ Chain InterpreterInsertQuery::buildChainImpl(
     /// We create a pipeline of several streams, into which we will write data.
     Chain out;
 
+    /// Keep a reference to the context to make sure it stays alive until the chain is executed and destroyed
+    out.addInterpreterContext(context_ptr);
+
     /// NOTE: we explicitly ignore bound materialized views when inserting into Kafka Storage.
     ///       Otherwise we'll get duplicates when MV reads same rows again from Kafka.
     if (table->noPushingToViews() && !no_destination)
