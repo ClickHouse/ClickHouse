@@ -34,7 +34,7 @@ struct ReplaceRegexpImpl
     /// Sequence of instructions, describing how to get resulting string.
     struct Instruction
     {
-        /// If non zero - perform substitution of n-th subpattern from the regexp match.
+        /// If not negative - perform substitution of n-th subpattern from the regexp match.
         int substitution_num = -1;
         /// Otherwise - paste this string verbatim.
         std::string literal;
