@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -105,7 +106,10 @@ size_t MergeTreeReaderWide::readRows(
             /// The column is already present in the block so we will append the values to the end.
             bool append = res_columns[pos] != nullptr;
             if (!append)
-                res_columns[pos] = type->createColumn();
+            {
+                auto serialization = data_part->getSerialization(column_from_part);
+                res_columns[pos] = type->createColumn(*serialization);
+            }
 
             auto & column = res_columns[pos];
             try
@@ -184,9 +188,7 @@ void MergeTreeReaderWide::addStreams(const NameAndTypePair & name_and_type,
             profile_callback, clock_type));
     };
 
-    auto serialization = data_part->getSerializationForColumn(name_and_type);
-    serialization->enumerateStreams(callback);
-    serializations.emplace(name_and_type.name, std::move(serialization));
+    data_part->getSerialization(name_and_type)->enumerateStreams(callback);
 }
 
 
@@ -229,8 +231,7 @@ void MergeTreeReaderWide::prefetch(
     ISerialization::SubstreamsCache & cache,
     std::unordered_set<std::string> & prefetched_streams)
 {
-    const auto & name = name_and_type.name;
-    auto & serialization = serializations[name];
+    auto serialization = data_part->getSerialization(name_and_type);
 
     serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
@@ -258,7 +259,7 @@ void MergeTreeReaderWide::readData(
     deserialize_settings.avg_value_size_hint = avg_value_size_hint;
 
     const auto & name = name_and_type.name;
-    auto & serialization = serializations[name];
+    auto serialization = data_part->getSerialization(name_and_type);
 
     if (deserialize_binary_bulk_state_map.count(name) == 0)
     {
