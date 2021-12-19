@@ -106,20 +106,20 @@ Build ClickHouse. Run ClickHouse from the terminal: change directory to `program
 
 Note that all clickhouse tools (server, client, etc) are just symlinks to a single binary named `clickhouse`. You can find this binary at `programs/clickhouse`. All tools can also be invoked as `clickhouse tool` instead of `clickhouse-tool`.
 
-Alternatively you can install ClickHouse package: either stable release from ClickHouse repository or you can build package for yourself with `./release` in ClickHouse sources root. Then start the server with `sudo service clickhouse-server start` (or stop to stop the server). Look for logs at `/etc/clickhouse-server/clickhouse-server.log`.
+Alternatively you can install ClickHouse package: either stable release from ClickHouse repository or you can build package for yourself with `./release` in ClickHouse sources root. Then start the server with `sudo clickhouse start` (or stop to stop the server). Look for logs at `/etc/clickhouse-server/clickhouse-server.log`.
 
 When ClickHouse is already installed on your system, you can build a new `clickhouse` binary and replace the existing binary:
 
 ``` bash
-$ sudo service clickhouse-server stop
+$ sudo clickhouse stop
 $ sudo cp ./clickhouse /usr/bin/
-$ sudo service clickhouse-server start
+$ sudo clickhouse start
 ```
 
 Also you can stop system clickhouse-server and run your own with the same configuration but with logging to terminal:
 
 ``` bash
-$ sudo service clickhouse-server stop
+$ sudo clickhouse stop
 $ sudo -u clickhouse /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
 ```
 
