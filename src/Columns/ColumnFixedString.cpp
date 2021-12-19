@@ -51,6 +51,12 @@ MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
     return new_col_holder;
 }
 
+bool ColumnFixedString::isDefaultAt(size_t index) const
+{
+    assert(index < size());
+    return memoryIsZero(chars.data() + index * n, n);
+}
+
 void ColumnFixedString::insert(const Field & x)
 {
     const String & s = DB::get<const String &>(x);
