@@ -481,7 +481,8 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
 template <typename T>
 ColumnPtr ColumnVector<T>::compress() const
 {
-    size_t source_size = data.size() * sizeof(T);
+    const size_t data_size = data.size();
+    const size_t source_size = data_size * sizeof(T);
 
     /// Don't compress small blocks.
     if (source_size < 4096) /// A wild guess.
@@ -492,8 +493,9 @@ ColumnPtr ColumnVector<T>::compress() const
     if (!compressed)
         return ColumnCompressed::wrap(this->getPtr());
 
-    return ColumnCompressed::create(data.size(), compressed->size(),
-        [compressed = std::move(compressed), column_size = data.size()]
+    const size_t compressed_size = compressed->size();
+    return ColumnCompressed::create(data_size, compressed_size,
+        [compressed = std::move(compressed), column_size = data_size]
         {
             auto res = ColumnVector<T>::create(column_size);
             ColumnCompressed::decompressBuffer(
