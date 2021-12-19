@@ -326,7 +326,7 @@ There is automated check for flaky tests. It runs all new tests 100 times (for f
 
 ## Testflows
 
-[Testflows](https://testflows.com/) is an enterprise-grade open-source testing framework, which is used to implement a subset of ClickHouse.
+[Testflows](https://testflows.com/) is an enterprise-grade open-source testing framework, which is used to test a subset of ClickHouse.
 
 ## Test Automation {#test-automation}
 
