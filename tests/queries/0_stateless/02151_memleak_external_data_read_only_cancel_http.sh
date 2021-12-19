@@ -19,7 +19,7 @@ function test()
 
 export -f test;
 
-timeout 90 bash -c test 2>&1 
+timeout 30 bash -c test 2>&1 
 $CLICKHOUSE_CLIENT -q "drop table t_02151"
 echo 'Ok'
 
