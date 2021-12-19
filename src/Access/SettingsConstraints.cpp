@@ -15,6 +15,7 @@ namespace ErrorCodes
     extern const int READONLY;
     extern const int QUERY_IS_PROHIBITED;
     extern const int SETTING_CONSTRAINT_VIOLATION;
+    extern const int UNKNOWN_SETTING;
 }
 
 
@@ -200,7 +201,23 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
     };
 
     if (reaction == THROW_ON_VIOLATION)
-        access_control->checkSettingNameIsAllowed(setting_name);
+    {
+        try
+        {
+            access_control->checkSettingNameIsAllowed(setting_name);
+        }
+        catch (Exception & e)
+        {
+            if (e.code() == ErrorCodes::UNKNOWN_SETTING)
+            {
+                if (const auto hints = current_settings.getHints(change.name); !hints.empty())
+                {
+                      e.addMessage(fmt::format("Maybe you meant {}", toString(hints)));
+                }
+            }
+            throw;
+        }
+    }
     else if (!access_control->isSettingNameAllowed(setting_name))
         return false;
 
