@@ -257,6 +257,10 @@ There are five variants (Debug, ASan, TSan, MSan, UBSan).
 
 Thread Fuzzer (please don't mix up with Thread Sanitizer) is another kind of fuzzing that allows to randomize thread order of execution. It helps to find even more special cases.
 
+## Security Audit
+
+People from Yandex Security Team did some basic overview of ClickHouse capabilities from the security standpoint.
+
 ## Static Analyzers {#static-analyzers}
 
 We run `clang-tidy` and `PVS-Studio` on per-commit basis. `clang-static-analyzer` checks are also enabled. `clang-tidy` is also used for some style checks.
