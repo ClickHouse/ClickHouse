@@ -94,9 +94,6 @@ struct ReplaceRegexpImpl
         re2_st::StringPiece matches[max_captures];
 
         size_t start_pos = 0;
-        bool is_first_match = true;
-        bool is_start_pos_added_one = false;
-
         while (start_pos < static_cast<size_t>(input.length()))
         {
             /// If no more replacements possible for current string
@@ -104,9 +101,6 @@ struct ReplaceRegexpImpl
 
             if (searcher.Match(input, start_pos, input.length(), re2_st::RE2::Anchor::UNANCHORED, matches, num_captures))
             {
-                if (is_start_pos_added_one)
-                    start_pos -= 1;
-
                 const auto & match = matches[0];
                 size_t bytes_to_copy = (match.data() - input.data()) - start_pos;
 
@@ -115,13 +109,6 @@ struct ReplaceRegexpImpl
                 memcpySmallAllowReadWriteOverflow15(&res_data[res_offset], input.data() + start_pos, bytes_to_copy);
                 res_offset += bytes_to_copy;
                 start_pos += bytes_to_copy + match.length();
-
-                /// To avoid infinite loop.
-                if (is_first_match && match.length() == 0 && !replace_one && input.length() > 1)
-                {
-                    start_pos += 1;
-                    is_start_pos_added_one = true;
-                }
 
                 /// Do substitution instructions
                 for (const auto & it : instructions)
@@ -140,9 +127,8 @@ struct ReplaceRegexpImpl
                     }
                 }
 
-                if (replace_one || (!is_first_match && match.length() == 0))
+                if (replace_one || match.length() == 0) /// Stop after match of zero length, to avoid infinite loop.
                     can_finish_current_string = true;
-                is_first_match = false;
             }
             else
                 can_finish_current_string = true;
