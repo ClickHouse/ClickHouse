@@ -48,16 +48,21 @@ public:
         const size_t number_of_arguments = arguments.size();
 
         if (number_of_arguments < 1 || number_of_arguments > 2)
-            throw Exception{"Number of arguments for function " + getName() + " doesn't match: passed "
-                            + toString(number_of_arguments) + ", should be 1 or 2",
-                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2",
+                getName(),
+                toString(number_of_arguments));
 
         if (!isNativeNumber(arguments[0]))
-            throw Exception{"Argument for function " + getName() + " must be number", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Argument for function {} must be number",
+                getName());
 
         if (number_of_arguments > 1 && !isString(arguments[1]))
-            throw Exception{"Illegal type " + arguments[1]->getName() + " of argument of function " + getName(),
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}",
+                arguments[1]->getName(),
+                getName());
 
 
         return std::make_shared<DataTypeUInt8>();
@@ -65,6 +70,10 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
+    /** Prevent constant folding for FunctionThrowIf because for short circuit evaluation
+      * it is unsafe to evaluate this function during DAG analysis.
+      */
     bool isSuitableForConstantFolding() const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -75,16 +84,17 @@ public:
         std::optional<String> custom_message;
         if (arguments.size() == 2)
         {
-            const auto * msg_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
-            if (!msg_column)
-                throw Exception{"Second argument for function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_COLUMN};
-            custom_message = msg_column->getValue<String>();
+            const auto * message_column = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
+            if (!message_column)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Second argument for function {} must be constant String",
+                    getName());
+
+            custom_message = message_column->getValue<String>();
         }
 
         auto first_argument_column = arguments.front().column;
-        auto first_argument_column_non_const = first_argument_column->convertToFullColumnIfConst();
-
-        const auto * in = first_argument_column_non_const.get();
+        const auto * in = first_argument_column.get();
 
         ColumnPtr res;
         if (!((res = execute<UInt8>(in, custom_message))
@@ -97,7 +107,9 @@ public:
             || (res = execute<Int64>(in, custom_message))
             || (res = execute<Float32>(in, custom_message))
             || (res = execute<Float64>(in, custom_message))))
+        {
             throw Exception{"Illegal column " + in->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+        }
 
         return res;
     }
@@ -105,7 +117,12 @@ public:
     template <typename T>
     ColumnPtr execute(const IColumn * in_untyped, const std::optional<String> & message) const
     {
-        if (const auto in = checkAndGetColumn<ColumnVector<T>>(in_untyped))
+        const auto * in = checkAndGetColumn<ColumnVector<T>>(in_untyped);
+
+        if (!in)
+            in = checkAndGetColumnConstData<ColumnVector<T>>(in_untyped);
+
+        if (in)
         {
             const auto & in_data = in->getData();
             if (!memoryIsZero(in_data.data(), in_data.size() * sizeof(in_data[0])))
