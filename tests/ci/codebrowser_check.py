@@ -20,7 +20,7 @@ NAME = "Woboq Build (actions)"
 
 def get_run_command(repo_path, output_path, image):
     cmd = "docker run " + \
-          f"--volume={repo_path}:/repo_path "  \
+          f"--volume={repo_path}:/repo_folder "  \
           f"--volume={output_path}:/test_output " \
           f"-e DATA=https://s3.amazonaws.com/clickhouse-test-reports/codebrowser/html_report/data {image}"
     return cmd
