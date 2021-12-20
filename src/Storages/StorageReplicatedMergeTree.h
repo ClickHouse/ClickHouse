@@ -747,18 +747,7 @@ private:
     static Strings getZeroCopyPartPath(const MergeTreeSettings & settings, DiskType disk_type, const String & table_uuid,
         const String & part_name, const String & zookeeper_path_old);
 
-    /// Upgrave zero-copy version
-    /// version 1 - lock for shared part inside table node in ZooKeeper
-    /// version 2 - lock for shared part in separate node
-    void convertZeroCopySchema();
-
-    void cleanupOldZeroCopySchema();
-
     static void createZeroCopyLockNode(const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_node);
-
-    bool isZeroCopySchemaInCompatibleMode() const;
-
-    bool is_zero_copy_in_compatible_mode = false;
 
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
