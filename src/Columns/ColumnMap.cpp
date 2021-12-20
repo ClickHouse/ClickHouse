@@ -81,6 +81,11 @@ void ColumnMap::get(size_t n, Field & res) const
         getNestedData().get(offset + i, map[i]);
 }
 
+bool ColumnMap::isDefaultAt(size_t n) const
+{
+    return nested->isDefaultAt(n);
+}
+
 StringRef ColumnMap::getDataAt(size_t) const
 {
     throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -271,6 +276,16 @@ bool ColumnMap::structureEquals(const IColumn & rhs) const
     if (const auto * rhs_map = typeid_cast<const ColumnMap *>(&rhs))
         return nested->structureEquals(*rhs_map->nested);
     return false;
+}
+
+double ColumnMap::getRatioOfDefaultRows(double sample_ratio) const
+{
+    return getRatioOfDefaultRowsImpl<ColumnMap>(sample_ratio);
+}
+
+void ColumnMap::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
+{
+    return getIndicesOfNonDefaultRowsImpl<ColumnMap>(indices, from, limit);
 }
 
 ColumnPtr ColumnMap::compress() const

@@ -5,7 +5,6 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
-#include <arrow/io/memory.h>
 #include "ArrowBufferedStreams.h"
 #include "ArrowColumnToCHColumn.h"
 #include <DataTypes/NestedUtils.h>
@@ -31,35 +30,25 @@ Chunk ORCBlockInputFormat::generate()
     if (!file_reader)
         prepareReader();
 
+    std::shared_ptr<arrow::RecordBatchReader> batch_reader;
+    auto result = file_reader->NextStripeReader(format_settings.orc.row_batch_size, include_indices);
+    if (!result.ok())
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to create batch reader: {}", result.status().ToString());
+    batch_reader = std::move(result).ValueOrDie();
     if (!batch_reader)
     {
-        auto result = file_reader->NextStripeReader(DBMS_DEFAULT_BUFFER_SIZE, include_indices);
-        if (!result.ok())
-            throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to create batch reader: {}", result.status().ToString());
-        batch_reader = std::move(result).ValueOrDie();
-        if (!batch_reader)
-            return res;
+        return res;
     }
 
-    std::shared_ptr<arrow::RecordBatch> batch_result;
-    arrow::Status batch_status = batch_reader->ReadNext(&batch_result);
-    if (!batch_status.ok())
-        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA,
-                                "Error while reading batch of ORC data: {}",
-                                batch_status.ToString());
+    std::shared_ptr<arrow::Table> table;
+    arrow::Status table_status = batch_reader->ReadAll(&table);
+    if (!table_status.ok())
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of ORC data: {}", table_status.ToString());
 
-    if (!batch_result || !batch_result->num_rows())
+    if (!table || !table->num_rows())
         return res;
 
-    ArrowColumnToCHColumn::NameToColumnPtr name_to_column_ptr;
-    for (const auto & column_name : column_names)
-    {
-        arrow::ArrayVector vec = {batch_result->GetColumnByName(column_name)};
-        std::shared_ptr<arrow::ChunkedArray> arrow_column = std::make_shared<arrow::ChunkedArray>(vec);
-        name_to_column_ptr[column_name] = arrow_column;
-    }
-    arrow_column_to_ch_column->arrowColumnsToCHChunk(res, name_to_column_ptr);
-    batch_reader.reset();
+    arrow_column_to_ch_column->arrowTableToCHChunk(res, table);
 
     return res;
 }
@@ -70,7 +59,6 @@ void ORCBlockInputFormat::resetParser()
 
     file_reader.reset();
     include_indices.clear();
-    stripe_current = 0;
 }
 
 static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
@@ -102,8 +90,6 @@ void ORCBlockInputFormat::prepareReader()
     if (!result.ok())
         throw Exception(result.status().ToString(), ErrorCodes::BAD_ARGUMENTS);
     file_reader = std::move(result).ValueOrDie();
-    stripe_total = file_reader->NumberOfStripes();
-    stripe_current = 0;
 
     auto read_schema_result = file_reader->ReadSchema();
     if (!read_schema_result.ok())

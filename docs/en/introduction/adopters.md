@@ -178,5 +178,9 @@ toc_title: Adopters
 | <a href="https://promo.croc.ru/digitalworker" class="favicon">Цифровой Рабочий</a> | Industrial IoT, Analytics | — | — | — | [Blog post in Russian, March 2021](https://habr.com/en/company/croc/blog/548018/) |
 | <a href="https://shop.okraina.ru/" class="favicon">ООО «МПЗ Богородский»</a> | Agriculture | — | — | — | [Article in Russian, November 2020](https://cloud.yandex.ru/cases/okraina) |
 | <a href="https://domclick.ru/" class="favicon">ДомКлик</a> | Real Estate | — | — | — | [Article in Russian, October 2021](https://habr.com/ru/company/domclick/blog/585936/) |
+| <a href="https://futurragroup.com/" class="favicon">Futurra Group</a> | Analytics | — | — | — | [Article in Russian, December 2021](https://dou.ua/forums/topic/35587/) |
+| <a href="https://usetech.com/" class="favicon">UseTech</a> | Software Development | — | — | — | [Job Posting, December 2021](https://vk.com/wall136266658_2418) |
+| <a href="https://lookforsale.ru/" class="favicon">Lookforsale</a> | E-Commerce | — | — | — | [Job Posting, December 2021](https://telegram.me/javascript_jobs/587318) |
+| <a href="https://rvision.pro/en/" class="favicon">R-Vision</a> | Information Security | — | — | — | [Article in Russian, December 2021](https://www.anti-malware.ru/reviews/R-Vision-SENSE-15) |
 
 [Original article](https://clickhouse.com/docs/en/introduction/adopters/) <!--hide-->
