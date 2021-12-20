@@ -72,7 +72,7 @@ public:
         auto & dst_data = dst->getData();
         dst_data.reserve(input_rows_count);
 
-        for (size_t row = 0; row < input_rows_count; row++)
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 id_first = col_id_first->getInt(row);
             const UInt64 id_second = col_id_second->getInt(row);
