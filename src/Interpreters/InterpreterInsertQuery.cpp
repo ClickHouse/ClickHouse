@@ -375,7 +375,7 @@ BlockIO InterpreterInsertQuery::execute()
             pipeline = interpreter_watch.buildQueryPipeline();
         }
 
-        for (size_t i = 0; i < out_streams_size; i++)
+        for (size_t i = 0; i < out_streams_size; ++i)
         {
             auto out = buildChainImpl(table, metadata_snapshot, query_sample_block, nullptr, nullptr);
             out_chains.emplace_back(std::move(out));
