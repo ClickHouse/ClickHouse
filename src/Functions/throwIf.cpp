@@ -63,11 +63,15 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    bool isSuitableForConstantFolding() const override { return false; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
         std::optional<String> custom_message;
         if (arguments.size() == 2)
         {
@@ -77,7 +81,10 @@ public:
             custom_message = msg_column->getValue<String>();
         }
 
-        const auto * in = arguments.front().column.get();
+        auto first_argument_column = arguments.front().column;
+        auto first_argument_column_non_const = first_argument_column->convertToFullColumnIfConst();
+
+        const auto * in = first_argument_column_non_const.get();
 
         ColumnPtr res;
         if (!((res = execute<UInt8>(in, custom_message))
@@ -106,7 +113,7 @@ public:
                                 ErrorCodes::FUNCTION_THROW_IF_VALUE_IS_NON_ZERO};
 
             /// We return non constant to avoid constant folding.
-            return  ColumnUInt8::create(in_data.size(), 0);
+            return ColumnUInt8::create(in_data.size(), 0);
         }
 
         return nullptr;
