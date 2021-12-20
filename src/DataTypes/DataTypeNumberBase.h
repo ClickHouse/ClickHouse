@@ -25,7 +25,7 @@ public:
     using ColumnType = ColumnVector<T>;
 
     const char * getFamilyName() const override { return TypeName<T>.data(); }
-    TypeIndex getTypeId() const override { return TypeId<T>; }
+    TypeIndex getTypeId() const override { return TypeToTypeIndex<T>; }
 
     Field getDefault() const override;
 

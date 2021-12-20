@@ -10,12 +10,12 @@ namespace DB
  * Returns TypeIndex::Nothing if type was not present in TypeIndex;
  * Returns TypeIndex element otherwise.
  *
- * @example TypeId<UInt8> == TypeIndex::UInt8
- * @example TypeId<MySuperType> == TypeIndex::Nothing
+ * @example TypeToTypeIndex<UInt8> == TypeIndex::UInt8
+ * @example TypeToTypeIndex<MySuperType> == TypeIndex::Nothing
  */
-template <class T> inline constexpr TypeIndex TypeId = TypeIndex::Nothing;
+template <class T> inline constexpr TypeIndex TypeToTypeIndex = TypeIndex::Nothing;
 
-template <TypeIndex index> struct ReverseTypeIdT : std::false_type {};
+template <TypeIndex index> struct TypeIndexToTypeHelper : std::false_type {};
 
 /**
  * Obtain real type from TypeIndex if possible.
@@ -23,14 +23,14 @@ template <TypeIndex index> struct ReverseTypeIdT : std::false_type {};
  * Returns a type alias if is corresponds to TypeIndex value.
  * Yields a compiler error otherwise.
  *
- * @example ReverseTypeId<TypeIndex::UInt8> == UInt8
+ * @example TypeIndexToType<TypeIndex::UInt8> == UInt8
  */
-template <TypeIndex index> using ReverseTypeId = typename ReverseTypeIdT<index>::T;
-template <TypeIndex index> constexpr bool HasReverseTypeId = ReverseTypeIdT<index>::value;
+template <TypeIndex index> using TypeIndexToType = typename TypeIndexToTypeHelper<index>::T;
+template <TypeIndex index> constexpr bool TypeIndexHasType = TypeIndexToTypeHelper<index>::value;
 
 #define TYPEID_MAP(_A) \
-    template <> inline constexpr TypeIndex TypeId<_A> = TypeIndex::_A; \
-    template <> struct ReverseTypeIdT<TypeIndex::_A> : std::true_type { using T = _A; };
+    template <> inline constexpr TypeIndex TypeToTypeIndex<_A> = TypeIndex::_A; \
+    template <> struct TypeIndexToTypeHelper<TypeIndex::_A> : std::true_type { using T = _A; };
 
 TYPEID_MAP(UInt8)
 TYPEID_MAP(UInt16)
@@ -58,4 +58,7 @@ TYPEID_MAP(String)
 
 struct Array;
 TYPEID_MAP(Array)
+
+#undef TYPEID_MAP
+
 }
