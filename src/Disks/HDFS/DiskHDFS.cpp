@@ -74,7 +74,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskHDFS::readFile(const String & path, 
 {
     auto metadata = readMeta(path);
 
-    LOG_TRACE(log,
+    LOG_TEST(log,
         "Read from file by path: {}. Existing HDFS objects: {}",
         backQuote(metadata_disk->getPath() + path), metadata.remote_fs_objects.size());
 
