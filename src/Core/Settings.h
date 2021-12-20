@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/NamePrompter.h>
 #include <Core/BaseSettings.h>
 #include <Core/SettingsEnums.h>
 #include <Core/Defines.h>
@@ -675,7 +676,7 @@ DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SettingsTraits, LIST_OF_SETTINGS)
 /** Settings of query execution.
   * These settings go to users.xml.
   */
-struct Settings : public BaseSettings<SettingsTraits>
+struct Settings : public BaseSettings<SettingsTraits>, public IHints<2, Settings>
 {
     /// For initialization from empty initializer-list to be "value initialization", not "aggregate initialization" in C++14.
     /// http://en.cppreference.com/w/cpp/language/aggregate_initialization
@@ -699,6 +700,8 @@ struct Settings : public BaseSettings<SettingsTraits>
     /// Check that there is no user-level settings at the top level in config.
     /// This is a common source of mistake (user don't know where to write user-level setting).
     static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);
+
+    std::vector<String> getAllRegisteredNames() const override;
 };
 
 /*
