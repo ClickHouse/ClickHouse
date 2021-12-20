@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-tsan
+#       ^^^^^^^
+# TSan does not supports tracing.
 
 # Regression for proper release of Context,
 # via tracking memory of external tables.
