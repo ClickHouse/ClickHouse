@@ -152,3 +152,5 @@ SELECT 1 + 1 AS a
 GROUP BY a
 select substr('aaaaaaaaaaaaaa', 8) as a  group by a;
 aaaaaaa
+select substr('aaaaaaaaaaaaaa', 8) as a  group by substr('aaaaaaaaaaaaaa', 8);
+aaaaaaa
