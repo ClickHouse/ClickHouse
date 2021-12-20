@@ -1033,7 +1033,7 @@ void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
                 min_unprocessed_insert_time_changed, max_processed_insert_time_changed, lock);
 
             (*it)->removed_by_other_entry = true;
-            queue.erase(it++);
+            it = queue.erase(it);
             ++removed_entries;
         }
         else
