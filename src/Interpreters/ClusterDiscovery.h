@@ -96,7 +96,7 @@ private:
     bool needUpdate(const Strings & node_uuids, const NodesInfo & nodes);
     bool updateCluster(ClusterInfo & cluster_info);
 
-    bool runMainThread();
+    bool runMainThread(std::function<void()> up_to_date_callback);
     void shutdown();
 
     /// cluster name -> cluster info (zk root, set of nodes)
