@@ -468,7 +468,7 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
                 columns_declare_list->set(columns_declare_list->columns, getColumnsExpressionList(ordinary_columns_and_types));
             }
 
-            auto columns = table_override->columns;
+            auto * columns = table_override->columns;
             if (columns && columns->constraints)
                 constraints = ConstraintsDescription(columns->constraints->children);
         }
