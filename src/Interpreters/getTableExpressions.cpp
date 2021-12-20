@@ -16,7 +16,7 @@ NameSet removeDuplicateColumns(NamesAndTypesList & columns)
         if (names.emplace(it->name).second)
             ++it;
         else
-            columns.erase(it++);
+            it = columns.erase(it);
     }
     return names;
 }
