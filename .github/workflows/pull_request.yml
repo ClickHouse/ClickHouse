@@ -1153,6 +1153,41 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
+  FunctionalStatelessTestAarch64:
+    needs: [BuilderDebAarch64]
+    runs-on: [self-hosted, func-tester-aarch64]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateless_release
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateless tests (aarch64, actions)
+          REPO_COPY=${{runner.temp}}/stateless_release/ClickHouse
+          KILL_TIMEOUT=10800
+          EOF
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
   FunctionalStatelessTestAsan0:
     needs: [BuilderDebAsan]
     runs-on: [self-hosted, func-tester]
@@ -1643,6 +1678,41 @@ jobs:
           TEMP_PATH=${{runner.temp}}/stateful_release
           REPORTS_PATH=${{runner.temp}}/reports_dir
           CHECK_NAME=Stateful tests (release, actions)
+          REPO_COPY=${{runner.temp}}/stateful_release/ClickHouse
+          KILL_TIMEOUT=3600
+          EOF
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  FunctionalStatefulTestAarch64:
+    needs: [BuilderDebAarch64]
+    runs-on: [self-hosted, func-tester-aarch64]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/stateful_release
+          REPORTS_PATH=${{runner.temp}}/reports_dir
+          CHECK_NAME=Stateful tests (aarch64, actions)
           REPO_COPY=${{runner.temp}}/stateful_release/ClickHouse
           KILL_TIMEOUT=3600
           EOF
@@ -2888,6 +2958,7 @@ jobs:
       - FunctionalStatelessTestReleaseDatabaseReplicated0
       - FunctionalStatelessTestReleaseDatabaseReplicated1
       - FunctionalStatelessTestReleaseWideParts
+      - FunctionalStatelessTestAarch64
       - FunctionalStatelessTestAsan0
       - FunctionalStatelessTestAsan1
       - FunctionalStatelessTestTsan0
@@ -2899,6 +2970,7 @@ jobs:
       - FunctionalStatelessTestUBsan
       - FunctionalStatefulTestDebug
       - FunctionalStatefulTestRelease
+      - FunctionalStatefulTestAarch64
       - FunctionalStatefulTestAsan
       - FunctionalStatefulTestTsan
       - FunctionalStatefulTestMsan

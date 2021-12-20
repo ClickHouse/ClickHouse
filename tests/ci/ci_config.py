@@ -221,6 +221,9 @@ CI_CONFIG = {
         "Stateful tests (release, actions)": {
             "required_build": "package_release",
         },
+        "Stateful tests (aarch64, actions)": {
+            "required_build": "package_aarch64",
+        },
         "Stateful tests (release, DatabaseOrdinary, actions)": {
             "required_build": "package_release",
         },
@@ -244,6 +247,9 @@ CI_CONFIG = {
         },
         "Stateless tests (release, actions)": {
             "required_build": "package_release",
+        },
+        "Stateless tests (aarch64, actions)": {
+            "required_build": "package_aarch64",
         },
         "Stateless tests (release, wide parts enabled, actions)": {
             "required_build": "package_release",
