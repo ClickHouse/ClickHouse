@@ -61,10 +61,8 @@ void TableFunctionHDFSCluster::parseArguments(const ASTPtr & ast_function, Conte
     uri = args[1]->as<ASTLiteral &>().value.safeGet<String>();
     format = args[2]->as<ASTLiteral &>().value.safeGet<String>();
     structure = args[3]->as<ASTLiteral &>().value.safeGet<String>();
-    if(args.size()>=5)
-    {
+    if (args.size() >= 5)
         compression_method = args[4]->as<ASTLiteral &>().value.safeGet<String>();
-    }
 }
 
 
