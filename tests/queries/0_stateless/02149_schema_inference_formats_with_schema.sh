@@ -21,7 +21,7 @@ do
     $CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', '$format')"
     $CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', '$format')"
 
-    $CLICKHOUSE_CLIENT -q "select toDate(number) as date, toDateTime(number) as datetime, toDate32(number) as date32 from numbers(2) format $format" > $DATA_FILE
+    $CLICKHOUSE_CLIENT -q "select toDate(number) as date, toDateTime(number, 'UTC') as datetime, toDate32(number) as date32 from numbers(2) format $format" > $DATA_FILE
     $CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', '$format')"
     $CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', '$format')"
 

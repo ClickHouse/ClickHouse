@@ -815,7 +815,6 @@ def test_seekable_formats(started_cluster):
     result = instance.query(f"SELECT count() FROM {table_function}")
     assert(int(result) == 5000000)
 
-    instance.query("SYSTEM FLUSH LOGS")
     result = instance.query(f"SELECT formatReadableSize(memory_usage) FROM system.query_log WHERE startsWith(query, 'SELECT count() FROM s3') AND memory_usage > 0 ORDER BY event_time desc")
     print(result[:3])
     assert(int(result[:3]) < 200)
@@ -839,7 +838,6 @@ def test_seekable_formats_url(started_cluster):
     result = instance.query(f"SELECT count() FROM {table_function}")
     assert(int(result) == 5000000)
 
-    instance.query("SYSTEM FLUSH LOGS")
     result = instance.query(f"SELECT formatReadableSize(memory_usage) FROM system.query_log WHERE startsWith(query, 'SELECT count() FROM url') AND memory_usage > 0 ORDER BY event_time desc")
     print(result[:3])
     assert(int(result[:3]) < 200)
@@ -871,14 +869,14 @@ def test_s3_schema_inference(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
 
-    instance.query(f"insert into table function s3(s3_parquet, structure='a Int32, b String', format='Parquet') select number, randomString(100) from numbers(5000000)")
-    result = instance.query(f"desc s3(s3_parquet, format='Parquet')")
+    instance.query(f"insert into table function s3(s3_native, structure='a Int32, b String', format='Native') select number, randomString(100) from numbers(5000000)")
+    result = instance.query(f"desc s3(s3_native, format='Native')")
     assert result == "a\tInt32\t\t\t\t\t\nb\tString\t\t\t\t\t\n"
 
-    result = instance.query(f"select count(*) from s3(s3_parquet, format='Parquet')")
+    result = instance.query(f"select count(*) from s3(s3_native, format='Native')")
     assert(int(result) == 5000000)
 
-    instance.query(f"create table schema_inference engine=S3(s3_parquet, format='Parquet')")
+    instance.query(f"create table schema_inference engine=S3(s3_native, format='Native')")
     result = instance.query(f"desc schema_inference")
     assert result == "a\tInt32\t\t\t\t\t\nb\tString\t\t\t\t\t\n"
 
