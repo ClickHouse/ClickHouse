@@ -16,7 +16,7 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
-def _test_read_write_storage(started_cluster):
+def test_read_write_storage(started_cluster):
     hdfs_api = started_cluster.hdfs_api
     node1.query("drop table if exists SimpleHDFSStorage SYNC")
     node1.query(
@@ -26,7 +26,7 @@ def _test_read_write_storage(started_cluster):
     assert node1.query("select * from SimpleHDFSStorage") == "1\tMark\t72.53\n"
 
 
-def _test_read_write_storage_with_globs(started_cluster):
+def test_read_write_storage_with_globs(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
     node1.query(
@@ -69,7 +69,7 @@ def _test_read_write_storage_with_globs(started_cluster):
         assert "in readonly mode" in str(ex)
 
 
-def _test_read_write_table(started_cluster):
+def test_read_write_table(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
 
@@ -82,7 +82,7 @@ def _test_read_write_table(started_cluster):
         "select * from hdfs('hdfs://hdfs1:9000/simple_table_function', 'TSV', 'id UInt64, text String, number Float64')") == data
 
 
-def _test_write_table(started_cluster):
+def test_write_table(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
 
@@ -95,7 +95,7 @@ def _test_write_table(started_cluster):
     assert node1.query("select * from OtherHDFSStorage order by id") == result
 
 
-def _test_bad_hdfs_uri(started_cluster):
+def test_bad_hdfs_uri(started_cluster):
     try:
         node1.query(
             "create table BadStorage1 (id UInt32, name String, weight Float64) ENGINE = HDFS('hads:hgsdfs100500:9000/other_storage', 'TSV')")
@@ -117,7 +117,7 @@ def _test_bad_hdfs_uri(started_cluster):
         assert "Unable to open HDFS file" in str(ex)
 
 @pytest.mark.timeout(800)
-def _test_globs_in_read_table(started_cluster):
+def test_globs_in_read_table(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
 
@@ -151,7 +151,7 @@ def _test_globs_in_read_table(started_cluster):
             files_amount)
 
 
-def _test_read_write_gzip_table(started_cluster):
+def test_read_write_gzip_table(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
 
@@ -164,7 +164,7 @@ def _test_read_write_gzip_table(started_cluster):
         "select * from hdfs('hdfs://hdfs1:9000/simple_table_function.gz', 'TSV', 'id UInt64, text String, number Float64')") == data
 
 
-def _test_read_write_gzip_table_with_parameter_gzip(started_cluster):
+def test_read_write_gzip_table_with_parameter_gzip(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
 
@@ -177,7 +177,7 @@ def _test_read_write_gzip_table_with_parameter_gzip(started_cluster):
         "select * from hdfs('hdfs://hdfs1:9000/simple_table_function', 'TSV', 'id UInt64, text String, number Float64', 'gzip')") == data
 
 
-def _test_read_write_table_with_parameter_none(started_cluster):
+def test_read_write_table_with_parameter_none(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
 
@@ -190,7 +190,7 @@ def _test_read_write_table_with_parameter_none(started_cluster):
         "select * from hdfs('hdfs://hdfs1:9000/simple_table_function.gz', 'TSV', 'id UInt64, text String, number Float64', 'none')") == data
 
 
-def _test_read_write_gzip_table_with_parameter_auto_gz(started_cluster):
+def test_read_write_gzip_table_with_parameter_auto_gz(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
 
@@ -203,7 +203,7 @@ def _test_read_write_gzip_table_with_parameter_auto_gz(started_cluster):
         "select * from hdfs('hdfs://hdfs1:9000/simple_table_function.gz', 'TSV', 'id UInt64, text String, number Float64', 'auto')") == data
 
 
-def _test_write_gz_storage(started_cluster):
+def test_write_gz_storage(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
 
@@ -214,7 +214,7 @@ def _test_write_gz_storage(started_cluster):
     assert node1.query("select * from GZHDFSStorage") == "1\tMark\t72.53\n"
 
 
-def _test_write_gzip_storage(started_cluster):
+def test_write_gzip_storage(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
 
@@ -225,7 +225,7 @@ def _test_write_gzip_storage(started_cluster):
     assert node1.query("select * from GZIPHDFSStorage") == "1\tMark\t72.53\n"
 
 
-def _test_virtual_columns(started_cluster):
+def test_virtual_columns(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
     node1.query("create table virtual_cols (id UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/file*', 'TSV')")
@@ -236,7 +236,7 @@ def _test_virtual_columns(started_cluster):
     assert node1.query("select id, _file as file_name, _path as file_path from virtual_cols order by id") == expected
 
 
-def _test_read_files_with_spaces(started_cluster):
+def test_read_files_with_spaces(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
     fs = HdfsClient(hosts=started_cluster.hdfs_ip)
@@ -256,7 +256,7 @@ def _test_read_files_with_spaces(started_cluster):
 
 
 
-def _test_truncate_table(started_cluster):
+def test_truncate_table(started_cluster):
     hdfs_api = started_cluster.hdfs_api
     node1.query(
         "create table test_truncate (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/tr', 'TSV')")
@@ -268,7 +268,7 @@ def _test_truncate_table(started_cluster):
     node1.query("drop table test_truncate")
 
 
-def _test_partition_by(started_cluster):
+def test_partition_by(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
@@ -296,7 +296,7 @@ def _test_partition_by(started_cluster):
     assert(result.strip() == "1\t2\t3")
 
 
-def _test_seekable_formats(started_cluster):
+def test_seekable_formats(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
     table_function = f"hdfs('hdfs://hdfs1:9000/parquet', 'Parquet', 'a Int32, b String')"
@@ -311,7 +311,7 @@ def _test_seekable_formats(started_cluster):
     assert(int(result) == 5000000)
 
 
-def _test_read_table_with_default(started_cluster):
+def test_read_table_with_default(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
     data = "n\n100\n"
