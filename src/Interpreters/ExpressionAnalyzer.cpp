@@ -183,6 +183,18 @@ bool checkPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_q
     {
         if (ast_function->arguments)
         {
+            /// Check that all literal arguments are integers in advance to be able to always
+            /// throw exception at once if argument is out of position bounds.
+            for (auto & arg : ast_function->arguments->children)
+            {
+                if (const auto * ast_literal = typeid_cast<const ASTLiteral *>(arg.get()))
+                {
+                    auto which = ast_literal->value.getType();
+                    if (which != Field::Types::UInt64)
+                        return false;
+                }
+            }
+
             for (auto & arg : ast_function->arguments->children)
                 positional &= checkPositionalArguments(arg, select_query, expression);
         }

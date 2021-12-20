@@ -52,3 +52,5 @@ select a, b, c, d, e, f  from (select 44 a, 88 b, 13 c, 14 d, 15 e, 16 f) t grou
 
 explain syntax select plus(1, 1) as a group by a;
 select substr('aaaaaaaaaaaaaa', 8) as a  group by a;
+select substr('aaaaaaaaaaaaaa', 8) as a  group by substr('aaaaaaaaaaaaaa', 8);
+
