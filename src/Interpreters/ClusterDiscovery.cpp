@@ -328,7 +328,7 @@ void ClusterDiscovery::start()
         {
             try
             {
-                finish = runMainThread();
+                finish = runMainThread([&backoff_timeout] { backoff_timeout = DEFAULT_BACKOFF_TIMEOUT; });
             }
             catch (...)
             {
@@ -345,7 +345,7 @@ void ClusterDiscovery::start()
 }
 
 /// Returns `true` on graceful shutdown (no restart required)
-bool ClusterDiscovery::runMainThread()
+bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
 {
     setThreadName("ClusterDiscover");
     LOG_DEBUG(log, "Worker thread started");
@@ -353,9 +353,9 @@ bool ClusterDiscovery::runMainThread()
     using namespace std::chrono_literals;
 
     constexpr auto force_update_interval = 2min;
-
     while (!stop_flag)
     {
+        bool all_up_to_date = true;
         auto & clusters = clusters_to_update->wait(stop_flag, 5s);
         for (auto & [cluster_name, need_update] : clusters)
         {
@@ -382,10 +382,16 @@ bool ClusterDiscovery::runMainThread()
             }
             else
             {
+                all_up_to_date = false;
                 /// no need to trigger convar, will retry after timeout in `wait`
                 need_update = true;
                 LOG_WARNING(log, "Cluster '{}' wasn't updated, will retry", cluster_name);
             }
+        }
+
+        if (all_up_to_date)
+        {
+            up_to_date_callback();
         }
     }
     LOG_DEBUG(log, "Worker thread stopped");
