@@ -355,7 +355,7 @@ void DiskS3::findLastRevision()
     /// Construct revision number from high to low bits.
     String revision;
     revision.reserve(64);
-    for (int bit = 0; bit < 64; bit++)
+    for (int bit = 0; bit < 64; ++bit)
     {
         auto revision_prefix = revision + "1";
 
