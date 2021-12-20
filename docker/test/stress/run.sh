@@ -148,6 +148,15 @@ info signals
 continue
 backtrace full
 info locals
+info registers
+disassemble /s
+up
+info locals
+disassemble /s
+up
+info locals
+disassemble /s
+p \"done\"
 detach
 quit
 " > script.gdb

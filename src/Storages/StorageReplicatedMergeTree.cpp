@@ -7372,7 +7372,6 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->is_temp = true;
 
-
     SyncGuardPtr sync_guard;
     if (new_data_part->isStoredOnDisk())
     {
@@ -7397,7 +7396,9 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     auto compression_codec = getContext()->chooseCompressionCodec(0, 0);
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
-    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);
+    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns,
+        index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);
+
     bool sync_on_insert = settings->fsync_after_insert;
 
     out.write(block);
