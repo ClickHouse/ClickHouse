@@ -227,8 +227,17 @@ public:
                 }
 
                 /// Check for duplicated changelog ids
-                if (logs.count(record.header.index) != 0)
-                    std::erase_if(logs, [record] (const auto & item) { return item.first >= record.header.index; });
+                if (logs.count(record.header.index) != 0) 
+                {
+                    for (auto i = logs.begin(), last = logs.end(); i != last; ) {
+                        if (i->first >= record.header.index) {
+                            i = logs.erase(i);
+                        } else {
+                            ++i;
+                        }
+                    }
+                    //std::erase_if(logs, [record] (const auto & item) { return item.first >= record.header.index; });
+                }
 
                 result.total_entries_read_from_log += 1;
 
@@ -284,6 +293,7 @@ Changelog::Changelog(
     , force_sync(force_sync_)
     , log(log_)
     , compress_logs(compress_logs_)
+    , cur_del_idx(0)
 {
     /// Load all files in changelog directory
     namespace fs = std::filesystem;
@@ -298,6 +308,23 @@ Changelog::Changelog(
 
     if (existing_changelogs.empty())
         LOG_WARNING(log, "No logs exists in {}. It's Ok if it's the first run of clickhouse-keeper.", changelogs_dir);
+    
+    clean_log_thread = ThreadFromGlobalPool([this] { cleanThread(); });
+}
+
+[[noreturn]] void Changelog::cleanThread()
+{
+    while (true)
+    {
+        std::string path;
+        if (del_log_q.pop(path))
+        {
+            std::filesystem::remove(path);
+            std::cout << "remove " << path << " because of compaction." << std::endl;
+        }
+        else
+            usleep(100);
+    }
 }
 
 void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uint64_t logs_to_keep)
@@ -410,7 +437,15 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
             LOG_INFO(log, "Removing log {} because it's empty or read finished with error", description.path);
             std::filesystem::remove(description.path);
             existing_changelogs.erase(last_log_read_result->log_start_index);
-            std::erase_if(logs, [last_log_read_result] (const auto & item) { return item.first >= last_log_read_result->log_start_index; });
+            //std::erase_if(logs, [last_log_read_result] (const auto & item) { return item.first >= last_log_read_result->log_start_index; });
+
+            for (auto i = logs.begin(), last = logs.end(); i != last; ) {
+                if (i->first >= last_log_read_result->log_start_index) {
+                    i = logs.erase(i);
+                } else {
+                    ++i;
+                }
+            }
         }
         else
         {
@@ -449,7 +484,14 @@ void Changelog::removeAllLogsAfter(uint64_t remove_after_log_start_index)
         itr = existing_changelogs.erase(itr);
     }
 
-    std::erase_if(logs, [start_to_remove_from_log_id] (const auto & item) { return item.first >= start_to_remove_from_log_id; });
+//    std::erase_if(logs, [start_to_remove_from_log_id] (const auto & item) { return item.first >= start_to_remove_from_log_id; });
+    for (auto i = logs.begin(), last = logs.end(); i != last; ) {
+        if (i->first >= start_to_remove_from_log_id) {
+            i = logs.erase(i);
+        } else {
+            ++i;
+        }
+    }
 }
 
 void Changelog::removeAllLogs()
@@ -521,6 +563,7 @@ void Changelog::appendEntry(uint64_t index, const LogEntryPtr & log_entry)
     current_writer->appendRecord(buildRecord(index, log_entry));
     logs[index] = makeClone(log_entry);
     max_log_id = index;
+    delOneEntry();
 }
 
 void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
@@ -553,10 +596,19 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
 
     /// Remove redundant logs from memory
     /// Everything >= index must be removed
-    std::erase_if(logs, [index] (const auto & item) { return item.first >= index; });
-
+    //std::erase_if(logs, [index] (const auto & item) { return item.first >= index; });
+    for (auto i = logs.begin(), last = logs.end(); i != last; ) {
+        if (i->first >= index) {
+            i = logs.erase(i);
+        } else {
+            ++i;
+        }
+    }
+    
     /// Now we can actually override entry at index
     appendEntry(index, log_entry);
+
+    delOneEntry();
 }
 
 void Changelog::compact(uint64_t up_to_log_index)
@@ -586,7 +638,8 @@ void Changelog::compact(uint64_t up_to_log_index)
             }
 
             LOG_INFO(log, "Removing changelog {} because of compaction", itr->second.path);
-            std::filesystem::remove(itr->second.path);
+            //std::filesystem::remove(itr->second.path);
+            del_log_q.push(itr->second.path);
             itr = existing_changelogs.erase(itr);
         }
         else /// Files are ordered, so all subsequent should exist
@@ -594,12 +647,19 @@ void Changelog::compact(uint64_t up_to_log_index)
     }
     /// Compaction from the past is possible, so don't make our min_log_id smaller.
     min_log_id = std::max(min_log_id, up_to_log_index + 1);
-    std::erase_if(logs, [up_to_log_index] (const auto & item) { return item.first <= up_to_log_index; });
-
+    //std::erase_if(logs, [up_to_log_index] (const auto & item) { return item.first <= up_to_log_index; });
+    delOneEntry();
+    delOneEntry();
     if (need_rotate)
         rotate(up_to_log_index + 1);
 
-    LOG_INFO(log, "Compaction up to {} finished new min index {}, new max index {}", up_to_log_index, min_log_id, max_log_id);
+    LOG_INFO(log, "Compaction up to {} finished new min index {}, new max index {}, actully del index {}, logsize {}", up_to_log_index, min_log_id, max_log_id, cur_del_idx, logs.size());
+}
+
+void Changelog::delOneEntry()
+{
+    if (cur_del_idx < min_log_id)
+        logs.erase(cur_del_idx++);
 }
 
 LogEntryPtr Changelog::getLastEntry() const
@@ -627,6 +687,8 @@ LogEntriesPtr Changelog::getLogEntriesBetween(uint64_t start, uint64_t end)
         (*ret)[result_pos] = entryAt(i);
         result_pos++;
     }
+
+    delOneEntry();
     return ret;
 }
 

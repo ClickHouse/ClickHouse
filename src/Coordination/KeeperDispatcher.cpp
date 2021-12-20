@@ -1,3 +1,6 @@
+#if defined(OS_LINUX)
+#   include <sys/sysinfo.h>
+#endif
 #include <Coordination/KeeperDispatcher.h>
 #include <Common/setThreadName.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -32,6 +35,17 @@ KeeperDispatcher::KeeperDispatcher()
 void KeeperDispatcher::requestThread()
 {
     setThreadName("KeeperReqT");
+#if defined(OS_LINUX)
+    int cpuid = get_nprocs() - 1;
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(cpuid, &cpuset);
+    int rc = pthread_setaffinity_np(pthread_self(),
+                                    sizeof(cpu_set_t), &cpuset);
+    if (rc != 0) {
+      std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n";
+    }
+#endif
 
     /// Result of requests batch from previous iteration
     RaftAppendResult prev_result = nullptr;
@@ -145,6 +159,17 @@ void KeeperDispatcher::requestThread()
 void KeeperDispatcher::responseThread()
 {
     setThreadName("KeeperRspT");
+#if defined(OS_LINUX)
+    int cpuid = get_nprocs() - 2;
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(cpuid, &cpuset);
+    int rc = pthread_setaffinity_np(pthread_self(),
+                                    sizeof(cpu_set_t), &cpuset);
+    if (rc != 0) {
+      std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n";
+    }
+#endif
     while (!shutdown_called)
     {
         KeeperStorage::ResponseForSession response_for_session;

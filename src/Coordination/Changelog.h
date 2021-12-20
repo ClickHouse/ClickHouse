@@ -7,6 +7,8 @@
 #include <IO/HashingWriteBuffer.h>
 #include <IO/CompressionMethod.h>
 #include <Disks/IDisk.h>
+#include <boost/lockfree/spsc_queue.hpp>
+#include <Common/robin_hood.h>
 
 namespace DB
 {
@@ -18,8 +20,10 @@ using LogEntries = std::vector<LogEntryPtr>;
 using LogEntriesPtr = nuraft::ptr<LogEntries>;
 using BufferPtr = nuraft::ptr<nuraft::buffer>;
 
-using IndexToOffset = std::unordered_map<uint64_t, off_t>;
-using IndexToLogEntry = std::unordered_map<uint64_t, LogEntryPtr>;
+//using IndexToOffset = std::unordered_map<uint64_t, off_t>;
+//using IndexToLogEntry = std::unordered_map<uint64_t, LogEntryPtr>;
+using IndexToOffset = robin_hood::unordered_map<uint64_t, off_t>;
+using IndexToLogEntry = robin_hood::unordered_map<uint64_t, LogEntryPtr>;
 
 enum class ChangelogVersion : uint8_t
 {
@@ -142,6 +146,10 @@ private:
     /// Init writer for existing log with some entries already written
     void initWriter(const ChangelogFileDescription & description);
 
+    [[noreturn]] void cleanThread();
+
+    void delOneEntry();
+
 private:
     const std::string changelogs_dir;
     const uint64_t rotate_interval;
@@ -160,6 +168,11 @@ private:
     /// min_log_id + 1 == max_log_id means empty log storage for NuRaft
     uint64_t min_log_id = 0;
     uint64_t max_log_id = 0;
+
+    // for compaction, queue of del not used logs
+    boost::lockfree::spsc_queue<std::string> del_log_q{128};
+    size_t cur_del_idx; 
+    ThreadFromGlobalPool clean_log_thread;
 };
 
 }
