@@ -92,7 +92,7 @@ def test_text_count(started_cluster):
 """
     assert result == expected_result
 
-def test_parquet_groupby_witch_cache(started_cluster):
+def test_parquet_groupby_with_cache(started_cluster):
     logging.info('Start testing groupby ...')
     node = started_cluster.instances['h0_0_0']
     result = node.query("""
