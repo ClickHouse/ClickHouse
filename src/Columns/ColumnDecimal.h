@@ -87,7 +87,7 @@ private:
 
 public:
     const char * getFamilyName() const override { return TypeName<T>.data(); }
-    TypeIndex getDataType() const override { return TypeId<T>; }
+    TypeIndex getDataType() const override { return TypeToTypeIndex<T>; }
 
     bool isNumeric() const override { return false; }
     bool canBeInsideNullable() const override { return true; }
