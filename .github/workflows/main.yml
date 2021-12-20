@@ -64,6 +64,8 @@ jobs:
           sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
+        with:
+          submodules: 'true'
       - name: Download changed images
         uses: actions/download-artifact@v2
         with:
