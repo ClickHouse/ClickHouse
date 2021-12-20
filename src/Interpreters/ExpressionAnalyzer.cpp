@@ -1973,7 +1973,7 @@ std::string ExpressionAnalysisResult::dump() const
     if (!selected_columns.empty())
     {
         ss << "selected_columns ";
-        for (size_t i = 0; i < selected_columns.size(); i++)
+        for (size_t i = 0; i < selected_columns.size(); ++i)
         {
             if (i > 0)
             {

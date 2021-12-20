@@ -73,7 +73,7 @@ public:
             // function name h3GetFaces (v3.x) changed to getIcosahedronFaces (v4.0.0).
             getIcosahedronFaces(data[row], faces.data());
 
-            for (int i = 0; i < max_faces; i++)
+            for (int i = 0; i < max_faces; ++i)
             {
                 // valid icosahedron faces are represented by integers 0-19
                 if (faces[i] >= 0 && faces[i] <= 19)
