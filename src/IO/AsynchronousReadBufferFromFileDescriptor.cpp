@@ -91,7 +91,7 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     {
         /// No pending request. Do synchronous read.
 
-        auto [size, offset] = readInto(memory.data(), memory.size()).get();
+        auto [size, _] = readInto(memory.data(), memory.size()).get();
         file_offset_of_buffer_end += size;
 
         if (size)

@@ -69,6 +69,11 @@ private:
 
     size_t file_offset_of_buffer_end = 0;
 
+    /**
+     * File:                        |___________________|
+     * Buffer:                            |~~~~~~~|
+     * file_offset_of_buffer_end:                 ^
+     */
     size_t bytes_to_ignore = 0;
 
     size_t read_until_position = 0;
