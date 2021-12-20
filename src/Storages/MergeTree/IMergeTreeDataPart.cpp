@@ -1342,9 +1342,7 @@ void IMergeTreeDataPart::renameToDetached(const String & prefix) const
 void IMergeTreeDataPart::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & /*metadata_snapshot*/) const
 {
     String destination_path = fs::path(storage.relative_data_path) / getRelativePathForDetachedPart(prefix);
-
-    /// Backup is not recursive (max_level is 0), so do not copy inner directories
-    localBackup(volume->getDisk(), getFullRelativePath(), destination_path, 0);
+    localBackup(volume->getDisk(), getFullRelativePath(), destination_path);
     volume->getDisk()->removeFileIfExists(fs::path(destination_path) / DELETE_ON_DESTROY_MARKER_FILE_NAME);
 }
 
