@@ -1,4 +1,5 @@
 #include <Storages/Hive/StorageHiveMetadata.h>
+#include <Storages/RemoteFileMetadataFactory.h>
 #include <Common/Exception.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Parser.h>
@@ -40,6 +41,12 @@ String StorageHiveMetadata::getVersion() const
     return std::to_string(getLastModificationTimestamp());
 }
 
-REGISTTER_REMOTE_FILE_META_DATA_CLASS(StorageHiveMetadata)
+void registerStorageHiveMetadataCreator()
+{
+    auto & factory = RemoteFileMetadataFactory::instance();
+    auto creator = []() -> IRemoteFileMetadataPtr { return std::make_shared<StorageHiveMetadata>(); };
+    factory.registerRemoteFileMatadataCreator("StorageHiveMetadata", creator);
+}
+
 
 }

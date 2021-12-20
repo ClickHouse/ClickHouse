@@ -40,39 +40,4 @@ protected:
 };
 
 using IRemoteFileMetadataPtr = std::shared_ptr<IRemoteFileMetadata>;
-
-/*
- * How to register a subclass into the factory and use it ?
- * 1) define your own subclass derive from IRemoteFileMetadata. Notice! the getName() must be the same
- *    as your subclass name.
- * 2) in a .cpp file, call REGISTTER_REMOTE_FILE_META_DATA_CLASS(subclass),
- * 3) call RemoteFileMetadataFactory::instance().createClass(subclass_name) where you want to make a new object
- */
-
-class RemoteFileMetadataFactory : private boost::noncopyable
-{
-public:
-    using ClassCreator = std::function<IRemoteFileMetadataPtr()>;
-    ~RemoteFileMetadataFactory() = default;
-
-    static RemoteFileMetadataFactory & instance();
-    IRemoteFileMetadataPtr get(const String & name);
-    void registerClass(const String &name, ClassCreator creator);
-protected:
-    RemoteFileMetadataFactory() = default;
-
-private:
-    std::unordered_map<String, ClassCreator> class_creators;
-};
-
-// this should be used in a .cpp file. All the subclasses will finish the registeration before the main()
-#define REGISTTER_REMOTE_FILE_META_DATA_CLASS(metadata_class) \
-    class FileMetadataFactory##metadata_class{\
-    public:\
-        FileMetadataFactory##metadata_class(){\
-            auto creator = []() -> IRemoteFileMetadataPtr { return std::make_shared<metadata_class>(); };\
-            RemoteFileMetadataFactory::instance().registerClass(#metadata_class, creator);\
-        }\
-    };\
-    static FileMetadataFactory##metadata_class g_file_metadata_factory_instance##metadata_class;
 }
