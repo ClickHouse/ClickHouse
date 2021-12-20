@@ -15,7 +15,7 @@ $CLICKHOUSE_CLIENT -q "SELECT toString(number) FROM numbers(1e6) FORMAT TSV" > "
 function run_and_check()
 {
     local query_id
-    query_id="$(uuidgen)"
+    query_id="$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary @- <<<'SELECT generateUUIDv4()')"
 
     echo "Checking $*"
 
