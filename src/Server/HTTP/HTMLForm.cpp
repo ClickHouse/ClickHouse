@@ -183,8 +183,8 @@ void HTMLForm::readMultipart(ReadBuffer & in_, PartHandler & handler)
     size_t fields = 0;
     MultipartReadBuffer in(in_, boundary);
 
-    /// Assume there is at least one part
-    in.skipToNextBoundary();
+    if (!in.skipToNextBoundary())
+        throw Poco::Net::HTMLFormException("No boundary line found (at least one is required)");
 
     /// Read each part until next boundary (or last boundary)
     while (!in.eof())
