@@ -17,7 +17,7 @@ bool HiveMetastoreClient::shouldUpdateTableMetadata(
     const String & db_name, const String & table_name, const std::vector<Apache::Hadoop::Hive::Partition> & partitions)
 {
     String cache_key = getCacheKey(db_name, table_name);
-    std::shared_ptr<HiveMetastoreClient::HiveTableMetadata> metadata = table_metadata_cache.get(cache_key);
+    HiveTableMetadataPtr metadata = table_metadata_cache.get(cache_key);
     if (!metadata)
         return true;
 
@@ -38,8 +38,7 @@ bool HiveMetastoreClient::shouldUpdateTableMetadata(
     return false;
 }
 
-std::shared_ptr<HiveMetastoreClient::HiveTableMetadata>
-HiveMetastoreClient::getTableMetadata(const String & db_name, const String & table_name)
+HiveMetastoreClient::HiveTableMetadataPtr HiveMetastoreClient::getTableMetadata(const String & db_name, const String & table_name)
 {
     LOG_TRACE(log, "Get table metadata for {}.{}", db_name, table_name);
     std::lock_guard lock{mutex};
@@ -60,9 +59,9 @@ HiveMetastoreClient::getTableMetadata(const String & db_name, const String & tab
     }
 
     bool update_cache = shouldUpdateTableMetadata(db_name, table_name, partitions);
-    String cache_key = db_name + "." + table_name;
+    String cache_key = getCacheKey(db_name, table_name);
 
-    std::shared_ptr<HiveMetastoreClient::HiveTableMetadata> metadata = table_metadata_cache.get(cache_key);
+    HiveTableMetadataPtr metadata = table_metadata_cache.get(cache_key);
 
     if (update_cache)
     {
@@ -107,7 +106,7 @@ void HiveMetastoreClient::clearTableMetadata(const String & db_name, const Strin
     String cache_key = getCacheKey(db_name, table_name);
 
     std::lock_guard lock{mutex};
-    std::shared_ptr<HiveMetastoreClient::HiveTableMetadata> metadata = table_metadata_cache.get(cache_key);
+    HiveTableMetadataPtr metadata = table_metadata_cache.get(cache_key);
     if (metadata)
         table_metadata_cache.set(cache_key, nullptr);
 }
