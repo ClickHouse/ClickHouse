@@ -14,9 +14,11 @@
 
 namespace DB
 {
+
 class HiveMetastoreClient : public WithContext
 {
 public:
+
     struct FileInfo
     {
         String path;
@@ -89,12 +91,14 @@ public:
         Poco::Logger * log = &Poco::Logger::get("HiveMetastoreClient");
     };
 
+    using HiveTableMetadataPtr = std::shared_ptr<HiveMetastoreClient::HiveTableMetadata>;
+
     explicit HiveMetastoreClient(std::shared_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> client_, ContextPtr context_)
         : WithContext(context_), client(client_), table_metadata_cache(1000)
     {
     }
 
-    std::shared_ptr<HiveTableMetadata> getTableMetadata(const String & db_name, const String & table_name);
+    HiveTableMetadataPtr getTableMetadata(const String & db_name, const String & table_name);
     void clearTableMetadata(const String & db_name, const String & table_name);
     void setClient(std::shared_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> client_);
     bool isExpired() const { return expired; }
@@ -116,7 +120,6 @@ private:
 };
 
 using HiveMetastoreClientPtr = std::shared_ptr<HiveMetastoreClient>;
-
 class HiveMetastoreClientFactory final : private boost::noncopyable
 {
 public:
