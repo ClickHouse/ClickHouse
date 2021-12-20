@@ -435,18 +435,15 @@ Similar to `interserver_http_host`, except that this hostname can be used by oth
 
 ## interserver_http_credentials {#server-settings-interserver-http-credentials}
 
-A username and a password used to connect to other servers during [replication](../../engines/table-engines/mergetree-family/replication.md). 
-Also the server expects these credentials for incoming connections from other replicas. So, these credentials should be the same for all replicas in a cluster.
+A username and a password used to connect to other servers during [replication](../../engines/table-engines/mergetree-family/replication.md). Also the server authenticate other replicas using these credentials. So, `interserver_http_credentials` must be the same for all replicas in a cluster.
 
 By default, if `interserver_http_credentials` section is omitted, authentication is not used during replication.
 
-These credentials are used for communication between replicas and they are unrelated to credentials for ClickHouse clients. 
+!!! note "Note"
+    `interserver_http_credentials` settings do not relate to a ClickHouse client credentials [configuration](../../interfaces/cli.md#configuration_files).
 
 !!! note "Note"
-    `interserver_http_credentials` do not relate to credentials for ClickHouse clients.
-
-!!! note "Note"
-    These credentials are common for replication through `HTTP` and `HTTPS`.
+    These credentials are common for replication via `HTTP` and `HTTPS`.
 
 The section contains the following parameters:
 
