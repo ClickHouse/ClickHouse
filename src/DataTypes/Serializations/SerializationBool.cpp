@@ -19,8 +19,10 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-static const std::unordered_set<String> true_values =
+static const std::unordered_set<std::string_view> true_values =
 {
+    "enable",
+    "enabled",
     "true",
     "yes",
     "on",
@@ -29,8 +31,10 @@ static const std::unordered_set<String> true_values =
     "1",
 };
 
-static const std::unordered_set<String> false_values =
+static const std::unordered_set<std::string_view> false_values =
 {
+    "disable",
+    "disabled",
     "false",
     "no",
     "off",
