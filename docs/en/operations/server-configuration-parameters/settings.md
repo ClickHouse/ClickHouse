@@ -464,7 +464,7 @@ To enable authentication, set `interserver_http_credentials.allow_empty` to `tru
 
 After configuring all replicas set `allow_empty` to `false` or remove this setting. It makes authentication with new credentials mandatory.
 
-To change existing credentials, move the user name and the password to `interserver_http_credentials.old` section and update `user` and `password` with new values. At this step a server uses new credentials to connect to other replicas and accepts connections with new or old credentials. 
+To change existing credentials, move the user name and the password to `interserver_http_credentials.old` section and update `user` and `password` with new values. At this point the server uses new credentials to connect to other replicas and accepts connections with either new or old credentials. 
 
 ``` xml
 <interserver_http_credentials>
