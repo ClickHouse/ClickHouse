@@ -54,6 +54,7 @@ public:
     void get(size_t n, Field & res) const override;
     bool getBool(size_t n) const override { return isNullAt(n) ? false : nested_column->getBool(n); }
     UInt64 get64(size_t n) const override { return nested_column->get64(n); }
+    bool isDefaultAt(size_t n) const override { return isNullAt(n); }
 
     /**
      * If isNullAt(n) returns false, returns the nested column's getDataAt(n), otherwise returns a special value
@@ -136,6 +137,18 @@ public:
             return nested_column->structureEquals(*rhs_nullable->nested_column);
         return false;
     }
+
+    double getRatioOfDefaultRows(double sample_ratio) const override
+    {
+        return null_map->getRatioOfDefaultRows(sample_ratio);
+    }
+
+    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
+    {
+        null_map->getIndicesOfNonDefaultRows(indices, from, limit);
+    }
+
+    ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const override;
 
     bool isNullable() const override { return true; }
     bool isFixedAndContiguous() const override { return false; }

@@ -11,7 +11,7 @@ CI_CONFIG = {
             "splitted": "unsplitted",
             "alien_pkgs": True,
             "tidy": "disable",
-            "with_coverage": False
+            "with_coverage": False,
         },
         "performance": {
             "compiler": "clang-13",
@@ -21,7 +21,7 @@ CI_CONFIG = {
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": False
+            "with_coverage": False,
         },
         "binary_gcc": {
             "compiler": "gcc-11",
@@ -31,7 +31,18 @@ CI_CONFIG = {
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": False
+            "with_coverage": False,
+        },
+        "package_aarch64": {
+            "compiler": "clang-13-aarch64",
+            "build_type": "",
+            "sanitizer": "",
+            "package_type": "deb",
+            "bundled": "bundled",
+            "splitted": "unsplitted",
+            "alien_pkgs": True,
+            "tidy": "disable",
+            "with_coverage": False,
         },
         "package_asan": {
             "compiler": "clang-13",
@@ -41,7 +52,7 @@ CI_CONFIG = {
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": False
+            "with_coverage": False,
         },
         "package_ubsan": {
             "compiler": "clang-13",
@@ -51,7 +62,7 @@ CI_CONFIG = {
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": False
+            "with_coverage": False,
         },
         "package_tsan": {
             "compiler": "clang-13",
@@ -61,7 +72,7 @@ CI_CONFIG = {
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": False
+            "with_coverage": False,
         },
         "package_msan": {
             "compiler": "clang-13",
@@ -71,7 +82,7 @@ CI_CONFIG = {
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": False
+            "with_coverage": False,
         },
         "package_debug": {
             "compiler": "clang-13",
@@ -81,7 +92,7 @@ CI_CONFIG = {
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": False
+            "with_coverage": False,
         },
         "binary_release": {
             "compiler": "clang-13",
@@ -91,7 +102,7 @@ CI_CONFIG = {
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": False
+            "with_coverage": False,
         },
         "binary_tidy": {
             "compiler": "clang-13",
@@ -101,7 +112,7 @@ CI_CONFIG = {
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "enable",
-            "with_coverage": False
+            "with_coverage": False,
         },
         "binary_splitted": {
             "compiler": "clang-13",
@@ -111,7 +122,7 @@ CI_CONFIG = {
             "bundled": "bundled",
             "splitted": "splitted",
             "tidy": "disable",
-            "with_coverage": False
+            "with_coverage": False,
         },
         "binary_darwin": {
             "compiler": "clang-13-darwin",
@@ -121,7 +132,7 @@ CI_CONFIG = {
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": False
+            "with_coverage": False,
         },
         "binary_aarch64": {
             "compiler": "clang-13-aarch64",
@@ -131,7 +142,7 @@ CI_CONFIG = {
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": False
+            "with_coverage": False,
         },
         "binary_freebsd": {
             "compiler": "clang-13-freebsd",
@@ -141,7 +152,7 @@ CI_CONFIG = {
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": False
+            "with_coverage": False,
         },
         "binary_darwin_aarch64": {
             "compiler": "clang-13-darwin-aarch64",
@@ -151,7 +162,7 @@ CI_CONFIG = {
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": False
+            "with_coverage": False,
         },
         "binary_ppc64le": {
             "compiler": "clang-13-ppc64le",
@@ -161,19 +172,20 @@ CI_CONFIG = {
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": False
-        }
+            "with_coverage": False,
+        },
     },
     "builds_report_config": {
         "ClickHouse build check (actions)": [
             "package_release",
             "performance",
+            "package_aarch64",
             "package_asan",
             "package_ubsan",
             "package_tsan",
             "package_msan",
             "package_debug",
-            "binary_release"
+            "binary_release",
         ],
         "ClickHouse special build check (actions)": [
             "binary_tidy",
@@ -320,6 +332,6 @@ CI_CONFIG = {
         },
         "Performance Comparison (actions)": {
             "required_build": "performance",
-        }
-    }
+        },
+    },
 }

@@ -534,8 +534,9 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
         if (right_sample_block.getByName(right_key).type->lowCardinality())
             lowcard_right_keys.push_back(right_key);
     }
-    JoinCommon::removeLowCardinalityInplace(right_table_keys);
-    JoinCommon::removeLowCardinalityInplace(right_sample_block, key_names_right);
+
+    JoinCommon::convertToFullColumnsInplace(right_table_keys);
+    JoinCommon::convertToFullColumnsInplace(right_sample_block, key_names_right);
 
     const NameSet required_right_keys = table_join->requiredRightKeys();
     for (const auto & column : right_table_keys)
@@ -664,7 +665,7 @@ bool MergeJoin::saveRightBlock(Block && block)
 Block MergeJoin::modifyRightBlock(const Block & src_block) const
 {
     Block block = materializeBlock(src_block);
-    JoinCommon::removeLowCardinalityInplace(block, table_join->getOnlyClause().key_names_right);
+    JoinCommon::convertToFullColumnsInplace(block, table_join->getOnlyClause().key_names_right);
     return block;
 }
 
@@ -706,7 +707,7 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
                 lowcard_keys.push_back(column_name);
         }
 
-        JoinCommon::removeLowCardinalityInplace(block, key_names_left, false);
+        JoinCommon::convertToFullColumnsInplace(block, key_names_left, false);
 
         sortBlock(block, left_sort_description);
 
