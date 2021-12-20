@@ -117,7 +117,6 @@ bool checkPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_q
 
     /// In case of expression/function (order by 1+2 and 2*x1, greatest(1, 2)) replace
     /// positions only if all literals are numbers, otherwise it is not positional.
-    bool positional = true;
 
     /// Case when GROUP BY element is position.
     if (const auto * ast_literal = typeid_cast<const ASTLiteral *>(argument.get()))
@@ -177,32 +176,12 @@ bool checkPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_q
             }
         }
         else
-            positional = false;
-    }
-    else if (const auto * ast_function = typeid_cast<const ASTFunction *>(argument.get()))
-    {
-        if (ast_function->arguments)
-        {
-            /// Check that all literal arguments are integers in advance to be able to always
-            /// throw exception at once if argument is out of position bounds.
-            for (auto & arg : ast_function->arguments->children)
-            {
-                if (const auto * ast_literal = typeid_cast<const ASTLiteral *>(arg.get()))
-                {
-                    auto which = ast_literal->value.getType();
-                    if (which != Field::Types::UInt64)
-                        return false;
-                }
-            }
-
-            for (auto & arg : ast_function->arguments->children)
-                positional &= checkPositionalArguments(arg, select_query, expression);
-        }
+            return false;
     }
     else
-        positional = false;
+        return false;
 
-    return positional;
+    return true;
 }
 
 void replaceForPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_query, ASTSelectQuery::Expression expression)
