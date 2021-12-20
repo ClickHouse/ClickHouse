@@ -1,5 +1,5 @@
 #!/usr/bin/expect -f
-# Tags: no-parallel, no-fasttest
+# Tags: no-parallel
 # Tag no-parallel: Uses non unique history file
 
 log_user 0
