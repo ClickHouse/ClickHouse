@@ -538,7 +538,7 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
 
     Int64 version = startMutation(commands, query_context);
 
-    if (query_context->getSettingsRef().mutations_sync > 0)
+    if (query_context->getSettingsRef().mutations_sync > 0 || query_context->getCurrentTransaction())
         waitForMutation(version);
 }
 

@@ -134,10 +134,7 @@ bool MergeTreeTransaction::rollback() noexcept
     bool need_rollback = csn.compare_exchange_strong(expected, Tx::RolledBackCSN);
 
     if (!need_rollback)
-    {
-        /// TODO add assertions for the case when this method called from background operation
         return false;
-    }
 
     for (const auto & table_and_mutation : mutations)
         table_and_mutation.first->killMutation(table_and_mutation.second);
