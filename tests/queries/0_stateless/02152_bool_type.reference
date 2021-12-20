@@ -9,6 +9,10 @@ true
 true
 true
 true
+true
+true
+true
+false
 false
 false
 false
@@ -34,3 +38,9 @@ CAST('true', 'Bool'): Custom true
 │ Custom true          │
 └──────────────────────┘
 {"CAST('true', 'Bool')":true}
+1
+1
+1
+1
+1
+1
