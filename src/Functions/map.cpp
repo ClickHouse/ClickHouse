@@ -492,7 +492,7 @@ public:
             auto res = func_like.executeImpl(new_arguments, result_type, input_rows_count);
             const auto & container = checkAndGetColumn<ColumnUInt8>(res.get())->getData();
 
-            for (size_t row_num = 0; row_num < element_size; row_num++)
+            for (size_t row_num = 0; row_num < element_size; ++row_num)
             {
                 if (container[row_num] == 1)
                 {
