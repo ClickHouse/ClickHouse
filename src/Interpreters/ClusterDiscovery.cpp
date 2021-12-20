@@ -71,19 +71,24 @@ public:
     /// waits unit at least one flag is set
     /// caller should handle all set flags (or set it again manually)
     /// note: keys of returen map should not be changed!
-    std::unordered_map<T, std::atomic_bool> & wait(std::atomic_bool & finished, std::chrono::milliseconds timeout)
+    /// @param finished - output parameter indicates that stop() was called
+    std::unordered_map<T, std::atomic_bool> & wait(std::chrono::milliseconds timeout, bool & finished)
     {
         std::unique_lock<std::mutex> lk(mu);
-        cv.wait_for(lk, timeout, [this, &finished]() -> bool { return any_need_update || finished; });
+        cv.wait_for(lk, timeout, [this]() -> bool { return any_need_update || stop_flag; });
+        finished = stop_flag;
 
         /// all set flags expected to be handled by caller
         any_need_update = false;
         return flags;
     }
 
-    std::unique_lock<std::mutex> getLock() { return std::unique_lock<std::mutex>(mu); }
-
-    void notify() { cv.notify_one(); }
+    void stop()
+    {
+        std::unique_lock<std::mutex> lk(mu);
+        stop_flag = true;
+        cv.notify_one();
+    }
 
 private:
     std::condition_variable cv;
@@ -92,6 +97,7 @@ private:
     /// flag indicates that update is required
     std::unordered_map<T, std::atomic_bool> flags;
     std::atomic_bool any_need_update = true;
+    bool stop_flag = false;
 };
 
 ClusterDiscovery::ClusterDiscovery(
@@ -353,10 +359,11 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
     using namespace std::chrono_literals;
 
     constexpr auto force_update_interval = 2min;
-    while (!stop_flag)
+    bool finished = false;
+    while (!finished)
     {
         bool all_up_to_date = true;
-        auto & clusters = clusters_to_update->wait(stop_flag, 5s);
+        auto & clusters = clusters_to_update->wait(5s, finished);
         for (auto & [cluster_name, need_update] : clusters)
         {
             auto cluster_info_it = clusters_info.find(cluster_name);
@@ -395,19 +402,13 @@ bool ClusterDiscovery::runMainThread(std::function<void()> up_to_date_callback)
         }
     }
     LOG_DEBUG(log, "Worker thread stopped");
-    return stop_flag;
+    return finished;
 }
 
 void ClusterDiscovery::shutdown()
 {
     LOG_DEBUG(log, "Shutting down");
-
-    /// need lock and notify because `clusters_to_update` uses `stop_flag` in stop condition
-    {
-        auto lk = clusters_to_update->getLock();
-        stop_flag = true;
-    }
-    clusters_to_update->notify();
+    clusters_to_update->stop();
 
     if (main_thread.joinable())
         main_thread.join();
