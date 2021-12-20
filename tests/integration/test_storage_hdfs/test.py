@@ -324,15 +324,15 @@ def test_read_table_with_default(started_cluster):
 
 
 def test_schema_inference(started_cluster):
-    node1.query(f"insert into table function hdfs('hdfs://hdfs1:9000/parquet', 'Parquet', 'a Int32, b String') SELECT number, randomString(100) FROM numbers(5000000)")
+    node1.query(f"insert into table function hdfs('hdfs://hdfs1:9000/native', 'Native', 'a Int32, b String') SELECT number, randomString(100) FROM numbers(5000000)")
 
-    result = node1.query(f"desc hdfs('hdfs://hdfs1:9000/parquet', 'Parquet')")
+    result = node1.query(f"desc hdfs('hdfs://hdfs1:9000/native', 'Native')")
     assert result == "a\tInt32\t\t\t\t\t\nb\tString\t\t\t\t\t\n"
 
-    result = node1.query(f"select count(*) from hdfs('hdfs://hdfs1:9000/parquet', 'Parquet')")
+    result = node1.query(f"select count(*) from hdfs('hdfs://hdfs1:9000/native', 'Native')")
     assert(int(result) == 5000000)
 
-    node1.query(f"create table schema_inference engine=HDFS('hdfs://hdfs1:9000/parquet', 'Parquet')")
+    node1.query(f"create table schema_inference engine=HDFS('hdfs://hdfs1:9000/native', 'Native')")
     result = node1.query(f"desc schema_inference")
     assert result == "a\tInt32\t\t\t\t\t\nb\tString\t\t\t\t\t\n"
 
