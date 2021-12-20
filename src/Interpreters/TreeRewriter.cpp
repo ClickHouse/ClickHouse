@@ -957,7 +957,7 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         unknown_required_source_columns.erase(column_name);
 
         if (!required.count(column_name))
-            source_columns.erase(it++);
+            it = source_columns.erase(it);
         else
             ++it;
     }
@@ -973,7 +973,7 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             if (column)
             {
                 source_columns.push_back(*column);
-                unknown_required_source_columns.erase(it++);
+                it = unknown_required_source_columns.erase(it);
             }
             else
                 ++it;
