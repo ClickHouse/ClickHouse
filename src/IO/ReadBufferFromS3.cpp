@@ -235,12 +235,12 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
 
         req.SetRange(fmt::format("bytes={}-{}", offset, read_until_position - 1));
-        LOG_DEBUG(log, "Read S3 object. Bucket: {}, Key: {}, Range: {}-{}", bucket, key, offset, read_until_position - 1);
+        LOG_TEST(log, "Read S3 object. Bucket: {}, Key: {}, Range: {}-{}", bucket, key, offset, read_until_position - 1);
     }
     else
     {
         req.SetRange(fmt::format("bytes={}-", offset));
-        LOG_DEBUG(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}", bucket, key, offset);
+        LOG_TEST(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}", bucket, key, offset);
     }
 
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);

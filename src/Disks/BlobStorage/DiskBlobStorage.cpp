@@ -67,7 +67,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskBlobStorage::readFile(
     auto settings = current_settings.get();
     auto metadata = readMeta(path);
 
-    LOG_TRACE(log, "Read from file by path: {}", backQuote(metadata_disk->getPath() + path));
+    LOG_TEST(log, "Read from file by path: {}", backQuote(metadata_disk->getPath() + path));
 
     bool threadpool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
 
