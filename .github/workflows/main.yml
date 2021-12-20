@@ -49,6 +49,38 @@ jobs:
         with:
           name: changed_images
           path: ${{ runner.temp }}/docker_images_check/changed_images.json
+  WoboqCodebrowser:
+    needs: CheckLabels
+    runs-on: [self-hosted, style-checker]
+    steps:
+      - name: Set envs
+        run: |
+          cat >> "$GITHUB_ENV" << 'EOF'
+          TEMP_PATH=${{runner.temp}}/codebrowser
+          REPO_COPY=${{runner.temp}}/codebrowser/ClickHouse
+          EOF
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Download changed images
+        uses: actions/download-artifact@v2
+        with:
+          name: changed_images
+          path: ${{ env.TEMP_PATH }}
+      - name: Codebrowser
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci && python3 codebrowser_check.py
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
   StyleCheck:
     needs: DockerHubPush
     runs-on: [self-hosted, style-checker]
