@@ -162,7 +162,7 @@ bool XDBCDictionarySource::hasUpdateField() const
 
 DictionarySourcePtr XDBCDictionarySource::clone() const
 {
-    return std::make_unique<XDBCDictionarySource>(*this);
+    return std::make_shared<XDBCDictionarySource>(*this);
 }
 
 
