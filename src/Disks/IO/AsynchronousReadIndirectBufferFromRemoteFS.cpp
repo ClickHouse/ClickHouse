@@ -257,7 +257,6 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence
     {
         ProfileEvents::increment(ProfileEvents::RemoteFSLazySeeks);
         bytes_to_ignore = file_offset_of_buffer_end - file_offset_before_seek;
-        prefetch_future = readInto(prefetch_buffer.data(), prefetch_buffer.size());
     }
     else
     {
