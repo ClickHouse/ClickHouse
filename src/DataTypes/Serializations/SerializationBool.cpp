@@ -7,6 +7,9 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <unordered_set>
+#include <boost/algorithm/string.hpp>
+
 namespace DB
 {
 
@@ -16,67 +19,57 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-SerializationBool::SerializationBool(const SerializationPtr &nested_)
-        : SerializationCustomSimpleText(nested_)
+static const std::unordered_set<String> true_values =
 {
-}
+    "true",
+    "yes",
+    "on",
+    "t",
+    "y",
+    "1",
+};
 
-void SerializationBool::serializeText(const IColumn &column, size_t row_num, WriteBuffer &ostr, const FormatSettings &) const
+static const std::unordered_set<String> false_values =
 {
-    const auto *col = checkAndGetColumn<ColumnUInt8>(&column);
-    if (!col)
+    "false",
+    "no",
+    "off",
+    "f",
+    "n",
+    "0",
+};
+
+static const ColumnUInt8 * checkAndGetSerializeColumnType(const IColumn & column)
+{
+    const auto * col = checkAndGetColumn<ColumnUInt8>(&column);
+    if (!checkAndGetColumn<ColumnUInt8>(&column))
         throw Exception("Bool type can only serialize columns of type UInt8." + column.getName(),
                         ErrorCodes::ILLEGAL_COLUMN);
-
-    if (col->getData()[row_num])
-        ostr.write(str_true, sizeof(str_true) - 1);
-    else
-        ostr.write(str_false, sizeof(str_false) - 1);
+    return col;
 }
 
-void SerializationBool::deserializeText(IColumn &column, ReadBuffer &istr, const FormatSettings & settings, bool whole) const
+static ColumnUInt8 * checkAndGetDeserializeColumnType(IColumn & column)
 {
-    ColumnUInt8 *col = typeid_cast<ColumnUInt8 *>(&column);
-    if (!col)
-    {
+    auto * col =  typeid_cast<ColumnUInt8 *>(&column);
+    if (!checkAndGetColumn<ColumnUInt8>(&column))
         throw Exception("Bool type can only deserialize columns of type UInt8." + column.getName(),
                         ErrorCodes::ILLEGAL_COLUMN);
-    }
+    return col;
+}
 
-    if (!istr.eof())
-    {
-        bool value = false;
+SerializationBool::SerializationBool(const SerializationPtr &nested_)
+        : SerializationWrapper(nested_)
+{
+}
 
-        if (*istr.position() == 't' || *istr.position() == 'f' || *istr.position() == 'T' || *istr.position() == 'F')
-            readBoolTextWord(value, istr, true);
-        else if (*istr.position() == '1' || *istr.position() == '0')
-            readBoolText(value, istr);
-        else
-            throw Exception("Invalid boolean value, should be true/false, TRUE/FALSE, 1/0.",
-                            ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING);
-        col->insert(value);
-    }
-    else
-        throw Exception("Expected boolean value but get EOF.", ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING);
-
-    if (whole && !istr.eof())
-        throwUnexpectedDataAfterParsedValue(column, istr, settings, "Bool");
+void SerializationBool::serializeText(const IColumn & column, size_t row_num, WriteBuffer &ostr, const FormatSettings & settings) const
+{
+    serializeCustom(column, row_num, ostr, settings);
 }
 
 void SerializationBool::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const auto *col = checkAndGetColumn<ColumnUInt8>(&column);
-    if (!col)
-        throw Exception("Bool type can only serialize columns of type UInt8." + column.getName(),
-                        ErrorCodes::ILLEGAL_COLUMN);
-    if (col->getData()[row_num])
-    {
-        writeString(settings.bool_true_representation, ostr);
-    }
-    else
-    {
-        writeString(settings.bool_false_representation, ostr);
-    }
+    serializeCustom(column, row_num, ostr, settings);
 }
 
 void SerializationBool::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -90,17 +83,12 @@ void SerializationBool::deserializeTextEscaped(IColumn & column, ReadBuffer & is
 
 void SerializationBool::serializeTextJSON(const IColumn &column, size_t row_num, WriteBuffer &ostr, const FormatSettings &settings) const
 {
-    serializeText(column, row_num, ostr, settings);
+    serializeSimple(column, row_num, ostr, settings);
 }
 
 void SerializationBool::deserializeTextJSON(IColumn &column, ReadBuffer &istr, const FormatSettings &) const
 {
-    ColumnUInt8 *col = typeid_cast<ColumnUInt8 *>(&column);
-    if (!col)
-    {
-        throw Exception("Bool type can only deserialize columns of type UInt8." + column.getName(),
-                        ErrorCodes::ILLEGAL_COLUMN);
-    }
+    ColumnUInt8 * col = checkAndGetDeserializeColumnType(column);
 
     if (!istr.eof())
     {
@@ -121,7 +109,7 @@ void SerializationBool::deserializeTextJSON(IColumn &column, ReadBuffer &istr, c
 
 void SerializationBool::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    serializeTextEscaped(column, row_num, ostr, settings);
+    serializeCustom(column, row_num, ostr, settings);
 }
 
 void SerializationBool::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -135,7 +123,7 @@ void SerializationBool::deserializeTextCSV(IColumn & column, ReadBuffer & istr, 
 
 void SerializationBool::serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    serializeTextEscaped(column, row_num, ostr, settings);
+    serializeCustom(column, row_num, ostr, settings);
 }
 
 void SerializationBool::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -147,13 +135,68 @@ void SerializationBool::deserializeTextRaw(IColumn & column, ReadBuffer & istr, 
     deserializeFromString(column, input, settings);
 }
 
-void SerializationBool::deserializeFromString(IColumn & column, String & input, const FormatSettings & settings)
+void SerializationBool::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    ColumnUInt8 * col = typeid_cast<ColumnUInt8 *>(&column);
-    if (!col)
+    serializeSimple(column, row_num, ostr, settings);
+}
+
+void SerializationBool::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    if (!istr.eof())
+        throw Exception("Expected boolean value but get EOF.", ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING);
+
+    auto * col = checkAndGetDeserializeColumnType(column);
+    bool value = false;
+
+    if (*istr.position() == 't' || *istr.position() == 'f' || *istr.position() == 'T' || *istr.position() == 'F')
+        readBoolTextWord(value, istr, true);
+    else if (*istr.position() == '1' || *istr.position() == '0')
+        readBoolText(value, istr);
+    else
+        throw Exception("Invalid boolean value, should be true/false, TRUE/FALSE, 1/0.", ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING);
+    col->insert(value);
+}
+
+void SerializationBool::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    String input;
+    readStringUntilEOF(input, istr);
+    deserializeFromString(column, input, settings);
+    assert(istr.eof());
+}
+
+void SerializationBool::serializeCustom(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    const auto * col = checkAndGetSerializeColumnType(column);
+
+    if (col->getData()[row_num])
     {
-        throw Exception("Bool type can only deserialize columns of type UInt8." + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
+        writeString(settings.bool_true_representation, ostr);
     }
+    else
+    {
+        writeString(settings.bool_false_representation, ostr);
+    }
+}
+
+void SerializationBool::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeSimple(column, row_num, ostr, settings);
+}
+
+void SerializationBool::serializeSimple(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+{
+    const auto * col = checkAndGetSerializeColumnType(column);
+
+    if (col->getData()[row_num])
+        ostr.write(str_true, sizeof(str_true) - 1);
+    else
+        ostr.write(str_false, sizeof(str_false) - 1);
+}
+
+void SerializationBool::deserializeFromString(IColumn & column, String & input, const FormatSettings & settings) const
+{
+    ColumnUInt8 * col = checkAndGetDeserializeColumnType(column);
 
     if (settings.bool_true_representation == input)
     {
@@ -164,6 +207,22 @@ void SerializationBool::deserializeFromString(IColumn & column, String & input, 
         col->insert(false);
     }
     else
-        throw Exception("Invalid boolean value, should be " + settings.bool_true_representation + " or " + settings.bool_false_representation + " controlled by setting bool_true_representation and bool_false_representation.", ErrorCodes::ILLEGAL_COLUMN);
+    {
+        String input_lower = boost::algorithm::to_lower_copy(input);
+        if (true_values.contains(input_lower))
+        {
+            col->insert(true);
+        }
+        else if (false_values.contains(input_lower))
+        {
+            col->insert(false);
+        }
+        else
+            throw Exception(
+                "Invalid boolean value '" + input + "', should be " + settings.bool_true_representation + " or " + settings.bool_false_representation
+                    + " controlled by setting bool_true_representation and bool_false_representation or one of "
+                      "True/False/T/F/Y/N/Yes/No/On/Off",
+                ErrorCodes::ILLEGAL_COLUMN);
+    }
 }
 }
