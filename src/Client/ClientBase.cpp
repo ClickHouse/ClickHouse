@@ -1720,7 +1720,8 @@ void ClientBase::init(int argc, char ** argv)
 
     addOptions(options_description);
 
-    auto getter = [](const auto & op) {
+    auto getter = [](const auto & op)
+    {
         String op_long_name = op->long_name();
         return "--" + String(op_long_name);
     };
