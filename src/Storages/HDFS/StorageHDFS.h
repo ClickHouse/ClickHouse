@@ -89,8 +89,8 @@ public:
     using StorageHDFSPtr = std::shared_ptr<StorageHDFS>;
 
     static Block getHeader(
-        const StorageMetadataPtr & metadata_snapshot, 
-        bool need_path_column, 
+        const StorageMetadataPtr & metadata_snapshot,
+        bool need_path_column,
         bool need_file_column);
 
     static Block getBlockForSource(

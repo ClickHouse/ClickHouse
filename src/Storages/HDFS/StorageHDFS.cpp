@@ -97,10 +97,8 @@ public:
         HDFSFSPtr fs = createHDFSFS(builder.get());
         std::lock_guard lock(mutex);
         uris = LSWithRegexpMatching("/", fs, path_from_uri);
-        for(size_t i=0; i<uris.size(); i++)
-        {
+        for (size_t i=0; i<uris.size(); i++)
            uris[i] = uri_without_path + uris[i];
-        }
         uris_iter = uris.begin();
     }
 
