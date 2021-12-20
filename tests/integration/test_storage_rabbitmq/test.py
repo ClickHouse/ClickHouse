@@ -67,7 +67,7 @@ def rabbitmq_cluster():
 def rabbitmq_setup_teardown():
     print("RabbitMQ is available - running test")
     yield  # run test
-    instance.query(f'DROP DATABASE test')
+    instance.query('DROP DATABASE test')
     instance.query('CREATE DATABASE test')
 
 
