@@ -231,7 +231,7 @@ bool MySQLDictionarySource::hasUpdateField() const
 
 DictionarySourcePtr MySQLDictionarySource::clone() const
 {
-    return std::make_unique<MySQLDictionarySource>(*this);
+    return std::make_shared<MySQLDictionarySource>(*this);
 }
 
 std::string MySQLDictionarySource::toString() const
