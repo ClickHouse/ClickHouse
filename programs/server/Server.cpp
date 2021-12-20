@@ -58,6 +58,7 @@
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Storages/RemoteReadBufferCache.h>
+#include <Storages/RemoteFileMetadataFactory.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -482,6 +483,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     registerDictionaries();
     registerDisks();
     registerFormats();
+    registerRemoteFileMatadataCreators();
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
