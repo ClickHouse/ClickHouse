@@ -1684,8 +1684,8 @@ size_t MergeTreeData::clearEmptyParts()
         if (part->rows_count != 0)
             continue;
 
-        /// Do not drop empty part if it may be visible for some transaction (otherwise it may cause conflicts)
-        if (!part->versions.canBeRemoved(TransactionLog::instance().getOldestSnapshot()))
+        /// Do not try to drop empty part if it's locked by some transaction and do not try to drop uncommitted parts.
+        if (part->versions.maxtid_lock.load() || !part->versions.isVisible(TransactionLog::instance().getLatestSnapshot()))
             continue;
 
         dropPartNoWaitNoThrow(part->name);

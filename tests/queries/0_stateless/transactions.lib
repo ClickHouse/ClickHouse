@@ -1,14 +1,48 @@
 #!/usr/bin/env bash
 
+# Useful to run
 function tx()
 {
     tx_num=$1
     query=$2
 
+    session="${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}_tx$tx_num"
+    query_id="${session}_${RANDOM}"
     url_without_session="https://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTPS}/?"
-    session="${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}_$tx_num"
-    url="${url_without_session}session_id=$session&database=$CLICKHOUSE_DATABASE"
+    url="${url_without_session}session_id=$session&query_id=$query_id&database=$CLICKHOUSE_DATABASE"
 
-    ${CLICKHOUSE_CURL} -m 30 -sSk "$url" --data "$query"
+    ${CLICKHOUSE_CURL} -m 60 -sSk "$url" --data "$query" | sed "s/^/tx$tx_num\t/"
 }
 
+function tx_wait() {
+    tx_num=$1
+
+    session="${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}_tx$tx_num"
+
+    # wait for previous query in transaction
+    count=0
+    while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE query_id LIKE '$session%'") -gt 0 ]]; do
+        sleep 0.5
+        count=$((count+1))
+        if [ "$count" -gt 120 ]; then
+            echo "timeout while waiting for $tx_num"
+            break
+        fi
+    done;
+}
+
+function tx_async()
+{
+    tx_num=$1
+    query=$2
+
+    tx_wait $tx_num
+
+    session="${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}_tx$tx_num"
+    query_id="${session}_${RANDOM}"
+    url_without_session="https://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTPS}/?"
+    url="${url_without_session}session_id=$session&query_id=$query_id&database=$CLICKHOUSE_DATABASE"
+
+    # run query asynchronously
+    ${CLICKHOUSE_CURL} -m 60 -sSk "$url" --data "$query" | sed "s/^/tx$tx_num\t/" &
+}
