@@ -156,8 +156,6 @@ static const auto QUEUE_UPDATE_ERROR_SLEEP_MS        = 1 * 1000;
 static const auto MUTATIONS_FINALIZING_SLEEP_MS      = 1 * 1000;
 static const auto MUTATIONS_FINALIZING_IDLE_SLEEP_MS = 5 * 1000;
 
-static const int CURRENT_ZERO_COPY_VERSION = 2;
-
 void StorageReplicatedMergeTree::setZooKeeper()
 {
     /// Every ReplicatedMergeTree table is using only one ZooKeeper session.
@@ -4111,10 +4109,6 @@ void StorageReplicatedMergeTree::startup()
         assert(prev_ptr == nullptr);
         getContext()->getInterserverIOHandler().addEndpoint(data_parts_exchange_ptr->getId(replica_path), data_parts_exchange_ptr);
 
-        convertZeroCopySchema();
-        is_zero_copy_in_compatible_mode = isZeroCopySchemaInCompatibleMode();
-        cleanupOldZeroCopySchema();
-
         /// In this thread replica will be activated.
         restarting_thread.start();
 
@@ -7176,7 +7170,7 @@ void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part)
     boost::replace_all(id, "/", "_");
 
     Strings zc_zookeeper_paths = getZeroCopyPartPath(*getDefaultSettings(), disk->getType(), getTableUniqID(),
-        part.name, is_zero_copy_in_compatible_mode ? zookeeper_path : "");
+        part.name, zookeeper_path);
     for (const auto & zc_zookeeper_path : zc_zookeeper_paths)
     {
         String zookeeper_node = fs::path(zc_zookeeper_path) / id / replica_name;
@@ -7210,7 +7204,7 @@ bool StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & par
         return false;
 
     return unlockSharedDataById(part.getUniqueId(), getTableUniqID(), name, replica_name, disk, zookeeper, *getDefaultSettings(), log,
-        is_zero_copy_in_compatible_mode ? zookeeper_path : String(""));
+        zookeeper_path);
 }
 
 
@@ -7302,7 +7296,7 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
         return best_replica;
 
     Strings zc_zookeeper_paths = getZeroCopyPartPath(*getDefaultSettings(), disk_type, getTableUniqID(), part.name,
-            is_zero_copy_in_compatible_mode ? zookeeper_path : "");
+            zookeeper_path);
 
     std::set<String> replicas;
 
@@ -7381,7 +7375,7 @@ Strings StorageReplicatedMergeTree::getZeroCopyPartPath(const MergeTreeSettings 
 
     String new_path = fs::path(settings.remote_fs_zero_copy_zookeeper_path.toString()) / zero_copy / table_uuid / part_name;
     res.push_back(new_path);
-    if (!zookeeper_path_old.empty())
+    if (settings.remote_fs_zero_copy_path_compatible_mode && !zookeeper_path_old.empty())
     { /// Compatibility mode for cluster with old and new versions
         String old_path = fs::path(zookeeper_path_old) / zero_copy / "shared" / part_name;
         res.push_back(old_path);
@@ -7611,148 +7605,6 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
 }
 
 
-void StorageReplicatedMergeTree::convertZeroCopySchema()
-{
-    if (!current_zookeeper)
-        return;
-
-    int zero_copy_version = 1;
-
-    auto version_path = fs::path(getDefaultSettings()->remote_fs_zero_copy_zookeeper_path.toString()) / "version" / replica_name;
-
-    if (current_zookeeper->exists(version_path))
-        zero_copy_version = parse<int>(current_zookeeper->get(version_path));
-
-    /// Emergency parameter to restore zero-copy marks on old paths
-    int revert_to_version = getDefaultSettings()->need_revert_zero_copy_version;
-
-    if (!revert_to_version && zero_copy_version >= CURRENT_ZERO_COPY_VERSION)
-        return;
-
-    if (revert_to_version && zero_copy_version <= revert_to_version)
-        return;
-
-    int required_zero_copy_version = revert_to_version ? revert_to_version : CURRENT_ZERO_COPY_VERSION;
-
-    auto storage_policy = getStoragePolicy();
-    if (!storage_policy)
-        return;
-
-    auto disks = storage_policy->getDisks();
-
-    std::set<String> disk_types;
-
-    for (const auto & disk : disks)
-        if (disk->supportZeroCopyReplication())
-            disk_types.insert(toString(disk->getType()));
-
-    if (disk_types.empty())
-        return;
-
-    LOG_INFO(log, "Convert zero_copy version from {} to {} for {}", zero_copy_version, required_zero_copy_version,
-        version_path.string());
-
-    unsigned long converted_part_counter = 0;
-
-    for (auto const & disk_type : disk_types)
-    {
-        String zero_copy = fmt::format("zero_copy_{}", disk_type);
-
-        auto shard_root_v1 = fs::path(zookeeper_path) / zero_copy / "shared";
-        auto shard_root_v2 = fs::path(getDefaultSettings()->remote_fs_zero_copy_zookeeper_path.toString())
-            / zero_copy / getTableUniqID();
-
-        auto old_shard_root = revert_to_version == 1 ? shard_root_v2 : shard_root_v1;
-        auto new_shard_root = revert_to_version == 1 ? shard_root_v1 : shard_root_v2;
-
-        Strings parts;
-        current_zookeeper->tryGetChildren(old_shard_root, parts);
-
-        for (const auto & part_name : parts)
-        {
-            auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
-            auto part = getPartIfExists(part_info, {MergeTreeDataPartState::Committed});
-
-            if (part)
-            { /// Do not move lost locks
-                Strings ids;
-                current_zookeeper->tryGetChildren(old_shard_root / part_name, ids);
-                for (const auto & id : ids)
-                {
-                    if (current_zookeeper->exists(old_shard_root / part_name / id / replica_name))
-                    {
-                        auto zookeeper_node = new_shard_root / part_name / id / replica_name;
-                        createZeroCopyLockNode(current_zookeeper, zookeeper_node.string());
-                        ++converted_part_counter;
-                    }
-                }
-            }
-        }
-    }
-
-    current_zookeeper->createAncestors(version_path);
-
-    current_zookeeper->createOrUpdate(version_path, std::to_string(required_zero_copy_version),
-        zkutil::CreateMode::Persistent);
-
-    current_zookeeper->createOrUpdate(version_path / "cleanup_required", std::to_string(zero_copy_version),
-        zkutil::CreateMode::Persistent);
-
-    LOG_INFO(log, "Convert zero_copy version from {} to {} for {} complete, converted {} locks", zero_copy_version, required_zero_copy_version,
-        version_path.string(), converted_part_counter);
-}
-
-
-void StorageReplicatedMergeTree::cleanupOldZeroCopySchema()
-{
-    if (is_zero_copy_in_compatible_mode)
-        return; /// Some replicas have old version
-
-    if (!current_zookeeper)
-        return;
-
-    auto old_version_path = fs::path(getDefaultSettings()->remote_fs_zero_copy_zookeeper_path.toString()) / "version" / replica_name / "cleanup_required";
-
-    if (!current_zookeeper->exists(old_version_path))
-        return;
-
-    auto zero_copy_version = parse<int>(current_zookeeper->get(old_version_path));
-
-    if (zero_copy_version == 1)
-    {
-        auto storage_policy = getStoragePolicy();
-        if (!storage_policy)
-            return;
-
-        auto disks = storage_policy->getDisks();
-
-        std::set<String> disk_types;
-
-        for (const auto & disk : disks)
-            if (disk->supportZeroCopyReplication())
-                disk_types.insert(toString(disk->getType()));
-
-        if (disk_types.empty())
-            return;
-
-        LOG_INFO(log, "Cleanup zero_copy version {}", zero_copy_version);
-
-        for (auto const & disk_type : disk_types)
-        {
-            String zero_copy = fmt::format("zero_copy_{}", disk_type);
-
-            auto old_shard_root = fs::path(zookeeper_path) / zero_copy / "shared";
-
-            current_zookeeper->tryRemoveRecursive(old_shard_root);
-        }
-
-        current_zookeeper->remove(old_version_path);
-
-        LOG_INFO(log, "Cleanup zero_copy version {} complete", zero_copy_version);
-    }
-}
-
-
 void StorageReplicatedMergeTree::createZeroCopyLockNode(const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_node)
 {
     /// In rare case other replica can remove path between createAncestors and createIfNotExists
@@ -7775,28 +7627,5 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(const zkutil::ZooKeeperP
     }
 }
 
-
-bool StorageReplicatedMergeTree::isZeroCopySchemaInCompatibleMode() const
-{
-    if (!current_zookeeper)
-        return false;
-
-    auto version_root_path = fs::path(getDefaultSettings()->remote_fs_zero_copy_zookeeper_path.toString()) / "version";
-
-    Strings replicas = current_zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
-
-    for (const auto & replica : replicas)
-    {
-        if (!current_zookeeper->exists(version_root_path / replica))
-            return true;
-        int zero_copy_version = parse<int>(current_zookeeper->get(version_root_path / replica));
-        if (zero_copy_version < CURRENT_ZERO_COPY_VERSION)
-            return true;
-        /// If version is greater that current then other replica has new version.
-        /// In that case other replica with new version should be in compatible mode.
-    }
-
-    return false;
-}
 
 }
