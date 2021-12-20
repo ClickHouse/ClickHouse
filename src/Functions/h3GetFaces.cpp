@@ -64,7 +64,7 @@ public:
         auto current_offset = 0;
         std::vector<int> faces;
 
-        for (size_t row = 0; row < input_rows_count; row++)
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
             int max_faces = maxFaceCount(data[row]);
 
