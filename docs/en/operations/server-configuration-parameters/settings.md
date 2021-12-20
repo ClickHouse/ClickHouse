@@ -448,7 +448,7 @@ This section contains the following parameters:
 -   `allow_empty` — If `true`, then other replicas are allowed to connect without authentication even if credentials are set. If `false`, then connections without authentication are refused. Default value: `false`.
 -   `old` — Contains old `user` and `password` used during credential rotation. Several `old` sections can be specified.
 
-**Credential Rotation**
+**Credentials Rotation**
 
 ClickHouse supports dynamic interserver credential rotation without the need of stopping all replicas at the same time to update their configuration. Credentials can be changed in several steps.
 
