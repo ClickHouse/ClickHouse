@@ -11,8 +11,6 @@
 namespace DB
 {
 
-class Pipe;
-
 class LibraryBridgeHelper : public IBridgeHelper
 {
 
@@ -38,13 +36,13 @@ public:
 
     bool supportsSelectiveLoad();
 
-    Pipe loadAll();
+    BlockInputStreamPtr loadAll();
 
-    Pipe loadIds(const std::vector<uint64_t> & ids);
+    BlockInputStreamPtr loadIds(const std::vector<uint64_t> & ids);
 
-    Pipe loadKeys(const Block & requested_block);
+    BlockInputStreamPtr loadKeys(const Block & requested_block);
 
-    Pipe loadBase(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = {});
+    BlockInputStreamPtr loadBase(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = {});
 
     bool executeRequest(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = {}) const;
 
@@ -101,7 +99,6 @@ private:
     size_t bridge_port;
     bool library_initialized = false;
     ConnectionTimeouts http_timeouts;
-    Poco::Net::HTTPBasicCredentials credentials{};
 };
 
 }

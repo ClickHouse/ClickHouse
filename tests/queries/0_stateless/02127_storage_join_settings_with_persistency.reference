@@ -1,2 +1,0 @@
-CREATE TABLE default.`02127_join_settings_with_persistency_1`\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = Join(ANY, LEFT, k)\nSETTINGS persistent = 1, join_any_take_last_row = 0
-CREATE TABLE default.`02127_join_settings_with_persistency_0`\n(\n    `k` UInt64,\n    `s` String\n)\nENGINE = Join(ANY, LEFT, k)\nSETTINGS persistent = 0, join_any_take_last_row = 0

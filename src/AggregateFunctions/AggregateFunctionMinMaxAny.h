@@ -6,15 +6,16 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnNullable.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <base/StringRef.h>
+#include <common/StringRef.h>
 #include <Common/assert_cast.h>
-#include <DataTypes/DataTypeNullable.h>
+
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -42,14 +43,12 @@ struct SingleValueDataFixed
 {
 private:
     using Self = SingleValueDataFixed;
-    using ColVecType = ColumnVectorOrDecimal<T>;
+    using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
 
     bool has_value = false; /// We need to remember if at least one value has been passed. This is necessary for AggregateFunctionIf.
     T value;
 
 public:
-    static constexpr bool is_nullable = false;
-
     bool has() const
     {
         return has_value;
@@ -470,8 +469,6 @@ private:
     char small_data[MAX_SMALL_STRING_SIZE]; /// Including the terminating zero.
 
 public:
-    static constexpr bool is_nullable = false;
-
     bool has() const
     {
         return size >= 0;
@@ -695,8 +692,6 @@ private:
     Field value;
 
 public:
-    static constexpr bool is_nullable = false;
-
     bool has() const
     {
         return !value.isNull();
@@ -980,68 +975,6 @@ struct AggregateFunctionAnyLastData : Data
 #endif
 };
 
-template <typename Data>
-struct AggregateFunctionSingleValueOrNullData : Data
-{
-    static constexpr bool is_nullable = true;
-
-    using Self = AggregateFunctionSingleValueOrNullData;
-
-    bool first_value = true;
-    bool is_null = false;
-
-    bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena)
-    {
-        if (first_value)
-        {
-            first_value = false;
-            this->change(column, row_num, arena);
-            return true;
-        }
-        else if (!this->isEqualTo(column, row_num))
-        {
-            is_null = true;
-        }
-        return false;
-    }
-
-    bool changeIfBetter(const Self & to, Arena * arena)
-    {
-        if (first_value)
-        {
-            first_value = false;
-            this->change(to, arena);
-            return true;
-        }
-        else if (!this->isEqualTo(to))
-        {
-            is_null = true;
-        }
-        return false;
-    }
-
-    void insertResultInto(IColumn & to) const
-    {
-        if (is_null || first_value)
-        {
-            to.insertDefault();
-        }
-        else
-        {
-            ColumnNullable & col = typeid_cast<ColumnNullable &>(to);
-            col.getNullMapColumn().insertDefault();
-            this->Data::insertResultInto(col.getNestedColumn());
-        }
-    }
-
-    static const char * name() { return "singleValueOrNull"; }
-
-#if USE_EMBEDDED_COMPILER
-
-    static constexpr bool is_compilable = false;
-
-#endif
-};
 
 /** Implement 'heavy hitters' algorithm.
   * Selects most frequent value if its frequency is more than 50% in each thread of execution.
@@ -1141,10 +1074,7 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        auto result_type = this->argument_types.at(0);
-        if constexpr (Data::is_nullable)
-            return makeNullable(result_type);
-        return result_type;
+        return this->argument_types.at(0);
     }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
@@ -1157,12 +1087,12 @@ public:
         this->data(place).changeIfBetter(this->data(rhs), arena);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         this->data(place).write(buf, *serialization);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
     {
         this->data(place).read(buf, *serialization, arena);
     }
