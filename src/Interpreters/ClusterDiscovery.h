@@ -114,7 +114,6 @@ private:
     /// It prevents accessing to invalid object after ClusterDiscovery is destroyed.
     std::shared_ptr<UpdateFlags> clusters_to_update;
 
-    std::atomic<bool> stop_flag = false;
     ThreadFromGlobalPool main_thread;
 
     Poco::Logger * log;
