@@ -69,7 +69,7 @@ def get_instances_addresses(ec2_client, instance_ids):
 
 
 def prepare_autoscaling_group_and_get_hostnames():
-    asg_client = boto3.client('autoscaling')
+    asg_client = boto3.client('autoscaling', region_name='us-east-1')
     asg_client.set_desired_capacity(AutoScalingGroupName=JEPSEN_GROUP_NAME, DesiredCapacity=DESIRED_INSTANCE_COUNT)
 
     instances = get_autoscaling_group_instances_ids(asg_client, JEPSEN_GROUP_NAME)
@@ -81,7 +81,7 @@ def prepare_autoscaling_group_and_get_hostnames():
         if counter > 30:
             raise Exception("Cannot wait autoscaling group")
 
-    ec2_client = boto3.client('ec2')
+    ec2_client = boto3.client('ec2', region_name='us-east-1')
     return get_instances_addresses(ec2_client, instances)
 
 
