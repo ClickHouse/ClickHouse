@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <optional>
+#include <cassert>
 
 #include <link.h>
 
@@ -85,12 +86,45 @@ namespace
 /// https://stackoverflow.com/questions/32088140/multiple-string-tables-in-elf-object
 
 
+void updateResources(std::string_view name, const void * address, SymbolIndex::Resources & resources)
+{
+    const char * char_address = static_cast<const char *>(address);
+
+    if (name.starts_with("_binary_") || name.starts_with("binary_"))
+    {
+        std::cerr << name << "\n";
+
+        if (name.ends_with("_start"))
+        {
+            name = name.substr((name[0] == '_') + strlen("binary_"));
+            name = name.substr(0, name.size() - strlen("_start"));
+
+            resources[name] = std::string_view{char_address, 0};
+        }
+        else if (name.ends_with("_end"))
+        {
+            name = name.substr((name[0] == '_') + strlen("binary_"));
+            name = name.substr(0, name.size() - strlen("_end"));
+
+            if (auto it = resources.find(name); it != resources.end())
+            {
+                auto start = it->second.data();
+                assert(char_address >= start);
+                it->second = std::string_view{start, static_cast<size_t>(char_address - start)};
+            }
+        }
+    }
+}
+
+
 /// Based on the code of musl-libc and the answer of Kanalpiroge on
 /// https://stackoverflow.com/questions/15779185/list-all-the-functions-symbols-on-the-fly-in-c-code-on-a-linux-architecture
 /// It does not extract all the symbols (but only public - exported and used for dynamic linking),
 /// but will work if we cannot find or parse ELF files.
-void collectSymbolsFromProgramHeaders(dl_phdr_info * info,
-    std::vector<SymbolIndex::Symbol> & symbols)
+void collectSymbolsFromProgramHeaders(
+    dl_phdr_info * info,
+    std::vector<SymbolIndex::Symbol> & symbols,
+    SymbolIndex::Resources & resources)
 {
     /* Iterate over all headers of the current shared lib
      * (first call is for the executable itself)
@@ -201,6 +235,8 @@ void collectSymbolsFromProgramHeaders(dl_phdr_info * info,
                     symbol.address_end = reinterpret_cast<const void *>(info->dlpi_addr + elf_sym[sym_index].st_value + elf_sym[sym_index].st_size);
                     symbol.name = sym_name;
                     symbols.push_back(symbol);
+
+                    updateResources(symbol.name, symbol.address_begin, resources);
                 }
 
                 break;
@@ -229,7 +265,8 @@ void collectSymbolsFromELFSymbolTable(
     const Elf & elf,
     const Elf::Section & symbol_table,
     const Elf::Section & string_table,
-    std::vector<SymbolIndex::Symbol> & symbols)
+    std::vector<SymbolIndex::Symbol> & symbols,
+    SymbolIndex::Resources & resources)
 {
     /// Iterate symbol table.
     const ElfSym * symbol_table_entry = reinterpret_cast<const ElfSym *>(symbol_table.begin());
@@ -256,6 +293,8 @@ void collectSymbolsFromELFSymbolTable(
         symbol.address_end = reinterpret_cast<const void *>(info->dlpi_addr + symbol_table_entry->st_value + symbol_table_entry->st_size);
         symbol.name = symbol_name;
         symbols.push_back(symbol);
+
+        updateResources(symbol.name, symbol.address_begin, resources);
     }
 }
 
@@ -265,7 +304,8 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
     const Elf & elf,
     unsigned section_header_type,
     const char * string_table_name,
-    std::vector<SymbolIndex::Symbol> & symbols)
+    std::vector<SymbolIndex::Symbol> & symbols,
+    SymbolIndex::Resources & resources)
 {
     std::optional<Elf::Section> symbol_table;
     std::optional<Elf::Section> string_table;
@@ -280,17 +320,20 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
             return (symbol_table && string_table);
         }))
     {
+        std::cerr << "!\n";
         return false;
     }
 
-    collectSymbolsFromELFSymbolTable(info, elf, *symbol_table, *string_table, symbols);
+    collectSymbolsFromELFSymbolTable(info, elf, *symbol_table, *string_table, symbols, resources);
     return true;
 }
 
 
-void collectSymbolsFromELF(dl_phdr_info * info,
+void collectSymbolsFromELF(
+    dl_phdr_info * info,
     std::vector<SymbolIndex::Symbol> & symbols,
     std::vector<SymbolIndex::Object> & objects,
+    SymbolIndex::Resources & resources,
     String & build_id)
 {
     /// MSan does not know that the program segments in memory are initialized.
@@ -377,10 +420,12 @@ void collectSymbolsFromELF(dl_phdr_info * info,
     object.name = object_name;
     objects.push_back(std::move(object));
 
-    searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SHT_SYMTAB, ".strtab", symbols);
+    searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SHT_SYMTAB, ".strtab", symbols, resources);
 
-    /// Unneeded because they were parsed from "program headers" of loaded objects.
-    //searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SHT_DYNSYM, ".dynstr", symbols);
+    /// Unneeded if they were parsed from "program headers" of loaded objects.
+#if defined USE_MUSL
+    searchAndCollectSymbolsFromELFSymbolTable(info, *objects.back().elf, SHT_DYNSYM, ".dynstr", symbols, resources);
+#endif
 }
 
 
@@ -392,8 +437,8 @@ int collectSymbols(dl_phdr_info * info, size_t, void * data_ptr)
 {
     SymbolIndex::Data & data = *reinterpret_cast<SymbolIndex::Data *>(data_ptr);
 
-    collectSymbolsFromProgramHeaders(info, data.symbols);
-    collectSymbolsFromELF(info, data.symbols, data.objects, data.build_id);
+    collectSymbolsFromProgramHeaders(info, data.symbols, data.resources);
+    collectSymbolsFromELF(info, data.symbols, data.objects, data.resources, data.build_id);
 
     /* Continue iterations */
     return 0;
@@ -424,7 +469,7 @@ const T * find(const void * address, const std::vector<T> & vec)
 
 void SymbolIndex::update()
 {
-    dl_iterate_phdr(collectSymbols, &data.symbols);
+    dl_iterate_phdr(collectSymbols, &data);
 
     std::sort(data.objects.begin(), data.objects.end(), [](const Object & a, const Object & b) { return a.address_begin < b.address_begin; });
     std::sort(data.symbols.begin(), data.symbols.end(), [](const Symbol & a, const Symbol & b) { return a.address_begin < b.address_begin; });

@@ -3,8 +3,8 @@
 #include <mysqlxx/Connection.h>
 #include <mysqlxx/Transaction.h>
 #include <mysqlxx/Pool.h>
-#include <base/LocalDate.h>
-#include <base/LocalDateTime.h>
+#include <Common/LocalDate.h>
+#include <Common/LocalDateTime.h>
 #include <mysqlxx/Null.h>
 
 
