@@ -61,13 +61,16 @@ public:
 
     String getName() const override { return "MagPackRowInputFormat"; }
     void resetParser() override;
+    void setReadBuffer(ReadBuffer & in_) override;
 
 private:
+    MsgPackRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_);
+
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 
     bool readObject();
 
-    PeekableReadBuffer buf;
+    std::unique_ptr<PeekableReadBuffer> buf;
     MsgPackVisitor visitor;
     msgpack::detail::parse_helper<MsgPackVisitor> parser;
     const DataTypes data_types;

@@ -2,10 +2,12 @@ import os
 import logging
 import ast
 
+from env_helper import GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_RUN_ID
 from report import create_test_html_report
 
+
 def process_logs(s3_client, additional_logs, s3_path_prefix, test_results, with_raw_logs):
-    proccessed_logs = {}
+    processed_logs = {}
     # Firstly convert paths of logs from test_results to urls to s3.
     for test_result in test_results:
         if len(test_result) <= 3 or with_raw_logs:
@@ -15,14 +17,14 @@ def process_logs(s3_client, additional_logs, s3_path_prefix, test_results, with_
         test_log_paths = ast.literal_eval(test_result[3])
         test_log_urls = []
         for log_path in test_log_paths:
-            if log_path in proccessed_logs:
-                test_log_urls.append(proccessed_logs[log_path])
+            if log_path in processed_logs:
+                test_log_urls.append(processed_logs[log_path])
             elif log_path:
                 url = s3_client.upload_test_report_to_s3(
                     log_path,
                     s3_path_prefix + "/" + os.path.basename(log_path))
                 test_log_urls.append(url)
-                proccessed_logs[log_path] = url
+                processed_logs[log_path] = url
 
         test_result[3] = test_log_urls
 
@@ -36,18 +38,19 @@ def process_logs(s3_client, additional_logs, s3_path_prefix, test_results, with_
 
     return additional_urls
 
+
 def upload_results(s3_client, pr_number, commit_sha, test_results, additional_files, check_name, with_raw_logs=True):
     s3_path_prefix = f"{pr_number}/{commit_sha}/" + check_name.lower().replace(' ', '_').replace('(', '_').replace(')', '_').replace(',', '_')
     additional_urls = process_logs(s3_client, additional_files, s3_path_prefix, test_results, with_raw_logs)
 
-    branch_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/commits/master"
+    branch_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/commits/master"
     branch_name = "master"
     if pr_number != 0:
         branch_name = f"PR #{pr_number}"
-        branch_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/pull/{pr_number}"
-    commit_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/commit/{commit_sha}"
+        branch_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/pull/{pr_number}"
+    commit_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/commit/{commit_sha}"
 
-    task_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
+    task_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID}"
 
     if additional_urls:
         raw_log_url = additional_urls[0]
