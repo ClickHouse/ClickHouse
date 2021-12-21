@@ -4,6 +4,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ZstdDeflatingAppendableWriteBuffer.h>
 #include <filesystem>
+#include <unistd.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/trim.hpp>
@@ -312,10 +313,11 @@ Changelog::Changelog(
     clean_log_thread = ThreadFromGlobalPool([this] { cleanThread(); });
 }
 
-[[noreturn]] void Changelog::cleanThread()
+void Changelog::cleanThread()
 {
-    while (true)
+    while (!shutdown_clean_thread.load(std::memory_order_relaxed))
     {
+    
         std::string path;
         if (del_log_q.pop(path))
         {
@@ -772,6 +774,8 @@ Changelog::~Changelog()
     try
     {
         flush();
+        shutdown_clean_thread.store(true);
+        clean_log_thread.join();
     }
     catch (...)
     {

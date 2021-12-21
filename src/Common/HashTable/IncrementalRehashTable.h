@@ -44,7 +44,7 @@ public:
         count = rhs.count;
     }
     ~IncrementalRehashTable() = default;
-    void reseve(size_t t)
+    void reserve(size_t t)
     {
         store[0]->reserve(t);
         store[1]->reserve(t * 2);
@@ -142,16 +142,19 @@ public:
     }
     iterator erase(iterator pos)
     {
-        auto res = store[0]->erase(pos);
+        int index = 0;
+        auto res = store[0]->erase(pos.m_iter);
         if (rehashing)
         {
-            res = store[1]->erase(pos);
+            res = store[1]->erase(pos.m_iter);
+            index = 1;
         }
-        return res;
+        return iterator(this, res, index);
     }
     iterator erase(const_iterator pos)
     {
-        return erase(const_cast<iterator>(pos));
+        iterator it(this, pos.m_iter, pos.index);
+        return erase(it);
     }
     iterator erase(const_iterator first, const_iterator last)
     {
@@ -168,6 +171,15 @@ public:
         return count;
     }
     bool empty() const { return count == 0; }
+    iterator find(const Key & key)
+    {
+        auto res =  store[0]->find(key);
+        if (res != store[0]->end())
+            return iterator(this, res, 0);
+        if (rehashing)
+            return iterator(this, store[1]->find(key), 1);
+        return iterator(this, store[0]->end(), 0);
+    }
     const_iterator find(const Key & key) const
     {
         auto res =  store[0]->find(key);
@@ -215,8 +227,15 @@ public:
     std::pair<iterator,bool> emplace(Args&&... args)
     {
         if (rehashing) 
-            return store[1]->emplace(std::forward<Args>(args)...);
-        return store[0]->emplace(std::forward<Args>(args)...);
+        {
+            auto res = store[1]->emplace(std::forward<Args>(args)...);
+            moveOneEntry();
+            return std::make_pair(iterator(this, res.first, 1), res.second);
+        }
+        else {
+            auto res = store[0]->emplace(std::forward<Args>(args)...);
+            return std::make_pair(iterator(this, res.first, 0), res.second);
+        }
     }
     bool exists(const Key & t)
     {
@@ -227,6 +246,7 @@ public:
         }
         return res;
     }
+    /*
     bool getValue(const Key & key, T & value) const
     {
         auto res = store[0]->find(key);
@@ -246,6 +266,7 @@ public:
         }
         return false;
     }
+    */
 };
 
 template <typename Key, typename Hash = robin_hood::hash<Key>, typename KeyEqual = std::equal_to<Key>,

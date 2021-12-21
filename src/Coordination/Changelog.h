@@ -2,6 +2,7 @@
 
 #include <libnuraft/nuraft.hxx>
 #include <city.h>
+#include <atomic>
 #include <optional>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/HashingWriteBuffer.h>
@@ -146,7 +147,7 @@ private:
     /// Init writer for existing log with some entries already written
     void initWriter(const ChangelogFileDescription & description);
 
-    [[noreturn]] void cleanThread();
+    void cleanThread();
 
     void delOneEntry();
 
@@ -173,6 +174,7 @@ private:
     boost::lockfree::spsc_queue<std::string> del_log_q{128};
     size_t cur_del_idx; 
     ThreadFromGlobalPool clean_log_thread;
+    std::atomic_bool shutdown_clean_thread{false};
 };
 
 }

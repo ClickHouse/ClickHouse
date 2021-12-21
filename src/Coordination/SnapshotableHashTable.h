@@ -97,7 +97,7 @@ private:
     //using IndexMap = std::unordered_map<StringRef, typename List::iterator, StringRefHash>;
     //using IndexMap = ArrayMap<StringRef, typename List::iterator, StringRefHash>;
     //using IndexMap = ArrayMap<std::string, typename List::iterator, StringRefHash>;
-    using IndexMap = my_unordered_set<std::string, typename List::iterator, StringRefHash>;
+    using IndexMap = my_unordered_map<std::string, typename List::iterator/*, StringRefHash*/>;
     //using IndexMap = TwoLevelHashMap<StringRef, typename List::iterator>;
 
     List list;
@@ -269,7 +269,7 @@ public:
     const_iterator updateValue(const std::string & key, ValueUpdater updater)
     {
         auto it = map.find(key);
-        assert(it != nullptr);
+        assert(it != map.end());
 
         auto list_itr = it->second;
         uint64_t old_value_size = list_itr->value.sizeInBytes();
@@ -298,7 +298,7 @@ public:
     const_iterator find(const std::string & key) const
     {
         auto map_it = map.find(key);
-        if (map_it != nullptr) 
+        if (map_it != map.end())
             return map_it->second;
         return list.end();
     }
@@ -306,7 +306,7 @@ public:
     const V & getValue(const std::string & key) const
     {
         auto it = map.find(key);
-        assert(it != nullptr);
+        assert(it != map.end());
         return it->second->value;
     }
 
