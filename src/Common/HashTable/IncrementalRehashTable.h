@@ -17,14 +17,14 @@ public:
     using size_type = size_t;
     using hasher = Hash;
     using key_equal = KeyEqual;
-    using Self = IncrementalRehashTable<IsFlat, MaxLoadFactor100+10, Key, T, Hash, KeyEqual>;
-    using US = robin_hood::detail::Table<IsFlat, MaxLoadFactor100+10, Key, T, Hash, KeyEqual>;
+    using Self = IncrementalRehashTable<IsFlat, MaxLoadFactor100, Key, T, Hash, KeyEqual>;
+    using US = robin_hood::detail::Table<IsFlat, MaxLoadFactor100, Key, T, Hash, KeyEqual>;
     using inner_iterator = typename US::iterator;
 private:
     std::shared_ptr<US> store[2];
     bool rehashing{false};
     inner_iterator cur; // rehash iterator
-    float max_load_factor = static_cast<float>(MaxLoadFactor100)/100.0;
+    float max_load_factor = static_cast<float>(MaxLoadFactor100 - 10)/100.0;
     std::size_t count{0};
 public:
     IncrementalRehashTable()
@@ -104,6 +104,7 @@ public:
             std::cout << "rehash end, size " << store[0]->size() << ", count " << count << std::endl;
         }
     }
+    // only insert table 1 if rehashing
     std::pair<iterator,bool> insert(const value_type & t)
     {
         ++count;
@@ -183,14 +184,14 @@ public:
 };
 
 template <typename Key, typename Hash = robin_hood::hash<Key>, typename KeyEqual = std::equal_to<Key>,
-          size_t MaxLoadFactor100 = 70>
+          size_t MaxLoadFactor100 = 80>
 using my_unordered_set = IncrementalRehashTable<sizeof(Key) <= sizeof(size_t) * 6 &&
                                         std::is_nothrow_move_constructible<Key>::value &&
                                         std::is_nothrow_move_assignable<Key>::value,
                                     MaxLoadFactor100, Key, void, Hash, KeyEqual>;
 
 template <typename Key, typename T, typename Hash = robin_hood::hash<Key>,
-          typename KeyEqual = std::equal_to<Key>, size_t MaxLoadFactor100 = 70>
+          typename KeyEqual = std::equal_to<Key>, size_t MaxLoadFactor100 = 80>
 using my_unordered_map = IncrementalRehashTable<sizeof(robin_hood::pair<Key, T>) <= sizeof(size_t) * 6 &&
                       std::is_nothrow_move_constructible<robin_hood::pair<Key, T>>::value &&
                       std::is_nothrow_move_assignable<robin_hood::pair<Key, T>>::value,
