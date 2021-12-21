@@ -207,7 +207,7 @@ jobs:
         run: |
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/keeper_jepsen
-          REPORTS_PATH=${{runner.temp}}/keeper_jepsen
+          REPORTS_PATH=${{runner.temp}}/reports_dir
           REPO_COPY=${{runner.temp}}/keeper_jepsen/ClickHouse
           EOF
       - name: Download json reports
