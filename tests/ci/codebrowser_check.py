@@ -7,6 +7,7 @@ import logging
 
 from github import Github
 
+from env_helper import IMAGES_PATH, REPO_COPY
 from stopwatch import Stopwatch
 from upload_result_helper import upload_results
 from s3_helper import S3Helper
@@ -22,7 +23,7 @@ def get_run_command(repo_path, output_path, image):
     cmd = "docker run " + \
           f"--volume={repo_path}:/repo_folder "  \
           f"--volume={output_path}:/test_output " \
-          f"-e DATA=https://s3.amazonaws.com/clickhouse-test-reports/codebrowser/html_report/data {image}"
+          f"-e 'DATA=https://s3.amazonaws.com/clickhouse-test-reports/codebrowser/html_report/data' {image}"
     return cmd
 
 if __name__ == "__main__":
@@ -31,7 +32,6 @@ if __name__ == "__main__":
     stopwatch = Stopwatch()
 
     temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
-    repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
 
     pr_info = PRInfo()
 
@@ -40,14 +40,14 @@ if __name__ == "__main__":
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    docker_image = get_image_with_version(temp_path, 'clickhouse/codebrowser')
+    docker_image = get_image_with_version(IMAGES_PATH, 'clickhouse/codebrowser')
     s3_helper = S3Helper('https://s3.amazonaws.com')
 
     result_path = os.path.join(temp_path, "result_path")
     if not os.path.exists(result_path):
         os.makedirs(result_path)
 
-    run_command = get_run_command(repo_path, result_path, docker_image)
+    run_command = get_run_command(REPO_COPY, result_path, docker_image)
 
     logging.info("Going to run codebrowser: %s", run_command)
 
