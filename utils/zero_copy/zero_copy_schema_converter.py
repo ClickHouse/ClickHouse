@@ -18,14 +18,14 @@ def parse_args():
     parser.add_argument('-p', '--password', default='', help='ZooKeeper ACL password')
     parser.add_argument('-r', '--root', default='/clickhouse', help='ZooKeeper root path for ClickHouse')
     parser.add_argument('-z', '--zcroot', default='zero_copy', help='ZooKeeper node for new zero-copy data')
-    parser.add_argument('--dryrun', default=False, action='store_true', help='Do not perfome any actions')
+    parser.add_argument('--dryrun', default=False, action='store_true', help='Do not perform any actions')
     parser.add_argument('--cleanup', default=False, action='store_true', help='Clean old nodes')
     parser.add_argument('-v', '--verbose', action='store_true', default=False, help='Verbose mode')
 
     return parser.parse_args()
 
 
-# Several folders to euristic that zookeepr node is folder node
+# Several folders to heuristic that zookeepr node is folder node
 # May be false positive when someone creates set of tables with same paths
 table_nodes = ['alter_partition_version', 'block_numbers', 'blocks', 'columns', 'leader_election']
 zc_nodes = ['zero_copy_s3', 'zero_copy_hdfs']
