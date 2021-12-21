@@ -92,8 +92,6 @@ void updateResources(std::string_view name, const void * address, SymbolIndex::R
 
     if (name.starts_with("_binary_") || name.starts_with("binary_"))
     {
-        std::cerr << name << "\n";
-
         if (name.ends_with("_start"))
         {
             name = name.substr((name[0] == '_') + strlen("binary_"));
@@ -218,10 +216,6 @@ void collectSymbolsFromProgramHeaders(
                 /* Iterate over the symbol table */
                 for (ElfW(Word) sym_index = 0; sym_index < ElfW(Word)(sym_cnt); ++sym_index)
                 {
-                    /// We are not interested in empty symbols.
-                    if (!elf_sym[sym_index].st_size)
-                        continue;
-
                     /* Get the name of the sym_index-th symbol.
                      * This is located at the address of st_name relative to the beginning of the string table.
                      */
@@ -231,11 +225,17 @@ void collectSymbolsFromProgramHeaders(
                         continue;
 
                     SymbolIndex::Symbol symbol;
-                    symbol.address_begin = reinterpret_cast<const void *>(info->dlpi_addr + elf_sym[sym_index].st_value);
-                    symbol.address_end = reinterpret_cast<const void *>(info->dlpi_addr + elf_sym[sym_index].st_value + elf_sym[sym_index].st_size);
+                    symbol.address_begin = reinterpret_cast<const void *>(
+                        info->dlpi_addr + elf_sym[sym_index].st_value);
+                    symbol.address_end = reinterpret_cast<const void *>(
+                        info->dlpi_addr + elf_sym[sym_index].st_value + elf_sym[sym_index].st_size);
                     symbol.name = sym_name;
-                    symbols.push_back(symbol);
 
+                    /// We are not interested in empty symbols.
+                    if (elf_sym[sym_index].st_size)
+                        symbols.push_back(symbol);
+
+                    /// But resources can be represented by a pair of empty symbols (indicating their boundaries).
                     updateResources(symbol.name, symbol.address_begin, resources);
                 }
 
@@ -278,7 +278,6 @@ void collectSymbolsFromELFSymbolTable(
     {
         if (!symbol_table_entry->st_name
             || !symbol_table_entry->st_value
-            || !symbol_table_entry->st_size
             || strings + symbol_table_entry->st_name >= elf.end())
             continue;
 
@@ -289,10 +288,14 @@ void collectSymbolsFromELFSymbolTable(
             continue;
 
         SymbolIndex::Symbol symbol;
-        symbol.address_begin = reinterpret_cast<const void *>(info->dlpi_addr + symbol_table_entry->st_value);
-        symbol.address_end = reinterpret_cast<const void *>(info->dlpi_addr + symbol_table_entry->st_value + symbol_table_entry->st_size);
+        symbol.address_begin = reinterpret_cast<const void *>(
+            info->dlpi_addr + symbol_table_entry->st_value);
+        symbol.address_end = reinterpret_cast<const void *>(
+            info->dlpi_addr + symbol_table_entry->st_value + symbol_table_entry->st_size);
         symbol.name = symbol_name;
-        symbols.push_back(symbol);
+
+        if (symbol_table_entry->st_size)
+            symbols.push_back(symbol);
 
         updateResources(symbol.name, symbol.address_begin, resources);
     }
@@ -320,7 +323,6 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
             return (symbol_table && string_table);
         }))
     {
-        std::cerr << "!\n";
         return false;
     }
 
