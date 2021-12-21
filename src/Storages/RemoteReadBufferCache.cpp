@@ -362,22 +362,22 @@ void RemoteReadBufferCache::recoverCachedFilesMetadata(
 {
     if (current_depth >= max_depth)
     {
-        std::vector<fs::path> invalid_pathes;
+        std::vector<fs::path> invalid_paths;
         for (auto const & dir : fs::directory_iterator{current_path})
         {
             String path = dir.path();
             auto cache_controller = RemoteCacheController::recover(path);
             if (!cache_controller)
             {
-                invalid_pathes.emplace_back(path);
+                invalid_paths.emplace_back(path);
                 continue;
             }
             if (!lru_caches->set(path, cache_controller))
             {
-                invalid_pathes.emplace_back(path);
+                invalid_paths.emplace_back(path);
             }
         }
-        for (auto & path : invalid_pathes)
+        for (auto & path : invalid_paths)
         {
             fs::remove_all(path);
         }
