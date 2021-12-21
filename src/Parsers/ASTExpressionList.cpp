@@ -66,7 +66,10 @@ void ASTExpressionList::formatImplMultiline(const FormatSettings & settings, For
         frame_nested.surround_each_list_element_with_parens = false;
 
         if (frame.surround_each_list_element_with_parens)
+        {
             settings.ostr << "(";
+            frame_nested.expression_list_prepend_whitespace = false;
+        }
 
         (*it)->formatImpl(settings, state, frame_nested);
 
