@@ -219,7 +219,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, co
     auto settings = current_settings.get();
     auto metadata = readMeta(path);
 
-    LOG_TRACE(log, "Read from file by path: {}. Existing S3 objects: {}",
+    LOG_TEST(log, "Read from file by path: {}. Existing S3 objects: {}",
         backQuote(metadata_disk->getPath() + path), metadata.remote_fs_objects.size());
 
     bool threadpool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
@@ -355,7 +355,7 @@ void DiskS3::findLastRevision()
     /// Construct revision number from high to low bits.
     String revision;
     revision.reserve(64);
-    for (int bit = 0; bit < 64; bit++)
+    for (int bit = 0; bit < 64; ++bit)
     {
         auto revision_prefix = revision + "1";
 

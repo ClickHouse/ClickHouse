@@ -212,6 +212,7 @@ struct FormatSettings
     {
         bool import_nested = false;
         bool allow_missing_columns = false;
+        int64_t row_batch_size = 100'000;
     } orc;
 
     /// For capnProto format we should determine how to

@@ -54,7 +54,7 @@ namespace
         const Poco::SHA1Engine::Digest & digest = engine.digest();
 
         Poco::SHA1Engine::Digest calculated_password_sha1(sha1_size);
-        for (size_t i = 0; i < sha1_size; i++)
+        for (size_t i = 0; i < sha1_size; ++i)
             calculated_password_sha1[i] = scrambled_password[i] ^ digest[i];
 
         auto calculated_password_double_sha1 = Util::encodeSHA1(calculated_password_sha1);

@@ -17,7 +17,6 @@
 #include "DictionaryStructure.h"
 #include "ExternalQueryBuilder.h"
 #include "readInvalidateQuery.h"
-#include "writeParenthesisedString.h"
 #include "DictionaryFactory.h"
 #include "DictionarySourceHelpers.h"
 
