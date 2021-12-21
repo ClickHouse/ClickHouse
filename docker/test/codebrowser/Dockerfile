@@ -23,7 +23,7 @@ ENV SOURCE_DIRECTORY=/repo_folder
 ENV BUILD_DIRECTORY=/build
 ENV HTML_RESULT_DIRECTORY=$BUILD_DIRECTORY/html_report
 ENV SHA=nosha
-ENV DATA="https://s3.amazonaws.com/clickhouse-test-reports/codebrowser/html_report/data"
+ENV DATA="https://s3.amazonaws.com/clickhouse-test-reports/codebrowser/data"
 
 CMD mkdir -p $BUILD_DIRECTORY && cd $BUILD_DIRECTORY && \
     cmake $SOURCE_DIRECTORY -DCMAKE_CXX_COMPILER=/usr/bin/clang\+\+-13 -DCMAKE_C_COMPILER=/usr/bin/clang-13 -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DENABLE_EMBEDDED_COMPILER=0 -DENABLE_S3=0 && \
