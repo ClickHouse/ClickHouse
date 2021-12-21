@@ -271,7 +271,7 @@ public:
     {
         lower_bound = std::min(lower_bound, other.lower_bound);
         upper_bound = std::max(upper_bound, other.upper_bound);
-        for (size_t i = 0; i < other.size; i++)
+        for (size_t i = 0; i < other.size; ++i)
             add(other.points[i].mean, other.points[i].weight, max_bins);
     }
 

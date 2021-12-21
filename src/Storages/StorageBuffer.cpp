@@ -1108,7 +1108,7 @@ void registerStorageBuffer(StorageFactory & factory)
 
         // After we evaluated all expressions, check that all arguments are
         // literals.
-        for (size_t i = 0; i < engine_args.size(); i++)
+        for (size_t i = 0; i < engine_args.size(); ++i)
         {
             if (!typeid_cast<ASTLiteral *>(engine_args[i].get()))
             {

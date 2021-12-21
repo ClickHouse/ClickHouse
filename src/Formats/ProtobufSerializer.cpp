@@ -860,7 +860,7 @@ namespace
         template <typename NumberType>
         void toStringAppend(NumberType value, PaddedPODArray<UInt8> & str)
         {
-            WriteBufferFromVector buf{str, WriteBufferFromVector<PaddedPODArray<UInt8>>::AppendModeTag{}};
+            WriteBufferFromVector buf{str, AppendModeTag{}};
             writeText(value, buf);
         }
 
@@ -2307,10 +2307,9 @@ namespace
             if (parent_field_descriptor)
                 out << " field " << quoteString(parent_field_descriptor->full_name()) << " (" << parent_field_descriptor->type_name() << ")";
 
-            for (size_t i = 0; i != field_infos.size(); ++i)
+            for (const auto & field_info : field_infos)
             {
                 out << "\n";
-                const auto & field_info = field_infos[i];
                 writeIndent(out, indent + 1) << "Columns #";
                 for (size_t j = 0; j != field_info.column_indices.size(); ++j)
                 {
@@ -3017,8 +3016,11 @@ namespace
                             if (nested_message_serializer)
                             {
                                 std::vector<std::string_view> column_names_used;
+                                column_names_used.reserve(used_column_indices_in_nested.size());
+
                                 for (size_t i : used_column_indices_in_nested)
                                     column_names_used.emplace_back(nested_column_names[i]);
+
                                 auto field_serializer = std::make_unique<ProtobufSerializerFlattenedNestedAsArrayOfNestedMessages>(
                                     std::move(column_names_used), field_descriptor, std::move(nested_message_serializer), get_root_desc_function);
                                 transformColumnIndices(used_column_indices_in_nested, nested_column_indices);

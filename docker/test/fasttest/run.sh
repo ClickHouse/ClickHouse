@@ -111,19 +111,6 @@ function start_server
     fi
 
     echo "ClickHouse server pid '$server_pid' started and responded"
-
-    echo "
-set follow-fork-mode child
-handle all noprint
-handle SIGSEGV stop print
-handle SIGBUS stop print
-handle SIGABRT stop print
-continue
-thread apply all backtrace
-continue
-" > script.gdb
-
-    gdb -batch -command script.gdb -p "$server_pid" &
 }
 
 function clone_root
@@ -186,6 +173,8 @@ function clone_submodules
             contrib/dragonbox
             contrib/fast_float
             contrib/NuRaft
+            contrib/jemalloc
+            contrib/replxx
         )
 
         git submodule sync
@@ -206,6 +195,8 @@ function run_cmake
         "-DENABLE_THINLTO=0"
         "-DUSE_UNWIND=1"
         "-DENABLE_NURAFT=1"
+        "-DENABLE_JEMALLOC=1"
+        "-DENABLE_REPLXX=1"
     )
 
     # TODO remove this? we don't use ccache anyway. An option would be to download it

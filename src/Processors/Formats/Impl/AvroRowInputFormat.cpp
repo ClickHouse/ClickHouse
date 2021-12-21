@@ -280,7 +280,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
                     for (size_t n = decoder.arrayStart(); n != 0; n = decoder.arrayNext())
                     {
                         total += n;
-                        for (size_t i = 0; i < n; i++)
+                        for (size_t i = 0; i < n; ++i)
                         {
                             nested_deserialize(nested_column, decoder);
                         }
@@ -344,7 +344,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
             if (target.isString())
             {
                 std::vector<std::string> symbols;
-                for (size_t i = 0; i < root_node->names(); i++)
+                for (size_t i = 0; i < root_node->names(); ++i)
                 {
                     symbols.push_back(root_node->nameAt(i));
                 }
@@ -359,7 +359,7 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(avro::Node
             {
                 const auto & enum_type = dynamic_cast<const IDataTypeEnum &>(*target_type);
                 Row symbol_mapping;
-                for (size_t i = 0; i < root_node->names(); i++)
+                for (size_t i = 0; i < root_node->names(); ++i)
                 {
                     symbol_mapping.push_back(enum_type.castToValue(root_node->nameAt(i)));
                 }
@@ -443,7 +443,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
         case avro::AVRO_UNION:
         {
             std::vector<SkipFn> union_skip_fns;
-            for (size_t i = 0; i < root_node->leaves(); i++)
+            for (size_t i = 0; i < root_node->leaves(); ++i)
             {
                 union_skip_fns.push_back(createSkipFn(root_node->leafAt(i)));
             }
@@ -476,7 +476,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
         case avro::AVRO_RECORD:
         {
             std::vector<SkipFn> field_skip_fns;
-            for (size_t i = 0; i < root_node->leaves(); i++)
+            for (size_t i = 0; i < root_node->leaves(); ++i)
             {
                 field_skip_fns.push_back(createSkipFn(root_node->leafAt(i)));
             }
