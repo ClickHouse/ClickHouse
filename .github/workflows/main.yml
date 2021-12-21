@@ -208,9 +208,6 @@ jobs:
           cat >> "$GITHUB_ENV" << 'EOF'
           TEMP_PATH=${{runner.temp}}/keeper_jepsen
           REPORTS_PATH=${{runner.temp}}/keeper_jepsen
-          ROBOT_CLICKHOUSE_SSH_KEY<<RCSK
-          ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
-          RCSK
           REPO_COPY=${{runner.temp}}/keeper_jepsen/ClickHouse
           EOF
       - name: Download json reports
