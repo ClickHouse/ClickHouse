@@ -8,7 +8,7 @@
 #include <IO/CompressionMethod.h>
 #include <Disks/IDisk.h>
 #include <boost/lockfree/spsc_queue.hpp>
-#include <Common/robin_hood.h>
+#include <Common/HashTable/robin_hood.h>
 
 namespace DB
 {
