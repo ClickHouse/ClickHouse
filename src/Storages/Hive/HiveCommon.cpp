@@ -13,6 +13,7 @@ namespace ErrorCodes
 {
     extern const int NO_HIVEMETASTORE;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 bool HiveMetastoreClient::shouldUpdateTableMetadata(
@@ -110,7 +111,12 @@ void HiveMetastoreClient::clearTableMetadata(const String & db_name, const Strin
     std::lock_guard lock{mutex};
     HiveTableMetadataPtr metadata = table_metadata_cache.get(cache_key);
     if (metadata)
-        table_metadata_cache.set(cache_key, nullptr);
+    {
+        if (!table_metadata_cache.tryDel(cache_key))
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Try to clear table metadata failed.");
+        }
+    }
 }
 
 void HiveMetastoreClient::setClient(std::shared_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> client_)
