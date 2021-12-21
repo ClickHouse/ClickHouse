@@ -29,7 +29,7 @@ void RemoteFileMetadataFactory::registerRemoteFileMatadataCreator(const String &
     auto it = class_creators.find(name);
     if (it != class_creators.end())
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Class ({}) has been registered. It is a fatal error.", name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Metadata class ({}) has already been registered.", name);
     }
     class_creators[name] = creator;
 }

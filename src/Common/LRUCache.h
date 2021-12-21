@@ -331,13 +331,14 @@ private:
         }
         else
         {
-            if (!evict_policy.canRelease(*cell.value))
+            if (cell.value && !evict_policy.canRelease(*cell.value))
             {
                 // the old value is refered by someone, cannot release now
                 // in default policy, it is always true.
                 return false;
             }
-            evict_policy.release(*cell.value); // release the old value. this action is empty in default policy.
+            if (cell.value)
+                evict_policy.release(*cell.value); // release the old value. this action is empty in default policy.
             current_size -= cell.size;
             queue.splice(queue.end(), queue, cell.queue_iterator);
         }
@@ -369,12 +370,15 @@ private:
             }
 
             const auto & cell = it->second;
-            auto can_evict = evict_policy.canRelease(*cell.value);// in default, it is true
+            bool can_evict = true;
+            if (cell.value)
+                can_evict = evict_policy.canRelease(*cell.value);// in default, it is true
             if (can_evict)
             {
                 // always call release() before erasing an element
                 // in default, it's an empty action
-                evict_policy.release(*cell.value);
+                if (cell.value)
+                    evict_policy.release(*cell.value);
 
                 current_size -= cell.size;
                 current_weight_lost += cell.size;
