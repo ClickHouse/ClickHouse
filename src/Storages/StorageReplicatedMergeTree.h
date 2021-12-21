@@ -237,7 +237,7 @@ public:
     /// Return false if data is still used by another node
     bool unlockSharedData(const IMergeTreeDataPart & part) const override;
 
-    /// Unlock same part with other (old) name
+    /// Remove lock with old name for shared data part after rename
     bool unlockSharedData(const IMergeTreeDataPart & part, const String & name) const override;
 
     /// Unlock shared data part in zookeeper by part id
@@ -274,8 +274,7 @@ public:
 
     bool createEmptyPartInsteadOfLost(zkutil::ZooKeeperPtr zookeeper, const String & lost_part_name);
 
-    virtual String getZooKeeperName() const override { return zookeeper_name; }
-    virtual String getZooKeeperPath() const override { return zookeeper_path; }
+    String getZooKeeperName() const { return zookeeper_name; }
 
     virtual String getTableUniqID() const override;
 
@@ -741,6 +740,13 @@ private:
         const String & part_name, const String & zookeeper_path_old);
 
     static void createZeroCopyLockNode(const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_node);
+
+    bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name, bool is_freezed) override;
+
+    bool removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name, const String & table_uuid,
+        const String & zookeeper_name, const String & replica_name, const String & zookeeper_path);
+
+    void freezeMetaData(DiskPtr disk, DataPartPtr part, String backup_part_path) const override;
 
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
