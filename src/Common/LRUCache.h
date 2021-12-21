@@ -148,7 +148,7 @@ public:
         /// Insert the new value only if the token is still in present in insert_tokens.
         /// (The token may be absent because of a concurrent reset() call).
         bool is_value_loaded = false;
-        bool is_value_updated = true;
+        bool is_value_updated = false;
         auto token_it = insert_tokens.find(key);
         if (token_it != insert_tokens.end() && token_it->second.get() == token)
         {
