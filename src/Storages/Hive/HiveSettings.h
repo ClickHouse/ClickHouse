@@ -4,9 +4,9 @@
 
 #if USE_HIVE
 
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Core/BaseSettings.h>
 #include <Core/Settings.h>
-#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {

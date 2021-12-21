@@ -1,10 +1,12 @@
-#include <ThriftHiveMetastore.h>
-#include <thrift/protocol/TBinaryProtocol.h>
-#include <thrift/transport/TBufferTransports.h>
-#include <thrift/transport/TSocket.h>
 #include <Storages/Hive/HiveCommon.h>
 
 #if USE_HIVE
+
+#include <thrift/protocol/TBinaryProtocol.h>
+#include <thrift/transport/TBufferTransports.h>
+#include <thrift/transport/TSocket.h>
+
+
 namespace DB
 {
 namespace ErrorCodes

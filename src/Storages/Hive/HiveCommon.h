@@ -6,10 +6,11 @@
 
 #include <mutex>
 #include <string>
-#include <base/types.h>
 #include <ThriftHiveMetastore.h>
-#include <Storages/HDFS/HDFSCommon.h>
+
+#include <base/types.h>
 #include <Common/LRUCache.h>
+#include <Storages/HDFS/HDFSCommon.h>
 
 
 namespace DB
@@ -131,9 +132,9 @@ private:
     std::mutex mutex;
     std::map<String, HiveMetastoreClientPtr> clients;
 
-    const int conn_timeout_ms = 60000;
-    const int recv_timeout_ms = 60000;
-    const int send_timeout_ms = 60000;
+    const int conn_timeout_ms = 10000;
+    const int recv_timeout_ms = 10000;
+    const int send_timeout_ms = 10000;
 };
 
 }
