@@ -31,20 +31,24 @@ class WriteHelper
     WriteBufferFromVector<typename ColumnType::Chars> buffer;
     size_t prev_row_buffer_size = 0;
 
-public:
-    WriteHelper(ColumnType & col_, size_t expected_rows)
-        : col(col_)
-        , buffer(col.getChars())
+    static ColumnType & resizeColumn(ColumnType & column, size_t rows)
     {
         if constexpr (std::is_same_v<ColumnType, ColumnFixedString>)
-            col.reserve(expected_rows);
+            column.resize(rows);
         else
         {
-            col.getOffsets().reserve(expected_rows);
+            column.getOffsets().resize(rows);
             /// Using coefficient 2 for initial size is arbitrary.
-            col.getChars().resize(expected_rows * 2);
+            column.getChars().resize(rows * 2);
         }
+        return column;
     }
+
+public:
+    WriteHelper(ColumnType & col_, size_t expected_rows)
+        : col(resizeColumn(col_, expected_rows))
+        , buffer(col.getChars())
+    {}
 
     ~WriteHelper() = default;
 
