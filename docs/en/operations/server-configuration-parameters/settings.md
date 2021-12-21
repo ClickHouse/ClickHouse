@@ -435,7 +435,7 @@ Similar to `interserver_http_host`, except that this hostname can be used by oth
 
 ## interserver_http_credentials {#server-settings-interserver-http-credentials}
 
-A username and a password used to connect to other servers during [replication](../../engines/table-engines/mergetree-family/replication.md). Also the server authenticate other replicas using these credentials. So, `interserver_http_credentials` must be the same for all replicas in a cluster.
+A username and a password used to connect to other servers during [replication](../../engines/table-engines/mergetree-family/replication.md). Also the server authenticates other replicas using these credentials. So, `interserver_http_credentials` must be the same for all replicas in a cluster.
 
 By default, if `interserver_http_credentials` section is omitted, authentication is not used during replication.
 
