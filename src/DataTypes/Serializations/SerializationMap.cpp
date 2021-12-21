@@ -250,13 +250,17 @@ void SerializationMap::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
 void SerializationMap::enumerateStreams(
     SubstreamPath & path,
     const StreamCallback & callback,
-    DataTypePtr type,
-    ColumnPtr column) const
+    const SubstreamData & data) const
 {
-    auto next_type = type ? assert_cast<const DataTypeMap &>(*type).getNestedType() : nullptr;
-    auto next_column = column ? assert_cast<const ColumnMap &>(*column).getNestedColumnPtr() : nullptr;
+    SubstreamData next_data =
+    {
+        nested,
+        data.type ? assert_cast<const DataTypeMap &>(*data.type).getNestedType() : nullptr,
+        data.column ? assert_cast<const ColumnMap &>(*data.column).getNestedColumnPtr() : nullptr,
+        data.serialization_info,
+    };
 
-    nested->enumerateStreams(path, callback, next_type, next_column);
+    nested->enumerateStreams(path, callback, next_data);
 }
 
 void SerializationMap::serializeBinaryBulkStatePrefix(

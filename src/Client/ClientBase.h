@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Common/NamePrompter.h"
 #include <Common/ProgressIndication.h>
 #include <Common/InterruptListener.h>
 #include <Common/ShellCommand.h>
@@ -37,7 +38,7 @@ void interruptSignalHandler(int signum);
 
 class InternalTextLogs;
 
-class ClientBase : public Poco::Util::Application
+class ClientBase : public Poco::Util::Application, public IHints<2, ClientBase>
 {
 
 public:
@@ -47,6 +48,8 @@ public:
     ~ClientBase() override;
 
     void init(int argc, char ** argv);
+
+    std::vector<String> getAllRegisteredNames() const override { return cmd_options; }
 
 protected:
     void runInteractive();
@@ -145,6 +148,7 @@ protected:
 
     std::vector<String> queries_files; /// If not empty, queries will be read from these files
     std::vector<String> interleave_queries_files; /// If not empty, run queries from these files before processing every file from 'queries_files'.
+    std::vector<String> cmd_options;
 
     bool stdin_is_a_tty = false; /// stdin is a terminal.
     bool stdout_is_a_tty = false; /// stdout is a terminal.

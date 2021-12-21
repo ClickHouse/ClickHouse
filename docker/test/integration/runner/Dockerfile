@@ -72,6 +72,7 @@ RUN python3 -m pip install \
     grpcio-tools \
     kafka-python \
     kazoo \
+    lz4 \
     minio \
     protobuf \
     psycopg2-binary==2.8.6 \
