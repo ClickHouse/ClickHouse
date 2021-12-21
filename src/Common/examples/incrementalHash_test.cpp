@@ -13,11 +13,14 @@ int64_t timeit()
     gettimeofday(&tv, nullptr);
     return tv.tv_sec * 1000 + tv.tv_usec / 1000;
 }
-
+#include <list>
 int main()
 {
     my_unordered_set<std::string> t;
     my_unordered_map<std::string, int> mp;
+    std::cout << "map is flat " << my_unordered_map<std::string, std::list<std::string>::iterator>::is_flat << std::endl;
+    std::cout << "set  map is flat " << my_unordered_set<std::string>::is_flat << std::endl;
+    #if 0
     {
         int N = 30000000;
         auto btime = timeit();
@@ -34,6 +37,7 @@ int main()
         etime = timeit();
         std::cout << "std use time ms " << etime - btime << std::endl;
     }
+    #endif
     {
         int N = 30000000;
         auto btime = timeit();

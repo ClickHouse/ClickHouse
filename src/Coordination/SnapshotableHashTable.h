@@ -7,13 +7,13 @@
 #include <list>
 #include <atomic>
 #include <Common/SipHash.h>
-//#include <Common/HashTable/TwoLevelHashMap.h>
-#include <Common/robin_hood.h>
+#include <Common/HashTable/robin_hood.h>
+#include <Common/HashTable/IncrementalRehashTable.h>
 #include <Common/ArenaWithFreeLists.h>
 
 namespace DB
 {
-
+#if 0
 template <typename K, typename V, typename Hash, int N=8>
 class ArrayMap
 {
@@ -76,6 +76,7 @@ public:
 private:
     undermap store[N];
 };
+#endif
 
 template<typename V>
 struct ListNode
@@ -95,7 +96,8 @@ private:
     using List = std::list<ListElem>;
     //using IndexMap = std::unordered_map<StringRef, typename List::iterator, StringRefHash>;
     //using IndexMap = ArrayMap<StringRef, typename List::iterator, StringRefHash>;
-    using IndexMap = ArrayMap<std::string, typename List::iterator, StringRefHash>;
+    //using IndexMap = ArrayMap<std::string, typename List::iterator, StringRefHash>;
+    using IndexMap = my_unordered_set<std::string, typename List::iterator, StringRefHash>;
     //using IndexMap = TwoLevelHashMap<StringRef, typename List::iterator>;
 
     List list;
@@ -186,14 +188,14 @@ public:
     using const_reverse_iterator = typename List::const_reverse_iterator;
     using ValueUpdater = std::function<void(V & value)>;
 
-    explicit SnapshotableHashTable(size_t n = 4)
+    explicit SnapshotableHashTable(size_t n = 1000000)
     {
         map.reserve(n);
     }
     bool insert(const std::string & key, const V & value)
     {
-        //auto it = map.find(key);
-        if (!map.exists(key))
+        auto it = map.find(key);
+        if (it == map.end())
         {
             ListElem elem{key, value, true};
             auto itr = list.insert(list.end(), elem);
@@ -208,15 +210,10 @@ public:
 
     void insertOrReplace(const std::string & key, const V & value)
     {
-        //auto it = map.find(key);
-        //uint64_t old_value_size = it == nullptr ? 0 : it->value.second->value.sizeInBytes();
+        auto it = map.find(key);
+        uint64_t old_value_size = it == map.end() ? 0 : it->second->value.sizeInBytes();
 
-        //if (it == nullptr)
-        iterator oldval;
-        bool exists = map.getValue(key, oldval);
-        
-        uint64_t old_value_size = !exists ? 0 : oldval->value.sizeInBytes();
-        if (!exists)
+        if (it == map.end())
         {
             ListElem elem{key, value, true};
             auto itr = list.insert(list.end(), elem);
@@ -224,14 +221,13 @@ public:
         }
         else
         {
-            auto list_itr = oldval;
+            auto list_itr = it->second;
             if (snapshot_mode)
             {
                 ListElem elem{key, value, true};
                 list_itr->active_in_map = false;
                 auto new_list_itr = list.insert(list.end(), elem);
-                map.erase(key);
-                //map.erase(it);
+                map.erase(it);
                 map.emplace(new_list_itr->key, new_list_itr);
             }
             else
@@ -244,28 +240,20 @@ public:
 
     bool erase(const std::string & key)
     {
-        iterator oldval;
-        bool exists = map.getValue(key, oldval);
-        if (!exists)
+        auto it = map.find(key);
+        if (it == map.end())
             return false;
 
-        //auto it = map.find(key);
-        //if (it == nullptr)
-        //    return false;
-
-        //auto list_itr = it->second;
-        auto list_itr = oldval;
+        auto list_itr = it->second;
         uint64_t old_data_size = list_itr->value.sizeInBytes();
         if (snapshot_mode)
         {
             list_itr->active_in_map = false;
-            map.erase(key);
-            //map.erase(it);
+            map.erase(it);
         }
         else
         {
-            map.erase(key);
-            //map.erase(it);
+            map.erase(it);
             list.erase(list_itr);
         }
 
@@ -275,21 +263,15 @@ public:
 
     bool contains(const std::string & key) const
     {
-        return map.exists(key);
-        //return map.find(key) != map.end();
+        return map.find(key) != map.end();
     }
 
     const_iterator updateValue(const std::string & key, ValueUpdater updater)
     {
-        iterator oldval;
-        /*bool exists = */map.getValue(key, oldval);
-        //assert(exists);
+        auto it = map.find(key);
+        assert(it != nullptr);
 
-        //auto it = map.find(key);
-        //assert(it != nullptr);
-
-        //auto list_itr = it->second;
-        auto list_itr = oldval;
+        auto list_itr = it->second;
         uint64_t old_value_size = list_itr->value.sizeInBytes();
 
         const_iterator ret;
@@ -298,8 +280,7 @@ public:
         {
             auto elem_copy = *(list_itr);
             list_itr->active_in_map = false;
-            map.erase(key);
-            //map.erase(it);
+            map.erase(it);
             updater(elem_copy.value);
             auto itr = list.insert(list.end(), elem_copy);
             map.emplace(itr->key, itr);
@@ -316,26 +297,17 @@ public:
 
     const_iterator find(const std::string & key) const
     {
-        iterator oldval;
-        bool exists = map.getValue(key, oldval);
-        if (exists)
-            return oldval;
-        //auto map_it = map.find(key);
-        //if (map_it != nullptr) 
-        //    return map_it->second;
+        auto map_it = map.find(key);
+        if (map_it != nullptr) 
+            return map_it->second;
         return list.end();
     }
 
     const V & getValue(const std::string & key) const
     {
-        iterator oldval;
-        /*bool exists = */map.getValue(key, oldval);
-        //assert(exists);
-        return oldval->value;
-
-        //auto it = map.find(key);
-        //assert(it != nullptr);
-        //return it->second->value;
+        auto it = map.find(key);
+        assert(it != nullptr);
+        return it->second->value;
     }
 
     void clearOutdatedNodes()

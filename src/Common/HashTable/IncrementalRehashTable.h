@@ -25,7 +25,7 @@ private:
     std::shared_ptr<US> store[2];
     bool rehashing{false};
     inner_iterator cur; // rehash iterator
-    float max_load_factor = static_cast<float>(MaxLoadFactor100 - 10)/100.0;
+    float max_load_factor = static_cast<float>(MaxLoadFactor100 - 5)/100.0;
     std::size_t count{0};
 public:
     IncrementalRehashTable()
@@ -128,7 +128,7 @@ public:
         auto res = store[0]->insert(t);
         return std::make_pair(iterator(this, res.first, 0), res.second);
     }
-    void erase(const Key & t)
+    size_type erase(const Key & t)
     {
         std::size_t del = 0;
         del = store[0]->erase(t);
@@ -138,6 +138,29 @@ public:
             moveOneEntry();
         }
         if (del) --count;
+        return del ? del : 0;
+    }
+    iterator erase(iterator pos)
+    {
+        auto res = store[0]->erase(pos);
+        if (rehashing)
+        {
+            res = store[1]->erase(pos);
+        }
+        return res;
+    }
+    iterator erase(const_iterator pos)
+    {
+        return erase(const_cast<iterator>(pos));
+    }
+    iterator erase(const_iterator first, const_iterator last)
+    {
+        iterator res;
+        for (auto item = first; item != last; ++item)
+        {
+            res = erase(first);
+        }
+        return res;
     }
     std::size_t size() const
     {
@@ -181,6 +204,47 @@ public:
     size_t htsize()
     { 
         return store[0]->size() + (rehashing ? store[1]->size() : 0);
+    }
+    void clear()
+    {
+        store[0]->clear();
+        store[1]->clear();
+    }
+
+    template< class... Args >
+    std::pair<iterator,bool> emplace(Args&&... args)
+    {
+        if (rehashing) 
+            return store[1]->emplace(std::forward<Args>(args)...);
+        return store[0]->emplace(std::forward<Args>(args)...);
+    }
+    bool exists(const Key & t)
+    {
+        bool res = store[0]->contains(t);
+        if (!res && rehashing)
+        {
+            res = store[1]->contains(t);
+        }
+        return res;
+    }
+    bool getValue(const Key & key, T & value) const
+    {
+        auto res = store[0]->find(key);
+        if (res != store[0]->end())
+        {
+            value = res->second;
+            return true;
+        }
+        if (rehashing)
+        {
+            res = store[1]->find(key);
+            if (res != store[1]->end())
+            {
+                value = res->second;
+                return true;
+            }
+        }
+        return false;
     }
 };
 
