@@ -22,9 +22,9 @@ using LogEntriesPtr = nuraft::ptr<LogEntries>;
 using BufferPtr = nuraft::ptr<nuraft::buffer>;
 
 //using IndexToOffset = std::unordered_map<uint64_t, off_t>;
-//using IndexToLogEntry = std::unordered_map<uint64_t, LogEntryPtr>;
+using IndexToLogEntry = std::unordered_map<uint64_t, LogEntryPtr>;
 using IndexToOffset = robin_hood::unordered_map<uint64_t, off_t>;
-using IndexToLogEntry = robin_hood::unordered_map<uint64_t, LogEntryPtr>;
+//using IndexToLogEntry = robin_hood::unordered_map<uint64_t, LogEntryPtr>;
 
 enum class ChangelogVersion : uint8_t
 {

@@ -246,27 +246,6 @@ public:
         }
         return res;
     }
-    /*
-    bool getValue(const Key & key, T & value) const
-    {
-        auto res = store[0]->find(key);
-        if (res != store[0]->end())
-        {
-            value = res->second;
-            return true;
-        }
-        if (rehashing)
-        {
-            res = store[1]->find(key);
-            if (res != store[1]->end())
-            {
-                value = res->second;
-                return true;
-            }
-        }
-        return false;
-    }
-    */
 };
 
 template <typename Key, typename Hash = robin_hood::hash<Key>, typename KeyEqual = std::equal_to<Key>,

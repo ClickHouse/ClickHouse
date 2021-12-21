@@ -565,7 +565,7 @@ void Changelog::appendEntry(uint64_t index, const LogEntryPtr & log_entry)
     current_writer->appendRecord(buildRecord(index, log_entry));
     logs[index] = makeClone(log_entry);
     max_log_id = index;
-    delOneEntry();
+    //delOneEntry();
 }
 
 void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
@@ -610,7 +610,7 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
     /// Now we can actually override entry at index
     appendEntry(index, log_entry);
 
-    delOneEntry();
+    //delOneEntry();
 }
 
 void Changelog::compact(uint64_t up_to_log_index)
@@ -649,9 +649,9 @@ void Changelog::compact(uint64_t up_to_log_index)
     }
     /// Compaction from the past is possible, so don't make our min_log_id smaller.
     min_log_id = std::max(min_log_id, up_to_log_index + 1);
-    //std::erase_if(logs, [up_to_log_index] (const auto & item) { return item.first <= up_to_log_index; });
-    delOneEntry();
-    delOneEntry();
+    std::erase_if(logs, [up_to_log_index] (const auto & item) { return item.first <= up_to_log_index; });
+    //delOneEntry();
+    //delOneEntry();
     if (need_rotate)
         rotate(up_to_log_index + 1);
 

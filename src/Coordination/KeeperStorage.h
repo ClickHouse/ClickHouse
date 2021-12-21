@@ -16,7 +16,7 @@
 
 namespace DB
 {
-#if 0
+#if 1
 template <typename T>
 class DoubleSet
 {
@@ -189,7 +189,8 @@ struct KeeperStorageRequestProcessor;
 using KeeperStorageRequestProcessorPtr = std::shared_ptr<KeeperStorageRequestProcessor>;
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
 //using ChildrenSet = std::unordered_set<std::string>;
-using ChildrenSet = my_unordered_set<std::string>;
+//using ChildrenSet = my_unordered_set<std::string>;
+using ChildrenSet = DoubleSet<std::string>;
 using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
 
 struct KeeperStorageSnapshot;
