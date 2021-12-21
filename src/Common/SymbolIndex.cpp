@@ -246,6 +246,7 @@ void collectSymbolsFromProgramHeaders(
 }
 
 
+#if !defined USE_MUSL
 String getBuildIDFromProgramHeaders(dl_phdr_info * info)
 {
     for (size_t header_index = 0; header_index < info->dlpi_phnum; ++header_index)
@@ -258,6 +259,7 @@ String getBuildIDFromProgramHeaders(dl_phdr_info * info)
     }
     return {};
 }
+#endif
 
 
 void collectSymbolsFromELFSymbolTable(
@@ -338,21 +340,33 @@ void collectSymbolsFromELF(
     SymbolIndex::Resources & resources,
     String & build_id)
 {
+    String object_name;
+    String our_build_id;
+
+#if defined (USE_MUSL)
+    object_name = "/proc/self/exe";
+    our_build_id = Elf(object_name).getBuildID();
+    build_id = our_build_id;
+#else
     /// MSan does not know that the program segments in memory are initialized.
     __msan_unpoison_string(info->dlpi_name);
 
-    std::string object_name = info->dlpi_name;
-
-    String our_build_id = getBuildIDFromProgramHeaders(info);
+    object_name = info->dlpi_name;
+    our_build_id = getBuildIDFromProgramHeaders(info);
 
     /// If the name is empty and there is a non-empty build-id - it's main executable.
     /// Find a elf file for the main executable and set the build-id.
     if (object_name.empty())
     {
         object_name = "/proc/self/exe";
+
+        if (our_build_id.empty())
+            our_build_id = Elf(object_name).getBuildID();
+
         if (build_id.empty())
             build_id = our_build_id;
     }
+#endif
 
     std::error_code ec;
     std::filesystem::path canonical_path = std::filesystem::canonical(object_name, ec);
