@@ -1,4 +1,5 @@
 #include "robin_hood.h"
+#include <iostream>
 
 template <bool IsFlat, size_t MaxLoadFactor100, typename Key, typename T, typename Hash,
           typename KeyEqual>

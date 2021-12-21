@@ -5,6 +5,7 @@
 #include <string>
 #include <unordered_set>
 #include <cassert>
+#include <iostream>
 
 int64_t timeit()
 {
