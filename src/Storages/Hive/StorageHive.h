@@ -86,7 +86,7 @@ private:
         ContextPtr context_);
 
     HiveFilePtr
-    createHiveFileIfValid(const FileInfo & file_info, const FieldVector & fields, SelectQueryInfo & query_info, ContextPtr context_);
+    createHiveFileIfNeeded(const FileInfo & file_info, const FieldVector & fields, SelectQueryInfo & query_info, ContextPtr context_);
 
     String hive_metastore_url;
 

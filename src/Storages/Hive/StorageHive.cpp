@@ -465,7 +465,7 @@ std::vector<HiveFilePtr> StorageHive::collectHiveFilesFromPartition(
     hive_files.reserve(file_infos.size());
     for (const auto & file_info : file_infos)
     {
-        auto hive_file = createHiveFileIfValid(file_info, fields, query_info, context_);
+        auto hive_file = createHiveFileIfNeeded(file_info, fields, query_info, context_);
         if (hive_file)
             hive_files.push_back(hive_file);
     }
@@ -478,7 +478,7 @@ StorageHive::listDirectory(const String & path, HiveTableMetadataPtr hive_table_
     return hive_table_metadata->getFilesByLocation(fs, path);
 }
 
-HiveFilePtr StorageHive::createHiveFileIfValid(
+HiveFilePtr StorageHive::createHiveFileIfNeeded(
     const FileInfo & file_info, const FieldVector & fields, SelectQueryInfo & query_info, ContextPtr context_)
 {
     LOG_TRACE(log, "Append hive file {}", file_info.path);
@@ -575,7 +575,7 @@ Pipe StorageHive::read(
         {
             pool.scheduleOrThrowOnError([&]
             {
-                auto hive_file = createHiveFileIfValid(file_info, {}, query_info, context_);
+                auto hive_file = createHiveFileIfNeeded(file_info, {}, query_info, context_);
                 if (hive_file)
                 {
                     std::lock_guard<std::mutex> lock(hive_files_mutex);
