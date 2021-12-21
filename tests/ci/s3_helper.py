@@ -102,10 +102,18 @@ class S3Helper:
             nonlocal sum_time
             try:
                 s3_path = file_path.replace(dir_path, s3_dir_path)
+                metadata = {}
+                if s3_path.endswith("html"):
+                    metadata['ContentType'] = "text/html; charset=utf-8"
+                elif s3_path.endswith("css"):
+                    metadata['ContentType'] = "text/css; charset=utf-8"
+                elif s3_path.endswith("js"):
+                    metadata['ContentType'] = "text/javascript; charset=utf-8"
+
                 # Retry
                 for i in range(5):
                     try:
-                        self.client.upload_file(file_path, bucket_name, s3_path)
+                        self.client.upload_file(file_path, bucket_name, s3_path, ExtraArgs=metadata)
                         break
                     except Exception as ex:
                         if i == 4:
