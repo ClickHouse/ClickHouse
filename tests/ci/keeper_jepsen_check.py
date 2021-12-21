@@ -7,6 +7,7 @@ import os
 import boto3
 from github import Github
 
+from get_robot_token import get_parameter_from_ssm
 from env_helper import REPORTS_PATH, REPO_COPY, TEMP_PATH
 from stopwatch import Stopwatch
 from upload_result_helper import upload_results
@@ -143,7 +144,8 @@ if __name__ == "__main__":
     else:
         raise Exception("Cannot binary clickhouse among build results")
 
-    with SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
+    os.environ['JEPSEN_KEY'] = get_parameter_from_ssm("jepsen_ssh_key")
+    with SSHKey("JEPSEN_KEY"):
         ssh_auth_sock = os.environ['SSH_AUTH_SOCK']
         auth_sock_dir = os.path.dirname(ssh_auth_sock)
         cmd = get_run_command(ssh_auth_sock, auth_sock_dir, pr_info, nodes_path, REPO_COPY, build_url, result_path, docker_image)
