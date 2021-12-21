@@ -20,6 +20,7 @@
 #include <Parsers/MySQL/ASTDeclareIndex.h>
 #include <Common/quoteString.h>
 #include <Common/assert_cast.h>
+#include <Interpreters/getTableOverride.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -433,22 +434,6 @@ void InterpreterCreateImpl::validate(const InterpreterCreateImpl::TQuery & creat
         if (missing_columns_definition)
             throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
     }
-}
-
-static ASTPtr tryGetTableOverride(const String & mapped_database, const String & table)
-{
-    if (auto database_ptr = DatabaseCatalog::instance().tryGetDatabase(mapped_database))
-    {
-        auto create_query = database_ptr->getCreateDatabaseQuery();
-        if (auto * create_database_query = create_query->as<ASTCreateQuery>())
-        {
-            if (create_database_query->table_overrides)
-            {
-                return create_database_query->table_overrides->tryGetTableOverride(table);
-            }
-        }
-    }
-    return nullptr;
 }
 
 ASTs InterpreterCreateImpl::getRewrittenQueries(

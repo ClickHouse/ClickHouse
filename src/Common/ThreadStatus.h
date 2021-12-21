@@ -61,6 +61,13 @@ using ThreadStatusPtr = ThreadStatus *;
 class ThreadGroupStatus
 {
 public:
+    struct ProfileEventsCountersAndMemory
+    {
+        ProfileEvents::Counters::Snapshot counters;
+        Int64 memory_usage;
+        UInt64 thread_id;
+    };
+
     mutable std::mutex mutex;
 
     ProfileEvents::Counters performance_counters{VariableContext::Process};
@@ -83,6 +90,10 @@ public:
 
     String query;
     UInt64 normalized_query_hash = 0;
+
+    std::vector<ProfileEventsCountersAndMemory> finished_threads_counters_memory;
+
+    std::vector<ProfileEventsCountersAndMemory> getProfileEventsCountersAndMemoryForThreads();
 };
 
 using ThreadGroupStatusPtr = std::shared_ptr<ThreadGroupStatus>;
