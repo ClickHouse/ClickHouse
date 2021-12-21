@@ -815,6 +815,7 @@ def test_seekable_formats(started_cluster):
     result = instance.query(f"SELECT count() FROM {table_function}")
     assert(int(result) == 5000000)
 
+    instance.query("SYSTEM FLUSH LOGS")
     result = instance.query(f"SELECT formatReadableSize(memory_usage) FROM system.query_log WHERE startsWith(query, 'SELECT count() FROM s3') AND memory_usage > 0 ORDER BY event_time desc")
     print(result[:3])
     assert(int(result[:3]) < 200)
@@ -838,6 +839,7 @@ def test_seekable_formats_url(started_cluster):
     result = instance.query(f"SELECT count() FROM {table_function}")
     assert(int(result) == 5000000)
 
+    instance.query("SYSTEM FLUSH LOGS")
     result = instance.query(f"SELECT formatReadableSize(memory_usage) FROM system.query_log WHERE startsWith(query, 'SELECT count() FROM url') AND memory_usage > 0 ORDER BY event_time desc")
     print(result[:3])
     assert(int(result[:3]) < 200)
