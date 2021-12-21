@@ -5,22 +5,18 @@
 #if USE_HIVE
 
 #include <Poco/URI.h>
+#include <ThriftHiveMetastore.h>
+
 #include <base/logger_useful.h>
 #include <base/shared_ptr_helper.h>
-
 #include <Interpreters/Context.h>
-#include <Interpreters/SubqueryForSet.h>
 #include <Storages/IStorage.h>
-#include <ThriftHiveMetastore.h>
-#include <Common/Stopwatch.h>
+#include <Storages/HDFS/HDFSCommon.h>
+#include <Storages/Hive/HiveCommon.h>
+#include <Storages/Hive/HiveFile.h>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
 
 class HiveSettings;
 /**
@@ -32,48 +28,6 @@ class StorageHive final : public shared_ptr_helper<StorageHive>, public IStorage
     friend struct shared_ptr_helper<StorageHive>;
 
 public:
-    enum class FileFormat
-    {
-        RC_FILE,
-        TEXT,
-        LZO_TEXT,
-        SEQUENCE_FILE,
-        AVRO,
-        PARQUET,
-        ORC,
-    };
-
-    // TODO: json support
-    inline static const String RCFILE_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.RCFileInputFormat";
-    inline static const String TEXT_INPUT_FORMAT = "org.apache.hadoop.mapred.TextInputFormat";
-    inline static const String LZO_TEXT_INPUT_FORMAT = "com.hadoop.mapred.DeprecatedLzoTextInputFormat";
-    inline static const String SEQUENCE_INPUT_FORMAT = "org.apache.hadoop.mapred.SequenceFileInputFormat";
-    inline static const String PARQUET_INPUT_FORMAT = "com.cloudera.impala.hive.serde.ParquetInputFormat";
-    inline static const String MR_PARQUET_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat";
-    inline static const String AVRO_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.avro.AvroContainerInputFormat";
-    inline static const String ORC_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.orc.OrcInputFormat";
-    inline static const std::map<String, FileFormat> VALID_HDFS_FORMATS = {
-        {RCFILE_INPUT_FORMAT, FileFormat::RC_FILE},
-        {TEXT_INPUT_FORMAT, FileFormat::TEXT},
-        {LZO_TEXT_INPUT_FORMAT, FileFormat::LZO_TEXT},
-        {SEQUENCE_INPUT_FORMAT, FileFormat::SEQUENCE_FILE},
-        {PARQUET_INPUT_FORMAT, FileFormat::PARQUET},
-        {MR_PARQUET_INPUT_FORMAT, FileFormat::PARQUET},
-        {AVRO_INPUT_FORMAT, FileFormat::AVRO},
-        {ORC_INPUT_FORMAT, FileFormat::ORC},
-    };
-
-    static inline bool isFormatClass(const String & format_class) { return VALID_HDFS_FORMATS.count(format_class) > 0; }
-    static inline FileFormat toFileFormat(const String & format_class)
-    {
-        if (isFormatClass(format_class))
-        {
-            return VALID_HDFS_FORMATS.find(format_class)->second;
-        }
-        throw Exception("Unsupported hdfs file format " + format_class, ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-
     String getName() const override { return "Hive"; }
 
     bool supportsIndexForIn() const override { return true; }
@@ -100,6 +54,7 @@ public:
     NamesAndTypesList getVirtuals() const override;
 
 protected:
+    friend class StorageHiveSource;
     StorageHive(
         const String & hive_metastore_url_,
         const String & hive_database_,
@@ -112,21 +67,37 @@ protected:
         std::unique_ptr<HiveSettings> storage_settings_,
         ContextPtr context_);
 
-    void initMinMaxIndexExpression();
+private:
+    using FileFormat = IHiveFile::FileFormat;
+    using FileInfo = HiveMetastoreClient::FileInfo;
+    using HiveTableMetadataPtr = HiveMetastoreClient::HiveTableMetadataPtr;
+
     static ASTPtr extractKeyExpressionList(const ASTPtr & node);
 
-private:
+    static std::vector<FileInfo> listDirectory(const String & path, HiveTableMetadataPtr hive_table_metadata, const HDFSFSPtr & fs);
+
+    void initMinMaxIndexExpression();
+
+    std::vector<HiveFilePtr> collectHiveFilesFromPartition(
+        const Apache::Hadoop::Hive::Partition & partition,
+        SelectQueryInfo & query_info,
+        HiveTableMetadataPtr hive_table_metadata,
+        const HDFSFSPtr & fs,
+        ContextPtr context_);
+
+    HiveFilePtr
+    createHiveFileIfValid(const FileInfo & file_info, const FieldVector & fields, SelectQueryInfo & query_info, ContextPtr context_);
+
     String hive_metastore_url;
 
-    // hive database and table
+    /// Hive database and table
     String hive_database;
     String hive_table;
 
-    // hive table meta
+    /// Hive table meta
     std::vector<Apache::Hadoop::Hive::FieldSchema> table_schema;
-    Names text_input_field_names; // Defines schema of hive file, only used when text input format is TEXT
+    Names text_input_field_names; /// Defines schema of hive file, only used when text input format is TEXT
 
-    // hdfs relative information
     String hdfs_namenode_url;
 
     String format_name;
@@ -134,6 +105,8 @@ private:
 
     const ASTPtr partition_by_ast;
     NamesAndTypesList partition_name_types;
+    Names partition_names;
+    DataTypes partition_types;
     ExpressionActionsPtr partition_key_expr;
     ExpressionActionsPtr partition_minmax_idx_expr;
 

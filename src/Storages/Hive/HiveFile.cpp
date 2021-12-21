@@ -3,9 +3,8 @@
 #if USE_HIVE
 
 #include <boost/algorithm/string/case_conv.hpp>
-#include <boost/algorithm/string/classification.hpp>
-#include <boost/algorithm/string/trim.hpp>
 #include <fmt/core.h>
+
 #include <arrow/api.h>
 #include <arrow/io/api.h>
 #include <arrow/status.h>

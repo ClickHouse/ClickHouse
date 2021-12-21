@@ -7,13 +7,12 @@
 #include <memory>
 
 #include <boost/algorithm/string/join.hpp>
-#include <arrow/filesystem/filesystem.h>
 #include <orc/Statistics.hh>
+#include <arrow/filesystem/filesystem.h>
 
 #include <Core/Field.h>
 #include <Core/Block.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/Hive/StorageHive.h>
 #include <Storages/Hive/HiveSettings.h>
 
 namespace orc
@@ -50,6 +49,49 @@ namespace ErrorCodes
 class IHiveFile : public WithContext
 {
 public:
+    using MinMaxIndex = IMergeTreeDataPart::MinMaxIndex;
+    using MinMaxIndexPtr = std::shared_ptr<MinMaxIndex>;
+
+    enum class FileFormat
+    {
+        RC_FILE,
+        TEXT,
+        LZO_TEXT,
+        SEQUENCE_FILE,
+        AVRO,
+        PARQUET,
+        ORC,
+    };
+
+    inline static const String RCFILE_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.RCFileInputFormat";
+    inline static const String TEXT_INPUT_FORMAT = "org.apache.hadoop.mapred.TextInputFormat";
+    inline static const String LZO_TEXT_INPUT_FORMAT = "com.hadoop.mapred.DeprecatedLzoTextInputFormat";
+    inline static const String SEQUENCE_INPUT_FORMAT = "org.apache.hadoop.mapred.SequenceFileInputFormat";
+    inline static const String PARQUET_INPUT_FORMAT = "com.cloudera.impala.hive.serde.ParquetInputFormat";
+    inline static const String MR_PARQUET_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat";
+    inline static const String AVRO_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.avro.AvroContainerInputFormat";
+    inline static const String ORC_INPUT_FORMAT = "org.apache.hadoop.hive.ql.io.orc.OrcInputFormat";
+    inline static const std::map<String, FileFormat> VALID_HDFS_FORMATS = {
+        {RCFILE_INPUT_FORMAT, FileFormat::RC_FILE},
+        {TEXT_INPUT_FORMAT, FileFormat::TEXT},
+        {LZO_TEXT_INPUT_FORMAT, FileFormat::LZO_TEXT},
+        {SEQUENCE_INPUT_FORMAT, FileFormat::SEQUENCE_FILE},
+        {PARQUET_INPUT_FORMAT, FileFormat::PARQUET},
+        {MR_PARQUET_INPUT_FORMAT, FileFormat::PARQUET},
+        {AVRO_INPUT_FORMAT, FileFormat::AVRO},
+        {ORC_INPUT_FORMAT, FileFormat::ORC},
+    };
+
+    static inline bool isFormatClass(const String & format_class) { return VALID_HDFS_FORMATS.count(format_class) > 0; }
+    static inline FileFormat toFileFormat(const String & format_class)
+    {
+        if (isFormatClass(format_class))
+        {
+            return VALID_HDFS_FORMATS.find(format_class)->second;
+        }
+        throw Exception("Unsupported hdfs file format " + format_class, ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     IHiveFile(
         const FieldVector & values_,
         const String & namenode_url_,
@@ -71,7 +113,6 @@ public:
     }
     virtual ~IHiveFile() = default;
 
-    using FileFormat = StorageHive::FileFormat;
     virtual FileFormat getFormat() const = 0;
 
     virtual String getName() const = 0;
@@ -89,7 +130,7 @@ public:
         throw Exception("Method loadMinMaxIndex is not supported by hive file:" + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual std::shared_ptr<IMergeTreeDataPart::MinMaxIndex> getMinMaxIndex() const { return minmax_idx; }
+    virtual MinMaxIndexPtr getMinMaxIndex() const { return minmax_idx; }
 
     // Do hive file contains sub-file level minmax index?
     virtual bool hasSubMinMaxIndex() const { return false; }
@@ -99,13 +140,13 @@ public:
         throw Exception("Method loadSubMinMaxIndex is not supported by hive file:" + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual const std::vector<std::shared_ptr<IMergeTreeDataPart::MinMaxIndex>> & getSubMinMaxIndexes() const { return sub_minmax_idxes; }
+    virtual const std::vector<MinMaxIndexPtr> & getSubMinMaxIndexes() const { return sub_minmax_idxes; }
 
     virtual void setSkipSplits(const std::set<int> & splits) { skip_splits = splits; }
 
     virtual const std::set<int> & getSkipSplits() const { return skip_splits; }
 
-    inline std::string describeMinMaxIndex(const std::shared_ptr<IMergeTreeDataPart::MinMaxIndex> & idx) const
+    inline std::string describeMinMaxIndex(const MinMaxIndexPtr & idx) const
     {
         if (!idx)
             return "";
@@ -130,11 +171,14 @@ protected:
     UInt64 last_modify_time;
     size_t size;
     NamesAndTypesList index_names_and_types;
-    std::shared_ptr<IMergeTreeDataPart::MinMaxIndex> minmax_idx;
-    std::vector<std::shared_ptr<IMergeTreeDataPart::MinMaxIndex>> sub_minmax_idxes;
+    MinMaxIndexPtr minmax_idx;
+    std::vector<MinMaxIndexPtr> sub_minmax_idxes;
     std::set<int> skip_splits; // skip splits for this file after applying minmax index (if any)
     std::shared_ptr<HiveSettings> storage_settings;
 };
+
+using HiveFilePtr = std::shared_ptr<IHiveFile>;
+using HiveFiles = std::vector<HiveFilePtr>;
 
 class HiveTextFile : public IHiveFile
 {
@@ -152,7 +196,6 @@ public:
     {
     }
 
-    using FileFormat = StorageHive::FileFormat;
     virtual FileFormat getFormat() const override { return FileFormat::TEXT; }
     virtual String getName() const override { return "TEXT"; }
 };
@@ -173,7 +216,6 @@ public:
     {
     }
 
-    using FileFormat = StorageHive::FileFormat;
     virtual FileFormat getFormat() const override { return FileFormat::ORC; }
     virtual String getName() const override { return "ORC"; }
     virtual bool hasMinMaxIndex() const override;
@@ -183,7 +225,7 @@ public:
     virtual void loadSubMinMaxIndex() override;
 
 protected:
-    virtual std::unique_ptr<IMergeTreeDataPart::MinMaxIndex> buildMinMaxIndex(const orc::Statistics * statistics);
+    virtual std::unique_ptr<MinMaxIndex> buildMinMaxIndex(const orc::Statistics * statistics);
     virtual Range buildRange(const orc::ColumnStatistics * col_stats);
     virtual void prepareReader();
     virtual void prepareColumnMapping();
@@ -208,7 +250,6 @@ public:
     {
     }
 
-    using FileFormat = StorageHive::FileFormat;
     virtual FileFormat getFormat() const override { return FileFormat::PARQUET; }
     virtual String getName() const override { return "PARQUET"; }
 
