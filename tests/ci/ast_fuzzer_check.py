@@ -15,12 +15,13 @@ from docker_pull_helper import get_image_with_version
 from commit_status_helper import post_commit_status
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
+from rerun_helper import RerunHelper
 
 IMAGE_NAME = 'clickhouse/fuzzer'
 
 def get_run_command(pr_number, sha, download_url, workspace_path, image):
     return f'docker run --network=host --volume={workspace_path}:/workspace ' \
-          '--cap-add syslog --cap-add sys_admin ' \
+          '--cap-add syslog --cap-add sys_admin --cap-add=SYS_PTRACE ' \
           f'-e PR_TO_TEST={pr_number} -e SHA_TO_TEST={sha} -e BINARY_URL_TO_DOWNLOAD="{download_url}" '\
           f'{image}'
 
@@ -46,6 +47,11 @@ if __name__ == "__main__":
     pr_info = PRInfo(get_event())
 
     gh = Github(get_best_robot_token())
+
+    rerun_helper = RerunHelper(gh, pr_info, check_name)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
 
     docker_image = get_image_with_version(temp_path, IMAGE_NAME)
 

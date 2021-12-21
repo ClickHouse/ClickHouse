@@ -71,6 +71,7 @@ ProtobufSchemas::~ProtobufSchemas() = default;
 
 const google::protobuf::Descriptor * ProtobufSchemas::getMessageTypeForFormatSchema(const FormatSchemaInfo & info)
 {
+    std::lock_guard lock(mutex);
     auto it = importers.find(info.schemaDirectory());
     if (it == importers.end())
         it = importers.emplace(info.schemaDirectory(), std::make_unique<ImporterWithSourceTree>(info.schemaDirectory())).first;

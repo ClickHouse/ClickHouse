@@ -197,11 +197,6 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 
         updateQuorumIfWeHavePart();
 
-        if (storage_settings->replicated_can_become_leader)
-            storage.enterLeaderElection();
-        else
-            LOG_INFO(log, "Will not enter leader election because replicated_can_become_leader=0");
-
         /// Anything above can throw a KeeperException if something is wrong with ZK.
         /// Anything below should not throw exceptions.
 
@@ -379,8 +374,6 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
     storage.replica_is_active_node = nullptr;
 
     LOG_TRACE(log, "Waiting for threads to finish");
-
-    storage.exitLeaderElection();
 
     storage.queue_updating_task->deactivate();
     storage.mutations_updating_task->deactivate();
