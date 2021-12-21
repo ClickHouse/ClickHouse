@@ -25,7 +25,7 @@ private:
     std::shared_ptr<US> store[2];
     bool rehashing{false};
     inner_iterator cur; // rehash iterator
-    float max_load_factor = static_cast<float>(MaxLoadFactor100 - 5)/100.0;
+    float max_load_factor = static_cast<float>(MaxLoadFactor100 - 10)/100.0;
     std::size_t count{0};
 public:
     IncrementalRehashTable()
@@ -69,7 +69,7 @@ public:
         Iter& operator++() noexcept
         {
             ++m_iter;
-            if (index == 0 && ref->rehashing && m_iter == ref->store[index]->end())
+            if (index == 0 && ref->rehashing && m_iter == ref->store[0]->end())
             {
                 m_iter = ref->store[1]->begin();
             }
@@ -99,7 +99,9 @@ public:
         if (++cur == store[0]->end())
         {
             rehashing = false;
+            store[0].reset();
             store[0] = store[1];
+            store[1].reset();
             store[1] = std::make_shared<US>();
             store[1]->reserve(store[0]->size() * 2);
             std::cout << "rehash end, size " << store[0]->size() << ", count " << count << std::endl;
@@ -138,7 +140,7 @@ public:
             moveOneEntry();
         }
         if (del) --count;
-        return del ? del : 0;
+        return del ? 1 : 0;
     }
     iterator erase(iterator pos)
     {
@@ -222,7 +224,6 @@ public:
         store[0]->clear();
         store[1]->clear();
     }
-
     template< class... Args >
     std::pair<iterator,bool> emplace(Args&&... args)
     {
@@ -232,19 +233,15 @@ public:
             moveOneEntry();
             return std::make_pair(iterator(this, res.first, 1), res.second);
         }
-        else {
+        else
+        {
             auto res = store[0]->emplace(std::forward<Args>(args)...);
             return std::make_pair(iterator(this, res.first, 0), res.second);
         }
     }
-    bool exists(const Key & t)
+    bool exists(const Key & t) const
     {
-        bool res = store[0]->contains(t);
-        if (!res && rehashing)
-        {
-            res = store[1]->contains(t);
-        }
-        return res;
+        return contains(t);
     }
 };
 
