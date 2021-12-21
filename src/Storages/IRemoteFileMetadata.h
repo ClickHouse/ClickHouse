@@ -19,7 +19,7 @@ public:
         ,last_modification_timestamp(last_modification_timestamp_)
     {
     }
-    virtual ~IRemoteFileMetadata();
+    virtual ~IRemoteFileMetadata() = default;
     virtual String getName() const = 0; //class name
     // methods for basic information
     inline size_t getFileSize() const { return file_size; }
