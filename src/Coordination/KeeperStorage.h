@@ -12,7 +12,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include <Common/robin_hood.h>
+#include <Common/HashTable/robin_hood.h>
 
 namespace DB
 {
