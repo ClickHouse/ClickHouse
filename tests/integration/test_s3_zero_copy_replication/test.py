@@ -60,6 +60,8 @@ def wait_for_active_parts(node, num_expected_parts, table_name, timeout=30):
     assert num_parts == num_expected_parts
 
 
+# Result of `get_large_objects_count` can be changed in other tests, so run this case at the beginning
+@pytest.mark.order(0)
 @pytest.mark.parametrize(
     "policy", ["s3"]
 )
@@ -82,7 +84,7 @@ def test_s3_zero_copy_replication(cluster, policy):
     assert node1.query("SELECT * FROM s3_test order by id FORMAT Values") == "(0,'data'),(1,'data')"
     assert node2.query("SELECT * FROM s3_test order by id FORMAT Values") == "(0,'data'),(1,'data')"
 
-    # Based on version 20.x - should be only one file with size 100+ (checksums.txt), used by both nodes
+    # Based on version 21.x - should be only 1 file with size 100+ (checksums.txt), used by both nodes
     assert get_large_objects_count(cluster) == 1
 
     node2.query("INSERT INTO s3_test VALUES (2,'data'),(3,'data')")
@@ -91,15 +93,15 @@ def test_s3_zero_copy_replication(cluster, policy):
     assert node2.query("SELECT * FROM s3_test order by id FORMAT Values") == "(0,'data'),(1,'data'),(2,'data'),(3,'data')"
     assert node1.query("SELECT * FROM s3_test order by id FORMAT Values") == "(0,'data'),(1,'data'),(2,'data'),(3,'data')"
 
-    # Based on version 20.x - two parts
+    # Based on version 21.x - two parts
     wait_for_large_objects_count(cluster, 2)
 
     node1.query("OPTIMIZE TABLE s3_test FINAL")
 
-    # Based on version 20.x - after merge, two old parts and one merged
+    # Based on version 21.x - after merge, two old parts and one merged
     wait_for_large_objects_count(cluster, 3)
 
-    # Based on version 20.x - after cleanup - only one merged part
+    # Based on version 21.x - after cleanup - only one merged part
     wait_for_large_objects_count(cluster, 1, timeout=60)
 
     node1.query("DROP TABLE IF EXISTS s3_test NO DELAY")

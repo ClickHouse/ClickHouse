@@ -207,7 +207,7 @@ bool HTTPDictionarySource::hasUpdateField() const
 
 DictionarySourcePtr HTTPDictionarySource::clone() const
 {
-    return std::make_unique<HTTPDictionarySource>(*this);
+    return std::make_shared<HTTPDictionarySource>(*this);
 }
 
 std::string HTTPDictionarySource::toString() const

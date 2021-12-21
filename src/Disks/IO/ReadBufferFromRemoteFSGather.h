@@ -102,11 +102,11 @@ private:
 
 
 #if USE_AZURE_BLOB_STORAGE
-/// Reads data from Blob Storage using paths stored in metadata.
-class ReadBufferFromBlobStorageGather final : public ReadBufferFromRemoteFSGather
+/// Reads data from AzureBlob Storage using paths stored in metadata.
+class ReadBufferFromAzureBlobStorageGather final : public ReadBufferFromRemoteFSGather
 {
 public:
-    ReadBufferFromBlobStorageGather(
+    ReadBufferFromAzureBlobStorageGather(
         const String & path_,
         std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
         IDiskRemote::Metadata metadata_,
