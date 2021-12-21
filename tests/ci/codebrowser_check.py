@@ -67,7 +67,7 @@ if __name__ == "__main__":
     s3_path_prefix = "codebrowser"
     html_urls = s3_helper.fast_parallel_upload_dir(report_path, s3_path_prefix, 'clickhouse-test-reports')
 
-    index_html = '<a href="https://s3.amazonaws.com/clickhouse-test-reports/codebrowser/html_report/ClickHouse/index.html">HTML report</a>'
+    index_html = '<a href="https://s3.amazonaws.com/clickhouse-test-reports/codebrowser/index.html">HTML report</a>'
 
     test_results = [(index_html, "Look at the report")]
 
