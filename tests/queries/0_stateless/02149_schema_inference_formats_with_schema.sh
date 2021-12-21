@@ -21,7 +21,7 @@ do
     $CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', '$format')"
     $CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', '$format')"
 
-    $CLICKHOUSE_CLIENT -q "select toDate(number) as date, toDateTime(number, 'UTC') as datetime, toDate32(number) as date32 from numbers(2) format $format" > $DATA_FILE
+    $CLICKHOUSE_CLIENT -q "select toDate(number) as date, toDate32(number) as date32 from numbers(2) format $format" > $DATA_FILE
     $CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', '$format')"
     $CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', '$format')"
 
@@ -49,7 +49,7 @@ $CLICKHOUSE_CLIENT -q "select toFloat32(number * 1.2) as float32, toFloat64(numb
 $CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'Avro')"
 $CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'Avro')"
 
-$CLICKHOUSE_CLIENT -q "select toDate(number) as date, toDateTime(number, 'UTC') as datetime from numbers(2) format Avro" > $DATA_FILE
+$CLICKHOUSE_CLIENT -q "select toDate(number) as date from numbers(2) format Avro" > $DATA_FILE
 $CLICKHOUSE_CLIENT -q "desc file('$FILE_NAME', 'Avro')"
 $CLICKHOUSE_CLIENT -q "select * from file('$FILE_NAME', 'Avro')"
 

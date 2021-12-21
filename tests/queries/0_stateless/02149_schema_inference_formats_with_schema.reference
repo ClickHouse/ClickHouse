@@ -16,10 +16,9 @@ decimal64	Decimal(18, 5)
 0	0	0	0
 1.2	0.7692307692307692	3.33333	333.33333
 date	UInt16					
-datetime	UInt32					
 date32	Date32					
-0	0	1970-01-01
-1	1	1970-01-02
+0	1970-01-01
+1	1970-01-02
 str	String					
 fixed_string	String					
 Str: 0	100
@@ -51,10 +50,9 @@ decimal64	Decimal(18, 5)
 0	0	0	0
 1.2	0.7692307692307692	3.33333	333.33333
 date	UInt16					
-datetime	UInt32					
 date32	Date32					
-0	0	1970-01-01
-1	1	1970-01-02
+0	1970-01-01
+1	1970-01-02
 str	String					
 fixed_string	String					
 Str: 0	100
@@ -86,10 +84,9 @@ decimal64	Decimal(18, 5)
 0	0	0	0
 1.2	0.7692307692307692	3.33333	333.33333
 date	UInt16					
-datetime	Int64					
 date32	Date32					
-0	0	1970-01-01
-1	1	1970-01-02
+0	1970-01-01
+1	1970-01-02
 str	String					
 fixed_string	String					
 Str: 0	100
@@ -121,10 +118,9 @@ decimal64	Decimal(18, 5)
 0	0	0	0
 1.2	0.7692307692307692	3.33333	333.33333
 date	Date32					
-datetime	UInt32					
 date32	Date32					
-1970-01-01	0	1970-01-01
-1970-01-02	1	1970-01-02
+1970-01-01	1970-01-01
+1970-01-02	1970-01-02
 str	String					
 fixed_string	String					
 Str: 0	100
@@ -156,10 +152,9 @@ decimal64	Decimal(18, 5)
 0	0	0	0
 1.2	0.7692307692307692	3.33333	333.33333
 date	Date					
-datetime	DateTime					
 date32	Date32					
-1970-01-01	1970-01-01 03:00:00	1970-01-01
-1970-01-02	1970-01-01 03:00:01	1970-01-02
+1970-01-01	1970-01-01
+1970-01-02	1970-01-02
 str	String					
 fixed_string	FixedString(3)					
 Str: 0	100
@@ -191,10 +186,9 @@ decimal64	Decimal(18, 5)
 0	0	0	0
 1.2	0.7692307692307692	3.33333	333.33333
 date	Date					
-datetime	DateTime(\'UTC\')					
 date32	Date32					
-1970-01-01	1970-01-01 00:00:00	1970-01-01
-1970-01-02	1970-01-01 00:00:01	1970-01-02
+1970-01-01	1970-01-01
+1970-01-02	1970-01-02
 str	String					
 fixed_string	FixedString(3)					
 Str: 0	100
@@ -226,10 +220,9 @@ decimal64	Decimal(18, 5)
 0	0	0	0
 1.2	0.7692307692307692	3.33333	333.33333
 date	Date					
-datetime	DateTime(\'UTC\')					
 date32	Date32					
-1970-01-01	1970-01-01 00:00:00	1970-01-01
-1970-01-02	1970-01-01 00:00:01	1970-01-02
+1970-01-01	1970-01-01
+1970-01-02	1970-01-02
 str	String					
 fixed_string	FixedString(3)					
 Str: 0	100
@@ -261,10 +254,9 @@ decimal64	Decimal(18, 5)
 0	0	0	0
 1.2	0.7692307692307692	3.33333	333.33333
 date	Date					
-datetime	DateTime(\'UTC\')					
 date32	Date32					
-1970-01-01	1970-01-01 00:00:00	1970-01-01
-1970-01-02	1970-01-01 00:00:01	1970-01-02
+1970-01-01	1970-01-01
+1970-01-02	1970-01-02
 str	String					
 fixed_string	FixedString(3)					
 Str: 0	100
@@ -296,10 +288,9 @@ decimal64	Decimal(18, 5)
 0	0	0	0
 1.2	0.7692307692307692	3.33333	333.33333
 date	Date					
-datetime	DateTime(\'UTC\')					
 date32	Date32					
-1970-01-01	1970-01-01 00:00:00	1970-01-01
-1970-01-02	1970-01-01 00:00:01	1970-01-02
+1970-01-01	1970-01-01
+1970-01-02	1970-01-02
 str	String					
 fixed_string	FixedString(3)					
 Str: 0	100
@@ -331,10 +322,9 @@ decimal64	Decimal(18, 5)
 0	0	0	0
 1.2	0.7692307692307692	3.33333	333.33333
 date	Date					
-datetime	DateTime(\'UTC\')					
 date32	Date32					
-1970-01-01	1970-01-01 00:00:00	1970-01-01
-1970-01-02	1970-01-01 00:00:01	1970-01-02
+1970-01-01	1970-01-01
+1970-01-02	1970-01-02
 str	String					
 fixed_string	FixedString(3)					
 Str: 0	100
@@ -366,10 +356,9 @@ decimal64	Decimal(18, 5)
 0	0	0	0
 1.2	0.7692307692307692	3.33333	333.33333
 date	Date					
-datetime	DateTime(\'UTC\')					
 date32	Date32					
-1970-01-01	1970-01-01 00:00:00	1970-01-01
-1970-01-02	1970-01-01 00:00:01	1970-01-02
+1970-01-01	1970-01-01
+1970-01-02	1970-01-02
 str	String					
 fixed_string	FixedString(3)					
 Str: 0	100
@@ -401,10 +390,9 @@ decimal64	Decimal(18, 5)
 0	0	0	0
 1.2	0.7692307692307692	3.33333	333.33333
 date	Date					
-datetime	DateTime(\'UTC\')					
 date32	Date32					
-1970-01-01	1970-01-01 00:00:00	1970-01-01
-1970-01-02	1970-01-01 00:00:01	1970-01-02
+1970-01-01	1970-01-01
+1970-01-02	1970-01-02
 str	String					
 fixed_string	FixedString(3)					
 Str: 0	100
@@ -435,9 +423,8 @@ float64	Float64
 0	0
 1.2	0.7692307692307692
 date	Int32					
-datetime	Int32					
-0	0
-1	1
+0
+1
 str	String					
 fixed_string	FixedString(3)					
 Str: 0	100
