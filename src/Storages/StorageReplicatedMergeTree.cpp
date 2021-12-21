@@ -7619,4 +7619,169 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(const zkutil::ZooKeeperP
 }
 
 
+struct FreezeMetaData
+{
+public:
+    void fill(const StorageReplicatedMergeTree & storage)
+    {
+        is_replicated = storage.supportsReplication();
+        is_remote = storage.isRemote();
+        replica_name = storage.getReplicaName();
+        zookeeper_name = storage.getZooKeeperName();
+        table_uuid = storage.getTableUniqID();
+    }
+
+    void save(DiskPtr disk, const String & path) const
+    {
+        auto file_path = getFileName(path);
+        auto buffer = disk->writeMetaFile(file_path);
+        writeIntText(version, *buffer);
+        buffer->write("\n", 1);
+        writeBoolText(is_replicated, *buffer);
+        buffer->write("\n", 1);
+        writeBoolText(is_remote, *buffer);
+        buffer->write("\n", 1);
+        writeString(replica_name, *buffer);
+        buffer->write("\n", 1);
+        writeString(zookeeper_name, *buffer);
+        buffer->write("\n", 1);
+        writeString(table_uuid, *buffer);
+        buffer->write("\n", 1);
+    }
+
+    bool load(DiskPtr disk, const String & path)
+    {
+        auto file_path = getFileName(path);
+        if (!disk->exists(file_path))
+            return false;
+        auto buffer = disk->readMetaFile(file_path);
+        readIntText(version, *buffer);
+        if (version != 1)
+        {
+            LOG_ERROR(&Poco::Logger::get("FreezeMetaData"), "Unknown freezed metadata version: {}", version);
+            return false;
+        }
+        DB::assertChar('\n', *buffer);
+        readBoolText(is_replicated, *buffer);
+        DB::assertChar('\n', *buffer);
+        readBoolText(is_remote, *buffer);
+        DB::assertChar('\n', *buffer);
+        readString(replica_name, *buffer);
+        DB::assertChar('\n', *buffer);
+        readString(zookeeper_name, *buffer);
+        DB::assertChar('\n', *buffer);
+        readString(table_uuid, *buffer);
+        DB::assertChar('\n', *buffer);
+        return true;
+    }
+
+    static void clean(DiskPtr disk, const String & path)
+    {
+        disk->removeMetaFileIfExists(getFileName(path));
+    }
+
+private:
+    static String getFileName(const String & path)
+    {
+        return fs::path(path) / "frozen_metadata.txt";
+    }
+
+public:
+    int version = 1;
+    bool is_replicated;
+    bool is_remote;
+    String replica_name;
+    String zookeeper_name;
+    String table_uuid;
+};
+
+
+bool StorageReplicatedMergeTree::removeDetachedPart(DiskPtr disk, const String & path, const String & part_name, bool is_freezed)
+{
+    if (disk->supportZeroCopyReplication())
+    {
+        if (is_freezed)
+        {
+            FreezeMetaData meta;
+            if (meta.load(disk, path))
+            {
+                FreezeMetaData::clean(disk, path);
+                return removeSharedDetachedPart(disk, path, part_name, meta.table_uuid, meta.zookeeper_name, meta.replica_name, "");
+            }
+        }
+        else
+        {
+            String table_uuid = getTableUniqID();
+
+            return removeSharedDetachedPart(disk, path, part_name, table_uuid, zookeeper_name, replica_name, zookeeper_path);
+        }
+    }
+
+    disk->removeRecursive(path);
+
+    return false;
+}
+
+
+bool StorageReplicatedMergeTree::removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name, const String & table_uuid,
+    const String & detached_zookeeper_name, const String & detached_replica_name, const String & detached_zookeeper_path)
+{
+    bool keep_shared = false;
+
+    static constexpr auto default_zookeeper_name = "default";
+    zkutil::ZooKeeperPtr zookeeper;
+    if (detached_zookeeper_name == default_zookeeper_name)
+    {
+        zookeeper = getContext()->getZooKeeper();
+    }
+    else
+    {
+        try
+        {
+            zookeeper = getContext()->getAuxiliaryZooKeeper(detached_zookeeper_name);
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() != ErrorCodes::BAD_ARGUMENTS)
+                throw;
+            /// No more stored non-default zookeeper
+            zookeeper = nullptr;
+        }
+    }
+
+    if (zookeeper)
+    {
+        fs::path checksums = fs::path(path) / "checksums.txt";
+        if (disk->exists(checksums))
+        {
+            auto ref_count = disk->getRefCount(checksums);
+            if (ref_count == 0)
+            {
+                String id = disk->getUniqueId(checksums);
+                keep_shared = !StorageReplicatedMergeTree::unlockSharedDataById(id, table_uuid, part_name,
+                    detached_replica_name, disk, zookeeper, getContext()->getReplicatedMergeTreeSettings(), log,
+                    detached_zookeeper_path);
+            }
+            else
+                keep_shared = true;
+        }
+    }
+
+    disk->removeSharedRecursive(path, keep_shared);
+
+    return keep_shared;
+}
+
+
+void StorageReplicatedMergeTree::freezeMetaData(DiskPtr disk, DataPartPtr, String backup_part_path) const
+{
+    if (disk->supportZeroCopyReplication())
+    {
+        FreezeMetaData meta;
+        meta.fill(*this);
+        meta.save(disk, backup_part_path);
+    }
+}
+
+
 }

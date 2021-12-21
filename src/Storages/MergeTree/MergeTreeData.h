@@ -879,8 +879,12 @@ public:
     /// Overridden in StorageReplicatedMergeTree
     virtual bool tryToFetchIfShared(const IMergeTreeDataPart &, const DiskPtr &, const String &) { return false; }
 
-    virtual String getZooKeeperName() const { return ""; }
-    virtual String getZooKeeperPath() const { return ""; }
+    /// Check shared data usage on other replicas for detached/freezed part
+    /// Remove local files and remote files if needed
+    virtual bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name, bool is_freezed);
+
+    /// Store some metadata for freezed part if needed
+    virtual void freezeMetaData(DiskPtr disk, DataPartPtr part, String backup_part_path) const;
 
     /// Parts that currently submerging (merging to bigger parts) or emerging
     /// (to be appeared after merging finished). These two variables have to be used
@@ -1183,12 +1187,6 @@ private:
         DataPartsVector & duplicate_parts_to_remove,
         MutableDataPartsVector & parts_from_wal,
         DataPartsLock & part_lock);
-
-    /// Check shared data usage on other replicas for detached/freezed part
-    /// Remove local files and remote files if needed
-    bool removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name);
-    bool removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name, const String & table_uuid,
-        const String & zookeeper_name, const String & replica_name, const String & zookeeper_path, bool is_replicated);
 };
 
 /// RAII struct to record big parts that are submerging or emerging.
