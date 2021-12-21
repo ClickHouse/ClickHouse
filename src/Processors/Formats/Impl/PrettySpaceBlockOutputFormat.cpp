@@ -26,7 +26,7 @@ void PrettySpaceBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind
 
     Serializations serializations(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
-        serializations[i] = header.getByPosition(i).type->getDefaultSerialization();
+        serializations[i] = header.getByPosition(i).type->getSerialization(*columns[i]->getSerializationInfo());
 
     WidthsPerColumn widths;
     Widths max_widths;

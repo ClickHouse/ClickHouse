@@ -233,8 +233,6 @@ void TCPHandler::runImpl()
             /// NOTE: these settings are applied only for current connection (not for distributed tables' connections)
             state.timeout_setter = std::make_unique<TimeoutSetter>(socket(), receive_timeout, send_timeout);
 
-            std::mutex fatal_error_mutex;
-
             /// Should we send internal logs to client?
             const auto client_logs_level = query_context->getSettingsRef().send_logs_level;
             if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_LOGS
@@ -243,7 +241,7 @@ void TCPHandler::runImpl()
                 state.logs_queue = std::make_shared<InternalTextLogsQueue>();
                 state.logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
                 CurrentThread::attachInternalTextLogsQueue(state.logs_queue, client_logs_level);
-                CurrentThread::setFatalErrorCallback([this, &fatal_error_mutex]
+                CurrentThread::setFatalErrorCallback([this]
                 {
                     std::lock_guard lock(fatal_error_mutex);
                     sendLogs();
@@ -351,7 +349,7 @@ void TCPHandler::runImpl()
                 /// Should not check for cancel in case of input.
                 if (!state.need_receive_data_for_input)
                 {
-                    auto callback = [this, &fatal_error_mutex]()
+                    auto callback = [this]()
                     {
                         std::lock_guard lock(fatal_error_mutex);
 
@@ -949,28 +947,27 @@ void TCPHandler::sendProfileEvents()
     ThreadIdToCountersSnapshot new_snapshots;
     ProfileEventsSnapshot group_snapshot;
     {
-        std::lock_guard guard(thread_group->mutex);
-        snapshots.reserve(thread_group->threads.size());
-        for (auto * thread : thread_group->threads)
+        auto stats = thread_group->getProfileEventsCountersAndMemoryForThreads();
+        snapshots.reserve(stats.size());
+
+        for (auto & stat : stats)
         {
-            auto const thread_id = thread->thread_id;
+            auto const thread_id = stat.thread_id;
             if (thread_id == current_thread_id)
                 continue;
             auto current_time = time(nullptr);
-            auto counters = thread->performance_counters.getPartiallyAtomicSnapshot();
-            auto memory_usage = thread->memory_tracker.get();
             auto previous_snapshot = last_sent_snapshots.find(thread_id);
             auto increment =
                 previous_snapshot != last_sent_snapshots.end()
-                ? CountersIncrement(counters, previous_snapshot->second)
-                : CountersIncrement(counters);
+                ? CountersIncrement(stat.counters, previous_snapshot->second)
+                : CountersIncrement(stat.counters);
             snapshots.push_back(ProfileEventsSnapshot{
                 thread_id,
                 std::move(increment),
-                memory_usage,
+                stat.memory_usage,
                 current_time
             });
-            new_snapshots[thread_id] = std::move(counters);
+            new_snapshots[thread_id] = std::move(stat.counters);
         }
 
         group_snapshot.thread_id    = 0;
