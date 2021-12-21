@@ -873,7 +873,7 @@ public:
     /// Overridden in StorageReplicatedMergeTree
     virtual bool unlockSharedData(const IMergeTreeDataPart &) const { return true; }
 
-    /// Unlock same part with other (old) name
+    /// Remove lock with old name for shared data part after rename
     virtual bool unlockSharedData(const IMergeTreeDataPart &, const String &) const { return true; }
 
     /// Fetch part only if some replica has it on shared storage like S3

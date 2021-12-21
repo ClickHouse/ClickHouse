@@ -1153,12 +1153,12 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     storage.lockSharedData(*this);
 }
 
-void IMergeTreeDataPart::cleanupOldName(const String & old_name) const
+void IMergeTreeDataPart::cleanupOldName(const String & old_part_name) const
 {
-    if (name == old_name)
+    if (name == old_part_name)
         return;
 
-    storage.unlockSharedData(*this, old_name);
+    storage.unlockSharedData(*this, old_part_name);
 }
 
 std::optional<bool> IMergeTreeDataPart::keepSharedDataInDecoupledStorage() const
