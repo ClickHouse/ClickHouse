@@ -4,7 +4,7 @@ env:
   PYTHONUNBUFFERED: 1
 
 concurrency:
-  group: cherry-pick
+  group: woboq
 on: # yamllint disable-line rule:truthy
   schedule:
     - cron: '0 */18 * *'
