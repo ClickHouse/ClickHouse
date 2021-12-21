@@ -501,7 +501,14 @@ bool MergeTask::VerticalMergeStage::finalizeVerticalMergeForAllColumns() const
 bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() const
 {
     for (const auto & part : global_ctx->future_part->parts)
-        global_ctx->new_data_part->minmax_idx->merge(*part->minmax_idx);
+    {
+        /// Skip empty parts,
+        /// (that can be created in StorageReplicatedMergeTree::createEmptyPartInsteadOfLost())
+        /// since they can incorrectly set min,
+        /// that will be changed after one more merge/OPTIMIZE.
+        if (!part->isEmpty())
+            global_ctx->new_data_part->minmax_idx->merge(*part->minmax_idx);
+    }
 
     /// Print overall profiling info. NOTE: it may duplicates previous messages
     {

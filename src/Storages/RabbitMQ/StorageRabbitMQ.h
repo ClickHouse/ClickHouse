@@ -66,6 +66,7 @@ public:
 
     bool updateChannel(ChannelPtr & channel);
     void updateQueues(std::vector<String> & queues_) { queues_ = queues; }
+    void prepareChannelForBuffer(ConsumerBufferPtr buffer);
 
     void incrementReader();
     void decrementReader();
@@ -148,6 +149,7 @@ private:
     /// For select query we must be aware of the end of streaming
     /// to be able to turn off the loop.
     std::atomic<size_t> readers_count = 0;
+    std::atomic<bool> mv_attached = false;
 
     /// In select query we start event loop, but do not stop it
     /// after that select is finished. Then in a thread, which

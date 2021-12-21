@@ -3,6 +3,8 @@ import logging
 import subprocess
 import os
 import csv
+import sys
+
 from github import Github
 from s3_helper import S3Helper
 from pr_info import PRInfo, get_event
@@ -12,7 +14,7 @@ from docker_pull_helper import get_image_with_version
 from commit_status_helper import post_commit_status
 from clickhouse_helper import ClickHouseHelper, mark_flaky_tests, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
-
+from rerun_helper import RerunHelper
 
 NAME = "Style Check (actions)"
 
@@ -26,10 +28,14 @@ def process_result(result_folder):
         test_files = [f for f in os.listdir(result_folder) if os.path.isfile(os.path.join(result_folder, f))]
         additional_files = [os.path.join(result_folder, f) for f in test_files]
 
+    status = []
     status_path = os.path.join(result_folder, "check_status.tsv")
-    logging.info("Found test_results.tsv")
-    status = list(csv.reader(open(status_path, 'r'), delimiter='\t'))
+    if os.path.exists(status_path):
+        logging.info("Found test_results.tsv")
+        with open(status_path, 'r', encoding='utf-8') as status_file:
+            status = list(csv.reader(status_file, delimiter='\t'))
     if len(status) != 1 or len(status[0]) != 2:
+        logging.info("Files in result folder %s", os.listdir(result_folder))
         return "error", "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
@@ -56,10 +62,15 @@ if __name__ == "__main__":
 
     pr_info = PRInfo(get_event())
 
+    gh = Github(get_best_robot_token())
+
+    rerun_helper = RerunHelper(gh, pr_info, NAME)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
+
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
-
-    gh = Github(get_best_robot_token())
 
     docker_image = get_image_with_version(temp_path, 'clickhouse/style-test')
     s3_helper = S3Helper('https://s3.amazonaws.com')

@@ -42,7 +42,7 @@ class IAsynchronousReader;
 using AsynchronousReaderPtr = std::shared_ptr<IAsynchronousReader>;
 
 
-/// Base Disk class for remote FS's, which are not posix-compatible (DiskS3 and DiskHDFS)
+/// Base Disk class for remote FS's, which are not posix-compatible (e.g. DiskS3, DiskHDFS, DiskBlobStorage)
 class IDiskRemote : public IDisk
 {
 

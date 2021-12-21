@@ -111,19 +111,6 @@ function start_server
     fi
 
     echo "ClickHouse server pid '$server_pid' started and responded"
-
-    echo "
-set follow-fork-mode child
-handle all noprint
-handle SIGSEGV stop print
-handle SIGBUS stop print
-handle SIGABRT stop print
-continue
-thread apply all backtrace
-continue
-" > script.gdb
-
-    gdb -batch -command script.gdb -p "$server_pid" &
 }
 
 function clone_root
@@ -234,6 +221,9 @@ function build
         time ninja clickhouse-bundle 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/build_log.txt"
         if [ "$COPY_CLICKHOUSE_BINARY_TO_OUTPUT" -eq "1" ]; then
             cp programs/clickhouse "$FASTTEST_OUTPUT/clickhouse"
+
+            strip programs/clickhouse -o "$FASTTEST_OUTPUT/clickhouse-stripped"
+            gzip "$FASTTEST_OUTPUT/clickhouse-stripped"
         fi
         ccache --show-stats ||:
     )
