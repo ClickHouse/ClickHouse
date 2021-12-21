@@ -7,12 +7,11 @@ import os
 import boto3
 from github import Github
 
-from get_robot_token import get_parameter_from_ssm
 from env_helper import REPORTS_PATH, REPO_COPY, TEMP_PATH
 from stopwatch import Stopwatch
 from upload_result_helper import upload_results
 from s3_helper import S3Helper
-from get_robot_token import get_best_robot_token
+from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
 from compress_files import compress_fast
 from commit_status_helper import post_commit_status
