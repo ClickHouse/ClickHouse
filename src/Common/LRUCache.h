@@ -165,7 +165,7 @@ public:
     }
 
     /// If key is not in cache or the element can be released, return is true. otherwise, return is false
-    bool tryDel(const Key &key)
+    bool tryDel(const Key & key)
     {
         std::lock_guard loc(mutex);
         auto it = cells.find(key);
