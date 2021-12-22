@@ -1,20 +1,32 @@
 #include "SerializedPlanParser.h"
-#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
-#include <Processors/Formats/Impl/ArrowBlockOutputFormat.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Core/Block.h>
+#include <Core/Names.h>
+#include <Core/NamesAndTypes.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
 #include <IO/ReadBufferFromFile.h>
-#include <Processors/Pipe.h>
 #include <IO/WriteBufferFromString.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/Formats/Impl/ArrowBlockOutputFormat.h>
+#include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
+#include <Processors/Pipe.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <sys/stat.h>
 
-DB::BatchParquetFileSourcePtr dbms::SerializedPlanParser::parseReadRealWithLocalFile(const io::substrait::ReadRel& rel)
+namespace substrait = io::substrait;
+
+DB::BatchParquetFileSourcePtr dbms::SerializedPlanParser::parseReadRealWithLocalFile(const io::substrait::ReadRel & rel)
 {
     assert(rel.has_local_files());
     assert(rel.has_base_schema());
     auto files_info = std::make_shared<FilesInfo>();
-    for (const auto &item : rel.local_files().items())
+    for (const auto & item : rel.local_files().items())
     {
         files_info->files.push_back(item.uri_path());
     }
@@ -27,14 +39,14 @@ DB::Block dbms::SerializedPlanParser::parseNameStruct(const io::substrait::Type_
     internal_cols->reserve(struct_.names_size());
     for (int i = 0; i < struct_.names_size(); ++i)
     {
-        const auto& name = struct_.names(i);
-        const auto& type = struct_.struct_().types(i);
+        const auto & name = struct_.names(i);
+        const auto & type = struct_.struct_().types(i);
         auto data_type = parseType(type);
         internal_cols->push_back(DB::ColumnWithTypeAndName(data_type->createColumn(), data_type, name));
     }
     return DB::Block(*std::move(internal_cols));
 }
-DB::DataTypePtr dbms::SerializedPlanParser::parseType(const io::substrait::Type& type)
+DB::DataTypePtr dbms::SerializedPlanParser::parseType(const io::substrait::Type & type)
 {
     auto & factory = DB::DataTypeFactory::instance();
     if (type.has_bool_() || type.has_i8())
@@ -72,55 +84,197 @@ DB::DataTypePtr dbms::SerializedPlanParser::parseType(const io::substrait::Type&
 }
 DB::QueryPlanPtr dbms::SerializedPlanParser::parse(std::unique_ptr<io::substrait::Plan> plan)
 {
-    auto query_plan = std::make_unique<DB::QueryPlan>();
+    if (plan->mappings_size() > 0)
+    {
+        for (auto mapping : plan->mappings())
+        {
+            if (mapping.has_function_mapping())
+            {
+                this->function_mapping.emplace(std::to_string(mapping.function_mapping().function_id().id()), mapping.function_mapping().name());
+            }
+        }
+    }
+
     if (plan->relations_size() == 1)
     {
         auto rel = plan->relations().at(0);
-        parse(*query_plan, rel);
+        return parseOp(rel);
     }
     else
     {
         throw std::runtime_error("too many relations found");
     }
-    return query_plan;
 }
-DB::QueryPlanPtr dbms::SerializedPlanParser::parse(std::string& plan)
+
+DB::QueryPlanPtr dbms::SerializedPlanParser::parseOp(const io::substrait::Rel & rel)
+{
+    switch (rel.RelType_case())
+    {
+        case substrait::Rel::RelTypeCase::kFetch: {
+            const auto & limit = rel.fetch();
+            DB::QueryPlanPtr query_plan = parseOp(limit.input());
+            auto limit_step = std::make_unique<DB::LimitStep>(query_plan->getCurrentDataStream(), limit.count(), limit.offset());
+            query_plan->addStep(std::move(limit_step));
+            return query_plan;
+        }
+        case substrait::Rel::RelTypeCase::kFilter: {
+            const auto & filter = rel.filter();
+            DB::QueryPlanPtr query_plan = parseOp(filter.input());
+            std::string filter_name;
+            auto actions_dag = parseFunction(query_plan->getCurrentDataStream(), filter.condition(), filter_name);
+            auto filter_step = std::make_unique<DB::FilterStep>(query_plan->getCurrentDataStream(), actions_dag, filter_name, true);
+            query_plan->addStep(std::move(filter_step));
+            return query_plan;
+        }
+        case substrait::Rel::RelTypeCase::kProject: {
+            const auto & project = rel.project();
+            DB::QueryPlanPtr query_plan = parseOp(project.input());
+            const auto & expressions = project.expressions();
+            for (const auto & expr : expressions)
+            {
+                std::string result_name;
+                auto expression_step = std::make_unique<DB::ExpressionStep>(
+                    query_plan->getCurrentDataStream(), parseFunction(query_plan->getCurrentDataStream(), expr, result_name));
+                query_plan->addStep(std::move(expression_step));
+            }
+            return query_plan;
+        }
+        case substrait::Rel::RelTypeCase::kAggregate: {
+            const auto & aggregate = rel.aggregate();
+            DB::QueryPlanPtr query_plan = parseOp(aggregate.input());
+            auto aggregate_step = parseAggregate(aggregate);
+            query_plan->addStep(std::move(aggregate_step));
+            return query_plan;
+        }
+        case substrait::Rel::RelTypeCase::kRead: {
+            const auto & read = rel.read();
+            assert(read.has_local_files() && "Only support local files read rel");
+            DB::QueryPlanPtr query_plan = std::make_unique<DB::QueryPlan>();
+            std::shared_ptr<IProcessor> source = std::dynamic_pointer_cast<IProcessor>(parseReadRealWithLocalFile(read));
+            auto source_step = std::make_unique<ReadFromStorageStep>(Pipe(source), "Parquet");
+            query_plan->addStep(std::move(source_step));
+            //            if (read.has_filter())
+            //            {
+            //                const auto &filter_expr = read.filter();
+            //                auto filter_step = std::make_unique<FilterStep>(query_plan->getCurrentDataStream(), parseExpr(filter_expr), "filter", true);
+            //                query_plan->addStep(std::move(filter_step));
+            //            }
+            return query_plan;
+        }
+        default:
+            throw std::runtime_error("doesn't support relation type " + std::to_string(rel.RelType_case()));
+    }
+}
+
+DB::QueryPlanStepPtr dbms::SerializedPlanParser::parseAggregate(const io::substrait::AggregateRel & rel)
+{
+}
+
+DB::NamesAndTypesList dbms::SerializedPlanParser::blockToNameAndTypeList(const DB::Block & header)
+{
+    DB::NamesAndTypesList types;
+    for (const auto & name : header.getNames())
+    {
+        const auto * column = header.findByName(name);
+        types.push_back(DB::NameAndTypePair(column->name, column->type));
+    }
+    return types;
+}
+
+void join(DB::ActionsDAG::NodeRawConstPtrs v, char c, std::string & s)
+{
+    s.clear();
+    for (auto p = v.begin(); p != v.end(); ++p)
+    {
+        s += (*p)->result_name;
+        if (p != v.end() - 1)
+            s += c;
+    }
+}
+
+
+DB::ActionsDAGPtr dbms::SerializedPlanParser::parseFunction(
+    const DataStream & input, const io::substrait::Expression & rel, std::string & result_name, DB::ActionsDAGPtr actions_dag)
+{
+    assert(rel.has_scalar_function() && "the root of expression should be a scalar function");
+    const auto & scalar_function = rel.scalar_function();
+    if (!actions_dag)
+    {
+        actions_dag = std::make_shared<ActionsDAG>(blockToNameAndTypeList(input.header));
+    }
+    DB::ActionsDAG::NodeRawConstPtrs args;
+    for (const auto & arg : scalar_function.args())
+    {
+        if (arg.has_scalar_function())
+        {
+            std::string arg_name;
+            parseFunction(input, arg, arg_name, actions_dag);
+            args.emplace_back(&actions_dag->getNodes().back());
+        }
+        else
+        {
+            args.emplace_back(parseArgument(actions_dag, arg));
+        }
+    }
+    auto function_name = this->function_mapping.at(std::to_string(rel.scalar_function().id().id()));
+    assert(SCALAR_FUNCTIONS.contains(function_name) && ("doesn't support function " + function_name).c_str());
+    auto function_builder = DB::FunctionFactory::instance().get(SCALAR_FUNCTIONS.at(function_name), this->context);
+    std::string args_name;
+    join(args, ',', args_name);
+    result_name = function_name + "(" + args_name + ")";
+    actions_dag->addFunction(function_builder, args, result_name);
+    return actions_dag;
+}
+
+const DB::ActionsDAG::Node * dbms::SerializedPlanParser::parseArgument(DB::ActionsDAGPtr action_dag, const io::substrait::Expression & rel)
+{
+    switch (rel.rex_type_case())
+    {
+        case io::substrait::Expression::RexTypeCase::kLiteral: {
+            const auto & literal = rel.literal();
+            switch (literal.literal_type_case())
+            {
+                case io::substrait::Expression_Literal::kFp64: {
+                    auto type = std::make_shared<DB::DataTypeFloat64>();
+                    auto const_node = action_dag->addInput(ColumnWithTypeAndName(
+                        type->createColumnConst(1, literal.fp64()), type, getUniqueName(std::to_string(literal.fp64()))));
+                    return action_dag->tryFindInIndex(const_node.result_name);
+                }
+                case io::substrait::Expression_Literal::kString: {
+                    auto type = std::make_shared<DB::DataTypeString>();
+                    auto const_node = action_dag->addInput(
+                        ColumnWithTypeAndName(type->createColumnConst(1, literal.string()), type, getUniqueName(literal.string())));
+                    return action_dag->tryFindInIndex(const_node.result_name);
+                }
+                case io::substrait::Expression_Literal::kI32: {
+                    auto type = std::make_shared<DB::DataTypeInt32>();
+                    auto const_node = action_dag->addInput(ColumnWithTypeAndName(
+                        type->createColumnConst(1, literal.i32()), type, getUniqueName(std::to_string(literal.i32()))));
+                    return action_dag->tryFindInIndex(const_node.result_name);
+                }
+                default:
+                    throw std::runtime_error("unsupported constant type " + std::to_string(literal.literal_type_case()));
+            }
+        }
+        case io::substrait::Expression::RexTypeCase::kSelection: {
+            if (!rel.selection().has_direct_reference() || !rel.selection().direct_reference().has_struct_field())
+            {
+                throw std::runtime_error("Can only have direct struct references in selections");
+            }
+            const auto * field = action_dag->getInputs()[rel.selection().direct_reference().struct_field().field() - 1];
+            return action_dag->tryFindInIndex(field->result_name);
+        }
+        default:
+            throw std::runtime_error("unsupported arg type " + std::to_string(rel.rex_type_case()));
+    }
+}
+
+
+DB::QueryPlanPtr dbms::SerializedPlanParser::parse(std::string & plan)
 {
     auto plan_ptr = std::make_unique<io::substrait::Plan>();
     plan_ptr->ParseFromString(plan);
     return parse(std::move(plan_ptr));
-}
-void dbms::SerializedPlanParser::parse(DB::QueryPlan & query_plan, const io::substrait::ReadRel & rel)
-{
-    std::shared_ptr<IProcessor> source = std::dynamic_pointer_cast<IProcessor>(SerializedPlanParser::parseReadRealWithLocalFile(rel));
-    auto source_step = std::make_unique<ReadFromStorageStep>(Pipe(source), "Parquet");
-    query_plan.addStep(std::move(source_step));
-}
-void dbms::SerializedPlanParser::parse(DB::QueryPlan & query_plan, const io::substrait::Rel& rel)
-{
-    if (rel.has_read()) {
-        parse(query_plan, rel.read());
-    }
-    else if (rel.has_project())
-    {
-        parse(query_plan, rel.project());
-    }
-    else
-    {
-        throw std::runtime_error("unsupported relation");
-    }
-}
-void dbms::SerializedPlanParser::parse(DB::QueryPlan & query_plan, const io::substrait::ProjectRel & rel)
-{
-    if (rel.has_input())
-    {
-        parse(query_plan, rel.input());
-    }
-    else
-    {
-        throw std::runtime_error("project relation should contains a input relation");
-    }
-    //TODO add project step
 }
 DB::Chunk DB::BatchParquetFileSource::generate()
 {
@@ -136,7 +290,9 @@ DB::Chunk DB::BatchParquetFileSource::generate()
             current_path = files_info->files[current_file];
             std::unique_ptr<ReadBuffer> nested_buffer;
 
-            struct stat file_stat{};
+            struct stat file_stat
+            {
+            };
 
             /// Check if file descriptor allows random reads (and reading it twice).
             if (0 != stat(current_path.c_str(), &file_stat))
@@ -173,8 +329,7 @@ DB::Chunk DB::BatchParquetFileSource::generate()
 
     return {};
 }
-DB::BatchParquetFileSource::BatchParquetFileSource(
-    FilesInfoPtr files, const DB::Block & sample)
+DB::BatchParquetFileSource::BatchParquetFileSource(FilesInfoPtr files, const DB::Block & sample)
     : SourceWithProgress(sample), files_info(files), header(sample)
 {
 }
@@ -186,7 +341,7 @@ void dbms::LocalExecutor::execute(DB::QueryPlanPtr query_plan)
     this->header = query_plan->getCurrentDataStream().header;
     this->ch_column_to_spark_row = std::make_unique<local_engine::CHColumnToSparkRow>();
 }
-std::unique_ptr<local_engine::SparkRowInfo> dbms::LocalExecutor::writeBlockToSparkRow(DB::Block &block)
+std::unique_ptr<local_engine::SparkRowInfo> dbms::LocalExecutor::writeBlockToSparkRow(DB::Block & block)
 {
     return this->ch_column_to_spark_row->convertCHColumnToSparkRow(block);
 }
@@ -197,7 +352,9 @@ bool dbms::LocalExecutor::hasNext()
     {
         this->current_chunk = std::make_unique<DB::Block>(this->header);
         has_next = this->executor->pull(*this->current_chunk);
-    } else {
+    }
+    else
+    {
         has_next = true;
     }
     return has_next;

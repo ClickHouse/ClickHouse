@@ -2,7 +2,7 @@
 
 namespace dbms
 {
-std::unique_ptr<io::substrait::Type_NamedStruct> SerializedSchemaBuilder::build()
+SchemaPtr SerializedSchemaBuilder::build()
 {
     for (const auto & [name, type] : this->type_map)
     {
@@ -68,16 +68,52 @@ SerializedSchemaBuilder & SerializedSchemaBuilder::column(std::string name, std:
     this->nullability_map.emplace(name, nullable);
     return *this;
 }
-SerializedSchemaBuilder::SerializedSchemaBuilder():schema(std::make_unique<io::substrait::Type_NamedStruct>())
+SerializedSchemaBuilder::SerializedSchemaBuilder():schema(new io::substrait::Type_NamedStruct())
 {
 }
-SerializedPlanBuilder & SerializedPlanBuilder::filter(std::string lhs, CompareOperator compareOperator, int value)
+SerializedPlanBuilder& SerializedPlanBuilder::registerFunction(int id, std::string name)
 {
-    this->filters.push_back(std::make_tuple(lhs, compareOperator, value));
+    auto *mapping = this->plan->mutable_mappings()->Add();
+    auto *function_mapping = mapping->mutable_function_mapping();
+    function_mapping->mutable_function_id()->set_id(id);
+    function_mapping->set_name(name);
     return *this;
 }
-SerializedPlanBuilder & SerializedPlanBuilder::files(std::string path, SchemaPtr schema)
+
+void SerializedPlanBuilder::setInputToPrev(io::substrait::Rel * input)
 {
+    if (!this->prev_rel) return;
+    if (this->prev_rel->has_filter())
+    {
+        this->prev_rel->mutable_filter()->set_allocated_input(input);
+    }
+    else if (this->prev_rel->has_aggregate())
+    {
+        this->prev_rel->mutable_aggregate()->set_allocated_input(input);
+    }
+    else if (this->prev_rel->has_project())
+    {
+        this->prev_rel->mutable_project()->set_allocated_input(input);
+    }
+    else 
+    {
+        throw std::runtime_error("does support rel type");
+    }
+}
+
+SerializedPlanBuilder & SerializedPlanBuilder::filter(io::substrait::Expression * condition)
+{
+    io::substrait::Rel * filter = new io::substrait::Rel();
+    filter->mutable_filter()->set_allocated_condition(condition);
+    setInputToPrev(filter);
+    this->prev_rel = filter;
+    return *this;
+}
+
+SerializedPlanBuilder & SerializedPlanBuilder::read(std::string path, SchemaPtr schema)
+{
+    io::substrait::Rel * rel = new io::substrait::Rel();
+    auto * read = rel->mutable_read();
     this->source = path;
     this->data_schema = std::move(schema);
     return *this;

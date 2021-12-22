@@ -107,7 +107,8 @@ void Java_io_kyligence_jni_engine_LocalEngine_execute(JNIEnv * env, jobject obj)
     jbyte * plan_address = env->GetByteArrayElements(*plan, nullptr);
     std::string plan_string;
     plan_string.assign(reinterpret_cast<const char *>(plan_address), plan_size);
-    auto query_plan = dbms::SerializedPlanParser::parse(plan_string);
+    dbms::SerializedPlanParser parser;
+    auto query_plan = parser.parse(plan_string);
     dbms::LocalExecutor * executor = new dbms::LocalExecutor();
     executor->execute(std::move(query_plan));
     env->SetLongField(obj, local_engine_executor_field_id, reinterpret_cast<jlong>(executor));

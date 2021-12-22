@@ -34,7 +34,8 @@ TEST(TestSelect, ReadRel)
     ASSERT_EQ(plan->relations_size(), 1);
     std::cout << "start execute" <<std::endl;
     dbms::LocalExecutor local_executor;
-    auto query_plan = dbms::SerializedPlanParser::parse(std::move(plan));
+    dbms::SerializedPlanParser parser;
+    auto query_plan = parser.parse(std::move(plan));
     local_executor.execute(std::move(query_plan));
     ASSERT_TRUE(local_executor.hasNext());
     while (local_executor.hasNext())
@@ -44,8 +45,13 @@ TEST(TestSelect, ReadRel)
         ASSERT_GT(spark_row_info->getNumRows(), 0);
         local_engine::SparkColumnToCHColumn converter;
         auto block = converter.convertCHColumnToSparkRow(*spark_row_info, local_executor.getHeader());
-        ASSERT_GT(spark_row_info->getNumRows(), block->rows());
+        ASSERT_EQ(spark_row_info->getNumRows(), block->rows());
     }
+}
+
+TEST(TestSelect, TestFilter)
+{
+    
 }
 
 TEST(TestSelect, PerformanceTest)
@@ -79,7 +85,8 @@ TEST(TestSelect, PerformanceTest)
 
         ASSERT_TRUE(plan->relations(0).has_read());
         ASSERT_EQ(plan->relations_size(), 1);
-        auto query_plan = dbms::SerializedPlanParser::parse(std::move(plan));
+        dbms::SerializedPlanParser parser;
+        auto query_plan = parser.parse(std::move(plan));
         std::cout << "start execute" << std::endl;
         dbms::LocalExecutor local_executor;
 

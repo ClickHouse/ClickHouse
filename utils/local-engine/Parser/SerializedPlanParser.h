@@ -12,6 +12,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 #include <arrow/ipc/writer.h>
+#include <Processors/QueryPlan/AggregatingStep.h>
 #include "CHColumnToSparkRow.h"
 
 namespace DB
@@ -57,18 +58,62 @@ namespace dbms
 using namespace DB;
 
 
+static const std::map<std::string, std::string> SCALAR_FUNCTIONS = {
+    {"IS_NOT_NULL","isNotNull"},
+    {"GREATER_THAN_OR_EQUAL","greaterOrEquals"},
+    {"AND", "and"},
+    {"LESS_THAN_OR_EQUAL", "lessOrEquals"},
+    {"LESS_THAN", "less"},
+    {"MULTIPLY", "multiply"}
+};
+
 class SerializedPlanParser
 {
 public:
-    static DB::QueryPlanPtr parse(std::string& plan);
-    static DB::QueryPlanPtr parse(std::unique_ptr<io::substrait::Plan> plan);
-    static DB::BatchParquetFileSourcePtr parseReadRealWithLocalFile(const io::substrait::ReadRel& rel);
-    static DB::Block parseNameStruct(const io::substrait::Type_NamedStruct& struct_);
-    static DB::DataTypePtr parseType(const io::substrait::Type& type);
+    DB::QueryPlanPtr parse(std::string& plan);
+    DB::QueryPlanPtr parse(std::unique_ptr<io::substrait::Plan> plan);
+
+    DB::BatchParquetFileSourcePtr parseReadRealWithLocalFile(const io::substrait::ReadRel& rel);
+    DB::Block parseNameStruct(const io::substrait::Type_NamedStruct& struct_);
+    DB::DataTypePtr parseType(const io::substrait::Type& type);
 private:
-    static void parse(DB::QueryPlan & query_plan, const io::substrait::Rel& rel);
-    static void parse(DB::QueryPlan & query_plan, const io::substrait::ReadRel& rel);
-    static void parse(DB::QueryPlan & query_plan, const io::substrait::ProjectRel& rel);
+    static DB::NamesAndTypesList blockToNameAndTypeList(const DB::Block & header);
+    DB::QueryPlanPtr parseOp(const io::substrait::Rel &rel);
+    DB::ActionsDAGPtr parseFunction(const DataStream & input, const io::substrait::Expression &rel, std::string & result_name, DB::ActionsDAGPtr actions_dag = nullptr);
+    DB::QueryPlanStepPtr parseAggregate(const io::substrait::AggregateRel &rel);
+    const DB::ActionsDAG::Node * parseArgument(DB::ActionsDAGPtr action_dag, const io::substrait::Expression &rel);
+    std::string getUniqueName(std::string name)
+    {
+        return name + "_" + std::to_string(name_no++);
+    }
+
+    Aggregator::Params getAggregateFunction(Block & header, ColumnNumbers & keys, AggregateDescriptions & aggregates)
+    {
+        Settings settings;
+        return Aggregator::Params(
+            header,
+            keys,
+            aggregates,
+            false,
+            settings.max_rows_to_group_by,
+            settings.group_by_overflow_mode,
+            settings.group_by_two_level_threshold,
+            settings.group_by_two_level_threshold_bytes,
+            settings.max_bytes_before_external_group_by,
+            settings.empty_result_for_aggregation_by_empty_set,
+            context->getTemporaryVolume(),
+            settings.max_threads,
+            settings.min_free_disk_space_for_temporary_data,
+            settings.compile_aggregate_expressions,
+            settings.min_count_to_compile_aggregate_expression);
+    }
+
+
+    int name_no = 0;
+    std::unordered_map<std::string, std::string> function_mapping;
+    ContextPtr context;
+//    DB::QueryPlanPtr query_plan;
+
 };
 
 struct SparkBuffer
