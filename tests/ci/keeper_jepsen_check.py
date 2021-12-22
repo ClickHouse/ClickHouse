@@ -167,8 +167,9 @@ if __name__ == "__main__":
         if any(r[1] == 'FAIL' for r in test_result):
             status = 'failure'
             description = 'Found invalid analysis (ﾉಥ益ಥ）ﾉ ┻━┻'
-        compress_fast(os.path.join(result_path, 'store'), 'jepsen_store.tar.gz')
-        additional_data.append(os.path.join(TEMP_PATH, 'jepsen_store.tar.gz'))
+
+        compress_fast(os.path.join(result_path, 'store'), os.path.join(result_path, 'jepsen_store.tar.gz'))
+        additional_data.append(os.path.join(result_path, 'jepsen_store.tar.gz'))
     except:
         status = 'failure'
         description = 'No Jepsen output log'
