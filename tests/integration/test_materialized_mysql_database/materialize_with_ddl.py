@@ -624,7 +624,7 @@ def err_sync_user_privs_with_materialized_mysql_database(clickhouse_node, mysql_
             service_name))
     assert "priv_err_db" in clickhouse_node.query("SHOW DATABASES")
     assert "test_table_1" not in clickhouse_node.query("SHOW TABLES FROM priv_err_db")
-    clickhouse_node.query("DETACH DATABASE priv_err_db")
+    clickhouse_node.query_with_retry("DETACH DATABASE priv_err_db")
 
     mysql_node.query("REVOKE SELECT ON priv_err_db.* FROM 'test'@'%'")
     time.sleep(3)
@@ -743,7 +743,7 @@ def mysql_kill_sync_thread_restore_test(clickhouse_node, mysql_node, service_nam
             time.sleep(sleep_time)
             clickhouse_node.query("SELECT * FROM test_database.test_table")
 
-    clickhouse_node.query("DETACH DATABASE test_database")
+    clickhouse_node.query_with_retry("DETACH DATABASE test_database")
     clickhouse_node.query("ATTACH DATABASE test_database")
     check_query(clickhouse_node, "SELECT * FROM test_database.test_table ORDER BY id FORMAT TSV", '1\n2\n')
 
@@ -784,7 +784,7 @@ def mysql_killed_while_insert(clickhouse_node, mysql_node, service_name):
 
         mysql_node.alloc_connection()
 
-        clickhouse_node.query("DETACH DATABASE kill_mysql_while_insert")
+        clickhouse_node.query_with_retry("DETACH DATABASE kill_mysql_while_insert")
         clickhouse_node.query("ATTACH DATABASE kill_mysql_while_insert")
 
         result = mysql_node.query_and_get_data("SELECT COUNT(1) FROM kill_mysql_while_insert.test")
