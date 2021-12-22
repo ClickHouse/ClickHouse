@@ -539,21 +539,40 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (!s_rparen.ignore(pos, expected))
             return false;
 
-        auto storage_parse_result = storage_p.parse(pos, storage, expected);
+        storage_p.parse(pos, storage, expected);
 
-        if (storage_parse_result && s_as.ignore(pos, expected))
+        if (storage && s_as.ignore(pos, expected))
         {
             if (!select_p.parse(pos, select, expected))
                 return false;
         }
 
-        if (!storage_parse_result && !is_temporary)
+        /// Omit ENGINE:
+        /// "CREATE TABLE [table_name] (col1 Int32, col2 Int32)" is legal
+        /// "CREATE TABLE [table_name] (col1 Int32, col2 Int32) AS SELECT ..." is legal
+        if (!storage && !is_temporary)
         {
-            if (!s_as.ignore(pos, expected))
-                return false;
-            if (!table_function_p.parse(pos, as_table_function, expected))
+            bool engine_omitted = true;
+            if (s_as.ignore(pos, expected))
             {
-                return false;
+                /// If followed by a SELECT subquery, must parse it.
+                if (select_p.parse(pos, select, expected))
+                    engine_omitted = true;
+                /// If followed by table_function, ENGINE can not be specified
+                else if (table_function_p.parse(pos, as_table_function, expected) && !is_temporary)
+                    engine_omitted = false;
+            }
+
+            if (engine_omitted)
+            {
+                storage = std::make_shared<ASTStorage>();
+                auto engine = std::make_shared<ASTFunction>();
+                engine->no_empty_args = true;
+                engine->name = "MergeTree";
+                storage->set(storage->as<ASTStorage>()->engine, engine);
+                auto order_by = std::make_shared<ASTFunction>();
+                order_by->name = "tuple";
+                storage->set(storage->as<ASTStorage>()->order_by, order_by);
             }
         }
     }
@@ -584,6 +603,17 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
                 if (!storage)
                     storage_p.parse(pos, storage, expected);
             }
+        }
+        else if (!storage)
+        {
+            storage = std::make_shared<ASTStorage>();
+            auto engine = std::make_shared<ASTFunction>();
+            engine->no_empty_args = true;
+            engine->name = "MergeTree";
+            storage->set(storage->as<ASTStorage>()->engine, engine);
+            auto order_by = std::make_shared<ASTFunction>();
+            order_by->name = "tuple";
+            storage->set(storage->as<ASTStorage>()->order_by, order_by);
         }
     }
     auto comment = parseComment(pos, expected);
@@ -1250,9 +1280,19 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     if (is_materialized_view && !to_table)
     {
-        /// Internal ENGINE for MATERIALIZED VIEW must be specified.
-        if (!storage_p.parse(pos, storage, expected))
-            return false;
+        /// If ENGINE omitted, use ENGINE=MergeTree() ORDER BY tuple() as default.
+        if (!storage_p.parse(pos, storage, expected) && !storage)
+        {
+            storage = std::make_shared<ASTStorage>();
+            auto engine = std::make_shared<ASTFunction>();
+            engine->no_empty_args = true;
+            engine->name = "MergeTree";
+            storage->set(storage->as<ASTStorage>()->engine, engine);
+
+            auto order_by = std::make_shared<ASTFunction>();
+            order_by->name = "tuple";
+            storage->set(storage->as<ASTStorage>()->order_by, order_by);
+        }
 
         if (s_populate.ignore(pos, expected))
             is_populate = true;
