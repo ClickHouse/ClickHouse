@@ -2,8 +2,8 @@
 import json
 import os
 
-import requests
-from unidiff import PatchSet
+import requests  # type: ignore
+from unidiff import PatchSet  # type: ignore
 
 from env_helper import GITHUB_REPOSITORY, GITHUB_SERVER_URL, GITHUB_RUN_ID, GITHUB_EVENT_PATH
 
