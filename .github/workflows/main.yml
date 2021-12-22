@@ -201,7 +201,7 @@ jobs:
           sudo rm -fr $TEMP_PATH
   KeeperJepsenRelease:
     needs: [BuilderBinRelease]
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, style-checker]
     steps:
       - name: Set envs
         run: |
@@ -219,7 +219,7 @@ jobs:
           sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
-      - name: Functional test
+      - name: Jepsen Test
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
