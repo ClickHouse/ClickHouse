@@ -842,3 +842,18 @@ def test_seekable_formats_url(started_cluster):
     result = instance.query(f"SELECT formatReadableSize(memory_usage) FROM system.query_log WHERE startsWith(query, 'SELECT count() FROM url') AND memory_usage > 0 ORDER BY event_time desc")
     print(result[:3])
     assert(int(result[:3]) < 200)
+
+
+def test_empty_file(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+
+    name = "empty"
+    url = f'http://{started_cluster.minio_ip}:{MINIO_INTERNAL_PORT}/{bucket}/{name}'
+
+    minio = started_cluster.minio_client
+    minio.put_object(bucket, name, io.BytesIO(b""), 0)
+
+    table_function = f"s3('{url}', 'CSV', 'id Int32')"
+    result = instance.query(f"SELECT count() FROM {table_function}")
+    assert(int(result) == 0)
