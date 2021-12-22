@@ -47,7 +47,7 @@ def skip_if_jemalloc_disabled():
     output = run_command_in_container("""clickhouse local -q "
         SELECT value FROM system.build_options WHERE name = 'USE_JEMALLOC'"
     """).strip()
-    if output != b'ON':
+    if output != b'ON' and output != b'1':
         pytest.skip(f'Compiled w/o jemalloc (USE_JEMALLOC={output})')
 
 
