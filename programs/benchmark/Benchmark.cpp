@@ -1,12 +1,8 @@
 #include <unistd.h>
 #include <stdlib.h>
-#include <fcntl.h>
 #include <signal.h>
-#include <time.h>
 #include <iostream>
-#include <fstream>
 #include <iomanip>
-#include <random>
 #include <pcg_random.hpp>
 #include <Poco/Util/Application.h>
 #include <Common/Stopwatch.h>
@@ -23,7 +19,6 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ConnectionTimeoutsContext.h>
