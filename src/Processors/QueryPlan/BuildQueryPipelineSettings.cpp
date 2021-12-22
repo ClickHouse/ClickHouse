@@ -11,6 +11,7 @@ BuildQueryPipelineSettings BuildQueryPipelineSettings::fromContext(ContextPtr fr
     BuildQueryPipelineSettings settings;
     settings.actions_settings = ExpressionActionsSettings::fromSettings(from->getSettingsRef(), CompileExpressions::yes);
     settings.process_list_element = from->getProcessListElement();
+    settings.progress_callback = from->getProgressCallback();
     return settings;
 }
 
