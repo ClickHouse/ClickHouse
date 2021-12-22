@@ -75,7 +75,7 @@ public:
             throw Exception("Scale " + std::to_string(scale) + " is out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
     }
 
-    TypeIndex getTypeId() const override { return TypeToTypeIndex<T>; }
+    TypeIndex getTypeId() const override { return TypeId<T>; }
 
     Field getDefault() const override;
     MutableColumnPtr createColumn() const override;

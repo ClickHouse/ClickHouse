@@ -473,7 +473,7 @@ template <typename T, typename DataType>
 inline bool isColumnedAsDecimalT(const DataType & data_type)
 {
     const WhichDataType which(data_type);
-    return (which.isDecimal() || which.isDateTime64()) && which.idx == TypeToTypeIndex<T>;
+    return (which.isDecimal() || which.isDateTime64()) && which.idx == TypeId<T>;
 }
 
 template <typename T>
