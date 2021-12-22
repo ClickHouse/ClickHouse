@@ -79,8 +79,8 @@ void NativeReader::readData(const ISerialization & serialization, ColumnPtr & co
     serialization.deserializeBinaryBulkWithMultipleStreams(column, rows, settings, state, nullptr);
 
     if (column->size() != rows)
-        throw Exception("Cannot read all data in NativeBlockInputStream. Rows read: " + toString(column->size()) + ". Rows expected: " + toString(rows) + ".",
-            ErrorCodes::CANNOT_READ_ALL_DATA);
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+            "Cannot read all data in NativeBlockInputStream. Rows read: {}. Rows expected: {}", column->size(), rows);
 }
 
 
