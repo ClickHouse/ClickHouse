@@ -4,7 +4,7 @@
 #include <Common/formatReadable.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
-
+#include <base/getPageSize.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <sys/mman.h>
@@ -37,7 +37,7 @@ public:
 
     explicit FiberStack(size_t stack_size_ = default_stack_size) : stack_size(stack_size_)
     {
-        ssize_t tmp_page_size = ::sysconf(_SC_PAGESIZE);
+        ssize_t tmp_page_size = getPageSize();
         page_size = (tmp_page_size == -1) ? default_page_size : tmp_page_size;
     }
 
