@@ -108,10 +108,10 @@ protected:
     static size_t byte_size(size_t num_elements) 
     {
         size_t test;
-        if (__builtin_mul_overflow(num_elements,ELEMENT_SIZE, &test))
-           throw Exception("Amount of memory requested to allocate is more than allowed", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+        if (__builtin_mul_overflow(num_elements, ELEMENT_SIZE, &test))
+            throw Exception("Amount of memory requested to allocate is more than allowed", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
         else 
-           return (num_elements * ELEMENT_SIZE);
+            return num_elements * ELEMENT_SIZE;
     }
     
     /// Minimum amount of memory to allocate for num_elements, including padding.
