@@ -33,7 +33,7 @@ def get_pr_for_commit(sha, ref):
 
 
 class PRInfo:
-    def __init__(self, github_event=None, need_orgs=False, need_changed_files=False):
+    def __init__(self, github_event=None, need_orgs=False, need_changed_files=False, labels_from_api=False):
         if not github_event:
             if GITHUB_EVENT_PATH:
                 with open(GITHUB_EVENT_PATH, 'r', encoding='utf-8') as event_file:
@@ -61,7 +61,12 @@ class PRInfo:
             self.head_ref = github_event['pull_request']['head']['ref']
             self.head_name = github_event['pull_request']['head']['repo']['full_name']
 
-            self.labels = {l['name'] for l in github_event['pull_request']['labels']}
+            if labels_from_api:
+                response = requests.get(f"https://api.github.com/repos/{GITHUB_REPOSITORY}/issues/{self.number}/labels")
+                self.labels = {l['name'] for l in response.json()}
+            else:
+                self.labels = {l['name'] for l in github_event['pull_request']['labels']}
+
             self.user_login = github_event['pull_request']['user']['login']
             self.user_orgs = set([])
             if need_orgs:
@@ -90,7 +95,12 @@ class PRInfo:
                     f"https://api.github.com/repos/{GITHUB_REPOSITORY}/compare/{github_event['before']}...{self.sha}"
             else:
                 self.number = pull_request['number']
-                self.labels = {l['name'] for l in pull_request['labels']}
+                if labels_from_api:
+                    response = requests.get(f"https://api.github.com/repos/{GITHUB_REPOSITORY}/issues/{self.number}/labels")
+                    self.labels = {l['name'] for l in response.json()}
+                else:
+                    self.labels = {l['name'] for l in pull_request['labels']}
+
                 self.base_ref = pull_request['base']['ref']
                 self.base_name = pull_request['base']['repo']['full_name']
                 self.head_ref = pull_request['head']['ref']
