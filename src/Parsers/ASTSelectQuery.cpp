@@ -114,6 +114,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
     {
         auto nested_frame = frame;
         nested_frame.surround_each_list_element_with_parens = true;
+        nested_frame.expression_list_prepend_whitespace = false;
         nested_frame.indent++;
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "GROUPING SETS" << (s.hilite ? hilite_none : "");
         s.ostr << " (";
