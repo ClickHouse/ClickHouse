@@ -68,6 +68,17 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int THERE_IS_NO_COLUMN;
+    extern const int INCORRECT_DATA;
+    extern const int ILLEGAL_COLUMN;
+    extern const int TYPE_MISMATCH;
+    extern const int CANNOT_PARSE_UUID;
+    extern const int CANNOT_READ_ALL_DATA;
+}
 class InputStreamReadBufferAdapter : public avro::InputStream
 {
 public:
