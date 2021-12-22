@@ -244,7 +244,7 @@ TRAP(lgammaf32x)
 TRAP(lgammaf64)
 TRAP(lgammaf64x)
 
-/// These functions are unused by ClickHouse and we should be aware if they are accidentially get used.
+/// These functions are unused by ClickHouse and we should be aware if they are accidentally get used.
 /// Sometimes people report that these function contain vulnerabilities (these reports are bogus for ClickHouse).
 TRAP(mq_close)
 TRAP(mq_getattr)
