@@ -78,8 +78,11 @@ namespace MySQLReplication
         }
     }
 
-    inline void readBitmapFromStr(const char * byte_buffer, Bitmap & bitmap, size_t bitmap_size)
+    inline void readBitmap(ReadBuffer & payload, Bitmap & bitmap, size_t bitmap_size)
     {
+        String byte_buffer;
+        byte_buffer.resize(bitmap_size);
+        payload.readStrict(reinterpret_cast<char *>(byte_buffer.data()), bitmap_size);
         bitmap.resize(bitmap_size * 8, false);
         for (size_t i = 0; i < bitmap_size; ++i)
         {
@@ -104,14 +107,6 @@ namespace MySQLReplication
             if ((tmp & 0x80) != 0)
                 bitmap.set(bit + 7);
         }
-    }
-
-    inline void readBitmap(ReadBuffer & payload, Bitmap & bitmap, size_t bitmap_size)
-    {
-        String byte_buffer;
-        byte_buffer.resize(bitmap_size);
-        payload.readStrict(reinterpret_cast<char *>(byte_buffer.data()), bitmap_size);
-        readBitmapFromStr(byte_buffer.c_str(), bitmap, bitmap_size);
     }
 
     class EventBase;

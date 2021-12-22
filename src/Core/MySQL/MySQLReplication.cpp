@@ -589,13 +589,9 @@ namespace MySQLReplication
                     {
                         UInt32 bits = ((meta >> 8) * 8) + (meta & 0xff);
                         UInt32 size = (bits + 7) / 8;
-
-                        Bitmap bitmap_value;
-                        String byte_buffer;
-                        byte_buffer.resize(size);
-                        readBigEndianStrict(payload, reinterpret_cast<char *>(byte_buffer.data()), size);
-                        readBitmapFromStr(byte_buffer.c_str(), bitmap_value, size);
-                        row.push_back(Field{UInt64{bitmap_value.to_ulong()}});
+                        UInt64 val = 0UL;
+                        readBigEndianStrict(payload, reinterpret_cast<char *>(&val), size);
+                        row.push_back(val);
                         break;
                     }
                     case MYSQL_TYPE_VARCHAR:

@@ -149,11 +149,10 @@ namespace
                 if (static_cast<int>(mysql_type) == 16)
                 {
                     size_t n = value.size();
-                    char *start = const_cast<char *>(value.data()), *end = start + n;
-                    std::reverse(start, end);
-                    MySQLReplication::Bitmap bitmap;
-                    MySQLReplication::readBitmapFromStr(value.data(), bitmap, n);
-                    assert_cast<ColumnUInt64 &>(column).insertValue(bitmap.to_ulong());
+                    UInt64 val = 0UL;
+                    ReadBufferFromMemory payload(const_cast<char *>(value.data()), n);
+                    MySQLReplication::readBigEndianStrict(payload, reinterpret_cast<char *>(&val), n);
+                    assert_cast<ColumnUInt64 &>(column).insertValue(val);
                     read_bytes_size += n;
                 }
                 else
