@@ -107,7 +107,8 @@ protected:
     /// The amount of memory occupied by the num_elements of the elements.
     static size_t byte_size(size_t num_elements) 
     {
-        if (num_elements > SIZE_MAX/ELEMENT_SIZE) 
+        size_t test;
+        if (__builtin_mul_overflow(num_elements,ELEMENT_SIZE, &test))
            throw Exception("Amount of memory requested to allocate is more than allowed", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
         else 
            return (num_elements * ELEMENT_SIZE);
