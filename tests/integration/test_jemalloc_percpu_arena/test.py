@@ -60,11 +60,11 @@ def test_jemalloc_percpu_arena():
 
     assert multiprocessing.cpu_count() > CPU_ID
 
-    online_cpus = run_with_cpu_limit('getconf _NPROCESSORS_ONLN')
-    assert int(online_cpus) == 1, online_cpus
+    online_cpus = int(run_with_cpu_limit('getconf _NPROCESSORS_ONLN'))
+    assert online_cpus == 1, online_cpus
 
-    all_cpus = run_with_cpu_limit('getconf _NPROCESSORS_CONF')
-    assert int(all_cpus) == multiprocessing.cpu_count(), all_cpus
+    all_cpus = int(run_with_cpu_limit('getconf _NPROCESSORS_CONF'))
+    assert all_cpus == multiprocessing.cpu_count(), all_cpus
 
     # implicitly disable percpu arena
     result = run_with_cpu_limit('clickhouse local -q "select 1"',
@@ -77,6 +77,11 @@ def test_jemalloc_percpu_arena():
     with pytest.raises(subprocess.CalledProcessError):
         run_with_cpu_limit('clickhouse local -q "select 1"',
             '--env', 'MALLOC_CONF=abort_conf:true')
+
+    # should not fail even with abort_conf:true, due to explicit narenas
+    # NOTE: abort:false to make it compatible with debug build
+    run_with_cpu_limit('clickhouse local -q "select 1"',
+        '--env', f'MALLOC_CONF=abort_conf:true,abort:false,narenas:{all_cpus}')
 
 # For manual run.
 if __name__ == '__main__':
