@@ -11,6 +11,7 @@ import helpers.client
 import pytest
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance, get_instances_dir
 from helpers.network import PartitionManager
+from helpers.test_tools import exec_query_with_retry
 
 MINIO_INTERNAL_PORT = 9001
 
@@ -809,7 +810,7 @@ def test_seekable_formats(started_cluster):
     assert(int(result) == 5000000)
 
     table_function = f"s3(s3_orc, structure='a Int32, b String', format='ORC')"
-    instance.query(f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(5000000)")
+    exec_query_with_retry(instance, f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(5000000)")
 
     result = instance.query(f"SELECT count() FROM {table_function}")
     assert(int(result) == 5000000)
@@ -832,7 +833,7 @@ def test_seekable_formats_url(started_cluster):
     assert(int(result) == 5000000)
 
     table_function = f"s3(s3_orc, structure='a Int32, b String', format='ORC')"
-    instance.query(f"insert into table function {table_function} select number, randomString(100) from numbers(5000000)")
+    exec_query_with_retry(instance, f"insert into table function {table_function} select number, randomString(100) from numbers(5000000)")
 
     table_function = f"url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_orc', 'ORC', 'a Int32, b String')"
     result = instance.query(f"SELECT count() FROM {table_function}")
