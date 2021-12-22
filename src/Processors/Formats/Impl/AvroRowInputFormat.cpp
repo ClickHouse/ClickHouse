@@ -68,6 +68,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -78,6 +79,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_UUID;
     extern const int CANNOT_READ_ALL_DATA;
 }
+
 class InputStreamReadBufferAdapter : public avro::InputStream
 {
 public:
