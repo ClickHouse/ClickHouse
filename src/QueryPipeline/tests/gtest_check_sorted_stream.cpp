@@ -29,7 +29,7 @@ static Block getSortedBlockWithSize(
 {
     ColumnsWithTypeAndName cols;
     size_t size_of_row_in_bytes = columns.size() * sizeof(UInt64);
-    for (size_t i = 0; i * sizeof(UInt64) < size_of_row_in_bytes; i++)
+    for (size_t i = 0; i * sizeof(UInt64) < size_of_row_in_bytes; ++i)
     {
         auto column = ColumnUInt64::create(rows, 0);
         for (size_t j = 0; j < rows; ++j)
@@ -47,7 +47,7 @@ static Block getUnSortedBlockWithSize(const std::vector<std::string> & columns, 
 {
     ColumnsWithTypeAndName cols;
     size_t size_of_row_in_bytes = columns.size() * sizeof(UInt64);
-    for (size_t i = 0; i * sizeof(UInt64) < size_of_row_in_bytes; i++)
+    for (size_t i = 0; i * sizeof(UInt64) < size_of_row_in_bytes; ++i)
     {
         auto column = ColumnUInt64::create(rows, 0);
         for (size_t j = 0; j < rows; ++j)
@@ -71,7 +71,7 @@ static Block getEqualValuesBlockWithSize(
 {
     ColumnsWithTypeAndName cols;
     size_t size_of_row_in_bytes = columns.size() * sizeof(UInt64);
-    for (size_t i = 0; i * sizeof(UInt64) < size_of_row_in_bytes; i++)
+    for (size_t i = 0; i * sizeof(UInt64) < size_of_row_in_bytes; ++i)
     {
         auto column = ColumnUInt64::create(rows, 0);
         for (size_t j = 0; j < rows; ++j)

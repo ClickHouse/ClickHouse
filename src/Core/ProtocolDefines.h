@@ -44,6 +44,8 @@
 
 #define DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS 54451
 
+#define DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION 54454
+
 /// Version of ClickHouse TCP protocol.
 ///
 /// Should be incremented manually on protocol changes.
@@ -51,7 +53,6 @@
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-
-#define DBMS_TCP_PROTOCOL_VERSION 54453
+#define DBMS_TCP_PROTOCOL_VERSION 54455
 
 #define DBMS_MIN_PROTOCOL_VERSION_WITH_INITIAL_QUERY_START_TIME 54449
