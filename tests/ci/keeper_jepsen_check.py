@@ -143,7 +143,7 @@ if __name__ == "__main__":
     else:
         raise Exception("Cannot binary clickhouse among build results")
 
-    with SSHKey(key_value=get_parameter_from_ssm("jepsen_ssh_key")):
+    with SSHKey(key_value=get_parameter_from_ssm("jepsen_ssh_key") + '\n'):
         ssh_auth_sock = os.environ['SSH_AUTH_SOCK']
         auth_sock_dir = os.path.dirname(ssh_auth_sock)
         cmd = get_run_command(ssh_auth_sock, auth_sock_dir, pr_info, nodes_path, REPO_COPY, build_url, result_path, docker_image)
