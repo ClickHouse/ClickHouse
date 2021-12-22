@@ -68,7 +68,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -453,7 +452,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
                 if (index >= union_skip_fns.size())
                 {
                     throw Exception("Union index out of boundary", ErrorCodes::INCORRECT_DATA);
-                }                
+                }
                 union_skip_fns[index](decoder);
             };
         }
