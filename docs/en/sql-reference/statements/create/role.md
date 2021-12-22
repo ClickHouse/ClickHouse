@@ -31,7 +31,7 @@ CREATE ROLE accountant;
 GRANT SELECT ON db.* TO accountant;
 ```
 
-This sequence of queries creates the role `accountant` that has the privilege of reading data from the `accounting` database.
+This sequence of queries creates the role `accountant` that has the privilege of reading data from the `db` database.
 
 Assigning the role to the user `mira`:
 
