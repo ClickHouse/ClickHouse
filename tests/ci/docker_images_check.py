@@ -5,7 +5,7 @@ import json
 import os
 import time
 import shutil
-from github import Github
+from github import Github  # type: ignore
 
 from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP
 from s3_helper import S3Helper
@@ -16,10 +16,14 @@ from commit_status_helper import get_commit
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
 
+from typing import Optional, Tuple
+
 NAME = "Push to Dockerhub (actions)"
 
 
-def get_changed_docker_images(pr_info, repo_path, image_file_path):
+def get_changed_docker_images(
+    pr_info: PRInfo, repo_path: str, image_file_path: str
+) -> Tuple[list, str]:
     images_dict = {}
     path_to_images_file = os.path.join(repo_path, image_file_path)
     if os.path.exists(path_to_images_file):
@@ -103,7 +107,9 @@ def get_changed_docker_images(pr_info, repo_path, image_file_path):
     return result, dockerhub_repo_name
 
 
-def build_and_push_one_image(path_to_dockerfile_folder, image_name, version_string):
+def build_and_push_one_image(
+    path_to_dockerfile_folder: str, image_name: str, version_string: str
+) -> Tuple[bool, str, Optional[str]]:
     logging.info(
         "Building docker image %s with version %s from path %s",
         image_name,
@@ -149,7 +155,9 @@ def build_and_push_one_image(path_to_dockerfile_folder, image_name, version_stri
     return True, build_log, push_log
 
 
-def process_single_image(versions, path_to_dockerfile_folder, image_name):
+def process_single_image(
+    versions: list, path_to_dockerfile_folder: str, image_name: str
+) -> list:
     logging.info("Image will be pushed with versions %s", ", ".join(versions))
     result = []
     for ver in versions:
@@ -171,7 +179,9 @@ def process_single_image(versions, path_to_dockerfile_folder, image_name):
     return result
 
 
-def process_test_results(s3_client, test_results, s3_path_prefix):
+def process_test_results(
+    s3_client: S3Helper, test_results: list, s3_path_prefix: str
+) -> Tuple[str, list]:
     overall_status = "success"
     processed_test_results = []
     for image, build_log, push_log, status in test_results:
