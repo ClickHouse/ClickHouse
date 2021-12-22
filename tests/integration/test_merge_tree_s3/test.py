@@ -456,3 +456,16 @@ def test_s3_disk_reads_on_unstable_connection(cluster, node_name):
     for i in range(30):
         print(f"Read sequence {i}")
         assert node.query("SELECT sum(id) FROM s3_test").splitlines() == ["40499995500000"]
+
+
+@pytest.mark.parametrize("node_name", ["node"])
+def test_lazy_seek_optimization_for_async_read(cluster, node_name):
+    node = cluster.instances[node_name]
+    node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
+    node.query("CREATE TABLE s3_test (key UInt32, value String) Engine=MergeTree() ORDER BY key SETTINGS storage_policy='s3';")
+    node.query("INSERT INTO s3_test SELECT * FROM generateRandom('key UInt32, value String') LIMIT 10000000")
+    node.query("SELECT * FROM s3_test WHERE value LIKE '%abc%' ORDER BY value LIMIT 10")
+    node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
+    minio = cluster.minio_client
+    for obj in list(minio.list_objects(cluster.minio_bucket, 'data/')):
+        minio.remove_object(cluster.minio_bucket, obj.object_name)
