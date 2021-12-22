@@ -2,6 +2,8 @@
 
 #include <filesystem>
 
+#include <boost/algorithm/string/split.hpp>
+
 #include <Common/ShellCommand.h>
 #include <Common/filesystemHelpers.h>
 
@@ -21,8 +23,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/StorageFactory.h>
 
-#include <boost/algorithm/string/split.hpp>
-
 
 namespace DB
 {
@@ -30,9 +30,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
-    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int TIMEOUT_EXCEEDED;
 }
 
 StorageExecutable::StorageExecutable(
@@ -82,7 +80,7 @@ Pipe StorageExecutable::read(
     auto user_scripts_path = context->getUserScriptsPath();
     auto script_path = user_scripts_path + '/' + script_name;
 
-    if (!pathStartsWith(script_path, user_scripts_path))
+    if (!fileOrSymlinkPathStartsWith(script_path, user_scripts_path))
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Executable file {} must be inside user scripts folder {}",
             script_name,
@@ -114,8 +112,7 @@ Pipe StorageExecutable::read(
         configuration.read_number_of_rows_from_process_output = true;
     }
 
-    /// TODO: Filter by column_names
-    return coordinator->createPipe(settings.script_name, settings.script_arguments, std::move(inputs), std::move(sample_block), context, configuration);
+    return coordinator->createPipe(script_path, settings.script_arguments, std::move(inputs), std::move(sample_block), context, configuration);
 }
 
 void registerStorageExecutable(StorageFactory & factory)
