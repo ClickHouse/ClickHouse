@@ -263,7 +263,7 @@ private:
     }
 
     /// Try push new query and check cancellation conditions
-    bool tryPushQueryInteractively(const String & query, InterruptListener & interrupt_listener)
+    bool tryPushQueryInteractively(const String & query, InterruptListener & interrupt_listener, bool & interrupt_received)
     {
         bool inserted = false;
 
@@ -287,6 +287,7 @@ private:
             if (interrupt_listener.check())
             {
                 std::cout << "Stopping launch of queries. SIGINT received." << std::endl;
+                interrupt_received = true;
                 return false;
             }
 
@@ -330,16 +331,24 @@ private:
         InterruptListener interrupt_listener;
         delay_watch.restart();
 
+        bool interrupt_received = false;
         /// Push queries into queue
         for (size_t i = 0; !max_iterations || i < max_iterations; ++i)
         {
             size_t query_index = randomize ? distribution(generator) : i % queries.size();
 
-            if (!tryPushQueryInteractively(queries[query_index], interrupt_listener))
+            if (!tryPushQueryInteractively(queries[query_index], interrupt_listener, interrupt_received))
             {
                 shutdown = true;
                 break;
             }
+        }
+
+        // if an interrupt is received (it's checked in tryPushQueryInteractively function call)
+        // call exit(1) so that the program actually exits on interrupts like SIGINT
+        if (interrupt_received)
+        {
+            exit(1);
         }
 
         pool.wait();
