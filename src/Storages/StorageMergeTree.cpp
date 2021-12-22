@@ -1218,7 +1218,7 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
             auto versions_it = std::lower_bound(
                 part_versions_with_names.begin(), part_versions_with_names.end(), needle);
 
-            if (versions_it != part_versions_with_names.begin())
+            if (versions_it != part_versions_with_names.begin() || !it->second.tid.isPrehistoric())
             {
                 done_count = std::distance(begin_it, it);
                 break;
@@ -1235,7 +1235,8 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
         {
             const auto & tid = it->second.tid;
             if (!tid.isPrehistoric() && !TransactionLog::instance().getCSN(tid))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove mutation {}, because transaction {} is not committed. It's a bug");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove mutation {}, because transaction {} is not committed. It's a bug",
+                                it->first, tid);
             mutations_to_delete.push_back(std::move(it->second));
             it = current_mutations_by_version.erase(it);
         }
