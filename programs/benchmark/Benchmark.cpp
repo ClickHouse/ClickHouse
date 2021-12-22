@@ -343,7 +343,7 @@ private:
         // call exit(1) so that the program actually exits on interrupts like SIGINT
         if (interrupt_received)
         {
-            exit(1);
+            _exit(1);
         }
 
         pool.wait();
