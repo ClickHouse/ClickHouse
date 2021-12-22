@@ -1,11 +1,20 @@
 #!/usr/bin/env python3
 
+from collections import namedtuple
 import json
 import time
-import jwt
 
+import jwt
 import requests
 import boto3
+
+NEED_RERUN_OR_CANCELL_WORKFLOWS = {
+    13241696, # PR
+    15834118, # Docs
+    15522500, # MasterCI
+    15516108, # ReleaseCI
+    15797242, # BackportPR
+}
 
 # https://docs.github.com/en/rest/reference/actions#cancel-a-workflow-run
 #
@@ -70,19 +79,32 @@ def _exec_get_with_retry(url):
     raise Exception("Cannot execute GET request with retries")
 
 
-def get_workflows_urls_for_pull_request(pull_request_event, url_name, check_status):
+WorkflowDescription = namedtuple('WorkflowDescription',
+                                 ['run_id', 'status', 'rerun_url', 'cancel_url'])
+
+
+def get_workflows_description_for_pull_request(pull_request_event):
     head_branch = pull_request_event['head']['ref']
     print("PR", pull_request_event['number'], "has head ref", head_branch)
     workflows = _exec_get_with_retry(API_URL + f"/actions/runs?branch={head_branch}")
-    workflows_urls = set([])
+    workflow_descriptions = []
     for workflow in workflows['workflow_runs']:
-        if check_status(workflow['status']):
-            print("Workflow", workflow['url'], "going to check workflow")
-            workflows_urls.add(workflow[url_name])
-        else:
-            print("Workflow", workflow['url'], "doesn't satisfy status condition")
+        if workflow['workflow_id'] in NEED_RERUN_OR_CANCELL_WORKFLOWS:
+            workflow_descriptions.append(WorkflowDescription(
+                run_id=workflow['id'],
+                status=workflow['status'],
+                rerun_url=workflow['rerun_url'],
+                cancel_url=workflow['cancel_url']))
 
-    return workflows_urls
+    return workflow_descriptions
+
+def get_workflow_description(workflow_id):
+    workflow = _exec_get_with_retry(API_URL + f"/actions/runs/{workflow_id}")
+    return WorkflowDescription(
+            run_id=workflow['id'],
+            status=workflow['status'],
+            rerun_url=workflow['rerun_url'],
+            cancel_url=workflow['cancel_url'])
 
 def _exec_post_with_retry(url, token):
     headers = {
@@ -101,9 +123,9 @@ def _exec_post_with_retry(url, token):
 
 def exec_workflow_url(urls_to_cancel, token):
     for url in urls_to_cancel:
-        print("Cancelling workflow using url", url)
+        print("Post for workflow workflow using url", url)
         _exec_post_with_retry(url, token)
-        print("Workflow cancelled")
+        print("Workflow post finished")
 
 def main(event):
     token = get_token_from_aws()
@@ -117,32 +139,39 @@ def main(event):
     print("PR has labels", labels)
     if action == 'closed' or 'do not test' in labels:
         print("PR merged/closed or manually labeled 'do not test' will kill workflows")
-        def check_status(status):
-            return status != 'completed'
-        workflows_to_cancel = get_workflows_urls_for_pull_request(pull_request, 'cancel_url', check_status)
-        print(f"Found {len(workflows_to_cancel)} workflows to cancel")
-        exec_workflow_url(workflows_to_cancel, token)
+        workflow_descriptions = get_workflows_description_for_pull_request(pull_request)
+        urls_to_cancel = []
+        for workflow_description in workflow_descriptions:
+            if workflow_description.status != 'completed':
+                urls_to_cancel.append(workflow_description.cancel_url)
+        print(f"Found {len(urls_to_cancel)} workflows to cancel")
+        exec_workflow_url(urls_to_cancel, token)
     elif action == 'labeled' and 'can be tested' in labels:
         print("PR marked with can be tested label, rerun workflow")
+        workflow_descriptions = get_workflows_description_for_pull_request(pull_request)
+        if not workflow_descriptions:
+            print("Not found any workflows")
+            return
 
-        def check_status_for_cancell(status):
-            return status != 'completed'
-        workflows_to_cancel = get_workflows_urls_for_pull_request(pull_request, 'cancel_url', check_status_for_cancell)
-        print("Cancelling all previous workflows")
-        print(f"Found {len(workflows_to_cancel)} workflows to cancel")
-        exec_workflow_url(workflows_to_cancel, token)
+        sorted_workflows = list(sorted(workflow_descriptions, key=lambda x: x.run_id))
+        most_recent_workflow = sorted_workflows[-1]
+        print("Latest workflow", most_recent_workflow)
+        if most_recent_workflow.status != 'completed':
+            print("Latest workflow is not completed, cancelling")
+            exec_workflow_url([most_recent_workflow.cancel_url], token)
+            print("Cancelled")
 
-        def check_status_for_rerun(status):
-            return status in ('completed', 'cancelled')
-        workflows_to_rerun = get_workflows_urls_for_pull_request(pull_request, 'rerun_url', check_status_for_rerun)
-        for _ in range(10):
-            print(f"Found {len(workflows_to_rerun)} workflows")
-            if len(workflows_to_rerun) > 0:
-                exec_workflow_url(workflows_to_rerun, token)
+        for _ in range(30):
+            latest_workflow_desc = get_workflow_description(most_recent_workflow.run_id)
+            print("Checking latest workflow", latest_workflow_desc)
+            if latest_workflow_desc.status in ('completed', 'cancelled'):
+                print("Finally latest workflow done, going to rerun")
+                exec_workflow_url([most_recent_workflow.rerun_url], token)
+                print("Rerun finished, exiting")
                 break
-            print("No workflows found, wait until cancelled")
+            print("Still have strange status")
             time.sleep(3)
-            workflows_to_rerun = get_workflows_urls_for_pull_request(pull_request, 'rerun_url', check_status_for_rerun)
+
     else:
         print("Nothing to do")
 
