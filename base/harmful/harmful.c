@@ -195,9 +195,8 @@ TRAP(dbm_nextkey)
 TRAP(dbm_open)
 TRAP(dbm_store)
 TRAP(dirname)
-#if !defined(SANITIZER)
-TRAP(dlerror) // Used by tsan
-#endif
+// TRAP(dlerror) // It is not thread-safe. But it is used by dynamic linker to load some name resolution plugins. Also used by TSan.
+/// Note: we should better get rid of glibc, dynamic linking and all that sort of annoying garbage altogether.
 TRAP(ftw)
 TRAP(getc_unlocked)
 //TRAP(getenv) // Ok at program startup
@@ -244,5 +243,22 @@ TRAP(lgammaf32)
 TRAP(lgammaf32x)
 TRAP(lgammaf64)
 TRAP(lgammaf64x)
+
+/// These functions are unused by ClickHouse and we should be aware if they are accidentially get used.
+/// Sometimes people report that these function contain vulnerabilities (these reports are bogus for ClickHouse).
+TRAP(mq_close)
+TRAP(mq_getattr)
+TRAP(mq_setattr)
+TRAP(mq_notify)
+TRAP(mq_open)
+TRAP(mq_receive)
+TRAP(mq_send)
+TRAP(mq_unlink)
+TRAP(mq_timedsend)
+TRAP(mq_timedreceive)
+
+/// These functions are also unused by ClickHouse.
+TRAP(wordexp)
+TRAP(wordfree)
 
 #endif
