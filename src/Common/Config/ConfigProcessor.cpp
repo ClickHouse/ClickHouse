@@ -52,7 +52,7 @@ static std::string numberFromHost(const std::string & s)
             res += s[j++];
         if (res.size() >= 2)
         {
-            while (!res.empty() && res[0] == '0')
+            while (res.starts_with('0'))
                 res.erase(res.begin());
             return res;
         }
