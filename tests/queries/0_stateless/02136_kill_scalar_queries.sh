@@ -20,4 +20,3 @@ wait_for_query_to_start "${QUERY_2_ID}"
 ${CLICKHOUSE_CLIENT} --query="KILL QUERY WHERE query_id='${QUERY_2_ID}' SYNC"
 
 wait
-
