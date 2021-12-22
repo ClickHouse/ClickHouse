@@ -62,7 +62,7 @@ class PRInfo:
             self.head_name = github_event['pull_request']['head']['repo']['full_name']
 
             if labels_from_api:
-                response = requests.get("https://api.github.com/repos/{GITHUB_REPOSITORY}/issues/{self.number}/labels")
+                response = requests.get(f"https://api.github.com/repos/{GITHUB_REPOSITORY}/issues/{self.number}/labels")
                 self.labels = {l['name'] for l in response.json()}
             else:
                 self.labels = {l['name'] for l in github_event['pull_request']['labels']}
@@ -96,7 +96,7 @@ class PRInfo:
             else:
                 self.number = pull_request['number']
                 if labels_from_api:
-                    response = requests.get("https://api.github.com/repos/{GITHUB_REPOSITORY}/issues/{self.number}/labels")
+                    response = requests.get(f"https://api.github.com/repos/{GITHUB_REPOSITORY}/issues/{self.number}/labels")
                     self.labels = {l['name'] for l in response.json()}
                 else:
                     self.labels = {l['name'] for l in pull_request['labels']}
