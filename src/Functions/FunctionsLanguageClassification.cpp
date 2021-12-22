@@ -2,7 +2,7 @@
 #    include "config_functions.h"
 #endif
 
-#if USE_CLD2
+#if USE_NLP
 
 #include <Functions/FunctionsTextClassification.h>
 #include <Functions/FunctionFactory.h>
@@ -104,12 +104,12 @@ struct LanguageClassificationImpl
 
 struct NameLanguageUTF8Detect
 {
-    static constexpr auto name = "detectLanguageUTF8";
+    static constexpr auto name = "detectLanguage";
 };
 
 struct NameLanguageMixedUTF8Detect
 {
-    static constexpr auto name = "detectLanguageMixedUTF8";
+    static constexpr auto name = "detectLanguageMixed";
 };
 
 

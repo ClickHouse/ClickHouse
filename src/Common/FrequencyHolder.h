@@ -5,16 +5,22 @@
 #include <IO/ReadHelpers.h>
 #include <IO/readFloatText.h>
 #include <IO/Operators.h>
+#include <IO/ZstdInflatingReadBuffer.h>
 
 #include <string_view>
 #include <string>
 #include <cstring>
 #include <unordered_map>
 #include <base/logger_useful.h>
-
+#include <base/getResource.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int FILE_DOESNT_EXIST;
+}
 
 class FrequencyHolder
 {
@@ -30,29 +36,7 @@ public:
     }
 
 
-    void parseEncodingFrequencies(const String & pt)
-    {
-        path_to_enc_freq = pt;
-        loadEncodingsFrequency(pt);
-        ///loadEncodingsFrequency("/home/sergey/ClickHouse/programs/server/charset_freq.txt");
-    }
-
-    void parseEmotionalDict(const String & pt)
-    {
-        path_to_emo_dict = pt;
-        loadEmotionalDict(pt);
-        ///loadEmotionalDict("/home/sergey/ClickHouse/programs/server/emotional_dictionary_rus.txt");
-    }
-
-    void parseProgrammingFrequency(const String & pt)
-    {
-        path_to_prog_freq = pt;
-        loadProgrammingFrequency(pt);
-        ///loadProgrammingFrequency("/home/sergey/ClickHouse/programs/server/prog_freq.txt");
-    }
-
-
-    void loadEncodingsFrequency(const String & path_to_charset_freq)
+    void loadEncodingsFrequency()
     {
         UInt16 bigram;
         Float64 frequency;
@@ -60,60 +44,72 @@ public:
 
         Poco::Logger * log = &Poco::Logger::get("EncodingsFrequency");
 
-        LOG_TRACE(log, "Charset frequencies loading from {}", path_to_charset_freq);
+        LOG_TRACE(log, "Loading embedded charset frequencies");
 
-        ReadBufferFromFile in(path_to_charset_freq);
-        while (!in.eof())
+        auto resource = getResource("charset_freq.txt.zst");
+            if (resource.empty())
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "There is no embedded charset frequencies");
+
+        auto buf = std::make_unique<ReadBufferFromMemory>(resource.data(), resource.size());
+        std::unique_ptr<ReadBuffer> in = std::make_unique<ZstdInflatingReadBuffer>(std::move(buf));
+
+        while (!in->eof())
         {
-            char * newline = find_first_symbols<'\n'>(in.position(), in.buffer().end());
-
-            if (newline >= in.buffer().end())
-                break;
-
-            std::string_view line(in.position(), newline - in.position());
+            String line;
+            readString(line, *in);
+            ++in->position();
 
             if (line.empty())
                 continue;
-            // Start load new charset
-            if (line.size() > 2 && line[0] == '/' && line[1] == '/')
+            
+            ReadBufferFromString buf_line(line);
+
+            // Start loading a new charset
+            if (line.starts_with("//"))
             {
-                ReadBufferFromMemory bufline(in.position() + 3, newline - in.position());
-                readString(charset_name, bufline);
-            } else
+                buf_line.ignore(3);
+                readString(charset_name, buf_line);
+            }
+            else
             {
-                ReadBufferFromMemory buf_line(in.position(), newline - in.position());
                 readIntText(bigram, buf_line);
                 buf_line.ignore();
                 readFloatText(frequency, buf_line);
                 encodings_freq[charset_name][bigram] = frequency;
             }
-            in.position() = newline + 1;
+            
         }
-        LOG_TRACE(log, "Charset frequencies was added");
+        LOG_TRACE(log, "Charset frequencies was added, charsets count: {}", encodings_freq.size());
     }
 
 
-    void loadEmotionalDict(const String & path_to_emotional_dict)
+    void loadEmotionalDict()
     {
 
         String word;
         Float64 tonality;
 
         Poco::Logger * log = &Poco::Logger::get("EmotionalDict");
-        LOG_TRACE(log, "Emotional dictionary loading from {}", path_to_emotional_dict);
+        LOG_TRACE(log, "Loading embedded emotional dictionary (RU)");
 
-        size_t buf_size = 10000000;
-        ReadBufferFromFile in(path_to_emotional_dict, buf_size);
+        auto resource = getResource("emotional_dictionary_rus.txt.zst");
+            if (resource.empty())
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "There is no embedded emotional dictionary");
+
+        auto buf = std::make_unique<ReadBufferFromMemory>(resource.data(), resource.size());
+        std::unique_ptr<ReadBuffer> in = std::make_unique<ZstdInflatingReadBuffer>(std::move(buf));
+
         size_t count = 0;
-        while (!in.eof())
+        while (!in->eof())
         {
-            char * newline = find_first_symbols<'\n'>(in.position(), in.buffer().end());
+            String line;
+            readString(line, *in);
+            ++in->position();
 
-            ReadBufferFromMemory buf_line(in.position(), newline - in.position());
-            in.position() = newline + 1;
-
-            if (newline >= in.buffer().end())
-                break;
+            if (line.empty())
+                continue;
+            
+            ReadBufferFromString buf_line(line);
 
             readStringUntilWhitespace(word, buf_line);
             buf_line.ignore();
@@ -126,7 +122,7 @@ public:
     }
 
 
-    void loadProgrammingFrequency(const String & path_to_programming_freq)
+    void loadProgrammingFrequency()
     {
         String bigram;
         Float64 frequency;
@@ -134,53 +130,68 @@ public:
 
         Poco::Logger * log = &Poco::Logger::get("ProgrammingFrequency");
 
-        LOG_TRACE(log, "Programming languages frequencies loading from {}", path_to_programming_freq);
+        LOG_TRACE(log, "Loading embedded programming languages frequencies loading");
 
-        size_t buf_size = 10000000;
-        ReadBufferFromFile in(path_to_programming_freq, buf_size);
-        while (!in.eof())
+        auto resource = getResource("prog_freq.txt.zst");
+            if (resource.empty())
+                throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "There is no embedded programming languages frequencies");
+
+        auto buf = std::make_unique<ReadBufferFromMemory>(resource.data(), resource.size());
+        std::unique_ptr<ReadBuffer> in = std::make_unique<ZstdInflatingReadBuffer>(std::move(buf));
+
+        while (!in->eof())
         {
-            char * newline = find_first_symbols<'\n'>(in.position(), in.buffer().end());
-
-            if (newline >= in.buffer().end())
-                break;
-
-            std::string_view line(in.position(), newline - in.position());
+            String line;
+            readString(line, *in);
+            ++in->position();
 
             if (line.empty())
                 continue;
-            // Start load new language
-            if (line.size() > 2 && line[0] == '/' && line[1] == '/')
+            
+            ReadBufferFromString buf_line(line);
+
+            // Start loading a new language
+            if (line.starts_with("//"))
             {
-                ReadBufferFromMemory bufline(in.position() + 3, newline - in.position());
-                readString(programming_language, bufline);
+                buf_line.ignore(3);
+                readString(programming_language, buf_line);
             }
             else
             {
-                ReadBufferFromMemory buf_line(in.position(), newline - in.position());
                 readStringUntilWhitespace(bigram, buf_line);
                 buf_line.ignore();
                 readFloatText(frequency, buf_line);
                 programming_freq[programming_language][bigram] = frequency;
             }
-            in.position() = newline + 1;
         }
         LOG_TRACE(log, "Programming languages frequencies was added");
     }
 
     const std::unordered_map<String, Float64> & getEmotionalDict()
     {
+        std::lock_guard lock(mutex);
+        if (emotional_dict.empty())
+            loadEmotionalDict();
+
         return emotional_dict;
     }
 
 
     const Container & getEncodingsFrequency()
     {
+        std::lock_guard lock(mutex);
+        if (encodings_freq.empty())
+            loadEncodingsFrequency();
+
         return encodings_freq;
     }
 
     const std::unordered_map<String, std::unordered_map<String, Float64>> & getProgrammingFrequency()
     {
+        std::lock_guard lock(mutex);
+        if (encodings_freq.empty())
+            loadProgrammingFrequency();
+
         return programming_freq;
     }
 
@@ -191,8 +202,6 @@ private:
     Container encodings_freq;
     std::unordered_map<String, std::unordered_map<String, Float64>> programming_freq;
 
-    String path_to_emo_dict;
-    String path_to_enc_freq;
-    String path_to_prog_freq;
+    std::mutex mutex;
 };
 }

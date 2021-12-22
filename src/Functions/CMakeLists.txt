@@ -81,7 +81,7 @@ endif()
 
 target_link_libraries(clickhouse_functions PRIVATE lz4)
 
-if (USE_CLD2)
+if (USE_NLP)
     target_link_libraries(clickhouse_functions PRIVATE cld2)
     target_include_directories(clickhouse_functions SYSTEM PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/cld2/public")
 endif()
