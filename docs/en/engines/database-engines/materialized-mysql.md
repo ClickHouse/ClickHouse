@@ -83,6 +83,7 @@ When working with the `MaterializedMySQL` database engine, [ReplacingMergeTree](
 | VARCHAR, VAR_STRING     | [String](../../sql-reference/data-types/string.md)           |
 | BLOB                    | [String](../../sql-reference/data-types/string.md)           |
 | BINARY                  | [FixedString](../../sql-reference/data-types/fixedstring.md) |
+| BIT                     | [UInt64](../../sql-reference/data-types/int-uint.md)         |
 
 [Nullable](../../sql-reference/data-types/nullable.md) is supported.
 

@@ -59,6 +59,7 @@ class DataTypeDecimalBase : public IDataType
 public:
     using FieldType = T;
     using ColumnType = ColumnDecimal<T>;
+    static constexpr auto type_id = TypeId<T>;
 
     static constexpr bool is_parametric = true;
 
