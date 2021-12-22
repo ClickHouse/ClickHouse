@@ -7,7 +7,7 @@ concurrency:
   group: woboq
 on: # yamllint disable-line rule:truthy
   schedule:
-    - cron: '0 */18 * *'
+    - cron: '0 */18 * * *'
 jobs:
   # don't use dockerhub push because this image updates so rarely
   WoboqCodebrowser:
