@@ -1,17 +1,18 @@
 #include <Formats/FormatFactory.h>
 
 #include <algorithm>
-#include <Common/Exception.h>
-#include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Formats/FormatSettings.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
-#include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
-#include <Processors/Formats/Impl/ParallelParsingInputFormat.h>
 #include <Processors/Formats/Impl/ParallelFormattingOutputFormat.h>
+#include <Processors/Formats/Impl/ParallelParsingInputFormat.h>
+#include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Poco/URI.h>
+#include <Common/Exception.h>
 
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadHelpers.h>
@@ -234,6 +235,18 @@ InputFormatPtr FormatFactory::getInputFormat(
     return format;
 }
 
+static void addExistingProgressToOutputFormat(OutputFormatPtr format, ContextPtr context)
+{
+    auto element_id = context->getProcessListElement();
+    if (element_id)
+    {
+        /// While preparing the query there might have been progress (for example in subscalar subqueries) so add it here
+        auto current_progress = element_id->getProgressIn();
+        Progress read_progress{current_progress.read_rows, current_progress.read_bytes, current_progress.total_rows_to_read};
+        format->onProgress(read_progress);
+    }
+}
+
 OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
     const String & name,
     WriteBuffer & buf,
@@ -262,7 +275,9 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
         if (context->hasQueryContext() && settings.log_queries)
             context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
 
-        return std::make_shared<ParallelFormattingOutputFormat>(builder);
+        auto format = std::make_shared<ParallelFormattingOutputFormat>(builder);
+        addExistingProgressToOutputFormat(format, context);
+        return format;
     }
 
     return getOutputFormat(name, buf, sample, context, callback, _format_settings);
@@ -301,6 +316,8 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     /// It's a kludge. Because I cannot remove context from MySQL format.
     if (auto * mysql = typeid_cast<MySQLOutputFormat *>(format.get()))
         mysql->setContext(context);
+
+    addExistingProgressToOutputFormat(format, context);
 
     return format;
 }
