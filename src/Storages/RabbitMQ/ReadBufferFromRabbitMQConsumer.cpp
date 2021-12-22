@@ -15,7 +15,6 @@ namespace DB
 {
 
 ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
-        ChannelPtr consumer_channel_,
         RabbitMQHandler & event_handler_,
         std::vector<String> & queues_,
         size_t channel_id_base_,
@@ -25,7 +24,6 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         uint32_t queue_size_,
         const std::atomic<bool> & stopped_)
         : ReadBuffer(nullptr, 0)
-        , consumer_channel(std::move(consumer_channel_))
         , event_handler(event_handler_)
         , queues(queues_)
         , channel_base(channel_base_)
@@ -122,9 +120,6 @@ void ReadBufferFromRabbitMQConsumer::setupChannel()
 {
     if (!consumer_channel)
         return;
-
-    /// We mark initialized only once.
-    initialized = true;
 
     wait_subscription.store(true);
 
