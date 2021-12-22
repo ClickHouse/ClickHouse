@@ -90,6 +90,7 @@ def pr_is_by_trusted_user(pr_user_login, pr_user_orgs):
 # can be skipped entirely.
 def should_run_checks_for_pr(pr_info):
     # Consider the labels and whether the user is trusted.
+    print("Got labels", pr_info.labels)
     force_labels = set(['force tests']).intersection(pr_info.labels)
     if force_labels:
         return True, "Labeled '{}'".format(', '.join(force_labels))
