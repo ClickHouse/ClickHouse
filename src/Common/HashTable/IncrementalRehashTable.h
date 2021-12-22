@@ -25,15 +25,15 @@ private:
     std::shared_ptr<US> store[2];
     bool rehashing{false};
     inner_iterator cur; // rehash iterator
-    float max_load_factor = static_cast<float>(MaxLoadFactor100 - 10)/100.0;
+    float max_load_factor = static_cast<float>(MaxLoadFactor100 - 3)/100.0;
     std::size_t count{0};
 public:
     IncrementalRehashTable()
     {
         store[0] = std::make_shared<US>();
-        store[0]->reserve(1000000); // for big container, cost is memory
+        //store[0]->reserve(1000000); // for big container, cost is memory
         store[1] = std::make_shared<US>();
-        store[1]->reserve(2000000);
+        //store[1]->reserve(2000000);
     }
     IncrementalRehashTable(const Self & rhs) {
         store[0] = rhs.store[0];
@@ -93,16 +93,19 @@ public:
     using iterator = Iter<false>;
     using const_iterator = Iter<true>;
 
-    void moveOneEntry()
+    void moveEntry(size_t n)
     {
-        store[1]->insert(*cur);
-        if (++cur == store[0]->end())
+        while (n && cur != store[0]->end())
+        {
+            store[1]->insert(*cur);
+            ++cur;
+            --n;
+        }
+        if (cur == store[0]->end())
         {
             rehashing = false;
-            store[0].reset();
-            store[0] = store[1];
-            store[1].reset();
-            store[1] = std::make_shared<US>();
+            store[0].swap(store[1]);
+            store[1]->clear();
             store[1]->reserve(store[0]->size() * 2);
             std::cout << "rehash end, size " << store[0]->size() << ", count " << count << std::endl;
         }
@@ -114,7 +117,7 @@ public:
         if (rehashing)
         {
             auto res = store[1]->insert(t);
-            moveOneEntry();
+            moveEntry(100);
             return std::make_pair(iterator(this, res.first, 1), res.second);
         }
         if (store[0]->load_factor() > max_load_factor)
@@ -123,7 +126,7 @@ public:
             rehashing = true;
             cur = store[0]->begin();
             store[1]->reserve(store[0]->size()*2);
-            moveOneEntry();
+            moveEntry(100);
             auto res = store[1]->insert(t);
             return std::make_pair(iterator(this, res.first, 1), res.second);
         }
@@ -137,7 +140,7 @@ public:
         if (rehashing)
         {
             del += store[1]->erase(t);
-            moveOneEntry();
+            moveEntry(100);
         }
         if (del) --count;
         return del ? 1 : 0;
@@ -230,7 +233,7 @@ public:
         if (rehashing) 
         {
             auto res = store[1]->emplace(std::forward<Args>(args)...);
-            moveOneEntry();
+            moveEntry(100);
             return std::make_pair(iterator(this, res.first, 1), res.second);
         }
         else

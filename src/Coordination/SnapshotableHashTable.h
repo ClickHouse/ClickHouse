@@ -13,17 +13,111 @@
 
 namespace DB
 {
-#if 0
+#if 1
 template <typename K, typename V, typename Hash, int N=8>
-class ArrayMap
+class ArrayMap: protected Hash
 {
     //using undermap = std::unordered_map<K, V, Hash>;
-    using undermap = robin_hood::unordered_map<K, V, Hash>;
-    using iterator = typename undermap::iterator;
+    using Us = robin_hood::unordered_map<K, V, Hash>;
+
+    static constexpr bool is_flat = true;
+    static constexpr bool is_set = false;
+    using key_type = K;
+    using mapped_type = V;
+    using value_type = typename std::conditional<
+        is_set, K,
+        robin_hood::pair<typename std::conditional<is_flat, K, K const>::type, V>>::type;
+    using size_type = size_t;
+    using Self = ArrayMap<K, V, Hash, N>;
+    using inner_iterator = typename Us::iterator;
 public:
-    bool getValue(const K& key, V & value) const
+    size_t hash(const K & x) const { return Hash::operator()(x); }
+    template <bool IsConst>
+    struct Iter
     {
-        auto index = sipHash64(key)&(N-1);
+    public:
+        using UsPtr = typename std::conditional<IsConst, Self const*, Self*>::type;
+        using difference_type = std::ptrdiff_t;
+        using value_type = typename Self::value_type;
+        using reference = typename std::conditional<IsConst, value_type const&, value_type&>::type;
+        using pointer = typename std::conditional<IsConst, value_type const*, value_type*>::type;
+        using iterator_category = std::forward_iterator_tag;
+        using inner_iter = typename std::conditional<IsConst, typename Us::const_iterator, typename Us::iterator>::type;
+
+        Iter() = default;
+        Iter(UsPtr ptr, inner_iter iter, int idx) : ref(ptr), m_iter(iter), index(idx) {}
+
+        reference operator*() const { return *m_iter; }
+        pointer operator->() { return &*m_iter; }
+        Iter& operator++() noexcept
+        {
+            /*
+            ++m_iter;
+            if (index == 0 && ref->rehashing && m_iter == ref->store[0]->end())
+            {
+                m_iter = ref->store[1]->begin();
+            }
+            */
+            return *this;
+        }
+        Iter operator++(int) noexcept { Iter tmp = *this; ++(*this); return tmp; }
+        template <bool O>
+        bool operator==(Iter<O> const& o) const noexcept
+        {
+            return m_iter == o.m_iter && index == o.index && ref == o.ref;
+        }
+        template <bool O>
+        bool operator!=(Iter<O> const& o) const noexcept
+        {
+            return m_iter != o.m_iter;
+        }
+        UsPtr ref;
+        inner_iter m_iter;
+        int index{0};
+    };
+    using iterator = Iter<false>;
+    using const_iterator = Iter<true>;
+    iterator find(K const & key)
+    {
+        auto index = hash(key)&(N-1);
+        auto iter = store[index].find(key);
+        //std::cout << "find " << iter->first << " value " << std::endl;
+        if (iter == store[index].end())
+            return end();
+        return iterator(this, iter, index);
+    }
+    const_iterator find(K const & key) const
+    {
+        auto index = hash(key)&(N-1);
+        auto iter = store[index].find(key);
+        if (iter == store[index].end())
+            return end();
+        //std::cout << "find " << iter->first << " value " << std::endl;
+        return const_iterator(this, iter, index);
+    }
+    iterator begin()
+    {
+        auto iter = store[0].begin();
+        return iterator(this, iter, 0);
+    }
+    const_iterator begin() const
+    {
+        auto iter = store[0].begin();
+        return const_iterator(this, iter, 0);
+    }
+    const_iterator end() const
+    {
+        auto iter = store[N-1].end();
+        return const_iterator(this, iter, N-1);
+    }
+    iterator end()
+    {
+        auto iter = store[N-1].end();
+        return iterator(this, iter, N-1);
+    }
+    bool getValue(const K & key, V & value) const
+    {
+        auto index = hash(key)&(N-1);
         auto iter = store[index].find(key);
         if (iter != store[index].end())
         {
@@ -34,18 +128,22 @@ public:
     }
     bool exists(const K & key) const
     {
-        auto index = sipHash64(key)&(N-1);
+        auto index = hash(key)&(N-1);
         //std::cout << "key " << key << ", index " << index << std::endl;
         return store[index].contains(key);
     }
+    void erase(iterator it)
+    {
+        store[it.index].erase(it.m_iter);
+    }
     void erase(const K & key)
     {
-        auto index = sipHash64(key)&(N-1);
+        auto index = hash(key)&(N-1);
         store[index].erase(key);
     }
     void emplace(const K & key, const V & value)
     {
-        auto index = sipHash64(key)&(N-1);
+        auto index = hash(key)&(N-1);
         //std::cout << "key " << key << ", index " << index << std::endl;
         /*auto it = */store[index].emplace(key, value);
         //std::cout << "insert res: " << it.second << std::endl;
@@ -73,8 +171,9 @@ public:
         }
         return s;
     }
+
 private:
-    undermap store[N];
+    Us store[N];
 };
 #endif
 
@@ -96,7 +195,6 @@ private:
     using List = std::list<ListElem>;
     //using IndexMap = std::unordered_map<StringRef, typename List::iterator, StringRefHash>;
     //using IndexMap = ArrayMap<StringRef, typename List::iterator, StringRefHash>;
-    //using IndexMap = ArrayMap<std::string, typename List::iterator, StringRefHash>;
     using IndexMap = my_unordered_map<std::string, typename List::iterator/*, StringRefHash*/>;
     //using IndexMap = TwoLevelHashMap<StringRef, typename List::iterator>;
 
