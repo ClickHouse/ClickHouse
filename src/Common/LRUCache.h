@@ -75,9 +75,9 @@ public:
     }
 
     /**
-      * set() will fail if there is no  space left and no keys could be evicted.
-      * In some cases, a key can be only evicted when it is not refered by anyone.
-      */
+     * set() will fail (return false) if there is no space left and no keys could be evicted.
+     * Eviction permission of each key is defined by EvictPolicy. In default policy there is no restriction.
+     */
     bool set(const Key & key, const MappedPtr & mapped)
     {
         std::lock_guard lock(mutex);
