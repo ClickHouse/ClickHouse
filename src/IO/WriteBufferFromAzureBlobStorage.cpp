@@ -12,11 +12,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int AZURE_BLOB_STORAGE_ERROR;
-}
-
 WriteBufferFromAzureBlobStorage::WriteBufferFromAzureBlobStorage(
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     const String & blob_path_,
@@ -44,6 +39,7 @@ void WriteBufferFromAzureBlobStorage::nextImpl()
     auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
 
     size_t read = 0;
+    std::vector<std::string> block_ids;
     while (read < len)
     {
         auto part_len = std::min(len - read, max_single_part_upload_size);
@@ -56,23 +52,8 @@ void WriteBufferFromAzureBlobStorage::nextImpl()
 
         read += part_len;
     }
-}
 
-
-void WriteBufferFromAzureBlobStorage::finalizeImpl()
-{
-    next();
-
-    try
-    {
-        auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
-        block_blob_client.CommitBlockList(block_ids);
-    }
-    catch (const Azure::core::RequestFailedException & e)
-    {
-        throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Azure blob storage commit block list failed: {}", e.message);
-    }
-    finalized = true;
+    block_blob_client.CommitBlockList(block_ids);
 }
 
 }
