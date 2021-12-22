@@ -28,3 +28,7 @@ taskset --cpu-list $((ncpus-1)) ${CLICKHOUSE_LOCAL} -q 'select * from numbers_mt
     MALLOC_CONF=abort_conf:true
     taskset --cpu-list $((ncpus-1)) ${CLICKHOUSE_LOCAL} -q 'select 1'
 ) |& grep -F 'Number of CPUs is not deterministic'
+
+# this command should not fail because we specify narenas explicitly
+# (even with abort_conf:true)
+MALLOC_CONF=abort_conf:true,narenas:$((ncpus)) taskset --cpu-list $((ncpus-1)) ${CLICKHOUSE_LOCAL} -q 'select 1' 2>&1
