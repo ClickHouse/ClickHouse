@@ -86,9 +86,9 @@ private:
                     break;
                 case Union:
                     auto index = decoder.decodeUnionIndex();
-                    if(index >= actions.size())
+                    if (index >= actions.size())
                     {
-                        throw Exception("Union index out of boundary",  ErrorCodes::INCORRECT_DATA);
+                        throw Exception("Union index out of boundary", ErrorCodes::INCORRECT_DATA);
                     }
                     actions[index].execute(columns, decoder, ext);
                     break;
