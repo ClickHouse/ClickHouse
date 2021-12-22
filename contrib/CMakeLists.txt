@@ -249,6 +249,10 @@ endif()
 # - sentry-native
 add_subdirectory (curl-cmake)
 
+if (USE_INTERNAL_AZURE_BLOB_STORAGE_LIBRARY)
+    add_subdirectory(azure-cmake)
+endif()
+
 if (USE_SENTRY)
     add_subdirectory (sentry-native-cmake)
 endif()

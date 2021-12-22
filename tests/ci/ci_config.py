@@ -316,6 +316,9 @@ CI_CONFIG = {
         },
         "ClickHouse Keeper Jepsen (actions)": {
             "required_build": "binary_release",
+        },
+        "Performance Comparison (actions)": {
+            "required_build": "performance",
         }
     }
 }
