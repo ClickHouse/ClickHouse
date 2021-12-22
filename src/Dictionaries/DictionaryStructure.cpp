@@ -46,9 +46,9 @@ std::optional<AttributeUnderlyingType> tryGetAttributeUnderlyingType(TypeIndex i
     switch (index) /// Special cases which do not map TypeIndex::T -> AttributeUnderlyingType::T
     {
         case TypeIndex::Date:       return AttributeUnderlyingType::UInt16;
-        case TypeIndex::Date32:     return AttributeUnderlyingType::UInt32;
+        case TypeIndex::Date32:     return AttributeUnderlyingType::Int32;
         case TypeIndex::DateTime:   return AttributeUnderlyingType::UInt32;
-        case TypeIndex::DateTime64: return AttributeUnderlyingType::UInt64;
+        case TypeIndex::DateTime64: return AttributeUnderlyingType::Int64;
         default: break;
     }
 
