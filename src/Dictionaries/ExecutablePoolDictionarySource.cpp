@@ -24,7 +24,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int DICTIONARY_ACCESS_DENIED;
     extern const int UNSUPPORTED_METHOD;
-    extern const int TIMEOUT_EXCEEDED;
 }
 
 ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(

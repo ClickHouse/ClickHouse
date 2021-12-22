@@ -15,6 +15,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int UNSUPPORTED_METHOD;
     extern const int TIMEOUT_EXCEEDED;
 }
 
@@ -66,8 +67,8 @@ namespace
             if (configuration.read_fixed_number_of_rows)
             {
                 /** Currently parallel parsing input format cannot read exactly max_block_size rows from input,
-                * so it will be blocked on ReadBufferFromFileDescriptor because this file descriptor represent pipe that does not have eof.
-                */
+                  * so it will be blocked on ReadBufferFromFileDescriptor because this file descriptor represent pipe that does not have eof.
+                  */
                 auto context_for_reading = Context::createCopy(context);
                 context_for_reading->setSetting("input_format_parallel_parsing", false);
                 context = context_for_reading;
@@ -263,7 +264,7 @@ Pipe ShellCommandCoordinator::createPipe(
             auto descriptor = i + 2;
             auto it = process->write_fds.find(descriptor);
             if (it == process->write_fds.end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Process does not contain descriptor to write {}", descriptor);
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Process does not contain descriptor to write {}", descriptor);
 
             write_buffer = &it->second;
         }

@@ -1,5 +1,7 @@
 #include "ExternalUserDefinedExecutableFunctionsLoader.h"
 
+#include <boost/algorithm/string/split.hpp>
+
 #include <DataTypes/DataTypeFactory.h>
 
 #include <Interpreters/UserDefinedExecutableFunction.h>
@@ -71,7 +73,7 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
     std::vector<String> script_name_with_arguments;
     boost::split(script_name_with_arguments, scipt_name_with_arguments_value, [](char c) { return c == ' '; });
 
-    auto script_path = script_name_with_arguments[0];
+    auto script_name = script_name_with_arguments[0];
     script_name_with_arguments.erase(script_name_with_arguments.begin());
 
     String format = config.getString(key_in_config + ".format");
@@ -115,7 +117,7 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
     UserDefinedExecutableFunctionConfiguration function_configuration
     {
         .name = std::move(name), //-V1030
-        .script_path = std::move(script_path), //-V1030
+        .script_name = std::move(script_name), //-V1030
         .script_arguments = std::move(script_name_with_arguments), //-V1030
         .argument_types = std::move(argument_types), //-V1030
         .result_type = std::move(result_type), //-V1030
@@ -133,8 +135,7 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
     };
 
     std::shared_ptr<ShellCommandCoordinator> coordinator = std::make_shared<ShellCommandCoordinator>(shell_command_coordinator_configration);
-
-    return std::make_shared<UserDefinedExecutableFunction>(function_configuration, coordinator, lifetime);
+    return std::make_shared<UserDefinedExecutableFunction>(function_configuration, std::move(coordinator), lifetime);
 }
 
 }

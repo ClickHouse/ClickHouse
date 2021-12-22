@@ -1,5 +1,9 @@
 #include "UserDefinedExecutableFunctionFactory.h"
 
+#include <filesystem>
+
+#include <Common/filesystemHelpers.h>
+
 #include <IO/WriteHelpers.h>
 
 #include <Processors/Sources/ShellCommandSource.h>
@@ -20,7 +24,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
-    extern const int TIMEOUT_EXCEEDED;
 }
 
 class UserDefinedFunction final : public IFunction
@@ -54,6 +57,24 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const auto & configuration = executable_function->getConfiguration();
+
+        auto user_scripts_path = context->getUserScriptsPath();
+        const auto & script_name = configuration.script_name;
+
+        auto script_path = user_scripts_path + '/' + script_name;
+
+        if (!fileOrSymlinkPathStartsWith(script_path, user_scripts_path))
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Executable file {} must be inside user scripts folder {}",
+                script_name,
+                user_scripts_path);
+
+        if (!std::filesystem::exists(std::filesystem::path(script_path)))
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Executable file {} does not exist inside user scripts folder {}",
+                script_name,
+                user_scripts_path);
+
         auto arguments_copy = arguments;
 
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -93,7 +114,7 @@ public:
         shell_input_pipes.emplace_back(std::move(shell_input_pipe));
 
         Pipe pipe = coordinator->createPipe(
-            configuration.script_path,
+            script_path,
             configuration.script_arguments,
             std::move(shell_input_pipes),
             result_block,

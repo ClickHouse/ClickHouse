@@ -13,7 +13,7 @@ namespace DB
 struct UserDefinedExecutableFunctionConfiguration
 {
     std::string name;
-    std::string script_path;
+    std::string script_name;
     std::vector<std::string> script_arguments;
     std::vector<DataTypePtr> argument_types;
     DataTypePtr result_type;
