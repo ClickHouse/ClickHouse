@@ -16,6 +16,8 @@ using MYSQL_ROW = char**;
 struct st_mysql_field;
 using MYSQL_FIELD = st_mysql_field;
 
+enum struct enum_field_types;
+
 #endif
 
 namespace mysqlxx
