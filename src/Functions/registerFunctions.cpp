@@ -63,7 +63,7 @@ void registerFunctionTid(FunctionFactory & factory);
 void registerFunctionLogTrace(FunctionFactory & factory);
 void registerFunctionsWindow(FunctionFactory &);
 
-#if USE_CLD2
+#if USE_NLP
 void registerFunctionLanguageDetectUTF8(FunctionFactory &);
 #endif
 
@@ -131,7 +131,7 @@ void registerFunctions()
     registerFunctionsSnowflake(factory);
     registerFunctionsWindow(factory);
 
-#if USE_CLD2
+#if USE_NLP
     registerFunctionLanguageDetectUTF8(factory);
 #endif
 

@@ -232,7 +232,7 @@ struct NameCharsetDetect
 
 struct NameLanguageDetect
 {
-    static constexpr auto name = "detectLanguage";
+    static constexpr auto name = "detectLanguageUnknown";
 };
 
 

@@ -746,24 +746,6 @@ if (ThreadFuzzer::instance().isEffective())
         TLDListsHolder::getInstance().parseConfig(fs::path(top_level_domains_path) / "", config());
     }
 
-    /// encoding frequencies
-    {
-        const std::string & encode_frequency_path = config().getString("encoding_frequencies_path", path);
-        FrequencyHolder::getInstance().parseEncodingFrequencies(path / encode_frequency_path);
-    }
-
-    /// programming languages frequencies
-    {
-        const std::string & programming_frequency_path = config().getString("programming_lang_frequencies_path", path);
-        FrequencyHolder::getInstance().parseProgrammingFrequency(path / programming_frequency_path);
-    }
-
-    /// emotional dictionary
-    {
-        const std::string & emotional_dict_path = config().getString("emotional_dict_path", path);
-        FrequencyHolder::getInstance().parseEmotionalDict(path / emotional_dict_path);
-    }
-
     {
         fs::create_directories(path / "data/");
         fs::create_directories(path / "metadata/");

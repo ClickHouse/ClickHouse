@@ -27,6 +27,13 @@ if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/lemmagen-c/README.md")
     return()
 endif ()
 
+if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/cld2/README.md")
+    message (WARNING "submodule contrib/cld2 is missing. to fix try run: \n git submodule update --init")
+    message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal cld2 library, NLP functions will be disabled")
+    set (USE_NLP 0)
+    return()
+endif ()
+
 set (USE_NLP 1)
 
 message (STATUS "Using Libraries for NLP functions: contrib/wordnet-blast, contrib/libstemmer_c, contrib/lemmagen-c")

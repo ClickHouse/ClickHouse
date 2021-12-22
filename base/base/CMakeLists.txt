@@ -87,6 +87,7 @@ target_link_libraries (common
         cctz
         fmt
         magic_enum
+        nlp_data
 )
 
 if (ENABLE_TESTS)

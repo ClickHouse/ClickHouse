@@ -250,3 +250,6 @@
 [submodule "contrib/sysroot"]
 	path = contrib/sysroot
 	url = https://github.com/ClickHouse-Extras/sysroot.git
+[submodule "contrib/nlp-data"]
+	path = contrib/nlp-data
+	url = https://github.com/evillique/nlp-data.git
