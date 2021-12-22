@@ -1037,7 +1037,7 @@ bool StorageRabbitMQ::streamToViews()
         /// Commit
         for (auto & stream : streams)
         {
-            const auto * rabbit_stream = stream->as<RabbitMQBlockInputStream>();
+            auto * rabbit_stream = stream->as<RabbitMQBlockInputStream>();
             if (rabbit_stream->queueEmpty())
                 ++queue_empty;
 
