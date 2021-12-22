@@ -424,6 +424,9 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 В следующем примере определяются настройки [max_threads](../operations/settings/settings.md#settings-max_threads) и `max_alter_threads`, а затем запрашивается системная таблица, чтобы проверить, были ли эти параметры успешно установлены.
 
+!!! note "Предупреждение"
+    Чтобы сохранить стандартные `handlers` такие как `query`, `play`, `ping`, используйте правило `<defaults/>`.
+
 Пример:
 
 ``` xml
@@ -441,6 +444,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
             <query>SELECT name, value FROM system.settings WHERE name = {name_2:String}</query>
         </handler>
     </rule>
+    <defaults/>
 </http_handlers>
 ```
 
@@ -473,6 +477,7 @@ ClickHouse извлекает и выполняет значение, соотв
         <query_param_name>query_param</query_param_name>
     </handler>
     </rule>
+    <defaults/>
 </http_handlers>
 ```
 
@@ -503,6 +508,7 @@ max_alter_threads   2
                 <response_content>Say Hi!</response_content>
             </handler>
         </rule>
+        <defaults/>
 </http_handlers>
 ```
 
