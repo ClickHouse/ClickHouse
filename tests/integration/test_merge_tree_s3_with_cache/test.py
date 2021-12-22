@@ -36,7 +36,6 @@ def get_query_stat(instance, hint):
                 result[ev[0]] = int(ev[1])
     return result
 
-
 @pytest.mark.parametrize("min_rows_for_wide_part,read_requests", [(0, 2), (8192, 1)])
 def test_write_is_cached(cluster, min_rows_for_wide_part, read_requests):
     node = cluster.instances["node"]
