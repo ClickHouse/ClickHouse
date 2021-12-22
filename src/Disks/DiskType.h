@@ -10,10 +10,10 @@ enum class DiskType
     Local,
     RAM,
     S3,
-    BlobStorage,
     HDFS,
     Encrypted,
     WebServer,
+    AzureBlobStorage,
 };
 
 inline String toString(DiskType disk_type)
@@ -26,14 +26,14 @@ inline String toString(DiskType disk_type)
             return "memory";
         case DiskType::S3:
             return "s3";
-        case DiskType::BlobStorage:
-            return "blob_storage";
         case DiskType::HDFS:
             return "hdfs";
         case DiskType::Encrypted:
             return "encrypted";
         case DiskType::WebServer:
             return "web";
+        case DiskType::AzureBlobStorage:
+            return "azure_blob_storage";
     }
     __builtin_unreachable();
 }

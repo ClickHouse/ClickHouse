@@ -227,7 +227,7 @@ private:
 
     void processMergeTreeReadTaskRequest(PartitionReadRequest request);
 
-    /// Cancell query and restart it with info about duplicated UUIDs
+    /// Cancel query and restart it with info about duplicate UUIDs
     /// only for `allow_experimental_query_deduplication`.
     std::variant<Block, int> restartQueryWithoutDuplicatedUUIDs(std::unique_ptr<ReadContext> * read_context = nullptr);
 

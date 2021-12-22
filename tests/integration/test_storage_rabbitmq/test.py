@@ -67,8 +67,8 @@ def rabbitmq_cluster():
 def rabbitmq_setup_teardown():
     print("RabbitMQ is available - running test")
     yield  # run test
-    for table_name in ['view', 'consumer', 'rabbitmq']:
-        instance.query(f'DROP TABLE IF EXISTS test.{table_name}')
+    instance.query('DROP DATABASE test NO DELAY')
+    instance.query('CREATE DATABASE test')
 
 
 # Tests
@@ -284,6 +284,12 @@ def test_rabbitmq_materialized_view(rabbitmq_cluster):
             ORDER BY key;
         CREATE MATERIALIZED VIEW test.consumer TO test.view AS
             SELECT * FROM test.rabbitmq;
+
+        CREATE TABLE test.view2 (key UInt64, value UInt64)
+            ENGINE = MergeTree()
+            ORDER BY key;
+        CREATE MATERIALIZED VIEW test.consumer2 TO test.view2 AS
+            SELECT * FROM test.rabbitmq group by (key, value);
     ''')
 
     credentials = pika.PlainCredentials('root', 'clickhouse')
@@ -297,13 +303,25 @@ def test_rabbitmq_materialized_view(rabbitmq_cluster):
     for message in messages:
         channel.basic_publish(exchange='mv', routing_key='', body=message)
 
-    while True:
+    time_limit_sec = 60
+    deadline = time.monotonic() + time_limit_sec
+
+    while time.monotonic() < deadline:
         result = instance.query('SELECT * FROM test.view ORDER BY key')
         if (rabbitmq_check_result(result)):
             break
 
-    connection.close()
     rabbitmq_check_result(result, True)
+
+    deadline = time.monotonic() + time_limit_sec
+
+    while time.monotonic() < deadline:
+        result = instance.query('SELECT * FROM test.view2 ORDER BY key')
+        if (rabbitmq_check_result(result)):
+            break
+
+    rabbitmq_check_result(result, True)
+    connection.close()
 
 
 def test_rabbitmq_materialized_view_with_subquery(rabbitmq_cluster):

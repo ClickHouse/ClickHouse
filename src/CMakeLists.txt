@@ -108,7 +108,7 @@ if (USE_AWS_S3)
 endif()
 
 if (USE_AZURE_BLOB_STORAGE)
-    add_headers_and_sources(dbms Disks/BlobStorage)
+    add_headers_and_sources(dbms Disks/AzureBlobStorage)
 endif()
 
 if (USE_HDFS)

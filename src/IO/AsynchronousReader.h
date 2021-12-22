@@ -49,10 +49,18 @@ public:
         size_t ignore = 0;
     };
 
-    /// Less than requested amount of data can be returned.
-    /// If size is zero - the file has ended.
-    /// (for example, EINTR must be handled by implementation automatically)
-    using Result = size_t;
+    struct Result
+    {
+        /// size
+        /// Less than requested amount of data can be returned.
+        /// If size is zero - the file has ended.
+        /// (for example, EINTR must be handled by implementation automatically)
+        size_t size = 0;
+
+        /// offset
+        /// Optional. Useful when implementation needs to do ignore().
+        size_t offset = 0;
+    };
 
     /// Submit request and obtain a handle. This method don't perform any waits.
     /// If this method did not throw, the caller must wait for the result with 'wait' method

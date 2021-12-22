@@ -285,12 +285,12 @@ public:
         if (size)
         {
             req.SetRange(fmt::format("bytes={}-{}", offset, offset + size - 1));
-            LOG_DEBUG(log, "Read S3 object. Bucket: {}, Key: {}, Range: {}-{}", bucket, key, offset, offset + size - 1);
+            LOG_TEST(log, "Read S3 object. Bucket: {}, Key: {}, Range: {}-{}", bucket, key, offset, offset + size - 1);
         }
         else
         {
             req.SetRange(fmt::format("bytes={}-", offset));
-            LOG_DEBUG(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}", bucket, key, offset);
+            LOG_TEST(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}", bucket, key, offset);
         }
 
         Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);

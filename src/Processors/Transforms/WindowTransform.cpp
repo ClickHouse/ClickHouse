@@ -385,7 +385,7 @@ void WindowTransform::advancePartitionEnd()
 //            prev_frame_start, partition_end);
 
         size_t i = 0;
-        for (; i < partition_by_columns; i++)
+        for (; i < partition_by_columns; ++i)
         {
             const auto * reference_column
                 = inputAt(prev_frame_start)[partition_by_indices[i]].get();
@@ -667,7 +667,7 @@ bool WindowTransform::arePeers(const RowNumber & x, const RowNumber & y) const
     }
 
     size_t i = 0;
-    for (; i < n; i++)
+    for (; i < n; ++i)
     {
         const auto * column_x = inputAt(x)[order_by_indices[i]].get();
         const auto * column_y = inputAt(y)[order_by_indices[i]].get();
