@@ -131,11 +131,18 @@ def main(event):
         print("Cancelling all previous workflows")
         print(f"Found {len(workflows_to_cancel)} workflows to cancel")
         exec_workflow_url(workflows_to_cancel, token)
+
         def check_status_for_rerun(status):
             return status in ('completed', 'cancelled')
         workflows_to_rerun = get_workflows_urls_for_pull_request(pull_request, 'rerun_url', check_status_for_rerun)
-        print(f"Found {len(workflows_to_rerun)} workflows")
-        exec_workflow_url(workflows_to_rerun, token)
+        for _ in range(10):
+            print(f"Found {len(workflows_to_rerun)} workflows")
+            if len(workflows_to_rerun) > 0:
+                exec_workflow_url(workflows_to_rerun, token)
+                break
+            print("No workflows found, wait until cancelled")
+            time.sleep(3)
+            workflows_to_rerun = get_workflows_urls_for_pull_request(pull_request, 'rerun_url', check_status_for_rerun)
     else:
         print("Nothing to do")
 
