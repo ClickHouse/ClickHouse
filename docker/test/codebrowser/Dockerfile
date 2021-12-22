@@ -6,7 +6,7 @@ FROM clickhouse/binary-builder
 ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
-RUN apt-get update && apt-get --yes --allow-unauthenticated install clang-9 libllvm9 libclang-9-dev
+RUN apt-get update && apt-get --yes --allow-unauthenticated install clang-13 libllvm13 libclang-13-dev
 
 # repo versions doesn't work correctly with C++17
 # also we push reports to s3, so we add index.html to subfolder urls
@@ -23,12 +23,12 @@ ENV SOURCE_DIRECTORY=/repo_folder
 ENV BUILD_DIRECTORY=/build
 ENV HTML_RESULT_DIRECTORY=$BUILD_DIRECTORY/html_report
 ENV SHA=nosha
-ENV DATA="data"
+ENV DATA="https://s3.amazonaws.com/clickhouse-test-reports/codebrowser/data"
 
 CMD mkdir -p $BUILD_DIRECTORY && cd $BUILD_DIRECTORY && \
     cmake $SOURCE_DIRECTORY -DCMAKE_CXX_COMPILER=/usr/bin/clang\+\+-13 -DCMAKE_C_COMPILER=/usr/bin/clang-13 -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DENABLE_EMBEDDED_COMPILER=0 -DENABLE_S3=0 && \
     mkdir -p $HTML_RESULT_DIRECTORY && \
     $CODEGEN -b $BUILD_DIRECTORY -a -o $HTML_RESULT_DIRECTORY -p ClickHouse:$SOURCE_DIRECTORY:$SHA -d $DATA | ts '%Y-%m-%d %H:%M:%S' && \
     cp -r $STATIC_DATA $HTML_RESULT_DIRECTORY/ &&\
-    $CODEINDEX $HTML_RESULT_DIRECTORY -d $DATA | ts '%Y-%m-%d %H:%M:%S' && \
+    $CODEINDEX $HTML_RESULT_DIRECTORY -d "$DATA" | ts '%Y-%m-%d %H:%M:%S' && \
     mv $HTML_RESULT_DIRECTORY /test_output
