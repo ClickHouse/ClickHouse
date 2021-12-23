@@ -719,9 +719,16 @@ void HTTPHandler::processQuery(
     context->checkSettingsConstraints(settings_changes);
     context->applySettingsChanges(settings_changes);
 
-    // Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
+    /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
     context->setCurrentQueryId(params.get("query_id", request.get("X-ClickHouse-Query-Id", "")));
 
+    /// Initialize query scope, once query_id is initialized.
+    /// (To track as much allocations as possible)
+    query_scope.emplace(context);
+
+    /// NOTE: this may create pretty huge allocations that will not be accounted in trace_log,
+    /// because memory_profiler_sample_probability/memory_profiler_step are not applied yet,
+    /// they will be applied in ProcessList::insert() from executeQuery() itself.
     const auto & query = getQuery(request, params, context);
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
     in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
@@ -769,7 +776,7 @@ void HTTPHandler::processQuery(
 
     if (settings.readonly > 0 && settings.cancel_http_readonly_queries_on_client_close)
     {
-        append_callback([context = context, &request](const Progress &)
+        append_callback([&context, &request](const Progress &)
         {
             /// Assume that at the point this method is called no one is reading data from the socket any more:
             /// should be true for read-only queries.
@@ -779,8 +786,6 @@ void HTTPHandler::processQuery(
     }
 
     customizeContext(request, context);
-
-    query_scope.emplace(context);
 
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
         [&response] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)

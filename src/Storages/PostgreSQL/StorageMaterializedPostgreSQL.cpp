@@ -24,6 +24,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
+#include <Interpreters/applyTableOverride.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -395,7 +396,7 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
 {
     auto create_table_query = std::make_shared<ASTCreateQuery>();
     if (table_override)
-        table_override->applyToCreateTableQuery(create_table_query.get());
+        applyTableOverrideToCreateQuery(*table_override, create_table_query.get());
 
     auto table_id = getStorageID();
     create_table_query->setTable(getNestedTableName());

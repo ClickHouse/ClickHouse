@@ -222,6 +222,23 @@ static ReadBuffer * getStream(
     return stream.data_buffer;
 }
 
+void MergeTreeReaderWide::deserializePrefix(
+    const SerializationPtr & serialization,
+    const NameAndTypePair & name_and_type,
+    size_t current_task_last_mark,
+    ISerialization::SubstreamsCache & cache)
+{
+    const auto & name = name_and_type.name;
+    if (deserialize_binary_bulk_state_map.count(name) == 0)
+    {
+        ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
+        deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
+        {
+            return getStream(/* seek_to_start = */true, substream_path, streams, name_and_type, 0, /* seek_to_mark = */false, current_task_last_mark, cache);
+        };
+        serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_binary_bulk_state_map[name]);
+    }
+}
 
 void MergeTreeReaderWide::prefetch(
     const NameAndTypePair & name_and_type,
@@ -232,6 +249,7 @@ void MergeTreeReaderWide::prefetch(
     std::unordered_set<std::string> & prefetched_streams)
 {
     auto serialization = data_part->getSerialization(name_and_type);
+    deserializePrefix(serialization, name_and_type, current_task_last_mark, cache);
 
     serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
@@ -261,14 +279,7 @@ void MergeTreeReaderWide::readData(
     const auto & name = name_and_type.name;
     auto serialization = data_part->getSerialization(name_and_type);
 
-    if (deserialize_binary_bulk_state_map.count(name) == 0)
-    {
-        deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
-        {
-            return getStream(/* seek_to_start = */true, substream_path, streams, name_and_type, from_mark, /* seek_to_mark = */false, current_task_last_mark, cache);
-        };
-        serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_binary_bulk_state_map[name]);
-    }
+    deserializePrefix(serialization, name_and_type, current_task_last_mark, cache);
 
     deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
     {
