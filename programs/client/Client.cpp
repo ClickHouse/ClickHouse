@@ -21,7 +21,6 @@
 #include <base/find_symbols.h>
 
 #include <Common/config_version.h>
-#include <Common/git_info.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <Common/TerminalSize.h>
@@ -77,13 +76,6 @@ namespace ErrorCodes
     extern const int AUTHENTICATION_FAILED;
 }
 
-namespace GitInfo 
-{
-    extern const std::string GIT_SHA1;
-    extern const std::string GIT_BRANCH;
-    extern const std::string GIT_DATE;
-    extern const std::string GIT_COMMIT_SUBJECT;
-}
 
 void Client::processError(const String & query) const
 {
@@ -1151,14 +1143,6 @@ void Client::processOptions(const OptionsDescription & options_description,
         global_context->getClientInfo().client_trace_context.tracestate = options["opentelemetry-tracestate"].as<std::string>();
 }
 
-static void showClientVersion()
-{
-    std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
-    std::cout << "GIT SHA1: " << GitInfo::GIT_SHA1 << std::endl;
-    std::cout << "GIT BRANCH: " << GitInfo::GIT_BRANCH << std::endl;
-    std::cout << "GIT DATE: " << GitInfo::GIT_DATE << std::endl;
-    std::cout << "GIT COMMIT SUBJECT: " << GitInfo::GIT_COMMIT_SUBJECT << std::endl;
-}
 
 void Client::processConfig()
 {
