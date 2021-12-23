@@ -145,15 +145,15 @@ void Block::insert(size_t position, ColumnWithTypeAndName elem)
     if (elem.name.empty())
         throw Exception("Column name in Block cannot be empty", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
 
-    auto [it, inserted] = index_by_name.emplace(elem.name, position);
+    auto [new_it, inserted] = index_by_name.emplace(elem.name, position);
     if (!inserted)
-        checkColumnStructure<void>(data[it->second], elem,
+        checkColumnStructure<void>(data[new_it->second], elem,
             "(columns with identical name must have identical structure)", true, ErrorCodes::AMBIGUOUS_COLUMN_NAME);
 
-    for (auto itr = index_by_name.begin(); itr != index_by_name.end(); ++itr)
+    for (auto it = index_by_name.begin(); it != index_by_name.end(); ++it)
     {
-        if (itr->second >= position && (!inserted || itr != it))
-            ++itr->second;
+        if (it->second >= position && (!inserted || it != new_it))
+            ++it->second;
     }
 
     data.emplace(data.begin() + position, std::move(elem));
