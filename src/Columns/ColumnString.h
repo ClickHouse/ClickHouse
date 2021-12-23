@@ -107,6 +107,12 @@ public:
         return StringRef(&chars[offsetAt(n)], sizeAt(n));
     }
 
+    bool isDefaultAt(size_t n) const override
+    {
+        assert(n < size());
+        return sizeAt(n) == 1;
+    }
+
 /// Suppress gcc 7.3.1 warning: '*((void*)&<anonymous> +8)' may be used uninitialized in this function
 #if !defined(__clang__)
 #pragma GCC diagnostic push
@@ -276,6 +282,16 @@ public:
     bool structureEquals(const IColumn & rhs) const override
     {
         return typeid(rhs) == typeid(ColumnString);
+    }
+
+    double getRatioOfDefaultRows(double sample_ratio) const override
+    {
+        return getRatioOfDefaultRowsImpl<ColumnString>(sample_ratio);
+    }
+
+    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
+    {
+        return getIndicesOfNonDefaultRowsImpl<ColumnString>(indices, from, limit);
     }
 
     Chars & getChars() { return chars; }

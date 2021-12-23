@@ -73,9 +73,13 @@ private:
         bool randomize_interval = false;
         mutable std::atomic<std::chrono::system_clock::duration> end_of_interval;
 
-        Interval();
+        Interval(std::chrono::seconds duration_, bool randomize_interval_, std::chrono::system_clock::time_point current_time_);
+
         Interval(const Interval & src) { *this = src; }
         Interval & operator =(const Interval & src);
+
+        std::chrono::system_clock::time_point getEndOfInterval(std::chrono::system_clock::time_point current_time) const;
+        std::chrono::system_clock::time_point getEndOfInterval(std::chrono::system_clock::time_point current_time, bool & counters_were_reset) const;
     };
 
     struct Intervals
