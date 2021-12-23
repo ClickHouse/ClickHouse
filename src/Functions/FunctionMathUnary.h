@@ -94,7 +94,7 @@ private:
                 Impl::execute(src_remaining, dst_remaining);
 
                 if constexpr (is_big_int_v<T> || std::is_same_v<T, Decimal256>)
-                    for (size_t i = 0; i < rows_remaining; i++)
+                    for (size_t i = 0; i < rows_remaining; ++i)
                         dst_data[rows_size + i] = dst_remaining[i];
                 else
                     memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(ReturnType));

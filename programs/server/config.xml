@@ -152,6 +152,7 @@
          This setting could be used to switch replication to another network interface
          (the server may be connected to multiple networks via multiple addresses)
       -->
+
     <!--
     <interserver_http_host>example.yandex.ru</interserver_http_host>
     -->
@@ -176,6 +177,7 @@
          See also: https://www.shodan.io/search?query=clickhouse
       -->
     <!-- <listen_host>::</listen_host> -->
+
 
     <!-- Same for hosts without support for IPv6: -->
     <!-- <listen_host>0.0.0.0</listen_host> -->
@@ -292,6 +294,10 @@
     -->
 
     <max_thread_pool_size>10000</max_thread_pool_size>
+
+    <!-- Number of workers to recycle connections in background (see also drain_timeout).
+         If the pool is full, connection will be drained synchronously. -->
+    <!-- <max_threads_for_connection_collector>10</max_threads_for_connection_collector> -->
 
     <!-- On memory constrained environments you may have to set this to value larger than 1.
       -->

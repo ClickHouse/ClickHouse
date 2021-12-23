@@ -29,12 +29,15 @@ namespace ErrorCodes
 }
 
 MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_)
-    : IRowInputFormat(header_, buf, std::move(params_)), buf(in_), parser(visitor), data_types(header_.getDataTypes())  {}
+    : MsgPackRowInputFormat(header_, std::make_unique<PeekableReadBuffer>(in_), params_) {}
+
+MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, Params params_)
+    : IRowInputFormat(header_, *buf_, std::move(params_)), buf(std::move(buf_)), parser(visitor), data_types(header_.getDataTypes())  {}
 
 void MsgPackRowInputFormat::resetParser()
 {
     IRowInputFormat::resetParser();
-    buf.reset();
+    buf->reset();
     visitor.reset();
 }
 
@@ -325,21 +328,21 @@ void MsgPackVisitor::parse_error(size_t, size_t) // NOLINT
 
 bool MsgPackRowInputFormat::readObject()
 {
-    if (buf.eof())
+    if (buf->eof())
         return false;
 
-    PeekableReadBufferCheckpoint checkpoint{buf};
+    PeekableReadBufferCheckpoint checkpoint{*buf};
     size_t offset = 0;
-    while (!parser.execute(buf.position(), buf.available(), offset))
+    while (!parser.execute(buf->position(), buf->available(), offset))
     {
-        buf.position() = buf.buffer().end();
-        if (buf.eof())
+        buf->position() = buf->buffer().end();
+        if (buf->eof())
             throw Exception("Unexpected end of file while parsing msgpack object.", ErrorCodes::INCORRECT_DATA);
-        buf.position() = buf.buffer().end();
-        buf.makeContinuousMemoryFromCheckpointToPos();
-        buf.rollbackToCheckpoint();
+        buf->position() = buf->buffer().end();
+        buf->makeContinuousMemoryFromCheckpointToPos();
+        buf->rollbackToCheckpoint();
     }
-    buf.position() += offset;
+    buf->position() += offset;
     return true;
 }
 
@@ -361,6 +364,12 @@ bool MsgPackRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
         return false;
     }
     return true;
+}
+
+void MsgPackRowInputFormat::setReadBuffer(ReadBuffer & in_)
+{
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    IInputFormat::setReadBuffer(*buf);
 }
 
 void registerInputFormatMsgPack(FormatFactory & factory)
