@@ -175,8 +175,8 @@ Block NativeReader::read()
             auto & header_column = header.getByName(column.name);
             if (!header_column.type->equals(*column.type))
             {
-                column.column = recursiveTypeConversion(column.column, column.type, header.getByPosition(i).type);
-                column.type = header.getByPosition(i).type;
+                column.column = recursiveTypeConversion(column.column, column.type, header.safeGetByPosition(i).type);
+                column.type = header.safeGetByPosition(i).type;
             }
         }
 
