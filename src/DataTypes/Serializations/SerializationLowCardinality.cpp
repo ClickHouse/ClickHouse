@@ -636,7 +636,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
 
         if (!low_cardinality_state->index_type.need_global_dictionary)
         {
-            if(additional_keys == nullptr)
+            if (additional_keys == nullptr)
                 throw Exception("No additional keys found.", ErrorCodes::INCORRECT_DATA);
 
             ColumnPtr keys_column = additional_keys;
@@ -665,7 +665,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
 
             if (!maps.additional_keys_map->empty())
             {
-                if(additional_keys == nullptr)
+                if (additional_keys == nullptr)
                     throw Exception("No additional keys found.", ErrorCodes::INCORRECT_DATA);
 
                 auto used_add_keys = additional_keys->index(*maps.additional_keys_map, 0);
