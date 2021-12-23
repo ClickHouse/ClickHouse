@@ -10,8 +10,11 @@ public:
             const String & cluster_,
             const String & remote_path_,
             size_t file_size_,
-            UInt64 last_modification_timestamp_):
-        IRemoteFileMetadata(remote_path_, file_size_, last_modification_timestamp_),schema(schema_), cluster(cluster_){}
+            UInt64 last_modification_timestamp_) : schema(schema_), cluster(cluster_){
+            remote_path = remote_path_;
+            file_size = file_size_;
+            last_modification_timestamp = last_modification_timestamp_;
+    }
     ~StorageHiveMetadata() override;
 
     String getName() const override { return "StorageHiveMetadata"; }
@@ -19,7 +22,7 @@ public:
     String getCluster() const { return cluster; }
 
     String toString() const override;
-    bool fromString(const String &buf) override;
+    bool fromString(const String & buf) override;
     String getVersion() const override;
 private:
     String schema;

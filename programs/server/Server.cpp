@@ -57,7 +57,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
-#include <Storages/RemoteReadBufferCache.h>
+#include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Storages/RemoteFileMetadataFactory.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/registerFunctions.h>
@@ -529,7 +529,7 @@ if (ThreadFuzzer::instance().isEffective())
             UInt64 limit_size = config().getUInt64("local_cache_for_remote_fs.limit_size");
             UInt64 bytes_read_before_flush
                 = config().getUInt64("local_cache_for_remote_fs.bytes_read_before_flush", DBMS_DEFAULT_BUFFER_SIZE);
-            RemoteReadBufferCache::instance().initOnce(global_context, root_dir, limit_size, bytes_read_before_flush);
+            ExternalDataSourceCache::instance().initOnce(global_context, root_dir, limit_size, bytes_read_before_flush);
         }
     }
 

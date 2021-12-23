@@ -25,12 +25,14 @@ struct TrivialWeightFunction
 template <typename T>
 struct TrivialLRUCacheEvitPolicy
 {
-    inline bool canRelease(const T &) const
+    // To note that the arg  maybe is null
+    inline bool canRelease(std::shared_ptr<T>) const
     {
         return true;
     }
 
-    inline void release(T &)
+    // To note that the arg is null
+    inline void release(std::shared_ptr<T>)
     {
     }
 };
@@ -89,10 +91,8 @@ public:
     template <typename LoadFunc>
     std::pair<MappedPtr, bool> getOrSet(const Key & key, LoadFunc && load_func)
     {
-        MappedPtr value = nullptr;
-        bool is_value_loaded = false, is_value_updated = false;
-        std::tie(value, is_value_loaded, is_value_updated) = getOrTrySet(key, std::move(load_func));
-        return std::make_pair(value, is_value_loaded);
+        auto [value, is_loaded, _] = getOrTrySet(key, std::move(load_func));
+        return std::make_pair(value, is_loaded);
     }
 
     /// If the value for the key is in the cache, returns it. If it is not, calls load_func() to
@@ -165,19 +165,17 @@ public:
     }
 
     /// If key is not in cache or the element can be released, return is true. otherwise, return is false
-    bool tryDel(const Key & key)
+    bool tryRemove(const Key & key)
     {
         std::lock_guard loc(mutex);
         auto it = cells.find(key);
         if (it == cells.end())
             return true;
         auto & cell = it->second;
-        if (cell.value)
-        {
-            if (!evict_policy.canRelease(*cell.value))
-                return false;
-            evict_policy.release(*cell.value);
-        }
+        if (!evict_policy.canRelease(cell.value))
+            return false;
+        evict_policy.release(cell.value);
+        
         current_size -= cell.size;
         cells.erase(it);
         queue.erase(cell.queue_iterator);
@@ -365,14 +363,13 @@ private:
         }
         else
         {
-            if (cell.value && !evict_policy.canRelease(*cell.value))
+            if (!evict_policy.canRelease(cell.value))
             {
                 // the old value is refered by someone, cannot release now
                 // in default policy, it is always true.
                 return false;
             }
-            if (cell.value)
-                evict_policy.release(*cell.value); // release the old value. this action is empty in default policy.
+            evict_policy.release(cell.value); // release the old value. this action is empty in default policy.
             current_size -= cell.size;
             queue.splice(queue.end(), queue, cell.queue_iterator);
         }
@@ -389,10 +386,9 @@ private:
         size_t current_weight_lost = 0;
         size_t queue_size = cells.size();
         auto key_it = queue.begin();
-
-        while ((current_size + required_size_to_remove > max_size || (max_elements_size != 0 && queue_size > max_elements_size))
-                && (queue_size > 1)
-                && (key_it != queue.end()))
+        auto is_overflow = [&] { return (current_size + required_size_to_remove > max_size || (max_elements_size != 0 && queue_size > max_elements_size));
+ };
+        while (is_overflow() && (queue_size > 1) && (key_it != queue.end()))
         {
             const Key & key = *key_it;
 
@@ -404,15 +400,11 @@ private:
             }
 
             const auto & cell = it->second;
-            bool can_evict = true;
-            if (cell.value)
-                can_evict = evict_policy.canRelease(*cell.value);// in default, it is true
-            if (can_evict)
+            if (evict_policy.canRelease(cell.value))// in default, it is true
             {
                 // always call release() before erasing an element
                 // in default, it's an empty action
-                if (cell.value)
-                    evict_policy.release(*cell.value);
+                evict_policy.release(cell.value);
 
                 current_size -= cell.size;
                 current_weight_lost += cell.size;
@@ -434,7 +426,7 @@ private:
             LOG_ERROR(&Poco::Logger::get("LRUCache"), "LRUCache became inconsistent. There must be a bug in it.");
             abort();
         }
-        return !(current_size + required_size_to_remove > max_size || (max_elements_size != 0 && queue_size > max_elements_size));
+        return !is_overflow();
     }
 
     /// Override this method if you want to track how much weight was lost in removeOverflow method.
