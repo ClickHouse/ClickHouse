@@ -1688,6 +1688,7 @@ size_t MergeTreeData::clearEmptyParts()
         if (part->versions.maxtid_lock.load() || !part->versions.isVisible(TransactionLog::instance().getLatestSnapshot()))
             continue;
 
+        LOG_TRACE(log, "Will drop empty part {}", part->name);
         dropPartNoWaitNoThrow(part->name);
         ++cleared_count;
     }
