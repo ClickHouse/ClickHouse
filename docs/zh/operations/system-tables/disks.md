@@ -5,7 +5,7 @@
 列:
 
 -   `name` ([字符串](../../sql-reference/data-types/string.md)) — 服务器配置中的磁盘名称.
--   `path` ([字符串](../../sql-reference/data-types/string.md)) — 文件系统中挂载点的路径Path to the mount point in the file system.
+-   `path` ([字符串](../../sql-reference/data-types/string.md)) — 文件系统中挂载点的路径.
 -   `free_space` ([UInt64](../../sql-reference/data-types/int-uint.md)) — 磁盘上的可用空间，以字节为单位.
 -   `total_space` ([UInt64](../../sql-reference/data-types/int-uint.md)) — 磁盘容量，以字节为单位。
 -   `keep_free_space` ([UInt64](../../sql-reference/data-types/int-uint.md)) — 在磁盘上应保持空闲的磁盘空间的数量，以字节为单位。在磁盘配置的 `keep_free_space_bytes` 参数中定义。
