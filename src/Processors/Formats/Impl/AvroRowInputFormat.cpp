@@ -68,6 +68,7 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -447,7 +448,15 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
             {
                 union_skip_fns.push_back(createSkipFn(root_node->leafAt(i)));
             }
-            return [union_skip_fns](avro::Decoder & decoder) { union_skip_fns[decoder.decodeUnionIndex()](decoder); };
+            return [union_skip_fns](avro::Decoder & decoder)
+            {
+                auto index = decoder.decodeUnionIndex();
+                if (index >= union_skip_fns.size())
+                {
+                    throw Exception("Union index out of boundary", ErrorCodes::INCORRECT_DATA);
+                }
+                union_skip_fns[index](decoder);
+            };
         }
         case avro::AVRO_NULL:
             return [](avro::Decoder & decoder) { decoder.decodeNull(); };
