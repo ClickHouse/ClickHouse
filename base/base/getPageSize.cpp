@@ -8,5 +8,5 @@ Int64 getPageSize()
     if(page_size == -1)
         abort();
     else
-        return sysconf(_SC_PAGESIZE);
+        return page_size;
 }
