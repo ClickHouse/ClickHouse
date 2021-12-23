@@ -67,3 +67,12 @@ function tx_async()
     query_pid=$!
     echo -e "$query_id\t$query_pid" >> "$tmp_file_name"
 }
+
+# Wait for previous query in session to finish, execute the next one synchronously
+function tx_sync()
+{
+    tx_num=$1
+    query=$2
+    tx_wait $tx_num
+    tx $tx_num $query
+}
