@@ -160,7 +160,7 @@ public:
 
         if (!token->cleaned_up)
             token_holder.cleanup(token_lock, cache_lock);
-        
+
         return {token->value, is_value_loaded, is_value_updated};
     }
 
@@ -175,7 +175,7 @@ public:
         if (!evict_policy.canRelease(cell.value))
             return false;
         evict_policy.release(cell.value);
-        
+
         current_size -= cell.size;
         cells.erase(it);
         queue.erase(cell.queue_iterator);
@@ -386,8 +386,7 @@ private:
         size_t current_weight_lost = 0;
         size_t queue_size = cells.size();
         auto key_it = queue.begin();
-        auto is_overflow = [&] { return (current_size + required_size_to_remove > max_size || (max_elements_size != 0 && queue_size > max_elements_size));
- };
+        auto is_overflow = [&] { return (current_size + required_size_to_remove > max_size || (max_elements_size != 0 && queue_size > max_elements_size)); };
         while (is_overflow() && (queue_size > 1) && (key_it != queue.end()))
         {
             const Key & key = *key_it;

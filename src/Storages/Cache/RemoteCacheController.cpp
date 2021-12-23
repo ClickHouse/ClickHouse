@@ -52,9 +52,9 @@ std::shared_ptr<RemoteCacheController> RemoteCacheController::recover(const std:
     {
         cache_controller->file_metadata_ptr = RemoteFileMetadataFactory::instance().get(cache_controller->metadata_class);
     }
-    catch(...)
+    catch(const Exception & e)
     {
-        LOG_ERROR(log, "Get metadata class failed for {}", cache_controller->metadata_class);
+        LOG_ERROR(log, "Get metadata class failed for {}. {}", cache_controller->metadata_class, e.message());
         cache_controller->file_metadata_ptr = nullptr;
     }
     if (!cache_controller->file_metadata_ptr)

@@ -25,12 +25,9 @@ namespace fs = std::filesystem;
 namespace ErrorCodes
 {
     extern const int OK;
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NOT_INIT;
     extern const int DISK_OVERFLOW;
-    extern const int FILE_BROKEN;
-    extern const int END_OF_FILE;
 }
 
 
