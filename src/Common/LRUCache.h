@@ -6,12 +6,16 @@
 #include <chrono>
 #include <mutex>
 #include <atomic>
-
 #include <base/logger_useful.h>
+#include <Common/Exception.h>
 
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int CANNOT_RELEASE;
+}
 
 template <typename T>
 struct TrivialWeightFunction
@@ -22,13 +26,32 @@ struct TrivialWeightFunction
     }
 };
 
+template <typename T>
+struct TrivialLRUCacheEvitPolicy
+{
+    // To note that the arg could be null
+    inline bool canRelease(std::shared_ptr<T>) const
+    {
+        return true;
+    }
+
+    // To note that the arg could be null
+    inline void release(std::shared_ptr<T>)
+    {
+    }
+};
+
 
 /// Thread-safe cache that evicts entries which are not used for a long time.
 /// WeightFunction is a functor that takes Mapped as a parameter and returns "weight" (approximate size)
 /// of that value.
 /// Cache starts to evict entries when their total weight exceeds max_size.
 /// Value weight should not change after insertion.
-template <typename TKey, typename TMapped, typename HashFunction = std::hash<TKey>, typename WeightFunction = TrivialWeightFunction<TMapped>>
+template <typename TKey,
+         typename TMapped,
+         typename HashFunction = std::hash<TKey>,
+         typename WeightFunction = TrivialWeightFunction<TMapped>,
+         typename EvictPolicy = TrivialLRUCacheEvitPolicy<TMapped>>
 class LRUCache
 {
 public:
@@ -60,20 +83,41 @@ public:
     void set(const Key & key, const MappedPtr & mapped)
     {
         std::lock_guard lock(mutex);
-
         setImpl(key, mapped, lock);
+    }
+
+    /**
+     * trySet() will fail (return false) if there is no space left and no keys could be evicted.
+     * Eviction permission of each key is defined by EvictPolicy. In default policy there is no restriction.
+     */
+    bool trySet(const Key & key, const MappedPtr & mapped)
+    {
+        std::lock_guard lock(mutex);
+
+        return setImpl(key, mapped, lock);
+    }
+
+    /// Returns std::pair of the cached value and a bool indicating whether the value was produced during this call.
+    template <typename LoadFunc>
+    std::pair<MappedPtr, bool> getOrSet(const Key & key, LoadFunc && load_func)
+    {
+        auto [value, is_loaded, _] = getOrTrySet(key, std::move(load_func));
+        return std::make_pair(value, is_loaded);
     }
 
     /// If the value for the key is in the cache, returns it. If it is not, calls load_func() to
     /// produce it, saves the result in the cache and returns it.
-    /// Only one of several concurrent threads calling getOrSet() will call load_func(),
+    /// Only one of several concurrent threads calling getOrTrySet() will call load_func(),
     /// others will wait for that call to complete and will use its result (this helps prevent cache stampede).
     /// Exceptions occurring in load_func will be propagated to the caller. Another thread from the
     /// set of concurrent threads will then try to call its load_func etc.
     ///
-    /// Returns std::pair of the cached value and a bool indicating whether the value was produced during this call.
+    /// return std::tuple is <MappedPtr, is_value_loaded, is_value_updated>, where
+    ///  - is_value_loaded indicates whether the value was produce during this call
+    ///  - is_value_updated indicates whether the value is updated in the cache when is_value_loaded = true.
+    ///    if is_value_loaded = false, is_value_updated = false
     template <typename LoadFunc>
-    std::pair<MappedPtr, bool> getOrSet(const Key & key, LoadFunc && load_func)
+    std::tuple<MappedPtr, bool, bool> getOrTrySet(const Key &key, LoadFunc && load_func)
     {
         InsertTokenHolder token_holder;
         {
@@ -83,7 +127,7 @@ public:
             if (val)
             {
                 ++hits;
-                return std::make_pair(val, false);
+                return {val, false, false};
             }
 
             auto & token = insert_tokens[key];
@@ -103,7 +147,7 @@ public:
         {
             /// Another thread already produced the value while we waited for token->mutex.
             ++hits;
-            return std::make_pair(token->value, false);
+            return {token->value, false, false};
         }
 
         ++misses;
@@ -113,18 +157,39 @@ public:
 
         /// Insert the new value only if the token is still in present in insert_tokens.
         /// (The token may be absent because of a concurrent reset() call).
-        bool result = false;
+        bool is_value_loaded = false;
+        bool is_value_updated = false;
         auto token_it = insert_tokens.find(key);
         if (token_it != insert_tokens.end() && token_it->second.get() == token)
         {
-            setImpl(key, token->value, cache_lock);
-            result = true;
+            // setImpl() may fail, but the final behavior seems not be affected
+            // next call of getOrTrySet() will still call load_func()
+            is_value_updated = setImpl(key, token->value, cache_lock);
+            is_value_loaded = true;
         }
 
         if (!token->cleaned_up)
             token_holder.cleanup(token_lock, cache_lock);
 
-        return std::make_pair(token->value, result);
+        return {token->value, is_value_loaded, is_value_updated};
+    }
+
+    /// If key is not in cache or the element can be released, return is true. otherwise, return is false
+    bool tryRemove(const Key & key)
+    {
+        std::lock_guard loc(mutex);
+        auto it = cells.find(key);
+        if (it == cells.end())
+            return true;
+        auto & cell = it->second;
+        if (!evict_policy.canRelease(cell.value))
+            return false;
+        evict_policy.release(cell.value);
+
+        current_size -= cell.size;
+        cells.erase(it);
+        queue.erase(cell.queue_iterator);
+        return true;
     }
 
     void getStats(size_t & out_hits, size_t & out_misses) const
@@ -259,6 +324,7 @@ private:
     std::atomic<size_t> misses {0};
 
     WeightFunction weight_function;
+    EvictPolicy evict_policy;
 
     MappedPtr getImpl(const Key & key, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
     {
@@ -276,7 +342,7 @@ private:
         return cell.value;
     }
 
-    void setImpl(const Key & key, const MappedPtr & mapped, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
+    bool setImpl(const Key & key, const MappedPtr & mapped, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
     {
         auto [it, inserted] = cells.emplace(std::piecewise_construct,
             std::forward_as_tuple(key),
@@ -286,6 +352,15 @@ private:
 
         if (inserted)
         {
+            auto value_weight = mapped ? weight_function(*mapped) : 0;
+            // move removeOverflow() ahead here. In default, the final result is the same as the old implementation
+            if (!removeOverflow(value_weight))
+            {
+                // cannot find enough space to put in the new value
+                cells.erase(it);
+                return false;
+            }
+
             try
             {
                 cell.queue_iterator = queue.insert(queue.end(), key);
@@ -298,6 +373,13 @@ private:
         }
         else
         {
+            if (!evict_policy.canRelease(cell.value))
+            {
+                // the old value is refered by someone, cannot release now
+                // in default policy, it is always true.
+                return false;
+            }
+            evict_policy.release(cell.value); // release the old value. this action is empty in default policy.
             current_size -= cell.size;
             queue.splice(queue.end(), queue, cell.queue_iterator);
         }
@@ -306,17 +388,18 @@ private:
         cell.size = cell.value ? weight_function(*cell.value) : 0;
         current_size += cell.size;
 
-        removeOverflow();
+        return true;
     }
 
-    void removeOverflow()
+    bool removeOverflow(size_t required_size_to_remove = 0)
     {
         size_t current_weight_lost = 0;
         size_t queue_size = cells.size();
-
-        while ((current_size > max_size || (max_elements_size != 0 && queue_size > max_elements_size)) && (queue_size > 1))
+        auto key_it = queue.begin();
+        auto is_overflow = [&] { return (current_size + required_size_to_remove > max_size || (max_elements_size != 0 && queue_size > max_elements_size)); };
+        while (is_overflow() && (queue_size > 1) && (key_it != queue.end()))
         {
-            const Key & key = queue.front();
+            const Key & key = *key_it;
 
             auto it = cells.find(key);
             if (it == cells.end())
@@ -326,13 +409,23 @@ private:
             }
 
             const auto & cell = it->second;
+            if (evict_policy.canRelease(cell.value))// in default, it is true
+            {
+                // always call release() before erasing an element
+                // in default, it's an empty action
+                evict_policy.release(cell.value);
 
-            current_size -= cell.size;
-            current_weight_lost += cell.size;
+                current_size -= cell.size;
+                current_weight_lost += cell.size;
 
-            cells.erase(it);
-            queue.pop_front();
-            --queue_size;
+                cells.erase(it);
+                key_it = queue.erase(key_it);
+                --queue_size;
+            }
+            else
+            {
+                key_it++;
+            }
         }
 
         onRemoveOverflowWeightLoss(current_weight_lost);
@@ -342,6 +435,7 @@ private:
             LOG_ERROR(&Poco::Logger::get("LRUCache"), "LRUCache became inconsistent. There must be a bug in it.");
             abort();
         }
+        return !is_overflow();
     }
 
     /// Override this method if you want to track how much weight was lost in removeOverflow method.
