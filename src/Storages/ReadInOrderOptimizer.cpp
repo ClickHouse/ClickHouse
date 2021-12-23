@@ -52,7 +52,7 @@ size_t calculateFixedPrefixSize(
     if (!condition)
         return 0;
 
-    /// Convert condition to CNF for more convinient analysis.
+    /// Convert condition to CNF for more convenient analysis.
     auto cnf = TreeCNFConverter::tryConvertToCNF(condition);
     if (!cnf)
         return 0;
@@ -183,11 +183,13 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
     UInt64 limit) const
 {
     auto sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
-    SortDescription order_key_prefix_descr;
     int read_direction = description.at(0).direction;
 
     size_t fixed_prefix_size = calculateFixedPrefixSize(query, sorting_key_columns);
     size_t descr_prefix_size = std::min(description.size(), sorting_key_columns.size() - fixed_prefix_size);
+
+    SortDescription order_key_prefix_descr;
+    order_key_prefix_descr.reserve(descr_prefix_size);
 
     for (size_t i = 0; i < descr_prefix_size; ++i)
     {
@@ -209,7 +211,15 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
     if (order_key_prefix_descr.empty())
         return {};
 
-    return std::make_shared<InputOrderInfo>(std::move(order_key_prefix_descr), read_direction, limit);
+    SortDescription order_key_fixed_prefix_descr;
+    order_key_fixed_prefix_descr.reserve(fixed_prefix_size);
+    for (size_t i = 0; i < fixed_prefix_size; ++i)
+        order_key_fixed_prefix_descr.emplace_back(sorting_key_columns[i], read_direction);
+
+    return std::make_shared<InputOrderInfo>(
+        std::move(order_key_fixed_prefix_descr),
+        std::move(order_key_prefix_descr),
+        read_direction, limit);
 }
 
 InputOrderInfoPtr ReadInOrderOptimizer::getInputOrder(
