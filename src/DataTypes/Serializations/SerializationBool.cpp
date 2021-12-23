@@ -67,23 +67,20 @@ void SerializationBool::serializeTextJSON(const IColumn &column, size_t row_num,
 
 void SerializationBool::deserializeTextJSON(IColumn &column, ReadBuffer &istr, const FormatSettings &) const
 {
-    ColumnUInt8 * col = checkAndGetDeserializeColumnType(column);
-
-    if (!istr.eof())
-    {
-        bool value = false;
-
-        if (*istr.position() == 't' || *istr.position() == 'f')
-            readBoolTextWord(value, istr);
-        else if (*istr.position() == '1' || *istr.position() == '0')
-            readBoolText(value, istr);
-        else
-            throw Exception("Invalid boolean value, should be true/false, 1/0.",
-                            ErrorCodes::CANNOT_PARSE_BOOL);
-        col->insert(value);
-    }
-    else
+    if (istr.eof())
         throw Exception("Expected boolean value but get EOF.", ErrorCodes::CANNOT_PARSE_BOOL);
+
+    ColumnUInt8 * col = checkAndGetDeserializeColumnType(column);
+    bool value = false;
+
+    if (*istr.position() == 't' || *istr.position() == 'f')
+        readBoolTextWord(value, istr);
+    else if (*istr.position() == '1' || *istr.position() == '0')
+        readBoolText(value, istr);
+    else
+        throw Exception("Invalid boolean value, should be true/false, 1/0.",
+                        ErrorCodes::CANNOT_PARSE_BOOL);
+    col->insert(value);
 }
 
 void SerializationBool::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
