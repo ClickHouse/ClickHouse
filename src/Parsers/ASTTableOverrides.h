@@ -26,7 +26,6 @@ public:
     String getID(char) const override { return "TableOverride " + table_name; }
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-    void applyToCreateTableQuery(ASTCreateQuery * create_query) const;
 };
 
 /// List of table overrides, for example:
