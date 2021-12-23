@@ -1,8 +1,8 @@
 #pragma once
-#include <memory>
-#include <base/types.h>
 #include <functional>
+#include <memory>
 #include <unordered_map>
+#include <base/types.h>
 #include <boost/core/noncopyable.hpp>
 
 namespace DB
@@ -20,7 +20,7 @@ public:
 
     // used for comparing two file metadatas are the same or not.
     virtual String getVersion() const = 0;
-    
+
     String remote_path;
     size_t file_size = 0;
     UInt64 last_modification_timestamp = 0;
