@@ -225,7 +225,7 @@ bool SerializationBool::deserializeImpl(ColumnUInt8 * column, ReadBuffer & istr)
         /// Check if it's just short form `T` or full form `True`
         if (checkCharCaseInsensitive('r', istr))
         {
-            if (!checkStringCaseInsensitive("ue", istr))
+            if (!checkStringCaseInsensitive("ue", istr)) // NOLINT
                 return false;
         }
         column->insert(true);
