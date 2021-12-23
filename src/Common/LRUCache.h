@@ -83,9 +83,9 @@ public:
     void set(const Key & key, const MappedPtr & mapped)
     {
         std::lock_guard lock(mutex);
-        if (!setImpl(key, mapped, lock))
-            throw Exception(ErrorCodes::CANNOT_RELEASE, "Cannot release the key in LRUCache");
+        setImpl(key, mapped, lock);
     }
+
     /**
      * trySet() will fail (return false) if there is no space left and no keys could be evicted.
      * Eviction permission of each key is defined by EvictPolicy. In default policy there is no restriction.
