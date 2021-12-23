@@ -819,16 +819,14 @@ T & Field::reinterpret()
 template <>
 inline char & Field::reinterpret<char>()
 {
-    using ValueType = std::decay_t<char>;
     if (which == Types::String)
     {
         // For String we want to return a pointer to the data, not the start of the class
         // as the layout of std::string depends on the STD version and options
-        ValueType * MAY_ALIAS ptr = reinterpret_cast<ValueType *>(reinterpret_cast<String *>(&storage)->data());
+        char * MAY_ALIAS ptr = reinterpret_cast<String *>(&storage)->data();
         return *ptr;
     }
-    ValueType * MAY_ALIAS ptr = reinterpret_cast<ValueType *>(&storage);
-    return *ptr;
+    return *reinterpret_cast<char *>(&storage);
 }
 
 template <typename T>
