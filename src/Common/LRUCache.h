@@ -25,13 +25,13 @@ struct TrivialWeightFunction
 template <typename T>
 struct TrivialLRUCacheEvitPolicy
 {
-    // To note that the arg  maybe is null
+    // To note that the arg could be null
     inline bool canRelease(std::shared_ptr<T>) const
     {
         return true;
     }
 
-    // To note that the arg is null
+    // To note that the arg could be null
     inline void release(std::shared_ptr<T>)
     {
     }
