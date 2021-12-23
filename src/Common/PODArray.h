@@ -37,7 +37,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_MPROTECT;
-    extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
 /** A dynamic array for POD types.
@@ -107,9 +106,9 @@ protected:
     /// The amount of memory occupied by the num_elements of the elements.
     static size_t byte_size(size_t num_elements) 
     {
-        size_t test;
-        if (__builtin_mul_overflow(num_elements, ELEMENT_SIZE, &test))
-            throw Exception("Amount of memory requested to allocate is more than allowed", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+        size_t result;
+        if (__builtin_mul_overflow(num_elements, ELEMENT_SIZE, &result))
+            return result;
         else 
             return num_elements * ELEMENT_SIZE;
     }
