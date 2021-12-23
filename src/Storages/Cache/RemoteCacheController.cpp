@@ -1,6 +1,6 @@
 #include <Storages/Cache/RemoteCacheController.h>
 #include <Storages/Cache/ExternalDataSourceCache.h>
-#include <Storages/RemoteFileMetadataFactory.h>
+#include <Storages/Cache/RemoteFileMetadataFactory.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadSettings.h>
 #include <Poco/JSON/JSON.h>

@@ -6,7 +6,7 @@
 #include <filesystem>
 #include <Core/BackgroundSchedulePool.h>
 #include <Common/ErrorCodes.h>
-#include <Storages/IRemoteFileMetadata.h>
+#include <Storages/Cache/IRemoteFileMetadata.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileBase.h>

@@ -11,7 +11,7 @@
 #include <Common/hex.h>
 #include <Common/Exception.h>
 #include <Storages/Cache/ExternalDataSourceCache.h>
-#include <Storages/RemoteFileMetadataFactory.h>
+#include <Storages/Cache/RemoteFileMetadataFactory.h>
 #include <IO/WriteHelpers.h>
 
 namespace fs = std::filesystem;
