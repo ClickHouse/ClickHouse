@@ -233,8 +233,6 @@ void TCPHandler::runImpl()
             /// NOTE: these settings are applied only for current connection (not for distributed tables' connections)
             state.timeout_setter = std::make_unique<TimeoutSetter>(socket(), receive_timeout, send_timeout);
 
-            std::mutex fatal_error_mutex;
-
             /// Should we send internal logs to client?
             const auto client_logs_level = query_context->getSettingsRef().send_logs_level;
             if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_LOGS
@@ -243,7 +241,7 @@ void TCPHandler::runImpl()
                 state.logs_queue = std::make_shared<InternalTextLogsQueue>();
                 state.logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
                 CurrentThread::attachInternalTextLogsQueue(state.logs_queue, client_logs_level);
-                CurrentThread::setFatalErrorCallback([this, &fatal_error_mutex]
+                CurrentThread::setFatalErrorCallback([this]
                 {
                     std::lock_guard lock(fatal_error_mutex);
                     sendLogs();
@@ -310,8 +308,23 @@ void TCPHandler::runImpl()
             query_context->setReadTaskCallback([this]() -> String
             {
                 std::lock_guard lock(task_callback_mutex);
+
+                if (state.is_cancelled)
+                    return {};
+
                 sendReadTaskRequestAssumeLocked();
                 return receiveReadTaskResponseAssumeLocked();
+            });
+
+            query_context->setMergeTreeReadTaskCallback([this](PartitionReadRequest request) -> std::optional<PartitionReadResponse>
+            {
+                std::lock_guard lock(task_callback_mutex);
+
+                if (state.is_cancelled)
+                    return std::nullopt;
+
+                sendMergeTreeReadTaskRequstAssumeLocked(std::move(request));
+                return receivePartitionMergeTreeReadTaskResponseAssumeLocked();
             });
 
             /// Processing Query
@@ -336,7 +349,7 @@ void TCPHandler::runImpl()
                 /// Should not check for cancel in case of input.
                 if (!state.need_receive_data_for_input)
                 {
-                    auto callback = [this, &fatal_error_mutex]()
+                    auto callback = [this]()
                     {
                         std::lock_guard lock(fatal_error_mutex);
 
@@ -663,10 +676,13 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
         Block block;
         while (executor.pull(block, interactive_delay / 1000))
         {
-            std::lock_guard lock(task_callback_mutex);
+            std::unique_lock lock(task_callback_mutex);
 
             if (isQueryCancelled())
             {
+                /// Several callback like callback for parallel reading could be called from inside the pipeline
+                /// and we have to unlock the mutex from our side to prevent deadlock.
+                lock.unlock();
                 /// A packet was received requesting to stop execution of the request.
                 executor.cancel();
                 break;
@@ -785,6 +801,15 @@ void TCPHandler::sendReadTaskRequestAssumeLocked()
     writeVarUInt(Protocol::Server::ReadTaskRequest, *out);
     out->next();
 }
+
+
+void TCPHandler::sendMergeTreeReadTaskRequstAssumeLocked(PartitionReadRequest request)
+{
+    writeVarUInt(Protocol::Server::MergeTreeReadTaskRequest, *out);
+    request.serialize(*out);
+    out->next();
+}
+
 
 void TCPHandler::sendProfileInfo(const ProfileInfo & info)
 {
@@ -922,28 +947,27 @@ void TCPHandler::sendProfileEvents()
     ThreadIdToCountersSnapshot new_snapshots;
     ProfileEventsSnapshot group_snapshot;
     {
-        std::lock_guard guard(thread_group->mutex);
-        snapshots.reserve(thread_group->threads.size());
-        for (auto * thread : thread_group->threads)
+        auto stats = thread_group->getProfileEventsCountersAndMemoryForThreads();
+        snapshots.reserve(stats.size());
+
+        for (auto & stat : stats)
         {
-            auto const thread_id = thread->thread_id;
+            auto const thread_id = stat.thread_id;
             if (thread_id == current_thread_id)
                 continue;
             auto current_time = time(nullptr);
-            auto counters = thread->performance_counters.getPartiallyAtomicSnapshot();
-            auto memory_usage = thread->memory_tracker.get();
             auto previous_snapshot = last_sent_snapshots.find(thread_id);
             auto increment =
                 previous_snapshot != last_sent_snapshots.end()
-                ? CountersIncrement(counters, previous_snapshot->second)
-                : CountersIncrement(counters);
+                ? CountersIncrement(stat.counters, previous_snapshot->second)
+                : CountersIncrement(stat.counters);
             snapshots.push_back(ProfileEventsSnapshot{
                 thread_id,
                 std::move(increment),
-                memory_usage,
+                stat.memory_usage,
                 current_time
             });
-            new_snapshots[thread_id] = std::move(counters);
+            new_snapshots[thread_id] = std::move(stat.counters);
         }
 
         group_snapshot.thread_id    = 0;
@@ -1293,6 +1317,35 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked()
         throw Exception("Protocol version for distributed processing mismatched", ErrorCodes::UNKNOWN_PROTOCOL);
     String response;
     readStringBinary(response, *in);
+    return response;
+}
+
+
+std::optional<PartitionReadResponse> TCPHandler::receivePartitionMergeTreeReadTaskResponseAssumeLocked()
+{
+    UInt64 packet_type = 0;
+    readVarUInt(packet_type, *in);
+    if (packet_type != Protocol::Client::MergeTreeReadTaskResponse)
+    {
+        if (packet_type == Protocol::Client::Cancel)
+        {
+            state.is_cancelled = true;
+            /// For testing connection collector.
+            if (sleep_in_receive_cancel.totalMilliseconds())
+            {
+                std::chrono::milliseconds ms(sleep_in_receive_cancel.totalMilliseconds());
+                std::this_thread::sleep_for(ms);
+            }
+            return std::nullopt;
+        }
+        else
+        {
+            throw Exception(fmt::format("Received {} packet after requesting read task",
+                    Protocol::Client::toString(packet_type)), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+        }
+    }
+    PartitionReadResponse response;
+    response.deserialize(*in);
     return response;
 }
 
@@ -1697,7 +1750,7 @@ bool TCPHandler::isQueryCancelled()
                 return true;
 
             default:
-                throw NetException("Unknown packet from client", ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+                throw NetException("Unknown packet from client " + toString(packet_type), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
         }
     }
 

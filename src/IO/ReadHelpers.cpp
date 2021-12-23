@@ -1211,4 +1211,96 @@ void skipToNextRowOrEof(PeekableReadBuffer & buf, const String & row_after_delim
     }
 }
 
+
+template <char opening_bracket, char closing_bracket>
+static void readQuotedFieldInBrackets(String & s, ReadBuffer & buf)
+{
+    assertChar(opening_bracket, buf);
+    s.push_back(opening_bracket);
+
+    size_t balance = 1;
+
+    while (!buf.eof() && balance)
+    {
+        char * next_pos = find_first_symbols<'\'', opening_bracket, closing_bracket>(buf.position(), buf.buffer().end());
+        appendToStringOrVector(s, buf, next_pos);
+        buf.position() = next_pos;
+
+        if (!buf.hasPendingData())
+            continue;
+
+        s.push_back(*buf.position());
+
+        if (*buf.position() == '\'')
+        {
+            readQuotedStringInto<false>(s, buf);
+            s.push_back('\'');
+        }
+        else if (*buf.position() == opening_bracket)
+        {
+            ++balance;
+            ++buf.position();
+        }
+        else if (*buf.position() == closing_bracket)
+        {
+            --balance;
+            ++buf.position();
+        }
+    }
+}
+
+void readQuotedFieldIntoString(String & s, ReadBuffer & buf)
+{
+    s.clear();
+
+    if (buf.eof())
+        return;
+
+    /// Possible values in 'Quoted' field:
+    /// - Strings: '...'
+    /// - Arrays: [...]
+    /// - Tuples: (...)
+    /// - Maps: {...}
+    /// - NULL
+    /// - Number: integer, float, decimal.
+
+    if (*buf.position() == '\'')
+        readQuotedString(s, buf);
+    else if (*buf.position() == '[')
+        readQuotedFieldInBrackets<'[', ']'>(s, buf);
+    else if (*buf.position() == '(')
+        readQuotedFieldInBrackets<'(', ')'>(s, buf);
+    else if (*buf.position() == '{')
+        readQuotedFieldInBrackets<'{', '}'>(s, buf);
+    else if (checkCharCaseInsensitive('n', buf))
+    {
+        /// NULL or NaN
+        if (checkCharCaseInsensitive('u', buf))
+        {
+            assertStringCaseInsensitive("ll", buf);
+            s.append("NULL");
+        }
+        else
+        {
+            assertStringCaseInsensitive("an", buf);
+            s.append("NaN");
+        }
+    }
+    else
+    {
+        /// It's an integer, float or decimal. They all can be parsed as float.
+        /// Use PeekableReadBuffer to copy field to string after parsing.
+        PeekableReadBuffer peekable_buf(buf);
+        peekable_buf.setCheckpoint();
+        Float64 tmp;
+        readFloatText(tmp, peekable_buf);
+        peekable_buf.makeContinuousMemoryFromCheckpointToPos();
+        auto * end = peekable_buf.position();
+        peekable_buf.rollbackToCheckpoint();
+        s.append(peekable_buf.position(), end);
+        peekable_buf.position() = end;
+    }
+}
+
+
 }
