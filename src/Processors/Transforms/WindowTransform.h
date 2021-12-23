@@ -30,7 +30,7 @@ struct WindowFunctionWorkspace
     std::vector<size_t> argument_column_indices;
 
     // Will not be initialized for a pure window function.
-    AlignedBuffer aggregate_function_state;
+    mutable AlignedBuffer aggregate_function_state;
 
     // Argument columns. Be careful, this is a per-block cache.
     std::vector<const IColumn *> argument_columns;
@@ -39,6 +39,7 @@ struct WindowFunctionWorkspace
 
 struct WindowTransformBlock
 {
+    Columns original_input_columns;
     Columns input_columns;
     MutableColumns output_columns;
 
@@ -80,8 +81,10 @@ struct RowNumber
  * the order of input data. This property also trivially holds for the ROWS and
  * GROUPS frames. For the RANGE frame, the proof requires the additional fact
  * that the ranges are specified in terms of (the single) ORDER BY column.
+ *
+ * `final` is so that the isCancelled() is devirtualized, we call it every row.
  */
-class WindowTransform : public IProcessor /* public ISimpleTransform */
+class WindowTransform final : public IProcessor
 {
 public:
     WindowTransform(
@@ -139,7 +142,9 @@ public:
     }
 
     const Columns & inputAt(const RowNumber & x) const
-    { return const_cast<WindowTransform *>(this)->inputAt(x); }
+    {
+        return const_cast<WindowTransform *>(this)->inputAt(x);
+    }
 
     auto & blockAt(const uint64_t block_number)
     {
@@ -149,13 +154,19 @@ public:
     }
 
     const auto & blockAt(const uint64_t block_number) const
-    { return const_cast<WindowTransform *>(this)->blockAt(block_number); }
+    {
+        return const_cast<WindowTransform *>(this)->blockAt(block_number);
+    }
 
     auto & blockAt(const RowNumber & x)
-    { return blockAt(x.block); }
+    {
+        return blockAt(x.block);
+    }
 
     const auto & blockAt(const RowNumber & x) const
-    { return const_cast<WindowTransform *>(this)->blockAt(x); }
+    {
+        return const_cast<WindowTransform *>(this)->blockAt(x);
+    }
 
     size_t blockRowsNumber(const RowNumber & x) const
     {
@@ -208,8 +219,8 @@ public:
 #endif
     }
 
-    auto moveRowNumber(const RowNumber & _x, int offset) const;
-    auto moveRowNumberNoCheck(const RowNumber & _x, int offset) const;
+    auto moveRowNumber(const RowNumber & _x, int64_t offset) const;
+    auto moveRowNumberNoCheck(const RowNumber & _x, int64_t offset) const;
 
     void assertValid(const RowNumber & x) const
     {
@@ -225,10 +236,14 @@ public:
     }
 
     RowNumber blocksEnd() const
-    { return RowNumber{first_block_number + blocks.size(), 0}; }
+    {
+        return RowNumber{first_block_number + blocks.size(), 0};
+    }
 
     RowNumber blocksBegin() const
-    { return RowNumber{first_block_number, 0}; }
+    {
+        return RowNumber{first_block_number, 0};
+    }
 
 public:
     /*

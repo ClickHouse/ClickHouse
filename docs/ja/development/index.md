@@ -9,4 +9,4 @@ toc_title: "\u96A0\u3057"
 
 # ClickHouse開発 {#clickhouse-development}
 
-[元の記事](https://clickhouse.tech/docs/en/development/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/development/) <!--hide-->

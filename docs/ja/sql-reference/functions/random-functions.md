@@ -62,4 +62,4 @@ FROM numbers(3)
 └────────────┴────────────┴──────────────┴────────────────┴─────────────────┴──────────────────────┘
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/random_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/random_functions/) <!--hide-->

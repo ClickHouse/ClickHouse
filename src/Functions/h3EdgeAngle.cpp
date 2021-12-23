@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
+#include "config_functions.h"
 
 #if USE_H3
 
@@ -10,7 +8,7 @@
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
-#include <common/range.h>
+#include <base/range.h>
 
 #include <constants.h>
 #include <h3api.h>
@@ -38,14 +36,16 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * arg = arguments[0].get();
         if (!WhichDataType(arg).isUInt8())
             throw Exception(
-                "Illegal type " + arg->getName() + " of argument " + std::to_string(1) + " of function " + getName() + ". Must be UInt8",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument {} of function {}. Must be UInt8",
+                arg->getName(), 1, getName());
 
         return std::make_shared<DataTypeFloat64>();
     }
@@ -58,15 +58,17 @@ public:
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
-        for (const auto row : collections::range(0, input_rows_count))
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
             const int resolution = col_hindex->getUInt(row);
             if (resolution > MAX_H3_RES)
-                throw Exception("The argument 'resolution' (" + toString(resolution) + ") of function " + getName()
-                    + " is out of bounds because the maximum resolution in H3 library is " + toString(MAX_H3_RES), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+                throw Exception(
+                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                    "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is ",
+                    resolution, getName(), MAX_H3_RES);
 
             // Numerical constant is 180 degrees / pi / Earth radius, Earth radius is from h3 sources
-            Float64 res = 8.99320592271288084e-6 * edgeLengthM(resolution);
+            Float64 res = 8.99320592271288084e-6 * getHexagonEdgeLengthAvgM(resolution);
 
             dst_data[row] = res;
         }

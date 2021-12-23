@@ -3,26 +3,31 @@
 #include <map>
 #include <shared_mutex>
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <Core/Defines.h>
 #include <Storages/IStorage.h>
+#include <Formats/IndexForNativeFormat.h>
 #include <Common/FileChecker.h>
 #include <Common/escapeForFileName.h>
 
 
 namespace DB
 {
+struct IndexForNativeFormat;
+
 /** Implements a table engine that is suitable for small chunks of the log.
   * In doing so, stores all the columns in a single Native file, with a nearby index.
   */
 class StorageStripeLog final : public shared_ptr_helper<StorageStripeLog>, public IStorage
 {
     friend class StripeLogSource;
-    friend class StripeLogBlockOutputStream;
+    friend class StripeLogSink;
     friend struct shared_ptr_helper<StorageStripeLog>;
 
 public:
+    ~StorageStripeLog() override;
+
     String getName() const override { return "StripeLog"; }
 
     Pipe read(
@@ -34,7 +39,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
@@ -44,6 +49,9 @@ public:
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder&) override;
+
+    BackupEntries backup(const ASTs & partitions, ContextPtr context) override;
+    RestoreDataTasks restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context) override;
 
 protected:
     StorageStripeLog(
@@ -57,19 +65,37 @@ protected:
         size_t max_compress_block_size_);
 
 private:
-    struct ColumnData
-    {
-        String data_file_path;
-    };
-    using Files = std::map<String, ColumnData>; /// file name -> column data
+    using ReadLock = std::shared_lock<std::shared_timed_mutex>;
+    using WriteLock = std::unique_lock<std::shared_timed_mutex>;
 
-    DiskPtr disk;
+    /// Reads the index file if it hasn't read yet.
+    /// It is done lazily, so that with a large number of tables, the server starts quickly.
+    void loadIndices(std::chrono::seconds lock_timeout);
+    void loadIndices(const WriteLock &);
+
+    /// Saves the index file.
+    void saveIndices(const WriteLock &);
+
+    /// Removes all unsaved indices.
+    void removeUnsavedIndices(const WriteLock &);
+
+    /// Saves the sizes of the data and index files.
+    void saveFileSizes(const WriteLock &);
+
+    const DiskPtr disk;
     String table_path;
 
-    size_t max_compress_block_size;
-
+    String data_file_path;
+    String index_file_path;
     FileChecker file_checker;
-    std::shared_timed_mutex rwlock;
+
+    IndexForNativeFormat indices;
+    std::atomic<bool> indices_loaded = false;
+    size_t num_indices_saved = 0;
+
+    const size_t max_compress_block_size;
+
+    mutable std::shared_timed_mutex rwlock;
 
     Poco::Logger * log;
 };

@@ -8,9 +8,9 @@ toc_title: "Mac OS X\u7528\u306ELinux\u4E0A\u3067ClickHouse\u3092\u69CB\u7BC9\u3
 
 # Mac OS X用のLinux上でClickHouseを構築する方法 {#how-to-build-clickhouse-on-linux-for-mac-os-x}
 
-これは、Linuxマシンを使用してビルドする場合のためのものです `clickhouse` これは、Linuxサーバー上で実行される継続的な統合チェックを目的としています。 Mac OS X上でClickHouseを直接ビルドする場合は、次の手順に進みます [別の命令](build-osx.md).
+これは、Linuxマシンを使用してビルドする場合のためのものです `clickhouse` これは、Linuxサーバー上で実行される継続的な統合チェックを目的としています。 Mac OS X上でClickHouseを直接ビルドする場合は、次の手順に進みます [別の命令](../development/build-osx.md).
 
-Mac OS X用のクロスビルドは [ビルド命令](build.md) 先について来い
+Mac OS X用のクロスビルドは [ビルド命令](../development/build.md) 先について来い
 
 # Clang-8をインストール {#install-clang-8}
 

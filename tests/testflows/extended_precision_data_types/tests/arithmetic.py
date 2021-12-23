@@ -141,7 +141,7 @@ def inline_check_dec(self, arithmetic_func, expected_result, node=None):
     if node is None:
         node = self.context.node
 
-    if arithmetic_func is 'negate' or arithmetic_func is 'abs':
+    if arithmetic_func in ['negate','abs']:
 
         with When(f"I check {arithmetic_func} with toDecimal256"):
             output = node.query(f"SELECT {arithmetic_func}(toDecimal256(1,0))").output

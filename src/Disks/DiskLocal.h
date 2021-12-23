@@ -1,10 +1,11 @@
 #pragma once
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 
 namespace DB
@@ -72,11 +73,8 @@ public:
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
-        size_t buf_size,
-        size_t estimated_size,
-        size_t aio_threshold,
-        size_t mmap_threshold,
-        MMappedFileCache * mmap_cache) const override;
+        const ReadSettings & settings,
+        std::optional<size_t> size) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -98,9 +96,14 @@ public:
 
     void truncateFile(const String & path, size_t size) override;
 
-    DiskType::Type getType() const override { return DiskType::Type::Local; }
+    DiskType getType() const override { return DiskType::Local; }
+    bool isRemote() const override { return false; }
+
+    bool supportZeroCopyReplication() const override { return false; }
 
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
+
+    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap &) override;
 
 private:
     bool tryReserve(UInt64 bytes);
@@ -108,7 +111,7 @@ private:
 private:
     const String name;
     const String disk_path;
-    const UInt64 keep_free_space_bytes;
+    std::atomic<UInt64> keep_free_space_bytes;
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
@@ -117,5 +120,6 @@ private:
 
     Poco::Logger * log = &Poco::Logger::get("DiskLocal");
 };
+
 
 }

@@ -1,12 +1,10 @@
 import logging
-import random
-import string
 import time
-import threading
 import os
 
 import pytest
 from helpers.cluster import ClickHouseCluster
+from helpers.utility import generate_values
 
 from pyhdfs import HdfsClient
 
@@ -43,23 +41,11 @@ FILES_OVERHEAD_PER_PART_WIDE = FILES_OVERHEAD_PER_COLUMN * 3 + 2 + 6 + 1
 FILES_OVERHEAD_PER_PART_COMPACT = 10 + 1
 
 
-def random_string(length):
-    letters = string.ascii_letters
-    return ''.join(random.choice(letters) for i in range(length))
-
-
-def generate_values(date_str, count, sign=1):
-    data = [[date_str, sign * (i + 1), random_string(10)] for i in range(count)]
-    data.sort(key=lambda tup: tup[1])
-    return ",".join(["('{}',{},'{}')".format(x, y, z) for x, y, z in data])
-
-
 @pytest.fixture(scope="module")
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance("node", main_configs=["configs/config.d/storage_conf.xml",
-                                                   "configs/config.d/log_conf.xml"], with_hdfs=True)
+        cluster.add_instance("node", main_configs=["configs/config.d/storage_conf.xml"], with_hdfs=True)
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
@@ -79,7 +65,7 @@ def wait_for_delete_hdfs_objects(cluster, expected, num_tries=30):
     while num_tries > 0:
         num_hdfs_objects = len(fs.listdir('/clickhouse'))
         if num_hdfs_objects == expected:
-            break;
+            break
         num_tries -= 1
         time.sleep(1)
     assert(len(fs.listdir('/clickhouse')) == expected)

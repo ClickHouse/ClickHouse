@@ -5,7 +5,7 @@
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/typeid_cast.h>
 #include <iostream>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 
 
 using namespace Coordination;
@@ -40,7 +40,7 @@ try
     }
 
 
-    ZooKeeper zk(nodes, {}, {}, {}, {5, 0}, {0, 50000}, {0, 50000});
+    ZooKeeper zk(nodes, {}, {}, {}, {5, 0}, {0, 50000}, {0, 50000}, nullptr);
 
     Poco::Event event(true);
 

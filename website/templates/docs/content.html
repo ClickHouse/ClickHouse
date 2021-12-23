@@ -1,5 +1,5 @@
-<div id="content-wrapper" class="{% if single_page %}col-md-10{% else %}col-md-8{% endif %} p-2 p-md-4">
-    <div id="content" class="mt-md-n3">
+<div id="content-wrapper" class="anchor-fixer {% if single_page %}col-md-10{% else %}col-md-8{% endif %} mt-5 p-2 p-md-4">
+    <div id="content">
         {% if not single_page %}
             {% set ancestors = page.ancestors|reverse|list %}
             {% if page.is_index %}

@@ -1071,6 +1071,8 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -1081,12 +1083,12 @@ public:
         const DataTypeTuple * right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].get());
 
         bool both_represented_by_number = arguments[0]->isValueRepresentedByNumber() && arguments[1]->isValueRepresentedByNumber();
-        bool has_date = left.isDate() || right.isDate();
+        bool has_date = left.isDateOrDate32() || right.isDateOrDate32();
 
         if (!((both_represented_by_number && !has_date)   /// Do not allow to compare date and number.
             || (left.isStringOrFixedString() || right.isStringOrFixedString())  /// Everything can be compared with string by conversion.
             /// You can compare the date, datetime, or datatime64 and an enumeration with a constant string.
-            || ((left.isDate() || left.isDateTime() || left.isDateTime64()) && (right.isDate() || right.isDateTime() || right.isDateTime64()) && left.idx == right.idx) /// only date vs date, or datetime vs datetime
+            || ((left.isDate() || left.isDate32() || left.isDateTime() || left.isDateTime64()) && (right.isDate() || right.isDate32() || right.isDateTime() || right.isDateTime64()) && left.idx == right.idx) /// only date vs date, or datetime vs datetime
             || (left.isUUID() && right.isUUID())
             || (left.isEnum() && right.isEnum() && arguments[0]->getName() == arguments[1]->getName()) /// only equivalent enum type values can be compared against
             || (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
@@ -1176,8 +1178,8 @@ public:
         const bool left_is_string = isStringOrFixedString(which_left);
         const bool right_is_string = isStringOrFixedString(which_right);
 
-        bool date_and_datetime = (which_left.idx != which_right.idx) && (which_left.isDate() || which_left.isDateTime() || which_left.isDateTime64())
-            && (which_right.isDate() || which_right.isDateTime() || which_right.isDateTime64());
+        bool date_and_datetime = (which_left.idx != which_right.idx) && (which_left.isDate() || which_left.isDate32() || which_left.isDateTime() || which_left.isDateTime64())
+            && (which_right.isDate() || which_right.isDate32() || which_right.isDateTime() || which_right.isDateTime64());
 
         ColumnPtr res;
         if (left_is_num && right_is_num && !date_and_datetime)
@@ -1218,17 +1220,38 @@ public:
         {
             return res;
         }
-        else if ((isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type))
-                 // Comparing Date and DateTime64 requires implicit conversion,
-                 // otherwise Date is treated as number.
-                 && !(date_and_datetime && (isDate(left_type) || isDate(right_type))))
+        else if ((isColumnedAsDecimal(left_type) || isColumnedAsDecimal(right_type)))
         {
-            // compare
-            if (!allowDecimalComparison(left_type, right_type) && !date_and_datetime)
-                throw Exception("No operation " + getName() + " between " + left_type->getName() + " and " + right_type->getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            // Comparing Date/Date32 and DateTime64 requires implicit conversion,
+            if (date_and_datetime && (isDateOrDate32(left_type) || isDateOrDate32(right_type)))
+            {
+                DataTypePtr common_type = getLeastSupertype({left_type, right_type});
+                ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, common_type);
+                ColumnPtr c1_converted = castColumn(col_with_type_and_name_right, common_type);
+                return executeDecimal({c0_converted, common_type, "left"}, {c1_converted, common_type, "right"});
+            }
+            else
+            {
+                // compare
+                if (!allowDecimalComparison(left_type, right_type) && !date_and_datetime)
+                    throw Exception(
+                        "No operation " + getName() + " between " + left_type->getName() + " and " + right_type->getName(),
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                return executeDecimal(col_with_type_and_name_left, col_with_type_and_name_right);
+            }
 
-            return executeDecimal(col_with_type_and_name_left, col_with_type_and_name_right);
+        }
+        else if (date_and_datetime)
+        {
+            DataTypePtr common_type = getLeastSupertype({left_type, right_type});
+            ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, common_type);
+            ColumnPtr c1_converted = castColumn(col_with_type_and_name_right, common_type);
+            if (!((res = executeNumLeftType<UInt32>(c0_converted.get(), c1_converted.get()))
+                  || (res = executeNumLeftType<UInt64>(c0_converted.get(), c1_converted.get()))
+                  || (res = executeNumLeftType<Int32>(c0_converted.get(), c1_converted.get()))
+                  || (res = executeDecimal({c0_converted, common_type, "left"}, {c1_converted, common_type, "right"}))))
+                throw Exception("Date related common types can only be UInt32/UInt64/Int32/Decimal", ErrorCodes::LOGICAL_ERROR);
+            return res;
         }
         else if (left_type->equals(*right_type))
         {
@@ -1265,23 +1288,7 @@ public:
         assert(2 == types.size() && 2 == values.size());
 
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
-        auto * x = values[0];
-        auto * y = values[1];
-        if (!types[0]->equals(*types[1]))
-        {
-            llvm::Type * common;
-            if (x->getType()->isIntegerTy() && y->getType()->isIntegerTy())
-                common = b.getIntNTy(std::max(
-                    /// if one integer has a sign bit, make sure the other does as well. llvm generates optimal code
-                    /// (e.g. uses overflow flag on x86) for (word size + 1)-bit integer operations.
-                    x->getType()->getIntegerBitWidth() + (!typeIsSigned(*types[0]) && typeIsSigned(*types[1])),
-                    y->getType()->getIntegerBitWidth() + (!typeIsSigned(*types[1]) && typeIsSigned(*types[0]))));
-            else
-                /// (double, float) or (double, int_N where N <= double's mantissa width) -> double
-                common = b.getDoubleTy();
-            x = nativeCast(b, types[0], x, common);
-            y = nativeCast(b, types[1], y, common);
-        }
+        auto [x, y] = nativeCastToCommon(b, types[0], values[0], types[1], values[1]);
         auto * result = CompileOp<Op>::compile(b, x, y, typeIsSigned(*types[0]) || typeIsSigned(*types[1]));
         return b.CreateSelect(result, b.getInt8(1), b.getInt8(0));
     }

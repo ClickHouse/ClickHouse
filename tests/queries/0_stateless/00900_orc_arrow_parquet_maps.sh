@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -19,9 +20,9 @@ formats="Arrow Parquet ORC";
 for format in ${formats}; do
     echo $format
     
-    ${CLICKHOUSE_CLIENT} --query="SELECT * FROM maps FORMAT Parquet" > "${CLICKHOUSE_TMP}"/maps
+    ${CLICKHOUSE_CLIENT} --query="SELECT * FROM maps FORMAT $format" > "${CLICKHOUSE_TMP}"/maps
     ${CLICKHOUSE_CLIENT} --query="TRUNCATE TABLE maps"
-    cat "${CLICKHOUSE_TMP}"/maps | ${CLICKHOUSE_CLIENT} -q "INSERT INTO maps FORMAT Parquet"
+    cat "${CLICKHOUSE_TMP}"/maps | ${CLICKHOUSE_CLIENT} -q "INSERT INTO maps FORMAT $format"
     ${CLICKHOUSE_CLIENT} --query="SELECT * FROM maps"
 done
 

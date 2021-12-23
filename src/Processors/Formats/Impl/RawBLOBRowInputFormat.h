@@ -16,8 +16,10 @@ class RawBLOBRowInputFormat : public IRowInputFormat
 public:
     RawBLOBRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_);
 
-    bool readRow(MutableColumns & columns, RowReadExtension &) override;
     String getName() const override { return "RawBLOBRowInputFormat"; }
+
+private:
+    bool readRow(MutableColumns & columns, RowReadExtension &) override;
 };
 
 }

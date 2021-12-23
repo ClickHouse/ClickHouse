@@ -19,6 +19,8 @@ The following operations with [partitions](../../../engines/table-engines/merget
 -   [UNFREEZE PARTITION](#alter_unfreeze-partition) — Removes a backup of a partition.
 -   [FETCH PARTITION\|PART](#alter_fetch-partition) — Downloads a part or partition from another server.
 -   [MOVE PARTITION\|PART](#alter_move-partition) — Move partition/data part to another disk or volume.
+-   [UPDATE IN PARTITION](#update-in-partition) — Update data inside the partition by condition.
+-   [DELETE IN PARTITION](#delete-in-partition) — Delete data inside the partition by condition.
 
 <!-- -->
 
@@ -86,7 +88,7 @@ ALTER TABLE visits ATTACH PART 201901_2_2_0;
 
 Read more about setting the partition expression in a section [How to specify the partition expression](#alter-how-to-specify-part-expr).
 
-This query is replicated. The replica-initiator checks whether there is data in the `detached` directory. 
+This query is replicated. The replica-initiator checks whether there is data in the `detached` directory.
 If data exists, the query checks its integrity. If everything is correct, the query adds the data to the table.
 
 If the non-initiator replica, receiving the attach command, finds the part with the correct checksums in its own `detached` folder, it attaches the data without fetching it from other replicas.
@@ -153,7 +155,7 @@ ALTER TABLE visits CLEAR COLUMN hour in PARTITION 201902
 ## FREEZE PARTITION {#alter_freeze-partition}
 
 ``` sql
-ALTER TABLE table_name FREEZE [PARTITION partition_expr]
+ALTER TABLE table_name FREEZE [PARTITION partition_expr] [WITH NAME 'backup_name']
 ```
 
 This query creates a local backup of a specified partition. If the `PARTITION` clause is omitted, the query creates the backup of all partitions at once.
@@ -167,6 +169,7 @@ At the time of execution, for a data snapshot, the query creates hardlinks to a 
 
 -   `/var/lib/clickhouse/` is the working ClickHouse directory specified in the config.
 -   `N` is the incremental number of the backup.
+-   if the `WITH NAME` parameter is specified, then the value of the `'backup_name'` parameter is used instead of the incremental number. 
 
 !!! note "Note"
     If you use [a set of disks for data storage in a table](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes), the `shadow/N` directory appears on every disk, storing data parts that matched by the `PARTITION` expression.

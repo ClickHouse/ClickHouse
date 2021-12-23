@@ -25,7 +25,7 @@ def round_int_inline(self, func, expected_result, supported, int_type, min, max,
     if node is None:
         node = self.context.node
 
-    if func is 'roundDown':
+    if func == 'roundDown':
 
         with When(f"I check roundDown with {int_type}"):
             node.query(f"SELECT roundDown(to{int_type}(1), [0,2]), roundDown(to{int_type}(\'{max}\'), [0,2]), roundDown(to{int_type}(\'{min}\'), [0,2])",
@@ -62,7 +62,7 @@ def round_int_table(self, func, expected_result, supported, int_type, min, max, 
     with Given("I have a table"):
         table(name = table_name, data_type = int_type)
 
-    if func is 'roundDown':
+    if func == 'roundDown':
 
         for value in [1,max,min]:
 
@@ -101,7 +101,7 @@ def round_dec_inline(self, func, expected_result, supported, node=None):
     if node is None:
         node = self.context.node
 
-    if func is 'roundDown':
+    if func == 'roundDown':
 
         with When(f"I check roundDown with Decimal256"):
             node.query(f"""SELECT roundDown(toDecimal256(1,0), [toDecimal256(0,0),toDecimal256(2,0)]),
@@ -142,7 +142,7 @@ def round_dec_table(self, func, expected_result, supported, node=None):
     with Given("I have a table"):
         table(name = table_name, data_type = 'Decimal256(0)')
 
-    if func is 'roundDown':
+    if func == 'roundDown':
 
         for value in [1, max, min]:
 

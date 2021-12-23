@@ -1,13 +1,14 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/Defines.h>
-#include <Core/TypeListNumber.h>
+#include <base/TypeLists.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
+#include <Common/NaNUtils.h>
 #include <Common/SipHash.h>
-#include <common/range.h>
+#include <base/range.h>
 
 /// Warning in boost::geometry during template strategy substitution.
 #pragma GCC diagnostic push
@@ -40,6 +41,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -304,6 +306,13 @@ void PointInPolygonWithGrid<CoordinateType>::calcGridAttributes(
     y_scale = 1 / cell_height;
     x_shift = -min_corner.x();
     y_shift = -min_corner.y();
+
+    if (!(isFinite(x_scale)
+        && isFinite(y_scale)
+        && isFinite(x_shift)
+        && isFinite(y_shift)
+        && isFinite(grid_size)))
+        throw Exception("Polygon is not valid: bounding box is unbounded", ErrorCodes::BAD_ARGUMENTS);
 }
 
 template <typename CoordinateType>
@@ -358,7 +367,7 @@ bool PointInPolygonWithGrid<CoordinateType>::contains(CoordinateType x, Coordina
     if (has_empty_bound)
         return false;
 
-    if (std::isnan(x) || std::isnan(y))
+    if (!isFinite(x) || !isFinite(y))
         return false;
 
     CoordinateType float_row = (y + y_shift) * y_scale;
@@ -595,7 +604,7 @@ struct CallPointInPolygon<Type, Types ...>
     template <typename PointInPolygonImpl>
     static ColumnPtr call(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
     {
-        using Impl = typename ApplyTypeListForClass<CallPointInPolygon, TypeListNativeNumbers>::Type;
+        using Impl = TypeListChangeRoot<CallPointInPolygon, TypeListIntAndFloat>;
         if (auto column = typeid_cast<const ColumnVector<Type> *>(&x))
             return Impl::template call<Type>(*column, y, impl);
         return CallPointInPolygon<Types ...>::call(x, y, impl);
@@ -621,7 +630,7 @@ struct CallPointInPolygon<>
 template <typename PointInPolygonImpl>
 NO_INLINE ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
 {
-    using Impl = typename ApplyTypeListForClass<CallPointInPolygon, TypeListNativeNumbers>::Type;
+    using Impl = TypeListChangeRoot<CallPointInPolygon, TypeListIntAndFloat>;
     return Impl::call(x, y, impl);
 }
 

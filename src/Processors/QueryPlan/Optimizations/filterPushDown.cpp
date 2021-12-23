@@ -7,10 +7,7 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
-#include <Processors/QueryPlan/FinishSortingStep.h>
-#include <Processors/QueryPlan/MergeSortingStep.h>
-#include <Processors/QueryPlan/MergingSortedStep.h>
-#include <Processors/QueryPlan/PartialSortingStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -197,12 +194,13 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// Push down is for left table only. We need to update JoinStep for push down into right.
         /// Only inner and left join are supported. Other types may generate default values for left table keys.
         /// So, if we push down a condition like `key != 0`, not all rows may be filtered.
-        if (table_join.kind() == ASTTableJoin::Kind::Inner || table_join.kind() == ASTTableJoin::Kind::Left)
+        if (table_join.oneDisjunct() && (table_join.kind() == ASTTableJoin::Kind::Inner || table_join.kind() == ASTTableJoin::Kind::Left))
         {
             const auto & left_header = join->getInputStreams().front().header;
             const auto & res_header = join->getOutputStream().header;
             Names allowed_keys;
-            for (const auto & name : table_join.keyNamesLeft())
+            const auto & key_names_left = table_join.getOnlyClause().key_names_left;
+            for (const auto & name : key_names_left)
             {
                 /// Skip key if it is renamed.
                 /// I don't know if it is possible. Just in case.
@@ -236,10 +234,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     // {
     // }
 
-    if (typeid_cast<PartialSortingStep *>(child.get())
-        || typeid_cast<MergeSortingStep *>(child.get())
-        || typeid_cast<MergingSortedStep *>(child.get())
-        || typeid_cast<FinishSortingStep *>(child.get()))
+    if (typeid_cast<SortingStep *>(child.get()))
     {
         Names allowed_inputs = child->getOutputStream().header.getNames();
         if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs))

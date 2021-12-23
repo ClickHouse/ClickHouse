@@ -26,6 +26,7 @@ HTTPServerRequest::HTTPServerRequest(ContextPtr context, HTTPServerResponse & re
     /// Now that we know socket is still connected, obtain addresses
     client_address = session.clientAddress();
     server_address = session.serverAddress();
+    secure = session.socket().secure();
 
     auto receive_timeout = context->getSettingsRef().http_receive_timeout;
     auto send_timeout = context->getSettingsRef().http_send_timeout;

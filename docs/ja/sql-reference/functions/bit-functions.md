@@ -252,4 +252,4 @@ SELECT bitCount(333)
 └───────────────┘
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/bit_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/bit_functions/) <!--hide-->
