@@ -115,6 +115,8 @@ bool SquashingTransform::isEnoughSize(const Block & block)
 
     for (const auto & [column, type, name] : block)
     {
+        assert(column && "Invalid column in block");
+
         if (!rows)
             rows = column->size();
         else if (rows != column->size())

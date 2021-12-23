@@ -64,6 +64,7 @@ static void loadDatabase(
     }
     else if (fs::exists(fs::path(database_path)))
     {
+        /// TODO Remove this code (it's required for compatibility with versions older than 20.7)
         /// Database exists, but .sql file is absent. It's old-style Ordinary database (e.g. system or default)
         database_attach_query = "ATTACH DATABASE " + backQuoteIfNeed(database) + " ENGINE = Ordinary";
     }

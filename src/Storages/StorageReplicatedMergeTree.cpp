@@ -193,43 +193,54 @@ zkutil::ZooKeeperPtr StorageReplicatedMergeTree::getZooKeeper() const
     return res;
 }
 
-static std::string normalizeZooKeeperPath(std::string zookeeper_path)
+static std::string normalizeZooKeeperPath(std::string zookeeper_path, bool check_starts_with_slash, Poco::Logger * log = nullptr)
 {
     if (!zookeeper_path.empty() && zookeeper_path.back() == '/')
         zookeeper_path.resize(zookeeper_path.size() - 1);
     /// If zookeeper chroot prefix is used, path should start with '/', because chroot concatenates without it.
     if (!zookeeper_path.empty() && zookeeper_path.front() != '/')
+    {
+        /// Do not allow this for new tables, print warning for tables created in old versions
+        if (check_starts_with_slash)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path must starts with '/', got '{}'", zookeeper_path);
+        if (log)
+            LOG_WARNING(log, "ZooKeeper path ('{}') does not start with '/'. It will not be supported in future releases");
         zookeeper_path = "/" + zookeeper_path;
+    }
 
     return zookeeper_path;
 }
 
 static String extractZooKeeperName(const String & path)
 {
+    static constexpr auto default_zookeeper_name = "default";
     if (path.empty())
-        throw Exception("ZooKeeper path should not be empty", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    auto pos = path.find(':');
-    if (pos != String::npos)
+        throw Exception("ZooKeeper path should not be empty", ErrorCodes::BAD_ARGUMENTS);
+    if (path[0] == '/')
+        return default_zookeeper_name;
+    auto pos = path.find(":/");
+    if (pos != String::npos && pos < path.find('/'))
     {
         auto zookeeper_name = path.substr(0, pos);
         if (zookeeper_name.empty())
-            throw Exception("Zookeeper path should start with '/' or '<auxiliary_zookeeper_name>:/'", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("Zookeeper path should start with '/' or '<auxiliary_zookeeper_name>:/'", ErrorCodes::BAD_ARGUMENTS);
         return zookeeper_name;
     }
-    static constexpr auto default_zookeeper_name = "default";
     return default_zookeeper_name;
 }
 
-static String extractZooKeeperPath(const String & path)
+static String extractZooKeeperPath(const String & path, bool check_starts_with_slash, Poco::Logger * log = nullptr)
 {
     if (path.empty())
-        throw Exception("ZooKeeper path should not be empty", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    auto pos = path.find(':');
-    if (pos != String::npos)
+        throw Exception("ZooKeeper path should not be empty", ErrorCodes::BAD_ARGUMENTS);
+    if (path[0] == '/')
+        return normalizeZooKeeperPath(path, check_starts_with_slash, log);
+    auto pos = path.find(":/");
+    if (pos != String::npos && pos < path.find('/'))
     {
-        return normalizeZooKeeperPath(path.substr(pos + 1, String::npos));
+        return normalizeZooKeeperPath(path.substr(pos + 1, String::npos), check_starts_with_slash, log);
     }
-    return normalizeZooKeeperPath(path);
+    return normalizeZooKeeperPath(path, check_starts_with_slash, log);
 }
 
 static MergeTreePartInfo makeDummyDropRangeForMovePartitionOrAttachPartitionFrom(const String & partition_id)
@@ -276,7 +287,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
                     attach,
                     [this] (const std::string & name) { enqueuePartForCheck(name); })
     , zookeeper_name(extractZooKeeperName(zookeeper_path_))
-    , zookeeper_path(extractZooKeeperPath(zookeeper_path_))
+    , zookeeper_path(extractZooKeeperPath(zookeeper_path_, /* check_starts_with_slash */ !attach, log))
     , replica_name(replica_name_)
     , replica_path(fs::path(zookeeper_path) / "replicas" / replica_name_)
     , reader(*this)
@@ -1363,9 +1374,6 @@ void StorageReplicatedMergeTree::checkPartChecksumsAndAddCommitOps(const zkutil:
         const auto storage_settings_ptr = getSettings();
         String part_path = fs::path(replica_path) / "parts" / part_name;
 
-        //ops.emplace_back(zkutil::makeCheckRequest(
-        //    zookeeper_path + "/columns", expected_columns_version));
-
         if (storage_settings_ptr->use_minimalistic_part_header_in_zookeeper)
         {
             ops.emplace_back(zkutil::makeCreateRequest(
@@ -1411,6 +1419,7 @@ MergeTreeData::DataPartsVector StorageReplicatedMergeTree::checkPartChecksumsAnd
             Coordination::Requests new_ops;
             for (const String & part_path : absent_part_paths_on_replicas)
             {
+                /// NOTE Create request may fail with ZNONODE if replica is being dropped, we will throw an exception
                 new_ops.emplace_back(zkutil::makeCreateRequest(part_path, "", zkutil::CreateMode::Persistent));
                 new_ops.emplace_back(zkutil::makeRemoveRequest(part_path, -1));
             }
@@ -5733,7 +5742,7 @@ void StorageReplicatedMergeTree::fetchPartition(
     info.table_id.uuid = UUIDHelpers::Nil;
     auto expand_from = query_context->getMacros()->expand(from_, info);
     String auxiliary_zookeeper_name = extractZooKeeperName(expand_from);
-    String from = extractZooKeeperPath(expand_from);
+    String from = extractZooKeeperPath(expand_from, /* check_starts_with_slash */ true);
     if (from.empty())
         throw Exception("ZooKeeper path should not be empty", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -6390,12 +6399,12 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     MutableDataPartsVector dst_parts;
     Strings block_id_paths;
     Strings part_checksums;
+    auto zookeeper = getZooKeeper();
     std::vector<EphemeralLockInZooKeeper> ephemeral_locks;
 
     LOG_DEBUG(log, "Cloning {} parts", src_all_parts.size());
 
     static const String TMP_PREFIX = "tmp_replace_from_";
-    auto zookeeper = getZooKeeper();
 
     String alter_partition_version_path = zookeeper_path + "/alter_partition_version";
     Coordination::Stat alter_partition_version_stat;
@@ -6805,7 +6814,7 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     if (!move_part)
         throw Exception("MOVE PARTITION TO SHARD is not supported, use MOVE PART instead", ErrorCodes::NOT_IMPLEMENTED);
 
-    if (normalizeZooKeeperPath(zookeeper_path) == normalizeZooKeeperPath(to))
+    if (normalizeZooKeeperPath(zookeeper_path, /* check_starts_with_slash */ true) == normalizeZooKeeperPath(to, /* check_starts_with_slash */ true))
         throw Exception("Source and destination are the same", ErrorCodes::BAD_ARGUMENTS);
 
     auto zookeeper = getZooKeeper();
@@ -7501,13 +7510,23 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     {
         auto lock = lockParts();
         auto parts_in_partition = getDataPartsPartitionRange(new_part_info.partition_id);
-        if (parts_in_partition.empty())
+        if (!parts_in_partition.empty())
         {
-            LOG_WARNING(log, "Empty part {} is not created instead of lost part because there are no parts in partition {} (it's empty), resolve this manually using DROP PARTITION.", lost_part_name, new_part_info.partition_id);
+            new_data_part->partition = (*parts_in_partition.begin())->partition;
+        }
+        else if (auto parsed_partition = MergeTreePartition::tryParseValueFromID(
+                     new_part_info.partition_id,
+                     metadata_snapshot->getPartitionKey().sample_block))
+        {
+            new_data_part->partition = MergeTreePartition(*parsed_partition);
+        }
+        else
+        {
+            LOG_WARNING(log, "Empty part {} is not created instead of lost part because there are no parts in partition {} (it's empty), "
+                             "resolve this manually using DROP/DETACH PARTITION.", lost_part_name, new_part_info.partition_id);
             return false;
         }
 
-        new_data_part->partition = (*parts_in_partition.begin())->partition;
     }
 
     new_data_part->minmax_idx = std::move(minmax_idx);

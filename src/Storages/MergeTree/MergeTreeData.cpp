@@ -22,6 +22,8 @@
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -123,11 +125,15 @@ namespace ErrorCodes
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
+    extern const int INCORRECT_QUERY;
 }
 
 
 static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool allow_sampling_expression_not_in_primary_key)
 {
+    if (metadata.sampling_key.column_names.empty())
+        throw Exception("There are no columns in sampling expression", ErrorCodes::INCORRECT_QUERY);
+
     const auto & pk_sample_block = metadata.getPrimaryKey().sample_block;
     if (!pk_sample_block.has(metadata.sampling_key.column_names[0]) && !allow_sampling_expression_not_in_primary_key)
         throw Exception("Sampling expression must be present in the primary key", ErrorCodes::BAD_ARGUMENTS);
@@ -3097,7 +3103,6 @@ Pipe MergeTreeData::alterPartition(
 
                     case PartitionCommand::MoveDestinationType::TABLE:
                     {
-                        checkPartitionCanBeDropped(command.partition);
                         String dest_database = query_context->resolveDatabase(command.to_database);
                         auto dest_storage = DatabaseCatalog::instance().getTable({dest_database, command.to_table}, query_context);
                         movePartitionToTable(dest_storage, command.partition, query_context);
@@ -3119,7 +3124,8 @@ Pipe MergeTreeData::alterPartition(
 
             case PartitionCommand::REPLACE_PARTITION:
             {
-                checkPartitionCanBeDropped(command.partition);
+                if (command.replace)
+                    checkPartitionCanBeDropped(command.partition);
                 String from_database = query_context->resolveDatabase(command.from_database);
                 auto from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table}, query_context);
                 replacePartitionFrom(from_storage, command.partition, command.replace, query_context);
@@ -3198,39 +3204,54 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     /// Re-parse partition key fields using the information about expected field types.
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    size_t fields_count = metadata_snapshot->getPartitionKey().sample_block.columns();
+    const Block & key_sample_block = metadata_snapshot->getPartitionKey().sample_block;
+    size_t fields_count = key_sample_block.columns();
     if (partition_ast.fields_count != fields_count)
-        throw Exception(
-            "Wrong number of fields in the partition expression: " + toString(partition_ast.fields_count) +
-            ", must be: " + toString(fields_count),
-            ErrorCodes::INVALID_PARTITION_VALUE);
+        throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+                        "Wrong number of fields in the partition expression: {}, must be: {}",
+                        partition_ast.fields_count, fields_count);
 
-    const FormatSettings format_settings;
     Row partition_row(fields_count);
-
-    if (fields_count)
+    if (fields_count == 0)
     {
-        ReadBufferFromMemory left_paren_buf("(", 1);
-        ReadBufferFromMemory fields_buf(partition_ast.fields_str.data(), partition_ast.fields_str.size());
-        ReadBufferFromMemory right_paren_buf(")", 1);
-        ConcatReadBuffer buf({&left_paren_buf, &fields_buf, &right_paren_buf});
+        /// Function tuple(...) requires at least one argument, so empty key is a special case
+        assert(!partition_ast.fields_count);
+        assert(typeid_cast<ASTFunction *>(partition_ast.value.get()));
+        assert(partition_ast.value->as<ASTFunction>()->name == "tuple");
+        assert(partition_ast.value->as<ASTFunction>()->arguments);
+        bool empty_tuple = partition_ast.value->as<ASTFunction>()->arguments->children.empty();
+        if (!empty_tuple)
+            throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition key is empty, expected 'tuple()' as partition key");
+    }
+    else if (fields_count == 1)
+    {
+        ASTPtr partition_value_ast = partition_ast.value;
+        if (auto * tuple = partition_value_ast->as<ASTFunction>())
+        {
+            assert(tuple->name == "tuple");
+            assert(tuple->arguments);
+            assert(tuple->arguments->children.size() == 1);
+            partition_value_ast = tuple->arguments->children[0];
+        }
+        /// Simple partition key, need to evaluate and cast
+        Field partition_key_value = evaluateConstantExpression(partition_value_ast, local_context).first;
+        partition_row[0] = convertFieldToTypeOrThrow(partition_key_value, *key_sample_block.getByPosition(0).type);
+    }
+    else
+    {
+        /// Complex key, need to evaluate, untuple and cast
+        Field partition_key_value = evaluateConstantExpression(partition_ast.value, local_context).first;
+        if (partition_key_value.getType() != Field::Types::Tuple)
+            throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+                            "Expected tuple for complex partition key, got {}", partition_key_value.getTypeName());
 
-        auto input_format = FormatFactory::instance().getInput(
-            "Values",
-            buf,
-            metadata_snapshot->getPartitionKey().sample_block,
-            local_context,
-            local_context->getSettingsRef().max_block_size);
-        auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
-
-        auto block = input_stream->read();
-        if (!block || !block.rows())
-            throw Exception(
-                "Could not parse partition value: `" + partition_ast.fields_str + "`",
-                ErrorCodes::INVALID_PARTITION_VALUE);
+        const Tuple & tuple = partition_key_value.get<Tuple>();
+        if (tuple.size() != fields_count)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Wrong number of fields in the partition expression: {}, must be: {}", tuple.size(), fields_count);
 
         for (size_t i = 0; i < fields_count; ++i)
-            block.getByPosition(i).column->get(0, partition_row[i]);
+            partition_row[i] = convertFieldToTypeOrThrow(tuple[i], *key_sample_block.getByPosition(i).type);
     }
 
     MergeTreePartition partition(std::move(partition_row));
@@ -3242,11 +3263,10 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
         if (existing_part_in_partition && existing_part_in_partition->partition.value != partition.value)
         {
             WriteBufferFromOwnString buf;
-            writeCString("Parsed partition value: ", buf);
-            partition.serializeText(*this, buf, format_settings);
-            writeCString(" doesn't match partition value for an existing part with the same partition ID: ", buf);
-            writeString(existing_part_in_partition->name, buf);
-            throw Exception(buf.str(), ErrorCodes::INVALID_PARTITION_VALUE);
+            partition.serializeText(*this, buf, FormatSettings{});
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Parsed partition value: {} "
+                            "doesn't match partition value for an existing part with the same partition ID: {}",
+                            buf.str(), existing_part_in_partition->name);
         }
     }
 

@@ -818,11 +818,11 @@ JoinPtr SelectQueryExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain
     return table_join;
 }
 
-static JoinPtr tryGetStorageJoin(std::shared_ptr<TableJoin> analyzed_join)
+static JoinPtr tryGetStorageJoin(ContextPtr context, std::shared_ptr<TableJoin> analyzed_join)
 {
     if (auto * table = analyzed_join->joined_storage.get())
         if (auto * storage_join = dynamic_cast<StorageJoin *>(table))
-            return storage_join->getJoinLocked(analyzed_join);
+            return storage_join->getJoinLocked(analyzed_join, context);
     return {};
 }
 
@@ -887,7 +887,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table join was already created for query");
 
     /// Use StorageJoin if any.
-    JoinPtr join = tryGetStorageJoin(syntax->analyzed_join);
+    JoinPtr join = tryGetStorageJoin(getContext(), syntax->analyzed_join);
 
     if (!join)
     {
@@ -982,7 +982,12 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendPrewhere(
         /// Remove unused source_columns from prewhere actions.
         auto tmp_actions_dag = std::make_shared<ActionsDAG>(sourceColumns());
         getRootActions(select_query->prewhere(), only_types, tmp_actions_dag);
-        tmp_actions_dag->removeUnusedActions(NameSet{prewhere_column_name});
+        /// Constants cannot be removed since they can be used in other parts of the query.
+        /// And if they are not used anywhere, except PREWHERE, they will be removed on the next step.
+        tmp_actions_dag->removeUnusedActions(
+            NameSet{prewhere_column_name},
+            /* allow_remove_inputs= */ true,
+            /* allow_constant_folding= */ false);
 
         auto required_columns = tmp_actions_dag->getRequiredColumnsNames();
         NameSet required_source_columns(required_columns.begin(), required_columns.end());
@@ -1234,7 +1239,8 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
     {
         const auto * ast = child->as<ASTOrderByElement>();
         if (!ast || ast->children.empty())
-            throw Exception("Bad order expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
+            throw Exception("Bad ORDER BY expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
+
         ASTPtr order_expression = ast->children.at(0);
         step.addRequiredOutput(order_expression->getColumnName());
 
@@ -1459,18 +1465,15 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     const Settings & settings = context->getSettingsRef();
     const ConstStoragePtr & storage = query_analyzer.storage();
 
-    bool finalized = false;
-    size_t where_step_num = 0;
+    ssize_t prewhere_step_num = -1;
+    ssize_t where_step_num = -1;
+    ssize_t having_step_num = -1;
 
     auto finalize_chain = [&](ExpressionActionsChain & chain)
     {
         chain.finalize();
 
-        if (!finalized)
-        {
-            finalize(chain, where_step_num, query);
-            finalized = true;
-        }
+        finalize(chain, prewhere_step_num, where_step_num, having_step_num, query);
 
         chain.clear();
     };
@@ -1507,6 +1510,8 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
         if (auto actions = query_analyzer.appendPrewhere(chain, !first_stage, additional_required_columns_after_prewhere))
         {
+            /// Prewhere is always the first one.
+            prewhere_step_num = 0;
             prewhere_info = std::make_shared<PrewhereInfo>(actions, query.prewhere()->getColumnName());
 
             if (allowEarlyConstantFolding(*prewhere_info->prewhere_actions, settings))
@@ -1576,6 +1581,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
             if (query_analyzer.appendHaving(chain, only_types || !second_stage))
             {
+                having_step_num = chain.steps.size() - 1;
                 before_having = chain.getLastActions();
                 chain.addStep();
             }
@@ -1676,13 +1682,16 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     checkActions();
 }
 
-void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, size_t where_step_num, const ASTSelectQuery & query)
+void ExpressionAnalysisResult::finalize(
+    const ExpressionActionsChain & chain,
+    ssize_t & prewhere_step_num,
+    ssize_t & where_step_num,
+    ssize_t & having_step_num,
+    const ASTSelectQuery & query)
 {
-    size_t next_step_i = 0;
-
-    if (hasPrewhere())
+    if (prewhere_step_num >= 0)
     {
-        const ExpressionActionsChain::Step & step = *chain.steps.at(next_step_i++);
+        const ExpressionActionsChain::Step & step = *chain.steps.at(prewhere_step_num);
         prewhere_info->prewhere_actions->projectInput(false);
 
         NameSet columns_to_remove;
@@ -1695,12 +1704,21 @@ void ExpressionAnalysisResult::finalize(const ExpressionActionsChain & chain, si
         }
 
         columns_to_remove_after_prewhere = std::move(columns_to_remove);
+        prewhere_step_num = -1;
     }
 
-    if (hasWhere())
+    if (where_step_num >= 0)
     {
         where_column_name = query.where()->getColumnName();
         remove_where_filter = chain.steps.at(where_step_num)->required_output.find(where_column_name)->second;
+        where_step_num = -1;
+    }
+
+    if (having_step_num >= 0)
+    {
+        having_column_name = query.having()->getColumnName();
+        remove_having_filter = chain.steps.at(having_step_num)->required_output.find(having_column_name)->second;
+        having_step_num = -1;
     }
 }
 

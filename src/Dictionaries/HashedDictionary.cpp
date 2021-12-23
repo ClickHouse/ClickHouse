@@ -628,6 +628,11 @@ void HashedDictionary<dictionary_key_type, sparse>::calculateBytesAllocated()
 
         if (attributes[i].string_arena)
             bytes_allocated += attributes[i].string_arena->size();
+
+        bytes_allocated += sizeof(attributes[i].is_nullable_set);
+
+        if (attributes[i].is_nullable_set.has_value())
+            bytes_allocated = attributes[i].is_nullable_set->getBufferSizeInBytes();
     }
 
     bytes_allocated += complex_key_arena.size();
@@ -733,8 +738,18 @@ void registerDictionaryHashed(DictionaryFactory & factory)
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
 
-        const std::string & layout_prefix = sparse ? ".layout.sparse_hashed" : ".layout.hashed";
-        const bool preallocate = config.getBool(config_prefix + layout_prefix + ".preallocate", false);
+        std::string dictionary_layout_name;
+
+        if (dictionary_key_type == DictionaryKeyType::simple)
+            dictionary_layout_name = "hashed";
+        else
+            dictionary_layout_name = "complex_key_hashed";
+
+        if (sparse)
+            dictionary_layout_name = "sparse_" + dictionary_layout_name;
+
+        const std::string dictionary_layout_prefix = ".layout." + dictionary_layout_name;
+        const bool preallocate = config.getBool(config_prefix + dictionary_layout_prefix + ".preallocate", false);
 
         HashedDictionaryStorageConfiguration configuration{preallocate, require_nonempty, dict_lifetime};
 

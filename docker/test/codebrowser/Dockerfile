@@ -1,6 +1,6 @@
-# docker build --network=host -t yandex/clickhouse-codebrowser .
-# docker run --volume=path_to_repo:/repo_folder --volume=path_to_result:/test_output yandex/clickhouse-codebrowser
-FROM yandex/clickhouse-binary-builder
+# docker build --network=host -t clickhouse/codebrowser .
+# docker run --volume=path_to_repo:/repo_folder --volume=path_to_result:/test_output clickhouse/codebrowser
+FROM clickhouse/binary-builder
 
 RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 

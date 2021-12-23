@@ -544,13 +544,28 @@ bool StorageRabbitMQ::updateChannel(ChannelPtr & channel)
     try
     {
         channel = connection->createChannel();
-        return channel->usable();
+        return true;
     }
     catch (...)
     {
         tryLogCurrentException(log);
         return false;
     }
+}
+
+
+void StorageRabbitMQ::prepareChannelForBuffer(ConsumerBufferPtr buffer)
+{
+    if (!buffer)
+        return;
+
+    if (buffer->queuesCount() != queues.size())
+        buffer->updateQueues(queues);
+
+    buffer->updateAckTracker();
+
+    if (updateChannel(buffer->getChannel()))
+        buffer->setupChannel();
 }
 
 
@@ -662,9 +677,9 @@ void StorageRabbitMQ::startup()
             }
             catch (...)
             {
-                tryLogCurrentException(log);
                 if (!is_attach)
                     throw;
+                tryLogCurrentException(log);
             }
         }
         else
@@ -678,15 +693,14 @@ void StorageRabbitMQ::startup()
         try
         {
             auto buffer = createReadBuffer();
-            if (rabbit_is_ready)
-                buffer->initialize();
             pushReadBuffer(std::move(buffer));
             ++num_created_consumers;
         }
-        catch (const AMQP::Exception & e)
+        catch (...)
         {
-            LOG_ERROR(log, "Got AMQ exception {}", e.what());
-            throw;
+            if (!is_attach)
+                throw;
+            tryLogCurrentException(log);
         }
     }
 
@@ -820,9 +834,8 @@ ConsumerBufferPtr StorageRabbitMQ::popReadBuffer(std::chrono::milliseconds timeo
 
 ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
 {
-    ChannelPtr consumer_channel = connection->createChannel();
     return std::make_shared<ReadBufferFromRabbitMQConsumer>(
-        std::move(consumer_channel), connection->getHandler(), queues, ++consumer_id,
+        connection->getHandler(), queues, ++consumer_id,
         unique_strbase, log, row_delimiter, queue_size, stream_cancelled);
 }
 
@@ -870,7 +883,7 @@ void StorageRabbitMQ::initializeBuffers()
     if (!initialized)
     {
         for (const auto & buffer : buffers)
-            buffer->initialize();
+            prepareChannelForBuffer(buffer);
         initialized = true;
     }
 }
@@ -1024,25 +1037,14 @@ bool StorageRabbitMQ::streamToViews()
         /// Commit
         for (auto & stream : streams)
         {
-            if (stream->as<RabbitMQBlockInputStream>()->queueEmpty())
+            auto * rabbit_stream = stream->as<RabbitMQBlockInputStream>();
+            if (rabbit_stream->queueEmpty())
                 ++queue_empty;
 
-            if (stream->as<RabbitMQBlockInputStream>()->needChannelUpdate())
+            if (rabbit_stream->needChannelUpdate())
             {
-                auto buffer = stream->as<RabbitMQBlockInputStream>()->getBuffer();
-                if (buffer)
-                {
-                    if (buffer->queuesCount() != queues.size())
-                        buffer->updateQueues(queues);
-
-                    buffer->updateAckTracker();
-
-                    if (updateChannel(buffer->getChannel()))
-                    {
-                        LOG_TRACE(log, "Connection is active, but channel update is needed");
-                        buffer->setupChannel();
-                    }
-                }
+                auto buffer = rabbit_stream->getBuffer();
+                prepareChannelForBuffer(buffer);
             }
 
             /* false is returned by the sendAck function in only two cases:

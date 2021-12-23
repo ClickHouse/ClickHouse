@@ -225,6 +225,8 @@ struct ExpressionAnalysisResult
     ActionsDAGPtr before_where;
     ActionsDAGPtr before_aggregation;
     ActionsDAGPtr before_having;
+    String having_column_name;
+    bool remove_having_filter = false;
     ActionsDAGPtr before_window;
     ActionsDAGPtr before_order_by;
     ActionsDAGPtr before_limit_by;
@@ -270,7 +272,12 @@ struct ExpressionAnalysisResult
 
     void removeExtraColumns() const;
     void checkActions() const;
-    void finalize(const ExpressionActionsChain & chain, size_t where_step_num, const ASTSelectQuery & query);
+    void finalize(
+        const ExpressionActionsChain & chain,
+        ssize_t & prewhere_step_num,
+        ssize_t & where_step_num,
+        ssize_t & having_step_num,
+        const ASTSelectQuery & query);
 };
 
 /// SelectQuery specific ExpressionAnalyzer part.

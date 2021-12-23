@@ -52,9 +52,7 @@ struct EnabledQuota::Impl
             return end;
         }
 
-        /// We reset counters only if the interval's end has been calculated before.
-        /// If it hasn't we just calculate the interval's end for the first time and don't reset counters yet.
-        bool need_reset_counters = (end_loaded.count() != 0);
+        bool need_reset_counters = false;
 
         do
         {
@@ -66,7 +64,10 @@ struct EnabledQuota::Impl
             UInt64 n = static_cast<UInt64>((current_time - end + duration) / duration);
             end = end + duration * n;
             if (end_of_interval.compare_exchange_strong(end_loaded, end.time_since_epoch()))
+            {
+                need_reset_counters = true;
                 break;
+            }
             end = std::chrono::system_clock::time_point{end_loaded};
         }
         while (current_time >= end);
@@ -90,10 +91,18 @@ struct EnabledQuota::Impl
     {
         for (const auto & interval : intervals.intervals)
         {
+            if (!interval.end_of_interval.load().count())
+            {
+                /// We need to calculate end of the interval if it hasn't been calculated before.
+                bool dummy;
+                getEndOfInterval(interval, current_time, dummy);
+            }
+
             ResourceAmount used = (interval.used[resource_type] += amount);
             ResourceAmount max = interval.max[resource_type];
             if (!max)
                 continue;
+
             if (used > max)
             {
                 bool counters_were_reset = false;
@@ -118,10 +127,18 @@ struct EnabledQuota::Impl
     {
         for (const auto & interval : intervals.intervals)
         {
+            if (!interval.end_of_interval.load().count())
+            {
+                /// We need to calculate end of the interval if it hasn't been calculated before.
+                bool dummy;
+                getEndOfInterval(interval, current_time, dummy);
+            }
+
             ResourceAmount used = interval.used[resource_type];
             ResourceAmount max = interval.max[resource_type];
             if (!max)
                 continue;
+
             if (used > max)
             {
                 bool counters_were_reset = false;

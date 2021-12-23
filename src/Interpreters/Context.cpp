@@ -1750,6 +1750,9 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
     auto zookeeper = shared->auxiliary_zookeepers.find(name);
     if (zookeeper == shared->auxiliary_zookeepers.end())
     {
+        if (name.find(':') != std::string::npos || name.find('/') != std::string::npos)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid auxiliary ZooKeeper name {}: ':' and '/' are not allowed", name);
+
         const auto & config = shared->auxiliary_zookeepers_config ? *shared->auxiliary_zookeepers_config : getConfigRef();
         if (!config.has("auxiliary_zookeepers." + name))
             throw Exception(
@@ -1886,21 +1889,20 @@ std::optional<UInt16> Context::getTCPPortSecure() const
 
 std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
 {
-    auto res = getClusters()->getCluster(cluster_name);
-    if (res)
+    if (auto res = tryGetCluster(cluster_name))
         return res;
-    if (!cluster_name.empty())
-        res = tryGetReplicatedDatabaseCluster(cluster_name);
-    if (res)
-        return res;
-
     throw Exception("Requested cluster '" + cluster_name + "' not found", ErrorCodes::BAD_GET);
 }
 
 
 std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name) const
 {
-    return getClusters()->getCluster(cluster_name);
+    auto res = getClusters()->getCluster(cluster_name);
+    if (res)
+        return res;
+    if (!cluster_name.empty())
+        res = tryGetReplicatedDatabaseCluster(cluster_name);
+    return res;
 }
 
 
