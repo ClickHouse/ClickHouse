@@ -124,7 +124,12 @@ void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader &
                 "Object has ambiguous path: {}", paths[i].getPath());
 
         if (!column_object.hasSubcolumn(paths[i]))
-            column_object.addSubcolumn(paths[i], column_size);
+        {
+            if (paths[i].hasNested())
+                column_object.addNestedSubcolumn(paths[i], field_info, column_size);
+            else
+                column_object.addSubcolumn(paths[i], column_size);
+        }
 
         auto & subcolumn = column_object.getSubcolumn(paths[i]);
         assert(subcolumn.size() == column_size);

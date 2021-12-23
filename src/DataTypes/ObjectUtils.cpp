@@ -63,6 +63,26 @@ DataTypePtr getBaseTypeOfArray(const DataTypePtr & type)
     return last_array ? last_array->getNestedType() : type;
 }
 
+ColumnPtr getBaseColumnOfArray(const ColumnPtr & column)
+{
+    const ColumnArray * last_array = nullptr;
+    const IColumn * current_column = column.get();
+    while (const auto * column_array = checkAndGetColumn<ColumnArray>(current_column))
+    {
+        current_column = &column_array->getData();
+        last_array = column_array;
+    }
+
+    return last_array ? last_array->getDataPtr() : column;
+}
+
+ColumnPtr createArrayOfColumn(ColumnPtr column, size_t num_dimensions)
+{
+    for (size_t i = 0; i < num_dimensions; ++i)
+        column = ColumnArray::create(column);
+    return column;
+}
+
 DataTypePtr createArrayOfType(DataTypePtr type, size_t dimension)
 {
     for (size_t i = 0; i < dimension; ++i)
