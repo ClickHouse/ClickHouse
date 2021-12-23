@@ -5,6 +5,8 @@ import json
 import os
 import time
 import shutil
+from typing import List, Tuple
+
 from github import Github  # type: ignore
 
 from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP
@@ -16,14 +18,12 @@ from commit_status_helper import get_commit
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
 
-from typing import Optional, Tuple
-
 NAME = "Push to Dockerhub (actions)"
 
 
 def get_changed_docker_images(
     pr_info: PRInfo, repo_path: str, image_file_path: str
-) -> Tuple[list, str]:
+) -> Tuple[List[Tuple[str, str]], str]:
     images_dict = {}
     path_to_images_file = os.path.join(repo_path, image_file_path)
     if os.path.exists(path_to_images_file):
@@ -109,82 +109,65 @@ def get_changed_docker_images(
 
 def build_and_push_one_image(
     path_to_dockerfile_folder: str, image_name: str, version_string: str
-) -> Tuple[bool, str, Optional[str]]:
+) -> Tuple[bool, str]:
+    path = path_to_dockerfile_folder
     logging.info(
         "Building docker image %s with version %s from path %s",
         image_name,
         version_string,
-        path_to_dockerfile_folder,
+        path,
     )
     build_log = None
-    push_log = None
     with open(
-        "build_log_" + str(image_name).replace("/", "_") + "_" + version_string, "w"
+        "build_and_push_log_{}_{}".format(
+            str(image_name).replace("/", "_"), version_string
+        ),
+        "w",
     ) as pl:
-        cmd = "docker build --network=host -t {im}:{ver} {path}".format(
-            im=image_name, ver=version_string, path=path_to_dockerfile_folder
+        cmd = (
+            f"docker buildx build --builder default "
+            f"--tag {image_name}:{version_string} --push {path}"
         )
+        logging.info("Docker command to run: %s", cmd)
         retcode = subprocess.Popen(cmd, shell=True, stderr=pl, stdout=pl).wait()
         build_log = str(pl.name)
         if retcode != 0:
-            return False, build_log, None
-
-    with open(
-        "tag_log_" + str(image_name).replace("/", "_") + "_" + version_string, "w"
-    ) as pl:
-        cmd = "docker build --network=host -t {im} {path}".format(
-            im=image_name, path=path_to_dockerfile_folder
-        )
-        retcode = subprocess.Popen(cmd, shell=True, stderr=pl, stdout=pl).wait()
-        build_log = str(pl.name)
-        if retcode != 0:
-            return False, build_log, None
-
-    logging.info("Pushing image %s to dockerhub", image_name)
-
-    with open(
-        "push_log_" + str(image_name).replace("/", "_") + "_" + version_string, "w"
-    ) as pl:
-        cmd = "docker push {im}:{ver}".format(im=image_name, ver=version_string)
-        retcode = subprocess.Popen(cmd, shell=True, stderr=pl, stdout=pl).wait()
-        push_log = str(pl.name)
-        if retcode != 0:
-            return False, build_log, push_log
+            return False, build_log
 
     logging.info("Processing of %s successfully finished", image_name)
-    return True, build_log, push_log
+    return True, build_log
 
 
 def process_single_image(
-    versions: list, path_to_dockerfile_folder: str, image_name: str
-) -> list:
+    versions: List[str], path_to_dockerfile_folder: str, image_name: str
+) -> List[Tuple[str, str, str]]:
     logging.info("Image will be pushed with versions %s", ", ".join(versions))
     result = []
     for ver in versions:
         for i in range(5):
-            success, build_log, push_log = build_and_push_one_image(
+            success, build_log = build_and_push_one_image(
                 path_to_dockerfile_folder, image_name, ver
             )
             if success:
-                result.append((image_name + ":" + ver, build_log, push_log, "OK"))
+                result.append((image_name + ":" + ver, build_log, "OK"))
                 break
             logging.info(
                 "Got error will retry %s time and sleep for %s seconds", i, i * 5
             )
             time.sleep(i * 5)
         else:
-            result.append((image_name + ":" + ver, build_log, push_log, "FAIL"))
+            result.append((image_name + ":" + ver, build_log, "FAIL"))
 
     logging.info("Processing finished")
     return result
 
 
 def process_test_results(
-    s3_client: S3Helper, test_results: list, s3_path_prefix: str
-) -> Tuple[str, list]:
+    s3_client: S3Helper, test_results: List[Tuple[str, str, str]], s3_path_prefix: str
+) -> Tuple[str, List[Tuple[str, str]]]:
     overall_status = "success"
     processed_test_results = []
-    for image, build_log, push_log, status in test_results:
+    for image, build_log, status in test_results:
         if status != "OK":
             overall_status = "failure"
         url_part = ""
@@ -193,13 +176,6 @@ def process_test_results(
                 build_log, s3_path_prefix + "/" + os.path.basename(build_log)
             )
             url_part += '<a href="{}">build_log</a>'.format(build_url)
-        if push_log is not None and os.path.exists(push_log):
-            push_url = s3_client.upload_test_report_to_s3(
-                push_log, s3_path_prefix + "/" + os.path.basename(push_log)
-            )
-            if url_part:
-                url_part += ", "
-            url_part += '<a href="{}">push_log</a>'.format(push_url)
         if url_part:
             test_name = image + " (" + url_part + ")"
         else:
