@@ -38,7 +38,7 @@ bool StorageHiveMetadata::fromString(const String &buf)
 
 String StorageHiveMetadata::getVersion() const
 {
-    return std::to_string(getLastModificationTimestamp());
+    return std::to_string(last_modification_timestamp);
 }
 
 void registerStorageHiveMetadataCreator()
