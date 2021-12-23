@@ -145,18 +145,12 @@ def test_select(table_name="", schema="str String,numuint UInt32,numint Int32,do
 
     if table_name:
         get_ch_answer("drop table if exists {}".format(table_name))
-        if schema is None:
-            get_ch_answer("create table {} engine=URL('{}', 'CSV')".format(table_name, HTTP_SERVER_URL_STR))
-        else:
-            get_ch_answer("create table {} ({}) engine=URL('{}', 'CSV')".format(table_name, schema, HTTP_SERVER_URL_STR))
+        get_ch_answer("create table {} ({}) engine=URL('{}', 'CSV')".format(table_name, schema, HTTP_SERVER_URL_STR))
 
     for i in range(len(requests)):
         tbl = table_name
         if not tbl:
-            if schema is None:
-                tbl = "url('{addr}', 'CSV')".format(addr=HTTP_SERVER_URL_STR)
-            else:
-                tbl = "url('{addr}', 'CSV', '{schema}')".format(addr=HTTP_SERVER_URL_STR, schema=schema)
+            tbl = "url('{addr}', 'CSV', '{schema}')".format(addr=HTTP_SERVER_URL_STR, schema=schema)
         check_answers(requests[i].format(tbl=tbl), answers[i])
 
     if table_name:
@@ -196,12 +190,6 @@ def main():
         "select str,numuint,numint,double from {tbl} limit 1": test_data.split("\n")[0].replace(',', '\t'),
     }
 
-    select_only_requests_without_schema = {
-        "select * from {tbl}" : test_data.replace(',', '\t'),
-        "select column_2, count(*) from {tbl} group by column_2" : "2\t2",
-        "select * from {tbl} limit 1": test_data.split("\n")[0].replace(',', '\t'),
-    }
-
     insert_requests = [
         "insert into {tbl} values('Hello',10,-2,7.7)('World',10,-5,7.7)",
         "insert into {tbl} select 'Buy', number, 9-number, 9.9 from system.numbers limit 10",
@@ -213,16 +201,12 @@ def main():
         'select double, count(*) from {tbl} group by double': "7.7\t2\n9.9\t10"
     }
 
-    t = start_server(len(select_only_requests) * 2 + len(select_only_requests_without_schema) * 2 + 4 + (len(insert_requests) + len(select_requests)) * 2)
+    t = start_server(len(select_only_requests) * 2 + (len(insert_requests) + len(select_requests)) * 2)
     t.start()
     # test table with url engine
     test_select(table_name="test_table_select", requests=list(select_only_requests.keys()), answers=list(select_only_requests.values()), test_data=test_data)
     # test table function url
     test_select(requests=list(select_only_requests.keys()), answers=list(select_only_requests.values()), test_data=test_data)
-    # test table with url engine without schema
-    test_select(table_name="test_table_select", schema=None, requests=list(select_only_requests_without_schema.keys()), answers=list(select_only_requests_without_schema.values()), test_data=test_data)
-    # test table function url without schema
-    test_select(schema=None, requests=list(select_only_requests_without_schema.keys()), answers=list(select_only_requests_without_schema.values()), test_data=test_data)
     #test insert into table with url engine
     test_insert(table_name="test_table_insert", requests_insert=insert_requests, requests_select=list(select_requests.keys()), answers=list(select_requests.values()))
     #test insert into table function url
