@@ -39,6 +39,7 @@ void WriteBufferFromAzureBlobStorage::nextImpl()
     auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
 
     size_t read = 0;
+    std::vector<std::string> block_ids;
     while (read < len)
     {
         auto part_len = std::min(len - read, max_single_part_upload_size);
@@ -51,16 +52,8 @@ void WriteBufferFromAzureBlobStorage::nextImpl()
 
         read += part_len;
     }
-}
 
-
-void WriteBufferFromAzureBlobStorage::finalizeImpl()
-{
-    next();
-
-    auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
     block_blob_client.CommitBlockList(block_ids);
-    finalized = true;
 }
 
 }
