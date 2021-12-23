@@ -34,7 +34,7 @@ void RemoteFileMetadataFactory::registerRemoteFileMatadataCreator(const String &
     class_creators[name] = creator;
 }
 
-void registerStorageHiveMetadataCreator();
+extern void registerStorageHiveMetadataCreator();
 
 void registerRemoteFileMatadataCreators()
 {
