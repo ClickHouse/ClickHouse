@@ -8,8 +8,7 @@
 #include <Interpreters/ExternalLoaderDictionaryStorageConfigRepository.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/quoteString.h>
-#include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <IO/Operators.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 
@@ -165,13 +164,11 @@ Pipe StorageDictionary::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
-    const unsigned /*threads*/)
+    const unsigned threads)
 {
     auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
     auto dictionary = getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, local_context);
-    auto stream = dictionary->getBlockInputStream(column_names, max_block_size);
-    /// TODO: update dictionary interface for processors.
-    return Pipe(std::make_shared<SourceFromInputStream>(stream));
+    return dictionary->read(column_names, max_block_size, threads);
 }
 
 void StorageDictionary::shutdown()
@@ -195,10 +192,6 @@ void StorageDictionary::startup()
 
 void StorageDictionary::removeDictionaryConfigurationFromRepository()
 {
-    if (remove_repository_callback_executed)
-        return;
-
-    remove_repository_callback_executed = true;
     remove_repository_callback.reset();
 }
 
@@ -219,11 +212,40 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
     auto old_table_id = getStorageID();
     IStorage::renameInMemory(new_table_id);
 
-    if (configuration)
+    assert((location == Location::SameDatabaseAndNameAsDictionary) == (getConfiguration().get() != nullptr));
+    if (location != Location::SameDatabaseAndNameAsDictionary)
+        return;
+
+    /// It's DDL dictionary, need to update configuration and reload
+
+    bool move_to_atomic = old_table_id.uuid == UUIDHelpers::Nil && new_table_id.uuid != UUIDHelpers::Nil;
+    bool move_to_ordinary = old_table_id.uuid != UUIDHelpers::Nil && new_table_id.uuid == UUIDHelpers::Nil;
+    assert(old_table_id.uuid == new_table_id.uuid || move_to_atomic || move_to_ordinary);
+
     {
+        std::lock_guard<std::mutex> lock(dictionary_config_mutex);
+
         configuration->setString("dictionary.database", new_table_id.database_name);
         configuration->setString("dictionary.name", new_table_id.table_name);
+        if (move_to_atomic)
+            configuration->setString("dictionary.uuid", toString(new_table_id.uuid));
+        else if (move_to_ordinary)
+                configuration->remove("dictionary.uuid");
+    }
 
+    /// Dictionary is moving between databases of different engines or is renaming inside Ordinary database
+    bool recreate_dictionary = old_table_id.uuid == UUIDHelpers::Nil || new_table_id.uuid == UUIDHelpers::Nil;
+
+    if (recreate_dictionary)
+    {
+        /// It's too hard to update both name and uuid, better to reload dictionary with new name
+        removeDictionaryConfigurationFromRepository();
+        auto repository = std::make_unique<ExternalLoaderDictionaryStorageConfigRepository>(*this);
+        remove_repository_callback = getContext()->getExternalDictionariesLoader().addConfigRepository(std::move(repository));
+        /// Dictionary will be reloaded lazily to avoid exceptions in the middle of renaming
+    }
+    else
+    {
         const auto & external_dictionaries_loader = getContext()->getExternalDictionariesLoader();
         auto result = external_dictionaries_loader.getLoadResult(old_table_id.getInternalDictionaryName());
 

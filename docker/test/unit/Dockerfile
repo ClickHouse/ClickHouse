@@ -1,5 +1,5 @@
-# docker build -t yandex/clickhouse-unit-test .
-FROM yandex/clickhouse-stateless-test
+# docker build -t clickhouse/unit-test .
+FROM clickhouse/stateless-test
 
 RUN apt-get install gdb
 

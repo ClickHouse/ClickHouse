@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
@@ -8,8 +8,7 @@
 #include <Common/SimpleIncrement.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
-#include <Parsers/ASTFunction.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/ActionBlocker.h>
 #include <Interpreters/Cluster.h>
 
@@ -83,7 +82,7 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
-    QueryPipelinePtr distributedWrite(const ASTInsertQuery & query, ContextPtr context) override;
+    QueryPipelineBuilderPtr distributedWrite(const ASTInsertQuery & query, ContextPtr context) override;
 
     /// Removes temporary data in local filesystem.
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
@@ -94,13 +93,14 @@ public:
 
     /// in the sub-tables, you need to manually add and delete columns
     /// the structure of the sub-table is not checked
-    void alter(const AlterCommands & params, ContextPtr context, TableLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
     void startup() override;
     void shutdown() override;
+    void flush() override;
     void drop() override;
 
-    bool storesDataOnDisk() const override { return true; }
+    bool storesDataOnDisk() const override { return data_volume != nullptr; }
     Strings getDataPaths() const override;
 
     ActionLock getActionLock(StorageActionBlockType type) override;
@@ -135,7 +135,8 @@ private:
         const String & relative_data_path_,
         const DistributedSettings & distributed_settings_,
         bool attach_,
-        ClusterPtr owned_cluster_ = {});
+        ClusterPtr owned_cluster_ = {},
+        ASTPtr remote_table_function_ptr_ = {});
 
     StorageDistributed(
         const StorageID & id_,
@@ -173,8 +174,27 @@ private:
     /// - optimize_skip_unused_shards
     /// - force_optimize_skip_unused_shards
     ClusterPtr getOptimizedCluster(ContextPtr, const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query_ptr) const;
-    ClusterPtr
-    skipUnusedShards(ClusterPtr cluster, const ASTPtr & query_ptr, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) const;
+
+    ClusterPtr skipUnusedShards(
+        ClusterPtr cluster, const ASTPtr & query_ptr, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) const;
+
+    /// This method returns optimal query processing stage.
+    ///
+    /// Here is the list of stages (from the less optimal to more optimal):
+    /// - WithMergeableState
+    /// - WithMergeableStateAfterAggregation
+    /// - WithMergeableStateAfterAggregationAndLimit
+    /// - Complete
+    ///
+    /// Some simple queries w/o GROUP BY/DISTINCT can use more optimal stage.
+    ///
+    /// Also in case of optimize_distributed_group_by_sharding_key=1 the queries
+    /// with GROUP BY/DISTINCT sharding_key can also use more optimal stage.
+    /// (see also optimize_skip_unused_shards/allow_nondeterministic_optimize_skip_unused_shards)
+    ///
+    /// @return QueryProcessingStage or empty std::optoinal
+    /// (in this case regular WithMergeableState should be used)
+    std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, const Settings & settings) const;
 
     size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
 

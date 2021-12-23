@@ -1,11 +1,11 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/IColumnImpl.h>
-#include <DataStreams/ColumnGathererStream.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <common/map.h>
-#include <common/range.h>
+#include <base/map.h>
+#include <base/range.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
@@ -81,6 +81,11 @@ void ColumnMap::get(size_t n, Field & res) const
         getNestedData().get(offset + i, map[i]);
 }
 
+bool ColumnMap::isDefaultAt(size_t n) const
+{
+    return nested->isDefaultAt(n);
+}
+
 StringRef ColumnMap::getDataAt(size_t) const
 {
     throw Exception("Method getDataAt is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
@@ -147,6 +152,11 @@ ColumnPtr ColumnMap::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     auto filtered = nested->filter(filt, result_size_hint);
     return ColumnMap::create(filtered);
+}
+
+void ColumnMap::expand(const IColumn::Filter & mask, bool inverted)
+{
+    nested->expand(mask, inverted);
 }
 
 ColumnPtr ColumnMap::permute(const Permutation & perm, size_t limit) const
@@ -258,7 +268,7 @@ void ColumnMap::getExtremes(Field & min, Field & max) const
 
 void ColumnMap::forEachSubcolumn(ColumnCallback callback)
 {
-    nested->forEachSubcolumn(callback);
+    callback(nested);
 }
 
 bool ColumnMap::structureEquals(const IColumn & rhs) const
@@ -268,10 +278,23 @@ bool ColumnMap::structureEquals(const IColumn & rhs) const
     return false;
 }
 
+double ColumnMap::getRatioOfDefaultRows(double sample_ratio) const
+{
+    return getRatioOfDefaultRowsImpl<ColumnMap>(sample_ratio);
+}
+
+void ColumnMap::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
+{
+    return getIndicesOfNonDefaultRowsImpl<ColumnMap>(indices, from, limit);
+}
+
 ColumnPtr ColumnMap::compress() const
 {
     auto compressed = nested->compress();
-    return ColumnCompressed::create(size(), compressed->byteSize(), [compressed = std::move(compressed)]
+    const auto byte_size = compressed->byteSize();
+    /// The order of evaluation of function arguments is unspecified
+    /// and could cause interacting with object in moved-from state
+    return ColumnCompressed::create(size(), byte_size, [compressed = std::move(compressed)]
     {
         return ColumnMap::create(compressed->decompress());
     });

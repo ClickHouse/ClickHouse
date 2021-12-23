@@ -32,8 +32,9 @@ private:
     /// The size of the rows.
     const size_t n;
 
-    template <bool positive>
+    template <bool positive> struct Cmp;
     struct less;
+    struct greater;
 
     /** Create an empty column of strings of fixed-length `n` */
     ColumnFixedString(size_t n_) : n(n_) {}
@@ -86,6 +87,8 @@ public:
     {
         return StringRef(&chars[n * index], n);
     }
+
+    bool isDefaultAt(size_t index) const override;
 
     void insert(const Field & x) override;
 
@@ -147,6 +150,8 @@ public:
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 
+    void expand(const IColumn::Filter & mask, bool inverted) override;
+
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
@@ -170,6 +175,11 @@ public:
         chars.reserve(n * size);
     }
 
+    void resize(size_t size)
+    {
+        chars.resize(n * size);
+    }
+
     void getExtremes(Field & min, Field & max) const override;
 
     bool structureEquals(const IColumn & rhs) const override
@@ -177,6 +187,16 @@ public:
         if (auto rhs_concrete = typeid_cast<const ColumnFixedString *>(&rhs))
             return n == rhs_concrete->n;
         return false;
+    }
+
+    double getRatioOfDefaultRows(double sample_ratio) const override
+    {
+        return getRatioOfDefaultRowsImpl<ColumnFixedString>(sample_ratio);
+    }
+
+    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
+    {
+        return getIndicesOfNonDefaultRowsImpl<ColumnFixedString>(indices, from, limit);
     }
 
     bool canBeInsideNullable() const override { return true; }

@@ -127,4 +127,4 @@ $ cd ClickHouse
 $ ./release
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/development/build/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/development/build/) <!--hide-->

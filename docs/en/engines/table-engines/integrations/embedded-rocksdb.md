@@ -33,7 +33,7 @@ CREATE TABLE test
     `key` String,
     `v1` UInt32,
     `v2` String,
-    `v3` Float32,
+    `v3` Float32
 )
 ENGINE = EmbeddedRocksDB
 PRIMARY KEY key
@@ -81,4 +81,4 @@ You can also change any [rocksdb options](https://github.com/facebook/rocksdb/wi
 </rocksdb>
 ```
 
-[Original article](https://clickhouse.tech/docs/en/engines/table-engines/integrations/embedded-rocksdb/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/embedded-rocksdb/) <!--hide-->

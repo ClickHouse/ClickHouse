@@ -90,6 +90,7 @@ public:
     NamesAndTypesList getNamesAndTypesList() const;
     Names getNames() const;
     DataTypes getDataTypes() const;
+    Names getDataTypeNames() const;
 
     /// Returns number of rows from first column in block, not equal to nullptr. If no columns, returns 0.
     size_t rows() const;
@@ -152,6 +153,7 @@ public:
 private:
     void eraseImpl(size_t position);
     void initializeIndexByName();
+    void reserve(size_t count);
 
     /// This is needed to allow function execution over data.
     /// It is safe because functions does not change column names, so index is unaffected.
@@ -190,5 +192,15 @@ void assertCompatibleHeader(const Block & actual, const Block & desired, const s
 
 /// Calculate difference in structure of blocks and write description into output strings. NOTE It doesn't compare values of constant columns.
 void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out_lhs_diff, std::string & out_rhs_diff);
+
+void convertToFullIfSparse(Block & block);
+
+/// Helps in-memory storages to extract columns from block.
+/// Properly handles cases, when column is a subcolumn and when it is compressed.
+ColumnPtr getColumnFromBlock(const Block & block, const NameAndTypePair & column);
+
+/// Converts columns-constants to full columns ("materializes" them).
+Block materializeBlock(const Block & block);
+void materializeBlockInplace(Block & block);
 
 }

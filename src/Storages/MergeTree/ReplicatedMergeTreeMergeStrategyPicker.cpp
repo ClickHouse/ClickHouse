@@ -3,7 +3,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 
 
-#include <common/types.h>
+#include <base/types.h>
 #include <optional>
 #include <mutex>
 #include <city.h>
@@ -144,9 +144,14 @@ void ReplicatedMergeTreeMergeStrategyPicker::refreshState()
 
     if (current_replica_index_tmp < 0 || active_replicas_tmp.size() < 2)
     {
-        LOG_WARNING(storage.log, "Can't find current replica in the active replicas list, or too few active replicas to use execute_merges_on_single_replica_time_threshold!");
-        /// we can reset the settings w/o lock (it's atomic)
-        execute_merges_on_single_replica_time_threshold = 0;
+        if (execute_merges_on_single_replica_time_threshold > 0)
+        {
+            LOG_WARNING(storage.log, "Can't find current replica in the active replicas list, or too few active replicas to use 'execute_merges_on_single_replica_time_threshold'");
+            /// we can reset the settings w/o lock (it's atomic)
+            execute_merges_on_single_replica_time_threshold = 0;
+        }
+        /// default value of remote_fs_execute_merges_on_single_replica_time_threshold is not 0
+        /// so we write no warning in log here
         remote_fs_execute_merges_on_single_replica_time_threshold = 0;
         return;
     }

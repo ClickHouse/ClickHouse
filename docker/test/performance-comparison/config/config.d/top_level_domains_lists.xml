@@ -1,5 +1,5 @@
-<yandex>
+<clickhouse>
     <top_level_domains_lists>
         <public_suffix_list>public_suffix_list.dat</public_suffix_list>
     </top_level_domains_lists>
-</yandex>
+</clickhouse>

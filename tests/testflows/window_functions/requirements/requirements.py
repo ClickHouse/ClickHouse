@@ -49,7 +49,7 @@ RQ_SRS_019_ClickHouse_WindowFunctions_DistributedTables = Requirement(
     uid=None,
     description=(
         '[ClickHouse] SHALL support correct operation of [window functions] on\n'
-        '[Distributed](https://clickhouse.tech/docs/en/engines/table-engines/special/distributed/) table engine.\n'
+        '[Distributed](https://clickhouse.com/docs/en/engines/table-engines/special/distributed/) table engine.\n'
         '\n'
         ),
     link=None,
@@ -3209,72 +3209,72 @@ RQ_SRS_019_ClickHouse_WindowFunctions_AggregateFunctions = Requirement(
     description=(
         '[ClickHouse] SHALL support using aggregate functions over windows.\n'
         '\n'
-        '* [count](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/count/)\n'
-        '* [min](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/min/)\n'
-        '* [max](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/max/)\n'
-        '* [sum](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/sum/)\n'
-        '* [avg](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/avg/)\n'
-        '* [any](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/any/)\n'
-        '* [stddevPop](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/stddevpop/)\n'
-        '* [stddevSamp](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/stddevsamp/)\n'
-        '* [varPop(x)](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/varpop/)\n'
-        '* [varSamp](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/varsamp/)\n'
-        '* [covarPop](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/covarpop/)\n'
-        '* [covarSamp](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/covarsamp/)\n'
-        '* [anyHeavy](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/anyheavy/)\n'
-        '* [anyLast](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/anylast/)\n'
-        '* [argMin](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/argmin/)\n'
-        '* [argMax](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/argmax/)\n'
-        '* [avgWeighted](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/avgweighted/)\n'
-        '* [corr](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/corr/)\n'
-        '* [topK](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/topk/)\n'
-        '* [topKWeighted](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/topkweighted/)\n'
-        '* [groupArray](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/grouparray/)\n'
-        '* [groupUniqArray](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/groupuniqarray/)\n'
-        '* [groupArrayInsertAt](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/grouparrayinsertat/)\n'
-        '* [groupArrayMovingSum](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/grouparraymovingsum/)\n'
-        '* [groupArrayMovingAvg](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/grouparraymovingavg/)\n'
-        '* [groupArraySample](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/grouparraysample/)\n'
-        '* [groupBitAnd](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/groupbitand/)\n'
-        '* [groupBitOr](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/groupbitor/)\n'
-        '* [groupBitXor](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/groupbitxor/)\n'
-        '* [groupBitmap](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/groupbitmap/)\n'
-        '* [groupBitmapAnd](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/groupbitmapand/)\n'
-        '* [groupBitmapOr](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/groupbitmapor/)\n'
-        '* [groupBitmapXor](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/groupbitmapxor/)\n'
-        '* [sumWithOverflow](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/sumwithoverflow/)\n'
-        '* [deltaSum](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/deltasum/)\n'
-        '* [sumMap](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/summap/)\n'
-        '* [minMap](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/minmap/)\n'
-        '* [maxMap](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/maxmap/)\n'
-        '* [initializeAggregation](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/initializeAggregation/)\n'
-        '* [skewPop](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/skewpop/)\n'
-        '* [skewSamp](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/skewsamp/)\n'
-        '* [kurtPop](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/kurtpop/)\n'
-        '* [kurtSamp](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/kurtsamp/)\n'
-        '* [uniq](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/uniq/)\n'
-        '* [uniqExact](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/uniqexact/)\n'
-        '* [uniqCombined](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/uniqcombined/)\n'
-        '* [uniqCombined64](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/uniqcombined64/)\n'
-        '* [uniqHLL12](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/uniqhll12/)\n'
-        '* [quantile](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/quantile/)\n'
-        '* [quantiles](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/quantiles/)\n'
-        '* [quantileExact](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/quantileexact/)\n'
-        '* [quantileExactWeighted](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/quantileexactweighted/)\n'
-        '* [quantileTiming](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/quantiletiming/)\n'
-        '* [quantileTimingWeighted](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/quantiletimingweighted/)\n'
-        '* [quantileDeterministic](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/quantiledeterministic/)\n'
-        '* [quantileTDigest](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/quantiletdigest/)\n'
-        '* [quantileTDigestWeighted](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/quantiletdigestweighted/)\n'
-        '* [simpleLinearRegression](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/simplelinearregression/)\n'
-        '* [stochasticLinearRegression](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/stochasticlinearregression/)\n'
-        '* [stochasticLogisticRegression](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/stochasticlogisticregression/)\n'
-        '* [categoricalInformationValue](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/stochasticlogisticregression/)\n'
-        '* [studentTTest](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/studentttest/)\n'
-        '* [welchTTest](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/welchttest/)\n'
-        '* [mannWhitneyUTest](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/mannwhitneyutest/)\n'
-        '* [median](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/median/)\n'
-        '* [rankCorr](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/rankCorr/)\n'
+        '* [count](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/count/)\n'
+        '* [min](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/min/)\n'
+        '* [max](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/max/)\n'
+        '* [sum](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/sum/)\n'
+        '* [avg](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/avg/)\n'
+        '* [any](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/any/)\n'
+        '* [stddevPop](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/stddevpop/)\n'
+        '* [stddevSamp](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/stddevsamp/)\n'
+        '* [varPop(x)](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/varpop/)\n'
+        '* [varSamp](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/varsamp/)\n'
+        '* [covarPop](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/covarpop/)\n'
+        '* [covarSamp](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/covarsamp/)\n'
+        '* [anyHeavy](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/anyheavy/)\n'
+        '* [anyLast](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/anylast/)\n'
+        '* [argMin](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/argmin/)\n'
+        '* [argMax](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/argmax/)\n'
+        '* [avgWeighted](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/avgweighted/)\n'
+        '* [corr](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/corr/)\n'
+        '* [topK](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/topk/)\n'
+        '* [topKWeighted](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/topkweighted/)\n'
+        '* [groupArray](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/grouparray/)\n'
+        '* [groupUniqArray](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupuniqarray/)\n'
+        '* [groupArrayInsertAt](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/grouparrayinsertat/)\n'
+        '* [groupArrayMovingSum](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/grouparraymovingsum/)\n'
+        '* [groupArrayMovingAvg](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/grouparraymovingavg/)\n'
+        '* [groupArraySample](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/grouparraysample/)\n'
+        '* [groupBitAnd](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupbitand/)\n'
+        '* [groupBitOr](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupbitor/)\n'
+        '* [groupBitXor](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupbitxor/)\n'
+        '* [groupBitmap](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupbitmap/)\n'
+        '* [groupBitmapAnd](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupbitmapand/)\n'
+        '* [groupBitmapOr](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupbitmapor/)\n'
+        '* [groupBitmapXor](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupbitmapxor/)\n'
+        '* [sumWithOverflow](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/sumwithoverflow/)\n'
+        '* [deltaSum](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/deltasum/)\n'
+        '* [sumMap](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/summap/)\n'
+        '* [minMap](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/minmap/)\n'
+        '* [maxMap](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/maxmap/)\n'
+        '* [initializeAggregation](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/initializeAggregation/)\n'
+        '* [skewPop](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/skewpop/)\n'
+        '* [skewSamp](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/skewsamp/)\n'
+        '* [kurtPop](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/kurtpop/)\n'
+        '* [kurtSamp](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/kurtsamp/)\n'
+        '* [uniq](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/uniq/)\n'
+        '* [uniqExact](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/uniqexact/)\n'
+        '* [uniqCombined](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/uniqcombined/)\n'
+        '* [uniqCombined64](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/uniqcombined64/)\n'
+        '* [uniqHLL12](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/uniqhll12/)\n'
+        '* [quantile](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantile/)\n'
+        '* [quantiles](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantiles/)\n'
+        '* [quantileExact](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantileexact/)\n'
+        '* [quantileExactWeighted](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantileexactweighted/)\n'
+        '* [quantileTiming](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantiletiming/)\n'
+        '* [quantileTimingWeighted](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantiletimingweighted/)\n'
+        '* [quantileDeterministic](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantiledeterministic/)\n'
+        '* [quantileTDigest](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantiletdigest/)\n'
+        '* [quantileTDigestWeighted](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantiletdigestweighted/)\n'
+        '* [simpleLinearRegression](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/simplelinearregression/)\n'
+        '* [stochasticLinearRegression](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/stochasticlinearregression/)\n'
+        '* [stochasticLogisticRegression](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/stochasticlogisticregression/)\n'
+        '* [categoricalInformationValue](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/stochasticlogisticregression/)\n'
+        '* [studentTTest](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/studentttest/)\n'
+        '* [welchTTest](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/welchttest/)\n'
+        '* [mannWhitneyUTest](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/mannwhitneyutest/)\n'
+        '* [median](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/median/)\n'
+        '* [rankCorr](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/rankCorr/)\n'
         '\n'
         ),
     link=None,
@@ -3291,17 +3291,17 @@ RQ_SRS_019_ClickHouse_WindowFunctions_AggregateFunctions_Combinators = Requireme
     description=(
         '[ClickHouse] SHALL support aggregate functions with combinator prefixes over windows.\n'
         '\n'
-        '* [-If](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-if)\n'
-        '* [-Array](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-array)\n'
-        '* [-SimpleState](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-simplestate)\n'
-        '* [-State](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-state)\n'
-        '* [-Merge](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/combinators/#aggregate_functions_combinators-merge)\n'
-        '* [-MergeState](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/combinators/#aggregate_functions_combinators-mergestate)\n'
-        '* [-ForEach](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-foreach)\n'
-        '* [-Distinct](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-distinct)\n'
-        '* [-OrDefault](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-ordefault)\n'
-        '* [-OrNull](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-ornull)\n'
-        '* [-Resample](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-resample)\n'
+        '* [-If](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-if)\n'
+        '* [-Array](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-array)\n'
+        '* [-SimpleState](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-simplestate)\n'
+        '* [-State](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-state)\n'
+        '* [-Merge](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#aggregate_functions_combinators-merge)\n'
+        '* [-MergeState](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#aggregate_functions_combinators-mergestate)\n'
+        '* [-ForEach](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-foreach)\n'
+        '* [-Distinct](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-distinct)\n'
+        '* [-OrDefault](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-ordefault)\n'
+        '* [-OrNull](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-ornull)\n'
+        '* [-Resample](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-resample)\n'
         '\n'
         ),
     link=None,
@@ -3318,13 +3318,13 @@ RQ_SRS_019_ClickHouse_WindowFunctions_AggregateFunctions_Parametric = Requiremen
     description=(
         '[ClickHouse] SHALL support parametric aggregate functions over windows.\n'
         '\n'
-        '* [histogram](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/parametric-functions/#histogram)\n'
-        '* [sequenceMatch(pattern)(timestamp, cond1, cond2, ...)](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/parametric-functions/#function-sequencematch)\n'
-        '* [sequenceCount(pattern)(time, cond1, cond2, ...)](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/parametric-functions/#function-sequencecount)\n'
-        '* [windowFunnel](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/parametric-functions/#windowfunnel)\n'
-        '* [retention](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/parametric-functions/#retention)\n'
-        '* [uniqUpTo(N)(x)](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/parametric-functions/#uniquptonx)\n'
-        '* [sumMapFiltered(keys_to_keep)(keys, values)](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/parametric-functions/#summapfilteredkeys-to-keepkeys-values)\n'
+        '* [histogram](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions/#histogram)\n'
+        '* [sequenceMatch(pattern)(timestamp, cond1, cond2, ...)](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions/#function-sequencematch)\n'
+        '* [sequenceCount(pattern)(time, cond1, cond2, ...)](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions/#function-sequencecount)\n'
+        '* [windowFunnel](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions/#windowfunnel)\n'
+        '* [retention](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions/#retention)\n'
+        '* [uniqUpTo(N)(x)](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions/#uniquptonx)\n'
+        '* [sumMapFiltered(keys_to_keep)(keys, values)](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions/#summapfilteredkeys-to-keepkeys-values)\n'
         '\n'
         ),
     link=None,
@@ -3916,7 +3916,7 @@ table engines such as `MergeTree`.
 version: 1.0
 
 [ClickHouse] SHALL support correct operation of [window functions] on
-[Distributed](https://clickhouse.tech/docs/en/engines/table-engines/special/distributed/) table engine.
+[Distributed](https://clickhouse.com/docs/en/engines/table-engines/special/distributed/) table engine.
 
 ### Window Specification
 
@@ -5911,72 +5911,72 @@ version: 1.0
 
 [ClickHouse] SHALL support using aggregate functions over windows.
 
-* [count](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/count/)
-* [min](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/min/)
-* [max](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/max/)
-* [sum](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/sum/)
-* [avg](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/avg/)
-* [any](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/any/)
-* [stddevPop](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/stddevpop/)
-* [stddevSamp](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/stddevsamp/)
-* [varPop(x)](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/varpop/)
-* [varSamp](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/varsamp/)
-* [covarPop](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/covarpop/)
-* [covarSamp](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/covarsamp/)
-* [anyHeavy](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/anyheavy/)
-* [anyLast](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/anylast/)
-* [argMin](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/argmin/)
-* [argMax](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/argmax/)
-* [avgWeighted](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/avgweighted/)
-* [corr](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/corr/)
-* [topK](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/topk/)
-* [topKWeighted](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/topkweighted/)
-* [groupArray](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/grouparray/)
-* [groupUniqArray](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/groupuniqarray/)
-* [groupArrayInsertAt](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/grouparrayinsertat/)
-* [groupArrayMovingSum](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/grouparraymovingsum/)
-* [groupArrayMovingAvg](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/grouparraymovingavg/)
-* [groupArraySample](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/grouparraysample/)
-* [groupBitAnd](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/groupbitand/)
-* [groupBitOr](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/groupbitor/)
-* [groupBitXor](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/groupbitxor/)
-* [groupBitmap](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/groupbitmap/)
-* [groupBitmapAnd](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/groupbitmapand/)
-* [groupBitmapOr](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/groupbitmapor/)
-* [groupBitmapXor](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/groupbitmapxor/)
-* [sumWithOverflow](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/sumwithoverflow/)
-* [deltaSum](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/deltasum/)
-* [sumMap](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/summap/)
-* [minMap](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/minmap/)
-* [maxMap](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/maxmap/)
-* [initializeAggregation](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/initializeAggregation/)
-* [skewPop](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/skewpop/)
-* [skewSamp](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/skewsamp/)
-* [kurtPop](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/kurtpop/)
-* [kurtSamp](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/kurtsamp/)
-* [uniq](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/uniq/)
-* [uniqExact](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/uniqexact/)
-* [uniqCombined](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/uniqcombined/)
-* [uniqCombined64](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/uniqcombined64/)
-* [uniqHLL12](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/uniqhll12/)
-* [quantile](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/quantile/)
-* [quantiles](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/quantiles/)
-* [quantileExact](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/quantileexact/)
-* [quantileExactWeighted](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/quantileexactweighted/)
-* [quantileTiming](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/quantiletiming/)
-* [quantileTimingWeighted](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/quantiletimingweighted/)
-* [quantileDeterministic](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/quantiledeterministic/)
-* [quantileTDigest](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/quantiletdigest/)
-* [quantileTDigestWeighted](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/quantiletdigestweighted/)
-* [simpleLinearRegression](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/simplelinearregression/)
-* [stochasticLinearRegression](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/stochasticlinearregression/)
-* [stochasticLogisticRegression](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/stochasticlogisticregression/)
-* [categoricalInformationValue](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/stochasticlogisticregression/)
-* [studentTTest](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/studentttest/)
-* [welchTTest](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/welchttest/)
-* [mannWhitneyUTest](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/mannwhitneyutest/)
-* [median](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/median/)
-* [rankCorr](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/rankCorr/)
+* [count](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/count/)
+* [min](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/min/)
+* [max](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/max/)
+* [sum](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/sum/)
+* [avg](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/avg/)
+* [any](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/any/)
+* [stddevPop](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/stddevpop/)
+* [stddevSamp](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/stddevsamp/)
+* [varPop(x)](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/varpop/)
+* [varSamp](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/varsamp/)
+* [covarPop](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/covarpop/)
+* [covarSamp](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/covarsamp/)
+* [anyHeavy](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/anyheavy/)
+* [anyLast](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/anylast/)
+* [argMin](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/argmin/)
+* [argMax](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/argmax/)
+* [avgWeighted](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/avgweighted/)
+* [corr](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/corr/)
+* [topK](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/topk/)
+* [topKWeighted](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/topkweighted/)
+* [groupArray](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/grouparray/)
+* [groupUniqArray](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupuniqarray/)
+* [groupArrayInsertAt](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/grouparrayinsertat/)
+* [groupArrayMovingSum](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/grouparraymovingsum/)
+* [groupArrayMovingAvg](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/grouparraymovingavg/)
+* [groupArraySample](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/grouparraysample/)
+* [groupBitAnd](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupbitand/)
+* [groupBitOr](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupbitor/)
+* [groupBitXor](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupbitxor/)
+* [groupBitmap](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupbitmap/)
+* [groupBitmapAnd](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupbitmapand/)
+* [groupBitmapOr](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupbitmapor/)
+* [groupBitmapXor](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/groupbitmapxor/)
+* [sumWithOverflow](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/sumwithoverflow/)
+* [deltaSum](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/deltasum/)
+* [sumMap](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/summap/)
+* [minMap](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/minmap/)
+* [maxMap](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/maxmap/)
+* [initializeAggregation](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/initializeAggregation/)
+* [skewPop](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/skewpop/)
+* [skewSamp](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/skewsamp/)
+* [kurtPop](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/kurtpop/)
+* [kurtSamp](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/kurtsamp/)
+* [uniq](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/uniq/)
+* [uniqExact](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/uniqexact/)
+* [uniqCombined](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/uniqcombined/)
+* [uniqCombined64](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/uniqcombined64/)
+* [uniqHLL12](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/uniqhll12/)
+* [quantile](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantile/)
+* [quantiles](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantiles/)
+* [quantileExact](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantileexact/)
+* [quantileExactWeighted](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantileexactweighted/)
+* [quantileTiming](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantiletiming/)
+* [quantileTimingWeighted](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantiletimingweighted/)
+* [quantileDeterministic](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantiledeterministic/)
+* [quantileTDigest](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantiletdigest/)
+* [quantileTDigestWeighted](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/quantiletdigestweighted/)
+* [simpleLinearRegression](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/simplelinearregression/)
+* [stochasticLinearRegression](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/stochasticlinearregression/)
+* [stochasticLogisticRegression](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/stochasticlogisticregression/)
+* [categoricalInformationValue](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/stochasticlogisticregression/)
+* [studentTTest](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/studentttest/)
+* [welchTTest](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/welchttest/)
+* [mannWhitneyUTest](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/mannwhitneyutest/)
+* [median](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/median/)
+* [rankCorr](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/rankCorr/)
 
 ##### Combinators
 
@@ -5985,17 +5985,17 @@ version: 1.0
 
 [ClickHouse] SHALL support aggregate functions with combinator prefixes over windows.
 
-* [-If](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-if)
-* [-Array](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-array)
-* [-SimpleState](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-simplestate)
-* [-State](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-state)
-* [-Merge](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/combinators/#aggregate_functions_combinators-merge)
-* [-MergeState](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/combinators/#aggregate_functions_combinators-mergestate)
-* [-ForEach](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-foreach)
-* [-Distinct](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-distinct)
-* [-OrDefault](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-ordefault)
-* [-OrNull](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-ornull)
-* [-Resample](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-resample)
+* [-If](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-if)
+* [-Array](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-array)
+* [-SimpleState](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-simplestate)
+* [-State](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-state)
+* [-Merge](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#aggregate_functions_combinators-merge)
+* [-MergeState](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#aggregate_functions_combinators-mergestate)
+* [-ForEach](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-foreach)
+* [-Distinct](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-distinct)
+* [-OrDefault](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-ordefault)
+* [-OrNull](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-ornull)
+* [-Resample](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/combinators/#agg-functions-combinator-resample)
 
 ##### Parametric
 
@@ -6004,13 +6004,13 @@ version: 1.0
 
 [ClickHouse] SHALL support parametric aggregate functions over windows.
 
-* [histogram](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/parametric-functions/#histogram)
-* [sequenceMatch(pattern)(timestamp, cond1, cond2, ...)](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/parametric-functions/#function-sequencematch)
-* [sequenceCount(pattern)(time, cond1, cond2, ...)](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/parametric-functions/#function-sequencecount)
-* [windowFunnel](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/parametric-functions/#windowfunnel)
-* [retention](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/parametric-functions/#retention)
-* [uniqUpTo(N)(x)](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/parametric-functions/#uniquptonx)
-* [sumMapFiltered(keys_to_keep)(keys, values)](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/parametric-functions/#summapfilteredkeys-to-keepkeys-values)
+* [histogram](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions/#histogram)
+* [sequenceMatch(pattern)(timestamp, cond1, cond2, ...)](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions/#function-sequencematch)
+* [sequenceCount(pattern)(time, cond1, cond2, ...)](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions/#function-sequencecount)
+* [windowFunnel](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions/#windowfunnel)
+* [retention](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions/#retention)
+* [uniqUpTo(N)(x)](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions/#uniquptonx)
+* [sumMapFiltered(keys_to_keep)(keys, values)](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/parametric-functions/#summapfilteredkeys-to-keepkeys-values)
 
 ## References
 
@@ -6029,8 +6029,8 @@ version: 1.0
 [partition_clause]: #partition-clause
 [order_clause]: #order-clause
 [frame_clause]: #frame-clause
-[window functions]: https://clickhouse.tech/docs/en/sql-reference/window-functions/
-[ClickHouse]: https://clickhouse.tech
+[window functions]: https://clickhouse.com/docs/en/sql-reference/window-functions/
+[ClickHouse]: https://clickhouse.com
 [GitHub Repository]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/window_functions/requirements/requirements.md
 [Revision History]: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/window_functions/requirements/requirements.md
 [Git]: https://git-scm.com/

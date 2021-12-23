@@ -3,21 +3,21 @@ toc_priority: 29
 toc_title: MaterializedMySQL
 ---
 
-# MaterializedMySQL {#materialized-mysql}
+# [experimental] MaterializedMySQL {#materialized-mysql}
 
-**This is experimental feature that should not be used in production.**
+!!! warning "Warning"
+    This is an experimental feature that should not be used in production.
 
 Creates ClickHouse database with all the tables existing in MySQL, and all the data in those tables.
 
 ClickHouse server works as MySQL replica. It reads binlog and performs DDL and DML queries.
-
-This feature is experimental.
 
 ## Creating a Database {#creating-a-database}
 
 ``` sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
 ENGINE = MaterializedMySQL('host:port', ['database' | database], 'user', 'password') [SETTINGS ...]
+[TABLE OVERRIDE table1 (...), TABLE OVERRIDE table2 (...)]
 ```
 
 **Engine Parameters**
@@ -28,28 +28,33 @@ ENGINE = MaterializedMySQL('host:port', ['database' | database], 'user', 'passwo
 -   `password` — User password.
 
 **Engine Settings**
--   `max_rows_in_buffer` — Max rows that data is allowed to cache in memory(for single table and the cache data unable to query). when rows is exceeded, the data will be materialized. Default: `65505`.
--   `max_bytes_in_buffer` —  Max bytes that data is allowed to cache in memory(for single table and the cache data unable to query). when rows is exceeded, the data will be materialized. Default: `1048576`.
--   `max_rows_in_buffers` — Max rows that data is allowed to cache in memory(for database and the cache data unable to query). when rows is exceeded, the data will be materialized. Default: `65505`.
--   `max_bytes_in_buffers` — Max bytes that data is allowed to cache in memory(for database and the cache data unable to query). when rows is exceeded, the data will be materialized. Default: `1048576`.
--   `max_flush_data_time` — Max milliseconds that data is allowed to cache in memory(for database and the cache data unable to query). when this time is exceeded, the data will be materialized. Default: `1000`.
--   `max_wait_time_when_mysql_unavailable` — Retry interval when MySQL is not available (milliseconds). Negative value disable retry. Default: `1000`.
--   `allows_query_when_mysql_lost` — Allow query materialized table when mysql is lost. Default: `0` (`false`).
-```
+
+-   `max_rows_in_buffer` — Maximum number of rows that data is allowed to cache in memory (for single table and the cache data unable to query). When this number is exceeded, the data will be materialized. Default: `65 505`.
+-   `max_bytes_in_buffer` —  Maximum number of bytes that data is allowed to cache in memory (for single table and the cache data unable to query). When this number is exceeded, the data will be materialized. Default: `1 048 576`.
+-   `max_rows_in_buffers` — Maximum number of rows that data is allowed to cache in memory (for database and the cache data unable to query). When this number is exceeded, the data will be materialized. Default: `65 505`.
+-   `max_bytes_in_buffers` — Maximum number of bytes that data is allowed to cache in memory (for database and the cache data unable to query). When this number is exceeded, the data will be materialized. Default: `1 048 576`.
+-   `max_flush_data_time` — Maximum number of milliseconds that data is allowed to cache in memory (for database and the cache data unable to query). When this time is exceeded, the data will be materialized. Default: `1000`.
+-   `max_wait_time_when_mysql_unavailable` — Retry interval when MySQL is not available (milliseconds). Negative value disables retry. Default: `1000`.
+-   `allows_query_when_mysql_lost` — Allows to query a materialized table when MySQL is lost. Default: `0` (`false`).
+
+```sql
 CREATE DATABASE mysql ENGINE = MaterializedMySQL('localhost:3306', 'db', 'user', '***')
      SETTINGS
         allows_query_when_mysql_lost=true,
         max_wait_time_when_mysql_unavailable=10000;
 ```
 
-**Settings on MySQL-server side**
+**Settings on MySQL-server Side**
 
-For the correct work of `MaterializeMySQL`, there are few mandatory `MySQL`-side configuration settings that should be set:
+For the correct work of `MaterializedMySQL`, there are few mandatory `MySQL`-side configuration settings that must be set:
 
-- `default_authentication_plugin = mysql_native_password` since `MaterializeMySQL` can only authorize with this method.
-- `gtid_mode = on` since GTID based logging is a mandatory for providing correct `MaterializeMySQL` replication. Pay attention that while turning this mode `On` you should also specify `enforce_gtid_consistency = on`.
+- `default_authentication_plugin = mysql_native_password` since `MaterializedMySQL` can only authorize with this method.
+- `gtid_mode = on` since GTID based logging is a mandatory for providing correct `MaterializedMySQL` replication.
 
-## Virtual columns {#virtual-columns}
+!!! attention "Attention"
+    While turning on `gtid_mode` you should also specify `enforce_gtid_consistency = on`.
+
+## Virtual Columns {#virtual-columns}
 
 When working with the `MaterializedMySQL` database engine, [ReplacingMergeTree](../../engines/table-engines/mergetree-family/replacingmergetree.md) tables are used with virtual `_sign` and `_version` columns.
 
@@ -78,14 +83,15 @@ When working with the `MaterializedMySQL` database engine, [ReplacingMergeTree](
 | VARCHAR, VAR_STRING     | [String](../../sql-reference/data-types/string.md)           |
 | BLOB                    | [String](../../sql-reference/data-types/string.md)           |
 | BINARY                  | [FixedString](../../sql-reference/data-types/fixedstring.md) |
-
-Other types are not supported. If MySQL table contains a column of such type, ClickHouse throws exception "Unhandled data type" and stops replication.
+| BIT                     | [UInt64](../../sql-reference/data-types/int-uint.md)         |
 
 [Nullable](../../sql-reference/data-types/nullable.md) is supported.
 
+Other types are not supported. If MySQL table contains a column of such type, ClickHouse throws exception "Unhandled data type" and stops replication.
+
 ## Specifics and Recommendations {#specifics-and-recommendations}
 
-### Compatibility restrictions
+### Compatibility Restrictions {#compatibility-restrictions}
 
 Apart of the data types limitations there are few restrictions comparing to `MySQL` databases, that should be resolved before replication will be possible:
 
@@ -105,15 +111,19 @@ MySQL DDL queries are converted into the corresponding ClickHouse DDL queries ([
 
 - MySQL `DELETE` query is converted into `INSERT` with `_sign=-1`.
 
-- MySQL `UPDATE` query is converted into `INSERT` with `_sign=-1` and `INSERT` with `_sign=1`.
+- MySQL `UPDATE` query is converted into `INSERT` with `_sign=-1` and `INSERT` with `_sign=1` if the primary key has been changed, or
+  `INSERT` with `_sign=1` if not.
 
 ### Selecting from MaterializedMySQL Tables {#select}
 
 `SELECT` query from `MaterializedMySQL` tables has some specifics:
 
-- If `_version` is not specified in the `SELECT` query, [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier is used. So only rows with `MAX(_version)` are selected.
+- If `_version` is not specified in the `SELECT` query, the
+  [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier is used, so only rows with
+  `MAX(_version)` are returned for each primary key value.
 
-- If `_sign` is not specified in the `SELECT` query, `WHERE _sign=1` is used by default. So the deleted rows are not included into the result set.
+- If `_sign` is not specified in the `SELECT` query, `WHERE _sign=1` is used by default. So the deleted rows are not
+  included into the result set.
 
 - The result includes columns comments in case they exist in MySQL database tables.
 
@@ -121,15 +131,95 @@ MySQL DDL queries are converted into the corresponding ClickHouse DDL queries ([
 
 MySQL `PRIMARY KEY` and `INDEX` clauses are converted into `ORDER BY` tuples in ClickHouse tables.
 
-ClickHouse has only one physical order, which is determined by `ORDER BY` clause. To create a new physical order, use [materialized views](../../sql-reference/statements/create/view.md#materialized).
+ClickHouse has only one physical order, which is determined by `ORDER BY` clause. To create a new physical order, use
+[materialized views](../../sql-reference/statements/create/view.md#materialized).
 
 **Notes**
 
 - Rows with `_sign=-1` are not deleted physically from the tables.
-- Cascade `UPDATE/DELETE` queries are not supported by the `MaterializedMySQL` engine.
+- Cascade `UPDATE/DELETE` queries are not supported by the `MaterializedMySQL` engine, as they are not visible in the
+  MySQL binlog.
 - Replication can be easily broken.
 - Manual operations on database and tables are forbidden.
-- `MaterializedMySQL` is influenced by [optimize_on_insert](../../operations/settings/settings.md#optimize-on-insert) setting. The data is merged in the corresponding table in the `MaterializedMySQL` database when a table in the MySQL server changes.
+- `MaterializedMySQL` is affected by the [optimize_on_insert](../../operations/settings/settings.md#optimize-on-insert)
+  setting. Data is merged in the corresponding table in the `MaterializedMySQL` database when a table in the MySQL
+  server changes.
+
+### Table Overrides {#table-overrides}
+
+Table overrides can be used to customize the ClickHouse DDL queries, allowing you to make schema optimizations for your
+application. This is especially useful for controlling partitioning, which is important for the overall performance of
+MaterializedMySQL.
+
+These are the schema conversion manipulations you can do with table overrides for MaterializedMySQL:
+
+ * Modify column type. Must be compatible with the original type, or replication will fail. For example,
+   you can modify a UInt32 column to UInt64, but you can not modify a String column to Array(String).
+ * Modify [column TTL](../table-engines/mergetree-family/mergetree/#mergetree-column-ttl).
+ * Modify [column compression codec](../../sql-reference/statements/create/table/#codecs).
+ * Add [ALIAS columns](../../sql-reference/statements/create/table/#alias).
+ * Add [skipping indexes](../table-engines/mergetree-family/mergetree/#table_engine-mergetree-data_skipping-indexes)
+ * Add [projections](../table-engines/mergetree-family/mergetree/#projections). Note that projection optimizations are
+   disabled when using `SELECT ... FINAL` (which MaterializedMySQL does by default), so their utility is limited here.
+   `INDEX ... TYPE hypothesis` as [described in the v21.12 blog post]](https://clickhouse.com/blog/en/2021/clickhouse-v21.12-released/)
+   may be more useful in this case.
+ * Modify [PARTITION BY](../table-engines/mergetree-family/custom-partitioning-key/)
+ * Modify [ORDER BY](../table-engines/mergetree-family/mergetree/#mergetree-query-clauses)
+ * Modify [PRIMARY KEY](../table-engines/mergetree-family/mergetree/#mergetree-query-clauses)
+ * Add [SAMPLE BY](../table-engines/mergetree-family/mergetree/#mergetree-query-clauses)
+ * Add [table TTL](../table-engines/mergetree-family/mergetree/#mergetree-query-clauses)
+
+```sql
+CREATE DATABASE db_name ENGINE = MaterializedMySQL(...)
+[SETTINGS ...]
+[TABLE OVERRIDE table_name (
+    [COLUMNS (
+        [col_name [datatype] [ALIAS expr] [CODEC(...)] [TTL expr], ...]
+        [INDEX index_name expr TYPE indextype[(...)] GRANULARITY val, ...]
+        [PROJECTION projection_name (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]), ...]
+    )]
+    [ORDER BY expr]
+    [PRIMARY KEY expr]
+    [PARTITION BY expr]
+    [SAMPLE BY expr]
+    [TTL expr]
+), ...]
+```
+
+Example:
+
+```sql
+CREATE DATABASE db_name ENGINE = MaterializedMySQL(...)
+TABLE OVERRIDE table1 (
+    COLUMNS (
+        userid UUID,
+        category LowCardinality(String),
+        timestamp DateTime CODEC(Delta, Default)
+    )
+    PARTITION BY toYear(timestamp)
+),
+TABLE OVERRIDE table2 (
+    COLUMNS (
+        client_ip String TTL created + INTERVAL 72 HOUR
+    )
+    SAMPLE BY ip_hash
+)
+```
+
+The `COLUMNS` list is sparse; existing columns are modified as specified, extra ALIAS columns are added. It is not
+possible to add ordinary or MATERIALIZED columns.  Modified columns with a different type must be assignable from the
+original type. There is currently no validation of this or similar issues when the `CREATE DATABASE` query executes, so
+extra care needs to be taken.
+
+You may specify overrides for tables that do not exist yet.
+
+!!! warning "Warning"
+    It is easy to break replication with table overrides if not used with care. For example:
+    
+    * If an ALIAS column is added with a table override, and a column with the same name is later added to the source
+	    MySQL table, the converted ALTER TABLE query in ClickHouse will fail and replication stops.
+    * It is currently possible to add overrides that reference nullable columns where not-nullable are required, such as in
+      `ORDER BY` or `PARTITION BY`. This will cause CREATE TABLE queries that will fail, also causing replication to stop.
 
 ## Examples of Use {#examples-of-use}
 
@@ -146,11 +236,9 @@ mysql> SELECT * FROM test;
 ```
 
 ```text
-+---+------+------+
-| a |    b |    c |
-+---+------+------+
-| 2 |  222 | Wow! |
-+---+------+------+
+┌─a─┬───b─┬─c────┐
+│ 2 │ 222 │ Wow! │
+└───┴─────┴──────┘
 ```
 
 Database in ClickHouse, exchanging data with the MySQL server:
@@ -193,4 +281,4 @@ SELECT * FROM mysql.test;
 └───┴─────┴──────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/engines/database-engines/materialized-mysql/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/engines/database-engines/materialized-mysql/) <!--hide-->

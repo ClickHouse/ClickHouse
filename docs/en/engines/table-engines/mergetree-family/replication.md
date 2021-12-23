@@ -137,7 +137,7 @@ CREATE TABLE table_name
 ) ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{layer}-{shard}/table_name', '{replica}', ver)
 PARTITION BY toYYYYMM(EventDate)
 ORDER BY (CounterID, EventDate, intHash32(UserID))
-SAMPLE BY intHash32(UserID)
+SAMPLE BY intHash32(UserID);
 ```
 
 <details markdown="1">
@@ -150,12 +150,12 @@ CREATE TABLE table_name
     EventDate DateTime,
     CounterID UInt32,
     UserID UInt32
-) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/table_name', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192)
+) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/table_name', '{replica}', EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID), EventTime), 8192);
 ```
 
 </details>
 
-As the example shows, these parameters can contain substitutions in curly brackets. The substituted values are taken from the «[macros](../../../operations/server-configuration-parameters/settings/#macros) section of the configuration file.
+As the example shows, these parameters can contain substitutions in curly brackets. The substituted values are taken from the [macros](../../../operations/server-configuration-parameters/settings.md#macros) section of the configuration file.
 
 Example:
 
@@ -288,5 +288,7 @@ If the data in ZooKeeper was lost or damaged, you can save data by moving it to 
 -   [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size)
 -   [background_fetches_pool_size](../../../operations/settings/settings.md#background_fetches_pool_size)
 -   [execute_merges_on_single_replica_time_threshold](../../../operations/settings/settings.md#execute-merges-on-single-replica-time-threshold)
+-   [max_replicated_fetches_network_bandwidth](../../../operations/settings/merge-tree-settings.md#max_replicated_fetches_network_bandwidth)
+-   [max_replicated_sends_network_bandwidth](../../../operations/settings/merge-tree-settings.md#max_replicated_sends_network_bandwidth)
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/replication/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/table_engines/replication/) <!--hide-->

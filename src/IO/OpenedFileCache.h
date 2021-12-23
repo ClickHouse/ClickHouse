@@ -46,8 +46,14 @@ public:
 
         auto [it, inserted] = files.emplace(key, OpenedFilePtr{});
         if (!inserted)
+        {
             if (auto res = it->second.lock())
+            {
+                ProfileEvents::increment(ProfileEvents::OpenedFileCacheHits);
                 return res;
+            }
+        }
+        ProfileEvents::increment(ProfileEvents::OpenedFileCacheMisses);
 
         OpenedFilePtr res
         {
@@ -63,6 +69,12 @@ public:
         };
 
         it->second = res;
+        return res;
+    }
+
+    static OpenedFileCache & instance()
+    {
+        static OpenedFileCache res;
         return res;
     }
 };

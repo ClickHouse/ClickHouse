@@ -5,13 +5,13 @@
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/SocketStream.h>
 #include <Poco/Util/Application.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
-/// пишет в Graphite данные в формате
+/// Writes to Graphite in the following format
 /// path value timestamp\n
-/// path может иметь любую вложенность. Директории разделяются с помощью "."
-/// у нас принят следующий формат path - root_path.server_name.sub_path.key
+/// path can be arbitrary nested. Elements are separated by '.'
+/// Example: root_path.server_name.sub_path.key
 class GraphiteWriter
 {
 public:
@@ -32,8 +32,6 @@ public:
         writeImpl(key_val_vec, timestamp, custom_root_path);
     }
 
-    /// возвращает путь root_path.server_name
-    static std::string getPerServerPath(const std::string & server_name, const std::string & root_path = "one_min");
 private:
     template <typename T>
     void writeImpl(const T & data, time_t timestamp, const std::string & custom_root_path)

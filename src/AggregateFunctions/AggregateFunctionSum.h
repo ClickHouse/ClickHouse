@@ -1,6 +1,7 @@
 #pragma once
 
-#include <experimental/type_traits>
+#include <cstring>
+#include <memory>
 #include <type_traits>
 
 #include <IO/WriteHelpers.h>
@@ -12,9 +13,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -96,24 +95,25 @@ struct AggregateFunctionSumData
         Impl::add(sum, local_sum);
     }
 
-    template <typename Value>
-    void NO_SANITIZE_UNDEFINED NO_INLINE addManyNotNull(const Value * __restrict ptr, const UInt8 * __restrict null_map, size_t count)
+    template <typename Value, bool add_if_zero>
+    void NO_SANITIZE_UNDEFINED NO_INLINE
+    addManyConditional_internal(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t count)
     {
         const auto * end = ptr + count;
 
         if constexpr (
-            (is_integer_v<T> && !is_big_int_v<T>)
-            || (IsDecimalNumber<T> && !std::is_same_v<T, Decimal256> && !std::is_same_v<T, Decimal128>))
+            (is_integer<T> && !is_big_int_v<T>)
+            || (is_decimal<T> && !std::is_same_v<T, Decimal256> && !std::is_same_v<T, Decimal128>))
         {
             /// For integers we can vectorize the operation if we replace the null check using a multiplication (by 0 for null, 1 for not null)
             /// https://quick-bench.com/q/MLTnfTvwC2qZFVeWHfOBR3U7a8I
             T local_sum{};
             while (ptr < end)
             {
-                T multiplier = !*null_map;
+                T multiplier = !*condition_map == add_if_zero;
                 Impl::add(local_sum, *ptr * multiplier);
                 ++ptr;
-                ++null_map;
+                ++condition_map;
             }
             Impl::add(sum, local_sum);
             return;
@@ -121,6 +121,10 @@ struct AggregateFunctionSumData
 
         if constexpr (std::is_floating_point_v<T>)
         {
+            /// For floating point we use a similar trick as above, except that now we  reinterpret the floating point number as an unsigned
+            /// integer of the same size and use a mask instead (0 to discard, 0xFF..FF to keep)
+            static_assert(sizeof(Value) == 4 || sizeof(Value) == 8);
+            typedef typename std::conditional<sizeof(Value) == 4, UInt32, UInt64>::type equivalent_integer;
             constexpr size_t unroll_count = 128 / sizeof(T);
             T partial_sums[unroll_count]{};
 
@@ -130,13 +134,15 @@ struct AggregateFunctionSumData
             {
                 for (size_t i = 0; i < unroll_count; ++i)
                 {
-                    if (!null_map[i])
-                    {
-                        Impl::add(partial_sums[i], ptr[i]);
-                    }
+                    equivalent_integer value;
+                    std::memcpy(&value, &ptr[i], sizeof(Value));
+                    value &= (!condition_map[i] != add_if_zero) - 1;
+                    Value d;
+                    std::memcpy(&d, &value, sizeof(Value));
+                    Impl::add(partial_sums[i], d);
                 }
                 ptr += unroll_count;
-                null_map += unroll_count;
+                condition_map += unroll_count;
             }
 
             for (size_t i = 0; i < unroll_count; ++i)
@@ -146,12 +152,24 @@ struct AggregateFunctionSumData
         T local_sum{};
         while (ptr < end)
         {
-            if (!*null_map)
+            if (!*condition_map == add_if_zero)
                 Impl::add(local_sum, *ptr);
             ++ptr;
-            ++null_map;
+            ++condition_map;
         }
         Impl::add(sum, local_sum);
+    }
+
+    template <typename Value>
+    void ALWAYS_INLINE addManyNotNull(const Value * __restrict ptr, const UInt8 * __restrict null_map, size_t count)
+    {
+        return addManyConditional_internal<Value, true>(ptr, null_map, count);
+    }
+
+    template <typename Value>
+    void ALWAYS_INLINE addManyConditional(const Value * __restrict ptr, const UInt8 * __restrict cond_map, size_t count)
+    {
+        return addManyConditional_internal<Value, false>(ptr, cond_map, count);
     }
 
     void NO_SANITIZE_UNDEFINED merge(const AggregateFunctionSumData & rhs)
@@ -229,8 +247,8 @@ struct AggregateFunctionSumKahanData
         }
     }
 
-    template <typename Value>
-    void NO_INLINE addManyNotNull(const Value * __restrict ptr, const UInt8 * __restrict null_map, size_t count)
+    template <typename Value, bool add_if_zero>
+    void NO_INLINE addManyConditional_internal(const Value * __restrict ptr, const UInt8 * __restrict condition_map, size_t count)
     {
         constexpr size_t unroll_count = 4;
         T partial_sums[unroll_count]{};
@@ -242,10 +260,10 @@ struct AggregateFunctionSumKahanData
         while (ptr < unrolled_end)
         {
             for (size_t i = 0; i < unroll_count; ++i)
-                if (!null_map[i])
+                if ((!condition_map[i]) == add_if_zero)
                     addImpl(ptr[i], partial_sums[i], partial_compensations[i]);
             ptr += unroll_count;
-            null_map += unroll_count;
+            condition_map += unroll_count;
         }
 
         for (size_t i = 0; i < unroll_count; ++i)
@@ -253,11 +271,23 @@ struct AggregateFunctionSumKahanData
 
         while (ptr < end)
         {
-            if (!*null_map)
+            if ((!*condition_map) == add_if_zero)
                 addImpl(*ptr, sum, compensation);
             ++ptr;
-            ++null_map;
+            ++condition_map;
         }
+    }
+
+    template <typename Value>
+    void ALWAYS_INLINE addManyNotNull(const Value * __restrict ptr, const UInt8 * __restrict null_map, size_t count)
+    {
+        return addManyConditional_internal<Value, true>(ptr, null_map, count);
+    }
+
+    template <typename Value>
+    void ALWAYS_INLINE addManyConditional(const Value * __restrict ptr, const UInt8 * __restrict cond_map, size_t count)
+    {
+        return addManyConditional_internal<Value, false>(ptr, cond_map, count);
     }
 
     void ALWAYS_INLINE mergeImpl(T & to_sum, T & to_compensation, T from_sum, T from_compensation)
@@ -308,9 +338,7 @@ class AggregateFunctionSum final : public IAggregateFunctionDataHelper<Data, Agg
 public:
     static constexpr bool DateTime64Supported = false;
 
-    using ResultDataType = std::conditional_t<IsDecimalNumber<T>, DataTypeDecimal<TResult>, DataTypeNumber<TResult>>;
-    using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
-    using ColVecResult = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<TResult>, ColumnVector<TResult>>;
+    using ColVecType = ColumnVectorOrDecimal<T>;
 
     String getName() const override
     {
@@ -335,10 +363,13 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        if constexpr (IsDecimalNumber<T>)
-            return std::make_shared<ResultDataType>(ResultDataType::maxPrecision(), scale);
+        if constexpr (!is_decimal<T>)
+            return std::make_shared<DataTypeNumber<TResult>>();
         else
-            return std::make_shared<ResultDataType>();
+        {
+            using DataType = DataTypeDecimal<TResult>;
+            return std::make_shared<DataType>(DataType::maxPrecision(), scale);
+        }
     }
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -352,40 +383,38 @@ public:
             this->data(place).add(column.getData()[row_num]);
     }
 
-    /// Vectorized version when there is no GROUP BY keys.
     void addBatchSinglePlace(
-        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const override
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena *, ssize_t if_argument_pos) const override
     {
+        const auto & column = assert_cast<const ColVecType &>(*columns[0]);
         if (if_argument_pos >= 0)
         {
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            for (size_t i = 0; i < batch_size; ++i)
-            {
-                if (flags[i])
-                    add(place, columns, i, arena);
-            }
+            this->data(place).addManyConditional(column.getData().data(), flags.data(), batch_size);
         }
         else
         {
-            const auto & column = assert_cast<const ColVecType &>(*columns[0]);
             this->data(place).addMany(column.getData().data(), batch_size);
         }
     }
 
     void addBatchSinglePlaceNotNull(
-        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, const UInt8 * null_map, Arena * arena, ssize_t if_argument_pos)
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, const UInt8 * null_map, Arena *, ssize_t if_argument_pos)
         const override
     {
+        const auto & column = assert_cast<const ColVecType &>(*columns[0]);
         if (if_argument_pos >= 0)
         {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            /// Merge the 2 sets of flags (null and if) into a single one. This allows us to use parallelizable sums when available
+            const auto * if_flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
+            auto final_flags = std::make_unique<UInt8[]>(batch_size);
             for (size_t i = 0; i < batch_size; ++i)
-                if (!null_map[i] && flags[i])
-                    add(place, columns, i, arena);
+                final_flags[i] = (!null_map[i]) & if_flags[i];
+
+            this->data(place).addManyConditional(column.getData().data(), final_flags.get(), batch_size);
         }
         else
         {
-            const auto & column = assert_cast<const ColVecType &>(*columns[0]);
             this->data(place).addManyNotNull(column.getData().data(), null_map, batch_size);
         }
     }
@@ -395,20 +424,19 @@ public:
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         this->data(place).read(buf);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        auto & column = assert_cast<ColVecResult &>(to);
-        column.getData().push_back(this->data(place).get());
+        castColumnToResult(to).getData().push_back(this->data(place).get());
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -487,6 +515,14 @@ public:
 
 private:
     UInt32 scale;
+
+    static constexpr auto & castColumnToResult(IColumn & to)
+    {
+        if constexpr (is_decimal<T>)
+            return assert_cast<ColumnDecimal<TResult> &>(to);
+        else
+            return assert_cast<ColumnVector<TResult> &>(to);
+    }
 };
 
 }

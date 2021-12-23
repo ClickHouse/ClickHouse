@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
+#include "config_functions.h"
 
 #if USE_S2_GEOMETRY
 
@@ -11,7 +9,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
-#include <common/range.h>
+#include <base/range.h>
 
 #include "s2_fwd.h"
 
@@ -56,6 +54,8 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         for (size_t index = 0; index < getNumberOfArguments(); ++index)
@@ -91,7 +91,7 @@ public:
         auto & dst_data = dst->getData();
         dst_data.reserve(input_rows_count);
 
-        for (const auto row : collections::range(0, input_rows_count))
+        for (size_t row=0 ; row < input_rows_count; ++row)
         {
             const auto center = S2CellId(col_center->getUInt(row));
             const Float64 degrees = col_degrees->getFloat64(row);

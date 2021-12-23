@@ -39,4 +39,4 @@ ENGINE = EmbeddedRocksDB
 PRIMARY KEY key
 ```
 
-[原始文章](https://clickhouse.tech/docs/en/engines/table-engines/integrations/embedded-rocksdb/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/engines/table-engines/integrations/embedded-rocksdb/) <!--hide-->

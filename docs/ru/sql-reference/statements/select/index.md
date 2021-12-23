@@ -11,7 +11,7 @@ toc_title: "Обзор"
 
 ``` sql
 [WITH expr_list|(subquery)]
-SELECT [DISTINCT] expr_list
+SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FROM [db.]table | (subquery) | table_function] [FINAL]
 [SAMPLE sample_coeff]
 [ARRAY JOIN ...]
@@ -25,7 +25,7 @@ SELECT [DISTINCT] expr_list
 [LIMIT [n, ]m] [WITH TIES]
 [SETTINGS ...]
 [UNION ALL ...]
-[INTO OUTFILE filename]
+[INTO OUTFILE filename [COMPRESSION type] ] 
 [FORMAT format]
 ```
 
@@ -34,6 +34,8 @@ SELECT [DISTINCT] expr_list
 Особенности каждой необязательной секции рассматриваются в отдельных разделах, которые перечислены в том же порядке, в каком они выполняются:
 
 -   [Секция WITH](with.md)
+-   [Секция SELECT](#select-clause)
+-   [Секция DISTINCT](distinct.md)
 -   [Секция FROM](from.md)
 -   [Секция SAMPLE](sample.md)
 -   [Секция JOIN](join.md)
@@ -42,11 +44,11 @@ SELECT [DISTINCT] expr_list
 -   [Секция GROUP BY](group-by.md)
 -   [Секция LIMIT BY](limit-by.md)
 -   [Секция HAVING](having.md)
--   [Секция SELECT](#select-clause)
--   [Секция DISTINCT](distinct.md)
 -   [Секция LIMIT](limit.md)
-    [Секция OFFSET](offset.md)
+-   [Секция OFFSET](offset.md)
 -   [Секция UNION ALL](union.md)
+-   [Секция INTERSECT](intersect.md)
+-   [Секция EXCEPT](except.md)
 -   [Секция INTO OUTFILE](into-outfile.md)
 -   [Секция FORMAT](format.md)
 
@@ -140,8 +142,7 @@ Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of 
 
 Вы можете использовать синонимы (алиасы `AS`) в любом месте запроса.
 
-В секциях `GROUP BY`, `ORDER BY`, в отличие от диалекта MySQL, и в соответствии со стандартным SQL, не поддерживаются позиционные аргументы.
-Например, если вы напишите `GROUP BY 1, 2` - то это будет воспринято, как группировка по константам (то есть, агрегация всех строк в одну).
+В секциях `GROUP BY`, `ORDER BY` и `LIMIT BY` можно использовать не названия столбцов, а номера. Для этого нужно включить настройку [enable_positional_arguments](../../../operations/settings/settings.md#enable-positional-arguments). Тогда, например, в запросе с `ORDER BY 1,2` будет выполнена сортировка сначала по первому, а затем по второму столбцу.
 
 
 ## Детали реализации {#implementation-details}

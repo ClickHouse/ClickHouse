@@ -64,26 +64,26 @@ RQ_SRS_016_Kerberos_Configuration_KerberosNotEnabled = Requirement(
         '[ClickHouse] SHALL reject [Kerberos] authentication in case user is properly configured for using Kerberos, but Kerberos itself is not enabled in `config.xml`. For example:\n'
         '\n'
         '```xml\n'
-        '<yandex>\n'
+        '<clickhouse>\n'
         '    <!- ... -->\n'
         '    <kerberos />\n'
-        '</yandex>\n'
+        '</clickhouse>\n'
         '```\n'
         '```xml\n'
-        '<yandex>\n'
+        '<clickhouse>\n'
         '    <!- ... -->\n'
         '    <kerberos>\n'
         '        <principal>HTTP/clickhouse.example.com@EXAMPLE.COM</principal>\n'
         '    </kerberos>\n'
-        '</yandex>\n'
+        '</clickhouse>\n'
         '```\n'
         '```xml\n'
-        '<yandex>\n'
+        '<clickhouse>\n'
         '    <!- ... -->\n'
         '    <kerberos>\n'
         '        <realm>EXAMPLE.COM</realm>\n'
         '    </kerberos>\n'
-        '</yandex>\n'
+        '</clickhouse>\n'
         '```\n'
         '\n'
         ),
@@ -177,7 +177,7 @@ RQ_SRS_016_Kerberos_ValidUser_XMLConfiguredUser = Requirement(
         '[ClickHouse] SHALL accept [Kerberos] authentication for a user that is configured in `users.xml` and has [Kerberos] enabled, i.e.:\n'
         '\n'
         '```xml\n'
-        '<yandex>\n'
+        '<clickhouse>\n'
         '    <!- ... -->\n'
         '    <users>\n'
         '        <!- ... -->\n'
@@ -188,7 +188,7 @@ RQ_SRS_016_Kerberos_ValidUser_XMLConfiguredUser = Requirement(
         '            </kerberos>\n'
         '        </my_user>\n'
         '    </users>\n'
-        '</yandex>\n'
+        '</clickhouse>\n'
         '```\n'
         '\n'
         ),
@@ -626,26 +626,26 @@ version: 1.0
 [ClickHouse] SHALL reject [Kerberos] authentication in case user is properly configured for using Kerberos, but Kerberos itself is not enabled in `config.xml`. For example:
 
 ```xml
-<yandex>
+<clickhouse>
     <!- ... -->
     <kerberos />
-</yandex>
+</clickhouse>
 ```
 ```xml
-<yandex>
+<clickhouse>
     <!- ... -->
     <kerberos>
         <principal>HTTP/clickhouse.example.com@EXAMPLE.COM</principal>
     </kerberos>
-</yandex>
+</clickhouse>
 ```
 ```xml
-<yandex>
+<clickhouse>
     <!- ... -->
     <kerberos>
         <realm>EXAMPLE.COM</realm>
     </kerberos>
-</yandex>
+</clickhouse>
 ```
 
 #### RQ.SRS-016.Kerberos.Configuration.MultipleKerberosSections
@@ -681,7 +681,7 @@ version: 1.0
 [ClickHouse] SHALL accept [Kerberos] authentication for a user that is configured in `users.xml` and has [Kerberos] enabled, i.e.:
 
 ```xml
-<yandex>
+<clickhouse>
     <!- ... -->
     <users>
         <!- ... -->
@@ -692,7 +692,7 @@ version: 1.0
             </kerberos>
         </my_user>
     </users>
-</yandex>
+</clickhouse>
 ```
 
 #### RQ.SRS-016.Kerberos.ValidUser.RBACConfiguredUser
@@ -792,7 +792,7 @@ version: 1.0
 
 ## References
 
-* **ClickHouse:** https://clickhouse.tech
+* **ClickHouse:** https://clickhouse.com
 * **GitHub Repository:** https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/kerberos/requirements/requirements.md
 * **Revision History:** https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/kerberos/requirements/requirements.md
 * **Git:** https://git-scm.com/
@@ -800,7 +800,7 @@ version: 1.0
 
 [Kerberos]: https://en.wikipedia.org/wiki/Kerberos_(protocol)
 [SPNEGO]: https://en.wikipedia.org/wiki/SPNEGO
-[ClickHouse]: https://clickhouse.tech
+[ClickHouse]: https://clickhouse.com
 [GitHub]: https://gitlab.com
 [GitHub Repository]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/kerberos/requirements/requirements.md
 [Revision History]: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/kerberos/requirements/requirements.md

@@ -98,7 +98,7 @@ void ASTWindowDefinition::formatImpl(const FormatSettings & settings,
             settings.ostr << " ";
         }
 
-        settings.ostr << WindowFrame::toString(frame_type) << " BETWEEN ";
+        settings.ostr << frame_type << " BETWEEN ";
         if (frame_begin_type == WindowFrame::BoundaryType::Current)
         {
             settings.ostr << "CURRENT ROW";

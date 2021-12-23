@@ -6,7 +6,7 @@
 #include <Functions/IFunction.h>
 #include <pcg_random.hpp>
 #include <Common/randomSeed.h>
-#include <common/arithmeticOverflow.h>
+#include <base/arithmeticOverflow.h>
 
 #include <memory>
 
@@ -18,6 +18,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int DECIMAL_OVERFLOW;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -58,6 +59,8 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 2; }
 
@@ -140,6 +143,7 @@ public:
         else if (const ColumnFixedString * col_in_fixed = checkAndGetColumn<ColumnFixedString>(col_in_untyped.get()))
         {
             const auto n = col_in_fixed->getN();
+            const auto col_in_rows = col_in_fixed->size();
             auto col_to = ColumnFixedString::create(n);
             ColumnFixedString::Chars & chars_to = col_to->getChars();
 
@@ -151,7 +155,16 @@ public:
 
             const auto * ptr_in = col_in_fixed->getChars().data();
             auto * ptr_to = chars_to.data();
-            fuzzBits(ptr_in, ptr_to, chars_to.size(), inverse_probability);
+
+            if (col_in_rows >= input_rows_count)
+                fuzzBits(ptr_in, ptr_to, chars_to.size(), inverse_probability);
+            else if (col_in_rows != 1)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "1 != col_in_rows {} < input_rows_count {}", col_in_rows, input_rows_count);
+            else
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    fuzzBits(ptr_in, ptr_to + i * n, n, inverse_probability);
 
             return col_to;
         }

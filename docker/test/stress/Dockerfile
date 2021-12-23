@@ -1,5 +1,5 @@
-# docker build -t yandex/clickhouse-stress-test .
-FROM yandex/clickhouse-stateful-test
+# docker build -t clickhouse/stress-test .
+FROM clickhouse/stateful-test
 
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
@@ -26,4 +26,6 @@ COPY ./stress /stress
 COPY run.sh /
 
 ENV DATASETS="hits visits"
+ENV S3_URL="https://clickhouse-datasets.s3.yandex.net"
+
 CMD ["/bin/bash", "/run.sh"]

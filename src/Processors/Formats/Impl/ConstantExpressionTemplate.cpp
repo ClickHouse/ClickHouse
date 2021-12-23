@@ -37,6 +37,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int SYNTAX_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -276,8 +277,9 @@ private:
             info.type = std::make_shared<DataTypeMap>(nested_types);
         }
         else
-            throw Exception(String("Unexpected literal type ") + info.literal->value.getTypeName() + ". It's a bug",
-                            ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Unexpected literal type {}",
+                info.literal->value.getTypeName());
 
         /// Allow literal to be NULL, if result column has nullable type or if function never returns NULL
         if (info.force_nullable && info.type->canBeInsideNullable())
@@ -341,6 +343,10 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
     auto syntax_result = TreeRewriter(context).analyze(expression, literals.getNamesAndTypesList());
     result_column_name = expression->getColumnName();
     actions_on_literals = ExpressionAnalyzer(expression, syntax_result, context).getActions(false);
+    if (actions_on_literals->hasArrayJoin())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Array joins are not allowed in constant expressions for IN, VALUES, LIMIT and similar sections.");
+
 }
 
 size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTPtr & expression,
@@ -632,19 +638,23 @@ ColumnPtr ConstantExpressionTemplate::evaluateAll(BlockMissingValues & nulls, si
 void ConstantExpressionTemplate::TemplateStructure::addNodesToCastResult(const IDataType & result_column_type, ASTPtr & expr, bool null_as_default)
 {
     /// Replace "expr" with "CAST(expr, 'TypeName')"
-    /// or with "(CAST(assumeNotNull(expr as _expression), 'TypeName'), isNull(_expression))" if null_as_default is true
+    /// or with "(if(isNull(_dummy_0 AS _expression), defaultValueOfTypeName('TypeName'), _CAST(_expression, 'TypeName')), isNull(_expression))" if null_as_default is true
     if (null_as_default)
     {
         expr->setAlias("_expression");
-        expr = makeASTFunction("assumeNotNull", std::move(expr));
-    }
 
-    expr = makeASTFunction("CAST", std::move(expr), std::make_shared<ASTLiteral>(result_column_type.getName()));
-
-    if (null_as_default)
-    {
         auto is_null = makeASTFunction("isNull", std::make_shared<ASTIdentifier>("_expression"));
-        expr = makeASTFunction("tuple", std::move(expr), std::move(is_null));
+        is_null->setAlias("_is_expression_nullable");
+
+        auto default_value = makeASTFunction("defaultValueOfTypeName", std::make_shared<ASTLiteral>(result_column_type.getName()));
+        auto cast = makeASTFunction("_CAST", std::move(expr), std::make_shared<ASTLiteral>(result_column_type.getName()));
+
+        auto cond = makeASTFunction("if", std::move(is_null), std::move(default_value), std::move(cast));
+        expr = makeASTFunction("tuple", std::move(cond), std::make_shared<ASTIdentifier>("_is_expression_nullable"));
+    }
+    else
+    {
+        expr = makeASTFunction("_CAST", std::move(expr), std::make_shared<ASTLiteral>(result_column_type.getName()));
     }
 }
 

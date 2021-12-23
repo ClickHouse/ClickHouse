@@ -8,7 +8,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnCompressed.h>
-#include <DataStreams/ColumnGathererStream.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 
 
 namespace DB
@@ -219,6 +219,12 @@ ColumnPtr ColumnNullable::filter(const Filter & filt, ssize_t result_size_hint) 
     ColumnPtr filtered_data = getNestedColumn().filter(filt, result_size_hint);
     ColumnPtr filtered_null_map = getNullMapColumn().filter(filt, result_size_hint);
     return ColumnNullable::create(filtered_data, filtered_null_map);
+}
+
+void ColumnNullable::expand(const IColumn::Filter & mask, bool inverted)
+{
+    nested_column->expand(mask, inverted);
+    null_map->expand(mask, inverted);
 }
 
 ColumnPtr ColumnNullable::permute(const Permutation & perm, size_t limit) const
@@ -571,15 +577,15 @@ void getExtremesWithNulls(const IColumn & nested_column, const NullMap & null_ar
     }
     else if (number_of_nulls == n)
     {
-        min = PositiveInfinity();
-        max = PositiveInfinity();
+        min = POSITIVE_INFINITY;
+        max = POSITIVE_INFINITY;
     }
     else
     {
         auto filtered_column = nested_column.filter(not_null_array, -1);
         filtered_column->getExtremes(min, max);
         if (null_last)
-            max = PositiveInfinity();
+            max = POSITIVE_INFINITY;
     }
 }
 }
@@ -640,6 +646,29 @@ void ColumnNullable::checkConsistency() const
     if (null_map->size() != getNestedColumn().size())
         throw Exception("Logical error: Sizes of nested column and null map of Nullable column are not equal",
             ErrorCodes::SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT);
+}
+
+ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const
+{
+    ColumnPtr new_values;
+    ColumnPtr new_null_map;
+
+    if (default_field.getType() == Field::Types::Null)
+    {
+        auto default_column = nested_column->cloneEmpty();
+        default_column->insertDefault();
+
+        /// Value in main column, when null map is 1 is implementation defined. So, take any value.
+        new_values = nested_column->createWithOffsets(offsets, (*default_column)[0], total_rows, shift);
+        new_null_map = null_map->createWithOffsets(offsets, Field(1u), total_rows, shift);
+    }
+    else
+    {
+        new_values = nested_column->createWithOffsets(offsets, default_field, total_rows, shift);
+        new_null_map = null_map->createWithOffsets(offsets, Field(0u), total_rows, shift);
+    }
+
+    return ColumnNullable::create(new_values, new_null_map);
 }
 
 ColumnPtr makeNullable(const ColumnPtr & column)

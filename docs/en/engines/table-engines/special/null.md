@@ -10,4 +10,4 @@ When writing to a `Null` table, data is ignored. When reading from a `Null` tabl
 !!! info "Hint"
     However, you can create a materialized view on a `Null` table. So the data written to the table will end up affecting the view, but original raw data will still be discarded.
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/null/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/table_engines/null/) <!--hide-->

@@ -8,7 +8,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <common/range.h>
+#include <base/range.h>
 
 
 namespace DB
@@ -61,12 +61,7 @@ public:
         return alignof(T);
     }
 
-    void add(
-        AggregateDataPtr place,
-        const IColumn ** columns,
-        size_t row_num,
-        Arena *
-    ) const override
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         auto y_col = static_cast<const ColumnUInt8 *>(columns[category_count]);
         bool y = y_col->getData()[row_num];
@@ -83,11 +78,7 @@ public:
         reinterpret_cast<T *>(place)[category_count * 2 + size_t(y)] += 1;
     }
 
-    void merge(
-        AggregateDataPtr place,
-        ConstAggregateDataPtr rhs,
-        Arena *
-    ) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         for (size_t i : collections::range(0, category_count + 1))
         {
@@ -96,19 +87,12 @@ public:
         }
     }
 
-    void serialize(
-        ConstAggregateDataPtr place,
-        WriteBuffer & buf
-    ) const override
+    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         buf.write(place, sizeOfData());
     }
 
-    void deserialize(
-        AggregateDataPtr place,
-        ReadBuffer & buf,
-        Arena *
-    ) const override
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         buf.read(place, sizeOfData());
     }
@@ -120,10 +104,7 @@ public:
         );
     }
 
-    void insertResultInto(
-        AggregateDataPtr place,
-        IColumn & to,
-        Arena *) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena *) const override
     {
         auto & col = static_cast<ColumnArray &>(to);
         auto & data_col = static_cast<ColumnFloat64 &>(col.getData());
