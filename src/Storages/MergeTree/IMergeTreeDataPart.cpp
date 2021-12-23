@@ -1357,7 +1357,7 @@ String IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix, bool 
     else if (parent_part)
         full_relative_path /= parent_part->relative_path;
 
-    for (int try_no = 0; try_no < 10; try_no++)
+    for (int try_no = 0; try_no < 10; ++try_no)
     {
         res = (prefix.empty() ? "" : prefix + "_") + name + (try_no ? "_try" + DB::toString(try_no) : "");
 
