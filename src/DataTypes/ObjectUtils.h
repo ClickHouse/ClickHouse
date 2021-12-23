@@ -15,6 +15,9 @@ size_t getNumberOfDimensions(const IColumn & column);
 DataTypePtr getBaseTypeOfArray(const DataTypePtr & type);
 DataTypePtr createArrayOfType(DataTypePtr type, size_t dimension);
 
+ColumnPtr getBaseColumnOfArray(const ColumnPtr & column);
+ColumnPtr createArrayOfColumn(const ColumnPtr & column, size_t num_dimensions);
+
 DataTypePtr getDataTypeByColumn(const IColumn & column);
 void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block, const NamesAndTypesList & extended_storage_columns);
 void checkObjectHasNoAmbiguosPaths(const Paths & paths);

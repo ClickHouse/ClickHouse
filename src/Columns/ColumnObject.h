@@ -57,7 +57,7 @@ public:
         void finalize();
 
         Field getLastField() const;
-        Subcolumn recreateWithDefaultValues() const;
+        Subcolumn recreateWithDefaultValues(const FieldInfo & field_info) const;
 
         IColumn & getFinalizedColumn();
         const IColumn & getFinalizedColumn() const;
@@ -97,8 +97,9 @@ public:
 
     void incrementNumRows() { ++num_rows; }
 
-    void addSubcolumn(const Path & key, size_t new_size, bool check_size = false);
-    void addSubcolumn(const Path & key, MutableColumnPtr && subcolumn, bool check_size = false);
+    void addSubcolumn(const Path & key, MutableColumnPtr && subcolumn);
+    void addSubcolumn(const Path & key, size_t new_size);
+    void addNestedSubcolumn(const Path & key, const FieldInfo & field_info, size_t new_size);
 
     const SubcolumnsTree & getSubcolumns() const { return subcolumns; }
     SubcolumnsTree & getSubcolumns() { return subcolumns; }
