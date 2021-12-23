@@ -20,7 +20,7 @@ public:
     {
         try
         {
-            CompletionAwareWriteBuffer::finalize();
+            finalize();
         }
         catch (...)
         {
@@ -28,12 +28,9 @@ public:
         }
     }
 
-    void finalize() override
+    void finalizeImpl() override
     {
-        if (finalized)
-            return;
-
-        WriteBufferFromFileDecorator::finalize();
+        WriteBufferFromFileDecorator::finalizeImpl();
 
         completion_callback();
     }
@@ -88,19 +85,16 @@ std::shared_ptr<FileDownloadMetadata> DiskCacheWrapper::acquireDownloadMetadata(
 std::unique_ptr<ReadBufferFromFileBase>
 DiskCacheWrapper::readFile(
     const String & path,
-    size_t buf_size,
-    size_t estimated_size,
-    size_t direct_io_threshold,
-    size_t mmap_threshold,
-    MMappedFileCache * mmap_cache) const
+    const ReadSettings & settings,
+    std::optional<size_t> size) const
 {
     if (!cache_file_predicate(path))
-        return DiskDecorator::readFile(path, buf_size, estimated_size, direct_io_threshold, mmap_threshold, mmap_cache);
+        return DiskDecorator::readFile(path, settings, size);
 
-    LOG_DEBUG(log, "Read file {} from cache", backQuote(path));
+    LOG_TEST(log, "Read file {} from cache", backQuote(path));
 
     if (cache_disk->exists(path))
-        return cache_disk->readFile(path, buf_size, estimated_size, direct_io_threshold, mmap_threshold, mmap_cache);
+        return cache_disk->readFile(path, settings, size);
 
     auto metadata = acquireDownloadMetadata(path);
 
@@ -111,11 +105,11 @@ DiskCacheWrapper::readFile(
         {
             /// This thread will responsible for file downloading to cache.
             metadata->status = DOWNLOADING;
-            LOG_DEBUG(log, "File {} doesn't exist in cache. Will download it", backQuote(path));
+            LOG_TEST(log, "File {} doesn't exist in cache. Will download it", backQuote(path));
         }
         else if (metadata->status == DOWNLOADING)
         {
-            LOG_DEBUG(log, "Waiting for file {} download to cache", backQuote(path));
+            LOG_TEST(log, "Waiting for file {} download to cache", backQuote(path));
             metadata->condition.wait(lock, [metadata] { return metadata->status == DOWNLOADED || metadata->status == ERROR; });
         }
     }
@@ -134,13 +128,13 @@ DiskCacheWrapper::readFile(
 
                 auto tmp_path = path + ".tmp";
                 {
-                    auto src_buffer = DiskDecorator::readFile(path, buf_size, estimated_size, direct_io_threshold, mmap_threshold, mmap_cache);
-                    auto dst_buffer = cache_disk->writeFile(tmp_path, buf_size, WriteMode::Rewrite);
+                    auto src_buffer = DiskDecorator::readFile(path, settings, size);
+                    auto dst_buffer = cache_disk->writeFile(tmp_path, settings.local_fs_buffer_size, WriteMode::Rewrite);
                     copyData(*src_buffer, *dst_buffer);
                 }
                 cache_disk->moveFile(tmp_path, path);
 
-                LOG_DEBUG(log, "File {} downloaded to cache", backQuote(path));
+                LOG_TEST(log, "File {} downloaded to cache", backQuote(path));
             }
             catch (...)
             {
@@ -158,9 +152,9 @@ DiskCacheWrapper::readFile(
     }
 
     if (metadata->status == DOWNLOADED)
-        return cache_disk->readFile(path, buf_size, estimated_size, direct_io_threshold, mmap_threshold, mmap_cache);
+        return cache_disk->readFile(path, settings, size);
 
-    return DiskDecorator::readFile(path, buf_size, estimated_size, direct_io_threshold, mmap_threshold, mmap_cache);
+    return DiskDecorator::readFile(path, settings, size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
@@ -169,7 +163,7 @@ DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode
     if (!cache_file_predicate(path))
         return DiskDecorator::writeFile(path, buf_size, mode);
 
-    LOG_DEBUG(log, "Write file {} to cache", backQuote(path));
+    LOG_TRACE(log, "Write file {} to cache", backQuote(path));
 
     auto dir_path = directoryPath(path);
     if (!cache_disk->exists(dir_path))
@@ -180,7 +174,7 @@ DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode
         [this, path, buf_size, mode]()
         {
             /// Copy file from cache to actual disk when cached buffer is finalized.
-            auto src_buffer = cache_disk->readFile(path, buf_size, 0, 0, 0, nullptr);
+            auto src_buffer = cache_disk->readFile(path, ReadSettings(), /* size= */ {});
             auto dst_buffer = DiskDecorator::writeFile(path, buf_size, mode);
             copyData(*src_buffer, *dst_buffer);
             dst_buffer->finalize();

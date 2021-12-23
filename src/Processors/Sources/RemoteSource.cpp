@@ -1,6 +1,6 @@
 #include <Processors/Sources/RemoteSource.h>
-#include <DataStreams/RemoteQueryExecutor.h>
-#include <DataStreams/RemoteQueryExecutorReadContext.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
+#include <QueryPipeline/RemoteQueryExecutorReadContext.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
@@ -56,7 +56,7 @@ std::optional<Chunk> RemoteSource::tryGenerate()
         query_executor->setProgressCallback([this](const Progress & value) { progress(value); });
 
         /// Get rows_before_limit result for remote query from ProfileInfo packet.
-        query_executor->setProfileInfoCallback([this](const BlockStreamProfileInfo & info)
+        query_executor->setProfileInfoCallback([this](const ProfileInfo & info)
         {
             if (rows_before_limit && info.hasAppliedLimit())
                 rows_before_limit->set(info.getRowsBeforeLimit());

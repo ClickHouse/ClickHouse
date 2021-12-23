@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <remote_servers>
 
         <test_cluster>
@@ -25,4 +25,4 @@
         </local_shard_with_internal_replication>
 
     </remote_servers>
-</yandex>
+</clickhouse>

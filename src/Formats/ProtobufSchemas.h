@@ -4,8 +4,9 @@
 #if USE_PROTOBUF
 
 #include <memory>
+#include <mutex>
 #include <unordered_map>
-#include <common/types.h>
+#include <base/types.h>
 #include <boost/noncopyable.hpp>
 
 
@@ -39,6 +40,7 @@ public:
 private:
     class ImporterWithSourceTree;
     std::unordered_map<String, std::unique_ptr<ImporterWithSourceTree>> importers;
+    std::mutex mutex;
 };
 
 }

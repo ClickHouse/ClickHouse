@@ -1,9 +1,11 @@
 #pragma once
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Core/QueryProcessingStage.h>
+#include <Client/IConnections.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/ClusterProxy/IStreamFactory.h>
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 namespace DB
 {
@@ -34,9 +36,15 @@ public:
 
     String getName() const override { return "ReadFromRemote"; }
 
-    void initializePipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
 private:
+    enum class Mode
+    {
+        PerReplica,
+        PerShard
+    };
+
     ClusterProxy::IStreamFactory::Shards shards;
     QueryProcessingStage::Enum stage;
 
@@ -52,8 +60,16 @@ private:
     Poco::Logger * log;
 
     UInt32 shard_count;
-    void addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard);
-    void addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard);
+    void addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard,
+        std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator,
+        std::shared_ptr<ConnectionPoolWithFailover> pool,
+        std::optional<IConnections::ReplicaInfo> replica_info);
+    void addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard,
+        std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator,
+        std::shared_ptr<ConnectionPoolWithFailover> pool,
+        std::optional<IConnections::ReplicaInfo> replica_info);
+
+    void addPipeForReplica();
 };
 
 }

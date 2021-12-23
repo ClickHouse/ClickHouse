@@ -1,21 +1,16 @@
 #pragma once
 
-
-#include <Core/Names.h>
-#include <DataStreams/IBlockStream_fwd.h>
-#include <Interpreters/IExternalLoadable.h>
-#include <Interpreters/StorageID.h>
-#include <Poco/Util/XMLConfiguration.h>
-#include <Common/PODArray.h>
-#include <common/StringRef.h>
-#include "IDictionarySource.h"
-#include <Dictionaries/DictionaryStructure.h>
-#include <DataTypes/IDataType.h>
-#include <Columns/ColumnsNumber.h>
-
-#include <chrono>
 #include <memory>
 #include <mutex>
+
+#include <Core/Names.h>
+#include <Columns/ColumnsNumber.h>
+#include <Interpreters/IExternalLoadable.h>
+#include <Interpreters/StorageID.h>
+#include <Dictionaries/IDictionarySource.h>
+#include <Dictionaries/DictionaryStructure.h>
+#include <DataTypes/IDataType.h>
+
 
 namespace DB
 {
@@ -24,7 +19,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-struct IDictionary;
+class IDictionary;
 using DictionaryPtr = std::unique_ptr<IDictionary>;
 
 /** DictionaryKeyType provides IDictionary client information about
@@ -33,22 +28,28 @@ using DictionaryPtr = std::unique_ptr<IDictionary>;
   * Simple is for dictionaries that support UInt64 key column.
   *
   * Complex is for dictionaries that support any combination of key columns.
-  *
-  * Range is for dictionary that support combination of UInt64 key column,
-  * and numeric representable range key column.
   */
 enum class DictionaryKeyType
 {
-    simple,
-    complex,
-    range
+    Simple,
+    Complex
+};
+
+/** DictionarySpecialKeyType provides IDictionary client information about
+  * which special key type is supported by dictionary.
+  */
+enum class DictionarySpecialKeyType
+{
+    None,
+    Range
 };
 
 /**
  * Base class for Dictionaries implementation.
  */
-struct IDictionary : public IExternalLoadable
+class IDictionary : public IExternalLoadable
 {
+public:
     explicit IDictionary(const StorageID & dictionary_id_)
     : dictionary_id(dictionary_id_)
     , full_name(dictionary_id.getInternalDictionaryName())
@@ -56,6 +57,7 @@ struct IDictionary : public IExternalLoadable
     }
 
     const std::string & getFullName() const{ return full_name; }
+
     StorageID getDictionaryID() const
     {
         std::lock_guard lock{name_mutex};
@@ -98,7 +100,7 @@ struct IDictionary : public IExternalLoadable
 
     virtual double getLoadFactor() const = 0;
 
-    virtual const IDictionarySource * getSource() const = 0;
+    virtual DictionarySourcePtr getSource() const = 0;
 
     virtual const DictionaryStructure & getStructure() const = 0;
 
@@ -108,6 +110,8 @@ struct IDictionary : public IExternalLoadable
       * Client will use that key type to provide valid key columns for `getColumn` and `has` functions.
       */
     virtual DictionaryKeyType getKeyType() const = 0;
+
+    virtual DictionarySpecialKeyType getSpecialKeyType() const { return DictionarySpecialKeyType::None; }
 
     /** Subclass must validate key columns and keys types
       * and return column representation of dictionary attribute.
@@ -191,13 +195,13 @@ struct IDictionary : public IExternalLoadable
                         getDictionaryID().getNameForLogs());
     }
 
-    virtual BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const = 0;
+    virtual Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const = 0;
 
     bool supportUpdates() const override { return true; }
 
     bool isModified() const override
     {
-        const auto * source = getSource();
+        const auto source = getSource();
         return source && source->isModified();
     }
 
@@ -213,12 +217,25 @@ struct IDictionary : public IExternalLoadable
         return std::static_pointer_cast<const IDictionary>(IExternalLoadable::shared_from_this());
     }
 
+    void setDictionaryComment(String new_comment)
+    {
+        std::lock_guard lock{name_mutex};
+        dictionary_comment = std::move(new_comment);
+    }
+
+    String getDictionaryComment() const
+    {
+        std::lock_guard lock{name_mutex};
+        return dictionary_comment;
+    }
+
 private:
     mutable std::mutex name_mutex;
     mutable StorageID dictionary_id;
 
 protected:
     const String full_name;
+    String dictionary_comment;
 };
 
 }

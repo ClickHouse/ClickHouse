@@ -1,13 +1,12 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#endif
 
 #if USE_AWS_S3
 
 #include <atomic>
-#include <common/logger_useful.h>
+#include <optional>
+#include <base/logger_useful.h>
 #include "Disks/DiskFactory.h"
 #include "Disks/Executor.h"
 
@@ -69,17 +68,15 @@ public:
         String name_,
         String bucket_,
         String s3_root_path_,
-        String metadata_path_,
+        DiskPtr metadata_disk_,
+        ContextPtr context_,
         SettingsPtr settings_,
         GetDiskSettings settings_getter_);
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
-        size_t buf_size,
-        size_t estimated_size,
-        size_t direct_io_threshold,
-        size_t mmap_threshold,
-        MMappedFileCache * mmap_cache) const override;
+        const ReadSettings & settings,
+        std::optional<size_t> size) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -96,7 +93,8 @@ public:
     void createHardLink(const String & src_path, const String & dst_path) override;
     void createHardLink(const String & src_path, const String & dst_path, bool send_metadata);
 
-    DiskType::Type getType() const override { return DiskType::Type::S3; }
+    DiskType getType() const override { return DiskType::S3; }
+    bool isRemote() const override { return true; }
 
     bool supportZeroCopyReplication() const override { return true; }
 
@@ -131,7 +129,15 @@ private:
 
     Aws::S3::Model::HeadObjectResult headObject(const String & source_bucket, const String & key) const;
     void listObjects(const String & source_bucket, const String & source_path, std::function<bool(const Aws::S3::Model::ListObjectsV2Result &)> callback) const;
-    void copyObject(const String & src_bucket, const String & src_key, const String & dst_bucket, const String & dst_key) const;
+    void copyObject(const String & src_bucket, const String & src_key, const String & dst_bucket, const String & dst_key,
+        std::optional<Aws::S3::Model::HeadObjectResult> head = std::nullopt) const;
+
+    void copyObjectImpl(const String & src_bucket, const String & src_key, const String & dst_bucket, const String & dst_key,
+        std::optional<Aws::S3::Model::HeadObjectResult> head = std::nullopt,
+        std::optional<std::reference_wrapper<const ObjectMetadata>> metadata = std::nullopt) const;
+    void copyObjectMultipartImpl(const String & src_bucket, const String & src_key, const String & dst_bucket, const String & dst_key,
+        std::optional<Aws::S3::Model::HeadObjectResult> head = std::nullopt,
+        std::optional<std::reference_wrapper<const ObjectMetadata>> metadata = std::nullopt) const;
 
     /// Restore S3 metadata files on file system.
     void restore();
@@ -162,7 +168,7 @@ private:
     inline static const String RESTORE_FILE_NAME = "restore";
 
     /// Key has format: ../../r{revision}-{operation}
-    const re2::RE2 key_regexp {".*/r(\\d+)-(\\w+).*"};
+    const re2::RE2 key_regexp {".*/r(\\d+)-(\\w+)$"};
 
     /// Object contains information about schema version.
     inline static const String SCHEMA_VERSION_OBJECT = ".SCHEMA_VERSION";
@@ -170,6 +176,8 @@ private:
     static constexpr int RESTORABLE_SCHEMA_VERSION = 1;
     /// Directories with data.
     const std::vector<String> data_roots {"data", "store"};
+
+    ContextPtr context;
 };
 
 }

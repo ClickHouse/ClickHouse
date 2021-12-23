@@ -37,6 +37,9 @@ def cluster():
                              with_hdfs=True)
         logging.info("Starting cluster...")
         cluster.start()
+        if cluster.instances["node1"].is_debug_build():
+            # https://github.com/ClickHouse/ClickHouse/issues/27814
+            pytest.skip("libhdfs3 calls rand function which does not pass harmful check in debug build")
         logging.info("Cluster started")
 
         fs = HdfsClient(hosts=cluster.hdfs_ip)

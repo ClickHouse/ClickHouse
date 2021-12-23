@@ -1,3 +1,5 @@
+-- Tags: distributed
+
 DROP TABLE IF EXISTS test_01040;
 DROP TABLE IF EXISTS dist_test_01040;
 

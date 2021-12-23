@@ -124,4 +124,4 @@ drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 
 ClickHouseでは、パーティションの削除、テーブル間のコピー、またはバックアップの作成などの操作を実行できます。 セクションのすべての操作の一覧を参照してください [パーティションとパーツの操作](../../../sql-reference/statements/alter.md#alter_manipulations-with-partitions).
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/custom_partitioning_key/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/custom_partitioning_key/) <!--hide-->

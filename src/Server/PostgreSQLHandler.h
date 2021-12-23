@@ -1,9 +1,10 @@
 #pragma once
 
 #include <Common/CurrentMetrics.h>
+#include <Common/config.h>
 #include <Core/PostgreSQLProtocol.h>
 #include <Poco/Net/TCPServerConnection.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include "IServer.h"
 
 #if USE_SSL
@@ -17,6 +18,8 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+class Session;
 
 /** PostgreSQL wire protocol implementation.
  * For more info see https://www.postgresql.org/docs/current/protocol.html
@@ -37,7 +40,7 @@ private:
     Poco::Logger * log = &Poco::Logger::get("PostgreSQLHandler");
 
     IServer & server;
-    ContextMutablePtr connection_context;
+    std::unique_ptr<Session> session;
     bool ssl_enabled = false;
     Int32 connection_id = 0;
     Int32 secret_key = 0;

@@ -41,6 +41,4 @@ target_compile_options (amqp-cpp
 )
 
 target_include_directories (amqp-cpp SYSTEM PUBLIC "${LIBRARY_DIR}/include")
-
-target_link_libraries (amqp-cpp PUBLIC ssl)
-
+target_link_libraries(amqp-cpp PUBLIC ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})

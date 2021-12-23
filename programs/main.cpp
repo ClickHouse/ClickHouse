@@ -13,16 +13,14 @@
 #include <tuple>
 #include <utility> /// pair
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_tools.h"
-#endif
+#include "config_tools.h"
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/IO.h>
 
-#include <common/phdr_cache.h>
-#include <common/scope_guard.h>
+#include <base/phdr_cache.h>
+#include <base/scope_guard.h>
 
 
 /// Universal executable for various clickhouse applications
@@ -62,6 +60,9 @@ int mainEntryClickHouseKeeper(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_KEEPER
 int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
 #endif
+#if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
+int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
+#endif
 #if ENABLE_CLICKHOUSE_INSTALL
 int mainEntryClickHouseInstall(int argc, char ** argv);
 int mainEntryClickHouseStart(int argc, char ** argv);
@@ -85,6 +86,7 @@ namespace
 
 using MainFunc = int (*)(int, char**);
 
+#if !defined(FUZZING_MODE)
 
 /// Add an item here to register new application
 std::pair<const char *, MainFunc> clickhouse_applications[] =
@@ -132,9 +134,11 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
     {"status", mainEntryClickHouseStatus},
     {"restart", mainEntryClickHouseRestart},
 #endif
+#if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
+    {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
+#endif
     {"hash-binary", mainEntryClickHouseHashBinary},
 };
-
 
 int printHelp(int, char **)
 {
@@ -143,7 +147,6 @@ int printHelp(int, char **)
         std::cerr << "clickhouse " << application.first << " [args] " << std::endl;
     return -1;
 }
-
 
 bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
 {
@@ -164,6 +167,7 @@ bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
     std::string app_name = "clickhouse-" + app_suffix;
     return !argv.empty() && (app_name == argv[0] || endsWith(argv[0], "/" + app_name));
 }
+#endif
 
 
 enum class InstructionFail
@@ -322,7 +326,11 @@ struct Checker
     {
         checkRequiredInstructions();
     }
-} checker __attribute__((init_priority(101)));  /// Run before other static initializers.
+} checker
+#ifndef __APPLE__
+    __attribute__((init_priority(101)))    /// Run before other static initializers.
+#endif
+;
 
 }
 
@@ -332,9 +340,13 @@ struct Checker
 ///
 /// extern bool inside_main;
 /// class C { C() { assert(inside_main); } };
+#ifndef FUZZING_MODE
 bool inside_main = false;
+#else
+bool inside_main = true;
+#endif
 
-
+#if !defined(FUZZING_MODE)
 int main(int argc_, char ** argv_)
 {
     inside_main = true;
@@ -365,3 +377,4 @@ int main(int argc_, char ** argv_)
 
     return main_func(static_cast<int>(argv.size()), argv.data());
 }
+#endif

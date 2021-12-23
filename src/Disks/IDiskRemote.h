@@ -1,18 +1,21 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#endif
 
 #include <atomic>
-#include "Disks/DiskFactory.h"
-#include "Disks/Executor.h"
+#include <Disks/DiskFactory.h>
+#include <Disks/Executor.h>
 #include <utility>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
+
+namespace CurrentMetrics
+{
+    extern const Metric DiskSpaceReservedForMerge;
+}
 
 namespace DB
 {
@@ -35,7 +38,11 @@ protected:
 using RemoteFSPathKeeperPtr = std::shared_ptr<RemoteFSPathKeeper>;
 
 
-/// Base Disk class for remote FS's, which are not posix-compatible (DiskS3 and DiskHDFS)
+class IAsynchronousReader;
+using AsynchronousReaderPtr = std::shared_ptr<IAsynchronousReader>;
+
+
+/// Base Disk class for remote FS's, which are not posix-compatible (e.g. DiskS3, DiskHDFS, DiskBlobStorage)
 class IDiskRemote : public IDisk
 {
 
@@ -45,7 +52,7 @@ public:
     IDiskRemote(
         const String & name_,
         const String & remote_fs_root_path_,
-        const String & metadata_path_,
+        DiskPtr metadata_disk_,
         const String & log_name_,
         size_t thread_pool_size);
 
@@ -53,7 +60,7 @@ public:
 
     const String & getName() const final override { return name; }
 
-    const String & getPath() const final override { return metadata_path; }
+    const String & getPath() const final override { return metadata_disk->getPath(); }
 
     Metadata readMeta(const String & path) const;
 
@@ -127,12 +134,14 @@ public:
 
     virtual RemoteFSPathKeeperPtr createFSPathKeeper() const = 0;
 
+    static AsynchronousReaderPtr getThreadPoolReader();
+
 protected:
     Poco::Logger * log;
     const String name;
     const String remote_fs_root_path;
 
-    const String metadata_path;
+    DiskPtr metadata_disk;
 
 private:
     void removeMeta(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper);
@@ -148,33 +157,40 @@ private:
 
 using RemoteDiskPtr = std::shared_ptr<IDiskRemote>;
 
-/// Remote FS (S3, HDFS) metadata file layout:
-/// Number of FS objects, Total size of all FS objects.
-/// Each FS object represents path where object located in FS and size of object.
 
-struct IDiskRemote::Metadata
+/// Minimum info, required to be passed to ReadIndirectBufferFromRemoteFS<T>
+struct RemoteMetadata
+{
+    using PathAndSize = std::pair<String, size_t>;
+
+    /// Remote FS objects paths and their sizes.
+    std::vector<PathAndSize> remote_fs_objects;
+
+    /// URI
+    const String & remote_fs_root_path;
+
+    /// Relative path to metadata file on local FS.
+    const String metadata_file_path;
+
+    RemoteMetadata(const String & remote_fs_root_path_, const String & metadata_file_path_)
+        : remote_fs_root_path(remote_fs_root_path_), metadata_file_path(metadata_file_path_) {}
+};
+
+/// Remote FS (S3, HDFS) metadata file layout:
+/// FS objects, their number and total size of all FS objects.
+/// Each FS object represents a file path in remote FS and its size.
+
+struct IDiskRemote::Metadata : RemoteMetadata
 {
     /// Metadata file version.
     static constexpr UInt32 VERSION_ABSOLUTE_PATHS = 1;
     static constexpr UInt32 VERSION_RELATIVE_PATHS = 2;
     static constexpr UInt32 VERSION_READ_ONLY_FLAG = 3;
 
-    using PathAndSize = std::pair<String, size_t>;
-
-    /// Remote FS (S3, HDFS) root path.
-    const String & remote_fs_root_path;
-
-    /// Disk path.
-    const String & disk_path;
-
-    /// Relative path to metadata file on local FS.
-    String metadata_file_path;
+    DiskPtr metadata_disk;
 
     /// Total size of all remote FS (S3, HDFS) objects.
     size_t total_size = 0;
-
-    /// Remote FS (S3, HDFS) objects paths and their sizes.
-    std::vector<PathAndSize> remote_fs_objects;
 
     /// Number of references (hardlinks) to this metadata file.
     UInt32 ref_count = 0;
@@ -184,7 +200,7 @@ struct IDiskRemote::Metadata
 
     /// Load metadata by path or create empty if `create` flag is set.
     Metadata(const String & remote_fs_root_path_,
-            const String & disk_path_,
+            DiskPtr metadata_disk_,
             const String & metadata_file_path_,
             bool create = false);
 
@@ -194,33 +210,6 @@ struct IDiskRemote::Metadata
     void save(bool sync = false);
 
 };
-
-
-class RemoteDiskDirectoryIterator final : public IDiskDirectoryIterator
-{
-public:
-    RemoteDiskDirectoryIterator() {}
-    RemoteDiskDirectoryIterator(const String & full_path, const String & folder_path_) : iter(full_path), folder_path(folder_path_) {}
-
-    void next() override { ++iter; }
-
-    bool isValid() const override { return iter != fs::directory_iterator(); }
-
-    String path() const override
-    {
-        if (fs::is_directory(iter->path()))
-            return folder_path / iter->path().filename().string() / "";
-        else
-            return folder_path / iter->path().filename().string();
-    }
-
-    String name() const override { return iter->path().filename(); }
-
-private:
-    fs::directory_iterator iter;
-    fs::path folder_path;
-};
-
 
 class DiskRemoteReservation final : public IReservation
 {

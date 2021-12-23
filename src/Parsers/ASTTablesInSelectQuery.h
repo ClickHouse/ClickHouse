@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <base/EnumReflection.h>
 
 
 namespace DB
@@ -116,8 +117,7 @@ inline bool isLeft(ASTTableJoin::Kind kind)         { return kind == ASTTableJoi
 inline bool isRight(ASTTableJoin::Kind kind)        { return kind == ASTTableJoin::Kind::Right; }
 inline bool isInner(ASTTableJoin::Kind kind)        { return kind == ASTTableJoin::Kind::Inner; }
 inline bool isFull(ASTTableJoin::Kind kind)         { return kind == ASTTableJoin::Kind::Full; }
-inline bool isCross(ASTTableJoin::Kind kind)        { return kind == ASTTableJoin::Kind::Cross; }
-inline bool isComma(ASTTableJoin::Kind kind)        { return kind == ASTTableJoin::Kind::Comma; }
+inline bool isCrossOrComma(ASTTableJoin::Kind kind) { return kind == ASTTableJoin::Kind::Comma || kind == ASTTableJoin::Kind::Cross; }
 inline bool isRightOrFull(ASTTableJoin::Kind kind)  { return kind == ASTTableJoin::Kind::Right || kind == ASTTableJoin::Kind::Full; }
 inline bool isLeftOrFull(ASTTableJoin::Kind kind)   { return kind == ASTTableJoin::Kind::Left  || kind == ASTTableJoin::Kind::Full; }
 inline bool isInnerOrRight(ASTTableJoin::Kind kind) { return kind == ASTTableJoin::Kind::Inner || kind == ASTTableJoin::Kind::Right; }

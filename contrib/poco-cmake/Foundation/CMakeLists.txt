@@ -51,6 +51,7 @@ if (USE_INTERNAL_POCO_LIBRARY)
         "${LIBRARY_DIR}/Foundation/src/Channel.cpp"
         "${LIBRARY_DIR}/Foundation/src/Checksum.cpp"
         "${LIBRARY_DIR}/Foundation/src/Clock.cpp"
+        "${LIBRARY_DIR}/Foundation/src/CompressedLogFile.cpp"
         "${LIBRARY_DIR}/Foundation/src/Condition.cpp"
         "${LIBRARY_DIR}/Foundation/src/Configurable.cpp"
         "${LIBRARY_DIR}/Foundation/src/ConsoleChannel.cpp"
@@ -222,7 +223,7 @@ if (USE_INTERNAL_POCO_LIBRARY)
             POCO_OS_FAMILY_UNIX
     )
     target_include_directories (_poco_foundation SYSTEM PUBLIC "${LIBRARY_DIR}/Foundation/include")
-    target_link_libraries (_poco_foundation PRIVATE Poco::Foundation::PCRE ${ZLIB_LIBRARIES})
+    target_link_libraries (_poco_foundation PRIVATE Poco::Foundation::PCRE ${ZLIB_LIBRARIES} lz4)
 else ()
     add_library (Poco::Foundation UNKNOWN IMPORTED GLOBAL)
 

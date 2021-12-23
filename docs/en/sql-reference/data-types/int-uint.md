@@ -25,14 +25,13 @@ Aliases:
 -   `Int32` — `INT`, `INT4`, `INTEGER`.
 -   `Int64` — `BIGINT`.
 
-## Uint Ranges {#uint-ranges}
+## UInt Ranges {#uint-ranges}
 
 -   `UInt8` — \[0 : 255\]
 -   `UInt16` — \[0 : 65535\]
 -   `UInt32` — \[0 : 4294967295\]
 -   `UInt64` — \[0 : 18446744073709551615\]
+-   `UInt128` — \[0 : 340282366920938463463374607431768211455\]
 -   `UInt256` — \[0 : 115792089237316195423570985008687907853269984665640564039457584007913129639935\]
 
-`UInt128` is not supported yet.
-
-[Original article](https://clickhouse.tech/docs/en/data_types/int_uint/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/data_types/int_uint/) <!--hide-->

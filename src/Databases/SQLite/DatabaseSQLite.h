@@ -1,20 +1,18 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include "config_core.h"
-#endif
 
 #if USE_SQLITE
 #include <Core/Names.h>
 #include <Databases/DatabasesCommon.h>
 #include <Parsers/ASTCreateQuery.h>
 
-#include <sqlite3.h> // Y_IGNORE
+#include <sqlite3.h>
 
 
 namespace DB
 {
-class DatabaseSQLite final : public IDatabase, protected WithContext
+class DatabaseSQLite final : public IDatabase, WithContext
 {
 public:
     using SQLitePtr = std::shared_ptr<sqlite3>;
@@ -34,7 +32,7 @@ public:
 
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
 
     bool empty() const override;
 
@@ -60,7 +58,6 @@ private:
 
     StoragePtr fetchTable(const String & table_name, ContextPtr context, bool table_checked) const;
 
-    ASTPtr getColumnDeclaration(const DataTypePtr & data_type) const;
 };
 
 }

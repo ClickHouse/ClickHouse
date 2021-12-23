@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP DICTIONARY IF EXISTS dict_01864;
 CREATE DICTIONARY dict_01864
 (

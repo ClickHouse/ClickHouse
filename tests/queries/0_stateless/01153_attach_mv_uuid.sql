@@ -1,3 +1,5 @@
+-- Tags: no-ordinary-database, no-parallel
+
 DROP TABLE IF EXISTS src;
 DROP TABLE IF EXISTS mv;
 DROP TABLE IF EXISTS ".inner_id.e15f3ab5-6cae-4df3-b879-f40deafd82c2";

@@ -1,11 +1,9 @@
 #pragma once
 
-#include <Access/RowPolicy.h>
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
-#include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -14,21 +12,18 @@
 #include <Common/MultiVersion.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/ThreadPool.h>
-#include <common/types.h>
+#include <Common/isLocalAddress.h>
+#include <base/types.h>
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
-#include <atomic>
-#include <chrono>
-#include <condition_variable>
+#include <boost/container/flat_set.hpp>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <thread>
+#include <exception>
 
 
 namespace Poco::Net { class IPAddress; }
@@ -49,9 +44,11 @@ struct QuotaUsage;
 class AccessFlags;
 struct AccessRightsElement;
 class AccessRightsElements;
+enum class RowPolicyFilterType;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalModelsLoader;
+class ExternalUserDefinedExecutableFunctionsLoader;
 class InterserverCredentials;
 using InterserverCredentialsPtr = std::shared_ptr<const InterserverCredentials>;
 class InterserverIOHandler;
@@ -67,9 +64,11 @@ class ProcessList;
 class QueryStatus;
 class Macros;
 struct Progress;
+struct FileProgress;
 class Clusters;
 class QueryLog;
 class QueryThreadLog;
+class QueryViewsLog;
 class PartLog;
 class TextLog;
 class TraceLog;
@@ -77,6 +76,7 @@ class MetricLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
+class SessionLog;
 struct MergeTreeSettings;
 class StorageS3Settings;
 class IDatabase;
@@ -87,7 +87,7 @@ class ActionLocksManager;
 using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
 class ICompressionCodec;
-class AccessControlManager;
+class AccessControl;
 class Credentials;
 class GSSAcceptorContext;
 struct SettingsConstraintsAndProfileIDs;
@@ -103,11 +103,22 @@ using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 using StoragePoliciesMap = std::map<String, StoragePolicyPtr>;
 class StoragePolicySelector;
 using StoragePolicySelectorPtr = std::shared_ptr<const StoragePolicySelector>;
+template <class Queue>
+class MergeTreeBackgroundExecutor;
+class MergeMutateRuntimeQueue;
+class OrdinaryRuntimeQueue;
+using MergeMutateBackgroundExecutor = MergeTreeBackgroundExecutor<MergeMutateRuntimeQueue>;
+using MergeMutateBackgroundExecutorPtr = std::shared_ptr<MergeMutateBackgroundExecutor>;
+using OrdinaryBackgroundExecutor = MergeTreeBackgroundExecutor<OrdinaryRuntimeQueue>;
+using OrdinaryBackgroundExecutorPtr = std::shared_ptr<OrdinaryBackgroundExecutor>;
 struct PartUUIDs;
 using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
-class KeeperStorageDispatcher;
+class KeeperDispatcher;
+class Session;
 
+class IInputFormat;
 class IOutputFormat;
+using InputFormatPtr = std::shared_ptr<IInputFormat>;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
@@ -125,6 +136,8 @@ using ThrottlerPtr = std::shared_ptr<Throttler>;
 class ZooKeeperMetadataTransaction;
 using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransaction>;
 
+class AsynchronousInsertQueue;
+
 /// Callback for external tables initializer
 using ExternalTablesInitializer = std::function<void(ContextPtr)>;
 
@@ -135,6 +148,8 @@ using InputBlocksReader = std::function<Block(ContextPtr)>;
 
 /// Used in distributed task processing
 using ReadTaskCallback = std::function<String()>;
+
+using MergeTreeReadTaskCallback = std::function<std::optional<PartitionReadResponse>(PartitionReadRequest)>;
 
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
@@ -184,7 +199,7 @@ private:
     std::shared_ptr<std::vector<UUID>> current_roles;
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> settings_constraints_and_current_profiles;
     std::shared_ptr<const ContextAccess> access;
-    std::shared_ptr<const EnabledRowPolicies> initial_row_policy;
+    std::shared_ptr<const EnabledRowPolicies> row_policies_of_initial_user;
     String current_database;
     Settings settings;  /// Setting for query execution.
 
@@ -204,8 +219,12 @@ private:
     Scalars scalars;
     Scalars local_scalars;
 
-    /// Fields for distributed s3 function
+    /// Used in s3Cluster table function. With this callback, a worker node could ask an initiator
+    /// about next file to read from s3.
     std::optional<ReadTaskCallback> next_task_callback;
+    /// Used in parallel reading from replicas. A replica tells about its intentions to read
+    /// some ranges from some part and initiator will tell the replica about whether it is accepted or denied.
+    std::optional<MergeTreeReadTaskCallback> merge_tree_read_task_callback;
 
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
@@ -219,6 +238,7 @@ private:
             tables = rhs.tables;
             columns = rhs.columns;
             projections = rhs.projections;
+            views = rhs.views;
         }
 
         QueryAccessInfo(QueryAccessInfo && rhs) = delete;
@@ -235,6 +255,7 @@ private:
             std::swap(tables, rhs.tables);
             std::swap(columns, rhs.columns);
             std::swap(projections, rhs.projections);
+            std::swap(views, rhs.views);
         }
 
         /// To prevent a race between copy-constructor and other uses of this structure.
@@ -242,7 +263,8 @@ private:
         std::set<std::string> databases{};
         std::set<std::string> tables{};
         std::set<std::string> columns{};
-        std::set<std::string> projections;
+        std::set<std::string> projections{};
+        std::set<std::string> views{};
     };
 
     QueryAccessInfo query_access_info;
@@ -275,16 +297,15 @@ private:
     /// XXX: move this stuff to shared part instead.
     ContextMutablePtr buffer_context;  /// Buffer context. Could be equal to this.
 
-    /// A flag, used to distinguish between user query and internal query to a database engine (MaterializePostgreSQL).
+    /// A flag, used to distinguish between user query and internal query to a database engine (MaterializedPostgreSQL).
     bool is_internal_query = false;
+
 
 public:
     // Top-level OpenTelemetry trace context for the query. Makes sense only for a query context.
     OpenTelemetryTraceContext query_trace_context;
 
 private:
-    friend class NamedSessions;
-
     using SampleBlockCache = std::unordered_map<std::string, Block>;
     mutable SampleBlockCache sample_block_cache;
 
@@ -318,17 +339,16 @@ public:
     static ContextMutablePtr createCopy(const ContextPtr & other);
     static SharedContextHolder createShared();
 
-    void copyFrom(const ContextPtr & other);
-
     ~Context();
 
     String getPath() const;
     String getFlagsPath() const;
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
+    String getUserScriptsPath() const;
 
     /// A list of warnings about server configuration to place in `system.warnings` table.
-    std::vector<String> getWarnings() const;
+    Strings getWarnings() const;
 
     VolumePtr getTemporaryVolume() const;
 
@@ -336,6 +356,7 @@ public:
     void setFlagsPath(const String & path);
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
+    void setUserScriptsPath(const String & path);
 
     void addWarningMessage(const String & msg);
 
@@ -347,8 +368,8 @@ public:
     void setConfig(const ConfigurationPtr & config);
     const Poco::Util::AbstractConfiguration & getConfigRef() const;
 
-    AccessControlManager & getAccessControlManager();
-    const AccessControlManager & getAccessControlManager() const;
+    AccessControl & getAccessControl();
+    const AccessControl & getAccessControl() const;
 
     /// Sets external authenticators config (LDAP, Kerberos).
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
@@ -363,22 +384,15 @@ public:
     void setUsersConfig(const ConfigurationPtr & config);
     ConfigurationPtr getUsersConfig();
 
-    /// Sets the current user, checks the credentials and that the specified host is allowed.
-    /// Must be called before getClientInfo() can be called.
-    void setUser(const Credentials & credentials, const Poco::Net::SocketAddress & address);
-    void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address);
-
-    /// Sets the current user, *does not check the password/credentials and that the specified host is allowed*.
-    /// Must be called before getClientInfo.
-    ///
-    /// (Used only internally in cluster, if the secret matches)
-    void setUserWithoutCheckingPassword(const String & name, const Poco::Net::SocketAddress & address);
-
-    void setQuotaKey(String quota_key_);
+    /// Sets the current user assuming that he/she is already authenticated.
+    /// WARNING: This function doesn't check password!
+    void setUser(const UUID & user_id_);
 
     UserPtr getUser() const;
     String getUserName() const;
     std::optional<UUID> getUserID() const;
+
+    void setQuotaKey(String quota_key_);
 
     void setCurrentRoles(const std::vector<UUID> & current_roles_);
     void setCurrentRolesDefault();
@@ -408,12 +422,14 @@ public:
 
     std::shared_ptr<const ContextAccess> getAccess() const;
 
-    ASTPtr getRowPolicyCondition(const String & database, const String & table_name, RowPolicy::ConditionType type) const;
+    ASTPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
 
-    /// Sets an extra row policy based on `client_info.initial_user`, if it exists.
+    /// Finds and sets extra row policies to be used based on `client_info.initial_user`,
+    /// if the initial user exists.
     /// TODO: we need a better solution here. It seems we should pass the initial row policy
-    /// because a shard is allowed to don't have the initial user or it may be another user with the same name.
-    void setInitialRowPolicy();
+    /// because a shard is allowed to not have the initial user or it might be another user
+    /// with the same name.
+    void enableRowPoliciesOfInitialUser();
 
     std::shared_ptr<const EnabledQuota> getQuota() const;
     std::optional<QuotaUsage> getQuotaUsage() const;
@@ -469,7 +485,9 @@ public:
         const String & quoted_database_name,
         const String & full_quoted_table_name,
         const Names & column_names,
-        const String & projection_name = {});
+        const String & projection_name = {},
+        const String & view_name = {});
+
 
     /// Supported factories for records in query_log
     enum class QueryLogFactories
@@ -540,27 +558,28 @@ public:
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
     const ExternalModelsLoader & getExternalModelsLoader() const;
+    const ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader() const;
     EmbeddedDictionaries & getEmbeddedDictionaries();
     ExternalDictionariesLoader & getExternalDictionariesLoader();
+    ExternalDictionariesLoader & getExternalDictionariesLoaderUnlocked();
+    ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader();
+    ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoaderUnlocked();
     ExternalModelsLoader & getExternalModelsLoader();
     ExternalModelsLoader & getExternalModelsLoaderUnlocked();
-    void tryCreateEmbeddedDictionaries() const;
-    void loadDictionaries(const Poco::Util::AbstractConfiguration & config);
+    void tryCreateEmbeddedDictionaries(const Poco::Util::AbstractConfiguration & config) const;
+    void loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config);
+    void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
+    void loadOrReloadModels(const Poco::Util::AbstractConfiguration & config);
 
 #if USE_NLP
     SynonymsExtensions & getSynonymsExtensions() const;
     Lemmatizers & getLemmatizers() const;
 #endif
 
-    void setExternalModelsConfig(const ConfigurationPtr & config, const std::string & config_name = "models_config");
-
     /// I/O formats.
-    BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const;
+    InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
-    /// Don't use streams. Better look at getOutputFormat...
-    BlockOutputStreamPtr getOutputStreamParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
-    BlockOutputStreamPtr getOutputStream(const String & name, WriteBuffer & buf, const Block & sample) const;
-
+    OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
     OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
 
     InterserverIOHandler & getInterserverIOHandler();
@@ -586,11 +605,10 @@ public:
 
     std::optional<UInt16> getTCPPortSecure() const;
 
-    /// Allow to use named sessions. The thread will be run to cleanup sessions after timeout has expired.
-    /// The method must be called at the server startup.
-    void enableNamedSessions();
+    /// Register server ports during server starting up. No lock is held.
+    void registerServerPort(String port_name, UInt16 port);
 
-    std::shared_ptr<NamedSession> acquireNamedSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check);
+    UInt16 getServerPort(const String & port_name) const;
 
     /// For methods below you may need to acquire the context lock by yourself.
 
@@ -602,6 +620,7 @@ public:
     bool hasSessionContext() const { return !session_context.expired(); }
 
     ContextMutablePtr getGlobalContext() const;
+
     bool hasGlobalContext() const { return !global_context.expired(); }
     bool isGlobalContext() const
     {
@@ -621,13 +640,13 @@ public:
     const Settings & getSettingsRef() const { return settings; }
 
     void setProgressCallback(ProgressCallback callback);
-    /// Used in InterpreterSelectQuery to pass it to the IBlockInputStream.
+    /// Used in executeQuery() to pass it to the QueryPipeline.
     ProgressCallback getProgressCallback() const;
 
     void setFileProgressCallback(FileProgressCallback && callback) { file_progress_callback = callback; }
     FileProgressCallback getFileProgressCallback() const { return file_progress_callback; }
 
-    /** Set in executeQuery and InterpreterSelectQuery. Then it is used in IBlockInputStream,
+    /** Set in executeQuery and InterpreterSelectQuery. Then it is used in QueryPipeline,
       *  to update and monitor information about the total number of resources spent for the query.
       */
     void setProcessListElement(QueryStatus * elem);
@@ -650,11 +669,20 @@ public:
     /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
 
+    /// Try to connect to Keeper using get(Auxiliary)ZooKeeper. Useful for
+    /// internal Keeper start (check connection to some other node). Return true
+    /// if connected successfully (without exception) or our zookeeper client
+    /// connection configured for some other cluster without our node.
+    bool tryCheckClientConnectionToMyKeeperCluster() const;
+
+    UInt32 getZooKeeperSessionUptime() const;
+
 #if USE_NURAFT
-    std::shared_ptr<KeeperStorageDispatcher> & getKeeperStorageDispatcher() const;
+    std::shared_ptr<KeeperDispatcher> & getKeeperDispatcher() const;
 #endif
-    void initializeKeeperStorageDispatcher() const;
-    void shutdownKeeperStorageDispatcher() const;
+    void initializeKeeperDispatcher(bool start_async) const;
+    void shutdownKeeperDispatcher() const;
+    void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config);
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
     void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
@@ -678,6 +706,16 @@ public:
     void setMarkCache(size_t cache_size_in_bytes);
     std::shared_ptr<MarkCache> getMarkCache() const;
     void dropMarkCache() const;
+
+    /// Create a cache of index uncompressed blocks of specified size. This can be done only once.
+    void setIndexUncompressedCache(size_t max_size_in_bytes);
+    std::shared_ptr<UncompressedCache> getIndexUncompressedCache() const;
+    void dropIndexUncompressedCache() const;
+
+    /// Create a cache of index marks of specified size. This can be done only once.
+    void setIndexMarkCache(size_t cache_size_in_bytes);
+    std::shared_ptr<MarkCache> getIndexMarkCache() const;
+    void dropIndexMarkCache() const;
 
     /// Create a cache of mapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
     void setMMappedFileCache(size_t cache_size_in_num_entries);
@@ -730,12 +768,14 @@ public:
     /// Nullptr if the query log is not ready for this moment.
     std::shared_ptr<QueryLog> getQueryLog() const;
     std::shared_ptr<QueryThreadLog> getQueryThreadLog() const;
+    std::shared_ptr<QueryViewsLog> getQueryViewsLog() const;
     std::shared_ptr<TraceLog> getTraceLog() const;
     std::shared_ptr<TextLog> getTextLog() const;
     std::shared_ptr<MetricLog> getMetricLog() const;
     std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog() const;
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog() const;
     std::shared_ptr<ZooKeeperLog> getZooKeeperLog() const;
+    std::shared_ptr<SessionLog> getSessionLog() const;
 
     /// Returns an object used to log operations with parts if it possible.
     /// Provide table name to make required checks.
@@ -763,6 +803,7 @@ public:
     StoragePoliciesMap getPoliciesMap() const;
     DisksMap getDisksMap() const;
     void updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config);
+
 
     /// Provides storage politics schemes
     StoragePolicyPtr getStoragePolicy(const String & name) const;
@@ -819,12 +860,31 @@ public:
     void initZooKeeperMetadataTransaction(ZooKeeperMetadataTransactionPtr txn, bool attach_existing = false);
     /// Returns context of current distributed DDL query or nullptr.
     ZooKeeperMetadataTransactionPtr getZooKeeperMetadataTransaction() const;
+    /// Removes context of current distributed DDL.
+    void resetZooKeeperMetadataTransaction();
 
     PartUUIDsPtr getPartUUIDs() const;
     PartUUIDsPtr getIgnoredPartUUIDs() const;
 
+    AsynchronousInsertQueue * getAsynchronousInsertQueue() const;
+    void setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr);
+
     ReadTaskCallback getReadTaskCallback() const;
     void setReadTaskCallback(ReadTaskCallback && callback);
+
+    MergeTreeReadTaskCallback getMergeTreeReadTaskCallback() const;
+    void setMergeTreeReadTaskCallback(MergeTreeReadTaskCallback && callback);
+
+    /// Background executors related methods
+    void initializeBackgroundExecutorsIfNeeded();
+
+    MergeMutateBackgroundExecutorPtr getMergeMutateExecutor() const;
+    OrdinaryBackgroundExecutorPtr getMovesExecutor() const;
+    OrdinaryBackgroundExecutorPtr getFetchesExecutor() const;
+    OrdinaryBackgroundExecutorPtr getCommonExecutor() const;
+
+    /** Get settings for reading from filesystem. */
+    ReadSettings getReadSettings() const;
 
 private:
     std::unique_lock<std::recursive_mutex> getLock() const;
@@ -844,32 +904,6 @@ private:
     StoragePolicySelectorPtr getStoragePolicySelector(std::lock_guard<std::mutex> & lock) const;
 
     DiskSelectorPtr getDiskSelector(std::lock_guard<std::mutex> & /* lock */) const;
-
-    /// If the password is not set, the password will not be checked
-    void setUserImpl(const String & name, const std::optional<String> & password, const Poco::Net::SocketAddress & address);
-};
-
-
-class NamedSessions;
-
-/// User name and session identifier. Named sessions are local to users.
-using NamedSessionKey = std::pair<String, String>;
-
-/// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
-struct NamedSession
-{
-    NamedSessionKey key;
-    UInt64 close_cycle = 0;
-    ContextMutablePtr context;
-    std::chrono::steady_clock::duration timeout;
-    NamedSessions & parent;
-
-    NamedSession(NamedSessionKey key_, ContextPtr context_, std::chrono::steady_clock::duration timeout_, NamedSessions & parent_)
-        : key(key_), context(Context::createCopy(context_)), timeout(timeout_), parent(parent_)
-    {
-    }
-
-    void release();
 };
 
 }

@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP TABLE IF EXISTS recompression_table;
 
 CREATE TABLE recompression_table

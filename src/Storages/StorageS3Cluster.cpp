@@ -1,8 +1,6 @@
 #include "Storages/StorageS3Cluster.h"
 
-#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#endif
 
 #if USE_AWS_S3
 
@@ -11,11 +9,9 @@
 #include "Client/Connection.h"
 #include "Core/QueryProcessingStage.h"
 #include <Core/UUID.h>
-#include "DataStreams/RemoteBlockInputStream.h"
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <IO/ReadBufferFromS3.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
@@ -24,20 +20,17 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/getTableExpressions.h>
-#include <Formats/FormatFactory.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <DataStreams/narrowBlockInputStreams.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
-#include <Processors/Pipe.h>
-#include <Processors/Sources/SourceFromInputStream.h>
+#include <QueryPipeline/narrowBlockInputStreams.h>
+#include <QueryPipeline/Pipe.h>
 #include "Processors/Sources/SourceWithProgress.h"
 #include <Processors/Sources/RemoteSource.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <aws/core/auth/AWSCredentials.h>
 #include <aws/s3/S3Client.h>
@@ -90,7 +83,6 @@ Pipe StorageS3Cluster::read(
     StorageS3::updateClientAndAuthSettings(context, client_auth);
 
     auto cluster = context->getCluster(cluster_name)->getClusterWithReplicasAsShards(context->getSettings());
-    S3::URI s3_uri(Poco::URI{filename});
     StorageS3::updateClientAndAuthSettings(context, client_auth);
 
     auto iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(*client_auth.client, client_auth.uri);
@@ -134,7 +126,7 @@ Pipe StorageS3Cluster::read(
                 scalars,
                 Tables(),
                 processed_stage,
-                callback);
+                RemoteQueryExecutor::Extension{.task_iterator = callback});
 
             pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
         }

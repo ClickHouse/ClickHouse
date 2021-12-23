@@ -1,0 +1,10 @@
+SELECT min(n AS a) + (1 AS b) AS c
+FROM
+(
+    SELECT number AS n
+    FROM numbers(10)
+    WHERE (1 > 0) AND (n > 0)
+)
+WHERE (a > 0) AND (b > 0)
+HAVING c > 0
+2

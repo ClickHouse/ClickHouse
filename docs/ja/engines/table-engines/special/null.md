@@ -11,4 +11,4 @@ Nullテーブルに書き込む場合、データは無視されます。 Null�
 
 ただし、Nullテーブルにマテリアライズドビューを作成できます。 したがって、テーブルに書き込まれたデータはビュー内で終了します。
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/null/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/null/) <!--hide-->

@@ -20,6 +20,12 @@ public:
     RestartAwareReadBuffer(const DiskRestartProxy & disk, std::unique_ptr<ReadBufferFromFileBase> impl_)
         : ReadBufferFromFileDecorator(std::move(impl_)), lock(disk.mutex) { }
 
+    void prefetch() override { impl->prefetch(); }
+
+    void setReadUntilPosition(size_t position) override { impl->setReadUntilPosition(position); }
+
+    void setReadUntilEnd() override { impl->setReadUntilEnd(); }
+
 private:
     ReadLock lock;
 };
@@ -35,7 +41,7 @@ public:
     {
         try
         {
-            RestartAwareWriteBuffer::finalize();
+            finalize();
         }
         catch (...)
         {
@@ -43,12 +49,9 @@ public:
         }
     }
 
-    void finalize() override
+    void finalizeImpl() override
     {
-        if (finalized)
-            return;
-
-        WriteBufferFromFileDecorator::finalize();
+        WriteBufferFromFileDecorator::finalizeImpl();
 
         lock.unlock();
     }
@@ -187,11 +190,10 @@ void DiskRestartProxy::listFiles(const String & path, std::vector<String> & file
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskRestartProxy::readFile(
-    const String & path, size_t buf_size, size_t estimated_size, size_t direct_io_threshold, size_t mmap_threshold, MMappedFileCache * mmap_cache)
-    const
+    const String & path, const ReadSettings & settings, std::optional<size_t> size) const
 {
     ReadLock lock (mutex);
-    auto impl = DiskDecorator::readFile(path, buf_size, estimated_size, direct_io_threshold, mmap_threshold, mmap_cache);
+    auto impl = DiskDecorator::readFile(path, settings, size);
     return std::make_unique<RestartAwareReadBuffer>(*this, std::move(impl));
 }
 

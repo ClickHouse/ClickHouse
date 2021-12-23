@@ -1,5 +1,9 @@
-# docker build -t yandex/clickhouse-testflows-runner .
+# docker build -t clickhouse/testflows-runner .
 FROM ubuntu:20.04
+
+# ARG for quick switch to a given ubuntu mirror
+ARG apt_archive="http://archive.ubuntu.com"
+RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
@@ -17,7 +21,6 @@ RUN apt-get update \
     cgroupfs-mount \
     python3-pip \
     tzdata \
-    libreadline-dev \
     libicu-dev \
     bsdutils \
     curl \
@@ -35,7 +38,7 @@ RUN apt-get update \
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-RUN pip3 install urllib3 testflows==1.7.20 docker-compose==1.29.1 docker==5.0.0 dicttoxml kazoo tzlocal python-dateutil numpy
+RUN pip3 install urllib3 testflows==1.7.20 docker-compose==1.29.1 docker==5.0.0 dicttoxml kazoo tzlocal==2.1 pytz python-dateutil numpy
 
 ENV DOCKER_CHANNEL stable
 ENV DOCKER_VERSION 20.10.6

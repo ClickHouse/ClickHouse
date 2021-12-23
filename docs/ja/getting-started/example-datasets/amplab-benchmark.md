@@ -126,4 +126,4 @@ ORDER BY totalRevenue DESC
 LIMIT 1
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/getting_started/example_datasets/amplab_benchmark/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/getting_started/example_datasets/amplab_benchmark/) <!--hide-->

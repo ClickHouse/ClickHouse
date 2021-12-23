@@ -4,6 +4,8 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 
+#include <Parsers/ASTFunction.h>
+
 #include <Poco/Logger.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 
@@ -39,12 +41,13 @@ void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
     {
         const DataTypePtr & type = index_sample_block.getByPosition(i).type;
         auto serialization = type->getDefaultSerialization();
+
         serialization->serializeBinary(hyperrectangle[i].left, ostr);
         serialization->serializeBinary(hyperrectangle[i].right, ostr);
     }
 }
 
-void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr)
+void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
 {
     hyperrectangle.clear();
     Field min_val;
@@ -54,14 +57,54 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr)
     {
         const DataTypePtr & type = index_sample_block.getByPosition(i).type;
         auto serialization = type->getDefaultSerialization();
-        serialization->deserializeBinary(min_val, istr);
-        serialization->deserializeBinary(max_val, istr);
 
-        // NULL_LAST
-        if (min_val.isNull())
-            min_val = PositiveInfinity();
-        if (max_val.isNull())
-            max_val = PositiveInfinity();
+        switch (version)
+        {
+            case 1:
+                if (!type->isNullable())
+                {
+                    serialization->deserializeBinary(min_val, istr);
+                    serialization->deserializeBinary(max_val, istr);
+                }
+                else
+                {
+                    /// NOTE: that this serialization differs from
+                    /// IMergeTreeDataPart::MinMaxIndex::load() to preserve
+                    /// backward compatibility.
+                    ///
+                    /// But this is deprecated format, so this is OK.
+
+                    bool is_null;
+                    readBinary(is_null, istr);
+                    if (!is_null)
+                    {
+                        serialization->deserializeBinary(min_val, istr);
+                        serialization->deserializeBinary(max_val, istr);
+                    }
+                    else
+                    {
+                        min_val = Null();
+                        max_val = Null();
+                    }
+                }
+                break;
+
+            /// New format with proper Nullable support for values that includes Null values
+            case 2:
+                serialization->deserializeBinary(min_val, istr);
+                serialization->deserializeBinary(max_val, istr);
+
+                // NULL_LAST
+                if (min_val.isNull())
+                    min_val = POSITIVE_INFINITY;
+                if (max_val.isNull())
+                    max_val = POSITIVE_INFINITY;
+
+                break;
+            default:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
+        }
+
         hyperrectangle.emplace_back(min_val, true, max_val, true);
     }
 }
@@ -168,6 +211,15 @@ bool MergeTreeIndexMinMax::mayBenefitFromIndexForIn(const ASTPtr & node) const
             return mayBenefitFromIndexForIn(func->arguments->children.front());
 
     return false;
+}
+
+MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(const DiskPtr disk, const std::string & relative_path_prefix) const
+{
+    if (disk->exists(relative_path_prefix + ".idx2"))
+        return {2, ".idx2"};
+    else if (disk->exists(relative_path_prefix + ".idx"))
+        return {1, ".idx"};
+    return {0 /* unknown */, ""};
 }
 
 MergeTreeIndexPtr minmaxIndexCreator(

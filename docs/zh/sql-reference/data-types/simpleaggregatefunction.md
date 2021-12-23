@@ -38,4 +38,4 @@
 CREATE TABLE simple (id UInt64, val SimpleAggregateFunction(sum, Double)) ENGINE=AggregatingMergeTree ORDER BY id;
 ```
 
-[原始文章](https://clickhouse.tech/docs/en/data_types/simpleaggregatefunction/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/data_types/simpleaggregatefunction/) <!--hide-->

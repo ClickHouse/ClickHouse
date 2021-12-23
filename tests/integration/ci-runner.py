@@ -10,21 +10,26 @@ from collections import defaultdict
 import random
 import json
 import csv
+# for crc32
+import zlib
 
 
 MAX_RETRY = 3
 NUM_WORKERS = 5
 SLEEP_BETWEEN_RETRIES = 5
 PARALLEL_GROUP_SIZE = 100
-CLICKHOUSE_BINARY_PATH = "/usr/bin/clickhouse"
-CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "/usr/bin/clickhouse-odbc-bridge"
-CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH = "/usr/bin/clickhouse-library-bridge"
+CLICKHOUSE_BINARY_PATH = "usr/bin/clickhouse"
+CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-odbc-bridge"
+CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-library-bridge"
 
 TRIES_COUNT = 10
 MAX_TIME_SECONDS = 3600
 
 MAX_TIME_IN_SANDBOX = 20 * 60   # 20 minutes
 TASK_TIMEOUT = 8 * 60 * 60      # 8 hours
+
+def stringhash(s):
+    return zlib.crc32(s.encode('utf-8'))
 
 def get_tests_to_run(pr_info):
     result = set([])
@@ -122,46 +127,48 @@ def get_test_times(output):
 
 
 def clear_ip_tables_and_restart_daemons():
-    logging.info("Dump iptables after run %s", subprocess.check_output("iptables -L", shell=True))
+    logging.info("Dump iptables after run %s", subprocess.check_output("sudo iptables -L", shell=True))
     try:
         logging.info("Killing all alive docker containers")
-        subprocess.check_output("docker kill $(docker ps -q)", shell=True)
+        subprocess.check_output("timeout -s 9 10m docker kill $(docker ps -q)", shell=True)
     except subprocess.CalledProcessError as err:
         logging.info("docker kill excepted: " + str(err))
 
     try:
         logging.info("Removing all docker containers")
-        subprocess.check_output("docker rm $(docker ps -a -q) --force", shell=True)
+        subprocess.check_output("timeout -s 9 10m docker rm $(docker ps -a -q) --force", shell=True)
     except subprocess.CalledProcessError as err:
         logging.info("docker rm excepted: " + str(err))
 
-    try:
-        logging.info("Stopping docker daemon")
-        subprocess.check_output("service docker stop", shell=True)
-    except subprocess.CalledProcessError as err:
-        logging.info("docker stop excepted: " + str(err))
+    # don't restart docker if it's disabled
+    if os.environ.get("CLICKHOUSE_TESTS_RUNNER_RESTART_DOCKER", '1') == '1':
+        try:
+            logging.info("Stopping docker daemon")
+            subprocess.check_output("service docker stop", shell=True)
+        except subprocess.CalledProcessError as err:
+            logging.info("docker stop excepted: " + str(err))
 
-    try:
-        for i in range(200):
-            try:
-                logging.info("Restarting docker %s", i)
-                subprocess.check_output("service docker start", shell=True)
-                subprocess.check_output("docker ps", shell=True)
-                break
-            except subprocess.CalledProcessError as err:
-                time.sleep(0.5)
-                logging.info("Waiting docker to start, current %s", str(err))
-        else:
-            raise Exception("Docker daemon doesn't responding")
-    except subprocess.CalledProcessError as err:
-        logging.info("Can't reload docker: " + str(err))
+        try:
+            for i in range(200):
+                try:
+                    logging.info("Restarting docker %s", i)
+                    subprocess.check_output("service docker start", shell=True)
+                    subprocess.check_output("docker ps", shell=True)
+                    break
+                except subprocess.CalledProcessError as err:
+                    time.sleep(0.5)
+                    logging.info("Waiting docker to start, current %s", str(err))
+            else:
+                raise Exception("Docker daemon doesn't responding")
+        except subprocess.CalledProcessError as err:
+            logging.info("Can't reload docker: " + str(err))
 
     iptables_iter = 0
     try:
         for i in range(1000):
             iptables_iter = i
             # when rules will be empty, it will raise exception
-            subprocess.check_output("iptables -D DOCKER-USER 1", shell=True)
+            subprocess.check_output("sudo iptables -D DOCKER-USER 1", shell=True)
     except subprocess.CalledProcessError as err:
         logging.info("All iptables rules cleared, " + str(iptables_iter) + "iterations, last error: " + str(err))
 
@@ -175,8 +182,18 @@ class ClickhouseIntegrationTestsRunner:
         self.image_versions = self.params['docker_images_with_versions']
         self.shuffle_groups = self.params['shuffle_test_groups']
         self.flaky_check = 'flaky check' in self.params['context_name']
+        # if use_tmpfs is not set we assume it to be true, otherwise check
+        self.use_tmpfs = 'use_tmpfs' not in self.params or self.params['use_tmpfs']
+        self.disable_net_host = 'disable_net_host' in self.params and self.params['disable_net_host']
         self.start_time = time.time()
         self.soft_deadline_time = self.start_time + (TASK_TIMEOUT - MAX_TIME_IN_SANDBOX)
+
+        if 'run_by_hash_total' in self.params:
+            self.run_by_hash_total = self.params['run_by_hash_total']
+            self.run_by_hash_num = self.params['run_by_hash_num']
+        else:
+            self.run_by_hash_total = 0
+            self.run_by_hash_num = 0
 
     def path(self):
         return self.result_path
@@ -207,11 +224,11 @@ class ClickhouseIntegrationTestsRunner:
 
     @staticmethod
     def get_images_names():
-        return ["yandex/clickhouse-integration-tests-runner", "yandex/clickhouse-mysql-golang-client",
-                "yandex/clickhouse-mysql-java-client", "yandex/clickhouse-mysql-js-client",
-                "yandex/clickhouse-mysql-php-client", "yandex/clickhouse-postgresql-java-client",
-                "yandex/clickhouse-integration-test", "yandex/clickhouse-kerberos-kdc",
-                "yandex/clickhouse-integration-helper", ]
+        return ["clickhouse/integration-tests-runner", "clickhouse/mysql-golang-client",
+                "clickhouse/mysql-java-client", "clickhouse/mysql-js-client",
+                "clickhouse/mysql-php-client", "clickhouse/postgresql-java-client",
+                "clickhouse/integration-test", "clickhouse/kerberos-kdc",
+                "clickhouse/integration-helper", ]
 
 
     def _can_run_with(self, path, opt):
@@ -231,7 +248,7 @@ class ClickhouseIntegrationTestsRunner:
                     log_name = "install_" + f + ".log"
                     log_path = os.path.join(str(self.path()), log_name)
                     with open(log_path, 'w') as log:
-                        cmd = "dpkg -i {}".format(full_path)
+                        cmd = "dpkg -x {} .".format(full_path)
                         logging.info("Executing installation cmd %s", cmd)
                         retcode = subprocess.Popen(cmd, shell=True, stderr=log, stdout=log).wait()
                         if retcode == 0:
@@ -248,26 +265,30 @@ class ClickhouseIntegrationTestsRunner:
         os.chmod(CLICKHOUSE_BINARY_PATH, 0o777)
         os.chmod(CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH, 0o777)
         os.chmod(CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH, 0o777)
-        result_path_bin = os.path.join(str(self.base_path()), "clickhouse")
-        result_path_odbc_bridge = os.path.join(str(self.base_path()), "clickhouse-odbc-bridge")
-        result_path_library_bridge = os.path.join(str(self.base_path()), "clickhouse-library-bridge")
-        shutil.copy(CLICKHOUSE_BINARY_PATH, result_path_bin)
-        shutil.copy(CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH, result_path_odbc_bridge)
-        shutil.copy(CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH, result_path_library_bridge)
-        return None, None
+        shutil.copy(CLICKHOUSE_BINARY_PATH, os.getenv("CLICKHOUSE_TESTS_SERVER_BIN_PATH"))
+        shutil.copy(CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH, os.getenv("CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH"))
+        shutil.copy(CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH, os.getenv("CLICKHOUSE_TESTS_LIBRARY_BRIDGE_BIN_PATH"))
 
     def _compress_logs(self, dir, relpaths, result_path):
         subprocess.check_call("tar czf {} -C {} {}".format(result_path, dir, ' '.join(relpaths)), shell=True)  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+
+    def _get_runner_opts(self):
+        result = []
+        if self.use_tmpfs:
+            result.append("--tmpfs")
+        if self.disable_net_host:
+            result.append("--disable-net-host")
+        return " ".join(result)
 
     def _get_all_tests(self, repo_path):
         image_cmd = self._get_runner_image_cmd(repo_path)
         out_file = "all_tests.txt"
         out_file_full = "all_tests_full.txt"
         cmd = "cd {repo_path}/tests/integration && " \
-            "./runner --tmpfs {image_cmd} ' --setup-plan' " \
+            "timeout -s 9 1h ./runner {runner_opts} {image_cmd} ' --setup-plan' " \
             "| tee {out_file_full} | grep '::' | sed 's/ (fixtures used:.*//g' | sed 's/^ *//g' | sed 's/ *$//g' " \
             "| grep -v 'SKIPPED' | sort -u  > {out_file}".format(
-                repo_path=repo_path, image_cmd=image_cmd, out_file=out_file, out_file_full=out_file_full)
+                repo_path=repo_path, runner_opts=self._get_runner_opts(), image_cmd=image_cmd, out_file=out_file, out_file_full=out_file_full)
 
         logging.info("Getting all tests with cmd '%s'", cmd)
         subprocess.check_call(cmd, shell=True)  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
@@ -343,7 +364,7 @@ class ClickhouseIntegrationTestsRunner:
         image_cmd = ''
         if self._can_run_with(os.path.join(repo_path, "tests/integration", "runner"), '--docker-image-version'):
             for img in self.get_images_names():
-                if img == "yandex/clickhouse-integration-tests-runner":
+                if img == "clickhouse/integration-tests-runner":
                     runner_version = self.get_single_image_version()
                     logging.info("Can run with custom docker image version %s", runner_version)
                     image_cmd += ' --docker-image-version={} '.format(runner_version)
@@ -375,6 +396,24 @@ class ClickhouseIntegrationTestsRunner:
             if (not path in old_snapshot) or (old_snapshot[path] != new_snapshot[path]):
                 res.add(path)
         return res
+
+    def try_run_test_group(self, repo_path, test_group, tests_in_group, num_tries, num_workers):
+        try:
+            return self.run_test_group(repo_path, test_group, tests_in_group, num_tries, num_workers)
+        except Exception as e:
+            logging.info("Failed to run {}:\n{}".format(str(test_group), str(e)))
+            counters = {
+                "ERROR": [],
+                "PASSED": [],
+                "FAILED": [],
+                "SKIPPED": [],
+                "FLAKY": [],
+            }
+            tests_times = defaultdict(float)
+            for test in tests_in_group:
+                counters["ERROR"].append(test)
+                tests_times[test] = 0
+            return counters, tests_times, []
 
     def run_test_group(self, repo_path, test_group, tests_in_group, num_tries, num_workers):
         counters = {
@@ -419,8 +458,8 @@ class ClickhouseIntegrationTestsRunner:
 
             test_cmd = ' '.join([test for test in sorted(test_names)])
             parallel_cmd = " --parallel {} ".format(num_workers) if num_workers > 0 else ""
-            cmd = "cd {}/tests/integration && ./runner --tmpfs {} -t {} {} '-rfEp --run-id={} --color=no --durations=0 {}' | tee {}".format(
-                repo_path, image_cmd, test_cmd, parallel_cmd, i, _get_deselect_option(self.should_skip_tests()), info_path)
+            cmd = "cd {}/tests/integration && timeout -s 9 1h ./runner {} {} -t {} {} '-rfEp --run-id={} --color=no --durations=0 {}' | tee {}".format(
+                repo_path, self._get_runner_opts(), image_cmd, test_cmd, parallel_cmd, i, _get_deselect_option(self.should_skip_tests()), info_path)
 
             log_basename = test_group_str + "_" + str(i) + ".log"
             log_path = os.path.join(repo_path, "tests/integration", log_basename)
@@ -507,7 +546,7 @@ class ClickhouseIntegrationTestsRunner:
         for i in range(TRIES_COUNT):
             final_retry += 1
             logging.info("Running tests for the %s time", i)
-            counters, tests_times, log_paths = self.run_test_group(repo_path, "flaky", tests_to_run, 1, 1)
+            counters, tests_times, log_paths = self.try_run_test_group(repo_path, "flaky", tests_to_run, 1, 1)
             logs += log_paths
             if counters["FAILED"]:
                 logging.info("Found failed tests: %s", ' '.join(counters["FAILED"]))
@@ -547,8 +586,17 @@ class ClickhouseIntegrationTestsRunner:
             return self.run_flaky_check(repo_path, build_path)
 
         self._install_clickhouse(build_path)
-        logging.info("Dump iptables before run %s", subprocess.check_output("iptables -L", shell=True))
+        logging.info("Dump iptables before run %s", subprocess.check_output("sudo iptables -L", shell=True))
         all_tests = self._get_all_tests(repo_path)
+
+        if self.run_by_hash_total != 0:
+            grouped_tests = self.group_test_by_file(all_tests)
+            all_filtered_by_hash_tests = []
+            for group, tests_in_group in grouped_tests.items():
+                if stringhash(group) % self.run_by_hash_total == self.run_by_hash_num:
+                    all_filtered_by_hash_tests += tests_in_group
+            all_tests = all_filtered_by_hash_tests
+
         parallel_skip_tests = self._get_parallel_tests_skip_list(repo_path)
         logging.info("Found %s tests first 3 %s", len(all_tests), ' '.join(all_tests[:3]))
         filtered_sequential_tests = list(filter(lambda test: test in all_tests, parallel_skip_tests))
@@ -582,8 +630,8 @@ class ClickhouseIntegrationTestsRunner:
             random.shuffle(items_to_run)
 
         for group, tests in items_to_run:
-            logging.info("Running test group %s countaining %s tests", group, len(tests))
-            group_counters, group_test_times, log_paths = self.run_test_group(repo_path, group, tests, MAX_RETRY, NUM_WORKERS)
+            logging.info("Running test group %s containing %s tests", group, len(tests))
+            group_counters, group_test_times, log_paths = self.try_run_test_group(repo_path, group, tests, MAX_RETRY, NUM_WORKERS)
             total_tests = 0
             for counter, value in group_counters.items():
                 logging.info("Tests from group %s stats, %s count %s", group, counter, len(value))

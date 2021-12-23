@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 drop table if exists ttl;
 
 create table ttl (d Date, a Int) engine = MergeTree order by a partition by toDayOfMonth(d);
@@ -61,7 +63,7 @@ alter table ttl modify column s String ttl i % 3 = 0 ? today() - 10 : toDate('21
 
 select i, s, t from ttl order by i;
 -- MATERIALIZE TTL ran only once
-select count() from system.mutations where table = 'ttl' and is_done;
+select count() from system.mutations where database = currentDatabase() and table = 'ttl' and is_done;
 select '=============';
 
 drop table if exists ttl;
@@ -69,6 +71,6 @@ drop table if exists ttl;
 -- Nothing changed, don't run mutation
 create table ttl (i Int, s String ttl toDate('2000-01-02')) engine = MergeTree order by i;
 alter table ttl modify column s String ttl toDate('2000-01-02');
-select count() from system.mutations where table = 'ttl' and is_done;
+select count() from system.mutations where database = currentDatabase() and table = 'ttl' and is_done;
 
 drop table if exists ttl;

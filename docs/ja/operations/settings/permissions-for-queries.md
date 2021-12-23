@@ -58,4 +58,4 @@ toc_title: "\u30AF\u30A8\u30EA\u306E\u6A29\u9650"
 
 デフォルト値:1
 
-[元の記事](https://clickhouse.tech/docs/en/operations/settings/permissions_for_queries/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/settings/permissions_for_queries/) <!--hide-->

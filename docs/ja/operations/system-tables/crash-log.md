@@ -1,0 +1,1 @@
+../../../en/operations/system-tables/crash-log.md

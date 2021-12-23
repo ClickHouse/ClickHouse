@@ -1,5 +1,5 @@
-<yandex>
+<clickhouse>
     <quotas>
         <default remove="1"/>
     </quotas>
-</yandex>
+</clickhouse>

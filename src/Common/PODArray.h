@@ -8,7 +8,7 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <common/strong_typedef.h>
+#include <base/strong_typedef.h>
 
 #include <Common/Allocator.h>
 #include <Common/Exception.h>
@@ -37,6 +37,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_MPROTECT;
+    extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
 /** A dynamic array for POD types.
@@ -104,7 +105,13 @@ protected:
     char * c_end_of_storage = null;    /// Does not include pad_right.
 
     /// The amount of memory occupied by the num_elements of the elements.
-    static size_t byte_size(size_t num_elements) { return num_elements * ELEMENT_SIZE; }
+    static size_t byte_size(size_t num_elements)
+    {
+        size_t amount;
+        if (__builtin_mul_overflow(num_elements, ELEMENT_SIZE, &amount))
+            throw Exception("Amount of memory requested to allocate is more than allowed", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+        return amount;
+    }
 
     /// Minimum amount of memory to allocate for num_elements, including padding.
     static size_t minimum_memory_for_elements(size_t num_elements) { return byte_size(num_elements) + pad_right + pad_left; }
