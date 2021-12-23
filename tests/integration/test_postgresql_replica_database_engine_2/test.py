@@ -34,6 +34,10 @@ postgres_table_template_4 = """
     CREATE TABLE IF NOT EXISTS "{}"."{}" (
     key Integer NOT NULL, value Integer, PRIMARY KEY(key))
     """
+postgres_table_template_5 = """
+    CREATE TABLE IF NOT EXISTS "{}" (
+    key Integer NOT NULL, value UUID, PRIMARY KEY(key))
+    """
 
 def get_postgres_conn(ip, port, database=False, auto_commit=True, database_name='postgres_database', replication=False):
     if database == True:
@@ -93,7 +97,7 @@ def drop_clickhouse_postgres_db(name='postgres_database'):
 def create_materialized_db(ip, port,
                            materialized_database='test_database',
                            postgres_database='postgres_database',
-                           settings=[]):
+                           settings=[], table_overrides=''):
     instance.query(f"DROP DATABASE IF EXISTS {materialized_database}")
     create_query = f"CREATE DATABASE {materialized_database} ENGINE = MaterializedPostgreSQL('{ip}:{port}', '{postgres_database}', 'postgres', 'mysecretpassword')"
     if len(settings) > 0:
@@ -102,6 +106,7 @@ def create_materialized_db(ip, port,
             if i != 0:
                 create_query += ', '
             create_query += settings[i]
+    create_query += table_overrides
     instance.query(create_query)
     assert materialized_database in instance.query('SHOW DATABASES')
 
@@ -180,12 +185,16 @@ def check_tables_are_synchronized(table_name, order_by='key', postgres_database=
     else:
         result = instance.query('select * from {}.`{}.{}` order by {};'.format(materialized_database, schema_name, table_name, order_by))
 
+    try_num = 0
     while result != expected:
         time.sleep(0.5)
         if len(schema_name) == 0:
             result = instance.query('select * from {}.{} order by {};'.format(materialized_database, table_name, order_by))
         else:
             result = instance.query('select * from {}.`{}.{}` order by {};'.format(materialized_database, schema_name, table_name, order_by))
+        try_num += 1
+        if try_num > 30:
+            break
 
     assert(result == expected)
 
@@ -212,6 +221,7 @@ def test_add_new_table_to_replication(started_cluster):
                              port=started_cluster.postgres_port,
                              database=True)
     cursor = conn.cursor()
+    cursor.execute('DROP TABLE IF EXISTS test_table')
     NUM_TABLES = 5
 
     for i in range(NUM_TABLES):
@@ -293,6 +303,7 @@ def test_remove_table_from_replication(started_cluster):
                              port=started_cluster.postgres_port,
                              database=True)
     cursor = conn.cursor()
+    cursor.execute('DROP TABLE IF EXISTS test_table')
     NUM_TABLES = 5
 
     for i in range(NUM_TABLES):
@@ -352,8 +363,9 @@ def test_predefined_connection_configuration(started_cluster):
     cursor = conn.cursor()
     cursor.execute(f'DROP TABLE IF EXISTS test_table')
     cursor.execute(f'CREATE TABLE test_table (key integer PRIMARY KEY, value integer)')
+    cursor.execute(f'INSERT INTO test_table SELECT 1, 2')
 
-    instance.query("CREATE DATABASE test_database ENGINE = MaterializedPostgreSQL(postgres1)")
+    instance.query("CREATE DATABASE test_database ENGINE = MaterializedPostgreSQL(postgres1) SETTINGS materialized_postgresql_tables_list='test_table'")
     check_tables_are_synchronized("test_table");
     drop_materialized_db()
     cursor.execute('DROP TABLE IF EXISTS test_table')
@@ -551,6 +563,30 @@ def test_database_with_multiple_non_default_schemas_2(started_cluster):
     assert_number_of_columns(3, f'schema{altered_schema}.postgresql_replica_{altered_table}')
     check_tables_are_synchronized(f"postgresql_replica_{altered_table}", schema_name=schema_name, postgres_database=clickhouse_postgres_db);
     drop_materialized_db()
+
+
+def test_table_override(started_cluster):
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port, database=True)
+    cursor = conn.cursor()
+    table_name = 'table_override'
+    materialized_database = 'test_database'
+    create_postgres_table(cursor, table_name, template=postgres_table_template_5);
+    instance.query(f"create table {table_name}(key Int32, value UUID) engine = PostgreSQL (postgres1, table={table_name})")
+    instance.query(f"insert into {table_name} select number, generateUUIDv4() from numbers(10)")
+    table_overrides = f" TABLE OVERRIDE {table_name} (COLUMNS (key Int32, value UUID))"
+    create_materialized_db(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port,
+                           settings=[f"materialized_postgresql_tables_list = '{table_name}'"], table_overrides=table_overrides)
+    assert_nested_table_is_created(table_name, materialized_database)
+    result = instance.query(f"show create table {materialized_database}.{table_name}")
+    print(result)
+    expected = "CREATE TABLE test_database.table_override\\n(\\n    `key` Int32,\\n    `value` UUID,\\n    `_sign` Int8() MATERIALIZED 1,\\n    `_version` UInt64() MATERIALIZED 1\\n)\\nENGINE = ReplacingMergeTree(_version)\\nORDER BY tuple(key)"
+    assert(result.strip() == expected)
+    time.sleep(5)
+    query = f"select * from {materialized_database}.{table_name} order by key"
+    expected = instance.query(f"select * from {table_name} order by key")
+    assert_eq_with_retry(instance, query, expected)
+    drop_materialized_db()
+    drop_postgres_table(cursor, table_name)
 
 
 if __name__ == '__main__':

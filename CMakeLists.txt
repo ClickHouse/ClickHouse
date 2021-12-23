@@ -149,6 +149,10 @@ if (ENABLE_FUZZING)
     set (ENABLE_JEMALLOC 0)
     set (ENABLE_CHECK_HEAVY_BUILDS 1)
     set (GLIBC_COMPATIBILITY OFF)
+
+    # For codegen_select_fuzzer
+    set (ENABLE_PROTOBUF 1)
+    set (USE_INTERNAL_PROTOBUF_LIBRARY 1)
 endif()
 
 # Global libraries
@@ -443,7 +447,7 @@ if (MAKE_STATIC_LIBRARIES)
         # It's disabled for ARM because otherwise ClickHouse cannot run on Android.
         set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-pie")
         set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -fno-pie")
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-no-pie")
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -no-pie -Wl,-no-pie")
     endif ()
 else ()
     set (CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -504,6 +508,7 @@ include (cmake/find/hdfs3.cmake) # uses protobuf
 include (cmake/find/poco.cmake)
 include (cmake/find/curl.cmake)
 include (cmake/find/s3.cmake)
+include (cmake/find/blob_storage.cmake)
 include (cmake/find/base64.cmake)
 include (cmake/find/parquet.cmake)
 include (cmake/find/simdjson.cmake)
