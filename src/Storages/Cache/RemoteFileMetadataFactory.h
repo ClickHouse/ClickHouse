@@ -1,5 +1,5 @@
 #pragma once
-#include <Storages/IRemoteFileMetadata.h>
+#include <Storages/Cache/IRemoteFileMetadata.h>
 #include <memory>
 #include <functional>
 #include <unordered_map>
