@@ -116,7 +116,12 @@ Pipe ExecutableDictionarySource::getStreamForBlock(const Block & block)
     Pipes shell_input_pipes;
     shell_input_pipes.emplace_back(std::move(shell_input_pipe));
 
-    return coordinator->createPipe(configuration.command, std::move(shell_input_pipes), sample_block, context);
+    auto pipe = coordinator->createPipe(configuration.command, std::move(shell_input_pipes), sample_block, context);
+
+    if (configuration.implicit_key)
+        pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(block, pipe.getHeader()));
+
+    return pipe;
 }
 
 bool ExecutableDictionarySource::isModified() const

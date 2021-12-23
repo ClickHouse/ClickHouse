@@ -103,7 +103,8 @@ Pipe ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
     Pipes shell_input_pipes;
     shell_input_pipes.emplace_back(std::move(shell_input_pipe));
 
-    return coordinator->createPipe(configuration.command, std::move(shell_input_pipes), std::move(sample_block), context, command_configuration);
+    auto pipe = coordinator->createPipe(configuration.command, std::move(shell_input_pipes), sample_block, context, command_configuration);
+    return pipe;
 }
 
 bool ExecutablePoolDictionarySource::isModified() const
