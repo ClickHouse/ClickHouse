@@ -687,7 +687,7 @@ private:
                 return (res = DecimalComparison<LeftDataType, RightDataType, Op, false>::apply(col_left, col_right)) != nullptr;
         };
 
-        if (!callOnBasicTypes<true, false, true, true>(left_number, right_number, call))
+        if (!callOnBasicTypes<true, true, true, true>(left_number, right_number, call))
             throw Exception("Wrong call for " + getName() + " with " + col_left.type->getName() + " and " + col_right.type->getName(),
                             ErrorCodes::LOGICAL_ERROR);
 
@@ -1175,9 +1175,6 @@ public:
         const bool left_is_num = col_left_untyped->isNumeric();
         const bool right_is_num = col_right_untyped->isNumeric();
 
-        const bool left_is_float = which_left.isFloat();
-        const bool right_is_float = which_right.isFloat();
-
         const bool left_is_string = which_left.isStringOrFixedString();
         const bool right_is_string = which_right.isStringOrFixedString();
 
@@ -1240,16 +1237,6 @@ public:
                     throw Exception(
                         "No operation " + getName() + " between " + left_type->getName() + " and " + right_type->getName(),
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-                if (left_is_float)
-                {
-                    ColumnPtr left_converted = castColumn(col_with_type_and_name_left, right_type);
-                    return executeDecimal({left_converted, right_type, "left"}, col_with_type_and_name_right);
-                }
-                if (right_is_float)
-                {
-                    ColumnPtr right_converted = castColumn(col_with_type_and_name_right, left_type);
-                    return executeDecimal(col_with_type_and_name_left, {right_converted, left_type, "right"});
-                }
                 return executeDecimal(col_with_type_and_name_left, col_with_type_and_name_right);
             }
 
