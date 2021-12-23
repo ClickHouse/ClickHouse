@@ -72,11 +72,13 @@ RUN python3 -m pip install \
     grpcio-tools \
     kafka-python \
     kazoo \
+    lz4 \
     minio \
     protobuf \
     psycopg2-binary==2.8.6 \
     pymongo==3.11.0 \
     pytest \
+    pytest-order==1.0.0 \
     pytest-timeout \
     pytest-xdist \
     pytest-repeat \

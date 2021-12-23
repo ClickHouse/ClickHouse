@@ -173,6 +173,8 @@ function clone_submodules
             contrib/dragonbox
             contrib/fast_float
             contrib/NuRaft
+            contrib/jemalloc
+            contrib/replxx
         )
 
         git submodule sync
@@ -193,6 +195,8 @@ function run_cmake
         "-DENABLE_THINLTO=0"
         "-DUSE_UNWIND=1"
         "-DENABLE_NURAFT=1"
+        "-DENABLE_JEMALLOC=1"
+        "-DENABLE_REPLXX=1"
     )
 
     # TODO remove this? we don't use ccache anyway. An option would be to download it
@@ -253,7 +257,13 @@ function run_tests
     start_server
 
     set +e
-    time clickhouse-test --hung-check -j 8 --order=random \
+    local NPROC
+    NPROC=$(nproc)
+    NPROC=$((NPROC / 2))
+    if [[ $NPROC == 0 ]]; then
+      NPROC=1
+    fi
+    time clickhouse-test --hung-check -j "${NPROC}" --order=random \
             --fast-tests-only --no-long --testname --shard --zookeeper --check-zookeeper-session \
             -- "$FASTTEST_FOCUS" 2>&1 \
         | ts '%Y-%m-%d %H:%M:%S' \
