@@ -81,8 +81,11 @@ void addDefaultRequiredExpressionsRecursively(
                 recursive_null_as_default);
         }
     }
-    else
+    else if (columns.has(required_column_name))
     {
+        /// In case of dictGet function we allow to use it with identifier dictGet(identifier, 'column_name', key_expression)
+        /// and this identifier will be in required columns. If such column is not in ColumnsDescription we ignore it.
+
         /// This column is required, but doesn't have default expression, so lets use "default default"
         auto column = columns.get(required_column_name);
         auto default_value = column.type->getDefault();
