@@ -8,9 +8,10 @@ import sys
 
 from github import Github
 
+from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
-from pr_info import PRInfo, get_event
+from pr_info import PRInfo
 from build_download_helper import download_all_deb_packages
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
@@ -126,9 +127,9 @@ if __name__ == "__main__":
 
     stopwatch = Stopwatch()
 
-    temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
-    repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
-    reports_path = os.getenv("REPORTS_PATH", "./reports")
+    temp_path = TEMP_PATH
+    repo_path = REPO_COPY
+    reports_path = REPORTS_PATH
 
     check_name = sys.argv[1]
     kill_timeout = int(sys.argv[2])
@@ -136,7 +137,7 @@ if __name__ == "__main__":
     flaky_check = 'flaky' in check_name.lower()
     gh = Github(get_best_robot_token())
 
-    pr_info = PRInfo(get_event(), need_changed_files=flaky_check)
+    pr_info = PRInfo(need_changed_files=flaky_check)
 
     if 'RUN_BY_HASH_NUM' in os.environ:
         run_by_hash_num = int(os.getenv('RUN_BY_HASH_NUM'))

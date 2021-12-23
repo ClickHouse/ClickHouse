@@ -58,7 +58,7 @@ public:
         return std::make_shared<DirectDictionary>(getDictionaryID(), dict_struct, source_ptr->clone());
     }
 
-    const IDictionarySource * getSource() const override { return source_ptr.get(); }
+    DictionarySourcePtr getSource() const override { return source_ptr; }
 
     const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 

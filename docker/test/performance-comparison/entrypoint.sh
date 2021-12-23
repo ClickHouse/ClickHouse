@@ -4,6 +4,27 @@ set -ex
 CHPC_CHECK_START_TIMESTAMP="$(date +%s)"
 export CHPC_CHECK_START_TIMESTAMP
 
+S3_URL=${S3_URL:="https://clickhouse-builds.s3.yandex.net"}
+
+COMMON_BUILD_PREFIX="/clickhouse_build_check"
+if [[ $S3_URL == *"s3.amazonaws.com"* ]]; then
+    COMMON_BUILD_PREFIX=""
+fi
+
+# Sometimes AWS responde with DNS error and it's impossible to retry it with
+# current curl version options.
+function curl_with_retry
+{
+    for _ in 1 2 3 4; do
+        if curl --fail --head "$1";then
+            return 0
+        else
+            sleep 0.5
+        fi
+    done
+    return 1
+}
+
 # Use the packaged repository to find the revision we will compare to.
 function find_reference_sha
 {
@@ -43,9 +64,12 @@ function find_reference_sha
         # Historically there were various path for the performance test package,
         # test all of them.
         unset found
-        for path in "https://clickhouse-builds.s3.yandex.net/0/$REF_SHA/"{,clickhouse_build_check/}"performance/performance.tgz"
+        declare -a urls_to_try=("https://s3.amazonaws.com/clickhouse-builds/0/$REF_SHA/performance/performance.tgz"
+                                "https://clickhouse-builds.s3.yandex.net/0/$REF_SHA/clickhouse_build_check/performance/performance.tgz"
+                               )
+        for path in "${urls_to_try[@]}"
         do
-            if curl --fail --head "$path"
+            if curl_with_retry "$path"
             then
                 found="$path"
                 break
@@ -65,14 +89,11 @@ chmod 777 workspace output
 
 cd workspace
 
-# Download the package for the version we are going to test
-for path in "https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/"{,clickhouse_build_check/}"performance/performance.tgz"
-do
-    if curl --fail --head "$path"
-    then
-        right_path="$path"
-    fi
-done
+# Download the package for the version we are going to test.
+if curl_with_retry "$S3_URL/$PR_TO_TEST/$SHA_TO_TEST$COMMON_BUILD_PREFIX/performance/performance.tgz"
+then
+    right_path="$S3_URL/$PR_TO_TEST/$SHA_TO_TEST$COMMON_BUILD_PREFIX/performance/performance.tgz"
+fi
 
 mkdir right
 wget -nv -nd -c "$right_path" -O- | tar -C right --strip-components=1 -zxv
