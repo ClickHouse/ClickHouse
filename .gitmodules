@@ -54,7 +54,7 @@
 	url = https://github.com/ClickHouse-Extras/Turbo-Base64.git
 [submodule "contrib/arrow"]
 	path = contrib/arrow
-	url = https://github.com/apache/arrow
+	url = https://github.com/ClickHouse-Extras/arrow.git
 	branch = blessed/release-6.0.1
 [submodule "contrib/thrift"]
 	path = contrib/thrift
@@ -207,7 +207,7 @@
 	branch = MergeWithUpstream
 [submodule "contrib/NuRaft"]
 	path = contrib/NuRaft
-	url = https://github.com/Algunenano/NuRaft.git
+	url = https://github.com/ClickHouse-Extras/NuRaft.git
 [submodule "contrib/nanodbc"]
 	path = contrib/nanodbc
 	url = https://github.com/ClickHouse-Extras/nanodbc.git
