@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
-#include <common/range.h>
+#include <base/range.h>
 #include <Common/PODArray.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -152,12 +152,12 @@ public:
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).serialize(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         this->data(place).deserialize(buf);
     }

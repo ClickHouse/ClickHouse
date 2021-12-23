@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Columns/FilterDescription.h>
-#include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/SubqueryForSet.h>
@@ -65,6 +64,7 @@ struct ExpressionAnalyzerData
 
     bool has_aggregation = false;
     NamesAndTypesList aggregation_keys;
+    NamesAndTypesLists aggregation_keys_list;
     bool has_const_aggregation_keys = false;
     AggregateDescriptions aggregate_descriptions;
 
@@ -94,6 +94,8 @@ private:
 
         explicit ExtractedSettings(const Settings & settings_);
     };
+
+    Poco::Logger * poco_log = &Poco::Logger::get("ExpressionAnalyzer");
 
 public:
     /// Ctor for non-select queries. Generally its usage is:
@@ -229,6 +231,8 @@ struct ExpressionAnalysisResult
     ActionsDAGPtr before_where;
     ActionsDAGPtr before_aggregation;
     ActionsDAGPtr before_having;
+    String having_column_name;
+    bool remove_having_filter = false;
     ActionsDAGPtr before_window;
     ActionsDAGPtr before_order_by;
     ActionsDAGPtr before_limit_by;
@@ -274,7 +278,12 @@ struct ExpressionAnalysisResult
 
     void removeExtraColumns() const;
     void checkActions() const;
-    void finalize(const ExpressionActionsChain & chain, size_t where_step_num, const ASTSelectQuery & query);
+    void finalize(
+        const ExpressionActionsChain & chain,
+        ssize_t & prewhere_step_num,
+        ssize_t & where_step_num,
+        ssize_t & having_step_num,
+        const ASTSelectQuery & query);
 };
 
 /// SelectQuery specific ExpressionAnalyzer part.
@@ -315,6 +324,7 @@ public:
 
     const NamesAndTypesList & aggregationKeys() const { return aggregation_keys; }
     bool hasConstAggregationKeys() const { return has_const_aggregation_keys; }
+    const NamesAndTypesLists & aggregationKeysList() const { return aggregation_keys_list; }
     const AggregateDescriptions & aggregates() const { return aggregate_descriptions; }
 
     const PreparedSets & getPreparedSets() const { return prepared_sets; }

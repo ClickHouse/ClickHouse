@@ -13,7 +13,7 @@
 #include <Functions/hyperscanRegexpChecker.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 
 
 namespace DB
@@ -41,13 +41,13 @@ namespace ErrorCodes
 
 /// The argument limiting raises from Volnitsky searcher -- it is performance crucial to save only one byte for pattern number.
 /// But some other searchers use this function, for example, multiMatchAny -- hyperscan does not have such restrictions
-template <typename Impl, typename Name, size_t LimitArgs = std::numeric_limits<UInt8>::max()>
+template <typename Impl, size_t LimitArgs = std::numeric_limits<UInt8>::max()>
 class FunctionsMultiStringSearch : public IFunction
 {
     static_assert(LimitArgs > 0);
 
 public:
-    static constexpr auto name = Name::name;
+    static constexpr auto name = Impl::name;
     static FunctionPtr create(ContextPtr context)
     {
         if (Impl::is_using_hyperscan && !context->getSettingsRef().allow_hyperscan)

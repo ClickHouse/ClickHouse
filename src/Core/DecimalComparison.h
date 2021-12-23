@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/arithmeticOverflow.h>
+#include <base/arithmeticOverflow.h>
 #include <Core/Block.h>
 #include <Core/AccurateComparison.h>
 #include <Core/callOnTypeIndex.h>

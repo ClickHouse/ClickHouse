@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <atomic>
 #include <pcg_random.hpp>
 #include <Storages/IStorage.h>
@@ -19,7 +19,6 @@
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 #include <Storages/MergeTree/DataPartsExchange.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
-#include <Storages/MergeTree/LeaderElection.h>
 #include <Storages/MergeTree/PartMovesBetweenShardsOrchestrator.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/MergeFromLogEntryTask.h>
@@ -30,7 +29,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/Throttler.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 
 
@@ -129,7 +128,7 @@ public:
         const Names & deduplicate_by_columns,
         ContextPtr query_context) override;
 
-    void alter(const AlterCommands & commands, ContextPtr query_context, TableLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & table_lock_holder) override;
 
     void mutate(const MutationCommands & commands, ContextPtr context) override;
     void waitMutation(const String & znode_name, size_t mutations_sync) const;
@@ -320,7 +319,6 @@ private:
       * It can be false only when old ClickHouse versions are working on the same cluster, because now we allow multiple leaders.
       */
     std::atomic<bool> is_leader {false};
-    zkutil::LeaderElectionPtr leader_election;
 
     InterserverIOEndpointPtr data_parts_exchange_endpoint;
 
@@ -514,15 +512,10 @@ private:
 
     bool processQueueEntry(ReplicatedMergeTreeQueue::SelectedEntryPtr entry);
 
-    /// Postcondition:
-    /// either leader_election is fully initialized (node in ZK is created and the watching thread is launched)
-    /// or an exception is thrown and leader_election is destroyed.
-    void enterLeaderElection();
-
-    /// Postcondition:
-    /// is_leader is false, merge_selecting_thread is stopped, leader_election is nullptr.
-    /// leader_election node in ZK is either deleted, or the session is marked expired.
-    void exitLeaderElection();
+    /// Start being leader (if not disabled by setting).
+    /// Since multi-leaders are allowed, it just sets is_leader flag.
+    void startBeingLeader();
+    void stopBeingLeader();
 
     /** Selects the parts to merge and writes to the log.
       */
@@ -682,6 +675,7 @@ private:
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr query_context) override;
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr query_context) override;
     void movePartitionToShard(const ASTPtr & partition, bool move_part, const String & to, ContextPtr query_context) override;
+    CancellationCode killPartMoveToShard(const UUID & task_uuid) override;
     void fetchPartition(
         const ASTPtr & partition,
         const StorageMetadataPtr & metadata_snapshot,
@@ -723,7 +717,6 @@ private:
 
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 
-    std::set<String> getPartitionIdsAffectedByCommands(const MutationCommands & commands, ContextPtr query_context) const;
     PartitionBlockNumbersHolder allocateBlockNumbersInAffectedPartitions(
         const MutationCommands & commands, ContextPtr query_context, const zkutil::ZooKeeperPtr & zookeeper) const;
 
@@ -744,6 +737,8 @@ protected:
         bool has_force_restore_data_flag,
         bool allow_renaming_);
 };
+
+String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info);
 
 
 /** There are three places for each part, where it should be

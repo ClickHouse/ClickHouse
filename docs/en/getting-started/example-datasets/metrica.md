@@ -7,14 +7,14 @@ toc_title: Yandex.Metrica Data
 
 Dataset consists of two tables containing anonymized data about hits (`hits_v1`) and visits (`visits_v1`) of Yandex.Metrica. You can read more about Yandex.Metrica in [ClickHouse history](../../introduction/history.md) section.
 
-The dataset consists of two tables, either of them can be downloaded as a compressed `tsv.xz` file or as prepared partitions. In addition to that, an extended version of the `hits` table containing 100 million rows is available as TSV at https://datasets.clickhouse.tech/hits/tsv/hits_100m_obfuscated_v1.tsv.xz and as prepared partitions at https://datasets.clickhouse.tech/hits/partitions/hits_100m_obfuscated_v1.tar.xz.
+The dataset consists of two tables, either of them can be downloaded as a compressed `tsv.xz` file or as prepared partitions. In addition to that, an extended version of the `hits` table containing 100 million rows is available as TSV at https://datasets.clickhouse.com/hits/tsv/hits_100m_obfuscated_v1.tsv.xz and as prepared partitions at https://datasets.clickhouse.com/hits/partitions/hits_100m_obfuscated_v1.tar.xz.
 
 ## Obtaining Tables from Prepared Partitions {#obtaining-tables-from-prepared-partitions}
 
 Download and import hits table:
 
 ``` bash
-curl -O https://datasets.clickhouse.tech/hits/partitions/hits_v1.tar
+curl -O https://datasets.clickhouse.com/hits/partitions/hits_v1.tar
 tar xvf hits_v1.tar -C /var/lib/clickhouse # path to ClickHouse data directory
 # check permissions on unpacked data, fix if required
 sudo service clickhouse-server restart
@@ -24,7 +24,7 @@ clickhouse-client --query "SELECT COUNT(*) FROM datasets.hits_v1"
 Download and import visits:
 
 ``` bash
-curl -O https://datasets.clickhouse.tech/visits/partitions/visits_v1.tar
+curl -O https://datasets.clickhouse.com/visits/partitions/visits_v1.tar
 tar xvf visits_v1.tar -C /var/lib/clickhouse # path to ClickHouse data directory
 # check permissions on unpacked data, fix if required
 sudo service clickhouse-server restart
@@ -36,7 +36,7 @@ clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 Download and import hits from compressed TSV file:
 
 ``` bash
-curl https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
+curl https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
 # Validate the checksum
 md5sum hits_v1.tsv
 # Checksum should be equal to: f3631b6295bf06989c1437491f7592cb
@@ -57,7 +57,7 @@ clickhouse-client --query "SELECT COUNT(*) FROM datasets.hits_v1"
 Download and import visits from compressed tsv-file:
 
 ``` bash
-curl https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
+curl https://datasets.clickhouse.com/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
 # Validate the checksum
 md5sum visits_v1.tsv
 # Checksum should be equal to: 6dafe1a0f24e59e3fc2d0fed85601de6

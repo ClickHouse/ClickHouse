@@ -20,6 +20,8 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [CSV](#csv)                                                                             | ✔     | ✔      |
 | [CSVWithNames](#csvwithnames)                                                           | ✔     | ✔      |
 | [CustomSeparated](#format-customseparated)                                              | ✔     | ✔      |
+| [CustomSeparatedWithNames](#customseparatedwithnames)                                   | ✔     | ✔      |
+| [CustomSeparatedWithNamesAndTypes](#customseparatedwithnamesandtypes)                   | ✔     | ✔      |
 | [Values](#data-format-values)                                                           | ✔     | ✔      |
 | [Vertical](#vertical)                                                                   | ✗     | ✔      |
 | [JSON](#json)                                                                           | ✗     | ✔      |
@@ -54,7 +56,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [Native](#native)                                                                       | ✔     | ✔      |
 | [Null](#null)                                                                           | ✗     | ✔      |
 | [XML](#xml)                                                                             | ✗     | ✔      |
-| [CapnProto](#capnproto)                                                                 | ✔     | ✗      |
+| [CapnProto](#capnproto)                                                                 | ✔     | ✔      |
 | [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
 | [Regexp](#data-format-regexp)                                                           | ✔     | ✗      |
 | [RawBLOB](#rawblob)                                                                     | ✔     | ✔      |
@@ -73,7 +75,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 Формат `TabSeparated` поддерживает вывод тотальных значений (при использовании WITH TOTALS) и экстремальных значений (при настройке extremes выставленной в 1). В этих случаях, после основных данных выводятся тотальные значения, и экстремальные значения. Основной результат, тотальные значения и экстремальные значения, отделяются друг от друга пустой строкой. Пример:
 
 ``` sql
-SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
+SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated
 ```
 
 ``` text
@@ -127,6 +129,9 @@ world
 
 Каждый элемент структуры типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md) представляется как отдельный массив.
 
+Входящие параметры типа "перечисление" (`ENUM`) могут передаваться в виде значений или порядковых номеров. Сначала переданное значение будет сопоставляться с элементами перечисления. Если совпадение не будет найдено и при этом переданное значение является числом, оно будет трактоваться как порядковый номер в перечислении.
+Если входящие параметры типа `ENUM` содержат только порядковые номера, рекомендуется включить настройку [input_format_tsv_enum_as_number](../operations/settings/settings.md#settings-input_format_tsv_enum_as_number) для ускорения парсинга.
+
 Например:
 
 ``` sql
@@ -163,8 +168,8 @@ SELECT * FROM nestedt FORMAT TSV
 ## TabSeparatedWithNames {#tabseparatedwithnames}
 
 Отличается от формата `TabSeparated` тем, что в первой строке пишутся имена столбцов.
-При парсинге, первая строка полностью игнорируется. Вы не можете использовать имена столбцов, чтобы указать их порядок расположения, или чтобы проверить их корректность.
-(Поддержка обработки заголовка при парсинге может быть добавлена в будущем.)
+
+При парсинге первая строка должна содержать имена столбцов. Вы можете использовать имена столбцов, чтобы указать их порядок расположения, или чтобы проверить их корректность.
 
 Этот формат также доступен под именем `TSVWithNames`.
 
@@ -360,16 +365,28 @@ $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FOR
 
 Если установлена настройка [input_format_defaults_for_omitted_fields = 1](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) и тип столбца не `Nullable(T)`, то пустые значения без кавычек заменяются значениями по умолчанию для типа данных столбца.
 
+Входящие параметры типа "перечисление" (`ENUM`) могут передаваться в виде значений или порядковых номеров. Сначала переданное значение будет сопоставляться с элементами перечисления. Если совпадение не будет найдено и при этом переданное значение является числом, оно будет трактоваться как порядковый номер в перечислении.
+Если входящие параметры типа `ENUM` содержат только порядковые номера, рекомендуется включить настройку [input_format_tsv_enum_as_number](../operations/settings/settings.md#settings-input_format_tsv_enum_as_number) для ускорения парсинга.
+
 Формат CSV поддерживает вывод totals и extremes аналогично `TabSeparated`.
 
 ## CSVWithNames {#csvwithnames}
 
-Выводит также заголовок, аналогично `TabSeparatedWithNames`.
+Выводит также заголовок, аналогично [TabSeparatedWithNames](#tabseparatedwithnames).
 
 ## CustomSeparated {#format-customseparated}
 
-Аналогичен [Template](#format-template), но выводит (или считывает) все столбцы, используя для них правило экранирования из настройки `format_custom_escaping_rule` и разделители из настроек `format_custom_field_delimiter`, `format_custom_row_before_delimiter`, `format_custom_row_after_delimiter`, `format_custom_row_between_delimiter`, `format_custom_result_before_delimiter` и `format_custom_result_after_delimiter`, а не из форматных строк.
-Также существует формат `CustomSeparatedIgnoreSpaces`, аналогичный `TemplateIgnoreSpaces`.
+Аналогичен [Template](#format-template), но выводит (или считывает) все имена и типы столбцов, используя для них правило экранирования из настройки [format_custom_escaping_rule](../operations/settings/settings.md#format-custom-escaping-rule) и разделители из настроек [format_custom_field_delimiter](../operations/settings/settings.md#format-custom-field-delimiter), [format_custom_row_before_delimiter](../operations/settings/settings.md#format-custom-row-before-delimiter), [format_custom_row_after_delimiter](../operations/settings/settings.md#format-custom-row-after-delimiter), [format_custom_row_between_delimiter](../operations/settings/settings.md#format-custom-row-between-delimiter), [format_custom_result_before_delimiter](../operations/settings/settings.md#format-custom-result-before-delimiter) и [format_custom_result_after_delimiter](../operations/settings/settings.md#format-custom-result-after-delimiter), а не из форматных строк.
+
+Также существует формат `CustomSeparatedIgnoreSpaces`, аналогичный формату [TemplateIgnoreSpaces](#templateignorespaces).
+
+## CustomSeparatedWithNames {#customseparatedwithnames}
+
+Выводит также заголовок с именами столбцов, аналогичен формату [TabSeparatedWithNames](#tabseparatedwithnames).
+
+## CustomSeparatedWithNamesAndTypes {#customseparatedwithnamesandtypes}
+
+Выводит также два заголовка с именами и типами столбцов, аналогичен формату [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
 
 ## JSON {#json}
 
@@ -493,7 +510,7 @@ ClickHouse поддерживает [NULL](../sql-reference/syntax.md), кото
 
 ## JSONAsString {#jsonasstring}
 
-В этом формате один объект JSON интерпретируется как одно строковое значение. Если входные данные имеют несколько объектов JSON, разделенных запятой, то они будут интерпретироваться как отдельные строки таблицы.
+В этом формате один объект JSON интерпретируется как одно строковое значение. Если входные данные имеют несколько объектов JSON, разделенных запятой, то они интерпретируются как отдельные строки таблицы. Если входные данные заключены в квадратные скобки, они интерпретируются как массив JSON-объектов.
 
 В этом формате парситься может только таблица с единственным полем типа [String](../sql-reference/data-types/string.md). Остальные столбцы должны быть заданы как `DEFAULT` или `MATERIALIZED`(смотрите раздел [Значения по умолчанию](../sql-reference/statements/create/table.md#create-default-values)), либо отсутствовать. Для дальнейшей обработки объекта JSON, представленного в строке, вы можете использовать [функции для работы с JSON](../sql-reference/functions/json-functions.md).
 
@@ -517,6 +534,28 @@ SELECT * FROM json_as_string;
 │ {"any json stucture":1}           │
 └───────────────────────────────────┘
 ```
+
+**Пример с массивом объектов JSON**
+
+Запрос:
+
+``` sql
+DROP TABLE IF EXISTS json_square_brackets;
+CREATE TABLE json_square_brackets (field String) ENGINE = Memory;
+INSERT INTO json_square_brackets FORMAT JSONAsString [{"id": 1, "name": "name1"}, {"id": 2, "name": "name2"}];
+
+SELECT * FROM json_square_brackets;
+```
+
+Результат:
+
+```text
+┌─field──────────────────────┐
+│ {"id": 1, "name": "name1"} │
+│ {"id": 2, "name": "name2"} │
+└────────────────────────────┘
+```
+
 
 ## JSONCompact {#jsoncompact}
 ## JSONCompactStrings {#jsoncompactstrings}
@@ -660,7 +699,7 @@ CREATE TABLE IF NOT EXISTS example_table
 -   Если `input_format_defaults_for_omitted_fields = 1`, то значение по умолчанию для `x` равно `0`, а значение по умолчанию `a` равно `x * 2`.
 
 !!! note "Предупреждение"
-    Если `input_format_defaults_for_omitted_fields = 1`, то при обработке запросов ClickHouse потребляет больше вычислительных ресурсов, чем если `input_format_defaults_for_omitted_fields = 0`.
+    При добавлении данных с помощью `input_format_defaults_for_omitted_fields = 1`, ClickHouse потребляет больше вычислительных ресурсов по сравнению с `input_format_defaults_for_omitted_fields = 0`.
 
 ### Выборка данных {#vyborka-dannykh}
 
@@ -991,12 +1030,44 @@ test: string with 'quotes' and   with some special
 
 ## CapnProto {#capnproto}
 
-Cap’n Proto - формат бинарных сообщений, похож на Protocol Buffers и Thrift, но не похож на JSON или MessagePack.
+CapnProto — формат бинарных сообщений, похож на [Protocol Buffers](https://developers.google.com/protocol-buffers/) и [Thrift](https://ru.wikipedia.org/wiki/Apache_Thrift), но не похож на [JSON](#json) или [MessagePack](https://msgpack.org/).
 
-Сообщения Cap’n Proto строго типизированы и не самоописывающиеся, т.е. нуждаются во внешнем описании схемы. Схема применяется «на лету» и кешируется между запросами.
+Сообщения формата CapnProto строго типизированы и не самоописывающиеся, т.е. нуждаются во внешнем описании схемы. Схема применяется "на лету" и кешируется между запросами.
+
+См. также [схема формата](#formatschema).
+
+### Соответствие типов данных {#data_types-matching-capnproto}
+
+Таблица ниже содержит поддерживаемые типы данных и их соответствие [типам данных](../sql-reference/data-types/index.md) ClickHouse для запросов `INSERT` и `SELECT`.
+
+| Тип данных CapnProto (`INSERT`) | Тип данных ClickHouse                                      | Тип данных CapnProto (`SELECT`) |
+|--------------------------------|-----------------------------------------------------------|--------------------------------|
+| `UINT8`, `BOOL`                | [UInt8](../sql-reference/data-types/int-uint.md)          | `UINT8`                        |
+| `INT8`                         | [Int8](../sql-reference/data-types/int-uint.md)           | `INT8`                         |
+| `UINT16`                       | [UInt16](../sql-reference/data-types/int-uint.md), [Date](../sql-reference/data-types/date.md)         | `UINT16`                       |
+| `INT16`                        | [Int16](../sql-reference/data-types/int-uint.md)          | `INT16`                        |
+| `UINT32`                       | [UInt32](../sql-reference/data-types/int-uint.md), [DateTime](../sql-reference/data-types/datetime.md)         | `UINT32`                       |
+| `INT32`                        | [Int32](../sql-reference/data-types/int-uint.md)          | `INT32`                        |
+| `UINT64`                       | [UInt64](../sql-reference/data-types/int-uint.md)         | `UINT64`                       |
+| `INT64`                        | [Int64](../sql-reference/data-types/int-uint.md), [DateTime64](../sql-reference/data-types/datetime.md)          | `INT64`                        |
+| `FLOAT32`                      | [Float32](../sql-reference/data-types/float.md)           | `FLOAT32`                      |
+| `FLOAT64`                      | [Float64](../sql-reference/data-types/float.md)           | `FLOAT64`                      |
+| `TEXT, DATA`                   | [String](../sql-reference/data-types/string.md), [FixedString](../sql-reference/data-types/fixedstring.md)               | `TEXT, DATA`                       |
+| `union(T, Void), union(Void, T)`          | [Nullable(T)](../sql-reference/data-types/date.md)       | `union(T, Void), union(Void, T)`                       |
+| `ENUM`                         | [Enum(8\|16)](../sql-reference/data-types/enum.md)        | `ENUM`                         |
+| `LIST`                         | [Array](../sql-reference/data-types/array.md)             | `LIST`                         |
+| `STRUCT`                       | [Tuple](../sql-reference/data-types/tuple.md)             | `STRUCT`                       |
+
+Для работы с типом данных `Enum` в формате CapnProto используйте настройку [format_capn_proto_enum_comparising_mode](../operations/settings/settings.md#format-capn-proto-enum-comparising-mode).
+
+Массивы могут быть вложенными и иметь в качестве аргумента значение типа `Nullable`. Тип `Tuple` также может быть вложенным.
+
+### Вставка и вывод данных {#inserting-and-selecting-data-capnproto}
+
+Чтобы вставить в ClickHouse данные из файла в формате CapnProto, выполните команду следующего вида:
 
 ``` bash
-$ cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits FORMAT CapnProto SETTINGS format_schema='schema:Message'"
+$ cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits FORMAT CapnProto SETTINGS format_schema = 'schema:Message'"
 ```
 
 Где `schema.capnp` выглядит следующим образом:
@@ -1008,9 +1079,11 @@ struct Message {
 }
 ```
 
-Десериализация эффективна и обычно не повышает нагрузку на систему.
+Чтобы получить данные из таблицы ClickHouse и сохранить их в файл формата CapnProto, используйте команду следующего вида:
 
-См. также [схема формата](#formatschema).
+``` bash
+$ clickhouse-client --query = "SELECT * FROM test.hits FORMAT CapnProto SETTINGS format_schema = 'schema:Message'"
+```
 
 ## Protobuf {#protobuf}
 
@@ -1343,14 +1416,17 @@ SELECT * FROM line_as_string;
 
 При работе с форматом `Regexp` можно использовать следующие параметры:
 
-- `format_regexp` — [String](../sql-reference/data-types/string.md). Строка с регулярным выражением в формате [re2](https://github.com/google/re2/wiki/Syntax).
-- `format_regexp_escaping_rule` — [String](../sql-reference/data-types/string.md). Правило сериализации. Поддерживаются следующие правила:
-    - CSV (как в [CSV](#csv))
-    - JSON (как в [JSONEachRow](#jsoneachrow))
-    - Escaped (как в [TSV](#tabseparated))
-    - Quoted (как в [Values](#data-format-values))
-    - Raw (данные импортируются как есть, без сериализации)
-- `format_regexp_skip_unmatched` — [UInt8](../sql-reference/data-types/int-uint.md). Признак, будет ли генерироваться исключение в случае, если импортируемые данные не соответствуют регулярному выражению `format_regexp`. Может принимать значение `0` или `1`.
+-   `format_regexp` — [String](../sql-reference/data-types/string.md). Строка с регулярным выражением в формате [re2](https://github.com/google/re2/wiki/Syntax).
+
+-   `format_regexp_escaping_rule` — [String](../sql-reference/data-types/string.md). Правило экранирования. Поддерживаются следующие правила:
+
+    -   CSV (как в формате [CSV](#csv))
+    -   JSON (как в формате [JSONEachRow](#jsoneachrow))
+    -   Escaped (как в формате [TSV](#tabseparated))
+    -   Quoted (как в формате [Values](#data-format-values))
+    -   Raw (данные импортируются как есть, без экранирования, как в формате [TSVRaw](#tabseparatedraw))
+
+-   `format_regexp_skip_unmatched` — [UInt8](../sql-reference/data-types/int-uint.md). Признак, будет ли генерироваться исключение в случае, если импортируемые данные не соответствуют регулярному выражению `format_regexp`. Может принимать значение `0` или `1`.
 
 **Использование**
 

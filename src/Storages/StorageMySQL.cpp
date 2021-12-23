@@ -4,23 +4,24 @@
 
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
-#include <Formats/MySQLSource.h>
+#include <Storages/MySQL/MySQLHelpers.h>
+#include <Processors/Sources/MySQLSource.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Formats/FormatFactory.h>
+#include <Processors/Formats/IOutputFormat.h>
 #include <Common/parseAddress.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <mysqlxx/Transaction.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Common/parseRemoteDescription.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -62,6 +63,7 @@ StorageMySQL::StorageMySQL(
     , on_duplicate_clause{on_duplicate_clause_}
     , mysql_settings(mysql_settings_)
     , pool(std::make_shared<mysqlxx::PoolWithFailover>(pool_))
+    , log(&Poco::Logger::get("StorageMySQL (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -88,6 +90,7 @@ Pipe StorageMySQL::read(
         remote_database_name,
         remote_table_name,
         context_);
+    LOG_TRACE(log, "Query: {}", query);
 
     Block sample_block;
     for (const String & column_name : column_names_)
@@ -132,7 +135,7 @@ public:
 
     void consume(Chunk chunk) override
     {
-        auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
+        auto block = getHeader().cloneWithColumns(chunk.detachColumns());
         auto blocks = splitBlocks(block, max_batch_rows);
         mysqlxx::Transaction trans(entry);
         try
@@ -159,7 +162,7 @@ public:
         sqlbuf << backQuoteMySQL(remote_table_name);
         sqlbuf << " (" << dumpNamesWithBackQuote(block) << ") VALUES ";
 
-        auto writer = FormatFactory::instance().getOutputStream("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.getContext());
+        auto writer = FormatFactory::instance().getOutputFormat("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.getContext());
         writer->write(block);
 
         if (!storage.on_duplicate_clause.empty())
@@ -248,9 +251,9 @@ StorageMySQLConfiguration StorageMySQL::getConfiguration(ASTs engine_args, Conte
         for (const auto & [arg_name, arg_value] : storage_specific_args)
         {
             if (arg_name == "replace_query")
-                configuration.replace_query = arg_value.safeGet<bool>();
+                configuration.replace_query = arg_value->as<ASTLiteral>()->value.safeGet<bool>();
             else if (arg_name == "on_duplicate_clause")
-                configuration.on_duplicate_clause = arg_value.safeGet<String>();
+                configuration.on_duplicate_clause = arg_value->as<ASTLiteral>()->value.safeGet<String>();
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Unexpected key-value argument."
@@ -304,13 +307,7 @@ void registerStorageMySQL(StorageFactory & factory)
         if (!mysql_settings.connection_pool_size)
             throw Exception("connection_pool_size cannot be zero.", ErrorCodes::BAD_ARGUMENTS);
 
-        mysqlxx::PoolWithFailover pool(
-            configuration.database, configuration.addresses,
-            configuration.username, configuration.password,
-            MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
-            mysql_settings.connection_pool_size,
-            mysql_settings.connection_max_tries,
-            mysql_settings.connection_wait_timeout);
+        mysqlxx::PoolWithFailover pool = createMySQLPoolWithFailover(configuration, mysql_settings);
 
         return StorageMySQL::create(
             args.table_id,

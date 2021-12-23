@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <storage_configuration>
         <disks>
             <hdfs1>
@@ -82,4 +82,4 @@
         <cluster>test_cluster</cluster>
         <shard>1</shard>
     </macros>
-</yandex>
+</clickhouse>

@@ -43,6 +43,8 @@ SELECT 'flat: inner';
 SELECT * FROM (SELECT number AS key FROM numbers(2)) s1 JOIN dict_flat d USING(key);
 SELECT 'flat: inner on';
 SELECT * FROM (SELECT number AS k FROM numbers(100)) s1 JOIN dict_flat d ON k = key ORDER BY k;
+SELECT 'flat: inner or'; -- it's not a join over dictionary, because it doen't suppoert multiple keys, but of falls back to regular join
+SELECT * FROM (SELECT if(number % 2 = 0, number, number * 1000) AS k FROM numbers(100)) s1 JOIN dict_flat d ON k = key OR k == 1000 * key ORDER BY key;
 
 SET join_use_nulls = 1;
 

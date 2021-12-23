@@ -24,6 +24,7 @@ ExternalUserDefinedExecutableFunctionsLoader::ExternalUserDefinedExecutableFunct
     setConfigSettings({"function", "name", "database", "uuid"});
     enableAsyncLoading(false);
     enablePeriodicUpdates(true);
+    enableAlwaysLoadEverything(true);
 }
 
 ExternalUserDefinedExecutableFunctionsLoader::UserDefinedExecutableFunctionPtr ExternalUserDefinedExecutableFunctionsLoader::getUserDefinedFunction(const std::string & user_defined_function_name) const
@@ -106,11 +107,11 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
     UserDefinedExecutableFunctionConfiguration function_configuration
     {
         .type = function_type,
-        .name = std::move(name),
-        .script_path = std::move(command),
-        .format = std::move(format),
-        .argument_types = std::move(argument_types),
-        .result_type = std::move(result_type),
+        .name = std::move(name), //-V1030
+        .script_path = std::move(command), //-V1030
+        .format = std::move(format), //-V1030
+        .argument_types = std::move(argument_types), //-V1030
+        .result_type = std::move(result_type), //-V1030
         .pool_size = pool_size,
         .command_termination_timeout = command_termination_timeout,
         .max_command_execution_time = max_command_execution_time,

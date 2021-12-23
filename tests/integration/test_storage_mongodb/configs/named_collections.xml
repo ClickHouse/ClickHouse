@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <named_collections>
         <mongo1>
             <user>root</user>
@@ -6,7 +6,7 @@
             <host>mongo1</host>
             <port>27017</port>
             <database>test</database>
-            <table>simple_table</table>
+            <collection>simple_table</collection>
         </mongo1>
     </named_collections>
-</yandex>
+</clickhouse>

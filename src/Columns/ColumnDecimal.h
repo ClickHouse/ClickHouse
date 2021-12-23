@@ -6,15 +6,16 @@
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
 #include <Common/typeid_cast.h>
-#include <common/sort.h>
+#include <base/sort.h>
 #include <Core/TypeId.h>
-#include <Core/TypeName.h>
+#include <base/TypeName.h>
 
 #include <cmath>
 
 
 namespace DB
 {
+
 /// PaddedPODArray extended by Decimal scale
 template <typename T>
 class DecimalPaddedPODArray : public PaddedPODArray<T>
@@ -85,7 +86,7 @@ private:
     {}
 
 public:
-    const char * getFamilyName() const override { return TypeName<T>; }
+    const char * getFamilyName() const override { return TypeName<T>.data(); }
     TypeIndex getDataType() const override { return TypeId<T>; }
 
     bool isNumeric() const override { return false; }
@@ -176,8 +177,17 @@ public:
         return false;
     }
 
-    ColumnPtr compress() const override;
+    double getRatioOfDefaultRows(double sample_ratio) const override
+    {
+        return this->template getRatioOfDefaultRowsImpl<Self>(sample_ratio);
+    }
 
+    void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override
+    {
+        return this->template getIndicesOfNonDefaultRowsImpl<Self>(indices, from, limit);
+    }
+
+    ColumnPtr compress() const override;
 
     void insertValue(const T value) { data.push_back(value); }
     Container & getData() { return data; }
@@ -219,12 +229,7 @@ template <is_decimal T>
 template <typename Type>
 ColumnPtr ColumnDecimal<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    size_t size = indexes.size();
-
-    if (limit == 0)
-        limit = size;
-    else
-        limit = std::min(size, limit);
+    assert(limit <= indexes.size());
 
     auto res = this->create(limit, scale);
     typename Self::Container & res_data = res->getData();

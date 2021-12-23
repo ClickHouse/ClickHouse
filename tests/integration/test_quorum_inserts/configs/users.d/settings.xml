@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <profiles>
         <default>
             <max_memory_usage>10000000000</max_memory_usage>
@@ -9,4 +9,4 @@
             <select_sequential_consistency>1</select_sequential_consistency>
         </default>
     </profiles>
-</yandex>
+</clickhouse>

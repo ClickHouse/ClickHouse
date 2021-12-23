@@ -8,9 +8,10 @@
 #if USE_LIBPQXX
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataStreams/PostgreSQLSource.h>
+#include <Processors/Transforms/PostgreSQLSource.h>
 #include "readInvalidateQuery.h"
 #include <Interpreters/Context.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 #endif
 
@@ -125,7 +126,7 @@ std::string PostgreSQLDictionarySource::doInvalidateQuery(const std::string & re
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-    return readInvalidateQuery(Pipe(std::make_unique<PostgreSQLSource<>>(pool->get(), request, invalidate_sample_block, 1)));
+    return readInvalidateQuery(QueryPipeline(std::make_unique<PostgreSQLSource<>>(pool->get(), request, invalidate_sample_block, 1)));
 }
 
 
@@ -160,7 +161,7 @@ bool PostgreSQLDictionarySource::supportsSelectiveLoad() const
 
 DictionarySourcePtr PostgreSQLDictionarySource::clone() const
 {
-    return std::make_unique<PostgreSQLDictionarySource>(*this);
+    return std::make_shared<PostgreSQLDictionarySource>(*this);
 }
 
 

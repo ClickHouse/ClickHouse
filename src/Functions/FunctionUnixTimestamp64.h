@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 
-#include <common/arithmeticOverflow.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -56,7 +56,7 @@ public:
 
         const auto & source_data = typeid_cast<const ColumnDecimal<DateTime64> &>(col).getData();
 
-        Int32 scale_diff = typeid_cast<const DataTypeDateTime64 &>(*src.type).getScale() - target_scale;
+        const Int32 scale_diff = typeid_cast<const DataTypeDateTime64 &>(*src.type).getScale() - target_scale;
         if (scale_diff == 0)
         {
             for (size_t i = 0; i < input_rows_count; ++i)

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MutateTask.h>
@@ -21,6 +21,8 @@ public:
         Callback && task_result_callback_)
         : ReplicatedMergeMutateTaskBase(&Poco::Logger::get("MutateFromLogEntryTask"), storage_, selected_entry_, task_result_callback_) {}
 
+    UInt64 getPriority() override { return priority; }
+
 private:
     std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> prepare() override;
     bool finalize(ReplicatedMergeMutateTaskBase::PartLogWriter write_part_log) override;
@@ -29,6 +31,8 @@ private:
     {
         return mutate_task->execute();
     }
+
+    UInt64 priority{0};
 
     TableLockHolder table_lock_holder{nullptr};
     ReservationSharedPtr reserved_space{nullptr};
@@ -42,6 +46,7 @@ private:
     MergeTreeData::MutableDataPartPtr new_part{nullptr};
     FutureMergedMutatedPartPtr future_mutated_part{nullptr};
 
+    ContextMutablePtr fake_query_context;
     MutateTaskPtr mutate_task;
 };
 

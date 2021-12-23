@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <users>
     	<restricted_user>
     		<password></password>
@@ -13,4 +13,4 @@
 	        </allow_databases>
     	</restricted_user>
     </users>
-</yandex>
+</clickhouse>

@@ -9,7 +9,7 @@
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Interpreters/Context.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Poco/Event.h>
 
 
@@ -117,7 +117,7 @@ public:
 
     String getName() const override final { return "ParallelParsingBlockInputFormat"; }
 
-protected:
+private:
 
     Chunk generate() override final;
 
@@ -136,8 +136,6 @@ protected:
 
         finishAndWait();
     }
-
-private:
 
     class InternalParser
     {

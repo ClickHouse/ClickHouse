@@ -3,21 +3,21 @@
 #include <Columns/ColumnString.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <DataTypes/DataTypeString.h>
-#include <Formats/FormatFactory.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/Context.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <common/LocalDateTime.h>
-#include <common/logger_useful.h>
+#include <base/LocalDateTime.h>
+#include <base/logger_useful.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "readInvalidateQuery.h"
 #include "registerDictionaries.h"
 #include <Common/escapeForFileName.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <Processors/Formats/IInputFormat.h>
 
 
 namespace DB
@@ -162,7 +162,7 @@ bool XDBCDictionarySource::hasUpdateField() const
 
 DictionarySourcePtr XDBCDictionarySource::clone() const
 {
-    return std::make_unique<XDBCDictionarySource>(*this);
+    return std::make_shared<XDBCDictionarySource>(*this);
 }
 
 
@@ -199,7 +199,7 @@ std::string XDBCDictionarySource::doInvalidateQuery(const std::string & request)
     for (const auto & [name, value] : url_params)
         invalidate_url.addQueryParameter(name, value);
 
-    return readInvalidateQuery(loadFromQuery(invalidate_url, invalidate_sample_block, request));
+    return readInvalidateQuery(QueryPipeline(loadFromQuery(invalidate_url, invalidate_sample_block, request)));
 }
 
 
@@ -214,8 +214,9 @@ Pipe XDBCDictionarySource::loadFromQuery(const Poco::URI & url, const Block & re
         os << "query=" << escapeForFileName(query);
     };
 
-    auto read_buf = std::make_unique<ReadWriteBufferFromHTTP>(url, Poco::Net::HTTPRequest::HTTP_POST, write_body_callback, timeouts);
-    auto format = FormatFactory::instance().getInput(IXDBCBridgeHelper::DEFAULT_FORMAT, *read_buf, required_sample_block, getContext(), max_block_size);
+    auto read_buf = std::make_unique<ReadWriteBufferFromHTTP>(
+        url, Poco::Net::HTTPRequest::HTTP_POST, write_body_callback, timeouts, credentials);
+    auto format = getContext()->getInputFormat(IXDBCBridgeHelper::DEFAULT_FORMAT, *read_buf, required_sample_block, max_block_size);
     format->addBuffer(std::move(read_buf));
 
     return Pipe(std::move(format));

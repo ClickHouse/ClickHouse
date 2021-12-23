@@ -1,5 +1,5 @@
 #include <Parsers/CommonParsers.h>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 
 namespace DB
 {

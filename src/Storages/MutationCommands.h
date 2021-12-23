@@ -5,7 +5,7 @@
 #include <memory>
 #include <unordered_map>
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/IStorage_fwd.h>
 #include <DataTypes/IDataType.h>

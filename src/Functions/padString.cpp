@@ -5,7 +5,7 @@
 #include <Functions/GatherUtils/Algorithms.h>
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Sources.h>
-#include <common/bit_cast.h>
+#include <base/bit_cast.h>
 
 namespace DB
 {

@@ -1,11 +1,11 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <Poco/MongoDB/Connection.h>
+
+#include <base/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
-
-#include <Poco/MongoDB/Connection.h>
 
 
 namespace DB

@@ -3,15 +3,16 @@
 #include <Columns/IColumnImpl.h>
 #include <Columns/ColumnCompressed.h>
 #include <Core/Field.h>
-#include <DataStreams/ColumnGathererStream.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <common/sort.h>
-#include <common/map.h>
-#include <common/range.h>
+#include <base/sort.h>
+#include <base/map.h>
+#include <base/range.h>
+#include <DataTypes/Serializations/SerializationInfoTuple.h>
 
 
 namespace DB
@@ -111,6 +112,15 @@ void ColumnTuple::get(size_t n, Field & res) const
         columns[i]->get(n, tuple[i]);
 
     res = tuple;
+}
+
+bool ColumnTuple::isDefaultAt(size_t n) const
+{
+    const size_t tuple_size = columns.size();
+    for (size_t i = 0; i < tuple_size; ++i)
+        if (!columns[i]->isDefaultAt(n))
+            return false;
+    return true;
 }
 
 StringRef ColumnTuple::getDataAt(size_t) const
@@ -534,6 +544,27 @@ ColumnPtr ColumnTuple::compress() const
                 column = column->decompress();
             return ColumnTuple::create(compressed);
         });
+}
+
+double ColumnTuple::getRatioOfDefaultRows(double sample_ratio) const
+{
+    return getRatioOfDefaultRowsImpl<ColumnTuple>(sample_ratio);
+}
+
+void ColumnTuple::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
+{
+    return getIndicesOfNonDefaultRowsImpl<ColumnTuple>(indices, from, limit);
+}
+
+SerializationInfoPtr ColumnTuple::getSerializationInfo() const
+{
+    MutableSerializationInfos infos;
+    infos.reserve(columns.size());
+
+    for (const auto & column : columns)
+        infos.push_back(const_pointer_cast<SerializationInfo>(column->getSerializationInfo()));
+
+    return std::make_shared<SerializationInfoTuple>(std::move(infos), SerializationInfo::Settings{});
 }
 
 }

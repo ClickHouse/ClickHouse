@@ -4,7 +4,7 @@
 
 #include <Disks/IDisk.h>
 
-#include <DataStreams/RemoteQueryExecutor.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -26,15 +26,17 @@
 
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
+#include <Parsers/IAST.h>
 
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -53,12 +55,12 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Functions/IFunction.h>
 
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/RemoteSource.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Sinks/EmptySink.h>
 
 #include <Core/Field.h>
@@ -108,6 +110,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INFINITE_LOOP;
+    extern const int ILLEGAL_FINAL;
     extern const int TYPE_MISMATCH;
     extern const int TOO_MANY_ROWS;
     extern const int UNABLE_TO_SKIP_UNUSED_SHARDS;
@@ -156,23 +159,6 @@ ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, co
     }
 
     return modified_query_ast;
-}
-
-/// The columns list in the original INSERT query is incorrect because inserted blocks are transformed
-/// to the form of the sample block of the Distributed table. So we rewrite it and add all columns from
-/// the sample block instead.
-ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::string & table, const Block & sample_block)
-{
-    auto query = std::make_shared<ASTInsertQuery>();
-    query->table_id = StorageID(database, table);
-
-    auto columns = std::make_shared<ASTExpressionList>();
-    query->columns = columns;
-    query->children.push_back(columns);
-    for (const auto & col : sample_block)
-        columns->children.push_back(std::make_shared<ASTIdentifier>(col.name));
-
-    return query;
 }
 
 /// Calculate maximum number in file names in directory and all subdirectories.
@@ -288,7 +274,7 @@ size_t getClusterQueriedNodes(const Settings & settings, const ClusterPtr & clus
 {
     size_t num_local_shards = cluster->getLocalShardCount();
     size_t num_remote_shards = cluster->getRemoteShardCount();
-    return (num_remote_shards * settings.max_parallel_replicas) + num_local_shards;
+    return (num_remote_shards + num_local_shards) * settings.max_parallel_replicas;
 }
 
 }
@@ -605,6 +591,10 @@ void StorageDistributed::read(
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
+    const auto * select_query = query_info.query->as<ASTSelectQuery>();
+    if (select_query->final() && local_context->getSettingsRef().allow_experimental_parallel_reading_from_replicas)
+        throw Exception(ErrorCodes::ILLEGAL_FINAL, "Final modifier is not allowed together with parallel reading from replicas feature");
+
     const auto & modified_query_ast = rewriteSelectQuery(
         query_info.query, remote_database, remote_table, remote_table_function_ptr);
 
@@ -681,21 +671,20 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
     bool insert_sync = settings.insert_distributed_sync || settings.insert_shard_id || owned_cluster;
     auto timeout = settings.insert_distributed_timeout;
 
-    Block sample_block;
-    if (!settings.insert_allow_materialized_columns)
-        sample_block = metadata_snapshot->getSampleBlockNonMaterialized();
+    Names columns_to_send;
+    if (settings.insert_allow_materialized_columns)
+        columns_to_send = metadata_snapshot->getSampleBlock().getNames();
     else
-        sample_block = metadata_snapshot->getSampleBlock();
+        columns_to_send = metadata_snapshot->getSampleBlockNonMaterialized().getNames();
 
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
     return std::make_shared<DistributedSink>(
-        local_context, *this, metadata_snapshot,
-        createInsertToRemoteTableQuery(remote_database, remote_table, sample_block),
-        cluster, insert_sync, timeout, StorageID{remote_database, remote_table});
+        local_context, *this, metadata_snapshot, cluster, insert_sync, timeout,
+        StorageID{remote_database, remote_table}, columns_to_send);
 }
 
 
-QueryPipelinePtr StorageDistributed::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)
+QueryPipelineBuilderPtr StorageDistributed::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)
 {
     const Settings & settings = local_context->getSettingsRef();
     std::shared_ptr<StorageDistributed> storage_src;
@@ -739,16 +728,25 @@ QueryPipelinePtr StorageDistributed::distributedWrite(const ASTInsertQuery & que
     const auto & cluster = getCluster();
     const auto & shards_info = cluster->getShardsInfo();
 
-    std::vector<std::unique_ptr<QueryPipeline>> pipelines;
+    std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines;
 
-    String new_query_str = queryToString(new_query);
+    String new_query_str;
+    {
+        WriteBufferFromOwnString buf;
+        IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true);
+        ast_format_settings.always_quote_identifiers = true;
+        new_query->IAST::format(ast_format_settings);
+        new_query_str = buf.str();
+    }
+
     for (size_t shard_index : collections::range(0, shards_info.size()))
     {
         const auto & shard_info = shards_info[shard_index];
         if (shard_info.isLocal())
         {
             InterpreterInsertQuery interpreter(new_query, local_context);
-            pipelines.emplace_back(std::make_unique<QueryPipeline>(interpreter.execute().pipeline));
+            pipelines.emplace_back(std::make_unique<QueryPipelineBuilder>());
+            pipelines.back()->init(interpreter.execute().pipeline);
         }
         else
         {
@@ -761,16 +759,16 @@ QueryPipelinePtr StorageDistributed::distributedWrite(const ASTInsertQuery & que
             ///  INSERT SELECT query returns empty block
             auto remote_query_executor
                 = std::make_shared<RemoteQueryExecutor>(shard_info.pool, std::move(connections), new_query_str, Block{}, local_context);
-            pipelines.emplace_back(std::make_unique<QueryPipeline>());
+            pipelines.emplace_back(std::make_unique<QueryPipelineBuilder>());
             pipelines.back()->init(Pipe(std::make_shared<RemoteSource>(remote_query_executor, false, settings.async_socket_for_remote)));
-            pipelines.back()->setSinks([](const Block & header, QueryPipeline::StreamType) -> ProcessorPtr
+            pipelines.back()->setSinks([](const Block & header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
             {
                 return std::make_shared<EmptySink>(header);
             });
         }
     }
 
-    return std::make_unique<QueryPipeline>(QueryPipeline::unitePipelines(std::move(pipelines)));
+    return std::make_unique<QueryPipelineBuilder>(QueryPipelineBuilder::unitePipelines(std::move(pipelines)));
 }
 
 
@@ -779,11 +777,9 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
     auto name_deps = getDependentViewsByColumn(local_context);
     for (const auto & command : commands)
     {
-        if (command.type != AlterCommand::Type::ADD_COLUMN
-            && command.type != AlterCommand::Type::MODIFY_COLUMN
-            && command.type != AlterCommand::Type::DROP_COLUMN
-            && command.type != AlterCommand::Type::COMMENT_COLUMN
-            && command.type != AlterCommand::Type::RENAME_COLUMN)
+        if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
+            && command.type != AlterCommand::Type::DROP_COLUMN && command.type != AlterCommand::Type::COMMENT_COLUMN
+            && command.type != AlterCommand::Type::RENAME_COLUMN && command.type != AlterCommand::Type::COMMENT_TABLE)
 
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
                 command.type, getName());
@@ -802,7 +798,7 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
     }
 }
 
-void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_context, TableLockHolder &)
+void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &)
 {
     auto table_id = getStorageID();
 

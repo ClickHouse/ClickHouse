@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <dictionary>
         <name>test_file</name>
         
@@ -42,4 +42,4 @@
             </attribute>
         </structure>
     </dictionary>
-</yandex>
+</clickhouse>

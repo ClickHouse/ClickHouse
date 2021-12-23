@@ -1,8 +1,6 @@
-#if !defined(ARCADIA_BUILD)
-    #include <Common/config.h>
-#endif
+#include <Common/config.h>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -10,7 +8,7 @@
 
 #if USE_AWS_S3
 
-#include <aws/core/client/DefaultRetryStrategy.h> // Y_IGNORE
+#include <aws/core/client/DefaultRetryStrategy.h>
 #include <IO/S3Common.h>
 #include "DiskS3.h"
 #include "Disks/DiskCacheWrapper.h"
@@ -19,7 +17,8 @@
 #include "ProxyListConfiguration.h"
 #include "ProxyResolverConfiguration.h"
 #include "Disks/DiskRestartProxy.h"
-
+#include "Disks/DiskLocal.h"
+#include "Disks/RemoteDisksCommon.h"
 
 namespace DB
 {
@@ -178,14 +177,14 @@ void registerDiskS3(DiskFactory & factory)
         if (uri.key.back() != '/')
             throw Exception("S3 path must ends with '/', but '" + uri.key + "' doesn't.", ErrorCodes::BAD_ARGUMENTS);
 
-        String metadata_path = config.getString(config_prefix + ".metadata_path", context->getPath() + "disks/" + name + "/");
-        fs::create_directories(metadata_path);
+        auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
 
         std::shared_ptr<IDisk> s3disk = std::make_shared<DiskS3>(
             name,
             uri.bucket,
             uri.key,
-            metadata_path,
+            metadata_disk,
+            context,
             getSettings(config, config_prefix, context),
             getSettings);
 
@@ -199,24 +198,10 @@ void registerDiskS3(DiskFactory & factory)
 
         s3disk->startup();
 
-        bool cache_enabled = config.getBool(config_prefix + ".cache_enabled", true);
-
-        if (cache_enabled)
+        if (config.getBool(config_prefix + ".cache_enabled", true))
         {
             String cache_path = config.getString(config_prefix + ".cache_path", context->getPath() + "disks/" + name + "/cache/");
-
-            if (metadata_path == cache_path)
-                throw Exception("Metadata and cache path should be different: " + metadata_path, ErrorCodes::BAD_ARGUMENTS);
-
-            auto cache_disk = std::make_shared<DiskLocal>("s3-cache", cache_path, 0);
-            auto cache_file_predicate = [] (const String & path)
-            {
-                return path.ends_with("idx") // index files.
-                       || path.ends_with("mrk") || path.ends_with("mrk2") || path.ends_with("mrk3") // mark files.
-                       || path.ends_with("txt") || path.ends_with("dat");
-            };
-
-            s3disk = std::make_shared<DiskCacheWrapper>(s3disk, cache_disk, cache_file_predicate);
+            s3disk = wrapWithCache(s3disk, "s3-cache", cache_path, metadata_path);
         }
 
         return std::make_shared<DiskRestartProxy>(s3disk);

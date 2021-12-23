@@ -2,13 +2,13 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <DataStreams/ColumnGathererStream.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <DataTypes/NumberTraits.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
-#include <common/sort.h>
-#include <common/scope_guard.h>
+#include <base/sort.h>
+#include <base/scope_guard.h>
 
 
 namespace DB
@@ -391,81 +391,6 @@ void ColumnLowCardinality::getPermutationImpl(bool reverse, size_t limit, int na
             if (perm_index == perm_size)
                 break;
         }
-    }
-}
-
-template <typename Cmp>
-void ColumnLowCardinality::updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_ranges, Cmp comparator) const
-{
-    if (equal_ranges.empty())
-        return;
-
-    if (limit >= size() || limit >= equal_ranges.back().second)
-        limit = 0;
-
-    size_t number_of_ranges = equal_ranges.size();
-    if (limit)
-        --number_of_ranges;
-
-    EqualRanges new_ranges;
-    SCOPE_EXIT({equal_ranges = std::move(new_ranges);});
-
-    auto less = [&comparator](size_t lhs, size_t rhs){ return comparator(lhs, rhs) < 0; };
-
-    for (size_t i = 0; i < number_of_ranges; ++i)
-    {
-        const auto& [first, last] = equal_ranges[i];
-        std::sort(res.begin() + first, res.begin() + last, less);
-
-        auto new_first = first;
-        for (auto j = first + 1; j < last; ++j)
-        {
-            if (comparator(res[new_first], res[j]) != 0)
-            {
-                if (j - new_first > 1)
-                    new_ranges.emplace_back(new_first, j);
-
-                new_first = j;
-            }
-        }
-        if (last - new_first > 1)
-            new_ranges.emplace_back(new_first, last);
-    }
-
-    if (limit)
-    {
-        const auto & [first, last] = equal_ranges.back();
-
-        if (limit < first || limit > last)
-            return;
-
-        /// Since then we are working inside the interval.
-
-        partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
-        auto new_first = first;
-
-        for (auto j = first + 1; j < limit; ++j)
-        {
-            if (comparator(res[new_first],res[j]) != 0)
-            {
-                if (j - new_first > 1)
-                    new_ranges.emplace_back(new_first, j);
-
-                new_first = j;
-            }
-        }
-
-        auto new_last = limit;
-        for (auto j = limit; j < last; ++j)
-        {
-            if (comparator(res[new_first], res[j]) == 0)
-            {
-                std::swap(res[new_last], res[j]);
-                ++new_last;
-            }
-        }
-        if (new_last - new_first > 1)
-            new_ranges.emplace_back(new_first, new_last);
     }
 }
 

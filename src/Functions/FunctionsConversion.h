@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <type_traits>
 
 #include <IO/WriteBufferFromVector.h>
@@ -34,6 +35,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnStringHelpers.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <Core/AccurateComparison.h>
@@ -330,7 +332,7 @@ struct ToDateTimeImpl
         return time_zone.fromDayNum(DayNum(d));
     }
 
-    static inline UInt32 execute(Int32 d, const DateLUTImpl & time_zone)
+    static inline Int64 execute(Int32 d, const DateLUTImpl & time_zone)
     {
         return time_zone.fromDayNum(ExtendedDayNum(d));
     }
@@ -398,6 +400,9 @@ struct ToDateTransform8Or16Signed
         return from;
     }
 };
+
+template <typename Name> struct ConvertImpl<DataTypeDateTime64, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
+        : DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate32, TransformDateTime64<ToDate32Impl>> {};
 
 /// Implementation of toDate32 function.
 
@@ -708,6 +713,12 @@ struct ToDateTime64Transform
         return execute(dt, time_zone);
     }
 
+    inline DateTime64::NativeType execute(Int32 d, const DateLUTImpl & time_zone) const
+    {
+        const auto dt = ToDateTimeImpl::execute(d, time_zone);
+        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
+    }
+
     inline DateTime64::NativeType execute(UInt32 dt, const DateLUTImpl & /*time_zone*/) const
     {
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
@@ -718,6 +729,8 @@ struct ToDateTime64Transform
   */
 template <typename Name> struct ConvertImpl<DataTypeDate, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeDate, DataTypeDateTime64, ToDateTime64Transform> {};
+template <typename Name> struct ConvertImpl<DataTypeDate32, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag>
+    : DateTimeTransformImpl<DataTypeDate32, DataTypeDateTime64, ToDateTime64Transform> {};
 template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeDateTime, DataTypeDateTime64, ToDateTime64Transform> {};
 
@@ -915,11 +928,15 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
 };
 
 
-/// Generic conversion of any type to String.
+/// Generic conversion of any type to String or FixedString via serialization to text.
+template <typename StringColumnType>
 struct ConvertImplGenericToString
 {
-    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type)
+    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/)
     {
+        static_assert(std::is_same_v<StringColumnType, ColumnString> || std::is_same_v<StringColumnType, ColumnFixedString>,
+                "Can be used only to serialize to ColumnString or ColumnFixedString");
+
         ColumnUInt8::MutablePtr null_map = copyNullMap(arguments[0].column);
 
         const auto & col_with_type_and_name = columnGetNested(arguments[0]);
@@ -927,27 +944,25 @@ struct ConvertImplGenericToString
         const IColumn & col_from = *col_with_type_and_name.column;
 
         size_t size = col_from.size();
+        auto col_to = result_type->createColumn();
 
-        auto col_to = ColumnString::create();
-
-        ColumnString::Chars & data_to = col_to->getChars();
-        ColumnString::Offsets & offsets_to = col_to->getOffsets();
-
-        data_to.resize(size * 2); /// Using coefficient 2 for initial size is arbitrary.
-        offsets_to.resize(size);
-
-        WriteBufferFromVector<ColumnString::Chars> write_buffer(data_to);
-
-        FormatSettings format_settings;
-        auto serialization = type.getDefaultSerialization();
-        for (size_t i = 0; i < size; ++i)
         {
-            serialization->serializeText(col_from, i, write_buffer, format_settings);
-            writeChar(0, write_buffer);
-            offsets_to[i] = write_buffer.count();
-        }
+            ColumnStringHelpers::WriteHelper write_helper(
+                    assert_cast<StringColumnType &>(*col_to),
+                    size);
 
-        write_buffer.finalize();
+            auto & write_buffer = write_helper.getWriteBuffer();
+
+            FormatSettings format_settings;
+            auto serialization = type.getDefaultSerialization();
+            for (size_t i = 0; i < size; ++i)
+            {
+                serialization->serializeText(col_from, i, write_buffer, format_settings);
+                write_helper.rowWritten();
+            }
+
+            write_helper.finalize();
+        }
 
         if (result_type->isNullable() && null_map)
             return ColumnNullable::create(std::move(col_to), std::move(null_map));
@@ -1071,7 +1086,8 @@ inline bool tryParseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer &
     else
         message_buf << " at begin of string";
 
-    if (isNativeNumber(to_type))
+    // Currently there are no functions toIPv{4,6}Or{Null,Zero}
+    if (isNativeNumber(to_type) && !(to_type.getName() == "IPv4" || to_type.getName() == "IPv6"))
         message_buf << ". Note: there are to" << to_type.getName() << "OrZero and to" << to_type.getName() << "OrNull functions, which returns zero/NULL instead of throwing exception.";
 
     throw Exception(message_buf.str(), ErrorCodes::CANNOT_PARSE_TEXT);
@@ -1351,40 +1367,35 @@ template <typename ToDataType, typename Name>
 struct ConvertImpl<std::enable_if_t<!std::is_same_v<ToDataType, DataTypeFixedString>, DataTypeFixedString>, ToDataType, Name, ConvertReturnNullOnErrorTag>
     : ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, ConvertExceptionMode::Null, ConvertFromStringParsingMode::Normal> {};
 
-/// Generic conversion of any type from String. Used for complex types: Array and Tuple.
+/// Generic conversion of any type from String. Used for complex types: Array and Tuple or types with custom serialization.
+template <typename StringColumnType>
 struct ConvertImplGenericFromString
 {
-    static ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type)
+    static ColumnPtr execute(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count)
     {
+        static_assert(std::is_same_v<StringColumnType, ColumnString> || std::is_same_v<StringColumnType, ColumnFixedString>,
+                "Can be used only to parse from ColumnString or ColumnFixedString");
+
         const IColumn & col_from = *arguments[0].column;
-        size_t size = col_from.size();
-
         const IDataType & data_type_to = *result_type;
-
-        if (const ColumnString * col_from_string = checkAndGetColumn<ColumnString>(&col_from))
+        if (const StringColumnType * col_from_string = checkAndGetColumn<StringColumnType>(&col_from))
         {
             auto res = data_type_to.createColumn();
 
             IColumn & column_to = *res;
-            column_to.reserve(size);
-
-            const ColumnString::Chars & chars = col_from_string->getChars();
-            const IColumn::Offsets & offsets = col_from_string->getOffsets();
-
-            size_t current_offset = 0;
+            column_to.reserve(input_rows_count);
 
             FormatSettings format_settings;
             auto serialization = data_type_to.getDefaultSerialization();
-            for (size_t i = 0; i < size; ++i)
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
-                ReadBufferFromMemory read_buffer(&chars[current_offset], offsets[i] - current_offset - 1);
+                const auto & val = col_from_string->getDataAt(i);
+                ReadBufferFromMemory read_buffer(val.data, val.size);
 
                 serialization->deserializeWholeText(column_to, read_buffer, format_settings);
 
                 if (!read_buffer.eof())
                     throwExceptionForIncompletelyParsedValue(read_buffer, result_type);
-
-                current_offset = offsets[i];
             }
 
             return res;
@@ -1587,12 +1598,12 @@ public:
 
         if constexpr (to_decimal)
         {
-            mandatory_args.push_back({"scale", &isNativeInteger, &isColumnConst, "const Integer"});
+            mandatory_args.push_back({"scale", &isNativeInteger<IDataType>, &isColumnConst, "const Integer"});
         }
 
         if (!to_decimal && isDateTime64<Name, ToDataType>(arguments))
         {
-            mandatory_args.push_back({"scale", &isNativeInteger, &isColumnConst, "const Integer"});
+            mandatory_args.push_back({"scale", &isNativeInteger<IDataType>, &isColumnConst, "const Integer"});
         }
 
         // toString(DateTime or DateTime64, [timezone: String])
@@ -1608,7 +1619,7 @@ public:
             // toDateTime64(value, scale : Integer[, timezone: String])
             || std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
-            optional_args.push_back({"timezone", &isString, &isColumnConst, "const String"});
+            optional_args.push_back({"timezone", &isString<IDataType>, &isColumnConst, "const String"});
         }
 
         validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
@@ -1833,7 +1844,7 @@ private:
             /// Generic conversion of any type to String.
             if (std::is_same_v<ToDataType, DataTypeString>)
             {
-                return ConvertImplGenericToString::execute(arguments, result_type);
+                return ConvertImplGenericToString<ColumnString>::execute(arguments, result_type, input_rows_count);
             }
             else
                 throw Exception("Illegal type " + arguments[0].type->getName() + " of argument of function " + getName(),
@@ -1888,11 +1899,11 @@ public:
         if (isDateTime64<Name, ToDataType>(arguments))
         {
             validateFunctionArgumentTypes(*this, arguments,
-                FunctionArgumentDescriptors{{"string", isStringOrFixedString, nullptr, "String or FixedString"}},
+                FunctionArgumentDescriptors{{"string", &isStringOrFixedString<IDataType>, nullptr, "String or FixedString"}},
                 // optional
                 FunctionArgumentDescriptors{
-                    {"precision", isUInt8, isColumnConst, "const UInt8"},
-                    {"timezone", isStringOrFixedString, isColumnConst, "const String or FixedString"},
+                    {"precision", &isUInt8<IDataType>, isColumnConst, "const UInt8"},
+                    {"timezone", &isStringOrFixedString<IDataType>, isColumnConst, "const String or FixedString"},
                 });
 
             UInt64 scale = to_datetime64 ? DataTypeDateTime64::default_scale : 0;
@@ -2071,7 +2082,7 @@ struct PositiveMonotonicity
     static bool has() { return true; }
     static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
     {
-        return { true };
+        return { .is_monotonic = true };
     }
 };
 
@@ -2080,7 +2091,7 @@ struct UnknownMonotonicity
     static bool has() { return false; }
     static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
     {
-        return { false };
+        return { };
     }
 };
 
@@ -2106,13 +2117,13 @@ struct ToNumberMonotonicity
         /// (Enum has separate case, because it is different data type)
         if (checkAndGetDataType<DataTypeNumber<T>>(&type) ||
             checkAndGetDataType<DataTypeEnum<T>>(&type))
-            return { true, true, true };
+            return { .is_monotonic = true, .is_always_monotonic = true };
 
         /// Float cases.
 
         /// When converting to Float, the conversion is always monotonic.
-        if (std::is_floating_point_v<T>)
-            return {true, true, true};
+        if constexpr (std::is_floating_point_v<T>)
+            return { .is_monotonic = true, .is_always_monotonic = true };
 
         /// If converting from Float, for monotonicity, arguments must fit in range of result type.
         if (WhichDataType(type).isFloat())
@@ -2127,7 +2138,7 @@ struct ToNumberMonotonicity
                 && left_float <= static_cast<Float64>(std::numeric_limits<T>::max())
                 && right_float >= static_cast<Float64>(std::numeric_limits<T>::min())
                 && right_float <= static_cast<Float64>(std::numeric_limits<T>::max()))
-                return { true };
+                return { .is_monotonic = true };
 
             return {};
         }
@@ -2152,10 +2163,10 @@ struct ToNumberMonotonicity
         if (size_of_from == size_of_to)
         {
             if (from_is_unsigned == to_is_unsigned)
-                return {true, true, true};
+                return { .is_monotonic = true, .is_always_monotonic = true };
 
             if (left_in_first_half == right_in_first_half)
-                return {true};
+                return { .is_monotonic = true };
 
             return {};
         }
@@ -2164,14 +2175,14 @@ struct ToNumberMonotonicity
         if (size_of_from < size_of_to)
         {
             if (from_is_unsigned == to_is_unsigned)
-                return {true, true, true};
+                return { .is_monotonic = true, .is_always_monotonic = true };
 
             if (!to_is_unsigned)
-                return {true, true, true};
+                return { .is_monotonic = true, .is_always_monotonic = true };
 
             /// signed -> unsigned. If arguments from the same half, then function is monotonic.
             if (left_in_first_half == right_in_first_half)
-                return {true};
+                return { .is_monotonic = true };
 
             return {};
         }
@@ -2188,10 +2199,14 @@ struct ToNumberMonotonicity
                 return {};
 
             if (to_is_unsigned)
-                return {true};
+                return { .is_monotonic = true };
             else
+            {
                 // If To is signed, it's possible that the signedness is different after conversion. So we check it explicitly.
-                return {(T(left.get<UInt64>()) >= 0) == (T(right.get<UInt64>()) >= 0)};
+                const bool is_monotonic = (T(left.get<UInt64>()) >= 0) == (T(right.get<UInt64>()) >= 0);
+
+                return { .is_monotonic = is_monotonic };
+            }
         }
 
         __builtin_unreachable();
@@ -2206,7 +2221,7 @@ struct ToDateMonotonicity
     {
         auto which = WhichDataType(type);
         if (which.isDateOrDate32() || which.isDateTime() || which.isDateTime64() || which.isInt8() || which.isInt16() || which.isUInt8() || which.isUInt16())
-            return {true, true, true};
+            return { .is_monotonic = true, .is_always_monotonic = true };
         else if (
             (which.isUInt() && ((left.isNull() || left.get<UInt64>() < 0xFFFF) && (right.isNull() || right.get<UInt64>() >= 0xFFFF)))
             || (which.isInt() && ((left.isNull() || left.get<Int64>() < 0xFFFF) && (right.isNull() || right.get<Int64>() >= 0xFFFF)))
@@ -2214,7 +2229,7 @@ struct ToDateMonotonicity
             || !type.isValueRepresentedByNumber())
             return {};
         else
-            return {true, true, true};
+            return { .is_monotonic = true, .is_always_monotonic = true };
     }
 };
 
@@ -2225,7 +2240,7 @@ struct ToDateTimeMonotonicity
     static IFunction::Monotonicity get(const IDataType & type, const Field &, const Field &)
     {
         if (type.isValueRepresentedByNumber())
-            return {true, true, true};
+            return { .is_monotonic = true, .is_always_monotonic = true };
         else
             return {};
     }
@@ -2240,7 +2255,7 @@ struct ToStringMonotonicity
 
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
-        IFunction::Monotonicity positive(true, true);
+        IFunction::Monotonicity positive{ .is_monotonic = true };
         IFunction::Monotonicity not_monotonic;
 
         const auto * type_ptr = &type;
@@ -2828,10 +2843,7 @@ private:
         /// Conversion from String through parsing.
         if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
         {
-            return [] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t /*input_rows_count*/)
-            {
-                return ConvertImplGenericFromString::execute(arguments, result_type);
-            };
+            return &ConvertImplGenericFromString<ColumnString>::execute;
         }
         else
         {
@@ -2848,10 +2860,7 @@ private:
         /// Conversion from String through parsing.
         if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
         {
-            return [] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t /*input_rows_count*/)
-            {
-                return ConvertImplGenericFromString::execute(arguments, result_type);
-            };
+            return &ConvertImplGenericFromString<ColumnString>::execute;
         }
 
         const auto * from_type = checkAndGetDataType<DataTypeArray>(from_type_untyped.get());
@@ -2919,10 +2928,7 @@ private:
         /// Conversion from String through parsing.
         if (checkAndGetDataType<DataTypeString>(from_type_untyped.get()))
         {
-            return [] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t /*input_rows_count*/)
-            {
-                return ConvertImplGenericFromString::execute(arguments, result_type);
-            };
+            return &ConvertImplGenericFromString<ColumnString>::execute;
         }
 
         const auto * from_type = checkAndGetDataType<DataTypeTuple>(from_type_untyped.get());
@@ -3432,6 +3438,38 @@ private:
 
             return false;
         };
+
+        auto  make_custom_serialization_wrapper = [&](const auto & types) -> bool
+        {
+            using Types = std::decay_t<decltype(types)>;
+            using ToDataType = typename Types::RightType;
+            using FromDataType = typename Types::LeftType;
+
+            if constexpr (WhichDataType(FromDataType::type_id).isStringOrFixedString())
+            {
+                if (to_type->getCustomSerialization())
+                {
+                    ret = &ConvertImplGenericFromString<typename FromDataType::ColumnType>::execute;
+                    return true;
+                }
+            }
+            if constexpr (WhichDataType(ToDataType::type_id).isStringOrFixedString())
+            {
+                if (from_type->getCustomSerialization())
+                {
+                    ret = [](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
+                    {
+                        return ConvertImplGenericToString<typename ToDataType::ColumnType>::execute(arguments, result_type, input_rows_count);
+                    };
+                    return true;
+                }
+            }
+
+            return false;
+        };
+
+        if (callOnTwoTypeIndexes(from_type->getTypeId(), to_type->getTypeId(), make_custom_serialization_wrapper))
+            return ret;
 
         if (callOnIndexAndDataType<void>(to_type->getTypeId(), make_default_wrapper))
             return ret;

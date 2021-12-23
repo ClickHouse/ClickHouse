@@ -39,8 +39,7 @@ public:
         const DictionaryStructure & dict_struct_,
         const Configuration & configuration_,
         const Block & sample_block_,
-        ContextMutablePtr context_,
-        std::shared_ptr<Session> local_session_);
+        ContextMutablePtr context_);
 
     /// copy-constructor is provided in order to support cloneability
     ClickHouseDictionarySource(const ClickHouseDictionarySource & other);
@@ -61,7 +60,7 @@ public:
 
     bool hasUpdateField() const override;
 
-    DictionarySourcePtr clone() const override { return std::make_unique<ClickHouseDictionarySource>(*this); }
+    DictionarySourcePtr clone() const override { return std::make_shared<ClickHouseDictionarySource>(*this); }
 
     std::string toString() const override;
 
@@ -82,7 +81,6 @@ private:
     mutable std::string invalidate_query_response;
     ExternalQueryBuilder query_builder;
     Block sample_block;
-    std::shared_ptr<Session> local_session;
     ContextMutablePtr context;
     ConnectionPoolWithFailoverPtr pool;
     const std::string load_all_query;

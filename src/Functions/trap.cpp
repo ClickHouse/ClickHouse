@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
 #include <Interpreters/Context.h>
-#include <common/scope_guard.h>
+#include <base/scope_guard.h>
 
 #include <thread>
 #include <memory>

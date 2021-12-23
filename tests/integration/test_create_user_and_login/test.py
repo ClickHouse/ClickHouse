@@ -58,13 +58,13 @@ def test_login_as_dropped_user_xml():
         instance.exec_in_container(["bash", "-c" , """
             cat > /etc/clickhouse-server/users.d/user_c.xml << EOF
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <users>
         <C>
             <no_password/>
         </C>
     </users>
-</yandex>
+</clickhouse>
 EOF"""])
 
         assert_eq_with_retry(instance, "SELECT name FROM system.users WHERE name='C'", "C")

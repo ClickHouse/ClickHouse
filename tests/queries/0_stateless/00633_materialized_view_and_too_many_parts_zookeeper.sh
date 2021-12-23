@@ -25,7 +25,7 @@ if ${CLICKHOUSE_CLIENT} --query "INSERT INTO root VALUES (2)" 2>/dev/null; then
 fi
 
 echo
-${CLICKHOUSE_CLIENT} --query "SELECT _table, d FROM merge('${CLICKHOUSE_DATABASE}', '^[abc]\$') ORDER BY _table"
+${CLICKHOUSE_CLIENT} --query "SELECT _table, d FROM merge('${CLICKHOUSE_DATABASE}', '^[abc]\$') ORDER BY _table, d"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE root"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE a"

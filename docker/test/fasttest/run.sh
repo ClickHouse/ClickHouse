@@ -111,19 +111,6 @@ function start_server
     fi
 
     echo "ClickHouse server pid '$server_pid' started and responded"
-
-    echo "
-set follow-fork-mode child
-handle all noprint
-handle SIGSEGV stop print
-handle SIGBUS stop print
-handle SIGABRT stop print
-continue
-thread apply all backtrace
-continue
-" > script.gdb
-
-    gdb -batch -command script.gdb -p "$server_pid" &
 }
 
 function clone_root
@@ -159,6 +146,7 @@ function clone_submodules
         cd "$FASTTEST_SOURCE"
 
         SUBMODULES_TO_UPDATE=(
+            contrib/sysroot
             contrib/magic_enum
             contrib/abseil-cpp
             contrib/boost
@@ -173,7 +161,6 @@ function clone_submodules
             contrib/double-conversion
             contrib/libcxx
             contrib/libcxxabi
-            contrib/libc-headers
             contrib/lz4
             contrib/zstd
             contrib/fastops
@@ -186,10 +173,12 @@ function clone_submodules
             contrib/dragonbox
             contrib/fast_float
             contrib/NuRaft
+            contrib/jemalloc
+            contrib/replxx
         )
 
         git submodule sync
-        git submodule update --depth 1 --init --recursive "${SUBMODULES_TO_UPDATE[@]}"
+        git submodule update --depth 1 --init "${SUBMODULES_TO_UPDATE[@]}"
         git submodule foreach git reset --hard
         git submodule foreach git checkout @ -f
         git submodule foreach git clean -xfd
@@ -206,6 +195,8 @@ function run_cmake
         "-DENABLE_THINLTO=0"
         "-DUSE_UNWIND=1"
         "-DENABLE_NURAFT=1"
+        "-DENABLE_JEMALLOC=1"
+        "-DENABLE_REPLXX=1"
     )
 
     # TODO remove this? we don't use ccache anyway. An option would be to download it
@@ -234,6 +225,9 @@ function build
         time ninja clickhouse-bundle 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/build_log.txt"
         if [ "$COPY_CLICKHOUSE_BINARY_TO_OUTPUT" -eq "1" ]; then
             cp programs/clickhouse "$FASTTEST_OUTPUT/clickhouse"
+
+            strip programs/clickhouse -o "$FASTTEST_OUTPUT/clickhouse-stripped"
+            gzip "$FASTTEST_OUTPUT/clickhouse-stripped"
         fi
         ccache --show-stats ||:
     )
@@ -262,11 +256,19 @@ function run_tests
 
     start_server
 
-    time clickhouse-test --hung-check -j 8 --order=random \
-            --fast-tests-only --no-long --testname --shard --zookeeper \
+    set +e
+    local NPROC
+    NPROC=$(nproc)
+    NPROC=$((NPROC / 2))
+    if [[ $NPROC == 0 ]]; then
+      NPROC=1
+    fi
+    time clickhouse-test --hung-check -j "${NPROC}" --order=random \
+            --fast-tests-only --no-long --testname --shard --zookeeper --check-zookeeper-session \
             -- "$FASTTEST_FOCUS" 2>&1 \
         | ts '%Y-%m-%d %H:%M:%S' \
-        | tee "$FASTTEST_OUTPUT/test_log.txt"
+        | tee "$FASTTEST_OUTPUT/test_result.txt"
+    set -e
 }
 
 case "$stage" in
@@ -315,6 +317,9 @@ case "$stage" in
     ;&
 "run_tests")
     run_tests
+    /process_functional_tests_result.py --in-results-dir "$FASTTEST_OUTPUT/" \
+        --out-results-file "$FASTTEST_OUTPUT/test_results.tsv" \
+        --out-status-file "$FASTTEST_OUTPUT/check_status.tsv" || echo -e "failure\tCannot parse results" > "$FASTTEST_OUTPUT/check_status.tsv"
     ;;
 *)
     echo "Unknown test stage '$stage'"

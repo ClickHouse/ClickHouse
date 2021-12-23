@@ -1,8 +1,7 @@
 #include "LibraryDictionarySource.h"
 
-#include <DataStreams/OneBlockInputStream.h>
 #include <Interpreters/Context.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/filesystemHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -42,13 +41,7 @@ LibraryDictionarySource::LibraryDictionarySource(
     , context(Context::createCopy(context_))
 {
     auto dictionaries_lib_path = context->getDictionariesLibPath();
-    bool path_checked = false;
-    if (fs::is_symlink(path))
-        path_checked = symlinkStartsWith(path, dictionaries_lib_path);
-    else
-        path_checked = pathStartsWith(path, dictionaries_lib_path);
-
-    if (created_from_ddl && !path_checked)
+    if (created_from_ddl && !fileOrSymlinkPathStartsWith(path, dictionaries_lib_path))
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", path, dictionaries_lib_path);
 
     if (!fs::exists(path))
@@ -136,7 +129,7 @@ Pipe LibraryDictionarySource::loadKeys(const Columns & key_columns, const std::v
 
 DictionarySourcePtr LibraryDictionarySource::clone() const
 {
-    return std::make_unique<LibraryDictionarySource>(*this);
+    return std::make_shared<LibraryDictionarySource>(*this);
 }
 
 

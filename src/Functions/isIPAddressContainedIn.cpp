@@ -12,7 +12,7 @@
 #include <charconv>
 
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_PARSE_TEXT;
@@ -210,7 +210,7 @@ namespace DB
             ColumnUInt8::MutablePtr col_res = ColumnUInt8::create(input_rows_count);
             ColumnUInt8::Container & vec_res = col_res->getData();
 
-            for (size_t i = 0; i < input_rows_count; i++)
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
                 const auto cidr = parseIPWithCIDR(col_cidr.getDataAt(i));
                 vec_res[i] = isAddressInRange(addr, cidr) ? 1 : 0;
@@ -227,7 +227,7 @@ namespace DB
 
             ColumnUInt8::MutablePtr col_res = ColumnUInt8::create(input_rows_count);
             ColumnUInt8::Container & vec_res = col_res->getData();
-            for (size_t i = 0; i < input_rows_count; i++)
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
                 const auto addr = IPAddressVariant(col_addr.getDataAt(i));
                 vec_res[i] = isAddressInRange(addr, cidr) ? 1 : 0;
@@ -241,7 +241,7 @@ namespace DB
             ColumnUInt8::MutablePtr col_res = ColumnUInt8::create(input_rows_count);
             ColumnUInt8::Container & vec_res = col_res->getData();
 
-            for (size_t i = 0; i < input_rows_count; i++)
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
                 const auto addr = IPAddressVariant(col_addr.getDataAt(i));
                 const auto cidr = parseIPWithCIDR(col_cidr.getDataAt(i));

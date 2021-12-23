@@ -1,9 +1,6 @@
 #include <gtest/gtest.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #if USE_NURAFT
 #include <Poco/ConsoleChannel.h>
@@ -17,12 +14,11 @@
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Exception.h>
-#include <common/logger_useful.h>
-#include <libnuraft/nuraft.hxx> // Y_IGNORE
+#include <base/logger_useful.h>
+#include <libnuraft/nuraft.hxx>
 #include <thread>
 #include <Coordination/KeeperLogStore.h>
 #include <Coordination/Changelog.h>
@@ -831,15 +827,29 @@ TEST_P(CoordinationTest, ChangelogTestLostFiles)
     EXPECT_FALSE(fs::exists("./logs/changelog_21_40.bin" + params.extension));
 }
 
+struct IntNode
+{
+    int value;
+    IntNode(int value_) : value(value_) { } // NOLINT(google-explicit-constructor)
+    UInt64 sizeInBytes() const { return sizeof value; }
+    IntNode & operator=(int rhs)
+    {
+        this->value = rhs;
+        return *this;
+    }
+    bool operator==(const int & rhs) const { return value == rhs; }
+    bool operator!=(const int & rhs) const { return rhs != this->value; }
+};
+
 TEST_P(CoordinationTest, SnapshotableHashMapSimple)
 {
-    DB::SnapshotableHashTable<int> hello;
+    DB::SnapshotableHashTable<IntNode> hello;
     EXPECT_TRUE(hello.insert("hello", 5));
     EXPECT_TRUE(hello.contains("hello"));
     EXPECT_EQ(hello.getValue("hello"), 5);
     EXPECT_FALSE(hello.insert("hello", 145));
     EXPECT_EQ(hello.getValue("hello"), 5);
-    hello.updateValue("hello", [](int & value) { value = 7; });
+    hello.updateValue("hello", [](IntNode & value) { value = 7; });
     EXPECT_EQ(hello.getValue("hello"), 7);
     EXPECT_EQ(hello.size(), 1);
     EXPECT_TRUE(hello.erase("hello"));
@@ -848,12 +858,12 @@ TEST_P(CoordinationTest, SnapshotableHashMapSimple)
 
 TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
 {
-    DB::SnapshotableHashTable<int> map_snp;
+    DB::SnapshotableHashTable<IntNode> map_snp;
     EXPECT_TRUE(map_snp.insert("/hello", 7));
     EXPECT_FALSE(map_snp.insert("/hello", 145));
     map_snp.enableSnapshotMode();
     EXPECT_FALSE(map_snp.insert("/hello", 145));
-    map_snp.updateValue("/hello", [](int & value) { value = 554; });
+    map_snp.updateValue("/hello", [](IntNode & value) { value = 554; });
     EXPECT_EQ(map_snp.getValue("/hello"), 554);
     EXPECT_EQ(map_snp.snapshotSize(), 2);
     EXPECT_EQ(map_snp.size(), 1);
@@ -923,6 +933,73 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
     map_snp.disableSnapshotMode();
 }
 
+TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
+{
+    /// int
+    DB::SnapshotableHashTable<IntNode> hello;
+    hello.disableSnapshotMode();
+    EXPECT_EQ(hello.getApproximateDataSize(), 0);
+
+    hello.insert("hello", 1);
+    EXPECT_EQ(hello.getApproximateDataSize(), 9);
+    hello.updateValue("hello", [](IntNode & value) { value = 2; });
+    EXPECT_EQ(hello.getApproximateDataSize(), 9);
+
+    hello.erase("hello");
+    EXPECT_EQ(hello.getApproximateDataSize(), 0);
+
+    hello.clear();
+    EXPECT_EQ(hello.getApproximateDataSize(), 0);
+
+    hello.enableSnapshotMode();
+    hello.insert("hello", 1);
+    EXPECT_EQ(hello.getApproximateDataSize(), 9);
+    hello.updateValue("hello", [](IntNode & value) { value = 2; });
+    EXPECT_EQ(hello.getApproximateDataSize(), 18);
+
+    hello.clearOutdatedNodes();
+    EXPECT_EQ(hello.getApproximateDataSize(), 9);
+
+    hello.erase("hello");
+    EXPECT_EQ(hello.getApproximateDataSize(), 9);
+
+    hello.clearOutdatedNodes();
+    EXPECT_EQ(hello.getApproximateDataSize(), 0);
+
+    /// Node
+    using Node = DB::KeeperStorage::Node;
+    DB::SnapshotableHashTable<Node> world;
+    Node n1;
+    n1.data = "1234";
+    Node n2;
+    n2.data = "123456";
+    n2.children.insert("");
+
+    world.disableSnapshotMode();
+    world.insert("world", n1);
+    EXPECT_EQ(world.getApproximateDataSize(), 98);
+    world.updateValue("world", [&](Node & value) { value = n2; });
+    EXPECT_EQ(world.getApproximateDataSize(), 98);
+
+    world.erase("world");
+    EXPECT_EQ(world.getApproximateDataSize(), 0);
+
+    world.enableSnapshotMode();
+    world.insert("world", n1);
+    EXPECT_EQ(world.getApproximateDataSize(), 98);
+    world.updateValue("world", [&](Node & value) { value = n2; });
+    EXPECT_EQ(world.getApproximateDataSize(), 196);
+
+    world.clearOutdatedNodes();
+    EXPECT_EQ(world.getApproximateDataSize(), 98);
+
+    world.erase("world");
+    EXPECT_EQ(world.getApproximateDataSize(), 98);
+
+    world.clear();
+    EXPECT_EQ(world.getApproximateDataSize(), 0);
+}
+
 void addNode(DB::KeeperStorage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner=0)
 {
     using Node = DB::KeeperStorage::Node;
@@ -934,8 +1011,9 @@ void addNode(DB::KeeperStorage & storage, const std::string & path, const std::s
 
 TEST_P(CoordinationTest, TestStorageSnapshotSimple)
 {
+    auto params = GetParam();
     ChangelogDirTest test("./snapshots");
-    DB::KeeperSnapshotManager manager("./snapshots", 3);
+    DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
 
     DB::KeeperStorage storage(500, "");
     addNode(storage, "/hello", "world", 1);
@@ -956,12 +1034,12 @@ TEST_P(CoordinationTest, TestStorageSnapshotSimple)
 
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
     manager.serializeSnapshotBufferToDisk(*buf, 2);
-    EXPECT_TRUE(fs::exists("./snapshots/snapshot_2.bin"));
+    EXPECT_TRUE(fs::exists("./snapshots/snapshot_2.bin" + params.extension));
 
 
     auto debuf = manager.deserializeSnapshotBufferFromDisk(2);
 
-    auto [snapshot_meta, restored_storage] = manager.deserializeSnapshotFromBuffer(debuf);
+    auto [restored_storage, snapshot_meta, _] = manager.deserializeSnapshotFromBuffer(debuf);
 
     EXPECT_EQ(restored_storage->container.size(), 3);
     EXPECT_EQ(restored_storage->container.getValue("/").children.size(), 1);
@@ -981,8 +1059,9 @@ TEST_P(CoordinationTest, TestStorageSnapshotSimple)
 
 TEST_P(CoordinationTest, TestStorageSnapshotMoreWrites)
 {
+    auto params = GetParam();
     ChangelogDirTest test("./snapshots");
-    DB::KeeperSnapshotManager manager("./snapshots", 3);
+    DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
 
     DB::KeeperStorage storage(500, "");
     storage.getSessionID(130);
@@ -1005,11 +1084,11 @@ TEST_P(CoordinationTest, TestStorageSnapshotMoreWrites)
 
     auto buf = manager.serializeSnapshotToBuffer(snapshot);
     manager.serializeSnapshotBufferToDisk(*buf, 50);
-    EXPECT_TRUE(fs::exists("./snapshots/snapshot_50.bin"));
+    EXPECT_TRUE(fs::exists("./snapshots/snapshot_50.bin" + params.extension));
 
 
     auto debuf = manager.deserializeSnapshotBufferFromDisk(50);
-    auto [meta, restored_storage] = manager.deserializeSnapshotFromBuffer(debuf);
+    auto [restored_storage, meta, _] = manager.deserializeSnapshotFromBuffer(debuf);
 
     EXPECT_EQ(restored_storage->container.size(), 51);
     for (size_t i = 0; i < 50; ++i)
@@ -1021,8 +1100,9 @@ TEST_P(CoordinationTest, TestStorageSnapshotMoreWrites)
 
 TEST_P(CoordinationTest, TestStorageSnapshotManySnapshots)
 {
+    auto params = GetParam();
     ChangelogDirTest test("./snapshots");
-    DB::KeeperSnapshotManager manager("./snapshots", 3);
+    DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
 
     DB::KeeperStorage storage(500, "");
     storage.getSessionID(130);
@@ -1037,17 +1117,17 @@ TEST_P(CoordinationTest, TestStorageSnapshotManySnapshots)
         DB::KeeperStorageSnapshot snapshot(&storage, j * 50);
         auto buf = manager.serializeSnapshotToBuffer(snapshot);
         manager.serializeSnapshotBufferToDisk(*buf, j * 50);
-        EXPECT_TRUE(fs::exists(std::string{"./snapshots/snapshot_"} + std::to_string(j * 50) + ".bin"));
+        EXPECT_TRUE(fs::exists(std::string{"./snapshots/snapshot_"} + std::to_string(j * 50) + ".bin" + params.extension));
     }
 
-    EXPECT_FALSE(fs::exists("./snapshots/snapshot_50.bin"));
-    EXPECT_FALSE(fs::exists("./snapshots/snapshot_100.bin"));
-    EXPECT_TRUE(fs::exists("./snapshots/snapshot_150.bin"));
-    EXPECT_TRUE(fs::exists("./snapshots/snapshot_200.bin"));
-    EXPECT_TRUE(fs::exists("./snapshots/snapshot_250.bin"));
+    EXPECT_FALSE(fs::exists("./snapshots/snapshot_50.bin" + params.extension));
+    EXPECT_FALSE(fs::exists("./snapshots/snapshot_100.bin" + params.extension));
+    EXPECT_TRUE(fs::exists("./snapshots/snapshot_150.bin" + params.extension));
+    EXPECT_TRUE(fs::exists("./snapshots/snapshot_200.bin" + params.extension));
+    EXPECT_TRUE(fs::exists("./snapshots/snapshot_250.bin" + params.extension));
 
 
-    auto [meta, restored_storage] = manager.restoreFromLatestSnapshot();
+    auto [restored_storage, meta, _] = manager.restoreFromLatestSnapshot();
 
     EXPECT_EQ(restored_storage->container.size(), 251);
 
@@ -1059,8 +1139,9 @@ TEST_P(CoordinationTest, TestStorageSnapshotManySnapshots)
 
 TEST_P(CoordinationTest, TestStorageSnapshotMode)
 {
+    auto params = GetParam();
     ChangelogDirTest test("./snapshots");
-    DB::KeeperSnapshotManager manager("./snapshots", 3);
+    DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
     DB::KeeperStorage storage(500, "");
     for (size_t i = 0; i < 50; ++i)
     {
@@ -1087,7 +1168,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotMode)
         auto buf = manager.serializeSnapshotToBuffer(snapshot);
         manager.serializeSnapshotBufferToDisk(*buf, 50);
     }
-    EXPECT_TRUE(fs::exists("./snapshots/snapshot_50.bin"));
+    EXPECT_TRUE(fs::exists("./snapshots/snapshot_50.bin" + params.extension));
     EXPECT_EQ(storage.container.size(), 26);
     storage.clearGarbageAfterSnapshot();
     EXPECT_EQ(storage.container.snapshotSize(), 26);
@@ -1099,7 +1180,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotMode)
             EXPECT_FALSE(storage.container.contains("/hello_" + std::to_string(i)));
     }
 
-    auto [meta, restored_storage] = manager.restoreFromLatestSnapshot();
+    auto [restored_storage, meta, _] = manager.restoreFromLatestSnapshot();
 
     for (size_t i = 0; i < 50; ++i)
     {
@@ -1110,8 +1191,9 @@ TEST_P(CoordinationTest, TestStorageSnapshotMode)
 
 TEST_P(CoordinationTest, TestStorageSnapshotBroken)
 {
+    auto params = GetParam();
     ChangelogDirTest test("./snapshots");
-    DB::KeeperSnapshotManager manager("./snapshots", 3);
+    DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
     DB::KeeperStorage storage(500, "");
     for (size_t i = 0; i < 50; ++i)
     {
@@ -1122,10 +1204,10 @@ TEST_P(CoordinationTest, TestStorageSnapshotBroken)
         auto buf = manager.serializeSnapshotToBuffer(snapshot);
         manager.serializeSnapshotBufferToDisk(*buf, 50);
     }
-    EXPECT_TRUE(fs::exists("./snapshots/snapshot_50.bin"));
+    EXPECT_TRUE(fs::exists("./snapshots/snapshot_50.bin" + params.extension));
 
     /// Let's corrupt file
-    DB::WriteBufferFromFile plain_buf("./snapshots/snapshot_50.bin", DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
+    DB::WriteBufferFromFile plain_buf("./snapshots/snapshot_50.bin" + params.extension, DBMS_DEFAULT_BUFFER_SIZE, O_APPEND | O_CREAT | O_WRONLY);
     plain_buf.truncate(34);
     plain_buf.sync();
 
@@ -1154,7 +1236,7 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest logs("./logs");
 
-    ResponsesQueue queue;
+    ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, "./snapshots", settings);
     state_machine->init();
@@ -1181,7 +1263,9 @@ void testLogAndStateMachine(Coordination::CoordinationSettingsPtr settings, uint
 
             state_machine->create_snapshot(s, when_done);
             CreateSnapshotTask snapshot_task;
-            snapshots_queue.pop(snapshot_task);
+            bool pop_result = snapshots_queue.pop(snapshot_task);
+            EXPECT_TRUE(pop_result);
+
             snapshot_task.create_snapshot(std::move(snapshot_task.snapshot));
         }
         if (snapshot_created)
@@ -1303,7 +1387,7 @@ TEST_P(CoordinationTest, TestEphemeralNodeRemove)
     ChangelogDirTest snapshots("./snapshots");
     CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
 
-    ResponsesQueue queue;
+    ResponsesQueue queue(std::numeric_limits<size_t>::max());
     SnapshotsQueue snapshots_queue{1};
     auto state_machine = std::make_shared<KeeperStateMachine>(queue, snapshots_queue, "./snapshots", settings);
     state_machine->init();
@@ -1461,8 +1545,80 @@ TEST_P(CoordinationTest, TestCompressedLogsMultipleRewrite)
         changelog2.append(entry);
         changelog2.end_of_append_batch(0, 0);
     }
-
 }
+
+TEST_P(CoordinationTest, TestStorageSnapshotDifferentCompressions)
+{
+    auto params = GetParam();
+
+    ChangelogDirTest test("./snapshots");
+    DB::KeeperSnapshotManager manager("./snapshots", 3, params.enable_compression);
+
+    DB::KeeperStorage storage(500, "");
+    addNode(storage, "/hello", "world", 1);
+    addNode(storage, "/hello/somepath", "somedata", 3);
+    storage.session_id_counter = 5;
+    storage.zxid = 2;
+    storage.ephemerals[3] = {"/hello"};
+    storage.ephemerals[1] = {"/hello/somepath"};
+    storage.getSessionID(130);
+    storage.getSessionID(130);
+
+    DB::KeeperStorageSnapshot snapshot(&storage, 2);
+
+    auto buf = manager.serializeSnapshotToBuffer(snapshot);
+    manager.serializeSnapshotBufferToDisk(*buf, 2);
+    EXPECT_TRUE(fs::exists("./snapshots/snapshot_2.bin" + params.extension));
+
+    DB::KeeperSnapshotManager new_manager("./snapshots", 3, !params.enable_compression);
+
+    auto debuf = new_manager.deserializeSnapshotBufferFromDisk(2);
+
+    auto [restored_storage, snapshot_meta, _] = new_manager.deserializeSnapshotFromBuffer(debuf);
+
+    EXPECT_EQ(restored_storage->container.size(), 3);
+    EXPECT_EQ(restored_storage->container.getValue("/").children.size(), 1);
+    EXPECT_EQ(restored_storage->container.getValue("/hello").children.size(), 1);
+    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").children.size(), 0);
+
+    EXPECT_EQ(restored_storage->container.getValue("/").data, "");
+    EXPECT_EQ(restored_storage->container.getValue("/hello").data, "world");
+    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").data, "somedata");
+    EXPECT_EQ(restored_storage->session_id_counter, 7);
+    EXPECT_EQ(restored_storage->zxid, 2);
+    EXPECT_EQ(restored_storage->ephemerals.size(), 2);
+    EXPECT_EQ(restored_storage->ephemerals[3].size(), 1);
+    EXPECT_EQ(restored_storage->ephemerals[1].size(), 1);
+    EXPECT_EQ(restored_storage->session_and_timeout.size(), 2);
+}
+
+
+TEST_P(CoordinationTest, TestLogGap)
+{
+    using namespace Coordination;
+    auto test_params = GetParam();
+    ChangelogDirTest logs("./logs");
+    DB::KeeperLogStore changelog("./logs", 100, true, test_params.enable_compression);
+
+    changelog.init(0, 3);
+    for (size_t i = 1; i < 55; ++i)
+    {
+        std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
+        request->path = "/hello_" + std::to_string(i);
+        auto entry = getLogEntryFromZKRequest(0, 1, request);
+        changelog.append(entry);
+        changelog.end_of_append_batch(0, 0);
+    }
+
+    DB::KeeperLogStore changelog1("./logs", 100, true, test_params.enable_compression);
+    changelog1.init(61, 3);
+
+    /// Logs discarded
+    EXPECT_FALSE(fs::exists("./logs/changelog_1_100.bin" + test_params.extension));
+    EXPECT_EQ(changelog1.start_index(), 61);
+    EXPECT_EQ(changelog1.next_slot(), 61);
+}
+
 
 INSTANTIATE_TEST_SUITE_P(CoordinationTestSuite,
     CoordinationTest,

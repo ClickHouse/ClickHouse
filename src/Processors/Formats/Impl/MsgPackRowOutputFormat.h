@@ -1,9 +1,7 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_formats.h"
-#    include "config_core.h"
-#endif
+#include "config_formats.h"
+#include "config_core.h"
 
 #if USE_MSGPACK
 
@@ -24,11 +22,11 @@ public:
 
     String getName() const override { return "MsgPackRowOutputFormat"; }
 
+private:
     void write(const Columns & columns, size_t row_num) override;
     void writeField(const IColumn &, const ISerialization &, size_t) override {}
     void serializeField(const IColumn & column, DataTypePtr data_type, size_t row_num);
 
-private:
     msgpack::packer<DB::WriteBuffer> packer;
 };
 

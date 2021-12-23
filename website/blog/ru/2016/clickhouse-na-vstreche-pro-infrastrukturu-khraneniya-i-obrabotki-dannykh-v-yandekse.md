@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse на встрече про инфраструктуру хранения и обработки данных в Яндексе'
-image: 'https://blog-images.clickhouse.tech/ru/2016/clickhouse-na-vstreche-pro-infrastrukturu-khraneniya-i-obrabotki-dannykh-v-yandekse/main.jpg'
+image: 'https://blog-images.clickhouse.com/ru/2016/clickhouse-na-vstreche-pro-infrastrukturu-khraneniya-i-obrabotki-dannykh-v-yandekse/main.jpg'
 date: '2016-10-16'
 tags: ['мероприятия', 'инфраструктура']
 ---

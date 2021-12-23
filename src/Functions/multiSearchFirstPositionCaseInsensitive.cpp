@@ -15,7 +15,7 @@ struct NameMultiSearchFirstPositionCaseInsensitive
 };
 
 using FunctionMultiSearchFirstPositionCaseInsensitive
-    = FunctionsMultiStringSearch<MultiSearchFirstPositionImpl<PositionCaseInsensitiveASCII>, NameMultiSearchFirstPositionCaseInsensitive>;
+    = FunctionsMultiStringSearch<MultiSearchFirstPositionImpl<NameMultiSearchFirstPositionCaseInsensitive, PositionCaseInsensitiveASCII>>;
 
 }
 

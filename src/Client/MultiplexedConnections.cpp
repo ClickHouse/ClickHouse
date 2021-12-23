@@ -1,8 +1,10 @@
 #include <Client/MultiplexedConnections.h>
+
+#include <Common/thread_local_rng.h>
+#include <Core/Protocol.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/Operators.h>
-#include <Common/thread_local_rng.h>
-
+#include <Interpreters/ClientInfo.h>
 
 namespace DB
 {
@@ -109,7 +111,7 @@ void MultiplexedConnections::sendQuery(
     const String & query,
     const String & query_id,
     UInt64 stage,
-    const ClientInfo & client_info,
+    ClientInfo & client_info,
     bool with_pending_data)
 {
     std::lock_guard lock(cancel_mutex);
@@ -130,16 +132,29 @@ void MultiplexedConnections::sendQuery(
             modified_settings.group_by_two_level_threshold = 0;
             modified_settings.group_by_two_level_threshold_bytes = 0;
         }
+
+        if (settings.allow_experimental_parallel_reading_from_replicas)
+        {
+            client_info.collaborate_with_initiator = true;
+            client_info.count_participating_replicas = replica_info.all_replicas_count;
+            client_info.number_of_current_replica = replica_info.number_of_current_replica;
+        }
     }
+
+    const bool enable_sample_offset_parallel_processing = settings.max_parallel_replicas > 1 && !settings.allow_experimental_parallel_reading_from_replicas;
 
     size_t num_replicas = replica_states.size();
     if (num_replicas > 1)
     {
-        /// Use multiple replicas for parallel query processing.
-        modified_settings.parallel_replicas_count = num_replicas;
+        if (enable_sample_offset_parallel_processing)
+            /// Use multiple replicas for parallel query processing.
+            modified_settings.parallel_replicas_count = num_replicas;
+
         for (size_t i = 0; i < num_replicas; ++i)
         {
-            modified_settings.parallel_replica_offset = i;
+            if (enable_sample_offset_parallel_processing)
+                modified_settings.parallel_replica_offset = i;
+
             replica_states[i].connection->sendQuery(timeouts, query, query_id,
                 stage, &modified_settings, &client_info, with_pending_data);
         }
@@ -177,6 +192,16 @@ void MultiplexedConnections::sendReadTaskResponse(const String & response)
         return;
     current_connection->sendReadTaskResponse(response);
 }
+
+
+void MultiplexedConnections::sendMergeTreeReadTaskResponse(PartitionReadResponse response)
+{
+    std::lock_guard lock(cancel_mutex);
+    if (cancelled)
+        return;
+    current_connection->sendMergeTreeReadTaskResponse(response);
+}
+
 
 Packet MultiplexedConnections::receivePacket()
 {
@@ -233,6 +258,7 @@ Packet MultiplexedConnections::drain()
 
         switch (packet.type)
         {
+            case Protocol::Server::MergeTreeReadTaskRequest:
             case Protocol::Server::ReadTaskRequest:
             case Protocol::Server::PartUUIDs:
             case Protocol::Server::Data:
@@ -312,6 +338,7 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
 
     switch (packet.type)
     {
+        case Protocol::Server::MergeTreeReadTaskRequest:
         case Protocol::Server::ReadTaskRequest:
         case Protocol::Server::PartUUIDs:
         case Protocol::Server::Data:
@@ -320,6 +347,7 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
         case Protocol::Server::Totals:
         case Protocol::Server::Extremes:
         case Protocol::Server::Log:
+        case Protocol::Server::ProfileEvents:
             break;
 
         case Protocol::Server::EndOfStream:
@@ -367,17 +395,17 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
                 read_list.push_back(*connection->socket);
         }
 
+        auto timeout = is_draining ? drain_timeout : receive_timeout;
         int n = Poco::Net::Socket::select(
             read_list,
             write_list,
             except_list,
-            is_draining ? drain_timeout : receive_timeout);
+            timeout);
 
         /// We treat any error as timeout for simplicity.
         /// And we also check if read_list is still empty just in case.
         if (n <= 0 || read_list.empty())
         {
-            auto err_msg = fmt::format("Timeout exceeded while reading from {}", dumpAddressesUnlocked());
             for (ReplicaState & state : replica_states)
             {
                 Connection * connection = state.connection;
@@ -387,7 +415,10 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
                     invalidateReplica(state);
                 }
             }
-            throw Exception(err_msg, ErrorCodes::TIMEOUT_EXCEEDED);
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                "Timeout ({} ms) exceeded while reading from {}",
+                timeout.totalMilliseconds(),
+                dumpAddressesUnlocked());
         }
     }
 

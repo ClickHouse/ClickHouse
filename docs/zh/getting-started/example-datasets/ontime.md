@@ -155,7 +155,7 @@ ls -1 *.zip | xargs -I{} -P $(nproc) bash -c "echo {}; unzip -cq {} '*.csv' | se
 ## 下载预处理好的分区数据 {#xia-zai-yu-chu-li-hao-de-fen-qu-shu-ju}
 
 ``` bash
-$ curl -O https://datasets.clickhouse.tech/ontime/partitions/ontime.tar
+$ curl -O https://datasets.clickhouse.com/ontime/partitions/ontime.tar
 $ tar xvf ontime.tar -C /var/lib/clickhouse # path to ClickHouse data directory
 $ # check permissions of unpacked data, fix if required
 $ sudo service clickhouse-server restart

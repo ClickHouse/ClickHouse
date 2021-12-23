@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Common/Exception.h>
 
 #include <filesystem>
@@ -35,8 +35,9 @@ bool pathStartsWith(const std::filesystem::path & path, const std::filesystem::p
 /// Returns true if path starts with prefix path
 bool pathStartsWith(const String & path, const String & prefix_path);
 
-/// Returns true if symlink starts with prefix path
-bool symlinkStartsWith(const String & path, const String & prefix_path);
+/// Same as pathStartsWith, but without canonization, i.e. allowed to check symlinks.
+/// (Path is made absolute and normalized.)
+bool fileOrSymlinkPathStartsWith(const String & path, const String & prefix_path);
 
 }
 

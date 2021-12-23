@@ -36,8 +36,10 @@ public:
     const char * getFamilyName() const override { return "Tuple"; }
 
     bool canBeInsideNullable() const override { return false; }
+    bool supportsSparseSerialization() const override { return true; }
 
     MutableColumnPtr createColumn() const override;
+    MutableColumnPtr createColumn(const ISerialization & serialization) const override;
 
     Field getDefault() const override;
     void insertDefaultInto(IColumn & column) const override;
@@ -52,28 +54,19 @@ public:
     size_t getMaximumSizeOfValueInMemory() const override;
     size_t getSizeOfValueInMemory() const override;
 
-    DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
-    ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const override;
-
-    SerializationPtr getSerialization(const String & column_name, const StreamExistenceCallback & callback) const override;
-
-    SerializationPtr getSubcolumnSerialization(
-        const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const override;
-
     SerializationPtr doGetDefaultSerialization() const override;
+    SerializationPtr getSerialization(const SerializationInfo & info) const override;
+    MutableSerializationInfoPtr createSerializationInfo(const SerializationInfo::Settings & settings) const override;
 
+    const DataTypePtr & getElement(size_t i) const { return elems[i]; }
     const DataTypes & getElements() const { return elems; }
     const Strings & getElementNames() const { return names; }
 
     size_t getPositionByName(const String & name) const;
+    String getNameByPosition(size_t i) const;
 
     bool haveExplicitNames() const { return have_explicit_names; }
     bool serializeNames() const { return serialize_names; }
-
-private:
-    template <typename OnSuccess, typename OnContinue>
-    auto getSubcolumnEntity(const String & subcolumn_name,
-        const OnSuccess & on_success, const OnContinue & on_continue) const;
 };
 
 }

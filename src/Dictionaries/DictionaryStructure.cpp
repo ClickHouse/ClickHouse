@@ -286,7 +286,7 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
 
         if (!inserted)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Dictionary attributes names must be unique. Attribute name ({}) is not unique",
+                "Dictionary attributes names must be unique. Attribute name {} is not unique",
                 name);
 
         const auto type_string = config.getString(prefix + "type");

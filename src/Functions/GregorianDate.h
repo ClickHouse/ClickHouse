@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/extended_types.h>
+#include <base/extended_types.h>
 #include <Common/Exception.h>
 #include <Core/Types.h>
 #include <IO/ReadBuffer.h>

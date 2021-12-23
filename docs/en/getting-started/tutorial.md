@@ -85,8 +85,8 @@ Now it’s time to fill our ClickHouse server with some sample data. In this tut
 ### Download and Extract Table Data {#download-and-extract-table-data}
 
 ``` bash
-curl https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
-curl https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
+curl https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
+curl https://datasets.clickhouse.com/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
 ```
 
 The extracted files are about 10GB in size.

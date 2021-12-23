@@ -132,6 +132,8 @@ bool isCompatible(IAST & node)
             || name == "notLike"
             || name == "in"
             || name == "notIn"
+            || name == "isNull"
+            || name == "isNotNull"
             || name == "tuple"))
             return false;
 

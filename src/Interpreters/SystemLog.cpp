@@ -12,7 +12,7 @@
 #include <Interpreters/ZooKeeperLog.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -93,6 +93,22 @@ std::shared_ptr<TSystemLog> createSystemLog(
     return std::make_shared<TSystemLog>(context, database, table, engine, flush_interval_milliseconds);
 }
 
+}
+
+
+ASTPtr ISystemLog::getCreateTableQueryClean(const StorageID & table_id, ContextPtr context)
+{
+    DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
+    ASTPtr old_ast = database->getCreateTableQuery(table_id.table_name, context);
+    auto & old_create_query_ast = old_ast->as<ASTCreateQuery &>();
+    /// Reset UUID
+    old_create_query_ast.uuid = UUIDHelpers::Nil;
+    /// Existing table has default settings (i.e. `index_granularity = 8192`), reset them.
+    if (ASTStorage * storage = old_create_query_ast.storage)
+    {
+        storage->reset(storage->settings);
+    }
+    return old_ast;
 }
 
 

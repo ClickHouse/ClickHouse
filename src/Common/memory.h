@@ -1,7 +1,7 @@
 #pragma once
 
 #include <new>
-#include <common/defines.h>
+#include <base/defines.h>
 
 #include <Common/CurrentMemoryTracker.h>
 

@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <encryption_codecs>
         <aes_128_gcm_siv>
             <key_hex>a32902703dab1cedd7ff7287067787ca</key_hex>
@@ -7,4 +7,4 @@
             <key_hex>a32902703dab1cedd7ff7287067787caa32902703dab1cedd7ff7287067787ca</key_hex>
         </aes_256_gcm_siv>
     </encryption_codecs>
-</yandex>
+</clickhouse>

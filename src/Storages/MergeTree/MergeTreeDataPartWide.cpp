@@ -80,8 +80,7 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
     if (checksums.empty())
         return size;
 
-    auto serialization = getSerializationForColumn(column);
-    serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+    getSerialization(column)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
         String file_name = ISerialization::getFileNameForStream(column, substream_path);
 
@@ -98,7 +97,7 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
         auto mrk_checksum = checksums.files.find(file_name + index_granularity_info.marks_file_extension);
         if (mrk_checksum != checksums.files.end())
             size.marks += mrk_checksum->second.file_size;
-    }, {});
+    });
 
     return size;
 }
@@ -142,6 +141,11 @@ void MergeTreeDataPartWide::loadIndexGranularity()
     index_granularity.setInitialized();
 }
 
+bool MergeTreeDataPartWide::isStoredOnRemoteDisk() const
+{
+    return volume->getDisk()->isRemote();
+}
+
 MergeTreeDataPartWide::~MergeTreeDataPartWide()
 {
     removeIfNeeded();
@@ -158,8 +162,7 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
         {
             for (const NameAndTypePair & name_type : columns)
             {
-                auto serialization = getSerializationForColumn(name_type);
-                serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+                getSerialization(name_type)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
                 {
                     String file_name = ISerialization::getFileNameForStream(name_type, substream_path);
                     String mrk_file_name = file_name + index_granularity_info.marks_file_extension;
@@ -173,7 +176,6 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
                 });
             }
         }
-
     }
     else
     {
@@ -181,13 +183,7 @@ void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
         std::optional<UInt64> marks_size;
         for (const NameAndTypePair & name_type : columns)
         {
-            auto serialization = IDataType::getSerialization(name_type,
-                [&](const String & stream_name)
-                {
-                    return volume->getDisk()->exists(stream_name + DATA_FILE_EXTENSION);
-                });
-
-            serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+            getSerialization(name_type)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
                 auto file_path = path + ISerialization::getFileNameForStream(name_type, substream_path) + index_granularity_info.marks_file_extension;
 
@@ -222,8 +218,7 @@ bool MergeTreeDataPartWide::hasColumnFiles(const NameAndTypePair & column) const
     };
 
     bool res = true;
-    auto serialization = IDataType::getSerialization(column, check_stream_exists);
-    serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+    getSerialization(column)->enumerateStreams([&](const auto & substream_path)
     {
         String file_name = ISerialization::getFileNameForStream(column, substream_path);
         if (!check_stream_exists(file_name))
@@ -236,8 +231,7 @@ bool MergeTreeDataPartWide::hasColumnFiles(const NameAndTypePair & column) const
 String MergeTreeDataPartWide::getFileNameForColumn(const NameAndTypePair & column) const
 {
     String filename;
-    auto serialization = column.type->getDefaultSerialization();
-    serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+    getSerialization(column)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
         if (filename.empty())
             filename = ISerialization::getFileNameForStream(column, substream_path);
@@ -256,7 +250,10 @@ void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_col
 
 #ifndef NDEBUG
         /// Most trivial types
-        if (rows_count != 0 && column.type->isValueRepresentedByNumber() && !column.type->haveSubtypes())
+        if (rows_count != 0
+            && column.type->isValueRepresentedByNumber()
+            && !column.type->haveSubtypes()
+            && getSerialization(column)->getKind() == ISerialization::Kind::DEFAULT)
         {
             size_t rows_in_column = size.data_uncompressed / column.type->getSizeOfValueInMemory();
             if (rows_in_column != rows_count)

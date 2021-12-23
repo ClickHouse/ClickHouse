@@ -11,8 +11,11 @@
 #include "registerDictionaries.h"
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
+#include <Storages/MySQL/MySQLHelpers.h>
+#include <Storages/MySQL/MySQLSettings.h>
 
 
 namespace DB
@@ -45,13 +48,17 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 
         auto settings_config_prefix = config_prefix + ".mysql";
         std::shared_ptr<mysqlxx::PoolWithFailover> pool;
-        ExternalDataSourceConfiguration configuration;
+        StorageMySQLConfiguration configuration;
         auto named_collection = created_from_ddl ? getExternalDataSourceConfiguration(config, settings_config_prefix, global_context) : std::nullopt;
         if (named_collection)
         {
-            configuration = *named_collection;
-            std::vector<std::pair<String, UInt16>> addresses{std::make_pair(configuration.host, configuration.port)};
-            pool = std::make_shared<mysqlxx::PoolWithFailover>(configuration.database, addresses, configuration.username, configuration.password);
+            configuration.set(*named_collection);
+            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
+            MySQLSettings mysql_settings;
+            const auto & settings = global_context->getSettingsRef();
+            mysql_settings.connect_timeout = settings.external_storage_connect_timeout_sec;
+            mysql_settings.read_write_timeout = settings.external_storage_rw_timeout_sec;
+            pool = std::make_shared<mysqlxx::PoolWithFailover>(createMySQLPoolWithFailover(configuration, mysql_settings));
         }
         else
         {
@@ -94,8 +101,8 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 #    include <DataTypes/DataTypeString.h>
 #    include <IO/WriteBufferFromString.h>
 #    include <IO/WriteHelpers.h>
-#    include <common/LocalDateTime.h>
-#    include <common/logger_useful.h>
+#    include <base/LocalDateTime.h>
+#    include <base/logger_useful.h>
 #    include "readInvalidateQuery.h"
 #    include <mysqlxx/Exception.h>
 #    include <Core/Settings.h>
@@ -224,7 +231,7 @@ bool MySQLDictionarySource::hasUpdateField() const
 
 DictionarySourcePtr MySQLDictionarySource::clone() const
 {
-    return std::make_unique<MySQLDictionarySource>(*this);
+    return std::make_shared<MySQLDictionarySource>(*this);
 }
 
 std::string MySQLDictionarySource::toString() const
@@ -307,7 +314,7 @@ std::string MySQLDictionarySource::doInvalidateQuery(const std::string & request
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-    return readInvalidateQuery(Pipe(std::make_unique<MySQLSource>(pool->get(), request, invalidate_sample_block, settings)));
+    return readInvalidateQuery(QueryPipeline(std::make_unique<MySQLSource>(pool->get(), request, invalidate_sample_block, settings)));
 }
 
 }

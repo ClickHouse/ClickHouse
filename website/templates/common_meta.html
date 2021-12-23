@@ -15,12 +15,12 @@
 {% if page and page.meta.image %}
 <meta property="og:image" content="{{ page.meta.image}}" />
 {% else %}
-<meta property="og:image" content="https://clickhouse.tech/images/logo.png" />
+<meta property="og:image" content="https://clickhouse.com/images/logo.png" />
 {% endif %}
-<meta property="og:url" content="{{ url or 'https://clickhouse.tech/' }}"/>
-<link rel="canonical" href="{{ canonical_url or 'https://clickhouse.tech/' }}" />
+<meta property="og:url" content="{{ url or 'https://clickhouse.com/' }}"/>
+<link rel="canonical" href="{{ canonical_url or 'https://clickhouse.com/' }}" />
 {% if page and not single_page and not is_blog %}
-<link rel="amphtml" href="{{ url or 'https://clickhouse.tech/' }}amp/" />
+<link rel="amphtml" href="{{ url or 'https://clickhouse.com/' }}amp/" />
 {% endif %}
 <link rel="search" href="/opensearch.xml" title="ClickHouse" type="application/opensearchdescription+xml" />
 {% include "templates/docs/ld_json.html" %}

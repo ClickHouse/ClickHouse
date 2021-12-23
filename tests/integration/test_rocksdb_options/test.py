@@ -58,8 +58,28 @@ def test_valid_column_family_options(start_cluster):
     DROP TABLE test;
     """)
 
+def test_invalid_column_family_options(start_cluster):
+    node.exec_in_container(['bash', '-c', "sed -i 's/num_levels/no_such_column_family_option/g' /etc/clickhouse-server/config.d/rocksdb.xml"])
+    node.restart_clickhouse()
+    with pytest.raises(QueryRuntimeException):
+        node.query("""
+        CREATE TABLE test (key UInt64, value String) Engine=EmbeddedRocksDB PRIMARY KEY(key);
+        """)
+    node.exec_in_container(['bash', '-c', "sed -i 's/no_such_column_family_option/num_levels/g' /etc/clickhouse-server/config.d/rocksdb.xml"])
+    node.restart_clickhouse()
+
 def test_table_valid_column_family_options(start_cluster):
     node.query("""
     CREATE TABLE test (key UInt64, value String) Engine=EmbeddedRocksDB PRIMARY KEY(key);
     DROP TABLE test;
     """)
+
+def test_table_invalid_column_family_options(start_cluster):
+    node.exec_in_container(['bash', '-c', "sed -i 's/max_bytes_for_level_base/no_such_table_column_family_option/g' /etc/clickhouse-server/config.d/rocksdb.xml"])
+    node.restart_clickhouse()
+    with pytest.raises(QueryRuntimeException):
+        node.query("""
+        CREATE TABLE test (key UInt64, value String) Engine=EmbeddedRocksDB PRIMARY KEY(key);
+        """)
+    node.exec_in_container(['bash', '-c', "sed -i 's/no_such_table_column_family_option/max_bytes_for_level_base/g' /etc/clickhouse-server/config.d/rocksdb.xml"])
+    node.restart_clickhouse()

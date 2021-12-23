@@ -1,12 +1,11 @@
 #pragma once
 
-#include <common/types.h>
+#include <optional>
+#include <base/types.h>
 #include <signal.h>
 #include <time.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 
 namespace Poco
@@ -42,14 +41,11 @@ private:
 
 #if USE_UNWIND
     /// Timer id from timer_create(2)
-    timer_t timer_id = nullptr;
+    std::optional<timer_t> timer_id;
 #endif
 
     /// Pause signal to interrupt threads to get traces
     int pause_signal;
-
-    /// Previous signal handler to restore after query profiler exits
-    struct sigaction * previous_handler = nullptr;
 };
 
 /// Query profiler with timer based on real clock

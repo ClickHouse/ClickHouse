@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <common/types.h>
+#include <base/types.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ConcatReadBuffer.h>

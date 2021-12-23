@@ -13,8 +13,8 @@
 #include <type_traits>
 #include <memory>
 
-#include <common/bit_cast.h>
-#include <common/extended_types.h>
+#include <base/bit_cast.h>
+#include <base/extended_types.h>
 #include <Core/Defines.h>
 
 

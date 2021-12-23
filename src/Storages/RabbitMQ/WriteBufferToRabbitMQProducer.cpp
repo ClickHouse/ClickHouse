@@ -4,9 +4,10 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <amqpcpp.h>
 #include <uv.h>
+#include <boost/algorithm/string/split.hpp>
 #include <chrono>
 #include <thread>
 #include <atomic>
@@ -21,6 +22,7 @@ static const auto RETURNED_LIMIT = 50000;
 namespace ErrorCodes
 {
     extern const int CANNOT_CONNECT_RABBITMQ;
+    extern const int LOGICAL_ERROR;
 }
 
 WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
@@ -31,7 +33,7 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         const AMQP::ExchangeType exchange_type_,
         const size_t channel_id_base_,
         const bool persistent_,
-        std::atomic<bool> & wait_confirm_,
+        std::atomic<bool> & shutdown_called_,
         Poco::Logger * log_,
         std::optional<char> delimiter,
         size_t rows_per_message,
@@ -43,7 +45,7 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         , exchange_type(exchange_type_)
         , channel_id_base(std::to_string(channel_id_base_))
         , persistent(persistent_)
-        , wait_confirm(wait_confirm_)
+        , shutdown_called(shutdown_called_)
         , payloads(BATCH)
         , returned(RETURNED_LIMIT)
         , log(log_)
@@ -88,7 +90,7 @@ void WriteBufferToRabbitMQProducer::countRow()
         const std::string & last_chunk = chunks.back();
         size_t last_chunk_size = offset();
 
-        if (delim && last_chunk[last_chunk_size - 1] == delim)
+        if (last_chunk_size && delim && last_chunk[last_chunk_size - 1] == delim)
             --last_chunk_size;
 
         std::string payload;
@@ -102,7 +104,8 @@ void WriteBufferToRabbitMQProducer::countRow()
         reinitializeChunks();
 
         ++payload_counter;
-        payloads.push(std::make_pair(payload_counter, payload));
+        if (!payloads.push(std::make_pair(payload_counter, payload)))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to payloads queue");
     }
 }
 
@@ -122,7 +125,8 @@ void WriteBufferToRabbitMQProducer::setupChannel()
          * they are republished because after channel recovery they will acquire new delivery tags, so all previous records become invalid
          */
         for (const auto & record : delivery_record)
-            returned.tryPush(record.second);
+            if (!returned.push(record.second))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to returned queue");
 
         LOG_DEBUG(log, "Producer on channel {} hasn't confirmed {} messages, {} waiting to be published",
                 channel_id, delivery_record.size(), payloads.size());
@@ -170,7 +174,8 @@ void WriteBufferToRabbitMQProducer::removeRecord(UInt64 received_delivery_tag, b
 
         if (republish)
             for (auto record = delivery_record.begin(); record != record_iter; ++record)
-                returned.tryPush(record->second);
+                if (!returned.push(record->second))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to returned queue");
 
         /// Delete the records even in case when republished because new delivery tags will be assigned by the server.
         delivery_record.erase(delivery_record.begin(), record_iter);
@@ -178,7 +183,8 @@ void WriteBufferToRabbitMQProducer::removeRecord(UInt64 received_delivery_tag, b
     else
     {
         if (republish)
-            returned.tryPush(record_iter->second);
+            if (!returned.push(record_iter->second))
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to returned queue");
 
         delivery_record.erase(record_iter);
     }
@@ -194,7 +200,11 @@ void WriteBufferToRabbitMQProducer::publish(ConcurrentBoundedQueue<std::pair<UIn
      */
     while (!messages.empty() && producer_channel->usable() && delivery_record.size() < RETURNED_LIMIT)
     {
-        messages.pop(payload);
+        bool pop_result = messages.pop(payload);
+
+        if (!pop_result)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not pop payload");
+
         AMQP::Envelope envelope(payload.second.data(), payload.second.size());
 
         /// if headers exchange is used, routing keys are added here via headers, if not - it is just empty
@@ -246,7 +256,7 @@ void WriteBufferToRabbitMQProducer::publish(ConcurrentBoundedQueue<std::pair<UIn
 
 void WriteBufferToRabbitMQProducer::writingFunc()
 {
-    while ((!payloads.empty() || wait_all) && wait_confirm.load())
+    while ((!payloads.empty() || wait_all) && !shutdown_called.load())
     {
         /// If onReady callback is not received, producer->usable() will anyway return true,
         /// but must publish only after onReady callback.

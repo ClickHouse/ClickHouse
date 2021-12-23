@@ -1,11 +1,11 @@
 #pragma once
 
-#include "common/types.h"
-#include "Storages/MergeTree/MergeTreeData.h"
-#include "Storages/MergeTree/MergeTreeDataPartType.h"
-#include "Storages/MergeTree/MergeTreePartInfo.h"
-#include "Storages/MergeTree/MergeType.h"
-#include "Storages/MergeTree/IMergeTreeDataPart.h"
+#include <base/types.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataPartType.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MergeTree/MergeType.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 
 namespace DB

@@ -19,26 +19,29 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     bool use_uncompressed_cache_,
     const PrewhereInfoPtr & prewhere_info_,
     ExpressionActionsSettings actions_settings,
-    bool check_columns_,
     const MergeTreeReaderSettings & reader_settings_,
     const Names & virt_column_names_,
     size_t part_index_in_query_,
-    bool has_limit_below_one_block_)
+    bool has_limit_below_one_block_,
+    std::optional<ParallelReadingExtension> extension_)
     : MergeTreeBaseSelectProcessor{
         metadata_snapshot_->getSampleBlockForColumns(required_columns_, storage_.getVirtuals(), storage_.getStorageID()),
         storage_, metadata_snapshot_, prewhere_info_, std::move(actions_settings), max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
-        reader_settings_, use_uncompressed_cache_, virt_column_names_},
+        reader_settings_, use_uncompressed_cache_, virt_column_names_, extension_},
     required_columns{std::move(required_columns_)},
     data_part{owned_data_part_},
     sample_block(metadata_snapshot_->getSampleBlock()),
     all_mark_ranges(std::move(mark_ranges_)),
     part_index_in_query(part_index_in_query_),
     has_limit_below_one_block(has_limit_below_one_block_),
-    check_columns(check_columns_),
     total_rows(data_part->index_granularity.getRowsCountInRanges(all_mark_ranges))
 {
-    addTotalRowsApprox(total_rows);
+    /// Actually it means that parallel reading from replicas enabled
+    /// and we have to collaborate with initiator.
+    /// In this case we won't set approximate rows, because it will be accounted multiple times
+    if (!extension_.has_value())
+        addTotalRowsApprox(total_rows);
     ordered_names = header_without_virtual_columns.getNames();
 }
 
@@ -46,7 +49,7 @@ void MergeTreeSelectProcessor::initializeReaders()
 {
     task_columns = getReadTaskColumns(
         storage, metadata_snapshot, data_part,
-        required_columns, prewhere_info, check_columns);
+        required_columns, prewhere_info);
 
     /// Will be used to distinguish between PREWHERE and WHERE columns when applying filter
     const auto & column_names = task_columns.columns.getNames();
@@ -65,6 +68,7 @@ void MergeTreeSelectProcessor::initializeReaders()
             owned_uncompressed_cache.get(), owned_mark_cache.get(), reader_settings);
 
 }
+
 
 void MergeTreeSelectProcessor::finish()
 {

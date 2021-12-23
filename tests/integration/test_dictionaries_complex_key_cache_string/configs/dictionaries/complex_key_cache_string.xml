@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <dictionary>
         <name>radars</name>
         <source>
@@ -42,4 +42,4 @@
         </layout>
         <lifetime>1</lifetime>
     </dictionary>
-</yandex>
+</clickhouse>

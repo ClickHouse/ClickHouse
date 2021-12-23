@@ -29,7 +29,7 @@ ClickHose支持Linux,FreeBSD 及 Mac OS X 系统。
 
 在终端命令行输入下列指令：
 
-    git clone --recursive git@guthub.com:your_github_username/ClickHouse.git
+    git clone git@guthub.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
 请注意，您需要将*your_github_username* 替换成实际使用的账户名!
@@ -71,7 +71,7 @@ ClickHose支持Linux,FreeBSD 及 Mac OS X 系统。
 
 在git中使用子模块可能会很痛苦。 接下来的命令将有助于管理它:
 
-    # ! each command accepts --recursive
+    # ! each command accepts
     # Update remote URLs for submodules. Barely rare case
     git submodule sync
     # Add new submodules
@@ -84,16 +84,16 @@ ClickHose支持Linux,FreeBSD 及 Mac OS X 系统。
 接下来的命令将帮助您将所有子模块重置为初始状态（！华林！ -里面的任何chenges将被删除):
 
     # Synchronizes submodules' remote URL with .gitmodules
-    git submodule sync --recursive
+    git submodule sync
     # Update the registered submodules with initialize not yet initialized
-    git submodule update --init --recursive
+    git submodule update --init
     # Reset all changes done after HEAD
     git submodule foreach git reset --hard
     # Clean files from .gitignore
     git submodule foreach git clean -xfd
     # Repeat last 4 commands for all submodule
-    git submodule foreach git submodule sync --recursive
-    git submodule foreach git submodule update --init --recursive
+    git submodule foreach git submodule sync
+    git submodule foreach git submodule update --init
     git submodule foreach git submodule foreach git reset --hard
     git submodule foreach git submodule foreach git clean -xfd
 
@@ -238,8 +238,8 @@ ClickHouse的架构描述可以在此处查看：https://clickhouse.com/docs/en/
 
     sudo apt install wget xz-utils
 
-    wget https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz
-    wget https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz
+    wget https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz
+    wget https://datasets.clickhouse.com/visits/tsv/visits_v1.tsv.xz
 
     xz -v -d hits_v1.tsv.xz
     xz -v -d visits_v1.tsv.xz
