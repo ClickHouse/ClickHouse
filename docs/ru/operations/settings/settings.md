@@ -1544,18 +1544,19 @@ INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2;
 
 `INSERT` завершается успешно только в том случае, когда ClickHouse смог без ошибки записать данные в `insert_quorum` реплик за время `insert_quorum_timeout`. Если по любой причине количество реплик с успешной записью не достигнет `insert_quorum`, то запись считается не состоявшейся и ClickHouse удалит вставленный блок из всех реплик, куда уже успел записать данные.
 
-Все реплики в кворуме консистентны, т.е. содержат данные всех более ранних запросов `INSERT`. Последовательность `INSERT` линеаризуется.
+Когда `insert_quorum_parallel` выключена, все реплики кворума консистентны, то есть содержат данные всех предыдущих запросов `INSERT` (последовательность `INSERT` линеаризуется). При чтении с диска данных, записанных с помощью `insert_quorum` и при выключенной `insert_quorum_parallel`, можно включить последовательную консистентность для запросов `SELECT` с помощью [select_sequential_consistency](#settings-select_sequential_consistency).
 
-При чтении данных, записанных с `insert_quorum` можно использовать настройку [select_sequential_consistency](#settings-select_sequential_consistency).
-
-ClickHouse генерирует исключение
+ClickHouse генерирует исключение:
 
 -   Если количество доступных реплик на момент запроса меньше `insert_quorum`.
 -   При попытке записать данные в момент, когда предыдущий блок ещё не вставлен в `insert_quorum` реплик. Эта ситуация может возникнуть, если пользователь вызвал `INSERT` прежде, чем завершился предыдущий с `insert_quorum`.
 
+-   При выключенной `insert_quorum_parallel` и при попытке записать данные в момент, когда предыдущий блок еще не вставлен в `insert_quorum` реплик. Эта ситуация может возникнуть при попытке пользователя выполнить очередной запрос `INSERT` к той же таблице, прежде чем завершится предыдущий с `insert_quorum`.
+
 См. также:
 
 -   [insert_quorum_timeout](#settings-insert_quorum_timeout)
+-   [insert_quorum_parallel](#settings-insert_quorum_parallel)
 -   [select_sequential_consistency](#settings-select_sequential_consistency)
 
 ## insert_quorum_timeout {#settings-insert_quorum_timeout}
@@ -1567,11 +1568,29 @@ ClickHouse генерирует исключение
 См. также:
 
 -   [insert_quorum](#settings-insert_quorum)
+-   [insert_quorum_parallel](#settings-insert_quorum_parallel)
+-   [select_sequential_consistency](#settings-select_sequential_consistency)
+
+## insert_quorum_parallel {#settings-insert_quorum_parallel}
+
+Включает и выключает параллелизм для кворума запросов `INSERT`. Когда включена, можно выполнить дополнительные запросы `INSERT` в то время, пока предыдущие запросы еще не завершены. Когда выключена, допольнительные записи в ту же таблицу будут отклонены.
+
+Возможные значения:
+
+-   0 — Выключена.
+-   1 — Включена.
+
+Значение по умолчанию: 1.
+
+См. также:
+
+-   [insert_quorum](#settings-insert_quorum)
+-   [insert_quorum_timeout](#settings-insert_quorum_timeout)
 -   [select_sequential_consistency](#settings-select_sequential_consistency)
 
 ## select_sequential_consistency {#settings-select_sequential_consistency}
 
-Включает или выключает последовательную консистентность для запросов `SELECT`.
+Включает или выключает последовательную консистентность для запросов `SELECT`. Необходимо, чтобы `insert_quorum_parallel` была выключена (по умолчанию включена).
 
 Возможные значения:
 
@@ -1584,10 +1603,13 @@ ClickHouse генерирует исключение
 
 Когда последовательная консистентность включена, то ClickHouse позволит клиенту выполнить запрос `SELECT` только к тем репликам, которые содержат данные всех предыдущих запросов `INSERT`, выполненных с `insert_quorum`. Если клиент обратится к неполной реплике, то ClickHouse сгенерирует исключение. В запросе SELECT не будут участвовать данные, которые ещё не были записаны на кворум реплик.
 
+Если `insert_quorum_parallel` включена (по умолчанию это так), тогда `select_sequential_consistency` не будет работать. Причина в том, что параллельные запросы `INSERT` можно записать в разные наборы реплик кворума, поэтому нет гарантии того, что в отдельно взятую реплику будут сделаны все записи.
+
 См. также:
 
 -   [insert_quorum](#settings-insert_quorum)
 -   [insert_quorum_timeout](#settings-insert_quorum_timeout)
+-   [insert_quorum_parallel](#settings-insert_quorum_parallel)
 
 ## insert_deduplicate {#settings-insert-deduplicate}
 
