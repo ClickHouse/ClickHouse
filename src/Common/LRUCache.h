@@ -6,12 +6,16 @@
 #include <chrono>
 #include <mutex>
 #include <atomic>
-
 #include <base/logger_useful.h>
+#include <Common/Exception.h>
 
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int CANNOT_RELEASE;
+}
 
 template <typename T>
 struct TrivialWeightFunction
@@ -76,11 +80,17 @@ public:
         return res;
     }
 
+    void set(const Key & key, const MappedPtr & mapped)
+    {
+        std::lock_guard lock(mutex);
+        if (!setImpl(key, mapped, lock))
+            throw Exception(ErrorCodes::CANNOT_RELEASE, "Cannot release the key in LRUCache");
+    }
     /**
-     * set() will fail (return false) if there is no space left and no keys could be evicted.
+     * trySet() will fail (return false) if there is no space left and no keys could be evicted.
      * Eviction permission of each key is defined by EvictPolicy. In default policy there is no restriction.
      */
-    bool set(const Key & key, const MappedPtr & mapped)
+    bool trySet(const Key & key, const MappedPtr & mapped)
     {
         std::lock_guard lock(mutex);
 
