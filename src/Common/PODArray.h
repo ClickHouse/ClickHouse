@@ -109,7 +109,7 @@ protected:
         size_t result;
         if (__builtin_mul_overflow(num_elements, ELEMENT_SIZE, &result))
             return result;
-        else 
+        else
             return num_elements * ELEMENT_SIZE;
     }
     
