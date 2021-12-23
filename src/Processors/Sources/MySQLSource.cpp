@@ -2,7 +2,6 @@
 
 #if USE_MYSQL
 #include <vector>
-#include <Core/MySQL/MySQLReplication.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -127,7 +126,7 @@ namespace
 {
     using ValueType = ExternalResultDescription::ValueType;
 
-    void insertValue(const IDataType & data_type, IColumn & column, const ValueType type, const mysqlxx::Value & value, size_t & read_bytes_size, enum enum_field_types mysql_type)
+    void insertValue(const IDataType & data_type, IColumn & column, const ValueType type, const mysqlxx::Value & value, size_t & read_bytes_size)
     {
         switch (type)
         {
@@ -144,24 +143,9 @@ namespace
                 read_bytes_size += 4;
                 break;
             case ValueType::vtUInt64:
-            {
-                //we don't have enum enum_field_types definition in mysqlxx/Types.h, so we use literal values directly here.
-                if (static_cast<int>(mysql_type) == 16)
-                {
-                    size_t n = value.size();
-                    UInt64 val = 0UL;
-                    ReadBufferFromMemory payload(const_cast<char *>(value.data()), n);
-                    MySQLReplication::readBigEndianStrict(payload, reinterpret_cast<char *>(&val), n);
-                    assert_cast<ColumnUInt64 &>(column).insertValue(val);
-                    read_bytes_size += n;
-                }
-                else
-                {
-                    assert_cast<ColumnUInt64 &>(column).insertValue(value.getUInt());
-                    read_bytes_size += 8;
-                }
+                assert_cast<ColumnUInt64 &>(column).insertValue(value.getUInt());
+                read_bytes_size += 8;
                 break;
-            }
             case ValueType::vtInt8:
                 assert_cast<ColumnInt8 &>(column).insertValue(value.getInt());
                 read_bytes_size += 1;
@@ -274,12 +258,12 @@ Chunk MySQLSource::generate()
                 {
                     ColumnNullable & column_nullable = assert_cast<ColumnNullable &>(*columns[index]);
                     const auto & data_type = assert_cast<const DataTypeNullable &>(*sample.type);
-                    insertValue(*data_type.getNestedType(), column_nullable.getNestedColumn(), description.types[index].first, value, read_bytes_size, row.getFieldType(position_mapping[index]));
+                    insertValue(*data_type.getNestedType(), column_nullable.getNestedColumn(), description.types[index].first, value, read_bytes_size);
                     column_nullable.getNullMapData().emplace_back(false);
                 }
                 else
                 {
-                    insertValue(*sample.type, *columns[index], description.types[index].first, value, read_bytes_size, row.getFieldType(position_mapping[index]));
+                    insertValue(*sample.type, *columns[index], description.types[index].first, value, read_bytes_size);
                 }
             }
             else

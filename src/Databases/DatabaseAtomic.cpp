@@ -43,7 +43,6 @@ DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, c
     , db_uuid(uuid)
 {
     assert(db_uuid != UUIDHelpers::Nil);
-    fs::create_directories(fs::path(getContext()->getPath()) / "metadata");
     fs::create_directories(path_to_table_symlinks);
     tryCreateMetadataSymlink();
 }

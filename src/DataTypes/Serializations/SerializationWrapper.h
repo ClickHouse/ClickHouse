@@ -16,14 +16,11 @@ protected:
 public:
     SerializationWrapper(const SerializationPtr & nested_serialization_) : nested_serialization(nested_serialization_) {}
 
-    const SerializationPtr & getNested() const  { return nested_serialization; }
-
-    Kind getKind() const override { return nested_serialization->getKind(); }
-
     void enumerateStreams(
         SubstreamPath & path,
         const StreamCallback & callback,
-        const SubstreamData & data) const override;
+        DataTypePtr type,
+        ColumnPtr column) const override;
 
     void serializeBinaryBulkStatePrefix(
         SerializeBinaryBulkSettings & settings,

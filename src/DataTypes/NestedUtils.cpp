@@ -36,18 +36,9 @@ std::string concatenateName(const std::string & nested_table_name, const std::st
 
 /** Name can be treated as compound if it contains dot (.) in the middle.
   */
-std::pair<std::string, std::string> splitName(const std::string & name, bool reverse)
+std::pair<std::string, std::string> splitName(const std::string & name)
 {
-    auto idx = (reverse ? name.find_last_of('.') : name.find_first_of('.'));
-    if (idx == std::string::npos || idx == 0 || idx + 1 == name.size())
-        return {name, {}};
-
-    return {name.substr(0, idx), name.substr(idx + 1)};
-}
-
-std::pair<std::string_view, std::string_view> splitName(const std::string_view & name, bool reverse)
-{
-    auto idx = (reverse ? name.find_last_of('.') : name.find_first_of('.'));
+    auto idx = name.find_first_of('.');
     if (idx == std::string::npos || idx == 0 || idx + 1 == name.size())
         return {name, {}};
 
@@ -219,7 +210,6 @@ void validateArraySizes(const Block & block)
         }
     }
 }
-
 
 std::unordered_set<String> getAllTableNames(const Block & block)
 {

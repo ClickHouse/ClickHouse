@@ -228,7 +228,6 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
     LOG_TRACE(log, "Part {} was cloned to {}", part->name, cloned_part->getFullPath());
 
     cloned_part->loadColumnsChecksumsIndexes(true, true);
-    cloned_part->modification_time = disk->getLastModified(cloned_part->getFullRelativePath()).epochTime();
     return cloned_part;
 
 }

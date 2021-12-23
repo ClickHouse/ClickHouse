@@ -20,7 +20,6 @@ class DataTypeNumberBase : public IDataType
 public:
     static constexpr bool is_parametric = false;
     static constexpr auto family_name = TypeName<T>;
-    static constexpr auto type_id = TypeId<T>;
 
     using FieldType = T;
     using ColumnType = ColumnVector<T>;

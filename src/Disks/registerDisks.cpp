@@ -14,10 +14,6 @@ void registerDiskMemory(DiskFactory & factory);
 void registerDiskS3(DiskFactory & factory);
 #endif
 
-#if USE_AZURE_BLOB_STORAGE
-void registerDiskAzureBlobStorage(DiskFactory & factory);
-#endif
-
 #if USE_SSL
 void registerDiskEncrypted(DiskFactory & factory);
 #endif
@@ -38,10 +34,6 @@ void registerDisks()
 
 #if USE_AWS_S3
     registerDiskS3(factory);
-#endif
-
-#if USE_AZURE_BLOB_STORAGE
-    registerDiskAzureBlobStorage(factory);
 #endif
 
 #if USE_SSL

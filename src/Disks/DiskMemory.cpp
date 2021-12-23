@@ -253,7 +253,7 @@ void DiskMemory::clearDirectory(const String & path)
             throw Exception(
                 "Failed to clear directory '" + path + "'. " + iter->first + " is a directory", ErrorCodes::CANNOT_DELETE_DIRECTORY);
 
-        iter = files.erase(iter);
+        files.erase(iter++);
     }
 }
 

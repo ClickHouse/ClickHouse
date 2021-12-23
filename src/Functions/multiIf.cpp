@@ -262,7 +262,7 @@ public:
 private:
     static void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments)
     {
-        int last_short_circuit_argument_index = checkShortCircuitArguments(arguments);
+        int last_short_circuit_argument_index = checkShirtCircuitArguments(arguments);
         if (last_short_circuit_argument_index < 0)
             return;
 

@@ -21,7 +21,6 @@
 #include <Processors/Transforms/CheckConstraintsTransform.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Storages/StorageDistributed.h>
@@ -375,7 +374,7 @@ BlockIO InterpreterInsertQuery::execute()
             pipeline = interpreter_watch.buildQueryPipeline();
         }
 
-        for (size_t i = 0; i < out_streams_size; ++i)
+        for (size_t i = 0; i < out_streams_size; i++)
         {
             auto out = buildChainImpl(table, metadata_snapshot, query_sample_block, nullptr, nullptr);
             out_chains.emplace_back(std::move(out));
@@ -401,13 +400,6 @@ BlockIO InterpreterInsertQuery::execute()
         pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
         {
             return std::make_shared<ExpressionTransform>(in_header, actions);
-        });
-
-        /// We need to convert Sparse columns to full, because it's destination storage
-        /// may not support it may have different settings for applying Sparse serialization.
-        pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
-        {
-            return std::make_shared<MaterializingTransform>(in_header);
         });
 
         size_t num_select_threads = pipeline.getNumThreads();

@@ -45,8 +45,7 @@ public:
         const ASTStorage * database_engine_define,
         const String & database_name_in_mysql,
         std::unique_ptr<ConnectionMySQLSettings> settings_,
-        mysqlxx::PoolWithFailover && pool,
-        bool attach);
+        mysqlxx::PoolWithFailover && pool);
 
     String getEngineName() const override { return "MySQL"; }
 

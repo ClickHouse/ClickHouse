@@ -126,7 +126,7 @@ Pipe StorageS3Cluster::read(
                 scalars,
                 Tables(),
                 processed_stage,
-                RemoteQueryExecutor::Extension{.task_iterator = callback});
+                callback);
 
             pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
         }

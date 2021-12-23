@@ -20,7 +20,6 @@
 
 #include <optional>
 #include <shared_mutex>
-#include <compare>
 
 
 namespace DB
@@ -511,7 +510,7 @@ public:
     virtual void shutdown() {}
 
     /// Called before shutdown() to flush data to underlying storage
-    /// Data in memory need to be persistent
+    /// (for Buffer)
     virtual void flush() {}
 
     /// Asks table to stop executing some action identified by action_type

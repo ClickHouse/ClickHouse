@@ -24,34 +24,41 @@ RUN apt-get update \
     && apt-key add /tmp/llvm-snapshot.gpg.key \
     && export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
     && echo "deb [trusted=yes] https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" >> \
-        /etc/apt/sources.list \
-    && apt-get clean
+        /etc/apt/sources.list
 
 # initial packages
 RUN apt-get update \
     && apt-get install \
         bash \
+        fakeroot \
+        ccache \
+        curl \
+        software-properties-common \
+        --yes --no-install-recommends
+
+RUN apt-get update \
+    && apt-get install \
+        bash \
         build-essential \
         ccache \
-        clang-${LLVM_VERSION} \
-        clang-tidy-${LLVM_VERSION} \
         cmake \
         curl \
-        fakeroot \
         gdb \
         git \
         gperf \
+        clang-${LLVM_VERSION} \
+        clang-tidy-${LLVM_VERSION} \
         lld-${LLVM_VERSION} \
         llvm-${LLVM_VERSION} \
         llvm-${LLVM_VERSION}-dev \
+        libicu-dev \
+        libreadline-dev \
         moreutils \
         ninja-build \
         pigz \
         rename \
-        software-properties-common \
         tzdata \
-        --yes --no-install-recommends \
-    && apt-get clean
+        --yes --no-install-recommends
 
 # This symlink required by gcc to find lld compiler
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
@@ -60,7 +67,7 @@ ENV CC=clang-${LLVM_VERSION}
 ENV CXX=clang++-${LLVM_VERSION}
 
 # libtapi is required to support .tbh format from recent MacOS SDKs
-RUN git clone --depth 1 https://github.com/tpoechtrager/apple-libtapi.git \
+RUN git clone https://github.com/tpoechtrager/apple-libtapi.git \
     && cd apple-libtapi \
     && INSTALLPREFIX=/cctools ./build.sh \
     && ./install.sh \
@@ -68,7 +75,7 @@ RUN git clone --depth 1 https://github.com/tpoechtrager/apple-libtapi.git \
     && rm -rf apple-libtapi
 
 # Build and install tools for cross-linking to Darwin (x86-64)
-RUN git clone --depth 1 https://github.com/tpoechtrager/cctools-port.git \
+RUN git clone https://github.com/tpoechtrager/cctools-port.git \
     && cd cctools-port/cctools \
     && ./configure --prefix=/cctools --with-libtapi=/cctools \
         --target=x86_64-apple-darwin \
@@ -77,7 +84,7 @@ RUN git clone --depth 1 https://github.com/tpoechtrager/cctools-port.git \
     && rm -rf cctools-port
 
 # Build and install tools for cross-linking to Darwin (aarch64)
-RUN git clone --depth 1 https://github.com/tpoechtrager/cctools-port.git \
+RUN git clone https://github.com/tpoechtrager/cctools-port.git \
     && cd cctools-port/cctools \
     && ./configure --prefix=/cctools --with-libtapi=/cctools \
         --target=aarch64-apple-darwin \
@@ -91,8 +98,7 @@ RUN wget -nv https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacO
 # NOTE: Seems like gcc-11 is too new for ubuntu20 repository
 RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get update \
-    && apt-get install gcc-11 g++-11 --yes \
-    && apt-get clean
+    && apt-get install gcc-11 g++-11 --yes
 
 
 COPY build.sh /

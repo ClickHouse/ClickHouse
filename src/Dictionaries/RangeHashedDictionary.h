@@ -67,7 +67,7 @@ public:
         return std::make_shared<RangeHashedDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty, update_field_loaded_block);
     }
 
-    DictionarySourcePtr getSource() const override { return source_ptr; }
+    const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
     const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 

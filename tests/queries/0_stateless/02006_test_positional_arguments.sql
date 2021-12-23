@@ -22,6 +22,12 @@ select x1, x2, x3 from test order by 3 limit 1 by 3;
 select x1, x2, x3 from test order by x3 limit 1 by x1;
 select x1, x2, x3 from test order by 3 limit 1 by 1;
 
+explain syntax select x3, x2, x1 from test order by 1 + 1;
+explain syntax select x3, x2, x1 from test order by (1 + 1) * 3;
+
+select x2, x1 from test group by x2 + x1; -- { serverError 215 }
+select x2, x1 from test group by 1 + 2; -- { serverError 215 }
+
 explain syntax select x3, x2, x1 from test order by 1;
 explain syntax select x3 + 1, x2, x1 from test order by 1;
 explain syntax select x3, x3 - x2, x2, x1 from test order by 2;
@@ -31,7 +37,11 @@ explain syntax select 1 + greatest(x1, 1), x2 from test group by 1, 2;
 
 select max(x1), x2 from test group by 1, 2; -- { serverError 43 }
 select 1 + max(x1), x2 from test group by 1, 2; -- { serverError 43 }
+select x1 + x2, x3 from test group by x1 + x2, x3;
 
+select x3, x2, x1 from test order by x3 * 2, x2, x1; -- check x3 * 2 does not become x3 * x2
+
+explain syntax select x1, x3 from test group by 1 + 2, 1, 2;
 explain syntax select x1 + x3, x3 from test group by 1, 2;
 
 create table test2(x1 Int, x2 Int, x3 Int) engine=Memory;
@@ -42,5 +52,3 @@ select a, b, c, d, e, f  from (select 44 a, 88 b, 13 c, 14 d, 15 e, 16 f) t grou
 
 explain syntax select plus(1, 1) as a group by a;
 select substr('aaaaaaaaaaaaaa', 8) as a  group by a;
-select substr('aaaaaaaaaaaaaa', 8) as a  group by substr('aaaaaaaaaaaaaa', 8);
-

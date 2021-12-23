@@ -391,14 +391,12 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 ## input_format_tsv_enum_as_number {#settings-input_format_tsv_enum_as_number}
 
-Включает или отключает парсинг значений перечислений как порядковых номеров. 
-
-Если режим включен, то во входящих данных в формате `TCV` значения перечисления (тип `ENUM`) всегда трактуются как порядковые номера, а не как элементы перечисления. Эту настройку рекомендуется включать для оптимизации парсинга, если данные типа `ENUM` содержат только порядковые номера, а не сами элементы перечисления.
+Включает или отключает парсинг значений перечислений как идентификаторов перечислений для входного формата TSV.
 
 Возможные значения:
 
--   0 — входящие значения типа `ENUM` сначала сопоставляются с элементами перечисления, а если совпадений не найдено, то трактуются как порядковые номера.
--   1 — входящие значения типа `ENUM` сразу трактуются как порядковые номера.
+-   0 — парсинг значений перечисления как значений.
+-   1 — парсинг значений перечисления как идентификаторов перечисления.
 
 Значение по умолчанию: 0.
 
@@ -412,39 +410,10 @@ CREATE TABLE table_with_enum_column_for_tsv_insert (Id Int32,Value Enum('first' 
 
 При включенной настройке `input_format_tsv_enum_as_number`:
 
-Запрос:
-
 ```sql
 SET input_format_tsv_enum_as_number = 1;
 INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
-SELECT * FROM table_with_enum_column_for_tsv_insert;
-```
-
-Результат:
-
-```text
-┌──Id─┬─Value──┐
-│ 102 │ second │
-└─────┴────────┘
-```
-
-Запрос:
-
-```sql
-SET input_format_tsv_enum_as_number = 1;
-INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	'first';
-```
-
-сгенерирует исключение.
-
-При отключенной настройке `input_format_tsv_enum_as_number`:
-
-Запрос:
-
-```sql
-SET input_format_tsv_enum_as_number = 0;
-INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
-INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	'first';
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	1;
 SELECT * FROM table_with_enum_column_for_tsv_insert;
 ```
 
@@ -458,6 +427,15 @@ SELECT * FROM table_with_enum_column_for_tsv_insert;
 │ 103 │ first  │
 └─────┴────────┘
 ```
+
+При отключенной настройке `input_format_tsv_enum_as_number` запрос `INSERT`:
+
+```sql
+SET input_format_tsv_enum_as_number = 0;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
+```
+
+сгенерирует исключение.
 
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
@@ -828,6 +806,26 @@ ClickHouse может парсить только базовый формат `Y
 -   Положительное целое число.
 
 Значение по умолчанию: 2013265920.
+
+## merge_tree_clear_old_temporary_directories_interval_seconds {#setting-merge-tree-clear-old-temporary-directories-interval-seconds}
+
+Задает интервал в секундах для удаления старых временных каталогов на сервере ClickHouse.
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `60` секунд.
+
+## merge_tree_clear_old_parts_interval_seconds {#setting-merge-tree-clear-old-parts-interval-seconds}
+
+Задает интервал в секундах для удаления старых кусков данных, журналов предзаписи (WAL) и мутаций на сервере ClickHouse .
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `1` секунда.
 
 ## min_bytes_to_use_direct_io {#settings-min-bytes-to-use-direct-io}
 
@@ -1533,13 +1531,12 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 ## input_format_csv_enum_as_number {#settings-input_format_csv_enum_as_number}
 
-Включает или отключает парсинг значений перечислений как порядковых номеров. 
-Если режим включен, то во входящих данных в формате `CSV` значения перечисления (тип `ENUM`) всегда трактуются как порядковые номера, а не как элементы перечисления. Эту настройку рекомендуется включать для оптимизации парсинга, если данные типа `ENUM` содержат только порядковые номера, а не сами элементы перечисления.
+Включает или отключает парсинг значений перечислений как идентификаторов перечислений для входного формата CSV.
 
 Возможные значения:
 
--   0 — входящие значения типа `ENUM` сначала сопоставляются с элементами перечисления, а если совпадений не найдено, то трактуются как порядковые номера.
--   1 — входящие значения типа `ENUM` сразу трактуются как порядковые номера.
+-   0 — парсинг значений перечисления как значений.
+-   1 — парсинг значений перечисления как идентификаторов перечисления.
 
 Значение по умолчанию: 0.
 
@@ -1553,38 +1550,9 @@ CREATE TABLE table_with_enum_column_for_csv_insert (Id Int32,Value Enum('first' 
 
 При включенной настройке `input_format_csv_enum_as_number`:
 
-Запрос:
-
 ```sql
 SET input_format_csv_enum_as_number = 1;
 INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2;
-```
-
-Результат:
-
-```text
-┌──Id─┬─Value──┐
-│ 102 │ second │
-└─────┴────────┘
-```
-
-Запрос:
-
-```sql
-SET input_format_csv_enum_as_number = 1;
-INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 103,'first'
-```
-
-сгенерирует исключение.
-
-При отключенной настройке `input_format_csv_enum_as_number`:
-
-Запрос:
-
-```sql
-SET input_format_csv_enum_as_number = 0;
-INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2
-INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 103,'first'
 SELECT * FROM table_with_enum_column_for_csv_insert;
 ```
 
@@ -1594,10 +1562,16 @@ SELECT * FROM table_with_enum_column_for_csv_insert;
 ┌──Id─┬─Value──┐
 │ 102 │ second │
 └─────┴────────┘
-┌──Id─┬─Value─┐
-│ 103 │ first │
-└─────┴───────┘
 ```
+
+При отключенной настройке `input_format_csv_enum_as_number` запрос `INSERT`:
+
+```sql
+SET input_format_csv_enum_as_number = 0;
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2;
+```
+
+сгенерирует исключение.
 
 ## output_format_csv_crlf_end_of_line {#settings-output-format-csv-crlf-end-of-line}
 

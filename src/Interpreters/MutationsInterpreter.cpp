@@ -421,7 +421,6 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
 
     NameSet updated_columns;
     bool materialize_ttl_recalculate_only = materializeTTLRecalculateOnly(storage);
-
     for (const MutationCommand & command : commands)
     {
         if (command.type == MutationCommand::Type::UPDATE
@@ -632,9 +631,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                         dependencies.insert(dependency);
                 }
             }
-            else if (metadata_snapshot->hasRowsTTL()
-                || metadata_snapshot->hasAnyRowsWhereTTL()
-                || metadata_snapshot->hasAnyGroupByTTL())
+            else if (metadata_snapshot->hasRowsTTL())
             {
                 for (const auto & column : all_columns)
                     dependencies.emplace(column.name, ColumnDependency::TTL_TARGET);

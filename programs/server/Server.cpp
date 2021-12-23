@@ -82,8 +82,10 @@
 #include <Compression/CompressionCodecEncrypted.h>
 #include <filesystem>
 
-#include "config_core.h"
-#include "Common/config_version.h"
+#if !defined(ARCADIA_BUILD)
+#   include "config_core.h"
+#   include "Common/config_version.h"
+#endif
 
 #if defined(OS_LINUX)
 #    include <sys/mman.h>
@@ -94,7 +96,7 @@
 #endif
 
 #if USE_SSL
-#    if USE_INTERNAL_SSL_LIBRARY
+#    if USE_INTERNAL_SSL_LIBRARY  && !defined(ARCADIA_BUILD)
 #        include <Compression/CompressionCodecEncrypted.h>
 #    endif
 #    include <Poco/Net/Context.h>

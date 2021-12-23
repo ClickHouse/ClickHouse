@@ -82,9 +82,7 @@ PoolWithFailover::PoolWithFailover(
         unsigned default_connections_,
         unsigned max_connections_,
         size_t max_tries_,
-        uint64_t wait_timeout_,
-        size_t connect_timeout_,
-        size_t rw_timeout_)
+        uint64_t wait_timeout_)
     : max_tries(max_tries_)
     , shareable(false)
     , wait_timeout(wait_timeout_)
@@ -95,8 +93,8 @@ PoolWithFailover::PoolWithFailover(
         replicas_by_priority[0].emplace_back(std::make_shared<Pool>(database,
             host, user, password, port,
             /* socket_ = */ "",
-            connect_timeout_,
-            rw_timeout_,
+            MYSQLXX_DEFAULT_TIMEOUT,
+            MYSQLXX_DEFAULT_RW_TIMEOUT,
             default_connections_,
             max_connections_));
     }

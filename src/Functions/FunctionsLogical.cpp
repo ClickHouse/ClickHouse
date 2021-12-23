@@ -609,7 +609,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
     ColumnsWithTypeAndName arguments = std::move(args);
 
     /// Special implementation for short-circuit arguments.
-    if (checkShortCircuitArguments(arguments) != -1)
+    if (checkShirtCircuitArguments(arguments) != -1)
         return executeShortCircuit(arguments, result_type);
 
     ColumnRawPtrs args_in;

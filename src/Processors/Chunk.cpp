@@ -1,7 +1,6 @@
 #include <Processors/Chunk.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
-#include <Columns/ColumnSparse.h>
 
 namespace DB
 {
@@ -184,16 +183,6 @@ const ChunkMissingValues::RowsBitMask & ChunkMissingValues::getDefaultsBitmask(s
     if (it != rows_mask_by_column_id.end())
         return it->second;
     return none;
-}
-
-void convertToFullIfSparse(Chunk & chunk)
-{
-    size_t num_rows = chunk.getNumRows();
-    auto columns = chunk.detachColumns();
-    for (auto & column : columns)
-        column = recursiveRemoveSparse(column);
-
-    chunk.setColumns(std::move(columns), num_rows);
 }
 
 }

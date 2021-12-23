@@ -133,6 +133,21 @@ static bool fixupACL(
     return valid_found;
 }
 
+uint64_t KeeperStorage::Node::sizeInBytes() const
+{
+    uint64_t total_size{0};
+    for (const auto & child : children)
+        total_size += child.size();
+
+    total_size += data.size();
+
+    total_size += sizeof(acl_id);
+    total_size += sizeof(is_sequental);
+    total_size += sizeof(stat);
+    total_size += sizeof(seq_num);
+    return total_size;
+}
+
 static KeeperStorage::ResponsesForSessions processWatchesImpl(const String & path, KeeperStorage::Watches & watches, KeeperStorage::Watches & list_watches, Coordination::Event event_type)
 {
     KeeperStorage::ResponsesForSessions result;
@@ -339,7 +354,6 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         {
 
             parent.children.insert(child_path);
-            parent.size_bytes += child_path.size();
             prev_parent_cversion = parent.stat.cversion;
             prev_parent_zxid = parent.stat.pzxid;
 
@@ -377,7 +391,6 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
                 undo_parent.stat.cversion = prev_parent_cversion;
                 undo_parent.stat.pzxid = prev_parent_zxid;
                 undo_parent.children.erase(child_path);
-                undo_parent.size_bytes -= child_path.size();
             });
         };
 
@@ -511,7 +524,6 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
                 --parent.stat.numChildren;
                 ++parent.stat.cversion;
                 parent.children.erase(child_basename);
-                parent.size_bytes -= child_basename.size();
             });
 
             response.error = Coordination::Error::ZOK;
@@ -531,7 +543,6 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
                     ++parent.stat.numChildren;
                     --parent.stat.cversion;
                     parent.children.insert(child_basename);
-                    parent.size_bytes += child_basename.size();
                 });
             };
         }
@@ -610,11 +621,11 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
 
             auto itr = container.updateValue(request.path, [zxid, request] (KeeperStorage::Node & value)
             {
+                value.data = request.data;
                 value.stat.version++;
                 value.stat.mzxid = zxid;
                 value.stat.mtime = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
                 value.stat.dataLength = request.data.length();
-                value.size_bytes = value.size_bytes + request.data.size() - value.data.size();
                 value.data = request.data;
             });
 
@@ -1099,7 +1110,6 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
                     --parent.stat.numChildren;
                     ++parent.stat.cversion;
                     parent.children.erase(getBaseName(ephemeral_path));
-                    parent.size_bytes -= getBaseName(ephemeral_path).size();
                 });
 
                 auto responses = processWatchesImpl(ephemeral_path, watches, list_watches, Coordination::Event::DELETED);

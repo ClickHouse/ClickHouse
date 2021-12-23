@@ -48,10 +48,8 @@
 #include <Parsers/ASTSetQuery.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/Sources/RemoteSource.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/Operators.h>
@@ -63,8 +61,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/InterserverCredentials.h>
-#include <Interpreters/SelectQueryOptions.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 
 #include <Poco/DirectoryIterator.h>
 
@@ -4230,9 +4226,6 @@ void StorageReplicatedMergeTree::read(
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    /// If true, then we will ask initiator if we can read chosen ranges
-    const bool enable_parallel_reading = local_context->getClientInfo().collaborate_with_initiator;
-
     /** The `select_sequential_consistency` setting has two meanings:
     * 1. To throw an exception if on a replica there are not all parts which have been written down on quorum of remaining replicas.
     * 2. Do not read parts that have not yet been written to the quorum of the replicas.
@@ -4242,18 +4235,13 @@ void StorageReplicatedMergeTree::read(
     {
         auto max_added_blocks = std::make_shared<ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock>(getMaxAddedBlocks());
         if (auto plan = reader.read(
-                column_names, metadata_snapshot, query_info, local_context,
-                max_block_size, num_streams, processed_stage, std::move(max_added_blocks), enable_parallel_reading))
+                column_names, metadata_snapshot, query_info, local_context, max_block_size, num_streams, processed_stage, std::move(max_added_blocks)))
             query_plan = std::move(*plan);
         return;
     }
 
-    if (auto plan = reader.read(
-        column_names, metadata_snapshot, query_info, local_context,
-        max_block_size, num_streams, processed_stage, nullptr, enable_parallel_reading))
-    {
+    if (auto plan = reader.read(column_names, metadata_snapshot, query_info, local_context, max_block_size, num_streams, processed_stage))
         query_plan = std::move(*plan);
-    }
 }
 
 Pipe StorageReplicatedMergeTree::read(
@@ -7372,6 +7360,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->is_temp = true;
 
+
     SyncGuardPtr sync_guard;
     if (new_data_part->isStoredOnDisk())
     {
@@ -7396,9 +7385,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     auto compression_codec = getContext()->chooseCompressionCodec(0, 0);
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
-    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns,
-        index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);
-
+    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);
     bool sync_on_insert = settings->fsync_after_insert;
 
     out.write(block);

@@ -8,7 +8,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Storages/StorageMySQL.h>
 #include <Storages/MySQL/MySQLSettings.h>
-#include <Storages/MySQL/MySQLHelpers.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/TableFunctionMySQL.h>
@@ -38,11 +37,7 @@ void TableFunctionMySQL::parseArguments(const ASTPtr & ast_function, ContextPtr 
         throw Exception("Table function 'mysql' must have arguments.", ErrorCodes::LOGICAL_ERROR);
 
     configuration = StorageMySQL::getConfiguration(args_func.arguments->children, context);
-    MySQLSettings mysql_settings;
-    const auto & settings = context->getSettingsRef();
-    mysql_settings.connect_timeout = settings.external_storage_connect_timeout_sec;
-    mysql_settings.read_write_timeout = settings.external_storage_rw_timeout_sec;
-    pool.emplace(createMySQLPoolWithFailover(*configuration, mysql_settings));
+    pool.emplace(configuration->database, configuration->addresses, configuration->username, configuration->password);
 }
 
 ColumnsDescription TableFunctionMySQL::getActualTableStructure(ContextPtr context) const

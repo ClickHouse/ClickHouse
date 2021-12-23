@@ -21,6 +21,7 @@ RUN apt-get update \
     cgroupfs-mount \
     python3-pip \
     tzdata \
+    libreadline-dev \
     libicu-dev \
     bsdutils \
     curl \
@@ -43,6 +44,7 @@ RUN apt-get update \
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
+# download correct docker
 ENV DOCKER_CHANNEL stable
 RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
 RUN add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -c -s) ${DOCKER_CHANNEL}"
@@ -72,13 +74,11 @@ RUN python3 -m pip install \
     grpcio-tools \
     kafka-python \
     kazoo \
-    lz4 \
     minio \
     protobuf \
     psycopg2-binary==2.8.6 \
     pymongo==3.11.0 \
     pytest \
-    pytest-order==1.0.0 \
     pytest-timeout \
     pytest-xdist \
     pytest-repeat \
@@ -87,8 +87,7 @@ RUN python3 -m pip install \
     tzlocal==2.1 \
     urllib3 \
     requests-kerberos \
-    pyhdfs \
-    azure-storage-blob
+    pyhdfs
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/

@@ -247,6 +247,3 @@
 [submodule "contrib/sysroot"]
 	path = contrib/sysroot
 	url = https://github.com/ClickHouse-Extras/sysroot.git
-[submodule "contrib/azure"]
-	path = contrib/azure
-	url = https://github.com/ClickHouse-Extras/azure-sdk-for-cpp.git

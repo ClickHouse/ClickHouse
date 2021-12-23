@@ -426,9 +426,6 @@ Next are the configuration methods for different `type`.
 
 The following example defines the values of [max_threads](../operations/settings/settings.md#settings-max_threads) and `max_alter_threads` settings, then queries the system table to check whether these settings were set successfully.
 
-!!! note "Warning"
-    To keep the default `handlers` such as` query`, `play`,` ping`, use the `<defaults/>` rule. 
-
 Example:
 
 ``` xml
@@ -446,7 +443,6 @@ Example:
             <query>SELECT name, value FROM system.settings WHERE name = {name_2:String}</query>
         </handler>
     </rule>
-    <defaults/>
 </http_handlers>
 ```
 
@@ -479,7 +475,6 @@ Example:
         <query_param_name>query_param</query_param_name>
     </handler>
     </rule>
-    <defaults/>
 </http_handlers>
 ```
 
@@ -510,7 +505,6 @@ Return a message.
                 <response_content>Say Hi!</response_content>
             </handler>
         </rule>
-        <defaults/>
 </http_handlers>
 ```
 

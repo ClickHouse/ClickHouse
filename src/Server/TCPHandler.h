@@ -15,8 +15,6 @@
 #include <Interpreters/Context_fwd.h>
 #include <Formats/NativeReader.h>
 
-#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
-
 #include "IServer.h"
 #include "base/types.h"
 
@@ -177,7 +175,6 @@ private:
     String cluster_secret;
 
     std::mutex task_callback_mutex;
-    std::mutex fatal_error_mutex;
 
     /// At the moment, only one ongoing query in the connection is supported at a time.
     QueryState state;
@@ -204,7 +201,6 @@ private:
     void receiveQuery();
     void receiveIgnoredPartUUIDs();
     String receiveReadTaskResponseAssumeLocked();
-    std::optional<PartitionReadResponse> receivePartitionMergeTreeReadTaskResponseAssumeLocked();
     bool receiveData(bool scalar);
     bool readDataNext();
     void readData();
@@ -237,7 +233,6 @@ private:
     void sendEndOfStream();
     void sendPartUUIDs();
     void sendReadTaskRequestAssumeLocked();
-    void sendMergeTreeReadTaskRequstAssumeLocked(PartitionReadRequest request);
     void sendProfileInfo(const ProfileInfo & info);
     void sendTotals(const Block & totals);
     void sendExtremes(const Block & extremes);

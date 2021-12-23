@@ -10,7 +10,7 @@ class WriteBuffer;
 struct FormatSettings;
 class IColumn;
 
-/** Simple ISerialization that uses serializeText/deserializeText
+/** Simple IDataTypeCustomTextSerialization that uses serializeText/deserializeText
  * for all serialization and deserialization. */
 class SerializationCustomSimpleText : public SerializationWrapper
 {

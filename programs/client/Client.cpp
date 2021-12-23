@@ -20,7 +20,9 @@
 #include <base/argsToConfig.h>
 #include <base/find_symbols.h>
 
-#include <Common/config_version.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config_version.h>
+#endif
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <Common/TerminalSize.h>

@@ -110,12 +110,12 @@ std::exception_ptr CacheDictionary<dictionary_key_type>::getLastException() cons
 }
 
 template <DictionaryKeyType dictionary_key_type>
-DictionarySourcePtr CacheDictionary<dictionary_key_type>::getSource() const
+const IDictionarySource * CacheDictionary<dictionary_key_type>::getSource() const
 {
     /// Mutex required here because of the getSourceAndUpdateIfNeeded() function
     /// which is used from another thread.
     std::lock_guard lock(source_mutex);
-    return source_ptr;
+    return source_ptr.get();
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -602,7 +602,6 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
                 Columns key_columns;
                 key_columns.reserve(skip_keys_size_offset);
 
-                convertToFullIfSparse(block);
                 auto block_columns = block.getColumns();
 
                 /// Split into keys columns and attribute columns

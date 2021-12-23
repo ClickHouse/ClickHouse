@@ -13,7 +13,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <shared_mutex>
 
@@ -71,7 +70,7 @@ public:
         const IMergeTreeDataPart * parent_part_);
 
     IMergeTreeDataPart(
-        const MergeTreeData & storage_,
+        MergeTreeData & storage_,
         const String & name_,
         const VolumePtr & volume,
         const std::optional<String> & relative_path,
@@ -104,7 +103,7 @@ public:
 
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// Otherwise return information about column size on disk.
-    ColumnSize getColumnSize(const String & column_name) const;
+    ColumnSize getColumnSize(const String & column_name, const IDataType & /* type */) const;
 
     /// NOTE: Returns zeros if secondary indexes are not found in checksums.
     /// Otherwise return information about secondary index size on disk.
@@ -128,12 +127,9 @@ public:
 
     String getTypeName() const { return getType().toString(); }
 
-    void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos = {});
+    void setColumns(const NamesAndTypesList & new_columns);
 
     const NamesAndTypesList & getColumns() const { return columns; }
-    const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
-    SerializationInfoByName & getSerializationInfos() { return serialization_infos; }
-    SerializationPtr getSerialization(const NameAndTypePair & column) const;
 
     /// Throws an exception if part is not stored in on-disk format.
     void assertOnDisk() const;
@@ -195,6 +191,7 @@ public:
     MergeTreeIndexGranularityInfo index_granularity_info;
 
     size_t rows_count = 0;
+
 
     time_t modification_time = 0;
     /// When the part is removed from the working set. Changes once.
@@ -394,15 +391,13 @@ public:
 
     static inline constexpr auto UUID_FILE_NAME = "uuid.txt";
 
-    /// File that contains information about kinds of serialization of columns
-    /// and information that helps to choose kind of serialization later during merging
-    /// (number of rows, number of rows with default values, etc).
-    static inline constexpr auto SERIALIZATION_FILE_NAME = "serialization.json";
-
     /// Checks that all TTLs (table min/max, column ttls, so on) for part
     /// calculated. Part without calculated TTL may exist if TTL was added after
     /// part creation (using alter query with materialize_ttl setting).
     bool checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const;
+
+    /// Returns serialization for column according to files in which column is written in part.
+    SerializationPtr getSerializationForColumn(const NameAndTypePair & column) const;
 
     /// Return some uniq string for file
     /// Required for distinguish different copies of the same part on S3
@@ -426,7 +421,6 @@ protected:
 
     /// Columns description. Cannot be changed, after part initialization.
     NamesAndTypesList columns;
-
     const Type part_type;
 
     /// Not null when it's a projection part.
@@ -450,9 +444,6 @@ protected:
 private:
     /// In compact parts order of columns is necessary
     NameToNumber column_name_to_position;
-
-    /// Map from name of column to its serialization info.
-    SerializationInfoByName serialization_infos;
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();

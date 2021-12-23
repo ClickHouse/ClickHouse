@@ -376,8 +376,6 @@ void HashedDictionary<dictionary_key_type, sparse>::updateData()
         Block block;
         while (executor.pull(block))
         {
-            convertToFullIfSparse(block);
-
             /// We are using this to keep saved data if input stream consists of multiple blocks
             if (!update_field_loaded_block)
                 update_field_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());

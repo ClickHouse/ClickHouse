@@ -251,22 +251,22 @@ Most common uses of live view tables include:
     Enable usage of window views and `WATCH` query using [allow_experimental_window_view](../../../operations/settings/settings.md#allow-experimental-window-view) setting. Input the command `set allow_experimental_window_view = 1`.
 
 ``` sql
-CREATE WINDOW VIEW [IF NOT EXISTS] [db.]table_name [TO [db.]table_name] [ENGINE = engine] [WATERMARK = strategy] [ALLOWED_LATENESS = interval_function] AS SELECT ... GROUP BY time_window_function
+CREATE WINDOW VIEW [IF NOT EXISTS] [db.]table_name [TO [db.]table_name] [ENGINE = engine] [WATERMARK = strategy] [ALLOWED_LATENESS = interval_function] AS SELECT ... GROUP BY window_view_function
 ```
 
-Window view can aggregate data by time window and output the results when the window is ready to fire. It stores the partial aggregation results in an inner(or specified) table to reduce latency and can push the processing result to a specified table or push notifications using the WATCH query.
+Window view can aggregate data by time window and output the results when the window is ready to fire. It stores the partial aggregation results in an inner(or specified) table and can push the processing result to a specified table or push notifications using the WATCH query.
 
 Creating a window view is similar to creating `MATERIALIZED VIEW`. Window view needs an inner storage engine to store intermediate data. The inner storage will use `AggregatingMergeTree` as the default engine.
 
-### Time Window Functions {#window-view-timewindowfunctions}
+### Window View Functions {#window-view-windowviewfunctions}
 
-[Time window functions](../../functions/time-window-functions.md) are used to get the lower and upper window bound of records. The window view needs to be used with a time window function.
+[Window view functions](../../functions/window-view-functions.md) are used to indicate the lower and upper window bound of records. The window view needs to be used with a window view function.
 
 ### TIME ATTRIBUTES {#window-view-timeattributes}
 
 Window view supports **processing time** and **event time** process.
 
-**Processing time** allows window view to produce results based on the local machine's time and is used by default. It is the most straightforward notion of time but does not provide determinism. The processing time attribute can be defined by setting the `time_attr` of the time window function to a table column or using the function `now()`. The following query creates a window view with processing time.
+**Processing time** allows window view to produce results based on the local machine's time and is used by default. It is the most straightforward notion of time but does not provide determinism. The processing time attribute can be defined by setting the `time_attr` of the window view function to a table column or using the function `now()`. The following query creates a window view with processing time.
 
 ``` sql
 CREATE WINDOW VIEW wv AS SELECT count(number), tumbleStart(w_id) as w_start from date GROUP BY tumble(now(), INTERVAL '5' SECOND) as w_id
@@ -274,13 +274,13 @@ CREATE WINDOW VIEW wv AS SELECT count(number), tumbleStart(w_id) as w_start from
 
 **Event time** is the time that each individual event occurred on its producing device. This time is typically embedded within the records when it is generated. Event time processing allows for consistent results even in case of out-of-order events or late events. Window view supports event time processing by using `WATERMARK` syntax.
 
-Window view provides three watermark strategies:
+Window view provides three watermark strategies.
 
 * `STRICTLY_ASCENDING`: Emits a watermark of the maximum observed timestamp so far. Rows that have a timestamp smaller to the max timestamp are not late.
 * `ASCENDING`: Emits a watermark of the maximum observed timestamp so far minus 1. Rows that have a timestamp equal and smaller to the max timestamp are not late.
 * `BOUNDED`: WATERMARK=INTERVAL. Emits watermarks, which are the maximum observed timestamp minus the specified delay.
 
-The following queries are examples of creating a window view with `WATERMARK`:
+The following queries are examples of creating a window view with `WATERMARK`.
 
 ``` sql
 CREATE WINDOW VIEW wv WATERMARK=STRICTLY_ASCENDING AS SELECT count(number) FROM date GROUP BY tumble(timestamp, INTERVAL '5' SECOND);
@@ -296,18 +296,15 @@ CREATE WINDOW VIEW test.wv TO test.dst WATERMARK=ASCENDING ALLOWED_LATENESS=INTE
 
 Note that elements emitted by a late firing should be treated as updated results of a previous computation. Instead of firing at the end of windows, the window view will fire immediately when the late event arrives. Thus, it will result in multiple outputs for the same window. Users need to take these duplicated results into account or deduplicate them.
 
-### Monitoring New Windows {#window-view-monitoring}
+### Monitoring New Windows{#window-view-monitoring}
 
-Window view supports the [WATCH](../../../sql-reference/statements/watch.md) query to monitoring changes, or use `TO` syntax to output the results to a table.
+Window view supports the `WATCH` query to constantly append the processing results to the console or use `TO` syntax to output the results to a table.
 
 ``` sql
-WATCH [db.]window_view
-[EVENTS]
-[LIMIT n]
-[FORMAT format]
+WATCH [db.]name [LIMIT n]
 ```
 
-`WATCH` query acts similar as in `LIVE VIEW`. A `LIMIT` can be specified to set the number of updates to receive before terminating the query. The `EVENTS` clause can be used to obtain a short form of the `WATCH` query where instead of the query result you will just get the latest query watermark.
+`WATCH` query acts similar as in `LIVE VIEW`. A `LIMIT` can be specified to set the number of updates to receive before terminating the query. 
 
 ### Settings {#window-view-settings}
 

@@ -426,24 +426,52 @@ std::vector<UUID> LDAPAccessStorage::findAllImpl(AccessEntityType type) const
 }
 
 
-bool LDAPAccessStorage::exists(const UUID & id) const
+bool LDAPAccessStorage::existsImpl(const UUID & id) const
 {
     std::scoped_lock lock(mutex);
     return memory_storage.exists(id);
 }
 
 
-AccessEntityPtr LDAPAccessStorage::readImpl(const UUID & id, bool throw_if_not_exists) const
+AccessEntityPtr LDAPAccessStorage::readImpl(const UUID & id) const
 {
     std::scoped_lock lock(mutex);
-    return memory_storage.read(id, throw_if_not_exists);
+    return memory_storage.read(id);
 }
 
 
-std::optional<String> LDAPAccessStorage::readNameImpl(const UUID & id, bool throw_if_not_exists) const
+String LDAPAccessStorage::readNameImpl(const UUID & id) const
 {
     std::scoped_lock lock(mutex);
-    return memory_storage.readName(id, throw_if_not_exists);
+    return memory_storage.readName(id);
+}
+
+
+bool LDAPAccessStorage::canInsertImpl(const AccessEntityPtr &) const
+{
+    return false;
+}
+
+
+UUID LDAPAccessStorage::insertImpl(const AccessEntityPtr & entity, bool)
+{
+    throwReadonlyCannotInsert(entity->getType(), entity->getName());
+}
+
+
+void LDAPAccessStorage::removeImpl(const UUID & id)
+{
+    std::scoped_lock lock(mutex);
+    auto entity = read(id);
+    throwReadonlyCannotRemove(entity->getType(), entity->getName());
+}
+
+
+void LDAPAccessStorage::updateImpl(const UUID & id, const UpdateFunc &)
+{
+    std::scoped_lock lock(mutex);
+    auto entity = read(id);
+    throwReadonlyCannotUpdate(entity->getType(), entity->getName());
 }
 
 
@@ -461,24 +489,20 @@ scope_guard LDAPAccessStorage::subscribeForChangesImpl(AccessEntityType type, co
 }
 
 
-bool LDAPAccessStorage::hasSubscription(const UUID & id) const
+bool LDAPAccessStorage::hasSubscriptionImpl(const UUID & id) const
 {
     std::scoped_lock lock(mutex);
     return memory_storage.hasSubscription(id);
 }
 
 
-bool LDAPAccessStorage::hasSubscription(AccessEntityType type) const
+bool LDAPAccessStorage::hasSubscriptionImpl(AccessEntityType type) const
 {
     std::scoped_lock lock(mutex);
     return memory_storage.hasSubscription(type);
 }
 
-std::optional<UUID> LDAPAccessStorage::authenticateImpl(
-    const Credentials & credentials,
-    const Poco::Net::IPAddress & address,
-    const ExternalAuthenticators & external_authenticators,
-    bool /* throw_if_user_not_exists */) const
+UUID LDAPAccessStorage::loginImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const
 {
     std::scoped_lock lock(mutex);
     LDAPClient::SearchResultsList external_roles;
@@ -487,11 +511,8 @@ std::optional<UUID> LDAPAccessStorage::authenticateImpl(
     {
         auto user = memory_storage.read<User>(*id);
 
-        if (!isAddressAllowed(*user, address))
+        if (!isAddressAllowedImpl(*user, address))
             throwAddressNotAllowed(address);
-
-        if (typeid_cast<const AlwaysAllowCredentials *>(&credentials))
-            return id;
 
         if (!areLDAPCredentialsValidNoLock(*user, credentials, external_authenticators, external_roles))
             throwInvalidCredentials();
@@ -499,7 +520,7 @@ std::optional<UUID> LDAPAccessStorage::authenticateImpl(
         // Just in case external_roles are changed. This will be no-op if they are not.
         updateAssignedRolesNoLock(*id, user->getName(), external_roles);
 
-        return id;
+        return *id;
     }
     else
     {
@@ -509,15 +530,8 @@ std::optional<UUID> LDAPAccessStorage::authenticateImpl(
         user->auth_data = AuthenticationData(AuthenticationType::LDAP);
         user->auth_data.setLDAPServerName(ldap_server_name);
 
-        if (!isAddressAllowed(*user, address))
+        if (!isAddressAllowedImpl(*user, address))
             throwAddressNotAllowed(address);
-
-        if (typeid_cast<const AlwaysAllowCredentials *>(&credentials))
-        {
-            // TODO: mapped external roles are not available here. Without a password we can't authenticate and retrieve roles from LDAP server.
-            assignRolesNoLock(*user, external_roles);
-            return memory_storage.insert(user);
-        }
 
         if (!areLDAPCredentialsValidNoLock(*user, credentials, external_authenticators, external_roles))
             throwInvalidCredentials();
@@ -527,4 +541,31 @@ std::optional<UUID> LDAPAccessStorage::authenticateImpl(
         return memory_storage.insert(user);
     }
 }
+
+UUID LDAPAccessStorage::getIDOfLoggedUserImpl(const String & user_name) const
+{
+    std::scoped_lock lock(mutex);
+    auto id = memory_storage.find<User>(user_name);
+    if (id)
+    {
+        return *id;
+    }
+    else
+    {
+        // User does not exist, so we create one, and add it pretending that the authentication is successful.
+        auto user = std::make_shared<User>();
+        user->setName(user_name);
+        user->auth_data = AuthenticationData(AuthenticationType::LDAP);
+        user->auth_data.setLDAPServerName(ldap_server_name);
+
+        LDAPClient::SearchResultsList external_roles;
+
+        // TODO: mapped external roles are not available here. Without a password we can't authenticate and retrieve roles from LDAP server.
+
+        assignRolesNoLock(*user, external_roles);
+
+        return memory_storage.insert(user);
+    }
+}
+
 }

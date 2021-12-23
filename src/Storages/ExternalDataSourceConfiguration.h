@@ -40,6 +40,7 @@ struct StorageMySQLConfiguration : ExternalDataSourceConfiguration
 
 struct StorageMongoDBConfiguration : ExternalDataSourceConfiguration
 {
+    String collection;
     String options;
 };
 

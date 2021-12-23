@@ -7,9 +7,10 @@ namespace DB
 void SerializationWrapper::enumerateStreams(
     SubstreamPath & path,
     const StreamCallback & callback,
-    const SubstreamData & data) const
+    DataTypePtr type,
+    ColumnPtr column) const
 {
-    nested_serialization->enumerateStreams(path, callback, data);
+    nested_serialization->enumerateStreams(path, callback, type, column);
 }
 
 void SerializationWrapper::serializeBinaryBulkStatePrefix(

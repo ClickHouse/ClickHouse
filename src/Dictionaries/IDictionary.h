@@ -1,15 +1,15 @@
 #pragma once
 
-#include <memory>
-#include <mutex>
-
 #include <Core/Names.h>
-#include <Columns/ColumnsNumber.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/StorageID.h>
+#include <Columns/ColumnsNumber.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <DataTypes/IDataType.h>
+
+#include <memory>
+#include <mutex>
 
 
 namespace DB
@@ -19,7 +19,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-class IDictionary;
+struct IDictionary;
 using DictionaryPtr = std::unique_ptr<IDictionary>;
 
 /** DictionaryKeyType provides IDictionary client information about
@@ -47,9 +47,8 @@ enum class DictionarySpecialKeyType
 /**
  * Base class for Dictionaries implementation.
  */
-class IDictionary : public IExternalLoadable
+struct IDictionary : public IExternalLoadable
 {
-public:
     explicit IDictionary(const StorageID & dictionary_id_)
     : dictionary_id(dictionary_id_)
     , full_name(dictionary_id.getInternalDictionaryName())
@@ -100,7 +99,7 @@ public:
 
     virtual double getLoadFactor() const = 0;
 
-    virtual DictionarySourcePtr getSource() const = 0;
+    virtual const IDictionarySource * getSource() const = 0;
 
     virtual const DictionaryStructure & getStructure() const = 0;
 
@@ -201,7 +200,7 @@ public:
 
     bool isModified() const override
     {
-        const auto source = getSource();
+        const auto * source = getSource();
         return source && source->isModified();
     }
 

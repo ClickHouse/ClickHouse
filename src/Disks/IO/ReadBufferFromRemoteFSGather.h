@@ -1,13 +1,12 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
+#endif
+
 #include <Disks/IDiskRemote.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadSettings.h>
-
-#if USE_AZURE_BLOB_STORAGE
-#include <azure/storage/blobs.hpp>
-#endif
 
 namespace Aws
 {
@@ -110,40 +109,6 @@ private:
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
     String bucket;
     UInt64 max_single_read_retries;
-    ReadSettings settings;
-    bool threadpool_read;
-};
-#endif
-
-
-#if USE_AZURE_BLOB_STORAGE
-/// Reads data from AzureBlob Storage using paths stored in metadata.
-class ReadBufferFromAzureBlobStorageGather final : public ReadBufferFromRemoteFSGather
-{
-public:
-    ReadBufferFromAzureBlobStorageGather(
-        const String & path_,
-        std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
-        IDiskRemote::Metadata metadata_,
-        size_t max_single_read_retries_,
-        size_t max_single_download_retries_,
-        const ReadSettings & settings_,
-        bool threadpool_read_ = false)
-        : ReadBufferFromRemoteFSGather(metadata_, path_)
-        , blob_container_client(blob_container_client_)
-        , max_single_read_retries(max_single_read_retries_)
-        , max_single_download_retries(max_single_download_retries_)
-        , settings(settings_)
-        , threadpool_read(threadpool_read_)
-    {
-    }
-
-    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t read_until_position) const override;
-
-private:
-    std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
-    size_t max_single_read_retries;
-    size_t max_single_download_retries;
     ReadSettings settings;
     bool threadpool_read;
 };

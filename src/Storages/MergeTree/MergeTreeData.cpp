@@ -1525,24 +1525,6 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
     }
 }
 
-void MergeTreeData::flushAllInMemoryPartsIfNeeded()
-{
-    if (getSettings()->in_memory_parts_enable_wal)
-        return;
-
-    auto metadata_snapshot = getInMemoryMetadataPtr();
-    DataPartsVector parts = getDataPartsVector();
-    for (const auto & part : parts)
-    {
-        if (auto part_in_memory = asInMemoryPart(part))
-        {
-            const auto & storage_relative_path = part_in_memory->storage.relative_data_path;
-            part_in_memory->flushToDisk(storage_relative_path, part_in_memory->relative_path, metadata_snapshot);
-        }
-    }
-
-}
-
 size_t MergeTreeData::clearOldPartsFromFilesystem(bool force)
 {
     DataPartsVector parts_to_remove = grabOldParts(force);
@@ -3181,7 +3163,7 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const Data
     for (const auto & column : part->getColumns())
     {
         ColumnSize & total_column_size = column_sizes[column.name];
-        ColumnSize part_column_size = part->getColumnSize(column.name);
+        ColumnSize part_column_size = part->getColumnSize(column.name, *column.type);
         total_column_size.add(part_column_size);
     }
 
@@ -3199,7 +3181,7 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
     for (const auto & column : part->getColumns())
     {
         ColumnSize & total_column_size = column_sizes[column.name];
-        ColumnSize part_column_size = part->getColumnSize(column.name);
+        ColumnSize part_column_size = part->getColumnSize(column.name, *column.type);
 
         auto log_subtract = [&](size_t & from, size_t value, const char * field)
         {

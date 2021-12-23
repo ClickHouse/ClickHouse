@@ -1,14 +1,45 @@
 import logging
+import random
+import string
 import time
+import threading
 import os
 
 import pytest
 from helpers.cluster import ClickHouseCluster, get_instances_dir
-from helpers.utility import generate_values, replace_config, SafeThread
 
+
+# By default the exceptions that was throwed in threads will be ignored
+# (they will not mark the test as failed, only printed to stderr).
+#
+# Wrap thrading.Thread and re-throw exception on join()
+class SafeThread(threading.Thread):
+    def __init__(self, target):
+        super().__init__()
+        self.target = target
+        self.exception = None
+    def run(self):
+        try:
+            self.target()
+        except Exception as e: # pylint: disable=broad-except
+            self.exception = e
+    def join(self, timeout=None):
+        super().join(timeout)
+        if self.exception:
+            raise self.exception
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 CONFIG_PATH = os.path.join(SCRIPT_DIR, './{}/node/configs/config.d/storage_conf.xml'.format(get_instances_dir()))
+
+
+def replace_config(old, new):
+    config = open(CONFIG_PATH, 'r')
+    config_lines = config.readlines()
+    config.close()
+    config_lines = [line.replace(old, new) for line in config_lines]
+    config = open(CONFIG_PATH, 'w')
+    config.writelines(config_lines)
+    config.close()
 
 
 @pytest.fixture(scope="module")
@@ -33,6 +64,17 @@ FILES_OVERHEAD = 1
 FILES_OVERHEAD_PER_COLUMN = 2  # Data and mark files
 FILES_OVERHEAD_PER_PART_WIDE = FILES_OVERHEAD_PER_COLUMN * 3 + 2 + 6 + 1
 FILES_OVERHEAD_PER_PART_COMPACT = 10 + 1
+
+
+def random_string(length):
+    letters = string.ascii_letters
+    return ''.join(random.choice(letters) for i in range(length))
+
+
+def generate_values(date_str, count, sign=1):
+    data = [[date_str, sign * (i + 1), random_string(10)] for i in range(count)]
+    data.sort(key=lambda tup: tup[1])
+    return ",".join(["('{}',{},'{}')".format(x, y, z) for x, y, z in data])
 
 
 def create_table(node, table_name, **additional_settings):
@@ -400,9 +442,8 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
     s3_requests_to_write_partition = get_s3_requests() - s3_requests_before
 
     # Force multi-part upload mode.
-    replace_config(CONFIG_PATH,
-        "<s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>",
-        "<s3_max_single_part_upload_size>0</s3_max_single_part_upload_size>")
+    replace_config("<s3_max_single_part_upload_size>33554432</s3_max_single_part_upload_size>",
+                   "<s3_max_single_part_upload_size>0</s3_max_single_part_upload_size>")
 
     node.query("SYSTEM RELOAD CONFIG")
 

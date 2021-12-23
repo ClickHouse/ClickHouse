@@ -86,7 +86,6 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     factory.registerAlias("INT UNSIGNED", "UInt32", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("INTEGER UNSIGNED", "UInt32", DataTypeFactory::CaseInsensitive);
     factory.registerAlias("BIGINT UNSIGNED", "UInt64", DataTypeFactory::CaseInsensitive);
-    factory.registerAlias("BIT", "UInt64", DataTypeFactory::CaseInsensitive);
 }
 
 }

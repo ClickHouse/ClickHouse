@@ -31,13 +31,13 @@ struct BlockIO
     /// When it is true, don't bother sending any non-empty blocks to the out stream
     bool null_format = false;
 
+    /// Call these functions if you want to log the request.
     void onFinish()
     {
         if (finish_callback)
         {
             finish_callback(pipeline);
         }
-        pipeline.reset();
     }
 
     void onException() const

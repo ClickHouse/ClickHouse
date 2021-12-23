@@ -64,14 +64,8 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get install gcc-11 g++-11 --yes
 
 
-# These symlinks are required:
-# /usr/bin/ld.lld: by gcc to find lld compiler
-# /usr/bin/aarch64-linux-gnu-obj*: for debug symbols stripping
-RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld \
-    && ln -sf /usr/lib/llvm-${LLVM_VERSION}/bin/llvm-objcopy /usr/bin/aarch64-linux-gnu-strip \
-    && ln -sf /usr/lib/llvm-${LLVM_VERSION}/bin/llvm-objcopy /usr/bin/aarch64-linux-gnu-objcopy \
-    && ln -sf /usr/lib/llvm-${LLVM_VERSION}/bin/llvm-objdump /usr/bin/aarch64-linux-gnu-objdump
-
+# This symlink required by gcc to find lld compiler
+RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
 
 COPY build.sh /
 
