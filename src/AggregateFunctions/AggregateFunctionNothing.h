@@ -48,7 +48,7 @@ public:
 
     size_t sizeOfData() const override
     {
-        return 1;
+        return 0;
     }
 
     size_t alignOfData() const override
@@ -65,13 +65,13 @@ public:
     }
 
 
-    void serialize(ConstAggregateDataPtr __restrict, WriteBuffer &, std::optional<size_t>) const override
+    void serialize(ConstAggregateDataPtr __restrict, WriteBuffer & buf, std::optional<size_t>) const override
     {
         writeChar('\0', buf);
     }
 
 
-    void deserialize(AggregateDataPtr, ReadBuffer &, std::optional<size_t>, Arena *) const override
+    void deserialize(AggregateDataPtr, ReadBuffer & buf, std::optional<size_t>, Arena *) const override
     {
         [[maybe_unused]] char symbol;
         readChar(symbol, buf);
