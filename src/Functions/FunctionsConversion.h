@@ -2638,7 +2638,7 @@ private:
     {
         if (checkAndGetDataType<DataTypeString>(from_type.get()))
         {
-            return [] (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t /*input_rows_count*/)
+            return [](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t /*input_rows_count*/) -> ColumnPtr
             {
                 return ConvertImplGenericFromString::execute(arguments, result_type);
             };
