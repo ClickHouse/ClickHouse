@@ -29,10 +29,6 @@
 namespace DB
 {
 
-/*
- * FIXME:RemoteReadBuffer derive from SeekableReadBufferWithSize may cause some risks, since it's not seekable in some cases
- * But SeekableReadBuffer is not a interface which make it hard to fixup.
- */
 class RemoteReadBuffer : public BufferWithOwnMemory<SeekableReadBufferWithSize>
 {
 public:
