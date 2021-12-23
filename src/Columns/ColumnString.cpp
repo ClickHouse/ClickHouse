@@ -474,8 +474,9 @@ void ColumnString::getExtremes(Field & min, Field & max) const
 
 ColumnPtr ColumnString::compress() const
 {
-    size_t source_chars_size = chars.size();
-    size_t source_offsets_size = offsets.size() * sizeof(Offset);
+    const size_t source_chars_size = chars.size();
+    const size_t source_offsets_elements = offsets.size();
+    const size_t source_offsets_size = source_offsets_elements * sizeof(Offset);
 
     /// Don't compress small blocks.
     if (source_chars_size < 4096) /// A wild guess.
@@ -489,12 +490,14 @@ ColumnPtr ColumnString::compress() const
 
     auto offsets_compressed = ColumnCompressed::compressBuffer(offsets.data(), source_offsets_size, true);
 
-    return ColumnCompressed::create(offsets.size(), chars_compressed->size() + offsets_compressed->size(),
+    const size_t chars_compressed_size = chars_compressed->size();
+    const size_t offsets_compressed_size = offsets_compressed->size();
+    return ColumnCompressed::create(source_offsets_elements, chars_compressed_size + offsets_compressed_size,
         [
             chars_compressed = std::move(chars_compressed),
             offsets_compressed = std::move(offsets_compressed),
             source_chars_size,
-            source_offsets_elements = offsets.size()
+            source_offsets_elements
         ]
         {
             auto res = ColumnString::create();

@@ -318,6 +318,7 @@ class FailureReason(enum.Enum):
     EXCEPTION = "having having exception in stdout: "
     RESULT_DIFF = "result differs with reference: "
     TOO_LONG = "Test runs too long (> 60s). Make it faster."
+    INTERNAL_QUERY_FAIL = "Internal query (CREATE/DROP DATABASE) failed:"
 
     # SKIPPED reasons
     DISABLED = "disabled"
@@ -355,6 +356,14 @@ class TestResult:
 
 
 class TestCase:
+    @staticmethod
+    def get_description_from_exception_info(exc_info):
+        exc_type, exc_value, tb = exc_info
+        exc_name = exc_type.__name__
+        traceback_str = "\n".join(traceback.format_tb(tb, 10))
+        description = f"\n{exc_name}\n{exc_value}\n{traceback_str}"
+        return description
+
     @staticmethod
     def get_reference_file(suite_dir, name):
         """
@@ -662,13 +671,21 @@ class TestCase:
             return result
         except KeyboardInterrupt as e:
             raise e
+        except HTTPError:
+            return TestResult(self.name, TestStatus.FAIL,
+                              FailureReason.INTERNAL_QUERY_FAIL,
+                              0.,
+                              self.get_description_from_exception_info(sys.exc_info()))
+        except (ConnectionRefusedError, ConnectionResetError):
+            return TestResult(self.name, TestStatus.FAIL,
+                              FailureReason.SERVER_DIED,
+                              0.,
+                              self.get_description_from_exception_info(sys.exc_info()))
         except:
-            exc_type, exc_value, tb = sys.exc_info()
-            exc_name = exc_type.__name__
-            traceback_str = "\n".join(traceback.format_tb(tb, 10))
-            description = f"{exc_name}\n{exc_value}\n{traceback_str}"
-            return TestResult(self.name, TestStatus.UNKNOWN, FailureReason.INTERNAL_ERROR, 0., description)
-
+            return TestResult(self.name, TestStatus.UNKNOWN,
+                              FailureReason.INTERNAL_ERROR,
+                              0.,
+                              self.get_description_from_exception_info(sys.exc_info()))
 
 class TestSuite:
     @staticmethod

@@ -117,6 +117,16 @@ void Settings::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfigura
     }
 }
 
+std::vector<String> Settings::getAllRegisteredNames() const
+{
+    std::vector<String> all_settings;
+    for (const auto & setting_field : all())
+    {
+        all_settings.push_back(setting_field.getName());
+    }
+    return all_settings;
+}
+
 IMPLEMENT_SETTINGS_TRAITS(FormatFactorySettingsTraits, FORMAT_FACTORY_SETTINGS)
 
 }

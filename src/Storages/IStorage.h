@@ -511,7 +511,7 @@ public:
     virtual void shutdown() {}
 
     /// Called before shutdown() to flush data to underlying storage
-    /// (for Buffer)
+    /// Data in memory need to be persistent
     virtual void flush() {}
 
     /// Asks table to stop executing some action identified by action_type
