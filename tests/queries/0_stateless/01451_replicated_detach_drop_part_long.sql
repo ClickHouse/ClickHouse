@@ -1,5 +1,5 @@
 -- Tags: long, replica, no-replicated-database
--- Tag no-replicated-database: Unsupported type of ALTER query
+-- Tag no-replicated-database: Fails due to additional replicas or shards
 
 SET replication_alter_partitions_sync = 2;
 

@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
+#include "config_functions.h"
 
 #if USE_S2_GEOMETRY
 
@@ -79,7 +77,7 @@ public:
         auto & vec_res_second = col_res_second->getData();
         vec_res_second.reserve(input_rows_count);
 
-        for (const auto row : collections::range(0, input_rows_count))
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
             const auto lo = S2CellId(col_lo->getUInt(row));
             const auto hi = S2CellId(col_hi->getUInt(row));

@@ -12,7 +12,7 @@ class MergeTreeInOrderSelectProcessor final : public MergeTreeSelectProcessor
 {
 public:
     template <typename... Args>
-    MergeTreeInOrderSelectProcessor(Args &&... args)
+    explicit MergeTreeInOrderSelectProcessor(Args &&... args)
         : MergeTreeSelectProcessor{std::forward<Args>(args)...}
     {
         LOG_DEBUG(log, "Reading {} ranges in order from part {}, approx. {} rows starting from {}",
@@ -23,7 +23,8 @@ public:
     String getName() const override { return "MergeTreeInOrder"; }
 
 private:
-    bool getNewTask() override;
+    bool getNewTaskImpl() override;
+    void finalizeNewTask() override {}
 
     Poco::Logger * log = &Poco::Logger::get("MergeTreeInOrderSelectProcessor");
 };

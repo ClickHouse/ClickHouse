@@ -11,16 +11,17 @@
 #include <Common/Stopwatch.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataStreams/BlockStreamProfileInfo.h>
+#include <QueryPipeline/ProfileInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
+#include <IO/CompressionMethod.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ParserQuery.h>
@@ -28,17 +29,19 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sinks/EmptySink.h>
-#include <Processors/QueryPipelineBuilder.h>
-#include <Formats/FormatFactory.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Server/IServer.h>
 #include <Storages/IStorage.h>
 #include <Poco/FileStream.h>
 #include <Poco/StreamCopier.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <base/range.h>
+#include <base/logger_useful.h>
 #include <grpc++/security/server_credentials.h>
 #include <grpc++/server.h>
 #include <grpc++/server_builder.h>
@@ -597,7 +600,7 @@ namespace
         void addProgressToResult();
         void addTotalsToResult(const Block & totals);
         void addExtremesToResult(const Block & extremes);
-        void addProfileInfoToResult(const BlockStreamProfileInfo & info);
+        void addProfileInfoToResult(const ProfileInfo & info);
         void addLogsToResult();
         void sendResult();
         void throwIfFailedToSendResult();
@@ -616,7 +619,11 @@ namespace
         ASTInsertQuery * insert_query = nullptr;
         String input_format;
         String input_data_delimiter;
+        PODArray<char> output;
         String output_format;
+        CompressionMethod compression_method = CompressionMethod::None;
+        int compression_level = 0;
+
         uint64_t interactive_delay = 100000;
         bool send_exception_with_stacktrace = true;
         bool input_function_is_used = false;
@@ -633,11 +640,13 @@ namespace
         bool responder_finished = false;
         bool cancelled = false;
 
-        std::optional<ReadBufferFromCallback> read_buffer;
-        std::optional<WriteBufferFromString> write_buffer;
+        std::unique_ptr<ReadBuffer> read_buffer;
+        std::unique_ptr<WriteBuffer> write_buffer;
+        WriteBufferFromVector<PODArray<char>> * nested_write_buffer = nullptr;
+        WriteBuffer * compressing_write_buffer = nullptr;
         std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> pipeline_executor;
-        BlockOutputStreamPtr block_output_stream;
+        std::shared_ptr<IOutputFormat> output_format_processor;
         bool need_input_data_from_insert_query = true;
         bool need_input_data_from_query_info = true;
         bool need_input_data_delimiter = false;
@@ -816,6 +825,10 @@ namespace
         if (output_format.empty())
             output_format = query_context->getDefaultFormat();
 
+        /// Choose compression.
+        compression_method = chooseCompressionMethod("", query_info.compression_type());
+        compression_level = query_info.compression_level();
+
         /// Set callback to create and fill external tables
         query_context->setExternalTablesInitializer([this] (ContextPtr context)
         {
@@ -889,7 +902,7 @@ namespace
     void Call::initializeBlockInputStream(const Block & header)
     {
         assert(!read_buffer);
-        read_buffer.emplace([this]() -> std::pair<const void *, size_t>
+        read_buffer = std::make_unique<ReadBufferFromCallback>([this]() -> std::pair<const void *, size_t>
         {
             if (need_input_data_from_insert_query)
             {
@@ -945,9 +958,11 @@ namespace
             return {nullptr, 0}; /// no more input data
         });
 
+        read_buffer = wrapReadBufferWithCompressionMethod(std::move(read_buffer), compression_method);
+
         assert(!pipeline);
-        auto source = FormatFactory::instance().getInput(
-            input_format, *read_buffer, header, query_context, query_context->getSettings().max_insert_block_size);
+        auto source = query_context->getInputFormat(
+            input_format, *read_buffer, header, query_context->getSettings().max_insert_block_size);
         QueryPipelineBuilder builder;
         builder.init(Pipe(source));
 
@@ -956,7 +971,18 @@ namespace
         {
             if (insert_query)
             {
-                auto table_id = query_context->resolveStorageID(insert_query->table_id, Context::ResolveOrdinary);
+                auto table_id = StorageID::createEmpty();
+
+                if (insert_query->table_id)
+                {
+                    table_id = query_context->resolveStorageID(insert_query->table_id, Context::ResolveOrdinary);
+                }
+                else
+                {
+                    StorageID local_table_id(insert_query->getDatabase(), insert_query->getTable());
+                    table_id = query_context->resolveStorageID(local_table_id, Context::ResolveOrdinary);
+                }
+
                 if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields && table_id)
                 {
                     StoragePtr storage = DatabaseCatalog::instance().getTable(table_id, query_context);
@@ -1017,7 +1043,10 @@ namespace
                     /// The data will be written directly to the table.
                     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
                     auto sink = storage->write(ASTPtr(), metadata_snapshot, query_context);
-                    ReadBufferFromMemory data(external_table.data().data(), external_table.data().size());
+
+                    std::unique_ptr<ReadBuffer> buf = std::make_unique<ReadBufferFromMemory>(external_table.data().data(), external_table.data().size());
+                    buf = wrapReadBufferWithCompressionMethod(std::move(buf), chooseCompressionMethod("", external_table.compression_type()));
+
                     String format = external_table.format();
                     if (format.empty())
                         format = "TabSeparated";
@@ -1033,9 +1062,9 @@ namespace
                         external_table_context->checkSettingsConstraints(settings_changes);
                         external_table_context->applySettingsChanges(settings_changes);
                     }
-                    auto in = FormatFactory::instance().getInput(
-                        format, data, metadata_snapshot->getSampleBlock(),
-                        external_table_context, external_table_context->getSettings().max_insert_block_size);
+                    auto in = external_table_context->getInputFormat(
+                        format, *buf, metadata_snapshot->getSampleBlock(),
+                        external_table_context->getSettings().max_insert_block_size);
 
                     QueryPipelineBuilder cur_pipeline;
                     cur_pipeline.init(Pipe(std::move(in)));
@@ -1088,9 +1117,19 @@ namespace
         if (io.pipeline.pulling())
             header = io.pipeline.getHeader();
 
-        write_buffer.emplace(*result.mutable_output());
-        block_output_stream = query_context->getOutputStream(output_format, *write_buffer, header);
-        block_output_stream->writePrefix();
+        if (compression_method != CompressionMethod::None)
+            output.resize(DBMS_DEFAULT_BUFFER_SIZE); /// Must have enough space for compressed data.
+        write_buffer = std::make_unique<WriteBufferFromVector<PODArray<char>>>(output);
+        nested_write_buffer = static_cast<WriteBufferFromVector<PODArray<char>> *>(write_buffer.get());
+        if (compression_method != CompressionMethod::None)
+        {
+            write_buffer = wrapWriteBufferWithCompressionMethod(std::move(write_buffer), compression_method, compression_level);
+            compressing_write_buffer = write_buffer.get();
+        }
+
+        auto has_output = [&] { return (nested_write_buffer->position() != output.data()) || (compressing_write_buffer && compressing_write_buffer->offset()); };
+
+        output_format_processor = query_context->getOutputFormat(output_format, *write_buffer, header);
         Stopwatch after_send_progress;
 
         /// Unless the input() function is used we are not going to receive input data anymore.
@@ -1121,7 +1160,7 @@ namespace
                     break;
 
                 if (block && !io.null_format)
-                    block_output_stream->write(block);
+                    output_format_processor->write(materializeBlock(block));
 
                 if (after_send_progress.elapsedMicroseconds() >= interactive_delay)
                 {
@@ -1131,8 +1170,7 @@ namespace
 
                 addLogsToResult();
 
-                bool has_output = write_buffer->offset();
-                if (has_output || result.has_progress() || result.logs_size())
+                if (has_output() || result.has_progress() || result.logs_size())
                     sendResult();
 
                 throwIfFailedToSendResult();
@@ -1152,13 +1190,11 @@ namespace
             auto executor = std::make_shared<CompletedPipelineExecutor>(io.pipeline);
             auto callback = [&]() -> bool
             {
-
                 throwIfFailedToSendResult();
                 addProgressToResult();
                 addLogsToResult();
 
-                bool has_output = write_buffer->offset();
-                if (has_output || result.has_progress() || result.logs_size())
+                if (has_output() || result.has_progress() || result.logs_size())
                     sendResult();
 
                 throwIfFailedToSendResult();
@@ -1169,7 +1205,7 @@ namespace
             executor->execute();
         }
 
-        block_output_stream->writeSuffix();
+        output_format_processor->finalize();
     }
 
     void Call::finishQuery()
@@ -1248,6 +1284,8 @@ namespace
         /// immediately after it receives our final result, and it's prohibited to have
         /// two queries executed at the same time with the same query ID or session ID.
         io.process_list_entry.reset();
+        if (query_context)
+            query_context->setProcessListElement(nullptr);
         if (session)
             session->releaseSessionID();
     }
@@ -1257,9 +1295,11 @@ namespace
         responder.reset();
         pipeline_executor.reset();
         pipeline.reset();
-        block_output_stream.reset();
+        output_format_processor.reset();
         read_buffer.reset();
         write_buffer.reset();
+        nested_write_buffer = nullptr;
+        compressing_write_buffer = nullptr;
         io = {};
         query_scope.reset();
         query_context.reset();
@@ -1378,11 +1418,17 @@ namespace
         if (!totals)
             return;
 
-        WriteBufferFromString buf{*result.mutable_totals()};
-        auto stream = query_context->getOutputStream(output_format, buf, totals);
-        stream->writePrefix();
-        stream->write(totals);
-        stream->writeSuffix();
+        PODArray<char> memory;
+        if (compression_method != CompressionMethod::None)
+            memory.resize(DBMS_DEFAULT_BUFFER_SIZE); /// Must have enough space for compressed data.
+        std::unique_ptr<WriteBuffer> buf = std::make_unique<WriteBufferFromVector<PODArray<char>>>(memory);
+        buf = wrapWriteBufferWithCompressionMethod(std::move(buf), compression_method, compression_level);
+        auto format = query_context->getOutputFormat(output_format, *buf, totals);
+        format->write(materializeBlock(totals));
+        format->finalize();
+        buf->finalize();
+
+        result.mutable_totals()->assign(memory.data(), memory.size());
     }
 
     void Call::addExtremesToResult(const Block & extremes)
@@ -1390,14 +1436,20 @@ namespace
         if (!extremes)
             return;
 
-        WriteBufferFromString buf{*result.mutable_extremes()};
-        auto stream = query_context->getOutputStream(output_format, buf, extremes);
-        stream->writePrefix();
-        stream->write(extremes);
-        stream->writeSuffix();
+        PODArray<char> memory;
+        if (compression_method != CompressionMethod::None)
+            memory.resize(DBMS_DEFAULT_BUFFER_SIZE); /// Must have enough space for compressed data.
+        std::unique_ptr<WriteBuffer> buf = std::make_unique<WriteBufferFromVector<PODArray<char>>>(memory);
+        buf = wrapWriteBufferWithCompressionMethod(std::move(buf), compression_method, compression_level);
+        auto format = query_context->getOutputFormat(output_format, *buf, extremes);
+        format->write(materializeBlock(extremes));
+        format->finalize();
+        buf->finalize();
+
+        result.mutable_extremes()->assign(memory.data(), memory.size());
     }
 
-    void Call::addProfileInfoToResult(const BlockStreamProfileInfo & info)
+    void Call::addProfileInfoToResult(const ProfileInfo & info)
     {
         auto & stats = *result.mutable_stats();
         stats.set_rows(info.rows);
@@ -1465,6 +1517,38 @@ namespace
         if (!send_final_message && !isOutputStreaming(call_type))
             return;
 
+        /// Copy output to `result.output`, with optional compressing.
+        if (write_buffer)
+        {
+            size_t output_size;
+            if (send_final_message)
+            {
+                if (compressing_write_buffer)
+                    LOG_DEBUG(log, "Compressing final {} bytes", compressing_write_buffer->offset());
+                write_buffer->finalize();
+                output_size = output.size();
+            }
+            else
+            {
+                if (compressing_write_buffer && compressing_write_buffer->offset())
+                {
+                    LOG_DEBUG(log, "Compressing {} bytes", compressing_write_buffer->offset());
+                    compressing_write_buffer->sync();
+                }
+                output_size = nested_write_buffer->position() - output.data();
+            }
+
+            if (output_size)
+            {
+                result.mutable_output()->assign(output.data(), output_size);
+                nested_write_buffer->restart(); /// We're going to reuse the same buffer again for next block of data.
+            }
+        }
+
+        if (!send_final_message && result.output().empty() && result.totals().empty() && result.extremes().empty() && !result.logs_size()
+            && !result.has_progress() && !result.has_stats() && !result.has_exception() && !result.cancelled())
+            return; /// Nothing to send.
+
         /// Wait for previous write to finish.
         /// (gRPC doesn't allow to start sending another result while the previous is still being sending.)
         if (sending_result.get())
@@ -1477,9 +1561,6 @@ namespace
 
         /// Start sending the result.
         LOG_DEBUG(log, "Sending {} result to the client: {}", (send_final_message ? "final" : "intermediate"), getResultDescription(result));
-
-        if (write_buffer)
-            write_buffer->finalize();
 
         sending_result.set(true);
         auto callback = [this](bool ok)
@@ -1501,8 +1582,6 @@ namespace
 
         /// gRPC has already retrieved all data from `result`, so we don't have to keep it.
         result.Clear();
-        if (write_buffer)
-            write_buffer->restart();
 
         if (send_final_message)
         {

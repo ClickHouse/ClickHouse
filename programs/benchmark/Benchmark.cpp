@@ -28,7 +28,7 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <IO/UseSSL.h>
-#include <DataStreams/RemoteQueryExecutor.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Interpreters/Context.h>
 #include <Client/Connection.h>
 #include <Common/InterruptListener.h>
@@ -432,7 +432,7 @@ private:
         Progress progress;
         executor.setProgressCallback([&progress](const Progress & value) { progress.incrementPiecewiseAtomically(value); });
 
-        BlockStreamProfileInfo info;
+        ProfileInfo info;
         while (Block block = executor.read())
             info.update(block);
 

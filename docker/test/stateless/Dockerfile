@@ -34,7 +34,7 @@ RUN apt-get update -y \
             postgresql-client \
             sqlite3
 
-RUN pip3 install numpy scipy pandas Jinja2 clickhouse_driver
+RUN pip3 install numpy scipy pandas Jinja2
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
    && wget -nv -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \
@@ -48,7 +48,6 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 ENV NUM_TRIES=1
 ENV MAX_RUN_TIME=0
-
 
 # Download Minio-related binaries
 RUN wget 'https://dl.min.io/server/minio/release/linux-amd64/minio' \

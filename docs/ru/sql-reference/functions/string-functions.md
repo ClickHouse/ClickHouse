@@ -34,15 +34,15 @@ empty(x)
 Запрос:
 
 ```sql
-SELECT notempty('text');
+SELECT empty('text');
 ```
 
 Результат:
 
 ```text
-┌─empty('')─┐
-│         1 │
-└───────────┘
+┌─empty('text')─┐
+│             0 │
+└───────────────┘
 ```
 
 ## notEmpty {#notempty}
@@ -779,6 +779,150 @@ SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1
 ┌─res─┐
 │   1 │
 └─────┘
+```
+
+## normalizeUTF8NFC {#normalizeutf8nfc}
+
+Преобразует строку в нормализованную форму [NFC](https://ru.wikipedia.org/wiki/Юникод#Алгоритмы_нормализации), предполагая, что строка содержит набор байтов, составляющих текст в кодировке UTF-8.
+
+**Синтаксис**
+
+``` sql
+normalizeUTF8NFC(words)
+```
+
+**Аргументы**
+
+-   `words` — входная строка, которая содержит набор байтов, составляющих текст в кодировке UTF-8. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Строка, преобразованная в нормализированную форму NFC.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT length('â'), normalizeUTF8NFC('â') AS nfc, length(nfc) AS nfc_len;
+```
+
+Результат:
+
+``` text
+┌─length('â')─┬─nfc─┬─nfc_len─┐
+│           2 │ â   │       2 │
+└─────────────┴─────┴─────────┘
+```
+
+## normalizeUTF8NFD {#normalizeutf8nfd}
+
+Преобразует строку в нормализованную форму [NFD](https://ru.wikipedia.org/wiki/Юникод#Алгоритмы_нормализации), предполагая, что строка содержит набор байтов, составляющих текст в кодировке UTF-8.
+
+**Синтаксис**
+
+``` sql
+normalizeUTF8NFD(words)
+```
+
+**Аргументы**
+
+-   `words` — входная строка, которая содержит набор байтов, составляющих текст в кодировке UTF-8. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Строка, преобразованная в нормализированную форму NFD.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT length('â'), normalizeUTF8NFD('â') AS nfd, length(nfd) AS nfd_len;
+```
+
+Результат:
+
+``` text
+┌─length('â')─┬─nfd─┬─nfd_len─┐
+│           2 │ â   │       3 │
+└─────────────┴─────┴─────────┘
+```
+
+## normalizeUTF8NFKC {#normalizeutf8nfkc}
+
+Преобразует строку в нормализованную форму [NFKC](https://ru.wikipedia.org/wiki/Юникод#Алгоритмы_нормализации), предполагая, что строка содержит набор байтов, составляющих текст в кодировке UTF-8.
+
+**Синтаксис**
+
+``` sql
+normalizeUTF8NFKC(words)
+```
+
+**Аргументы**
+
+-   `words` — входная строка, которая содержит набор байтов, составляющих текст в кодировке UTF-8. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Строка, преобразованная в нормализированную форму NFKC.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT length('â'), normalizeUTF8NFKC('â') AS nfkc, length(nfkc) AS nfkc_len;
+```
+
+Результат:
+
+``` text
+┌─length('â')─┬─nfkc─┬─nfkc_len─┐
+│           2 │ â    │        2 │
+└─────────────┴──────┴──────────┘
+```
+
+## normalizeUTF8NFKD {#normalizeutf8nfkd}
+
+Преобразует строку в нормализованную форму [NFKD](https://ru.wikipedia.org/wiki/Юникод#Алгоритмы_нормализации), предполагая, что строка содержит набор байтов, составляющих текст в кодировке UTF-8.
+
+**Синтаксис**
+
+``` sql
+normalizeUTF8NFKD(words)
+```
+
+**Аргументы**
+
+-   `words` — входная строка, которая содержит набор байтов, составляющих текст в кодировке UTF-8. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемое значение**
+
+-   Строка, преобразованная в нормализированную форму NFKD.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT length('â'), normalizeUTF8NFKD('â') AS nfkd, length(nfkd) AS nfkd_len;
+```
+
+Результат:
+
+``` text
+┌─length('â')─┬─nfkd─┬─nfkd_len─┐
+│           2 │ â    │        3 │
+└─────────────┴──────┴──────────┘
 ```
 
 ## encodeXMLComponent {#encode-xml-component}

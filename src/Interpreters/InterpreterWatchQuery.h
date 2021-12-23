@@ -12,7 +12,7 @@ See the License for the specific language governing permissions and
 limitations under the License. */
 
 #include <Core/QueryProcessingStage.h>
-#include <DataStreams/BlockIO.h>
+#include <QueryPipeline/BlockIO.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage.h>
@@ -38,8 +38,6 @@ private:
 
     /// Table from where to read data, if not subquery.
     StoragePtr storage;
-    /// Streams of read data
-    BlockInputStreams streams;
 };
 
 }

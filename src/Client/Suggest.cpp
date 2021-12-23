@@ -10,7 +10,6 @@
 #include <IO/Operators.h>
 #include <Functions/FunctionFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Formats/FormatFactory.h>
 #include <Storages/StorageFactory.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>

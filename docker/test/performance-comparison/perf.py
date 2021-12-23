@@ -45,6 +45,7 @@ parser.add_argument('--runs', type=int, default=1, help='Number of query runs pe
 parser.add_argument('--max-queries', type=int, default=None, help='Test no more than this number of queries, chosen at random.')
 parser.add_argument('--queries-to-run', nargs='*', type=int, default=None, help='Space-separated list of indexes of queries to test.')
 parser.add_argument('--max-query-seconds', type=int, default=15, help='For how many seconds at most a query is allowed to run. The script finishes with error if this time is exceeded.')
+parser.add_argument('--prewarm-max-query-seconds', type=int, default=180, help='For how many seconds at most a prewarm (cold storage) query is allowed to run. The script finishes with error if this time is exceeded.')
 parser.add_argument('--profile-seconds', type=int, default=0, help='For how many seconds to profile a query for which the performance has changed.')
 parser.add_argument('--long', action='store_true', help='Do not skip the tests tagged as long.')
 parser.add_argument('--print-queries', action='store_true', help='Print test queries and exit.')
@@ -283,8 +284,11 @@ for query_index in queries_to_run:
                 #   test coverage. We disable profiler for normal runs because
                 #   it makes the results unstable.
                 res = c.execute(q, query_id = prewarm_id,
-                    settings = {'max_execution_time': args.max_query_seconds,
-                        'query_profiler_real_time_period_ns': 10000000})
+                    settings = {
+                        'max_execution_time': args.prewarm_max_query_seconds,
+                        'query_profiler_real_time_period_ns': 10000000,
+                        'memory_profiler_step': '4Mi',
+                    })
             except clickhouse_driver.errors.Error as e:
                 # Add query id to the exception to make debugging easier.
                 e.args = (prewarm_id, *e.args)
@@ -351,11 +355,9 @@ for query_index in queries_to_run:
             print(f'query\t{query_index}\t{run_id}\t{conn_index}\t{elapsed}')
 
             if elapsed > args.max_query_seconds:
-                # Stop processing pathologically slow queries, to avoid timing out
-                # the entire test task. This shouldn't really happen, so we don't
-                # need much handling for this case and can just exit.
+                # Do not stop processing pathologically slow queries,
+                # since this may hide errors in other queries.
                 print(f'The query no. {query_index} is taking too long to run ({elapsed} s)', file=sys.stderr)
-                exit(2)
 
         # Be careful with the counter, after this line it's the next iteration
         # already.

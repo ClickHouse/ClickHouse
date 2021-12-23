@@ -1,12 +1,12 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-    #include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #if USE_HDFS
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <fcntl.h>
 #include <string>
 #include <memory>
 
@@ -23,6 +23,7 @@ public:
     WriteBufferFromHDFS(
         const String & hdfs_name_,
         const Poco::Util::AbstractConfiguration & config_,
+        int replication_,
         size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         int flags = O_WRONLY);
 
@@ -34,9 +35,9 @@ public:
 
     void sync() override;
 
-    void finalize() override;
-
 private:
+    void finalizeImpl() override;
+
     struct WriteBufferFromHDFSImpl;
     std::unique_ptr<WriteBufferFromHDFSImpl> impl;
 };

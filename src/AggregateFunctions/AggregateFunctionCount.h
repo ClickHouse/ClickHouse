@@ -10,9 +10,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/assert_cast.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -93,12 +91,12 @@ public:
         data(place).count += data(rhs).count;
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         writeVarUInt(data(place).count, buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         readVarUInt(data(place).count, buf);
     }
@@ -205,17 +203,32 @@ public:
         data(place).count += !assert_cast<const ColumnNullable &>(*columns[0]).isNullAt(row_num);
     }
 
+    void addBatchSinglePlace(
+        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena *, ssize_t if_argument_pos) const override
+    {
+        auto & nc = assert_cast<const ColumnNullable &>(*columns[0]);
+        if (if_argument_pos >= 0)
+        {
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            data(place).count += countBytesInFilterWithNull(flags, nc.getNullMapData().data());
+        }
+        else
+        {
+            data(place).count += batch_size - countBytesInFilter(nc.getNullMapData().data(), batch_size);
+        }
+    }
+
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).count += data(rhs).count;
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         writeVarUInt(data(place).count, buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         readVarUInt(data(place).count, buf);
     }

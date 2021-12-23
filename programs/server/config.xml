@@ -152,6 +152,7 @@
          This setting could be used to switch replication to another network interface
          (the server may be connected to multiple networks via multiple addresses)
       -->
+
     <!--
     <interserver_http_host>example.yandex.ru</interserver_http_host>
     -->
@@ -176,6 +177,7 @@
          See also: https://www.shodan.io/search?query=clickhouse
       -->
     <!-- <listen_host>::</listen_host> -->
+
 
     <!-- Same for hosts without support for IPv6: -->
     <!-- <listen_host>0.0.0.0</listen_host> -->
@@ -293,6 +295,10 @@
 
     <max_thread_pool_size>10000</max_thread_pool_size>
 
+    <!-- Number of workers to recycle connections in background (see also drain_timeout).
+         If the pool is full, connection will be drained synchronously. -->
+    <!-- <max_threads_for_connection_collector>10</max_threads_for_connection_collector> -->
+
     <!-- On memory constrained environments you may have to set this to value larger than 1.
       -->
     <max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>
@@ -351,8 +357,11 @@
       -->
     <mmap_cache_size>1000</mmap_cache_size>
 
-    <!-- Cache size for compiled expressions.-->
+    <!-- Cache size in bytes for compiled expressions.-->
     <compiled_expression_cache_size>134217728</compiled_expression_cache_size>
+
+    <!-- Cache size in elements for compiled expressions.-->
+    <compiled_expression_cache_elements_size>10000</compiled_expression_cache_elements_size>
 
     <!-- Path to data directory, with trailing slash. -->
     <path>/var/lib/clickhouse/</path>
@@ -647,6 +656,38 @@
                 </replica>
             </shard>
         </test_shard_localhost>
+        <test_cluster_one_shard_three_replicas_localhost>
+            <shard>
+                <internal_replication>false</internal_replication>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>127.0.0.3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <!--shard>
+                <internal_replication>false</internal_replication>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>127.0.0.2</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>127.0.0.3</host>
+                    <port>9000</port>
+                </replica>
+            </shard-->
+        </test_cluster_one_shard_three_replicas_localhost>
         <test_cluster_two_shards_localhost>
              <shard>
                  <replica>
