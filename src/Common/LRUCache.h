@@ -12,11 +12,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int CANNOT_RELEASE;
-}
-
 template <typename T>
 struct TrivialWeightFunction
 {
