@@ -7,7 +7,6 @@
 #include <mutex>
 #include <atomic>
 #include <base/logger_useful.h>
-#include <Common/Exception.h>
 
 
 namespace DB
