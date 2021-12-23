@@ -87,7 +87,7 @@ toc_title: Adopters
 | <a href="https://kontur.ru" class="favicon">Kontur</a> | Software Development | Metrics | — | — | [Talk in Russian, November 2018](https://www.youtube.com/watch?v=U4u4Bd0FtrY) |
 | <a href="https://www.kuaishou.com/" class="favicon">Kuaishou</a> | Video | — | — | — | [ClickHouse Meetup, October 2018](https://clickhouse.com/blog/en/2018/clickhouse-community-meetup-in-beijing-on-october-28-2018/) |
 | <a href="https://www.kgk-global.com/en/" class="favicon">KGK Global</a> | Vehicle monitoring | — | — | — | [Press release, June 2021](https://zoom.cnews.ru/news/item/530921) |
-| <a href="https://www.lbl.gov" class="favicon">Lawrence Berkeley National Laboratory</a> | Research | Traffic analysis | 1 server | 11.8 TiB | [Slides in English, April 2019](https://www.smitasin.com/presentations/2019-04-17_DOE-NSM.pdf) |
+| <a href="https://www.lbl.gov" class="favicon">Lawrence Berkeley National Laboratory</a> | Research | Traffic analysis | 5 servers | 55 TiB | [Slides in English, April 2019](https://www.smitasin.com/presentations/2019-04-17_DOE-NSM.pdf) |
 | <a href="https://lifestreet.com/" class="favicon">LifeStreet</a> | Ad network | Main product | 75 servers (3 replicas) | 5.27 PiB | [Blog post in Russian, February 2017](https://habr.com/en/post/322620/) |
 | <a href="https://mcs.mail.ru/" class="favicon">Mail.ru Cloud Solutions</a> | Cloud services | Main product | — | — | [Article in Russian](https://mcs.mail.ru/help/db-create/clickhouse#) |
 | <a href="https://maxilect.com/" class="favicon">MAXILECT</a> | Ad Tech, Blockchain, ML, AI | — | — | — | [Job advertisement, 2021](https://www.linkedin.com/feed/update/urn:li:activity:6780842017229430784/) |
