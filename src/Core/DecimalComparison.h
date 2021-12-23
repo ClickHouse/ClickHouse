@@ -1,16 +1,20 @@
 #pragma once
 
-#include <base/arithmeticOverflow.h>
-#include <Core/Block.h>
-#include <Core/AccurateComparison.h>
-#include <Core/callOnTypeIndex.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesDecimal.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnConst.h>
-#include <Functions/FunctionHelpers.h>  /// TODO Core should not depend on Functions
+#include <Core/AccurateComparison.h>
+#include <Core/Block.h>
+#include <Core/DecimalFloatComparison.h>
+#include <Core/callOnTypeIndex.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionHelpers.h> /// TODO Core should not depend on Functions
+#include <Functions/IsOperation.h>
+#include <base/arithmeticOverflow.h>
 
+
+#include <type_traits>
 
 namespace DB
 {
@@ -52,9 +56,14 @@ struct DecCompareInt
     using TypeB = Type;
 };
 
-///
-template <typename A, typename B, template <typename, typename> typename Operation, bool _check_overflow = true,
-    bool _actual = is_decimal<A> || is_decimal<B>>
+template <
+    typename A,
+    typename B,
+    template <typename, typename>
+    typename Operation,
+    bool _check_overflow = true,
+    bool _actual = is_decimal<A> || is_decimal<B>,
+    bool _has_float = std::is_floating_point_v<A> || std::is_floating_point_v<B>>
 class DecimalComparison
 {
 public:
@@ -221,48 +230,135 @@ private:
     template <bool scale_left, bool scale_right>
     static NO_INLINE UInt8 apply(A a, B b, CompareInt scale [[maybe_unused]])
     {
-        CompareInt x;
-        if constexpr (is_decimal<A>)
-            x = a.value;
-        else
-            x = a;
-
-        CompareInt y;
-        if constexpr (is_decimal<B>)
-            y = b.value;
-        else
-            y = b;
-
-        if constexpr (_check_overflow)
+        /// Decimal compares with Float
+        if constexpr (_has_float)
         {
-            bool overflow = false;
-
-            if constexpr (sizeof(A) > sizeof(CompareInt))
-                overflow |= (static_cast<A>(x) != a);
-            if constexpr (sizeof(B) > sizeof(CompareInt))
-                overflow |= (static_cast<B>(y) != b);
-            if constexpr (is_unsigned_v<A>)
-                overflow |= (x < 0);
-            if constexpr (is_unsigned_v<B>)
-                overflow |= (y < 0);
-
-            if constexpr (scale_left)
-                overflow |= common::mulOverflow(x, scale, x);
-            if constexpr (scale_right)
-                overflow |= common::mulOverflow(y, scale, y);
-
-            if (overflow)
-                throw Exception("Can't compare decimal number due to overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            if constexpr (IsOperation<Operation>::equals)
+            {
+                if constexpr (std::is_floating_point_v<A> && is_decimal<B>)
+                {
+                    CompareInt decimal_value = b.value;
+                    return DecimalFloatComparison::equals(a, decimal_value, scale);
+                }
+                if constexpr (std::is_floating_point_v<B> && is_decimal<A>)
+                {
+                    CompareInt decimal_value = a.value;
+                    return DecimalFloatComparison::equals(b, decimal_value, scale);
+                }
+            }
+            if constexpr (IsOperation<Operation>::not_equals)
+            {
+                if constexpr (std::is_floating_point_v<A> && is_decimal<B>)
+                {
+                    CompareInt decimal_value = b.value;
+                    return DecimalFloatComparison::notEquals(a, decimal_value, scale);
+                }
+                if constexpr (std::is_floating_point_v<B> && is_decimal<A>)
+                {
+                    CompareInt decimal_value = a.value;
+                    return DecimalFloatComparison::notEquals(b, decimal_value, scale);
+                }
+            }
+            if constexpr (IsOperation<Operation>::less)
+            {
+                if constexpr (std::is_floating_point_v<A> && is_decimal<B>)
+                {
+                    CompareInt decimal_value = b.value;
+                    return DecimalFloatComparison::less(a, decimal_value, scale);
+                }
+                if constexpr (std::is_floating_point_v<B> && is_decimal<A>)
+                {
+                    CompareInt decimal_value = a.value;
+                    return DecimalFloatComparison::greater(b, decimal_value, scale);
+                }
+            }
+            if constexpr (IsOperation<Operation>::less_or_equals)
+            {
+                if constexpr (std::is_floating_point_v<A> && is_decimal<B>)
+                {
+                    CompareInt decimal_value = b.value;
+                    return DecimalFloatComparison::lessOrEquals(a, decimal_value, scale);
+                }
+                if constexpr (std::is_floating_point_v<B> && is_decimal<A>)
+                {
+                    CompareInt decimal_value = a.value;
+                    return DecimalFloatComparison::greaterOrEquals(b, decimal_value, scale);
+                }
+            }
+            if constexpr (IsOperation<Operation>::greater)
+            {
+                if constexpr (std::is_floating_point_v<A> && is_decimal<B>)
+                {
+                    CompareInt decimal_value = b.value;
+                    return DecimalFloatComparison::greater(a, decimal_value, scale);
+                }
+                if constexpr (std::is_floating_point_v<B> && is_decimal<A>)
+                {
+                    CompareInt decimal_value = a.value;
+                    return DecimalFloatComparison::less(b, decimal_value, scale);
+                }
+            }
+            if constexpr (IsOperation<Operation>::greater_or_equals)
+            {
+                if constexpr (std::is_floating_point_v<A> && is_decimal<B>)
+                {
+                    CompareInt decimal_value = b.value;
+                    return DecimalFloatComparison::greaterOrEquals(a, decimal_value, scale);
+                }
+                if constexpr (std::is_floating_point_v<B> && is_decimal<A>)
+                {
+                    CompareInt decimal_value = a.value;
+                    return DecimalFloatComparison::lessOrEquals(b, decimal_value, scale);
+                }
+            }
         }
+
+        /// Decimal compares with Int
         else
         {
-            if constexpr (scale_left)
-                x = common::mulIgnoreOverflow(x, scale);
-            if constexpr (scale_right)
-                y = common::mulIgnoreOverflow(y, scale);
-        }
+            CompareInt x;
+            if constexpr (is_decimal<A>)
+                x = a.value;
+            else
+                x = a;
 
-        return Op::apply(x, y);
+            CompareInt y;
+            if constexpr (is_decimal<B>)
+                y = b.value;
+            else
+                y = b;
+
+            if constexpr (_check_overflow)
+            {
+                bool overflow = false;
+
+                if constexpr (sizeof(A) > sizeof(CompareInt))
+                    overflow |= (static_cast<A>(x) != a);
+                if constexpr (sizeof(B) > sizeof(CompareInt))
+                    overflow |= (static_cast<B>(y) != b);
+                if constexpr (is_unsigned_v<A>)
+                    overflow |= (x < 0);
+                if constexpr (is_unsigned_v<B>)
+                    overflow |= (y < 0);
+
+                if constexpr (scale_left)
+                    overflow |= common::mulOverflow(x, scale, x);
+                if constexpr (scale_right)
+                    overflow |= common::mulOverflow(y, scale, y);
+
+                if (overflow)
+                    throw Exception("Can't compare decimal number due to overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            }
+            else
+            {
+                if constexpr (scale_left)
+                    x = common::mulIgnoreOverflow(x, scale);
+                if constexpr (scale_right)
+                    y = common::mulIgnoreOverflow(y, scale);
+            }
+
+            return Op::apply(x, y);
+        }
     }
 
     template <bool scale_left, bool scale_right>
