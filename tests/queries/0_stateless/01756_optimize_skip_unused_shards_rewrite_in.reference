@@ -1,17 +1,17 @@
 (0, 2)
 0	0
 0	0
-WITH _CAST(\'default\', \'Nullable(String)\') AS id_no SELECT one.dummy, ignore(id_no) FROM system.one WHERE dummy IN (0, 2)
-WITH _CAST(\'default\', \'Nullable(String)\') AS id_no SELECT one.dummy, ignore(id_no) FROM system.one WHERE dummy IN (0, 2)
+WITH _CAST(\'default\', \'Nullable(String)\') AS `id_no` SELECT `one`.`dummy`, ignore(`id_no`) FROM `system`.`one` WHERE `dummy` IN (0, 2)
+WITH _CAST(\'default\', \'Nullable(String)\') AS `id_no` SELECT `one`.`dummy`, ignore(`id_no`) FROM `system`.`one` WHERE `dummy` IN (0, 2)
 optimize_skip_unused_shards_rewrite_in(0, 2)
 0	0
-WITH _CAST(\'default\', \'Nullable(String)\') AS id_02 SELECT one.dummy, ignore(id_02) FROM system.one WHERE dummy IN tuple(0)
-WITH _CAST(\'default\', \'Nullable(String)\') AS id_02 SELECT one.dummy, ignore(id_02) FROM system.one WHERE dummy IN tuple(2)
+WITH _CAST(\'default\', \'Nullable(String)\') AS `id_02` SELECT `one`.`dummy`, ignore(`id_02`) FROM `system`.`one` WHERE `dummy` IN tuple(0)
+WITH _CAST(\'default\', \'Nullable(String)\') AS `id_02` SELECT `one`.`dummy`, ignore(`id_02`) FROM `system`.`one` WHERE `dummy` IN tuple(2)
 optimize_skip_unused_shards_rewrite_in(2,)
-WITH _CAST(\'default\', \'Nullable(String)\') AS id_2 SELECT one.dummy, ignore(id_2) FROM system.one WHERE dummy IN tuple(2)
+WITH _CAST(\'default\', \'Nullable(String)\') AS `id_2` SELECT `one`.`dummy`, ignore(`id_2`) FROM `system`.`one` WHERE `dummy` IN tuple(2)
 optimize_skip_unused_shards_rewrite_in(0,)
 0	0
-WITH _CAST(\'default\', \'Nullable(String)\') AS id_0 SELECT one.dummy, ignore(id_0) FROM system.one WHERE dummy IN tuple(0)
+WITH _CAST(\'default\', \'Nullable(String)\') AS `id_0` SELECT `one`.`dummy`, ignore(`id_0`) FROM `system`.`one` WHERE `dummy` IN tuple(0)
 0
 0
 errors

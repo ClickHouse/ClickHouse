@@ -391,12 +391,14 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 ## input_format_tsv_enum_as_number {#settings-input_format_tsv_enum_as_number}
 
-Включает или отключает парсинг значений перечислений как идентификаторов перечислений для входного формата TSV.
+Включает или отключает парсинг значений перечислений как порядковых номеров. 
+
+Если режим включен, то во входящих данных в формате `TCV` значения перечисления (тип `ENUM`) всегда трактуются как порядковые номера, а не как элементы перечисления. Эту настройку рекомендуется включать для оптимизации парсинга, если данные типа `ENUM` содержат только порядковые номера, а не сами элементы перечисления.
 
 Возможные значения:
 
--   0 — парсинг значений перечисления как значений.
--   1 — парсинг значений перечисления как идентификаторов перечисления.
+-   0 — входящие значения типа `ENUM` сначала сопоставляются с элементами перечисления, а если совпадений не найдено, то трактуются как порядковые номера.
+-   1 — входящие значения типа `ENUM` сразу трактуются как порядковые номера.
 
 Значение по умолчанию: 0.
 
@@ -410,10 +412,39 @@ CREATE TABLE table_with_enum_column_for_tsv_insert (Id Int32,Value Enum('first' 
 
 При включенной настройке `input_format_tsv_enum_as_number`:
 
+Запрос:
+
 ```sql
 SET input_format_tsv_enum_as_number = 1;
 INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
-INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	1;
+SELECT * FROM table_with_enum_column_for_tsv_insert;
+```
+
+Результат:
+
+```text
+┌──Id─┬─Value──┐
+│ 102 │ second │
+└─────┴────────┘
+```
+
+Запрос:
+
+```sql
+SET input_format_tsv_enum_as_number = 1;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	'first';
+```
+
+сгенерирует исключение.
+
+При отключенной настройке `input_format_tsv_enum_as_number`:
+
+Запрос:
+
+```sql
+SET input_format_tsv_enum_as_number = 0;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	'first';
 SELECT * FROM table_with_enum_column_for_tsv_insert;
 ```
 
@@ -427,15 +458,6 @@ SELECT * FROM table_with_enum_column_for_tsv_insert;
 │ 103 │ first  │
 └─────┴────────┘
 ```
-
-При отключенной настройке `input_format_tsv_enum_as_number` запрос `INSERT`:
-
-```sql
-SET input_format_tsv_enum_as_number = 0;
-INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
-```
-
-сгенерирует исключение.
 
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
@@ -807,26 +829,6 @@ ClickHouse может парсить только базовый формат `Y
 
 Значение по умолчанию: 2013265920.
 
-## merge_tree_clear_old_temporary_directories_interval_seconds {#setting-merge-tree-clear-old-temporary-directories-interval-seconds}
-
-Задает интервал в секундах для удаления старых временных каталогов на сервере ClickHouse.
-
-Возможные значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: `60` секунд.
-
-## merge_tree_clear_old_parts_interval_seconds {#setting-merge-tree-clear-old-parts-interval-seconds}
-
-Задает интервал в секундах для удаления старых кусков данных, журналов предзаписи (WAL) и мутаций на сервере ClickHouse .
-
-Возможные значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: `1` секунда.
-
 ## min_bytes_to_use_direct_io {#settings-min-bytes-to-use-direct-io}
 
 Минимальный объём данных, необходимый для прямого (небуферизованного) чтения/записи (direct I/O) на диск.
@@ -912,11 +914,18 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 
 ## log_query_threads {#settings-log-query-threads}
 
-Установка логирования информации о потоках выполнения запроса.
+Управляет логированием информации о потоках выполнения запросов.
 
-Лог информации о потоках выполнения запросов, переданных в ClickHouse с этой установкой, записывается согласно правилам конфигурационного параметра сервера [query_thread_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log).
+Информация о потоках выполнения запросов сохраняется в системной таблице [system.query_thread_log](../../operations/system-tables/query_thread_log.md). Работает только в том случае, если включена настройка [log_queries](#settings-log-queries). Лог информации о потоках выполнения запросов, переданных в ClickHouse с этой установкой, записывается согласно правилам конфигурационного параметра сервера [query_thread_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log).
 
-Пример:
+Возможные значения:
+
+-   0 — отключено.
+-   1 — включено.
+
+Значение по умолчанию: `1`.
+
+**Пример**
 
 ``` text
 log_query_threads=1
@@ -1524,12 +1533,13 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 ## input_format_csv_enum_as_number {#settings-input_format_csv_enum_as_number}
 
-Включает или отключает парсинг значений перечислений как идентификаторов перечислений для входного формата CSV.
+Включает или отключает парсинг значений перечислений как порядковых номеров. 
+Если режим включен, то во входящих данных в формате `CSV` значения перечисления (тип `ENUM`) всегда трактуются как порядковые номера, а не как элементы перечисления. Эту настройку рекомендуется включать для оптимизации парсинга, если данные типа `ENUM` содержат только порядковые номера, а не сами элементы перечисления.
 
 Возможные значения:
 
--   0 — парсинг значений перечисления как значений.
--   1 — парсинг значений перечисления как идентификаторов перечисления.
+-   0 — входящие значения типа `ENUM` сначала сопоставляются с элементами перечисления, а если совпадений не найдено, то трактуются как порядковые номера.
+-   1 — входящие значения типа `ENUM` сразу трактуются как порядковые номера.
 
 Значение по умолчанию: 0.
 
@@ -1543,10 +1553,11 @@ CREATE TABLE table_with_enum_column_for_csv_insert (Id Int32,Value Enum('first' 
 
 При включенной настройке `input_format_csv_enum_as_number`:
 
+Запрос:
+
 ```sql
 SET input_format_csv_enum_as_number = 1;
 INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2;
-SELECT * FROM table_with_enum_column_for_csv_insert;
 ```
 
 Результат:
@@ -1557,14 +1568,36 @@ SELECT * FROM table_with_enum_column_for_csv_insert;
 └─────┴────────┘
 ```
 
-При отключенной настройке `input_format_csv_enum_as_number` запрос `INSERT`:
+Запрос:
 
 ```sql
-SET input_format_csv_enum_as_number = 0;
-INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2;
+SET input_format_csv_enum_as_number = 1;
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 103,'first'
 ```
 
 сгенерирует исключение.
+
+При отключенной настройке `input_format_csv_enum_as_number`:
+
+Запрос:
+
+```sql
+SET input_format_csv_enum_as_number = 0;
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 103,'first'
+SELECT * FROM table_with_enum_column_for_csv_insert;
+```
+
+Результат:
+
+```text
+┌──Id─┬─Value──┐
+│ 102 │ second │
+└─────┴────────┘
+┌──Id─┬─Value─┐
+│ 103 │ first │
+└─────┴───────┘
+```
 
 ## output_format_csv_crlf_end_of_line {#settings-output-format-csv-crlf-end-of-line}
 
@@ -3807,6 +3840,40 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 -   0 — ожидание отключено.
 
 Значение по умолчанию: `0`.
+
+## alter_partition_verbose_result {#alter-partition-verbose-result}
+
+Включает или отключает вывод информации о кусках, к которым были успешно применены операции манипуляции с партициями и кусками. Применимо к [ATTACH PARTITION|PART](../../sql-reference/statements/alter/partition.md#alter_attach-partition) и к [FREEZE PARTITION](../../sql-reference/statements/alter/partition.md#alter_freeze-partition)
+
+Возможные значения:
+
+-   0 — отображение отключено.
+-   1 — отображение включено.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+```sql
+CREATE TABLE test(a Int64, d Date, s String) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY a;
+INSERT INTO test VALUES(1, '2021-01-01', '');
+INSERT INTO test VALUES(1, '2021-01-01', '');
+ALTER TABLE test DETACH PARTITION ID '202101';
+
+ALTER TABLE test ATTACH PARTITION ID '202101' SETTINGS alter_partition_verbose_result = 1;
+
+┌─command_type─────┬─partition_id─┬─part_name────┬─old_part_name─┐
+│ ATTACH PARTITION │ 202101       │ 202101_7_7_0 │ 202101_5_5_0  │
+│ ATTACH PARTITION │ 202101       │ 202101_8_8_0 │ 202101_6_6_0  │
+└──────────────────┴──────────────┴──────────────┴───────────────┘
+
+ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
+
+┌─command_type─┬─partition_id─┬─part_name────┬─backup_name─┬─backup_path───────────────────┬─part_backup_path────────────────────────────────────────────┐
+│ FREEZE ALL   │ 202101       │ 202101_7_7_0 │ 8           │ /var/lib/clickhouse/shadow/8/ │ /var/lib/clickhouse/shadow/8/data/default/test/202101_7_7_0 │
+│ FREEZE ALL   │ 202101       │ 202101_8_8_0 │ 8           │ /var/lib/clickhouse/shadow/8/ │ /var/lib/clickhouse/shadow/8/data/default/test/202101_8_8_0 │
+└──────────────┴──────────────┴──────────────┴─────────────┴───────────────────────────────┴─────────────────────────────────────────────────────────────┘
+```
 
 ## format_capn_proto_enum_comparising_mode {#format-capn-proto-enum-comparising-mode}
 

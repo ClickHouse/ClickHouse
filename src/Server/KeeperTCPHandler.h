@@ -93,7 +93,7 @@ private:
 
     Poco::Timestamp established;
 
-    using Operations = std::map<Coordination::XID, Poco::Timestamp>;
+    using Operations = std::unordered_map<Coordination::XID, Poco::Timestamp>;
     Operations operations;
 
     LastOpMultiVersion last_op;

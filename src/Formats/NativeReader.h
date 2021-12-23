@@ -31,7 +31,7 @@ public:
         IndexForNativeFormat::Blocks::const_iterator index_block_it_,
         IndexForNativeFormat::Blocks::const_iterator index_block_end_);
 
-    static void readData(const IDataType & type, ColumnPtr & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint);
+    static void readData(const ISerialization & serialization, ColumnPtr & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint);
 
     Block getHeader() const;
 
