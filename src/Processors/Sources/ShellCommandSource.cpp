@@ -104,8 +104,9 @@ namespace
         {
             rethrowExceptionDuringSendDataIfNeeded();
 
-            if (configuration.read_fixed_number_of_rows && configuration.number_of_rows_to_read >= current_read_rows)
+            if (configuration.read_fixed_number_of_rows && current_read_rows >= configuration.number_of_rows_to_read) {
                 return {};
+            }
 
             Chunk chunk;
 

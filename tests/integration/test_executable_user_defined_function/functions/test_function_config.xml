@@ -1,0 +1,59 @@
+<functions>
+    <function>
+        <type>executable</type>
+        <name>test_function_bash</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>test_input.sh</command>
+    </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_pool_bash</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>test_input.sh</command>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>test_input.py</command>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_sum_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>test_input_sum.py</command>
+    </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>test_input.py</command>
+    </function>
+</functions>
