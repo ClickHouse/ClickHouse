@@ -145,7 +145,7 @@ void ExternalDataSourceCache::recoverCachedFilesMetadata(
                 invalid_paths.emplace_back(path);
                 continue;
             }
-            if (!lru_caches->set(path, cache_controller))
+            if (!lru_caches->trySet(path, cache_controller))
             {
                 invalid_paths.emplace_back(path);
             }
@@ -244,7 +244,7 @@ ExternalDataSourceCache::createReader(ContextPtr context, IRemoteFileMetadataPtr
 
     // cache is not found or is invalid
     auto new_cache = std::make_shared<RemoteCacheController>(remote_file_metadata, local_path, local_cache_bytes_read_before_flush);
-    if (!lru_caches->set(local_path, new_cache))
+    if (!lru_caches->trySet(local_path, new_cache))
     {
         LOG_ERROR(log, "Insert the new cache failed. new file size:{}, current total size:{}",
                 remote_file_metadata->file_size,
