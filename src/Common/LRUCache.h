@@ -367,7 +367,7 @@ private:
         {
             if (!evict_policy.canRelease(cell.value))
             {
-                // the old value is refered by someone, cannot release now
+                // the old value is referred by someone, cannot release now
                 // in default policy, it is always true.
                 return false;
             }
