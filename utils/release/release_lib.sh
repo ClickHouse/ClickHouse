@@ -168,7 +168,7 @@ function gen_changelog {
         -e "s/[@]VERSION_STRING[@]/$VERSION_STRING/g" \
         -e "s/[@]DATE[@]/$CHDATE/g" \
         -e "s/[@]AUTHOR[@]/$AUTHOR/g" \
-        -e "s/[@]EMAIL[@]/$(whoami)@yandex-team.ru/g" \
+        -e "s/[@]EMAIL[@]/$(whoami)@clickhouse.com/g" \
         < $CHLOG.in > $CHLOG
 }
 

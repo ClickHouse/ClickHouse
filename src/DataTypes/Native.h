@@ -1,8 +1,6 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #if USE_EMBEDDED_COMPILER
 #    include <Common/Exception.h>
@@ -29,7 +27,7 @@ namespace ErrorCodes
 static inline bool typeIsSigned(const IDataType & type)
 {
     WhichDataType data_type(type);
-    return data_type.isNativeInt() || data_type.isFloat();
+    return data_type.isNativeInt() || data_type.isFloat() || data_type.isEnum();
 }
 
 static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const IDataType & type)
@@ -57,8 +55,50 @@ static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const IDa
         return builder.getFloatTy();
     else if (data_type.isFloat64())
         return builder.getDoubleTy();
+    else if (data_type.isEnum8())
+        return builder.getInt8Ty();
+    else if (data_type.isEnum16())
+        return builder.getInt16Ty();
 
     return nullptr;
+}
+
+template <typename ToType>
+static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder)
+{
+    if constexpr (std::is_same_v<ToType, Int8> || std::is_same_v<ToType, UInt8>)
+        return builder.getInt8Ty();
+    else if constexpr (std::is_same_v<ToType, Int16> || std::is_same_v<ToType, UInt16>)
+        return builder.getInt16Ty();
+    else if constexpr (std::is_same_v<ToType, Int32> || std::is_same_v<ToType, UInt32>)
+        return builder.getInt32Ty();
+    else if constexpr (std::is_same_v<ToType, Int64> || std::is_same_v<ToType, UInt64>)
+        return builder.getInt64Ty();
+    else if constexpr (std::is_same_v<ToType, Float32>)
+        return builder.getFloatTy();
+    else if constexpr (std::is_same_v<ToType, Float64>)
+        return builder.getDoubleTy();
+
+    return nullptr;
+}
+
+template <typename Type>
+static inline bool canBeNativeType()
+{
+    if constexpr (std::is_same_v<Type, Int8> || std::is_same_v<Type, UInt8>)
+        return true;
+    else if constexpr (std::is_same_v<Type, Int16> || std::is_same_v<Type, UInt16>)
+        return true;
+    else if constexpr (std::is_same_v<Type, Int32> || std::is_same_v<Type, UInt32>)
+        return true;
+    else if constexpr (std::is_same_v<Type, Int64> || std::is_same_v<Type, UInt64>)
+        return true;
+    else if constexpr (std::is_same_v<Type, Float32>)
+        return true;
+    else if constexpr (std::is_same_v<Type, Float64>)
+        return true;
+
+    return false;
 }
 
 static inline bool canBeNativeType(const IDataType & type)
@@ -71,7 +111,7 @@ static inline bool canBeNativeType(const IDataType & type)
         return canBeNativeType(*data_type_nullable.getNestedType());
     }
 
-    return data_type.isNativeInt() || data_type.isNativeUInt() || data_type.isFloat() || data_type.isDate();
+    return data_type.isNativeInt() || data_type.isNativeUInt() || data_type.isFloat() || data_type.isDate() || data_type.isEnum();
 }
 
 static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const DataTypePtr & type)
@@ -79,38 +119,60 @@ static inline llvm::Type * toNativeType(llvm::IRBuilderBase & builder, const Dat
     return toNativeType(builder, *type);
 }
 
-static inline llvm::Value * nativeBoolCast(llvm::IRBuilder<> & b, const DataTypePtr & from, llvm::Value * value)
+static inline llvm::Value * nativeBoolCast(llvm::IRBuilder<> & b, const DataTypePtr & from_type, llvm::Value * value)
 {
-    if (from->isNullable())
+    if (from_type->isNullable())
     {
-        auto * inner = nativeBoolCast(b, removeNullable(from), b.CreateExtractValue(value, {0}));
+        auto * inner = nativeBoolCast(b, removeNullable(from_type), b.CreateExtractValue(value, {0}));
         return b.CreateAnd(b.CreateNot(b.CreateExtractValue(value, {1})), inner);
     }
     auto * zero = llvm::Constant::getNullValue(value->getType());
+
     if (value->getType()->isIntegerTy())
         return b.CreateICmpNE(value, zero);
     if (value->getType()->isFloatingPointTy())
         return b.CreateFCmpONE(value, zero); /// QNaN is false
 
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cast non-number {} to bool", from->getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cast non-number {} to bool", from_type->getName());
 }
 
-static inline llvm::Value * nativeCast(llvm::IRBuilder<> & b, const DataTypePtr & from, llvm::Value * value, llvm::Type * to)
+static inline llvm::Value * nativeCast(llvm::IRBuilder<> & b, const DataTypePtr & from, llvm::Value * value, llvm::Type * to_type)
 {
-    auto * n_from = value->getType();
+    auto * from_type = value->getType();
 
-    if (n_from == to)
+    if (from_type == to_type)
         return value;
-    else if (n_from->isIntegerTy() && to->isFloatingPointTy())
-        return typeIsSigned(*from) ? b.CreateSIToFP(value, to) : b.CreateUIToFP(value, to);
-    else if (n_from->isFloatingPointTy() && to->isIntegerTy())
-        return typeIsSigned(*from) ? b.CreateFPToSI(value, to) : b.CreateFPToUI(value, to);
-    else if (n_from->isIntegerTy() && to->isIntegerTy())
-        return b.CreateIntCast(value, to, typeIsSigned(*from));
-    else if (n_from->isFloatingPointTy() && to->isFloatingPointTy())
-        return b.CreateFPCast(value, to);
+    else if (from_type->isIntegerTy() && to_type->isFloatingPointTy())
+        return typeIsSigned(*from) ? b.CreateSIToFP(value, to_type) : b.CreateUIToFP(value, to_type);
+    else if (from_type->isFloatingPointTy() && to_type->isIntegerTy())
+        return typeIsSigned(*from) ? b.CreateFPToSI(value, to_type) : b.CreateFPToUI(value, to_type);
+    else if (from_type->isIntegerTy() && to_type->isIntegerTy())
+        return b.CreateIntCast(value, to_type, typeIsSigned(*from));
+    else if (from_type->isFloatingPointTy() && to_type->isFloatingPointTy())
+        return b.CreateFPCast(value, to_type);
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cast {} to requested type", from->getName());
+}
+
+template <typename FromType>
+static inline llvm::Value * nativeCast(llvm::IRBuilder<> & b, llvm::Value * value, llvm::Type * to_type)
+{
+    auto * from_type = value->getType();
+
+    static constexpr bool from_type_is_signed = std::numeric_limits<FromType>::is_signed;
+
+    if (from_type == to_type)
+        return value;
+    else if (from_type->isIntegerTy() && to_type->isFloatingPointTy())
+        return from_type_is_signed ? b.CreateSIToFP(value, to_type) : b.CreateUIToFP(value, to_type);
+    else if (from_type->isFloatingPointTy() && to_type->isIntegerTy())
+        return from_type_is_signed ? b.CreateFPToSI(value, to_type) : b.CreateFPToUI(value, to_type);
+    else if (from_type->isIntegerTy() && to_type->isIntegerTy())
+        return b.CreateIntCast(value, to_type, from_type_is_signed);
+    else if (from_type->isFloatingPointTy() && to_type->isFloatingPointTy())
+        return b.CreateFPCast(value, to_type);
+
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cast {} to requested type", TypeName<FromType>);
 }
 
 static inline llvm::Value * nativeCast(llvm::IRBuilder<> & b, const DataTypePtr & from, llvm::Value * value, const DataTypePtr & to)
@@ -137,6 +199,37 @@ static inline llvm::Value * nativeCast(llvm::IRBuilder<> & b, const DataTypePtr 
     }
 
     return nativeCast(b, from, value, n_to);
+}
+
+static inline std::pair<llvm::Value *, llvm::Value *> nativeCastToCommon(llvm::IRBuilder<> & b, const DataTypePtr & lhs_type, llvm::Value * lhs, const DataTypePtr & rhs_type, llvm::Value * rhs)
+{
+    llvm::Type * common;
+
+    bool lhs_is_signed = typeIsSigned(*lhs_type);
+    bool rhs_is_signed = typeIsSigned(*rhs_type);
+
+    if (lhs->getType()->isIntegerTy() && rhs->getType()->isIntegerTy())
+    {
+        /// if one integer has a sign bit, make sure the other does as well. llvm generates optimal code
+        /// (e.g. uses overflow flag on x86) for (word size + 1)-bit integer operations.
+
+        size_t lhs_bit_width = lhs->getType()->getIntegerBitWidth() + (!lhs_is_signed && rhs_is_signed);
+        size_t rhs_bit_width = rhs->getType()->getIntegerBitWidth() + (!rhs_is_signed && lhs_is_signed);
+
+        size_t max_bit_width = std::max(lhs_bit_width, rhs_bit_width);
+        common = b.getIntNTy(max_bit_width);
+    }
+    else
+    {
+        /// TODO: Check
+        /// (double, float) or (double, int_N where N <= double's mantissa width) -> double
+        common = b.getDoubleTy();
+    }
+
+    auto * cast_lhs_to_common = nativeCast(b, lhs_type, lhs, common);
+    auto * cast_rhs_to_common = nativeCast(b, rhs_type, rhs, common);
+
+    return std::make_pair(cast_lhs_to_common, cast_rhs_to_common);
 }
 
 static inline llvm::Constant * getColumnNativeValue(llvm::IRBuilderBase & builder, const DataTypePtr & column_type, const IColumn & column, size_t index)
@@ -175,7 +268,7 @@ static inline llvm::Constant * getColumnNativeValue(llvm::IRBuilderBase & builde
     {
         return llvm::ConstantInt::get(type, column.getUInt(index));
     }
-    else if (column_data_type.isNativeInt())
+    else if (column_data_type.isNativeInt() || column_data_type.isEnum())
     {
         return llvm::ConstantInt::get(type, column.getInt(index));
     }

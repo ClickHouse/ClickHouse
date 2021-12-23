@@ -14,33 +14,35 @@
 namespace DB
 {
 
-struct CassandraSettings
-{
-    String host;
-    UInt16 port;
-    String user;
-    String password;
-    String db;
-    String table;
-
-    CassConsistency consistency;
-    bool allow_filtering;
-    /// TODO get information about key from the driver
-    size_t partition_key_prefix;
-    size_t max_threads;
-    String where;
-
-    CassandraSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
-
-    void setConsistency(const String & config_str);
-};
-
 class CassandraDictionarySource final : public IDictionarySource
 {
 public:
+
+    struct Configuration
+    {
+        String host;
+        UInt16 port;
+        String user;
+        String password;
+        String db;
+        String table;
+        String query;
+
+        CassConsistency consistency;
+        bool allow_filtering;
+        /// TODO get information about key from the driver
+        size_t partition_key_prefix;
+        size_t max_threads;
+        String where;
+
+        Configuration(const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+
+        void setConsistency(const String & config_str);
+    };
+
     CassandraDictionarySource(
         const DictionaryStructure & dict_struct,
-        const CassandraSettings & settings_,
+        const Configuration & configuration,
         const Block & sample_block);
 
     CassandraDictionarySource(
@@ -49,7 +51,7 @@ public:
             const String & config_prefix,
             Block & sample_block);
 
-    BlockInputStreamPtr loadAll() override;
+    Pipe loadAll() override;
 
     bool supportsSelectiveLoad() const override { return true; }
 
@@ -59,14 +61,14 @@ public:
 
     DictionarySourcePtr clone() const override
     {
-        return std::make_unique<CassandraDictionarySource>(dict_struct, settings, sample_block);
+        return std::make_shared<CassandraDictionarySource>(dict_struct, configuration, sample_block);
     }
 
-    BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
+    Pipe loadIds(const std::vector<UInt64> & ids) override;
 
-    BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    Pipe loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
-    BlockInputStreamPtr loadUpdatedAll() override;
+    Pipe loadUpdatedAll() override;
 
     String toString() const override;
 
@@ -76,7 +78,7 @@ private:
 
     Poco::Logger * log;
     const DictionaryStructure dict_struct;
-    const CassandraSettings settings;
+    const Configuration configuration;
     Block sample_block;
     ExternalQueryBuilder query_builder;
 

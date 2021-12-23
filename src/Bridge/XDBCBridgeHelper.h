@@ -3,7 +3,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Interpreters/Context.h>
-#include <Access/AccessType.h>
+#include <Access/Common/AccessType.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -11,13 +11,11 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
 #include <IO/ConnectionTimeoutsContext.h>
-#include <common/logger_useful.h>
-#include <common/range.h>
+#include <base/logger_useful.h>
+#include <base/range.h>
 #include <Bridge/IBridgeHelper.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 
 namespace DB
@@ -60,20 +58,33 @@ public:
     static constexpr inline auto SCHEMA_ALLOWED_HANDLER = "/schema_allowed";
 
     XDBCBridgeHelper(
-        ContextPtr context_,
-        Poco::Timespan http_timeout_,
-        const std::string & connection_string_)
-    : IXDBCBridgeHelper(context_->getGlobalContext())
-    , log(&Poco::Logger::get(BridgeHelperMixin::getName() + "BridgeHelper"))
-    , connection_string(connection_string_)
-    , http_timeout(http_timeout_)
-    , config(context_->getGlobalContext()->getConfigRef())
-{
-    bridge_host = config.getString(BridgeHelperMixin::configPrefix() + ".host", DEFAULT_HOST);
-    bridge_port = config.getUInt(BridgeHelperMixin::configPrefix() + ".port", DEFAULT_PORT);
-}
+            ContextPtr context_,
+            Poco::Timespan http_timeout_,
+            const std::string & connection_string_)
+        : IXDBCBridgeHelper(context_->getGlobalContext())
+        , log(&Poco::Logger::get(BridgeHelperMixin::getName() + "BridgeHelper"))
+        , connection_string(connection_string_)
+        , http_timeout(http_timeout_)
+        , config(context_->getGlobalContext()->getConfigRef())
+    {
+        bridge_host = config.getString(BridgeHelperMixin::configPrefix() + ".host", DEFAULT_HOST);
+        bridge_port = config.getUInt(BridgeHelperMixin::configPrefix() + ".port", DEFAULT_PORT);
+    }
 
 protected:
+    bool bridgeHandShake() override
+    {
+        try
+        {
+            ReadWriteBufferFromHTTP buf(getPingURI(), Poco::Net::HTTPRequest::HTTP_GET, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()), credentials);
+            return checkString(PING_OK_ANSWER, buf);
+        }
+        catch (...)
+        {
+            return false;
+        }
+    }
+
     auto getConnectionString() const { return connection_string; }
 
     String getName() const override { return BridgeHelperMixin::getName(); }
@@ -124,6 +135,8 @@ private:
     std::optional<IdentifierQuotingStyle> quote_style;
     std::optional<bool> is_schema_allowed;
 
+    Poco::Net::HTTPBasicCredentials credentials{};
+
 
 protected:
     using URLParams = std::vector<std::pair<std::string, std::string>>;
@@ -155,7 +168,7 @@ protected:
             uri.setPath(SCHEMA_ALLOWED_HANDLER);
             uri.addQueryParameter("connection_string", getConnectionString());
 
-            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()));
+            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()), credentials);
 
             bool res;
             readBoolText(res, buf);
@@ -175,7 +188,7 @@ protected:
             uri.setPath(IDENTIFIER_QUOTE_HANDLER);
             uri.addQueryParameter("connection_string", getConnectionString());
 
-            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()));
+            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()), credentials);
 
             std::string character;
             readStringBinary(character, buf);

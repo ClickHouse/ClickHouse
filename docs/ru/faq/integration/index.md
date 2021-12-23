@@ -16,4 +16,4 @@ toc_title: Интеграция
 !!! info "Если вы не нашли то, что искали"
     Загляните в другие подразделы F.A.Q. или поищите в остальных разделах документации, ориентируйтесь по оглавлению слева.
 
-[Original article](https://clickhouse.tech/docs/ru/faq/integration/)
+[Original article](https://clickhouse.com/docs/ru/faq/integration/)

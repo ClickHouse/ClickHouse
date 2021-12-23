@@ -1,13 +1,14 @@
 #include <Storages/HDFS/HDFSCommon.h>
 #include <Poco/URI.h>
 #include <boost/algorithm/string/replace.hpp>
+#include <re2/re2.h>
 
 #if USE_HDFS
 #include <Common/ShellCommand.h>
 #include <Common/Exception.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -21,6 +22,7 @@ namespace ErrorCodes
 }
 
 const String HDFSBuilderWrapper::CONFIG_PREFIX = "hdfs";
+const String HDFS_URL_REGEXP = "^hdfs://[^/]*/.*";
 
 void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration & config,
     const String & config_path, bool isUser)
@@ -123,6 +125,12 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
     if (host.empty())
         throw Exception("Illegal HDFS URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
 
+    // Shall set env LIBHDFS3_CONF *before* HDFSBuilderWrapper construction.
+    const String & libhdfs3_conf = config.getString(HDFSBuilderWrapper::CONFIG_PREFIX + ".libhdfs3_conf", "");
+    if (!libhdfs3_conf.empty())
+    {
+        setenv("LIBHDFS3_CONF", libhdfs3_conf.c_str(), 1);
+    }
     HDFSBuilderWrapper builder;
     if (builder.get() == nullptr)
         throw Exception("Unable to create builder to connect to HDFS: " +
@@ -189,6 +197,12 @@ HDFSFSPtr createHDFSFS(hdfsBuilder * builder)
             ErrorCodes::NETWORK_ERROR);
 
     return fs;
+}
+
+void checkHDFSURL(const String & url)
+{
+    if (!re2::RE2::FullMatch(url, HDFS_URL_REGEXP))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad hdfs url: {}. It should have structure 'hdfs://<host_name>:<port>/<path>'", url);
 }
 
 }

@@ -3,7 +3,7 @@
 #include <memory>
 #include <boost/noncopyable.hpp>
 #include <Compression/CompressionInfo.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Parsers/IAST.h>
 #include <Common/SipHash.h>
 
@@ -17,6 +17,8 @@ using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 using Codecs = std::vector<CompressionCodecPtr>;
 
 class IDataType;
+
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 
 /**
 * Represents interface for compression codecs like LZ4, ZSTD, etc.
@@ -73,6 +75,9 @@ public:
     /// Is it a generic compression algorithm like lz4, zstd. Usually it does not make sense to apply generic compression more than single time.
     virtual bool isGenericCompression() const = 0;
 
+    /// If it is a post-processing codec such as encryption. Usually it does not make sense to apply non-post-processing codecs after this.
+    virtual bool isEncryption() const { return false; }
+
     /// It is a codec available only for evaluation purposes and not meant to be used in production.
     /// It will not be allowed to use unless the user will turn off the safety switch.
     virtual bool isExperimental() const { return false; }
@@ -81,6 +86,8 @@ public:
     virtual bool isNone() const { return false; }
 
 protected:
+    /// This is used for fuzz testing
+    friend int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size);
 
     /// Return size of compressed data without header
     virtual UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const { return uncompressed_size; }

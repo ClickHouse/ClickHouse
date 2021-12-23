@@ -8,14 +8,15 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/interpretSubquery.h>
+#include <Interpreters/SubqueryForSet.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Sinks/SinkToStorage.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -62,7 +63,7 @@ public:
                 return;
 
             bool is_table = false;
-            ASTPtr subquery_or_table_name = ast; /// ASTTableIdentifier | ASTSubquery | ASTTableExpression
+            ASTPtr subquery_or_table_name; /// ASTTableIdentifier | ASTSubquery | ASTTableExpression
 
             if (const auto * ast_table_expr = ast->as<ASTTableExpression>())
             {
@@ -75,7 +76,14 @@ public:
                 }
             }
             else if (ast->as<ASTTableIdentifier>())
+            {
+                subquery_or_table_name = ast;
                 is_table = true;
+            }
+            else if (ast->as<ASTSubquery>())
+            {
+                subquery_or_table_name = ast;
+            }
 
             if (!subquery_or_table_name)
                 throw Exception("Global subquery requires subquery or table name", ErrorCodes::WRONG_GLOBAL_SUBQUERY);
@@ -150,14 +158,9 @@ public:
                 auto external_table = external_storage_holder->getTable();
                 auto table_out = external_table->write({}, external_table->getInMemoryMetadataPtr(), getContext());
                 auto io = interpreter->execute();
-                PullingPipelineExecutor executor(io.pipeline);
-
-                table_out->writePrefix();
-                Block block;
-                while (executor.pull(block))
-                    table_out->write(block);
-
-                table_out->writeSuffix();
+                io.pipeline.complete(std::move(table_out));
+                CompletedPipelineExecutor executor(io.pipeline);
+                executor.execute();
             }
             else
             {
@@ -198,8 +201,9 @@ private:
         {
             ASTPtr & ast = func.arguments->children[1];
 
-            /// Literal can use regular IN
-            if (ast->as<ASTLiteral>())
+            /// Literal or function can use regular IN.
+            /// NOTE: We don't support passing table functions to IN.
+            if (ast->as<ASTLiteral>() || ast->as<ASTFunction>())
             {
                 if (func.name == "globalIn")
                     func.name = "in";

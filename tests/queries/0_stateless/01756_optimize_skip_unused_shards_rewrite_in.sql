@@ -1,3 +1,5 @@
+-- Tags: shard
+
 -- NOTE: this test cannot use 'current_database = currentDatabase()',
 -- because it does not propagated via remote queries,
 -- hence it uses 'with (select currentDatabase()) as X'
@@ -33,8 +35,8 @@ select query from system.query_log where
     event_date = today() and
     event_time > now() - interval 1 hour and
     not is_initial_query and
-    query not like '%system.query_log%' and
-    query like concat('WITH%', currentDatabase(), '%AS id_no %') and
+    query not like '%system%query_log%' and
+    query like concat('WITH%', currentDatabase(), '%AS `id_no` %') and
     type = 'QueryFinish'
 order by query;
 
@@ -52,8 +54,8 @@ select query from system.query_log where
     event_date = today() and
     event_time > now() - interval 1 hour and
     not is_initial_query and
-    query not like '%system.query_log%' and
-    query like concat('WITH%', currentDatabase(), '%AS id_02 %') and
+    query not like '%system%query_log%' and
+    query like concat('WITH%', currentDatabase(), '%AS `id_02` %') and
     type = 'QueryFinish'
 order by query;
 
@@ -64,8 +66,8 @@ select query from system.query_log where
     event_date = today() and
     event_time > now() - interval 1 hour and
     not is_initial_query and
-    query not like '%system.query_log%' and
-    query like concat('WITH%', currentDatabase(), '%AS id_2 %') and
+    query not like '%system%query_log%' and
+    query like concat('WITH%', currentDatabase(), '%AS `id_2` %') and
     type = 'QueryFinish'
 order by query;
 
@@ -76,14 +78,15 @@ select query from system.query_log where
     event_date = today() and
     event_time > now() - interval 1 hour and
     not is_initial_query and
-    query not like '%system.query_log%' and
-    query like concat('WITH%', currentDatabase(), '%AS id_0 %') and
+    query not like '%system%query_log%' and
+    query like concat('WITH%', currentDatabase(), '%AS `id_0` %') and
     type = 'QueryFinish'
 order by query;
 
 -- not tuple
 select * from dist_01756 where dummy in (0);
 select * from dist_01756 where dummy in ('0');
+
 
 --
 -- errors
@@ -93,8 +96,6 @@ select 'errors';
 -- optimize_skip_unused_shards does not support non-constants
 select * from dist_01756 where dummy in (select * from system.one); -- { serverError 507 }
 select * from dist_01756 where dummy in (toUInt8(0)); -- { serverError 507 }
--- intHash64 does not accept string
-select * from dist_01756 where dummy in ('0', '2'); -- { serverError 43 }
 -- NOT IN does not supported
 select * from dist_01756 where dummy not in (0, 2); -- { serverError 507 }
 
@@ -126,6 +127,8 @@ select 'different types -- conversion';
 create table dist_01756_column as system.one engine=Distributed(test_cluster_two_shards, system, one, dummy);
 select * from dist_01756_column where dummy in (0, '255');
 select * from dist_01756_column where dummy in (0, '255foo'); -- { serverError 53 }
+-- intHash64 does not accept string, but implicit conversion should be done
+select * from dist_01756 where dummy in ('0', '2');
 
 -- optimize_skip_unused_shards_limit
 select 'optimize_skip_unused_shards_limit';

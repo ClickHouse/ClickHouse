@@ -12,7 +12,7 @@ For information on connecting and configuring external dictionaries, see [Extern
 
 ## dictGet, dictGetOrDefault, dictGetOrNull {#dictget}
 
-Retrieves values from an external dictionary. 
+Retrieves values from an external dictionary.
 
 ``` sql
 dictGet('dict_name', attr_names, id_expr)
@@ -24,7 +24,7 @@ dictGetOrNull('dict_name', attr_name, id_expr)
 
 -   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
 -   `attr_names` — Name of the column of the dictionary, [String literal](../../sql-reference/syntax.md#syntax-string-literal), or tuple of column names, [Tuple](../../sql-reference/data-types/tuple.md)([String literal](../../sql-reference/syntax.md#syntax-string-literal)).
--   `id_expr` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md) or [Tuple](../../sql-reference/data-types/tuple.md)-type value depending on the dictionary configuration.
+-   `id_expr` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning dictionary key-type value or [Tuple](../../sql-reference/data-types/tuple.md)-type value depending on the dictionary configuration.
 -   `default_value_expr` — Values returned if the dictionary does not contain a row with the `id_expr` key. [Expression](../../sql-reference/syntax.md#syntax-expressions) or [Tuple](../../sql-reference/data-types/tuple.md)([Expression](../../sql-reference/syntax.md#syntax-expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
 
 **Returned value**
@@ -53,7 +53,7 @@ The first column is `id`, the second column is `c1`.
 Configure the external dictionary:
 
 ``` xml
-<yandex>
+<clickhouse>
     <dictionary>
         <name>ext-dict-test</name>
         <source>
@@ -77,7 +77,7 @@ Configure the external dictionary:
         </structure>
         <lifetime>0</lifetime>
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 Perform the query:
@@ -87,7 +87,7 @@ SELECT
     dictGetOrDefault('ext-dict-test', 'c1', number + 1, toUInt32(number * 10)) AS val,
     toTypeName(val) AS type
 FROM system.numbers
-LIMIT 3
+LIMIT 3;
 ```
 
 ``` text
@@ -113,7 +113,7 @@ The first column is `id`, the second is `c1`, the third is `c2`.
 Configure the external dictionary:
 
 ``` xml
-<yandex>
+<clickhouse>
     <dictionary>
         <name>ext-dict-mult</name>
         <source>
@@ -138,11 +138,11 @@ Configure the external dictionary:
                 <name>c2</name>
                 <type>String</type>
                 <null_value></null_value>
-            </attribute>            
+            </attribute>
         </structure>
         <lifetime>0</lifetime>
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 Perform the query:
@@ -237,7 +237,7 @@ dictHas('dict_name', id_expr)
 **Arguments**
 
 -   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
--   `id_expr` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md) or [Tuple](../../sql-reference/data-types/tuple.md)-type value depending on the dictionary configuration.
+-   `id_expr` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning dictionary key-type value or [Tuple](../../sql-reference/data-types/tuple.md)-type value depending on the dictionary configuration.
 
 **Returned value**
 
@@ -292,16 +292,16 @@ Type: `UInt8`.
 
 Returns first-level children as an array of indexes. It is the inverse transformation for [dictGetHierarchy](#dictgethierarchy).
 
-**Syntax** 
+**Syntax**
 
 ``` sql
 dictGetChildren(dict_name, key)
 ```
 
-**Arguments** 
+**Arguments**
 
--   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal). 
--   `key` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md)-type value. 
+-   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
+-   `key` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md)-type value.
 
 **Returned values**
 
@@ -339,7 +339,7 @@ SELECT dictGetChildren('hierarchy_flat_dictionary', number) FROM system.numbers 
 
 ## dictGetDescendant {#dictgetdescendant}
 
-Returns all descendants as if [dictGetChildren](#dictgetchildren) function was applied `level` times recursively.  
+Returns all descendants as if [dictGetChildren](#dictgetchildren) function was applied `level` times recursively.
 
 **Syntax**
 
@@ -347,9 +347,9 @@ Returns all descendants as if [dictGetChildren](#dictgetchildren) function was a
 dictGetDescendants(dict_name, key, level)
 ```
 
-**Arguments** 
+**Arguments**
 
--   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal). 
+-   `dict_name` — Name of the dictionary. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
 -   `key` — Key value. [Expression](../../sql-reference/syntax.md#syntax-expressions) returning a [UInt64](../../sql-reference/data-types/int-uint.md)-type value.
 -   `level` — Hierarchy level. If `level = 0` returns all descendants to the end. [UInt8](../../sql-reference/data-types/int-uint.md).
 

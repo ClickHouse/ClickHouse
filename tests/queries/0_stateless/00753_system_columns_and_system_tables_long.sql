@@ -1,3 +1,5 @@
+-- Tags: long
+
 DROP TABLE IF EXISTS check_system_tables;
 
 -- Check MergeTree declaration in new format

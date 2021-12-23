@@ -91,4 +91,4 @@ SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 この実装はre2::RE2::QuoteMetaとは若干異なります。 ゼロバイトは00の代わりに\\0としてエスケープされ、必要な文字のみがエスケープされます。
 詳細は、リンクを参照してください: [RE2](https://github.com/google/re2/blob/master/re2/re2.cc#L473)
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/string_replace_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/string_replace_functions/) <!--hide-->

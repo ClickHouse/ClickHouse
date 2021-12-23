@@ -27,6 +27,7 @@ public:
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
     String getStorageParamsJSON() const override;
+    bool isReadOnly() const override { return true; }
 
     String getPath() const;
     bool isPathEqual(const String & path_) const;
@@ -39,23 +40,21 @@ public:
               const zkutil::GetZooKeeper & get_zookeeper_function = {});
     void reload();
     void startPeriodicReloading();
+    void stopPeriodicReloading();
+
+    bool exists(const UUID & id) const override;
+    bool hasSubscription(const UUID & id) const override;
+    bool hasSubscription(AccessEntityType type) const override;
 
 private:
     void parseFromConfig(const Poco::Util::AbstractConfiguration & config);
 
-    std::optional<UUID> findImpl(EntityType type, const String & name) const override;
-    std::vector<UUID> findAllImpl(EntityType type) const override;
-    bool existsImpl(const UUID & id) const override;
-    AccessEntityPtr readImpl(const UUID & id) const override;
-    String readNameImpl(const UUID & id) const override;
-    bool canInsertImpl(const AccessEntityPtr &) const override { return false; }
-    UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) override;
-    void removeImpl(const UUID & id) override;
-    void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
+    std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
+    std::vector<UUID> findAllImpl(AccessEntityType type) const override;
+    AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
+    std::optional<String> readNameImpl(const UUID & id, bool throw_if_not_exists) const override;
     scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
-    scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const override;
-    bool hasSubscriptionImpl(const UUID & id) const override;
-    bool hasSubscriptionImpl(EntityType type) const override;
+    scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const override;
 
     MemoryAccessStorage memory_storage;
     CheckSettingNameFunction check_setting_name_function;

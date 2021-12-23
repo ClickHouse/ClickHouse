@@ -1,12 +1,17 @@
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Common/Exception.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <algorithm>
 #include <cassert>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 
 ActiveDataPartSet::ActiveDataPartSet(MergeTreeDataFormatVersion format_version_, const Strings & names)
@@ -16,8 +21,7 @@ ActiveDataPartSet::ActiveDataPartSet(MergeTreeDataFormatVersion format_version_,
         add(name);
 }
 
-/// FIXME replace warnings with logical errors
-bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts, Poco::Logger * log)
+bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts)
 {
     /// TODO make it exception safe (out_replaced_parts->push_back(...) may throw)
     auto part_info = MergeTreePartInfo::fromPartName(name, format_version);
@@ -38,18 +42,14 @@ bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts, P
         if (!part_info.contains(it->first))
         {
             if (!part_info.isDisjoint(it->first))
-            {
-                if (log)
-                    LOG_ERROR(log, "Part {} intersects previous part {}. It is a bug.", name, it->first.getPartName());
-                assert(false);
-            }
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects previous part {}. It is a bug or a result of manual intervention in the ZooKeeper data.", name, it->first.getPartName());
             ++it;
             break;
         }
 
         if (out_replaced_parts)
             out_replaced_parts->push_back(it->second);
-        part_info_to_name.erase(it++);
+        it = part_info_to_name.erase(it);
     }
 
     if (out_replaced_parts)
@@ -61,15 +61,11 @@ bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts, P
         assert(part_info != it->first);
         if (out_replaced_parts)
             out_replaced_parts->push_back(it->second);
-        part_info_to_name.erase(it++);
+        it = part_info_to_name.erase(it);
     }
 
     if (it != part_info_to_name.end() && !part_info.isDisjoint(it->first))
-    {
-        if (log)
-            LOG_ERROR(log, "Part {} intersects next part {}. It is a bug.", name, it->first.getPartName());
-        assert(false);
-    }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} intersects next part {}. It is a bug or a result of manual intervention in the ZooKeeper data.", name, it->first.getPartName());
 
     part_info_to_name.emplace(part_info, name);
     return true;

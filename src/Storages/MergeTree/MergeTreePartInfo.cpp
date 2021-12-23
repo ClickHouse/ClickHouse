@@ -9,34 +9,59 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_DATA_PART_NAME;
+    extern const int INVALID_PARTITION_VALUE;
 }
 
 
 MergeTreePartInfo MergeTreePartInfo::fromPartName(const String & part_name, MergeTreeDataFormatVersion format_version)
 {
-    MergeTreePartInfo part_info;
-    if (!tryParsePartName(part_name, &part_info, format_version))
-        throw Exception("Unexpected part name: " + part_name, ErrorCodes::BAD_DATA_PART_NAME);
-    return part_info;
+    if (auto part_opt = tryParsePartName(part_name, format_version))
+        return *part_opt;
+    else
+        throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Unexpected part name: {}", part_name);
 }
 
+void MergeTreePartInfo::validatePartitionID(const String & partition_id, MergeTreeDataFormatVersion format_version)
+{
+    if (partition_id.empty())
+        throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Partition id is empty");
 
-bool MergeTreePartInfo::tryParsePartName(const String & part_name, MergeTreePartInfo * part_info, MergeTreeDataFormatVersion format_version)
+    if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+    {
+        if (partition_id.size() != 6 || !std::all_of(partition_id.begin(), partition_id.end(), isNumericASCII))
+            throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+                "Invalid partition format: {}. Partition should consist of 6 digits: YYYYMM",
+                partition_id);
+    }
+    else
+    {
+        auto is_valid_char = [](char c) { return c == '-' || isAlphaNumericASCII(c); };
+        if (!std::all_of(partition_id.begin(), partition_id.end(), is_valid_char))
+            throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Invalid partition format: {}", partition_id);
+    }
+
+}
+
+std::optional<MergeTreePartInfo> MergeTreePartInfo::tryParsePartName(
+    std::string_view part_name, MergeTreeDataFormatVersion format_version)
 {
     ReadBufferFromString in(part_name);
 
     String partition_id;
+
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         UInt32 min_yyyymmdd = 0;
         UInt32 max_yyyymmdd = 0;
+
         if (!tryReadIntText(min_yyyymmdd, in)
             || !checkChar('_', in)
             || !tryReadIntText(max_yyyymmdd, in)
             || !checkChar('_', in))
         {
-            return false;
+            return std::nullopt;
         }
+
         partition_id = toString(min_yyyymmdd / 100);
     }
     else
@@ -54,9 +79,7 @@ bool MergeTreePartInfo::tryParsePartName(const String & part_name, MergeTreePart
 
     /// Sanity check
     if (partition_id.empty())
-    {
-        return false;
-    }
+        return std::nullopt;
 
     Int64 min_block_num = 0;
     Int64 max_block_num = 0;
@@ -69,14 +92,12 @@ bool MergeTreePartInfo::tryParsePartName(const String & part_name, MergeTreePart
         || !checkChar('_', in)
         || !tryReadIntText(level, in))
     {
-        return false;
+        return std::nullopt;
     }
 
     /// Sanity check
     if (min_block_num > max_block_num)
-    {
-        return false;
-    }
+        return std::nullopt;
 
     if (!in.eof())
     {
@@ -84,29 +105,30 @@ bool MergeTreePartInfo::tryParsePartName(const String & part_name, MergeTreePart
             || !tryReadIntText(mutation, in)
             || !in.eof())
         {
-            return false;
+            return std::nullopt;
         }
     }
 
-    if (part_info)
+    MergeTreePartInfo part_info;
+
+    part_info.partition_id = std::move(partition_id);
+    part_info.min_block = min_block_num;
+    part_info.max_block = max_block_num;
+
+    if (level == LEGACY_MAX_LEVEL)
     {
-        part_info->partition_id = std::move(partition_id);
-        part_info->min_block = min_block_num;
-        part_info->max_block = max_block_num;
-        if (level == LEGACY_MAX_LEVEL)
-        {
-            /// We (accidentally) had two different max levels until 21.6 and it might cause logical errors like
-            /// "Part 20170601_20170630_0_2_999999999 intersects 201706_0_1_4294967295".
-            /// So we replace unexpected max level to make contains(...) method and comparison operators work
-            /// correctly with such virtual parts. On part name serialization we will use legacy max level to keep the name unchanged.
-            part_info->use_leagcy_max_level = true;
-            level = MAX_LEVEL;
-        }
-        part_info->level = level;
-        part_info->mutation = mutation;
+        /// We (accidentally) had two different max levels until 21.6 and it might cause logical errors like
+        /// "Part 20170601_20170630_0_2_999999999 intersects 201706_0_1_4294967295".
+        /// So we replace unexpected max level to make contains(...) method and comparison operators work
+        /// correctly with such virtual parts. On part name serialization we will use legacy max level to keep the name unchanged.
+        part_info.use_leagcy_max_level = true;
+        level = MAX_LEVEL;
     }
 
-    return true;
+    part_info.level = level;
+    part_info.mutation = mutation;
+
+    return part_info;
 }
 
 
@@ -213,30 +235,76 @@ String MergeTreePartInfo::getPartNameV0(DayNum left_date, DayNum right_date) con
     return wb.str();
 }
 
-bool DetachedPartInfo::tryParseDetachedPartName(const String & dir_name, DetachedPartInfo & part_info,
-                                                MergeTreeDataFormatVersion format_version)
+DetachedPartInfo DetachedPartInfo::parseDetachedPartName(
+    const DiskPtr & disk, std::string_view dir_name, MergeTreeDataFormatVersion format_version)
 {
+    DetachedPartInfo part_info;
+    part_info.disk = disk;
     part_info.dir_name = dir_name;
 
-    /// First, try to parse as <part_name>.
-    // TODO what if tryParsePartName will parse prefix as partition_id? It can happen if dir_name doesn't contain mutation number at the end
-    if (MergeTreePartInfo::tryParsePartName(dir_name, &part_info, format_version))
-        return part_info.valid_name = true;
+    /// First, try to find known prefix and parse dir_name as <prefix>_<part_name>.
+    /// Arbitrary strings are not allowed for partition_id, so known_prefix cannot be confused with partition_id.
+    for (std::string_view known_prefix : DETACH_REASONS)
+    {
+        if (dir_name.starts_with(known_prefix)
+            && known_prefix.size() < dir_name.size()
+            && dir_name[known_prefix.size()] == '_')
+        {
+            part_info.prefix = known_prefix;
+
+            const std::string_view part_name = dir_name.substr(known_prefix.size() + 1);
+
+            if (auto part_opt = MergeTreePartInfo::tryParsePartName(part_name, format_version))
+            {
+                part_info.valid_name = true;
+                part_info.addParsedPartInfo(*part_opt);
+            }
+            else
+                part_info.valid_name = false;
+
+            return part_info;
+        }
+    }
+
+    /// Next, try to parse dir_name as <part_name>.
+    if (auto part_opt = MergeTreePartInfo::tryParsePartName(dir_name, format_version))
+    {
+        part_info.valid_name = true;
+        part_info.addParsedPartInfo(*part_opt);
+        return part_info;
+    }
 
     /// Next, as <prefix>_<partname>. Use entire name as prefix if it fails.
     part_info.prefix = dir_name;
-    const auto first_separator = dir_name.find_first_of('_');
+
+    const size_t first_separator = dir_name.find_first_of('_');
+
     if (first_separator == String::npos)
-        return part_info.valid_name = false;
+    {
+        part_info.valid_name = false;
+        return part_info;
+    }
 
-    // TODO what if <prefix> contains '_'?
-    const auto part_name = dir_name.substr(first_separator + 1,
-                                           dir_name.size() - first_separator - 1);
-    if (!MergeTreePartInfo::tryParsePartName(part_name, &part_info, format_version))
-        return part_info.valid_name = false;
+    const std::string_view part_name = dir_name.substr(
+        first_separator + 1,
+        dir_name.size() - first_separator - 1);
 
-    part_info.prefix = dir_name.substr(0, first_separator);
-    return part_info.valid_name = true;
+    if (auto part_opt = MergeTreePartInfo::tryParsePartName(part_name, format_version))
+    {
+        part_info.valid_name = true;
+        part_info.prefix = dir_name.substr(0, first_separator);
+        part_info.addParsedPartInfo(*part_opt);
+    }
+    else
+        part_info.valid_name = false;
+
+    // TODO what if name contains "_tryN" suffix?
+    return part_info;
 }
 
+void DetachedPartInfo::addParsedPartInfo(const MergeTreePartInfo& part)
+{
+    // Both class are aggregates so it's ok.
+    static_cast<MergeTreePartInfo &>(*this) = part;
+}
 }

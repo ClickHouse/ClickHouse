@@ -3,7 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
-#include <DataStreams/RemoteBlockInputStream.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
@@ -71,17 +71,16 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     };
 
     /// Execute remote query without restrictions (because it's not real user query, but part of implementation)
-    auto input = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, sample_block, new_context);
-    input->setPoolMode(PoolMode::GET_ONE);
+    RemoteQueryExecutor executor(shard_info.pool, query, sample_block, new_context);
+    executor.setPoolMode(PoolMode::GET_ONE);
     if (!table_func_ptr)
-        input->setMainTable(table_id);
-    input->readPrefix();
+        executor.setMainTable(table_id);
 
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
     ParserExpression expr_parser;
 
-    while (Block current = input->read())
+    while (Block current = executor.read())
     {
         ColumnPtr name = current.getByName("name").column;
         ColumnPtr type = current.getByName("type").column;
@@ -111,6 +110,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
         }
     }
 
+    executor.finish();
     return res;
 }
 

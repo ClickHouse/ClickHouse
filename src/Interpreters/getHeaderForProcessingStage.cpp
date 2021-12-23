@@ -3,8 +3,10 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Storages/IStorage.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 
 namespace DB
 {
@@ -98,12 +100,12 @@ Block getHeaderForProcessingStage(
 
                 if (prewhere_info.row_level_filter)
                 {
-                    prewhere_info.row_level_filter->execute(header);
+                    header = prewhere_info.row_level_filter->updateHeader(std::move(header));
                     header.erase(prewhere_info.row_level_column_name);
                 }
 
                 if (prewhere_info.prewhere_actions)
-                    prewhere_info.prewhere_actions->execute(header);
+                    header = prewhere_info.prewhere_actions->updateHeader(std::move(header));
 
                 if (prewhere_info.remove_prewhere_column)
                     header.erase(prewhere_info.prewhere_column_name);
@@ -120,9 +122,9 @@ Block getHeaderForProcessingStage(
             TreeRewriterResult new_rewriter_result = *query_info.syntax_analyzer_result;
             removeJoin(*query->as<ASTSelectQuery>(), new_rewriter_result, context);
 
-            auto stream = std::make_shared<OneBlockInputStream>(
-                    metadata_snapshot->getSampleBlockForColumns(column_names, storage.getVirtuals(), storage.getStorageID()));
-            return InterpreterSelectQuery(query, context, stream, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+            auto pipe = Pipe(std::make_shared<SourceFromSingleChunk>(
+                    metadata_snapshot->getSampleBlockForColumns(column_names, storage.getVirtuals(), storage.getStorageID())));
+            return InterpreterSelectQuery(query, context, std::move(pipe), SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
         }
     }
     throw Exception("Logical Error: unknown processed stage.", ErrorCodes::LOGICAL_ERROR);

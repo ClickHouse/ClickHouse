@@ -18,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -39,11 +40,29 @@ SerializationLowCardinality::SerializationLowCardinality(const DataTypePtr & dic
 {
 }
 
-void SerializationLowCardinality::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
+void SerializationLowCardinality::enumerateStreams(
+    SubstreamPath & path,
+    const StreamCallback & callback,
+    const SubstreamData & data) const
 {
+    const auto * column_lc = data.column ? &getColumnLowCardinality(*data.column) : nullptr;
+
+    SubstreamData dict_data =
+    {
+        dict_inner_serialization,
+        data.type ? dictionary_type : nullptr,
+        column_lc ? column_lc->getDictionary().getNestedColumn() : nullptr,
+        data.serialization_info,
+    };
+
     path.push_back(Substream::DictionaryKeys);
-    dict_inner_serialization->enumerateStreams(callback, path);
+    path.back().data = dict_data;
+
+    dict_inner_serialization->enumerateStreams(path, callback, dict_data);
+
     path.back() = Substream::DictionaryIndexes;
+    path.back().data = data;
+
     callback(path);
     path.pop_back();
 }
@@ -64,7 +83,7 @@ struct KeysSerializationVersion
     static void checkVersion(UInt64 version)
     {
         if (version != SharedDictionariesWithAdditionalKeys)
-            throw Exception("Invalid version for SerializationLowCardinality key column.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Invalid version for SerializationLowCardinality key column.", ErrorCodes::INCORRECT_DATA);
     }
 
     explicit KeysSerializationVersion(UInt64 version) : value(static_cast<Value>(version)) { checkVersion(version); }
@@ -105,7 +124,7 @@ struct IndexesSerializationType
         if (value <= TUInt64)
             return;
 
-        throw Exception("Invalid type for SerializationLowCardinality index column.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Invalid type for SerializationLowCardinality index column.", ErrorCodes::INCORRECT_DATA);
     }
 
     void serialize(WriteBuffer & buffer) const
@@ -120,15 +139,24 @@ struct IndexesSerializationType
         writeIntBinary(val, buffer);
     }
 
-    void deserialize(ReadBuffer & buffer)
+    void deserialize(ReadBuffer & buffer, const ISerialization::DeserializeBinaryBulkSettings & settings)
     {
         SerializationType val;
         readIntBinary(val, buffer);
+
         checkType(val);
         has_additional_keys = (val & HasAdditionalKeysBit) != 0;
         need_global_dictionary = (val & NeedGlobalDictionaryBit) != 0;
         need_update_dictionary = (val & NeedUpdateDictionary) != 0;
         type = static_cast<Type>(resetFlags(val));
+
+        if (settings.native_format)
+        {
+            if (need_global_dictionary)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                                "LowCardinality indexes serialization type for Native format "
+                                "cannot use global dictionary");
+        }
     }
 
     IndexesSerializationType(const IColumn & column,
@@ -196,42 +224,6 @@ struct DeserializeStateLowCardinality : public ISerialization::DeserializeBinary
     explicit DeserializeStateLowCardinality(UInt64 key_version_) : key_version(key_version_) {}
 };
 
-static SerializeStateLowCardinality * checkAndGetLowCardinalitySerializeState(
-    ISerialization::SerializeBinaryBulkStatePtr & state)
-{
-    if (!state)
-        throw Exception("Got empty state for SerializationLowCardinality.", ErrorCodes::LOGICAL_ERROR);
-
-    auto * low_cardinality_state = typeid_cast<SerializeStateLowCardinality *>(state.get());
-    if (!low_cardinality_state)
-    {
-        auto & state_ref = *state;
-        throw Exception("Invalid SerializeBinaryBulkState for SerializationLowCardinality. Expected: "
-                        + demangle(typeid(SerializeStateLowCardinality).name()) + ", got "
-                        + demangle(typeid(state_ref).name()), ErrorCodes::LOGICAL_ERROR);
-    }
-
-    return low_cardinality_state;
-}
-
-static DeserializeStateLowCardinality * checkAndGetLowCardinalityDeserializeState(
-    ISerialization::DeserializeBinaryBulkStatePtr & state)
-{
-    if (!state)
-        throw Exception("Got empty state for SerializationLowCardinality.", ErrorCodes::LOGICAL_ERROR);
-
-    auto * low_cardinality_state = typeid_cast<DeserializeStateLowCardinality *>(state.get());
-    if (!low_cardinality_state)
-    {
-        auto & state_ref = *state;
-        throw Exception("Invalid DeserializeBinaryBulkState for SerializationLowCardinality. Expected: "
-                        + demangle(typeid(DeserializeStateLowCardinality).name()) + ", got "
-                        + demangle(typeid(state_ref).name()), ErrorCodes::LOGICAL_ERROR);
-    }
-
-    return low_cardinality_state;
-}
-
 void SerializationLowCardinality::serializeBinaryBulkStatePrefix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
@@ -256,7 +248,7 @@ void SerializationLowCardinality::serializeBinaryBulkStateSuffix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    auto * low_cardinality_state = checkAndGetLowCardinalitySerializeState(state);
+    auto * low_cardinality_state = checkAndGetState<SerializeStateLowCardinality>(state);
     KeysSerializationVersion::checkVersion(low_cardinality_state->key_version.value);
 
     if (low_cardinality_state->shared_dictionary && settings.low_cardinality_max_dictionary_size)
@@ -495,7 +487,7 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
 
     const ColumnLowCardinality & low_cardinality_column = typeid_cast<const ColumnLowCardinality &>(column);
 
-    auto * low_cardinality_state = checkAndGetLowCardinalitySerializeState(state);
+    auto * low_cardinality_state = checkAndGetState<SerializeStateLowCardinality>(state);
     auto & global_dictionary = low_cardinality_state->shared_dictionary;
     KeysSerializationVersion::checkVersion(low_cardinality_state->key_version.value);
 
@@ -519,8 +511,8 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
         /// Insert used_keys into global dictionary and update sub_index.
         auto indexes_with_overflow = global_dictionary->uniqueInsertRangeWithOverflow(*keys, 0, keys->size(),
                                                                                       settings.low_cardinality_max_dictionary_size);
-        size_t max_size = settings.low_cardinality_max_dictionary_size + indexes_with_overflow.overflowed_keys->size();
-        ColumnLowCardinality::Index(indexes_with_overflow.indexes->getPtr()).check(max_size);
+        // size_t max_size = settings.low_cardinality_max_dictionary_size + indexes_with_overflow.overflowed_keys->size();
+        // ColumnLowCardinality::Index(indexes_with_overflow.indexes->getPtr()).check(max_size);
 
         if (global_dictionary->size() > settings.low_cardinality_max_dictionary_size)
             throw Exception("Got dictionary with size " + toString(global_dictionary->size()) +
@@ -594,7 +586,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     if (!indexes_stream)
         throw Exception("Got empty stream for SerializationLowCardinality indexes.", ErrorCodes::LOGICAL_ERROR);
 
-    auto * low_cardinality_state = checkAndGetLowCardinalityDeserializeState(state);
+    auto * low_cardinality_state = checkAndGetState<DeserializeStateLowCardinality>(state);
     KeysSerializationVersion::checkVersion(low_cardinality_state->key_version.value);
 
     auto read_dictionary = [this, low_cardinality_state, keys_stream]()
@@ -614,6 +606,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     {
         UInt64 num_keys;
         readIntBinary(num_keys, *indexes_stream);
+
         auto keys_type = removeNullable(dictionary_type);
         auto additional_keys = keys_type->createColumn();
         dict_inner_serialization->deserializeBinaryBulk(*additional_keys, *indexes_stream, num_keys, 0);
@@ -643,6 +636,9 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
 
         if (!low_cardinality_state->index_type.need_global_dictionary)
         {
+            if (additional_keys == nullptr)
+                throw Exception("No additional keys found.", ErrorCodes::INCORRECT_DATA);
+
             ColumnPtr keys_column = additional_keys;
             if (low_cardinality_state->null_map)
                 keys_column = ColumnNullable::create(additional_keys, low_cardinality_state->null_map);
@@ -660,15 +656,18 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
         {
             auto maps = mapIndexWithAdditionalKeys(*indexes_column, global_dictionary->size());
 
-            ColumnLowCardinality::Index(maps.additional_keys_map->getPtr()).check(additional_keys->size());
+            // ColumnLowCardinality::Index(maps.additional_keys_map->getPtr()).check(additional_keys->size());
 
-            ColumnLowCardinality::Index(indexes_column->getPtr()).check(
-                    maps.dictionary_map->size() + maps.additional_keys_map->size());
+            // ColumnLowCardinality::Index(indexes_column->getPtr()).check(
+            //         maps.dictionary_map->size() + maps.additional_keys_map->size());
 
             auto used_keys = IColumn::mutate(global_dictionary->getNestedColumn()->index(*maps.dictionary_map, 0));
 
             if (!maps.additional_keys_map->empty())
             {
+                if (additional_keys == nullptr)
+                    throw Exception("No additional keys found.", ErrorCodes::INCORRECT_DATA);
+
                 auto used_add_keys = additional_keys->index(*maps.additional_keys_map, 0);
 
                 if (dictionary_type->isNullable())
@@ -702,7 +701,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
             auto & index_type = low_cardinality_state->index_type;
             auto & global_dictionary = low_cardinality_state->global_dictionary;
 
-            index_type.deserialize(*indexes_stream);
+            index_type.deserialize(*indexes_stream, settings);
 
             bool need_update_dictionary =
                 !global_dictionary || index_type.need_update_dictionary || low_cardinality_state->need_update_dictionary;
@@ -791,6 +790,7 @@ void SerializationLowCardinality::serializeTextJSON(const IColumn & column, size
 {
     serializeImpl(column, row_num, &ISerialization::serializeTextJSON, ostr, settings);
 }
+
 void SerializationLowCardinality::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     deserializeImpl(column, &ISerialization::deserializeTextJSON, istr, settings);
@@ -799,6 +799,16 @@ void SerializationLowCardinality::deserializeTextJSON(IColumn & column, ReadBuff
 void SerializationLowCardinality::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     serializeImpl(column, row_num, &ISerialization::serializeTextXML, ostr, settings);
+}
+
+void SerializationLowCardinality::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeImpl(column, &ISerialization::deserializeTextRaw, istr, settings);
+}
+
+void SerializationLowCardinality::serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeImpl(column, row_num, &ISerialization::serializeTextRaw, ostr, settings);
 }
 
 template <typename... Params, typename... Args>

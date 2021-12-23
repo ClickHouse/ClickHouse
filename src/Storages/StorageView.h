@@ -4,7 +4,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage.h>
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 
 namespace DB
@@ -49,7 +49,11 @@ public:
     static ASTPtr restoreViewName(ASTSelectQuery & select_query, const ASTPtr & view_name);
 
 protected:
-    StorageView(const StorageID & table_id_, const ASTCreateQuery & query, const ColumnsDescription & columns_, const String & comment);
+    StorageView(
+        const StorageID & table_id_,
+        const ASTCreateQuery & query,
+        const ColumnsDescription & columns_,
+        const String & comment);
 };
 
 }

@@ -5,9 +5,7 @@
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 namespace DB
 {
@@ -26,8 +24,6 @@ using FunctionOverloadResolverPtr = std::shared_ptr<IFunctionOverloadResolver>;
 
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
-
-class CompiledExpressionCache;
 
 namespace JSONBuilder
 {
@@ -63,8 +59,6 @@ public:
         FUNCTION,
     };
 
-    static const char * typeToString(ActionType type);
-
     struct Node;
     using NodeRawPtrs = std::vector<Node *>;
     using NodeRawConstPtrs = std::vector<const Node *>;
@@ -85,6 +79,9 @@ public:
         ExecutableFunctionPtr function;
         /// If function is a compiled statement.
         bool is_function_compiled = false;
+        /// It is deterministic (See IFunction::isDeterministic).
+        /// This property is kept after constant folding of non-deterministic functions like 'now', 'today'.
+        bool is_deterministic = true;
 
         /// For COLUMN node and propagated constants.
         ColumnPtr column;
@@ -163,8 +160,8 @@ public:
     bool isInputProjected() const { return project_input; }
     bool isOutputProjected() const { return projected_output; }
 
-    void removeUnusedActions(const Names & required_names);
-    void removeUnusedActions(const NameSet & required_names);
+    void removeUnusedActions(const Names & required_names, bool allow_remove_inputs = true, bool allow_constant_folding = true);
+    void removeUnusedActions(const NameSet & required_names, bool allow_remove_inputs = true, bool allow_constant_folding = true);
 
     NameSet foldActionsByProjection(
         const NameSet & required_columns,
@@ -177,15 +174,16 @@ public:
     bool hasArrayJoin() const;
     bool hasStatefulFunctions() const;
     bool trivial() const; /// If actions has no functions or array join.
+    void assertDeterministic() const; /// Throw if not isDeterministic.
 
 #if USE_EMBEDDED_COMPILER
-    void compileExpressions(size_t min_count_to_compile_expression);
+    void compileExpressions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
 #endif
 
     ActionsDAGPtr clone() const;
 
     /// Execute actions for header. Input block must have empty columns.
-    /// Result should be equal to the execution of ExpressionActions build form this DAG.
+    /// Result should be equal to the execution of ExpressionActions built from this DAG.
     /// Actions are not changed, no expressions are compiled.
     ///
     /// In addition, check that result constants are constants according to DAG.
@@ -212,6 +210,7 @@ public:
     /// Conversion should be possible with only usage of CAST function and renames.
     /// @param ignore_constant_values - Do not check that constants are same. Use value from result_header.
     /// @param add_casted_columns - Create new columns with converted values instead of replacing original.
+    /// @param new_names - Output parameter for new column names when add_casted_columns is used.
     static ActionsDAGPtr makeConvertingActions(
         const ColumnsWithTypeAndName & source,
         const ColumnsWithTypeAndName & result,
@@ -270,10 +269,10 @@ public:
 private:
     Node & addNode(Node node);
 
-    void removeUnusedActions(bool allow_remove_inputs = true);
+    void removeUnusedActions(bool allow_remove_inputs = true, bool allow_constant_folding = true);
 
 #if USE_EMBEDDED_COMPILER
-    void compileFunctions(size_t min_count_to_compile_expression);
+    void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
 #endif
 
     static ActionsDAGPtr cloneActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs);

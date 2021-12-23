@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <storage_configuration>
         <disks>
             <s3>
@@ -11,4 +11,4 @@
             </s3>
         </disks>
     </storage_configuration>
-</yandex>
+</clickhouse>

@@ -69,6 +69,7 @@ private:
 void registerDataTypeNumbers(DataTypeFactory & factory);
 void registerDataTypeDecimal(DataTypeFactory & factory);
 void registerDataTypeDate(DataTypeFactory & factory);
+void registerDataTypeDate32(DataTypeFactory & factory);
 void registerDataTypeDateTime(DataTypeFactory & factory);
 void registerDataTypeString(DataTypeFactory & factory);
 void registerDataTypeFixedString(DataTypeFactory & factory);
@@ -84,6 +85,7 @@ void registerDataTypeNested(DataTypeFactory & factory);
 void registerDataTypeInterval(DataTypeFactory & factory);
 void registerDataTypeLowCardinality(DataTypeFactory & factory);
 void registerDataTypeDomainIPv4AndIPv6(DataTypeFactory & factory);
+void registerDataTypeDomainBool(DataTypeFactory & factory);
 void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory);
 void registerDataTypeDomainGeo(DataTypeFactory & factory);
 

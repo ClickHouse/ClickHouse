@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -15,8 +14,8 @@ namespace DB
 class Context;
 class QueryPlan;
 
-class QueryPipeline;
-using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
+class QueryPipelineBuilder;
+using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
 /// Return false if the data isn't going to be changed by mutations.
 bool isStorageTouchedByMutations(
@@ -51,10 +50,12 @@ public:
     size_t evaluateCommandsSize();
 
     /// The resulting stream will return blocks containing only changed columns and columns, that we need to recalculate indices.
-    BlockInputStreamPtr execute();
+    QueryPipeline execute();
 
     /// Only changed columns.
-    const Block & getUpdatedHeader() const;
+    Block getUpdatedHeader() const;
+
+    const ColumnDependencies & getColumnDependencies() const;
 
     /// Latest mutation stage affects all columns in storage
     bool isAffectingAllColumns() const;
@@ -83,7 +84,7 @@ private:
     struct Stage;
 
     ASTPtr prepareInterpreterSelectQuery(std::vector<Stage> &prepared_stages, bool dry_run);
-    QueryPipelinePtr addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
+    QueryPipelineBuilderPtr addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
 
     std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
 
@@ -148,6 +149,9 @@ private:
     NameSet materialized_projections;
 
     MutationKind mutation_kind; /// Do we meet any index or projection mutation.
+
+    /// Columns, that we need to read for calculation of skip indices, projections or TTL expressions.
+    ColumnDependencies dependencies;
 };
 
 }

@@ -1,3 +1,5 @@
+-- Tags: no-parallel, no-fasttest
+
 SELECT 'Hello' ILIKE '';
 SELECT 'Hello' ILIKE '%';
 SELECT 'Hello' ILIKE '%%';

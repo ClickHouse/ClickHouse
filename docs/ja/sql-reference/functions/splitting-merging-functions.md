@@ -114,4 +114,4 @@ SELECT alphaTokens('abca1abc')
 └─────────────────────────┘
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/splitting_merging_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/splitting_merging_functions/) <!--hide-->
