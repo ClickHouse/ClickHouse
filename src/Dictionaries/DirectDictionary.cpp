@@ -8,7 +8,7 @@
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 namespace DB
@@ -75,6 +75,8 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
     Block block;
     while (executor.pull(block))
     {
+        convertToFullIfSparse(block);
+
         /// Split into keys columns and attribute columns
         for (size_t i = 0; i < dictionary_keys_size; ++i)
             block_key_columns.emplace_back(block.safeGetByPosition(i).column);
@@ -290,7 +292,7 @@ Pipe DirectDictionary<dictionary_key_type>::getSourceBlockInputStream(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-Pipe DirectDictionary<dictionary_key_type>::read(const Names & /* column_names */, size_t /* max_block_size */) const
+Pipe DirectDictionary<dictionary_key_type>::read(const Names & /* column_names */, size_t /* max_block_size */, size_t /* num_streams */) const
 {
     return source_ptr->loadAll();
 }

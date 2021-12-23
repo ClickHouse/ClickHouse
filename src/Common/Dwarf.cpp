@@ -838,7 +838,7 @@ bool Dwarf::findLocation(
 
                 // The next inlined subroutine's call file and call line is the current
                 // caller's location.
-                for (size_t i = 0; i < num_found - 1; i++)
+                for (size_t i = 0; i < num_found - 1; ++i)
                 {
                     call_locations[i].file = call_locations[i + 1].file;
                     call_locations[i].line = call_locations[i + 1].line;

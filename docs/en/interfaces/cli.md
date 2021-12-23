@@ -127,6 +127,9 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 -   `--secure` – If specified, will connect to server over secure connection.
 -   `--history_file` — Path to a file containing command history.
 -   `--param_<name>` — Value for a [query with parameters](#cli-queries-with-parameters).
+-   `--hardware-utilization` — Print hardware utilization information in progress bar.
+-   `--print-profile-events` – Print `ProfileEvents` packets.
+-   `--profile-events-delay-ms` – Delay between printing `ProfileEvents` packets (-1 - print only totals, 0 - print every single packet).
 
 Since version 20.5, `clickhouse-client` has automatic syntax highlighting (always enabled).
 

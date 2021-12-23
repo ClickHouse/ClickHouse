@@ -125,7 +125,7 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
 
 bool MergeTreeDataPartCompact::hasColumnFiles(const NameAndTypePair & column) const
 {
-    if (!getColumnPosition(column.name))
+    if (!getColumnPosition(column.getNameInStorage()))
         return false;
 
     auto bin_checksum = checksums.files.find(DATA_FILE_NAME_WITH_EXTENSION);
@@ -180,6 +180,11 @@ void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata) cons
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
         }
     }
+}
+
+bool MergeTreeDataPartCompact::isStoredOnRemoteDisk() const
+{
+    return volume->getDisk()->isRemote();
 }
 
 MergeTreeDataPartCompact::~MergeTreeDataPartCompact()

@@ -3,9 +3,7 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/IAST.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 
 namespace DB
@@ -24,6 +22,8 @@ public:
         DROP_DNS_CACHE,
         DROP_MARK_CACHE,
         DROP_UNCOMPRESSED_CACHE,
+        DROP_INDEX_MARK_CACHE,
+        DROP_INDEX_UNCOMPRESSED_CACHE,
         DROP_MMAP_CACHE,
 #if USE_EMBEDDED_COMPILER
         DROP_COMPILED_EXPRESSION_CACHE,
@@ -70,10 +70,17 @@ public:
 
     Type type = Type::UNKNOWN;
 
+    ASTPtr database;
+    ASTPtr table;
+
+    String getDatabase() const;
+    String getTable() const;
+
+    void setDatabase(const String & name);
+    void setTable(const String & name);
+
     String target_model;
     String target_function;
-    String database;
-    String table;
     String replica;
     String replica_zk_path;
     bool is_drop_whole_replica{};
@@ -84,7 +91,16 @@ public:
 
     String getID(char) const override { return "SYSTEM query"; }
 
-    ASTPtr clone() const override { return std::make_shared<ASTSystemQuery>(*this); }
+    ASTPtr clone() const override
+    {
+        auto res = std::make_shared<ASTSystemQuery>(*this);
+        res->children.clear();
+
+        if (database) { res->database = database->clone(); res->children.push_back(res->database); }
+        if (table) { res->table = table->clone(); res->children.push_back(res->table); }
+
+        return res;
+    }
 
     ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
     {

@@ -82,7 +82,7 @@ def test_create_and_select_mysql(started_cluster, clickhouse, name, layout):
         key_field1 Int32,
         key_field2 Int64,
         value1 String DEFAULT 'xxx',
-        value2 Float32 DEFAULT 'yyy'
+        value2 Float32 DEFAULT '42.42'
     )
     PRIMARY KEY key_field1, key_field2
     SOURCE(MYSQL(
@@ -190,7 +190,7 @@ def test_restricted_database(started_cluster):
         LIFETIME(MIN 1 MAX 10)
         """)
     for node in [node1, node2]:
-        node.query("DROP TABLE restricted_db.table_in_restricted_db", user="admin")
+        node.query("DROP DICTIONARY IF EXISTS default.some_dict", user="admin")
         node.query("DROP DATABASE restricted_db", user="admin")
 
 
@@ -228,7 +228,7 @@ def test_http_dictionary_restrictions(started_cluster):
         """)
         node3.query("SELECT dictGetString('test.restricted_http_dictionary', 'value', toUInt64(1))")
     except QueryRuntimeException as ex:
-        assert 'is not allowed in config.xml' in str(ex)
+        assert 'is not allowed in configuration file' in str(ex)
     node3.query("DROP DICTIONARY test.restricted_http_dictionary")
 
 

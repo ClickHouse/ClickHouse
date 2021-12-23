@@ -1,11 +1,13 @@
-.navbar {
+.navbar-clickhouse {
     border-bottom: 4px solid $gray-100;
 	height: 142px;
 
 	> .container {
 		flex-wrap: wrap;
 	}
+}
 
+.navbar {
 	&-super {
 		flex-shrink: 0;
 		width: 100%;
@@ -38,8 +40,8 @@
 		}
 	}
 
-	&-brand {
-		background: no-repeat url(#{"../images/logo.svg"});
+	&-brand-clickhouse {
+		background: no-repeat url(#{"../images/logo-clickhouse.svg"});
 		background-size: contain;
 		flex-shrink: 0;
 		height: 28px;
@@ -50,7 +52,7 @@
 
 	&-nav {
 		align-items: center;
-		height: 46px;
+		height: $navbar-nav-height;
 	}
 
 	.nav-item:not(:last-child) {
@@ -129,6 +131,35 @@
 	}
 
 	@media screen and (max-width: 399.98px) {
-		height: 80px;
+		height: $navbar-height-xl;
+	}
+}
+
+
+.navbar {
+	@for $i from 1 through 8 {
+		&.py-#{$i} {
+			+ div {
+				.anchor-fixer {
+					:target {
+						@media screen and (min-width: 616px) {
+							scroll-margin-top: $navbar-nav-height + $spacer * $i * 2;
+						}
+					}
+				}
+			}
+		}
+	}
+	+ div {
+		.anchor-fixer {
+			:target {
+				@media screen and (max-width: 615.98px) {
+					scroll-margin-top: 73px;
+				}
+				@media screen and (max-width: 399.98px) {
+					scroll-margin-top: $navbar-height-xl;
+				}
+			}
+		}
 	}
 }

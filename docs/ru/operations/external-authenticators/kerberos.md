@@ -24,32 +24,32 @@ ClickHouse предоставляет возможность аутентифи�
 Примеры, как должен выглядеть файл `config.xml`:
 
 ```xml
-<yandex>
+<clickhouse>
     <!- ... -->
     <kerberos />
-</yandex>
+</clickhouse>
 ```
 
 Или, с указанием принципала:
 
 ```xml
-<yandex>
+<clickhouse>
     <!- ... -->
     <kerberos>
         <principal>HTTP/clickhouse.example.com@EXAMPLE.COM</principal>
     </kerberos>
-</yandex>
+</clickhouse>
 ```
 
 Или, с фильтрацией по реалм:
 
 ```xml
-<yandex>
+<clickhouse>
     <!- ... -->
     <kerberos>
         <realm>EXAMPLE.COM</realm>
     </kerberos>
-</yandex>
+</clickhouse>
 ```
 
 !!! Warning "Важно"
@@ -81,7 +81,7 @@ ClickHouse предоставляет возможность аутентифи�
 Пример, как выглядит конфигурация Kerberos в `users.xml`:
 
 ```xml
-<yandex>
+<clickhouse>
     <!- ... -->
     <users>
         <!- ... -->
@@ -92,7 +92,7 @@ ClickHouse предоставляет возможность аутентифи�
             </kerberos>
         </my_user>
     </users>
-</yandex>
+</clickhouse>
 ```
 
 

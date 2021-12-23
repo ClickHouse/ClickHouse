@@ -6,8 +6,9 @@
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/queryToString.h>
-#include <Access/AccessRightsElement.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Access/ContextAccess.h>
 #include <Common/Macros.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -15,7 +16,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Processors/Sinks/EmptySink.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <filesystem>
 
 
@@ -152,7 +153,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
         }
     }
 
-    AddDefaultDatabaseVisitor visitor(current_database, !use_local_default_database);
+    AddDefaultDatabaseVisitor visitor(context, current_database, !use_local_default_database);
     visitor.visitDDL(query_ptr);
 
     /// Check access rights, assume that all servers have the same users config

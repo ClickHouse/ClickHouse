@@ -2,9 +2,10 @@
 
 #include "Connection.h"
 #include <Interpreters/Context.h>
-#include <DataStreams/BlockIO.h>
+#include <QueryPipeline/BlockIO.h>
 #include <IO/TimeoutSetter.h>
 #include <Interpreters/Session.h>
+#include <Storages/ColumnsDescription.h>
 
 
 namespace DB
@@ -33,6 +34,8 @@ struct LocalQueryState
 
     /// Current block to be sent next.
     std::optional<Block> block;
+    std::optional<ColumnsDescription> columns_description;
+    std::optional<ProfileInfo> profile_info;
 
     /// Is request cancelled
     bool is_cancelled = false;
@@ -41,6 +44,7 @@ struct LocalQueryState
     bool sent_totals = false;
     bool sent_extremes = false;
     bool sent_progress = false;
+    bool sent_profile_info = false;
 
     /// To output progress, the difference after the previous sending of progress.
     Progress progress;
@@ -55,6 +59,8 @@ public:
     explicit LocalConnection(ContextPtr context_, bool send_progress_ = false);
 
     ~LocalConnection() override;
+
+    IServerConnection::Type getConnectionType() const override { return IServerConnection::Type::LOCAL; }
 
     static ServerConnectionPtr createConnection(const ConnectionParameters & connection_parameters, ContextPtr current_context, bool send_progress = false);
 
@@ -76,7 +82,7 @@ public:
     void sendQuery(
         const ConnectionTimeouts & timeouts,
         const String & query,
-        const String & query_id_/* = "" */,
+        const String & query_id/* = "" */,
         UInt64 stage/* = QueryProcessingStage::Complete */,
         const Settings * settings/* = nullptr */,
         const ClientInfo * client_info/* = nullptr */,
@@ -87,6 +93,8 @@ public:
     void sendData(const Block & block, const String & name/* = "" */, bool scalar/* = false */) override;
 
     void sendExternalTablesData(ExternalTablesData &) override;
+
+    void sendMergeTreeReadTaskResponse(const PartitionReadResponse & response) override;
 
     bool poll(size_t timeout_microseconds/* = 0 */) override;
 

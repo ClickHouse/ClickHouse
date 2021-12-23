@@ -11,7 +11,7 @@
 #include <Processors/Transforms/PostgreSQLSource.h>
 #include "readInvalidateQuery.h"
 #include <Interpreters/Context.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 #endif
 
@@ -161,7 +161,7 @@ bool PostgreSQLDictionarySource::supportsSelectiveLoad() const
 
 DictionarySourcePtr PostgreSQLDictionarySource::clone() const
 {
-    return std::make_unique<PostgreSQLDictionarySource>(*this);
+    return std::make_shared<PostgreSQLDictionarySource>(*this);
 }
 
 

@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/DataPartsExchange.h>
 
-#include <DataStreams/NativeWriter.h>
+#include <Formats/NativeWriter.h>
 #include <Disks/IDiskRemote.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/createVolume.h>
@@ -16,6 +16,7 @@
 #include <IO/createReadBufferFromFileBase.h>
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <boost/algorithm/string/join.hpp>
 #include <iterator>
 #include <regex>
 
@@ -24,6 +25,7 @@ namespace fs = std::filesystem;
 namespace CurrentMetrics
 {
     extern const Metric ReplicatedSend;
+    extern const Metric ReplicatedFetch;
 }
 
 namespace DB
@@ -344,7 +346,7 @@ void Service::sendPartFromDiskRemoteMeta(const MergeTreeData::DataPartPtr & part
         writeStringBinary(it.first, out);
         writeBinary(file_size, out);
 
-        auto file_in = createReadBufferFromFileBase(metadata_file, {}, 0);
+        auto file_in = createReadBufferFromFileBase(metadata_file, /* settings= */ {});
         HashingWriteBuffer hashing_out(out);
         copyDataWithThrottler(*file_in, hashing_out, blocker.getCounter(), data.getSendsThrottler());
         if (blocker.isCancelled())
@@ -589,6 +591,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
             block.getNamesAndTypesList(),
             {},
             CompressionCodecFactory::instance().get("NONE", {}));
+
         part_out.write(block);
         part_out.writeSuffixAndFinalizePart(new_projection_part);
         new_projection_part->checksums.checkEqual(checksums, /* have_uncompressed = */ true);
@@ -610,7 +613,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     new_data_part->partition.create(metadata_snapshot, block, 0, context);
 
     MergedBlockOutputStream part_out(
-        new_data_part, metadata_snapshot, block.getNamesAndTypesList(), {}, CompressionCodecFactory::instance().get("NONE", {}));
+        new_data_part, metadata_snapshot, block.getNamesAndTypesList(), {},
+        CompressionCodecFactory::instance().get("NONE", {}));
+
     part_out.write(block);
     part_out.writeSuffixAndFinalizePart(new_data_part);
     new_data_part->checksums.checkEqual(checksums, /* have_uncompressed = */ true);
