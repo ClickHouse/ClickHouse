@@ -160,7 +160,7 @@ void PrettyBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind)
 
     Serializations serializations(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
-        serializations[i] = header.getByPosition(i).type->getDefaultSerialization();
+        serializations[i] = header.getByPosition(i).type->getSerialization(*columns[i]->getSerializationInfo());
 
     WidthsPerColumn widths;
     Widths max_widths;
@@ -325,7 +325,7 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
 {
     String serialized_value = " ";
     {
-        WriteBufferFromString out_serialize(serialized_value, WriteBufferFromString::AppendModeTag());
+        WriteBufferFromString out_serialize(serialized_value, AppendModeTag());
         serialization.serializeText(column, row_num, out_serialize, format_settings);
     }
 

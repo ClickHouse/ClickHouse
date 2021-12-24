@@ -152,7 +152,7 @@ bool ExecutablePoolDictionarySource::hasUpdateField() const
 
 DictionarySourcePtr ExecutablePoolDictionarySource::clone() const
 {
-    return std::make_unique<ExecutablePoolDictionarySource>(*this);
+    return std::make_shared<ExecutablePoolDictionarySource>(*this);
 }
 
 std::string ExecutablePoolDictionarySource::toString() const

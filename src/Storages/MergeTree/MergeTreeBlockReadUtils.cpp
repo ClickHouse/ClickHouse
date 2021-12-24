@@ -128,8 +128,6 @@ MergeTreeReadTask::MergeTreeReadTask(
 {
 }
 
-MergeTreeReadTask::~MergeTreeReadTask() = default;
-
 
 MergeTreeBlockSizePredictor::MergeTreeBlockSizePredictor(
     const MergeTreeData::DataPartPtr & data_part_, const Names & columns, const Block & sample_block)
@@ -175,8 +173,7 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const C
             ColumnInfo info;
             info.name = column_name;
             /// If column isn't fixed and doesn't have checksum, than take first
-            ColumnSize column_size = data_part->getColumnSize(
-                column_name, *column_with_type_and_name.type);
+            ColumnSize column_size = data_part->getColumnSize(column_name);
 
             info.bytes_per_row_global = column_size.data_uncompressed
                 ? column_size.data_uncompressed / number_of_rows_in_part

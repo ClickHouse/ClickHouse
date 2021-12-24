@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+#Tags: no-parallel
+
 import os
 import sys
 import signal
@@ -32,16 +34,16 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
 
     client1.send('CREATE TABLE 01069_window_view_proc_tumble_watch.mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple()')
     client1.expect(prompt)
-    client1.send("CREATE WINDOW VIEW 01069_window_view_proc_tumble_watch.wv AS SELECT count(a) AS count FROM 01069_window_view_proc_tumble_watch.mt GROUP BY TUMBLE(timestamp, INTERVAL '1' SECOND, 'US/Samoa') AS wid;")
+    client1.send("CREATE WINDOW VIEW 01069_window_view_proc_tumble_watch.wv AS SELECT count(a) AS count FROM 01069_window_view_proc_tumble_watch.mt GROUP BY tumble(timestamp, INTERVAL '1' SECOND, 'US/Samoa') AS wid;")
     client1.expect(prompt)
 
     client1.send('WATCH 01069_window_view_proc_tumble_watch.wv')
     client1.expect('Query id' + end_of_block)
-    client2.send("INSERT INTO 01069_window_view_proc_tumble_watch.mt VALUES (1, now('US/Samoa') + 1)")
+    client2.send("INSERT INTO 01069_window_view_proc_tumble_watch.mt VALUES (1, now('US/Samoa') + 3)")
     client2.expect("Ok.")
     client1.expect('1' + end_of_block)
     client1.expect('Progress: 1.00 rows.*\)')
-    client2.send("INSERT INTO 01069_window_view_proc_tumble_watch.mt VALUES (1, now('US/Samoa') + 1)")
+    client2.send("INSERT INTO 01069_window_view_proc_tumble_watch.mt VALUES (1, now('US/Samoa') + 3)")
     client2.expect("Ok.")
     client1.expect('1' + end_of_block)
     client1.expect('Progress: 2.00 rows.*\)')

@@ -198,36 +198,41 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
     return result;
 }
 
-Block MergeTreeDataWriter::mergeBlock(const Block & block, SortDescription sort_description, Names & partition_key_columns, IColumn::Permutation *& permutation)
+Block MergeTreeDataWriter::mergeBlock(
+    const Block & block,
+    SortDescription sort_description,
+    const Names & partition_key_columns,
+    IColumn::Permutation *& permutation,
+    const MergeTreeData::MergingParams & merging_params)
 {
     size_t block_size = block.rows();
 
     auto get_merging_algorithm = [&]() -> std::shared_ptr<IMergingAlgorithm>
     {
-        switch (data.merging_params.mode)
+        switch (merging_params.mode)
         {
             /// There is nothing to merge in single block in ordinary MergeTree
             case MergeTreeData::MergingParams::Ordinary:
                 return nullptr;
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedAlgorithm>(
-                    block, 1, sort_description, data.merging_params.version_column, block_size + 1);
+                    block, 1, sort_description, merging_params.version_column, block_size + 1);
             case MergeTreeData::MergingParams::Collapsing:
                 return std::make_shared<CollapsingSortedAlgorithm>(
-                    block, 1, sort_description, data.merging_params.sign_column,
+                    block, 1, sort_description, merging_params.sign_column,
                     false, block_size + 1, &Poco::Logger::get("MergeTreeBlockOutputStream"));
             case MergeTreeData::MergingParams::Summing:
                 return std::make_shared<SummingSortedAlgorithm>(
-                    block, 1, sort_description, data.merging_params.columns_to_sum,
+                    block, 1, sort_description, merging_params.columns_to_sum,
                     partition_key_columns, block_size + 1);
             case MergeTreeData::MergingParams::Aggregating:
                 return std::make_shared<AggregatingSortedAlgorithm>(block, 1, sort_description, block_size + 1);
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 return std::make_shared<VersionedCollapsingAlgorithm>(
-                    block, 1, sort_description, data.merging_params.sign_column, block_size + 1);
+                    block, 1, sort_description, merging_params.sign_column, block_size + 1);
             case MergeTreeData::MergingParams::Graphite:
                 return std::make_shared<GraphiteRollupSortedAlgorithm>(
-                    block, 1, sort_description, block_size + 1, data.merging_params.graphite_params, time(nullptr));
+                    block, 1, sort_description, block_size + 1, merging_params.graphite_params, time(nullptr));
         }
 
         __builtin_unreachable();
@@ -330,7 +335,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(
 
     Names partition_key_columns = metadata_snapshot->getPartitionKey().column_names;
     if (context->getSettingsRef().optimize_on_insert)
-        block = mergeBlock(block, sort_description, partition_key_columns, perm_ptr);
+        block = mergeBlock(block, sort_description, partition_key_columns, perm_ptr, data.merging_params);
 
     /// Size of part would not be greater than block.bytes() + epsilon
     size_t expected_size = block.bytes();
@@ -359,7 +364,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(
     if (data.storage_settings.get()->assign_part_uuids)
         new_data_part->uuid = UUIDHelpers::generateV4();
 
-    new_data_part->setColumns(columns);
+    const auto & data_settings = data.getSettings();
+
+    SerializationInfo::Settings settings{data_settings->ratio_of_defaults_for_sparse_serialization, true};
+    SerializationInfoByName infos(columns, settings);
+    infos.add(block);
+
+    new_data_part->setColumns(columns, infos);
     new_data_part->rows_count = block.rows();
     new_data_part->partition = std::move(partition);
     new_data_part->minmax_idx = std::move(minmax_idx);
@@ -407,8 +418,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(
     auto compression_codec = data.getContext()->chooseCompressionCodec(0, 0);
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
-    MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);
-    bool sync_on_insert = data.getSettings()->fsync_after_insert;
+    MergedBlockOutputStream out(new_data_part, metadata_snapshot,columns,
+        index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);
+
+    bool sync_on_insert = data_settings->fsync_after_insert;
 
     out.writeWithPermutation(block, perm_ptr);
 
@@ -429,7 +442,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
-    const String part_name,
+    const String & part_name,
     MergeTreeDataPartType part_type,
     const String & relative_path,
     bool is_temp,
@@ -437,8 +450,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     const MergeTreeData & data,
     Poco::Logger * log,
     Block block,
-    const StorageMetadataPtr & metadata_snapshot)
+    const ProjectionDescription & projection)
 {
+    const StorageMetadataPtr & metadata_snapshot = projection.metadata;
     MergeTreePartInfo new_part_info("all", 0, 0, 0);
     auto new_data_part = data.createPart(
         part_name,
@@ -450,7 +464,11 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     new_data_part->is_temp = is_temp;
 
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
-    new_data_part->setColumns(columns);
+    SerializationInfo::Settings settings{data.getSettings()->ratio_of_defaults_for_sparse_serialization, true};
+    SerializationInfoByName infos(columns, settings);
+    infos.add(block);
+
+    new_data_part->setColumns(columns, infos);
 
     if (new_data_part->isStoredOnDisk())
     {
@@ -492,6 +510,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         }
         else
             ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterBlocksAlreadySorted);
+    }
+
+    if (projection.type == ProjectionDescription::Type::Aggregate)
+    {
+        MergeTreeData::MergingParams projection_merging_params;
+        projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
+        block = mergeBlock(block, sort_description, {}, perm_ptr, projection_merging_params);
     }
 
     /// This effectively chooses minimal compression method:
@@ -542,7 +567,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeProjectionPart(
         data,
         log,
         block,
-        projection.metadata);
+        projection);
 }
 
 /// This is used for projection materialization process which may contain multiple stages of
@@ -579,7 +604,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempProjectionPart(
         data,
         log,
         block,
-        projection.metadata);
+        projection);
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeInMemoryProjectionPart(
@@ -598,7 +623,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeInMemoryProjectionPa
         data,
         log,
         block,
-        projection.metadata);
+        projection);
 }
 
 }
