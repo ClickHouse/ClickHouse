@@ -3,6 +3,7 @@
 import time
 import logging
 import os
+import sys
 
 import boto3
 from github import Github
@@ -20,6 +21,7 @@ from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickh
 from tee_popen import TeePopen
 from ssh import SSHKey
 from build_download_helper import get_build_name_for_check, get_build_urls
+from rerun_helper import RerunHelper
 
 JEPSEN_GROUP_NAME = 'jepsen_group'
 DESIRED_INSTANCE_COUNT = 3
@@ -86,7 +88,7 @@ def prepare_autoscaling_group_and_get_hostnames():
 
 
 def clear_autoscaling_group():
-    asg_client = boto3.client('autoscaling')
+    asg_client = boto3.client('autoscaling', region_name='us-east-1')
     asg_client.set_desired_capacity(AutoScalingGroupName=JEPSEN_GROUP_NAME, DesiredCapacity=0)
     instances = get_autoscaling_group_instances_ids(asg_client, JEPSEN_GROUP_NAME)
     counter = 0
@@ -118,6 +120,11 @@ if __name__ == "__main__":
     pr_info = PRInfo()
 
     gh = Github(get_best_robot_token())
+
+    rerun_helper = RerunHelper(gh, pr_info, CHECK_NAME)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
 
     if not os.path.exists(TEMP_PATH):
         os.makedirs(TEMP_PATH)
