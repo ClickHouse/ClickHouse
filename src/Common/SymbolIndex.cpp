@@ -106,7 +106,7 @@ void updateResources(std::string_view name, const void * address, SymbolIndex::R
 
             if (auto it = resources.find(name); it != resources.end() && it->second.empty())
             {
-                auto start = it->second.data();
+                const char * start = it->second.data();
                 assert(char_address >= start);
                 it->second = std::string_view{start, static_cast<size_t>(char_address - start)};
             }
