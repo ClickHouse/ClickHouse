@@ -23,7 +23,7 @@
   *     where values are stored consecutively as (non-zero-terminated) strings.
   *
   * 2. Too slow methods for converting values to numbers.
-  *    In mysql++, it is done through std::stringstream.
+  *    In mysql++, it is done through std::s*****stream (it is banned in our codebase).
   *    This is slower than POSIX functions (strtoul, etc).
   *    In turn, this is slower than simple hand-coded functions,
   *     that doesn't respect locales and unused by MySQL number representations.

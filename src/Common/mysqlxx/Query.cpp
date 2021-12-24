@@ -21,10 +21,7 @@ Query::Query(Connection * conn_, const std::string & query_string) : conn(conn_)
     /// Важно в случае, если Query используется не из того же потока, что Connection.
     mysql_thread_init();
 
-    if (!query_string.empty())
-        query_buf << query_string;
-
-    query_buf.imbue(std::locale::classic());
+    query = query_string;
 }
 
 Query::Query(const Query & other) : conn(other.conn)
@@ -32,9 +29,7 @@ Query::Query(const Query & other) : conn(other.conn)
     /// Важно в случае, если Query используется не из того же потока, что Connection.
     mysql_thread_init();
 
-    query_buf.imbue(std::locale::classic());
-
-    *this << other.str();
+    query = other.query;
 }
 
 Query & Query::operator= (const Query & other)
@@ -43,8 +38,7 @@ Query & Query::operator= (const Query & other)
         return *this;
 
     conn = other.conn;
-
-    query_buf.str(other.str());
+    query = other.query;
 
     return *this;
 }
@@ -54,20 +48,13 @@ Query::~Query()
     mysql_thread_end();
 }
 
-void Query::reset()
-{
-    query_buf.str({});
-}
-
 void Query::executeImpl()
 {
-    std::string query_string = query_buf.str();
-
     MYSQL* mysql_driver = conn->getDriver();
 
     auto & logger = Poco::Logger::get("mysqlxx::Query");
     logger.trace("Running MySQL query using connection %lu", mysql_thread_id(mysql_driver));
-    if (mysql_real_query(mysql_driver, query_string.data(), query_string.size()))
+    if (mysql_real_query(mysql_driver, query.data(), query.size()))
     {
         const auto err_no = mysql_errno(mysql_driver);
         switch (err_no)
