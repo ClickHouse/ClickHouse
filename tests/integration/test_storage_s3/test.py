@@ -858,3 +858,10 @@ def test_empty_file(started_cluster):
     table_function = f"s3('{url}', 'CSV', 'id Int32')"
     result = instance.query(f"SELECT count() FROM {table_function}")
     assert(int(result) == 0)
+
+
+def test_insert_with_path_with_globs(started_cluster):
+    instance = started_cluster.instances["dummy"]
+
+    table_function_3 = f"s3('http://minio1:9001/root/test_parquet*', 'minio', 'minio123', 'Parquet', 'a Int32, b String')"
+    instance.query_and_get_error(f"insert into table function {table_function_3} SELECT number, randomString(100) FROM numbers(500)")
