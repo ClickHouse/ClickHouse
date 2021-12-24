@@ -885,26 +885,6 @@ Possible values:
 
 Default value: 2013265920.
 
-## merge_tree_clear_old_temporary_directories_interval_seconds {#setting-merge-tree-clear-old-temporary-directories-interval-seconds}
-
-Sets the interval in seconds for ClickHouse to execute the cleanup of old temporary directories.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: `60` seconds.
-
-## merge_tree_clear_old_parts_interval_seconds {#setting-merge-tree-clear-old-parts-interval-seconds}
-
-Sets the interval in seconds for ClickHouse to execute the cleanup of old parts, WALs, and mutations.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: `1` second.
-
 ## min_bytes_to_use_direct_io {#settings-min-bytes-to-use-direct-io}
 
 The minimum data volume required for using direct I/O access to the storage disk.
@@ -1707,18 +1687,17 @@ Quorum writes
 
 `INSERT` succeeds only when ClickHouse manages to correctly write data to the `insert_quorum` of replicas during the `insert_quorum_timeout`. If for any reason the number of replicas with successful writes does not reach the `insert_quorum`, the write is considered failed and ClickHouse will delete the inserted block from all the replicas where data has already been written.
 
-All the replicas in the quorum are consistent, i.e., they contain data from all previous `INSERT` queries. The `INSERT` sequence is linearized.
+When `insert_quorum_parallel` is disabled, all replicas in the quorum are consistent, i.e. they contain data from all previous `INSERT` queries (the `INSERT` sequence is linearized). When reading data written using `insert_quorum` and `insert_quorum_parallel` is disabled, you can turn on sequential consistency for `SELECT` queries using [select_sequential_consistency](#settings-select_sequential_consistency).
 
-When reading the data written from the `insert_quorum`, you can use the [select_sequential_consistency](#settings-select_sequential_consistency) option.
-
-ClickHouse generates an exception
+ClickHouse generates an exception:
 
 -   If the number of available replicas at the time of the query is less than the `insert_quorum`.
--   At an attempt to write data when the previous block has not yet been inserted in the `insert_quorum` of replicas. This situation may occur if the user tries to perform an `INSERT` before the previous one with the `insert_quorum` is completed.
+-   When `insert_quorum_parallel` is disabled and an attempt to write data is made when the previous block has not yet been inserted in `insert_quorum` of replicas. This situation may occur if the user tries to perform another `INSERT` query to the same table before the previous one with `insert_quorum` is completed.
 
 See also:
 
 -   [insert_quorum_timeout](#settings-insert_quorum_timeout)
+-   [insert_quorum_parallel](#settings-insert_quorum_parallel)
 -   [select_sequential_consistency](#settings-select_sequential_consistency)
 
 ## insert_quorum_timeout {#settings-insert_quorum_timeout}
@@ -1730,11 +1709,29 @@ Default value: 600 000 milliseconds (ten minutes).
 See also:
 
 -   [insert_quorum](#settings-insert_quorum)
+-   [insert_quorum_parallel](#settings-insert_quorum_parallel)
+-   [select_sequential_consistency](#settings-select_sequential_consistency)
+
+## insert_quorum_parallel {#settings-insert_quorum_parallel}
+
+Enables or disables parallelism for quorum `INSERT` queries. If enabled, additional `INSERT` queries can be sent while previous queries have not yet finished. If disabled, additional writes to the same table will be rejected.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 1.
+
+See also:
+
+-   [insert_quorum](#settings-insert_quorum)
+-   [insert_quorum_timeout](#settings-insert_quorum_timeout)
 -   [select_sequential_consistency](#settings-select_sequential_consistency)
 
 ## select_sequential_consistency {#settings-select_sequential_consistency}
 
-Enables or disables sequential consistency for `SELECT` queries:
+Enables or disables sequential consistency for `SELECT` queries. Requires `insert_quorum_parallel` to be disabled (enabled by default).
 
 Possible values:
 
@@ -1747,10 +1744,13 @@ Usage
 
 When sequential consistency is enabled, ClickHouse allows the client to execute the `SELECT` query only for those replicas that contain data from all previous `INSERT` queries executed with `insert_quorum`. If the client refers to a partial replica, ClickHouse will generate an exception. The SELECT query will not include data that has not yet been written to the quorum of replicas.
 
+When `insert_quorum_parallel` is enabled (the default), then `select_sequential_consistency` does not work. This is because parallel `INSERT` queries can be written to different sets of quorum replicas so there is no guarantee a single replica will have received all writes.
+
 See also:
 
 -   [insert_quorum](#settings-insert_quorum)
 -   [insert_quorum_timeout](#settings-insert_quorum_timeout)
+-   [insert_quorum_parallel](#settings-insert_quorum_parallel)
 
 ## insert_deduplicate {#settings-insert-deduplicate}
 

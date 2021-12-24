@@ -16,7 +16,7 @@ namespace ProfileEvents
 namespace DB
 {
 
-void CountingTransform::transform(Chunk & chunk)
+void CountingTransform::onConsume(Chunk chunk)
 {
     Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
     progress.incrementPiecewiseAtomically(local_progress);
@@ -39,6 +39,8 @@ void CountingTransform::transform(Chunk & chunk)
 
     if (progress_callback)
         progress_callback(local_progress);
+
+    cur_chunk = std::move(chunk);
 }
 
 }
