@@ -7,8 +7,9 @@ import sys
 
 import boto3
 from github import Github
+import requests
 
-from env_helper import REPORTS_PATH, REPO_COPY, TEMP_PATH
+from env_helper import REPO_COPY, TEMP_PATH
 from stopwatch import Stopwatch
 from upload_result_helper import upload_results
 from s3_helper import S3Helper
@@ -16,11 +17,11 @@ from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from pr_info import PRInfo
 from compress_files import compress_fast
 from commit_status_helper import post_commit_status
-from docker_pull_helper import get_image_with_version
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
+from version_helper import get_version_from_repo
 from tee_popen import TeePopen
 from ssh import SSHKey
-from build_download_helper import get_build_name_for_check, get_build_urls
+from build_download_helper import get_build_name_for_check
 from rerun_helper import RerunHelper
 
 JEPSEN_GROUP_NAME = 'jepsen_group'
@@ -119,6 +120,10 @@ if __name__ == "__main__":
 
     pr_info = PRInfo()
 
+    if pr_info.number != 0 and 'jepsen test' not in pr_info.labels():
+        logging.info("Not jepsen test label in labels list, skipping")
+        sys.exit(0)
+
     gh = Github(get_best_robot_token())
 
     rerun_helper = RerunHelper(gh, pr_info, CHECK_NAME)
@@ -136,19 +141,32 @@ if __name__ == "__main__":
     instances = prepare_autoscaling_group_and_get_hostnames()
     nodes_path = save_nodes_to_file(instances, TEMP_PATH)
 
-    docker_image = get_image_with_version(REPORTS_PATH, IMAGE_NAME)
+    # always use latest
+    docker_image = IMAGE_NAME
 
     build_name = get_build_name_for_check(CHECK_NAME)
-    urls = get_build_urls(build_name, REPORTS_PATH)
-    if not urls:
-        raise Exception("No build URLs found")
 
-    for url in urls:
-        if url.endswith('/clickhouse'):
-            build_url = url
-            break
+    if pr_info.number == 0:
+        version = get_version_from_repo(REPO_COPY)
+        release_or_pr = ".".join(version.as_tuple()[:2])
     else:
-        raise Exception("Cannot binary clickhouse among build results")
+        # PR number for anything else
+        release_or_pr = str(pr_info.number)
+
+    # This check run separately from other checks because it requires exclusive
+    # run (see .github/workflows/jepsen.yml) So we cannot add explicit
+    # dependency on a build job and using busy loop on it's results. For the
+    # same reason we are using latest docker image.
+    build_url = f"https://s3.amazonaws.com/clickhouse-builds/{release_or_pr}/{pr_info.sha}/{build_name}/clickhouse"
+    head = requests.head(build_url)
+    counter = 0
+    while head.status_code != 200:
+        time.sleep(10)
+        head = requests.head(build_url)
+        counter += 1
+        if counter >= 180:
+            post_commit_status(gh, pr_info.sha, CHECK_NAME, "Cannot fetch build to run", "error", "")
+            raise Exception("Cannot fetch build")
 
     with SSHKey(key_value=get_parameter_from_ssm("jepsen_ssh_key") + '\n'):
         ssh_auth_sock = os.environ['SSH_AUTH_SOCK']
