@@ -14,7 +14,7 @@
 
 #include <IO/WriteHelpers.h>
 
-#include <base/DateLUTImpl.h>
+#include <Common/DateLUTImpl.h>
 #include <base/find_symbols.h>
 #include <Core/DecimalFunctions.h>
 

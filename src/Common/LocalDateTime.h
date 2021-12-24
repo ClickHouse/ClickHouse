@@ -3,8 +3,8 @@
 #include <string>
 #include <iomanip>
 #include <exception>
-#include <base/DateLUT.h>
-#include <base/LocalDate.h>
+#include <Common/DateLUT.h>
+#include <Common/LocalDate.h>
 
 
 /** Stores calendar date and time in broken-down form.
