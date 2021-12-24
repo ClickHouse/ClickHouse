@@ -57,7 +57,7 @@ void SerializationBool::deserializeTextEscaped(IColumn & column, ReadBuffer & is
     if (istr.eof())
         throw Exception("Expected boolean value but get EOF.", ErrorCodes::CANNOT_PARSE_BOOL);
 
-    deserializeWithCustom(column, istr, settings, [](ReadBuffer & buf){ return buf.eof() || *buf.position() == '\t' || *buf.position() == '\n'; });
+    deserializeImpl(column, istr, settings, [](ReadBuffer & buf){ return buf.eof() || *buf.position() == '\t' || *buf.position() == '\n'; });
 }
 
 void SerializationBool::serializeTextJSON(const IColumn &column, size_t row_num, WriteBuffer &ostr, const FormatSettings &settings) const
@@ -93,7 +93,7 @@ void SerializationBool::deserializeTextCSV(IColumn & column, ReadBuffer & istr, 
     if (istr.eof())
         throw Exception("Expected boolean value but get EOF.", ErrorCodes::CANNOT_PARSE_BOOL);
 
-    deserializeWithCustom(column, istr, settings, [&](ReadBuffer & buf){ return buf.eof() || *buf.position() == settings.csv.delimiter || *buf.position() == '\n'; });
+    deserializeImpl(column, istr, settings, [&](ReadBuffer & buf){ return buf.eof() || *buf.position() == settings.csv.delimiter || *buf.position() == '\n'; });
 }
 
 void SerializationBool::serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -106,7 +106,7 @@ void SerializationBool::deserializeTextRaw(IColumn & column, ReadBuffer & istr, 
     if (istr.eof())
         throw Exception("Expected boolean value but get EOF.", ErrorCodes::CANNOT_PARSE_BOOL);
 
-    deserializeWithCustom(column, istr, settings, [&](ReadBuffer & buf){ return buf.eof() || *buf.position() == '\t' || *buf.position() == '\n'; });
+    deserializeImpl(column, istr, settings, [&](ReadBuffer & buf){ return buf.eof() || *buf.position() == '\t' || *buf.position() == '\n'; });
 }
 
 void SerializationBool::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -114,16 +114,42 @@ void SerializationBool::serializeTextQuoted(const IColumn & column, size_t row_n
     serializeSimple(column, row_num, ostr, settings);
 }
 
-void SerializationBool::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationBool::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     if (istr.eof())
         throw Exception("Expected boolean value but get EOF.", ErrorCodes::CANNOT_PARSE_BOOL);
 
     auto * col = checkAndGetDeserializeColumnType(column);
-    if (!deserializeImpl(col, istr))
-        throw Exception(
-            ErrorCodes::CANNOT_PARSE_BOOL,
-            "Invalid boolean value, should be one of True/False/T/F/Y/N/Yes/No/On/Off/Enable/Disable/Enabled/Disabled/1/0");
+
+    char symbol = toLowerIfAlphaASCII(*istr.position());
+    switch (symbol)
+    {
+        case 't':
+            assertStringCaseInsensitive("true", istr);
+            col->insert(true);
+            break;
+        case 'f':
+            assertStringCaseInsensitive("false", istr);
+            col->insert(false);
+            break;
+        case '1':
+            col->insert(true);
+            break;
+        case '0':
+            col->insert(false);
+            break;
+        case '\'':
+            ++istr.position();
+            deserializeImpl(column, istr, settings, [](ReadBuffer & buf){ return !buf.eof() && *buf.position() == '\''; });
+            assertChar('\'', istr);
+            break;
+        default:
+            throw Exception(
+                ErrorCodes::CANNOT_PARSE_BOOL,
+                "Cannot parse boolean value here: '{}', should be true/false, 1/0 or on of "
+                "True/False/T/F/Y/N/Yes/No/On/Off/Enable/Disable/Enabled/Disabled/1/0 in quotes",
+                String(istr.position(), std::min(10ul, istr.available())));
+    }
 }
 
 void SerializationBool::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -131,7 +157,7 @@ void SerializationBool::deserializeWholeText(IColumn & column, ReadBuffer & istr
     if (istr.eof())
         throw Exception("Expected boolean value but get EOF.", ErrorCodes::CANNOT_PARSE_BOOL);
 
-    deserializeWithCustom(column, istr, settings, [&](ReadBuffer & buf){ return buf.eof(); });
+    deserializeImpl(column, istr, settings, [&](ReadBuffer & buf){ return buf.eof(); });
 }
 
 void SerializationBool::serializeCustom(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -163,7 +189,7 @@ void SerializationBool::serializeSimple(const IColumn & column, size_t row_num, 
         ostr.write(str_false, sizeof(str_false) - 1);
 }
 
-void SerializationBool::deserializeWithCustom(
+void SerializationBool::deserializeImpl(
     IColumn & column, ReadBuffer & istr, const FormatSettings & settings, std::function<bool(ReadBuffer &)> check_end_of_value) const
 {
     ColumnUInt8 * col = checkAndGetDeserializeColumnType(column);
@@ -190,7 +216,7 @@ void SerializationBool::deserializeWithCustom(
     }
 
     buf.rollbackToCheckpoint();
-    if (deserializeImpl(col, buf) && check_end_of_value(buf))
+    if (tryDeserializeAllVariants(col, buf) && check_end_of_value(buf))
     {
         buf.dropCheckpoint();
         if (buf.hasUnreadData())
@@ -201,15 +227,18 @@ void SerializationBool::deserializeWithCustom(
         return;
     }
 
+    buf.makeContinuousMemoryFromCheckpointToPos();
+    buf.rollbackToCheckpoint();
     throw Exception(
         ErrorCodes::CANNOT_PARSE_BOOL,
-        "Invalid boolean value, should be '{}' or '{}' controlled by setting bool_true_representation and "
+        "Cannot parse boolean value here: '{}', should be '{}' or '{}' controlled by setting bool_true_representation and "
         "bool_false_representation or one of "
         "True/False/T/F/Y/N/Yes/No/On/Off/Enable/Disable/Enabled/Disabled/1/0",
+        String(buf.position(), std::min(10lu, buf.available())),
         settings.bool_true_representation, settings.bool_false_representation);
 }
 
-bool SerializationBool::deserializeImpl(ColumnUInt8 * column, ReadBuffer & istr) const
+bool SerializationBool::tryDeserializeAllVariants(ColumnUInt8 * column, ReadBuffer & istr) const
 {
     if (checkCharCaseInsensitive('1', istr))
     {
