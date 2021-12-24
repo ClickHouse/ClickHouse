@@ -823,7 +823,7 @@ inline char & Field::reinterpret<char>()
     {
         // For String we want to return a pointer to the data, not the start of the class
         // as the layout of std::string depends on the STD version and options
-        char * MAY_ALIAS ptr = reinterpret_cast<String *>(&storage)->data();
+        char * ptr = reinterpret_cast<String *>(&storage)->data();
         return *ptr;
     }
     return *reinterpret_cast<char *>(&storage);
