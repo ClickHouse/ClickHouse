@@ -169,4 +169,28 @@
         <command_read_timeout>1000</command_read_timeout>
     </function>
 
+    <function>
+        <type>executable</type>
+        <name>test_function_non_direct_bash</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>while read read_data; do printf "Key $read_data\n"; done</command>
+        <execute_direct>0</execute_direct>
+    </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_non_direct_pool_bash</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>while read read_data; do printf "Key $read_data\n"; done</command>
+        <execute_direct>0</execute_direct>
+    </function>
+
 </functions>
