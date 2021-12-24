@@ -51,7 +51,7 @@ function tx_async()
     tx_num=$1
     query=$2
 
-    tx_wait $tx_num
+    tx_wait "$tx_num"
 
     session="${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}_tx$tx_num"
     query_id="${session}_${RANDOM}"
@@ -73,6 +73,6 @@ function tx_sync()
 {
     tx_num=$1
     query=$2
-    tx_wait $tx_num
-    tx $tx_num $query
+    tx_wait "$tx_num"
+    tx "$tx_num" "$query"
 }
