@@ -1101,15 +1101,13 @@ class ClickHouseCluster:
                 info = self.mysql_client_container.client.api.inspect_container(self.mysql_client_container.name)
                 if info['State']['Health']['Status'] == 'healthy':
                     logging.debug("Mysql Client Container Started")
-                    break
+                    return
                 time.sleep(1)
-
-                return
             except Exception as ex:
                 errors += [str(ex)]
                 time.sleep(1)
 
-        run_and_check(['docker-compose', 'ps', '--services', '--all'])
+        run_and_check(['docker', 'ps', '--all'])
         logging.error("Can't connect to MySQL Client:{}".format(errors))
         raise Exception("Cannot wait MySQL Client container")
 
@@ -1529,7 +1527,7 @@ class ClickHouseCluster:
                 if os.path.exists(self.mysql_dir):
                     shutil.rmtree(self.mysql_dir)
                 os.makedirs(self.mysql_logs_dir)
-                os.chmod(self.mysql_logs_dir, stat.S_IRWXO)
+                os.chmod(self.mysql_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 subprocess_check_call(self.base_mysql_cmd + common_opts)
                 self.up_called = True
                 self.wait_mysql_to_start()
@@ -1539,7 +1537,7 @@ class ClickHouseCluster:
                 if os.path.exists(self.mysql8_dir):
                     shutil.rmtree(self.mysql8_dir)
                 os.makedirs(self.mysql8_logs_dir)
-                os.chmod(self.mysql8_logs_dir, stat.S_IRWXO)
+                os.chmod(self.mysql8_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 subprocess_check_call(self.base_mysql8_cmd + common_opts)
                 self.wait_mysql8_to_start()
 
@@ -1548,7 +1546,7 @@ class ClickHouseCluster:
                 if os.path.exists(self.mysql_cluster_dir):
                     shutil.rmtree(self.mysql_cluster_dir)
                 os.makedirs(self.mysql_cluster_logs_dir)
-                os.chmod(self.mysql_cluster_logs_dir, stat.S_IRWXO)
+                os.chmod(self.mysql_cluster_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 subprocess_check_call(self.base_mysql_cluster_cmd + common_opts)
                 self.up_called = True
@@ -1559,7 +1557,7 @@ class ClickHouseCluster:
                 if os.path.exists(self.postgres_dir):
                     shutil.rmtree(self.postgres_dir)
                 os.makedirs(self.postgres_logs_dir)
-                os.chmod(self.postgres_logs_dir, stat.S_IRWXO)
+                os.chmod(self.postgres_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 subprocess_check_call(self.base_postgres_cmd + common_opts)
                 self.up_called = True
@@ -1568,11 +1566,11 @@ class ClickHouseCluster:
             if self.with_postgres_cluster and self.base_postgres_cluster_cmd:
                 print('Setup Postgres')
                 os.makedirs(self.postgres2_logs_dir)
-                os.chmod(self.postgres2_logs_dir, stat.S_IRWXO)
+                os.chmod(self.postgres2_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 os.makedirs(self.postgres3_logs_dir)
-                os.chmod(self.postgres3_logs_dir, stat.S_IRWXO)
+                os.chmod(self.postgres3_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 os.makedirs(self.postgres4_logs_dir)
-                os.chmod(self.postgres4_logs_dir, stat.S_IRWXO)
+                os.chmod(self.postgres4_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 subprocess_check_call(self.base_postgres_cluster_cmd + common_opts)
                 self.up_called = True
                 self.wait_postgres_cluster_to_start()
@@ -1593,7 +1591,7 @@ class ClickHouseCluster:
             if self.with_rabbitmq and self.base_rabbitmq_cmd:
                 logging.debug('Setup RabbitMQ')
                 os.makedirs(self.rabbitmq_logs_dir)
-                os.chmod(self.rabbitmq_logs_dir, stat.S_IRWXO)
+                os.chmod(self.rabbitmq_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 for i in range(5):
                     subprocess_check_call(self.base_rabbitmq_cmd + common_opts + ['--renew-anon-volumes'])
@@ -1606,7 +1604,7 @@ class ClickHouseCluster:
             if self.with_hdfs and self.base_hdfs_cmd:
                 logging.debug('Setup HDFS')
                 os.makedirs(self.hdfs_logs_dir)
-                os.chmod(self.hdfs_logs_dir, stat.S_IRWXO)
+                os.chmod(self.hdfs_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 subprocess_check_call(self.base_hdfs_cmd + common_opts)
                 self.up_called = True
                 self.make_hdfs_api()
@@ -1615,7 +1613,7 @@ class ClickHouseCluster:
             if self.with_kerberized_hdfs and self.base_kerberized_hdfs_cmd:
                 logging.debug('Setup kerberized HDFS')
                 os.makedirs(self.hdfs_kerberized_logs_dir)
-                os.chmod(self.hdfs_kerberized_logs_dir, stat.S_IRWXO)
+                os.chmod(self.hdfs_kerberized_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 run_and_check(self.base_kerberized_hdfs_cmd + common_opts)
                 self.up_called = True
                 self.make_hdfs_api(kerberized=True)
@@ -1671,7 +1669,7 @@ class ClickHouseCluster:
 
             if self.with_jdbc_bridge and self.base_jdbc_bridge_cmd:
                 os.makedirs(self.jdbc_driver_logs_dir)
-                os.chmod(self.jdbc_driver_logs_dir, stat.S_IRWXO)
+                os.chmod(self.jdbc_driver_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 subprocess_check_call(self.base_jdbc_bridge_cmd + ['up', '-d'])
                 self.up_called = True
@@ -2156,7 +2154,7 @@ class ClickHouseInstance:
     def wait_start(self, start_wait_sec):
         start_time = time.time()
         last_err = None
-        while time.time() <= start_time + start_wait_sec:
+        while True:
             try:
                 pid = self.get_process_pid("clickhouse")
                 if pid is None:
@@ -2170,6 +2168,8 @@ class ClickHouseInstance:
                     logging.warning(f"ERROR {err}")
                 else:
                     raise Exception("ClickHouse server is not running. Check logs.")
+            if time.time() > start_time + start_wait_sec:
+                break
         logging.error(f"No time left to start. But process is still running. Will dump threads.")
         ps_clickhouse = self.exec_in_container(["bash", "-c", "ps -C clickhouse"], nothrow=True, user='root')
         logging.info(f"PS RESULT:\n{ps_clickhouse}")
