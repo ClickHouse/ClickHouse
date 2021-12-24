@@ -17,8 +17,8 @@ CREATE TABLE IF NOT EXISTS decimal
 INSERT INTO decimal (a, b, c, d, e, f, g, h, i, j) VALUES (42, 42, 42, 0.42, 0.42, 0.42, 42.42, 42.42, 42.42, 42.42);
 INSERT INTO decimal (a, b, c, d, e, f, g, h, i, j) VALUES (-42, -42, -42, -0.42, -0.42, -0.42, -42.42, -42.42, -42.42, -42.42);
 
-SELECT a > toFloat64(0) FROM decimal;
-SELECT g > toFloat32(0) FROM decimal;
+SELECT a > toFloat64(0) FROM decimal ORDER BY a;
+SELECT g > toFloat32(0) FROM decimal ORDER BY g;
 SELECT a > '0.0' FROM decimal ORDER BY a;
 
 SELECT a, b, a = b, a < b, a > b, a != b, a <= b, a >= b FROM decimal ORDER BY a;
