@@ -2,7 +2,6 @@
 
 #include <string.h>
 #include <string>
-#include <sstream>
 #include <exception>
 #include <Common/DateLUT.h>
 
@@ -153,19 +152,6 @@ public:
     bool operator!= (const LocalDate & other) const
     {
         return !(*this == other);
-    }
-
-    /// NOTE Inefficient.
-    std::string toString(char separator = '-') const
-    {
-        std::stringstream ss;
-        if (separator)
-            ss << year() << separator << (month() / 10) << (month() % 10)
-                << separator << (day() / 10) << (day() % 10);
-        else
-            ss << year() << (month() / 10) << (month() % 10)
-                << (day() / 10) << (day() % 10);
-        return ss.str();
     }
 };
 
