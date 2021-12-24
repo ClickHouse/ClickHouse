@@ -111,6 +111,7 @@ class PRInfo:
                 else:
                     self.diff_url = pull_request['diff_url']
         else:
+            print(json.dumps(github_event, sort_keys=True, indent=4))
             raise Exception("Cannot detect type of event")
         if need_changed_files:
             self.fetch_changed_files()
