@@ -4,6 +4,7 @@
 #include <mysql/mysql.h>
 #endif
 #include <mysqlxx/Exception.h>
+#include <fmt/format.h>
 
 
 namespace mysqlxx
@@ -11,11 +12,7 @@ namespace mysqlxx
 
 std::string errorMessage(MYSQL * driver)
 {
-    std::stringstream res;
-    res << mysql_error(driver)
-        << " (" << (driver->host ? driver->host : "(nullptr)")
-        << ":" << driver->port << ")";
-    return res.str();
+    return fmt::format("{} ({}:{})", mysql_error(driver), driver->host ? driver->host : "(nullptr)", driver->port);
 }
 
 void checkError(MYSQL * driver)
