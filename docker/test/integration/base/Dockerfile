@@ -1,5 +1,6 @@
 # docker build -t clickhouse/integration-test .
-FROM clickhouse/test-base
+ARG FROM_TAG=latest
+FROM clickhouse/test-base:$FROM_TAG
 
 SHELL ["/bin/bash", "-c"]
 

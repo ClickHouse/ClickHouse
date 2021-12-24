@@ -125,8 +125,9 @@ def build_and_push_one_image(
         "w",
     ) as pl:
         cmd = (
-            f"docker buildx build --builder default "
-            f"--tag {image_name}:{version_string} --push {path}"
+            "docker buildx build --builder default --build-arg "
+            f"FROM_TAG={version_string} --tag {image_name}:{version_string} "
+            f"--push {path}"
         )
         logging.info("Docker command to run: %s", cmd)
         retcode = subprocess.Popen(cmd, shell=True, stderr=pl, stdout=pl).wait()
