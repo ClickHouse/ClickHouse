@@ -238,6 +238,6 @@ target_link_libraries(mariadbclient ${SYSTEM_LIBS})
 
 target_include_directories(mariadbclient
     PRIVATE ${CC_BINARY_DIR}/include-private
-    PUBLIC ${CC_BINARY_DIR}/include-public ${CC_SOURCE_DIR}/include ${CC_SOURCE_DIR}/libmariadb)
+    PUBLIC SYSTEM ${CC_BINARY_DIR}/include-public ${CC_SOURCE_DIR}/include ${CC_SOURCE_DIR}/libmariadb)
 
 set_target_properties(mariadbclient PROPERTIES IMPORTED_INTERFACE_LINK_LIBRARIES "${SYSTEM_LIBS}")
