@@ -28,7 +28,7 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        return argument_types.front();
+        return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
     }
 
     bool allocatesMemoryInArena() const override { return false; }
