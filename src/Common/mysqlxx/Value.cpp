@@ -156,19 +156,21 @@ void Value::throwException(const char * text) const
 {
     static constexpr size_t preview_length = 1000;
 
-    std::stringstream info;
-    info << text;
+    std::string info(text);
 
     if (!isNull())
     {
-        info << ": ";
-        info.write(m_data, m_length);
+        info.append(": ");
+        info.append(m_data, m_length);
     }
 
     if (res && res->getQuery())
-        info << ", query: " << res->getQuery()->str().substr(0, preview_length);
+    {
+        info.append(", query: ");
+        info.append(res->getQuery()->str().substr(0, preview_length));
+    }
 
-    throw CannotParseValue(info.str());
+    throw CannotParseValue(info);
 }
 
 }
