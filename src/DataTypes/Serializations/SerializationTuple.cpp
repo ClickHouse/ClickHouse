@@ -260,7 +260,7 @@ void SerializationTuple::serializeTextCSV(const IColumn & column, size_t row_num
     for (const auto i : collections::range(0, elems.size()))
     {
         if (i != 0)
-            writeChar(',', ostr);
+            writeChar(settings.csv.tuple_delimiter, ostr);
         elems[i]->serializeTextCSV(extractElementColumn(column, i), row_num, ostr, settings);
     }
 }
@@ -275,7 +275,7 @@ void SerializationTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
             if (i != 0)
             {
                 skipWhitespaceIfAny(istr);
-                assertChar(settings.csv.delimiter, istr);
+                assertChar(settings.csv.tuple_delimiter, istr);
                 skipWhitespaceIfAny(istr);
             }
             elems[i]->deserializeTextCSV(extractElementColumn(column, i), istr, settings);
