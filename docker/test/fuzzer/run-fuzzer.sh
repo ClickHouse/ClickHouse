@@ -194,8 +194,8 @@ quit
     time clickhouse-client --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
 
     # Check connectivity after we attach gdb, because it might cause the server
-    # to freeze and the fuzzer will fail.
-    for _ in {1..60}
+    # to freeze and the fuzzer will fail. In debug build it can take a lot of time.
+    for _ in {1..180}
     do
         sleep 1
         if clickhouse-client --query "select 1"
