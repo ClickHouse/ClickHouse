@@ -11,17 +11,18 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
 
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Interpreters/convertFieldToType.h>
@@ -1178,6 +1179,9 @@ public:
         const bool left_is_string = which_left.isStringOrFixedString();
         const bool right_is_string = which_right.isStringOrFixedString();
 
+        const bool left_is_float = which_left.isFloat();
+        const bool right_is_float = which_right.isFloat();
+
         bool date_and_datetime = (which_left.idx != which_right.idx) && (which_left.isDate() || which_left.isDate32() || which_left.isDateTime() || which_left.isDateTime64())
             && (which_right.isDate() || which_right.isDate32() || which_right.isDateTime() || which_right.isDateTime64());
 
@@ -1237,6 +1241,15 @@ public:
                     throw Exception(
                         "No operation " + getName() + " between " + left_type->getName() + " and " + right_type->getName(),
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                /// When Decimal comparing to Float32/64, We convert both of them into Float64. Other systems like MySQL
+                /// also do as this.
+                if (left_is_float || right_is_float)
+                {
+                    const auto converted_type = DataTypeFactory::instance().get("Float64");
+                    ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, converted_type);
+                    ColumnPtr c1_converted = castColumn(col_with_type_and_name_right, converted_type);
+                    return executeGenericIdenticalTypes(c0_converted.get(), c1_converted.get());
+                }
                 return executeDecimal(col_with_type_and_name_left, col_with_type_and_name_right);
             }
 

@@ -17,9 +17,7 @@ template <typename, typename> struct GreatestBaseImpl;
 template <typename, typename> struct ModuloImpl;
 template <typename, typename> struct EqualsOp;
 template <typename, typename> struct NotEqualsOp;
-template <typename, typename> struct LessOp;
 template <typename, typename> struct LessOrEqualsOp;
-template <typename, typename> struct GreaterOp;
 template <typename, typename> struct GreaterOrEqualsOp;
 
 template <typename>
@@ -44,9 +42,7 @@ struct IsOperation
 {
     static constexpr bool equals = IsSameOperation<Op, EqualsOp>::value;
     static constexpr bool not_equals = IsSameOperation<Op, NotEqualsOp>::value;
-    static constexpr bool less = IsSameOperation<Op, LessOp>::value;
     static constexpr bool less_or_equals = IsSameOperation<Op, LessOrEqualsOp>::value;
-    static constexpr bool greater = IsSameOperation<Op, GreaterOp>::value;
     static constexpr bool greater_or_equals = IsSameOperation<Op, GreaterOrEqualsOp>::value;
 
     static constexpr bool plus = IsSameOperation<Op, PlusImpl>::value;
