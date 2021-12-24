@@ -56,28 +56,36 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        auto coordinator = executable_function->getCoordinator();
+        const auto & coordinator_configuration = coordinator->getConfiguration();
         const auto & configuration = executable_function->getConfiguration();
 
-        auto user_scripts_path = context->getUserScriptsPath();
-        const auto & script_name = configuration.script_name;
+        String command = configuration.command;
 
-        auto script_path = user_scripts_path + '/' + script_name;
+        if (coordinator_configuration.execute_direct)
+        {
+            auto user_scripts_path = context->getUserScriptsPath();
+            auto script_path = user_scripts_path + '/' + command;
 
-        if (!fileOrSymlinkPathStartsWith(script_path, user_scripts_path))
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Executable file {} must be inside user scripts folder {}",
-                script_name,
-                user_scripts_path);
+            if (!fileOrSymlinkPathStartsWith(script_path, user_scripts_path))
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                    "Executable file {} must be inside user scripts folder {}",
+                    command,
+                    user_scripts_path);
 
-        if (!std::filesystem::exists(std::filesystem::path(script_path)))
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Executable file {} does not exist inside user scripts folder {}",
-                script_name,
-                user_scripts_path);
+            if (!std::filesystem::exists(std::filesystem::path(script_path)))
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                    "Executable file {} does not exist inside user scripts folder {}",
+                    command,
+                    user_scripts_path);
 
+            command = std::move(script_path);
+        }
+
+        size_t argument_size = arguments.size();
         auto arguments_copy = arguments;
 
-        for (size_t i = 0; i < arguments.size(); ++i)
+        for (size_t i = 0; i < argument_size; ++i)
         {
             auto & column_with_type = arguments_copy[i];
             column_with_type.column = column_with_type.column->convertToFullColumnIfConst();
@@ -100,8 +108,6 @@ public:
         auto source = std::make_shared<SourceFromSingleChunk>(std::move(arguments_block));
         auto shell_input_pipe = Pipe(std::move(source));
 
-        auto coordinator = executable_function->getCoordinator();
-
         ShellCommandSourceConfiguration shell_command_source_configuration;
 
         if (coordinator->getConfiguration().is_executable_pool)
@@ -114,8 +120,8 @@ public:
         shell_input_pipes.emplace_back(std::move(shell_input_pipe));
 
         Pipe pipe = coordinator->createPipe(
-            script_path,
-            configuration.script_arguments,
+            command,
+            configuration.command_arguments,
             std::move(shell_input_pipes),
             result_block,
             context,

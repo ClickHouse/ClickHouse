@@ -19,7 +19,10 @@
 namespace DB
 {
 
-using ProcessPool = BorrowedObjectPool<std::unique_ptr<ShellCommand>>;
+class ShellCommandHolder;
+using ShellCommandHolderPtr = std::unique_ptr<ShellCommandHolder>;
+
+using ProcessPool = BorrowedObjectPool<ShellCommandHolderPtr>;
 
 struct ShellCommandSourceConfiguration
 {
@@ -43,14 +46,20 @@ public:
         /// Script output format
         std::string format;
 
+        /// Command termination timeout in seconds
+        size_t command_termination_timeout_seconds = 10;
+
+        /// Timeout for reading data from command stdout
+        size_t command_read_timeout_milliseconds = 10000;
+
+        /// Timeout for writing data to command stdin
+        size_t command_write_timeout_milliseconds = 10000;
+
         /// Pool size valid only if executable_pool = true
         size_t pool_size = 16;
 
-        /// Command termination timeout in seconds. Valid only if executable_pool = true
-        size_t command_termination_timeout = 10;
-
-        /// Max command execution time in seconds. Valid only if executable_pool = true
-        size_t max_command_execution_time = 10;
+        /// Max command execution time in milliseconds. Valid only if executable_pool = true
+        size_t max_command_execution_time_seconds = 10;
 
         /// Should pool of processes be created.
         bool is_executable_pool = false;

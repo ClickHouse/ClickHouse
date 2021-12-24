@@ -54,8 +54,53 @@ def test_executable_function_python(started_cluster):
     assert node.query("SELECT test_function_python(toUInt64(1))") == 'Key 1\n'
     assert node.query("SELECT test_function_python(1)") == 'Key 1\n'
 
+    assert node.query("SELECT test_function_pool_python(toUInt64(1))") == 'Key 1\n'
+    assert node.query("SELECT test_function_pool_python(1)") == 'Key 1\n'
+
+def test_executable_function_send_chunk_header_python(started_cluster):
+    skip_test_msan(node)
+    assert node.query("SELECT test_function_send_chunk_header_python(toUInt64(1))") == 'Key 1\n'
+    assert node.query("SELECT test_function_send_chunk_header_python(1)") == 'Key 1\n'
+
+    assert node.query("SELECT test_function_send_chunk_header_pool_python(toUInt64(1))") == 'Key 1\n'
+    assert node.query("SELECT test_function_send_chunk_header_pool_python(1)") == 'Key 1\n'
+
+def test_executable_function_sum_python(started_cluster):
+    skip_test_msan(node)
     assert node.query("SELECT test_function_sum_python(toUInt64(1), toUInt64(1))") == '2\n'
     assert node.query("SELECT test_function_sum_python(1, 1)") == '2\n'
 
-    # assert node.query("SELECT test_function_pool_python(toUInt64(1))") == 'Key 1\n'
-    # assert node.query("SELECT test_function_pool_python(1)") == 'Key 1\n'
+    assert node.query("SELECT test_function_sum_pool_python(toUInt64(1), toUInt64(1))") == '2\n'
+    assert node.query("SELECT test_function_sum_pool_python(1, 1)") == '2\n'
+
+def test_executable_function_argument_python(started_cluster):
+    skip_test_msan(node)
+    assert node.query("SELECT test_function_argument_python(toUInt64(1))") == 'Key 1 1\n'
+    assert node.query("SELECT test_function_argument_python(1)") == 'Key 1 1\n'
+
+    assert node.query("SELECT test_function_argument_pool_python(toUInt64(1))") == 'Key 1 1\n'
+    assert node.query("SELECT test_function_argument_pool_python(1)") == 'Key 1 1\n'
+
+def test_executable_function_signalled_python(started_cluster):
+    skip_test_msan(node)
+    assert node.query_and_get_error("SELECT test_function_signalled_python(toUInt64(1))")
+    assert node.query_and_get_error("SELECT test_function_signalled_python(1)")
+
+    assert node.query_and_get_error("SELECT test_function_signalled_pool_python(toUInt64(1))")
+    assert node.query_and_get_error("SELECT test_function_signalled_pool_python(1)")
+
+def test_executable_function_slow_python(started_cluster):
+    skip_test_msan(node)
+    assert node.query_and_get_error("SELECT test_function_slow_python(toUInt64(1))")
+    assert node.query_and_get_error("SELECT test_function_slow_python(1)")
+
+    assert node.query_and_get_error("SELECT test_function_slow_pool_python(toUInt64(1))")
+    assert node.query_and_get_error("SELECT test_function_slow_pool_python(1)")
+
+def test_executable_function_signalled_python(started_cluster):
+    skip_test_msan(node)
+    assert node.query_and_get_error("SELECT test_function_signalled_python(toUInt64(1))")
+    assert node.query_and_get_error("SELECT test_function_signalled_python(1)")
+
+    assert node.query_and_get_error("SELECT test_function_signalled_pool_python(toUInt64(1))")
+    assert node.query_and_get_error("SELECT test_function_signalled_pool_python(1)")

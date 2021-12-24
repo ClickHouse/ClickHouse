@@ -53,10 +53,12 @@ StorageExecutable::StorageExecutable(
     ShellCommandCoordinator::Configuration configuration
     {
         .format = format,
+        .command_termination_timeout_seconds = settings.command_termination_timeout,
+        .command_read_timeout_milliseconds = settings.command_read_timeout,
+        .command_write_timeout_milliseconds = settings.command_write_timeout,
 
         .pool_size = settings.pool_size,
-        .command_termination_timeout = settings.command_termination_timeout,
-        .max_command_execution_time = settings.max_command_execution_time,
+        .max_command_execution_time_seconds = settings.max_command_execution_time,
 
         .is_executable_pool = settings.is_executable_pool,
         .send_chunk_header = settings.send_chunk_header,
