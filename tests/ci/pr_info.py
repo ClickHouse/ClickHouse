@@ -42,6 +42,14 @@ class PRInfo:
                 github_event = {'commits': 1, 'after': 'HEAD', 'ref': None}
         self.event = github_event
         self.changed_files = set([])
+
+        # workflow completed event, used for PRs only
+        if github_event['action'] == 'completed':
+            self.sha = github_event['workflow_run']['head_sha']
+            prs_for_sha = requests.get(f"https://api.github.com/repos/{GITHUB_REPOSITORY}/commits/{self.sha}/pulls").json()
+            if len(prs_for_sha) != 0:
+                github_event['pull_request'] = prs_for_sha[0]
+
         if 'pull_request' in github_event:  # pull request and other similar events
             self.number = github_event['number']
             if 'after' in github_event:
