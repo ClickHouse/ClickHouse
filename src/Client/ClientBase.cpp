@@ -561,7 +561,7 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
 
     try
     {
-        processParsedSingleQuery(full_query, query_to_execute, parsed_query);
+        processParsedSingleQuery(full_query, query_to_execute, parsed_query, echo_queries);
     }
     catch (Exception & e)
     {
