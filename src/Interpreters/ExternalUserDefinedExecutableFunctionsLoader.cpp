@@ -68,25 +68,32 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
             "Wrong user defined function type expected 'executable' or 'executable_pool' actual {}",
             type);
 
-    String scipt_name_with_arguments_value = config.getString(key_in_config + ".command");
+    bool execute_direct = config.getBool(key_in_config + ".execute_direct", true);
 
-    std::vector<String> script_name_with_arguments;
-    boost::split(script_name_with_arguments, scipt_name_with_arguments_value, [](char c) { return c == ' '; });
+    String command_value = config.getString(key_in_config + ".command");
+    std::vector<String> command_arguments;
 
-    auto script_name = script_name_with_arguments[0];
-    script_name_with_arguments.erase(script_name_with_arguments.begin());
+    if (execute_direct)
+    {
+        boost::split(command_arguments, command_value, [](char c) { return c == ' '; });
+
+        command_value = std::move(command_arguments[0]);
+        command_arguments.erase(command_arguments.begin());
+    }
 
     String format = config.getString(key_in_config + ".format");
     DataTypePtr result_type = DataTypeFactory::instance().get(config.getString(key_in_config + ".return_type"));
     bool send_chunk_header = config.getBool(key_in_config + ".send_chunk_header", false);
+    size_t command_termination_timeout_seconds = config.getUInt64(key_in_config + ".command_termination_timeout", 10);
+    size_t command_read_timeout_milliseconds = config.getUInt64(key_in_config + ".command_read_timeout", 10000);
+    size_t command_write_timeout_milliseconds = config.getUInt64(key_in_config + ".command_write_timeout", 10000);
 
     size_t pool_size = 0;
-    size_t command_termination_timeout = 0;
     size_t max_command_execution_time = 0;
+
     if (is_executable_pool)
     {
         pool_size = config.getUInt64(key_in_config + ".pool_size", 16);
-        command_termination_timeout = config.getUInt64(key_in_config + ".command_termination_timeout", 10);
         max_command_execution_time = config.getUInt64(key_in_config + ".max_command_execution_time", 10);
 
         size_t max_execution_time_seconds = static_cast<size_t>(getContext()->getSettings().max_execution_time.totalSeconds());
@@ -117,8 +124,8 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
     UserDefinedExecutableFunctionConfiguration function_configuration
     {
         .name = std::move(name), //-V1030
-        .script_name = std::move(script_name), //-V1030
-        .script_arguments = std::move(script_name_with_arguments), //-V1030
+        .command = std::move(command_value), //-V1030
+        .command_arguments = std::move(command_arguments), //-V1030
         .argument_types = std::move(argument_types), //-V1030
         .result_type = std::move(result_type), //-V1030
     };
@@ -126,12 +133,14 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
     ShellCommandCoordinator::Configuration shell_command_coordinator_configration
     {
         .format = std::move(format), //-V1030
+        .command_termination_timeout_seconds = command_termination_timeout_seconds,
+        .command_read_timeout_milliseconds = command_read_timeout_milliseconds,
+        .command_write_timeout_milliseconds = command_write_timeout_milliseconds,
         .pool_size = pool_size,
-        .command_termination_timeout = command_termination_timeout,
-        .max_command_execution_time = max_command_execution_time,
+        .max_command_execution_time_seconds = max_command_execution_time,
         .is_executable_pool = is_executable_pool,
         .send_chunk_header = send_chunk_header,
-        .execute_direct = true
+        .execute_direct = execute_direct
     };
 
     std::shared_ptr<ShellCommandCoordinator> coordinator = std::make_shared<ShellCommandCoordinator>(shell_command_coordinator_configration);

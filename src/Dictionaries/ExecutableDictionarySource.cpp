@@ -183,6 +183,9 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
         ShellCommandCoordinator::Configuration shell_command_coordinator_configration
         {
             .format = config.getString(settings_config_prefix + ".format"),
+            .command_termination_timeout_seconds = config.getUInt64(settings_config_prefix + ".command_termination_timeout", 10),
+            .command_read_timeout_milliseconds = config.getUInt64(settings_config_prefix + ".command_read_timeout", 10000),
+            .command_write_timeout_milliseconds = config.getUInt64(settings_config_prefix + ".command_write_timeout", 10000),
             .is_executable_pool = false,
             .send_chunk_header = config.getBool(settings_config_prefix + ".send_chunk_header", false),
             .execute_direct = false

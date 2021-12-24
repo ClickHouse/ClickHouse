@@ -1,5 +1,9 @@
 #include <Processors/Sources/ShellCommandSource.h>
 
+#include <sys/poll.h>
+
+#include <Common/Stopwatch.h>
+
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
@@ -17,7 +21,221 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int CANNOT_FCNTL;
+    extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
+    extern const int CANNOT_SELECT;
+    extern const int CANNOT_CLOSE_FILE;
+    extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
 }
+
+static bool tryMakeFdNonBlocking(int fd)
+{
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (-1 == flags)
+        return false;
+    if (-1 == fcntl(fd, F_SETFL, flags | O_NONBLOCK))
+        return false;
+
+    return true;
+}
+
+static void makeFdNonBlocking(int fd)
+{
+    bool result = tryMakeFdNonBlocking(fd);
+    if (!result)
+        throwFromErrno("Cannot set non-blocking mode of pipe", ErrorCodes::CANNOT_FCNTL);
+}
+
+static bool tryMakeFdBlocking(int fd)
+{
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (-1 == flags)
+        return false;
+
+    if (-1 == fcntl(fd, F_SETFL, flags & (~O_NONBLOCK)))
+        return false;
+
+    return true;
+}
+
+static void makeFdBlocking(int fd)
+{
+    bool result = tryMakeFdBlocking(fd);
+    if (!result)
+        throwFromErrno("Cannot set blocking mode of pipe", ErrorCodes::CANNOT_FCNTL);
+}
+
+static bool pollFd(int fd, size_t timeout_milliseconds, int events)
+{
+    pollfd pfd;
+    pfd.fd = fd;
+    pfd.events = events;
+    pfd.revents = 0;
+
+    Stopwatch watch;
+
+    int res;
+
+    while (true)
+    {
+        res = poll(&pfd, 1, timeout_milliseconds);
+
+        if (res < 0)
+        {
+            if (errno == EINTR)
+            {
+                watch.stop();
+                timeout_milliseconds -= watch.elapsedMilliseconds();
+                watch.start();
+
+                continue;
+            }
+            else
+            {
+                throwFromErrno("Cannot select", ErrorCodes::CANNOT_SELECT);
+            }
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    return res > 0;
+}
+
+class TimeoutReadBufferFromFileDescriptor : public BufferWithOwnMemory<ReadBuffer>
+{
+public:
+    explicit TimeoutReadBufferFromFileDescriptor(int fd_, size_t timeout_milliseconds_)
+        : BufferWithOwnMemory<ReadBuffer>()
+        , fd(fd_)
+        , timeout_milliseconds(timeout_milliseconds_)
+    {
+        makeFdNonBlocking(fd);
+    }
+
+    bool nextImpl() override
+    {
+        size_t bytes_read = 0;
+
+        while (!bytes_read)
+        {
+            if (!pollFd(fd, timeout_milliseconds, POLLIN))
+                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Pipe read timeout exceeded {} milliseconds", timeout_milliseconds);
+
+            ssize_t res = ::read(fd, internal_buffer.begin(), internal_buffer.size());
+
+            if (-1 == res && errno != EINTR)
+                throwFromErrno("Cannot read from pipe ", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
+
+            if (res == 0) {
+                break;
+            }
+
+            if (res > 0)
+                bytes_read += res;
+        }
+
+        if (bytes_read > 0) {
+            working_buffer = internal_buffer;
+            working_buffer.resize(bytes_read);
+        }
+        else
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    void reset() const
+    {
+        makeFdBlocking(fd);
+    }
+
+    ~TimeoutReadBufferFromFileDescriptor() override
+    {
+        tryMakeFdBlocking(fd);
+    }
+
+private:
+    int fd;
+    size_t timeout_milliseconds;
+};
+
+class TimeoutWriteBufferFromFileDescriptor : public BufferWithOwnMemory<WriteBuffer>
+{
+public:
+    explicit TimeoutWriteBufferFromFileDescriptor(int fd_, size_t timeout_milliseconds_)
+        : BufferWithOwnMemory<WriteBuffer>()
+        , fd(fd_)
+        , timeout_milliseconds(timeout_milliseconds_)
+    {
+        makeFdNonBlocking(fd);
+    }
+
+    void nextImpl() override
+    {
+        if (!offset())
+            return;
+
+        size_t bytes_written = 0;
+
+        while (bytes_written != offset())
+        {
+            if (!pollFd(fd, timeout_milliseconds, POLLOUT))
+                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Pipe write timeout exceeded {} milliseconds", timeout_milliseconds);
+
+            ssize_t res = ::write(fd, working_buffer.begin() + bytes_written, offset() - bytes_written);
+
+            if ((-1 == res || 0 == res) && errno != EINTR)
+                throwFromErrno("Cannot write into pipe ", ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR);
+
+            if (res > 0)
+                bytes_written += res;
+        }
+    }
+
+    void reset() const {
+        makeFdBlocking(fd);
+    }
+
+    ~TimeoutWriteBufferFromFileDescriptor() override
+    {
+        tryMakeFdBlocking(fd);
+    }
+
+private:
+    int fd;
+    size_t timeout_milliseconds;
+};
+
+class ShellCommandHolder
+{
+public:
+    using ShellCommandBuilderFunc = std::function<std::unique_ptr<ShellCommand>()>;
+
+    explicit ShellCommandHolder(ShellCommandBuilderFunc && func_)
+        : func(std::move(func_))
+    {}
+
+    std::unique_ptr<ShellCommand> buildCommand() {
+        if (returned_command) {
+            return std::move(returned_command);
+        }
+
+        return func();
+    }
+
+    void returnCommand(std::unique_ptr<ShellCommand> command) {
+        returned_command = std::move(command);
+    }
+
+private:
+    std::unique_ptr<ShellCommand> returned_command;
+    ShellCommandBuilderFunc func;
+};
 
 namespace
 {
@@ -36,14 +254,18 @@ namespace
         ShellCommandSource(
             ContextPtr context,
             const std::string & format,
+            size_t command_read_timeout_milliseconds,
             const Block & sample_block,
             std::unique_ptr<ShellCommand> && command_,
             std::vector<SendDataTask> && send_data_tasks = {},
             const ShellCommandSourceConfiguration & configuration_ = {},
+            std::unique_ptr<ShellCommandHolder> && command_holder_ = nullptr,
             std::shared_ptr<ProcessPool> process_pool_ = nullptr)
             : SourceWithProgress(sample_block)
             , command(std::move(command_))
             , configuration(configuration_)
+            , timeout_command_out(command->out.getFD(), command_read_timeout_milliseconds)
+            , command_holder(std::move(command_holder_))
             , process_pool(process_pool_)
         {
             for (auto && send_data_task : send_data_tasks)
@@ -84,7 +306,7 @@ namespace
                 max_block_size = configuration.number_of_rows_to_read;
             }
 
-            pipeline = QueryPipeline(Pipe(context->getInputFormat(format, command->out, sample_block, max_block_size)));
+            pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, sample_block, max_block_size)));
             executor = std::make_unique<PullingPipelineExecutor>(pipeline);
         }
 
@@ -94,8 +316,19 @@ namespace
                 if (thread.joinable())
                     thread.join();
 
-            if (command && process_pool)
-                process_pool->returnObject(std::move(command));
+            if (command_is_invalid) {
+                command = nullptr;
+            }
+
+            if (command_holder && process_pool) {
+                bool valid_command = configuration.read_fixed_number_of_rows && current_read_rows >= configuration.number_of_rows_to_read;
+
+                if (command && valid_command) {
+                    command_holder->returnCommand(std::move(command));
+                }
+
+                process_pool->returnObject(std::move(command_holder));
+            }
         }
 
     protected:
@@ -119,7 +352,7 @@ namespace
             }
             catch (...)
             {
-                command = nullptr;
+                command_is_invalid = true;
                 throw;
             }
 
@@ -159,22 +392,28 @@ namespace
         std::unique_ptr<ShellCommand> command;
         ShellCommandSourceConfiguration configuration;
 
+        TimeoutReadBufferFromFileDescriptor timeout_command_out;
+
         size_t current_read_rows = 0;
 
+        ShellCommandHolderPtr command_holder;
         std::shared_ptr<ProcessPool> process_pool;
 
         QueryPipeline pipeline;
         std::unique_ptr<PullingPipelineExecutor> executor;
 
         std::vector<ThreadFromGlobalPool> send_data_threads;
+
         std::mutex send_data_lock;
         std::exception_ptr exception_during_send_data;
+
+        std::atomic<bool> command_is_invalid {false};
     };
 
     class SendingChunkHeaderTransform final : public ISimpleTransform
     {
     public:
-        SendingChunkHeaderTransform(const Block & header, WriteBuffer & buffer_)
+        SendingChunkHeaderTransform(const Block & header, std::shared_ptr<TimeoutWriteBufferFromFileDescriptor> buffer_)
             : ISimpleTransform(header, header, false)
             , buffer(buffer_)
         {
@@ -186,12 +425,12 @@ namespace
 
         void transform(Chunk & chunk) override
         {
-            writeText(chunk.getNumRows(), buffer);
-            writeChar('\n', buffer);
+            writeText(chunk.getNumRows(), *buffer);
+            writeChar('\n', *buffer);
         }
 
     private:
-        WriteBuffer & buffer;
+        std::shared_ptr<TimeoutWriteBufferFromFileDescriptor> buffer;
     };
 
 }
@@ -217,29 +456,39 @@ Pipe ShellCommandCoordinator::createPipe(
         command_config.write_fds.emplace_back(i + 2);
 
     std::unique_ptr<ShellCommand> process;
+    std::unique_ptr<ShellCommandHolder> process_holder;
+
+    auto destructor_strategy = ShellCommand::DestructorStrategy{true /*terminate_in_destructor*/, configuration.command_termination_timeout_seconds};
+    command_config.terminate_in_destructor_strategy = destructor_strategy;
 
     bool is_executable_pool = (process_pool != nullptr);
     if (is_executable_pool)
     {
-        bool result = process_pool->tryBorrowObject(
-            process,
-            [&command_config, this]()
-            {
-                command_config.terminate_in_destructor_strategy
-                    = ShellCommand::DestructorStrategy{true /*terminate_in_destructor*/, configuration.command_termination_timeout};
+        bool execute_direct = configuration.execute_direct;
 
-                if (configuration.execute_direct)
-                    return ShellCommand::executeDirect(command_config);
-                else
-                    return ShellCommand::execute(command_config);
+        bool result = process_pool->tryBorrowObject(
+            process_holder,
+            [command_config, execute_direct]()
+            {
+                ShellCommandHolder::ShellCommandBuilderFunc func = [command_config, execute_direct]() mutable
+                {
+                    if (execute_direct)
+                        return ShellCommand::executeDirect(command_config);
+                    else
+                        return ShellCommand::execute(command_config);
+                };
+
+                return std::make_unique<ShellCommandHolder>(std::move(func));
             },
-            configuration.max_command_execution_time * 10000);
+            configuration.max_command_execution_time_seconds * 10000);
 
         if (!result)
             throw Exception(
                 ErrorCodes::TIMEOUT_EXCEEDED,
                 "Could not get process from pool, max command execution timeout exceeded {} seconds",
-                configuration.max_command_execution_time);
+                configuration.max_command_execution_time_seconds);
+
+        process = process_holder->buildCommand();
     }
     else
     {
@@ -270,32 +519,41 @@ Pipe ShellCommandCoordinator::createPipe(
             write_buffer = &it->second;
         }
 
+        int write_buffer_fd = write_buffer->getFD();
+        auto timeout_write_buffer = std::make_shared<TimeoutWriteBufferFromFileDescriptor>(write_buffer_fd, configuration.command_write_timeout_milliseconds);
+
         input_pipes[i].resize(1);
 
         if (configuration.send_chunk_header)
         {
-            auto transform = std::make_shared<SendingChunkHeaderTransform>(input_pipes[i].getHeader(), *write_buffer);
+            auto transform = std::make_shared<SendingChunkHeaderTransform>(input_pipes[i].getHeader(), timeout_write_buffer);
             input_pipes[i].addTransform(std::move(transform));
         }
 
         auto pipeline = std::make_shared<QueryPipeline>(std::move(input_pipes[i]));
-        auto out = context->getOutputFormat(configuration.format, *write_buffer, materializeBlock(pipeline->getHeader()));
+        auto out = context->getOutputFormat(configuration.format, *timeout_write_buffer, materializeBlock(pipeline->getHeader()));
         out->setAutoFlush();
         pipeline->complete(std::move(out));
 
-        ShellCommandSource::SendDataTask task = [pipeline, write_buffer, is_executable_pool]()
+        ShellCommandSource::SendDataTask task = [pipeline, timeout_write_buffer, write_buffer, is_executable_pool]()
         {
             CompletedPipelineExecutor executor(*pipeline);
             executor.execute();
 
             if (!is_executable_pool)
+            {
+                timeout_write_buffer->next();
+                timeout_write_buffer->reset();
+
                 write_buffer->close();
+            }
         };
 
         tasks.emplace_back(std::move(task));
     }
 
-    Pipe pipe(std::make_unique<ShellCommandSource>(context, configuration.format, std::move(sample_block), std::move(process), std::move(tasks), source_configuration, process_pool));
+    Pipe pipe(std::make_unique<ShellCommandSource>(
+        context, configuration.format, configuration.command_read_timeout_milliseconds, std::move(sample_block), std::move(process), std::move(tasks), source_configuration, std::move(process_holder), process_pool));
     return pipe;
 }
 

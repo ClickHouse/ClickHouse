@@ -33,6 +33,41 @@
     </function>
 
     <function>
+        <type>executable_pool</type>
+        <name>test_function_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>test_input.py</command>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_send_chunk_header_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <send_chunk_header>1</send_chunk_header>
+        <command>test_input_chunk_header.py</command>
+    </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_send_chunk_header_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <send_chunk_header>1</send_chunk_header>
+        <command>test_input_chunk_header.py</command>
+    </function>
+
+    <function>
         <type>executable</type>
         <name>test_function_sum_python</name>
         <return_type>String</return_type>
@@ -48,12 +83,90 @@
 
     <function>
         <type>executable_pool</type>
-        <name>test_function_pool_python</name>
+        <name>test_function_sum_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>test_input_sum.py</command>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_argument_python</name>
         <return_type>String</return_type>
         <argument>
             <type>UInt64</type>
         </argument>
         <format>TabSeparated</format>
-        <command>test_input.py</command>
+        <command>test_input_argument.py 1</command>
     </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_argument_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>test_input_argument.py 1</command>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_slow_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>test_input_slow.py</command>
+        <command_termination_timeout>1</command_termination_timeout>
+        <command_read_timeout>1000</command_read_timeout>
+    </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_slow_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>test_input_slow.py</command>
+        <command_termination_timeout>1</command_termination_timeout>
+        <command_read_timeout>1000</command_read_timeout>
+    </function>
+
+    <function>
+        <type>executable</type>
+        <name>test_function_signalled_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>test_input_signalled.py</command>
+        <command_termination_timeout>1</command_termination_timeout>
+        <command_read_timeout>1000</command_read_timeout>
+    </function>
+
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_signalled_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>test_input_signalled.py</command>
+        <command_termination_timeout>1</command_termination_timeout>
+        <command_read_timeout>1000</command_read_timeout>
+    </function>
+
 </functions>
