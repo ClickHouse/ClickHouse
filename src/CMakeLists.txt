@@ -29,25 +29,25 @@ configure_file (Common/config_version.h.in ${CONFIG_VERSION})
 configure_file (Core/config_core.h.in "${CMAKE_CURRENT_BINARY_DIR}/Core/include/config_core.h")
 
 set(GIT_EXECUTABLE /usr/bin/git)
-# the commit's SHA1, and whether the building workspace was dirty or not
+# The commit's SHA1, and whether the building workspace was dirty or not
 execute_process(COMMAND
   "${GIT_EXECUTABLE}" rev-parse HEAD
   WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
   OUTPUT_VARIABLE GIT_SHA1
   ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
-# git branch name
+# Git branch name
 execute_process(COMMAND
   "${GIT_EXECUTABLE}" rev-parse --abbrev-ref HEAD
   WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
   OUTPUT_VARIABLE GIT_BRANCH
   ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
-# the date of the commit
+# The date of the commit
 execute_process(COMMAND
   "${GIT_EXECUTABLE}" log -1 --format=%ad --date=local
   WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
   OUTPUT_VARIABLE GIT_DATE
   ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
-# the subject of the commit
+# The subject of the commit
 execute_process(COMMAND
   "${GIT_EXECUTABLE}" log -1 --format=%s
   WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
