@@ -117,7 +117,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                     };
 
                     ISerialization::SubstreamPath path;
-                    column_type->getDefaultSerialization()->enumerateStreams(path, callback, column_type, nullptr);
+                    column_type->getDefaultSerialization()->enumerateStreams(path, callback, column_type);
 
                     if (!result_codec)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find any substream with data type for type {}. It's a bug", column_type->getName());
