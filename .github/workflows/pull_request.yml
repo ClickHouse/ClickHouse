@@ -31,6 +31,24 @@ jobs:
         run: |
           cd $GITHUB_WORKSPACE/tests/ci
           python3 run_check.py
+  DockerHubPushAarch64:
+    needs: CheckLabels
+    runs-on: [self-hosted, func-tester-aarch64]
+    steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Images check
+        run: |
+          cd $GITHUB_WORKSPACE/tests/ci
+          python3 docker_images_check.py
+      - name: Upload images files to artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: changed_images
+          path: ${{ runner.temp }}/docker_images_check/changed_images.json
   DockerHubPush:
     needs: CheckLabels
     runs-on: [self-hosted, style-checker]
