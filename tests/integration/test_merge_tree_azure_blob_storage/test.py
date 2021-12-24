@@ -342,3 +342,10 @@ def test_restart_during_load(cluster):
 
     for thread in threads:
         thread.join()
+
+
+def test_big_insert(cluster):
+    node = cluster.instances[NODE_NAME]
+    create_table(node, TABLE_NAME)
+    node.query(f"INSERT INTO {TABLE_NAME} select '2020-01-03', number, toString(number) from numbers(5000000)")
+    assert int(node.query(f"SELECT count() FROM {TABLE_NAME}")) == 5000000

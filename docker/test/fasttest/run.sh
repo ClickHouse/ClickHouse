@@ -257,7 +257,13 @@ function run_tests
     start_server
 
     set +e
-    time clickhouse-test --hung-check -j 8 --order=random \
+    local NPROC
+    NPROC=$(nproc)
+    NPROC=$((NPROC / 2))
+    if [[ $NPROC == 0 ]]; then
+      NPROC=1
+    fi
+    time clickhouse-test --hung-check -j "${NPROC}" --order=random \
             --fast-tests-only --no-long --testname --shard --zookeeper --check-zookeeper-session \
             -- "$FASTTEST_FOCUS" 2>&1 \
         | ts '%Y-%m-%d %H:%M:%S' \
