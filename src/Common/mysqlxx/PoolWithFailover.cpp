@@ -3,13 +3,8 @@
 #include <random>
 #include <thread>
 #include <mysqlxx/PoolWithFailover.h>
-
-
-/// Duplicate of code from StringUtils.h. Copied here for less dependencies.
-static bool startsWith(const std::string & s, const char * prefix)
-{
-    return s.size() >= strlen(prefix) && 0 == memcmp(s.data(), prefix, strlen(prefix));
-}
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 
 using namespace mysqlxx;
@@ -31,7 +26,7 @@ PoolWithFailover::PoolWithFailover(
         for (const auto & replica_config_key : replica_keys)
         {
             /// There could be another elements in the same level in configuration file, like "password", "port"...
-            if (startsWith(replica_config_key, "replica"))
+            if (replica_config_key.starts_with("replica"))
             {
                 std::string replica_name = config_name_ + "." + replica_config_key;
 
@@ -181,7 +176,7 @@ PoolWithFailover::Entry PoolWithFailover::get()
         return (*full_pool)->get(wait_timeout);
     }
 
-    std::stringstream message;
+    DB::WriteBufferFromOwnString message;
     message << "Connections to all replicas failed: ";
     for (auto it = replicas_by_priority.begin(); it != replicas_by_priority.end(); ++it)
         for (auto jt = it->second.begin(); jt != it->second.end(); ++jt)
