@@ -120,7 +120,7 @@ if __name__ == "__main__":
 
     pr_info = PRInfo()
 
-    if pr_info.number != 0 and 'jepsen test' not in pr_info.labels():
+    if pr_info.number != 0 and 'jepsen-test' not in pr_info.labels():
         logging.info("Not jepsen test label in labels list, skipping")
         sys.exit(0)
 
