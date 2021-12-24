@@ -688,7 +688,7 @@ private:
                 return (res = DecimalComparison<LeftDataType, RightDataType, Op, false>::apply(col_left, col_right)) != nullptr;
         };
 
-        if (!callOnBasicTypes<true, true, true, true>(left_number, right_number, call))
+        if (!callOnBasicTypes<true, false, true, true>(left_number, right_number, call))
             throw Exception("Wrong call for " + getName() + " with " + col_left.type->getName() + " and " + col_right.type->getName(),
                             ErrorCodes::LOGICAL_ERROR);
 
@@ -1236,13 +1236,13 @@ public:
             }
             else
             {
-                // compare
+                /// Check does another data type is comparable to Decimal, includes Int and Float.
                 if (!allowDecimalComparison(left_type, right_type) && !date_and_datetime)
                     throw Exception(
                         "No operation " + getName() + " between " + left_type->getName() + " and " + right_type->getName(),
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-                /// When Decimal comparing to Float32/64, We convert both of them into Float64. Other systems like MySQL
-                /// also do as this.
+                /// When Decimal comparing to Float32/64, we convert both of them into Float64.
+                /// Other systems like MySQL and Spark also do as this.
                 if (left_is_float || right_is_float)
                 {
                     const auto converted_type = DataTypeFactory::instance().get("Float64");
