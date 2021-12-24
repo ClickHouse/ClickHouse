@@ -2919,7 +2919,6 @@ jobs:
       - SplitBuildSmokeTest
       - CompatibilityCheck
       - IntegrationTestsFlakyCheck
-      - KeeperJepsenRelease
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Clear repository
