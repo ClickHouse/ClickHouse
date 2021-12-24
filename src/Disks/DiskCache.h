@@ -137,6 +137,7 @@ public:
     };
 
     virtual RemoteFSStream get(size_t offset, size_t size) = 0;
+    virtual String getFilePath() const = 0;
 };
 
 class DiskCache

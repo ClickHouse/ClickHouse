@@ -75,9 +75,13 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::hasPendingDataToRead()
         if (file_offset_of_buffer_end == *read_until_position)
             return false;
 
-        if (file_offset_of_buffer_end > *read_until_position)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Read beyond last offset ({} > {})",
-                            file_offset_of_buffer_end, *read_until_position);
+        /// With local cache it is possible to have in buffer more data than requested when data readed from local cache file
+        if (!local_cache_enabled)
+        {
+            if (file_offset_of_buffer_end > *read_until_position)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Read beyond last offset ({} > {})",
+                                file_offset_of_buffer_end, *read_until_position);
+        }
     }
     else if (must_read_until_position)
         throw Exception(ErrorCodes::LOGICAL_ERROR,

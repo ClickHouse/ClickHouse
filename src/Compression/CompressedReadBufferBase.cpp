@@ -31,6 +31,7 @@ namespace ErrorCodes
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int CANNOT_DECOMPRESS;
     extern const int CORRUPTED_DATA;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 using Checksum = CityHash_v1_0_2::uint128;
@@ -117,7 +118,18 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     UInt8 header_size = ICompressionCodec::getHeaderSize();
     own_compressed_buffer.resize(header_size + sizeof(Checksum));
 
-    compressed_in->readStrict(own_compressed_buffer.data(), sizeof(Checksum) + header_size);
+    {
+        /// Use this block instead of readStrict because when disk uses local cache
+        /// data may be splitted in pieces, partially in local cache files, partially in remote storage.
+        /// In this data should be readed several times, one per piece.
+        size_t size = sizeof(Checksum) + header_size;
+        size_t read_bytes = compressed_in->read(own_compressed_buffer.data(), size);
+        while (read_bytes < size && compressed_in->next())
+            read_bytes += compressed_in->read(own_compressed_buffer.data() + read_bytes, size - read_bytes);
+        if (read_bytes != size)
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data. Bytes read: {}. Bytes expected: {}.", std::to_string(read_bytes), std::to_string(size));
+    }
+
     char * compressed_header = own_compressed_buffer.data() + sizeof(Checksum);
 
     uint8_t method = ICompressionCodec::readMethod(compressed_header);
@@ -175,7 +187,15 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     {
         own_compressed_buffer.resize(sizeof(Checksum) + size_compressed_without_checksum + additional_size_at_the_end_of_buffer);
         compressed_buffer = own_compressed_buffer.data() + sizeof(Checksum);
-        compressed_in->readStrict(compressed_buffer + header_size, size_compressed_without_checksum - header_size);
+
+        {
+            size_t size = size_compressed_without_checksum - header_size;
+            size_t read_bytes = compressed_in->read(compressed_buffer + header_size, size);
+            while (read_bytes < size && compressed_in->next())
+                read_bytes += compressed_in->read(compressed_buffer + header_size + read_bytes, size - read_bytes);
+            if (read_bytes != size)
+                throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data. Bytes read: {}. Bytes expected: {}.", std::to_string(read_bytes), std::to_string(size));
+        }
     }
 
     if (!disable_checksum)

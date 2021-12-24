@@ -260,17 +260,41 @@ struct Range
     }
 };
 
+
+class ReadBufferFromS3Result : public ReadBufferFromIStream
+{
+public:
+    ReadBufferFromS3Result(std::unique_ptr<Aws::S3::Model::GetObjectResult> & read_result_, size_t size) :
+        ReadBufferFromIStream(read_result_->GetBody(), size),
+        read_result(std::move(read_result_))
+    {
+        LOG_TEST(&Poco::Logger::get("ReadBufferFromS3Result"), "Create stream. this {}, result {}", reinterpret_cast<size_t>(this), reinterpret_cast<size_t>(&*read_result));
+    }
+
+    ~ReadBufferFromS3Result() override
+    {
+        LOG_TEST(&Poco::Logger::get("ReadBufferFromS3Result"), "Destroy stream. this {}, result {}", reinterpret_cast<size_t>(this), reinterpret_cast<size_t>(&*read_result));
+    }
+
+private:
+    std::unique_ptr<Aws::S3::Model::GetObjectResult> read_result;
+};
+
 class DiskCacheDownloaderS3 : public DiskCacheDownloader
 {
 public:
     DiskCacheDownloaderS3(std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_,
-        const String & key_, Aws::S3::Model::GetObjectResult & read_result_, size_t buffer_size_) :
-        client_ptr(client_ptr_), bucket(bucket_), key(key_), read_result(read_result_), buffer_size(buffer_size_)
+        const String & key_, size_t buffer_size_) :
+        client_ptr(client_ptr_), bucket(bucket_), key(key_), buffer_size(buffer_size_)
     {
         log = &Poco::Logger::get("DiskCacheDownloaderS3");
+        LOG_TEST(log, "Create downloader. Bucket: {}, Key: {}, this: {}", bucket, key, reinterpret_cast<size_t>(this));
     }
 
-    ~DiskCacheDownloaderS3() override = default;
+    ~DiskCacheDownloaderS3() override
+    {
+        LOG_TEST(log, "Destroy downloader. Bucket: {}, Key: {}, this: {}", bucket, key, reinterpret_cast<size_t>(this));
+    }
 
     RemoteFSStream get(size_t offset, size_t size) override
     {
@@ -285,12 +309,12 @@ public:
         if (size)
         {
             req.SetRange(fmt::format("bytes={}-{}", offset, offset + size - 1));
-            LOG_TEST(log, "Read S3 object. Bucket: {}, Key: {}, Range: {}-{}", bucket, key, offset, offset + size - 1);
+            LOG_TEST(log, "Read S3 object. Bucket: {}, Key: {}, Range: {}-{}, this: {}", bucket, key, offset, offset + size - 1, reinterpret_cast<size_t>(this));
         }
         else
         {
             req.SetRange(fmt::format("bytes={}-", offset));
-            LOG_TEST(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}", bucket, key, offset);
+            LOG_TEST(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}, this: {}", bucket, key, offset, reinterpret_cast<size_t>(this));
         }
 
         Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
@@ -308,9 +332,9 @@ public:
                 throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
         }
 
-        read_result = outcome.GetResultWithOwnership();
+        std::unique_ptr<Aws::S3::Model::GetObjectResult> read_result = std::make_unique<Aws::S3::Model::GetObjectResult>(outcome.GetResultWithOwnership());
 
-        String range_header = read_result.GetContentRange();
+        String range_header = read_result->GetContentRange();
         Range range;
         if (!range.parse(range_header))
         {
@@ -322,15 +346,19 @@ public:
             res.file_size = range.size;
         }
 
-        res.stream = std::make_unique<ReadBufferFromIStream>(read_result.GetBody(), buffer_size);
+        res.stream = std::make_unique<ReadBufferFromS3Result>(read_result, buffer_size);
         return res;
+    }
+
+    String getFilePath() const override
+    {
+        return bucket + "/" + key;
     }
 
 private:
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
     String bucket;
     String key;
-    Aws::S3::Model::GetObjectResult & read_result;
     size_t buffer_size;
     Poco::Logger * log;
 };
@@ -343,7 +371,7 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
     }
 
-    auto downloader = std::make_shared<DiskCacheDownloaderS3>(client_ptr, bucket, key, read_result, read_settings.remote_fs_buffer_size);
+    auto downloader = std::make_shared<DiskCacheDownloaderS3>(client_ptr, bucket, key, read_settings.remote_fs_buffer_size);
 
     if (disk_cache)
     {

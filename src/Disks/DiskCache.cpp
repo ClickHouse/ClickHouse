@@ -70,7 +70,7 @@ void DiskCacheLRUPolicy::complete(const String & key, size_t offset, FileDownloa
         p->second.erase(q);
         if (p->second.empty())
             cache_in_progress.erase(p);
-        throw Exception("File downloading error with size more than reserved", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "File downloading error with size {} more than reserved {}", toString(q->second->size), toString(reserved_size));
     }
     else
     {
@@ -103,7 +103,7 @@ std::list<std::pair<String, size_t>> DiskCacheLRUPolicy::add(const String & key,
         if (!restore)
         {
             complete(key, offset, FileDownloadStatus::ERROR);
-            throw Exception("Should not try to insert more than possibly cache size", ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Should not try to insert {} more than possibly cache size {}", toString(size), toString(cache_size_limit));
         }
 
         return res;
@@ -131,7 +131,7 @@ std::list<std::pair<String, size_t>> DiskCacheLRUPolicy::add(const String & key,
             else
             {
                 complete(key, offset, FileDownloadStatus::ERROR);
-                throw Exception("Could not insert already existing data, remove it first", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not insert already existing data {}:{}, remove it first", key, toString(offset));
             }
         }
 
@@ -148,7 +148,7 @@ std::list<std::pair<String, size_t>> DiskCacheLRUPolicy::add(const String & key,
             else
             {
                 complete(key, offset, FileDownloadStatus::ERROR);
-                throw Exception("Could not insert already existing data, remove it first", ErrorCodes::LOGICAL_ERROR);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not insert already existing data {}:{}, remove it first", key, toString(offset));
             }
         }
     }
@@ -462,11 +462,11 @@ public:
     CacheableReadBuffer(std::unique_ptr<ReadBuffer> &from_,
         std::shared_ptr<DiskLocal> cache_disk_, std::shared_ptr<DiskCachePolicy> cache_policy_,
         const String & cache_key_, const String & cache_path_, size_t file_size_,
-        size_t part_offset_, size_t expected_size_) :
+        size_t part_offset_, size_t expected_size_, bool read_until_end_) :
         ReadBuffer(nullptr, 0), from(std::move(from_)), cache_disk(std::move(cache_disk_)),
         cache_policy(std::move(cache_policy_)), cache_key(cache_key_), cache_path(cache_path_),
         cache_file_size(file_size_),
-        part_offset(part_offset_), expected_size(expected_size_)
+        part_offset(part_offset_), expected_size(expected_size_), read_until_end(read_until_end_)
     {
         log = &Poco::Logger::get("CacheableReadBuffer");
 
@@ -514,13 +514,14 @@ private:
         cache->finalize();
         cache.reset(nullptr);
 
-        if (cache_part_size > expected_size)
+        if (cache_part_size > expected_size || (!read_until_end && cache_part_size < expected_size))
         {
             LOG_ERROR(log, "Unexpected part size, got {}, expected {}", cache_part_size, expected_size);
-            throw Exception("Unexpected part size", ErrorCodes::LOCAL_CACHE_ERROR);
+            throw Exception(ErrorCodes::LOCAL_CACHE_ERROR, "Unexpected part size, got {}, expected {}", toString(cache_part_size), toString(expected_size));
         }
 
         cache_disk->moveFile(cache_path + ".tmp", cache_path);
+
         LOG_TRACE(log, "Add key {}: {}+{} of {}", cache_key, part_offset, cache_part_size, cache_file_size);
         auto to_remove = cache_policy->add(cache_key, cache_file_size, part_offset, cache_part_size, false);
         for (auto & entry_to_remove : to_remove)
@@ -550,6 +551,8 @@ private:
     size_t expected_size = 0;
 
     size_t cache_part_size = 0;
+
+    bool read_until_end = false;
 
     Poco::Logger * log = nullptr;
 };
@@ -648,7 +651,6 @@ private:
         return res;
     }
 
-private:
     void ensureFrom()
     {
         int retries = 3;
@@ -725,12 +727,12 @@ private:
                     from = std::unique_ptr<ReadBuffer>{ new CacheableReadBuffer(s3from.stream,
                         cache_disk, cache_policy, cache_key, cache_path,
                         s3from.file_size,
-                        part.offset, s3from.expected_size) };
+                        part.offset, s3from.expected_size, false) };
                     current_offset = part.offset + s3from.expected_size;
                 }
                 else
                 {
-                    throw Exception("Can't download remote file", ErrorCodes::LOCAL_CACHE_ERROR);
+                    throw Exception(ErrorCodes::LOCAL_CACHE_ERROR, "Can't download remote file {}", downloader->getFilePath());
                 }
             }
 
@@ -746,7 +748,7 @@ private:
                 }
                 else
                 {
-                    throw Exception("Can't download remote file", ErrorCodes::LOCAL_CACHE_ERROR);
+                    throw Exception(ErrorCodes::LOCAL_CACHE_ERROR, "Can't download remote file {}", downloader->getFilePath());
                 }
             }
 

@@ -48,6 +48,8 @@ public:
 
     void setReadUntilEnd() override;
 
+    void setLocalCacheEnabled(bool enabled) { local_cache_enabled = enabled; }
+
 private:
     bool nextImpl() override;
 
@@ -76,6 +78,8 @@ private:
     std::optional<size_t> read_until_position;
 
     bool must_read_until_position;
+
+    bool local_cache_enabled = false;
 };
 
 }
