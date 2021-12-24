@@ -149,9 +149,9 @@ void ReadBufferFromAzureBlobStorage::initialize()
             data_stream = std::move(download_response.Value.BodyStream);
             break;
         }
-        catch (const Azure::Storage::StorageException & e)
+        catch (const Azure::Core::RequestFailedException & e)
         {
-            LOG_INFO(log, "Exception caught during Azure Download for file {} at offset {} at attempt {} : {}", path, offset, i, e.Message);
+            LOG_INFO(log, "Exception caught during Azure Download for file {} at offset {} at attempt {} : {}", path, offset, i + 1, e.Message);
             if (i + 1 == max_single_download_retries)
                 throw e;
 
