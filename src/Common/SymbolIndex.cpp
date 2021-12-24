@@ -97,14 +97,14 @@ void updateResources(std::string_view name, const void * address, SymbolIndex::R
             name = name.substr((name[0] == '_') + strlen("binary_"));
             name = name.substr(0, name.size() - strlen("_start"));
 
-            resources.emplace(name, std::string_view{char_address, 0});
+            resources.emplace(name, std::string_view{char_address, 0}); // NOLINT
         }
         else if (name.ends_with("_end"))
         {
             name = name.substr((name[0] == '_') + strlen("binary_"));
             name = name.substr(0, name.size() - strlen("_end"));
 
-            if (auto it = resources.find(name); it != resources.end() && it->second.size() == 0)
+            if (auto it = resources.find(name); it != resources.end() && it->second.empty())
             {
                 auto start = it->second.data();
                 assert(char_address >= start);
