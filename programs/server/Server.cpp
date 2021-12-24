@@ -128,7 +128,7 @@ namespace CurrentMetrics
     extern const Metric MaxPushedDDLEntryID;
 }
 
-namespace GitInfo 
+namespace GitInfo
 {
     extern const std::string GIT_SHA1;
     extern const std::string GIT_BRANCH;
