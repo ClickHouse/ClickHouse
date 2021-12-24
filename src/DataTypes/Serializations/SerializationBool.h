@@ -40,8 +40,8 @@ public:
 protected:
     void serializeCustom(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
     void serializeSimple(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
-    void deserializeWithCustom(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, std::function<bool(ReadBuffer & buf)> check_end_of_value) const;
-    bool deserializeImpl(ColumnUInt8 * column, ReadBuffer & istr) const;
+    void deserializeImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, std::function<bool(ReadBuffer & buf)> check_end_of_value) const;
+    bool tryDeserializeAllVariants(ColumnUInt8 * column, ReadBuffer & istr) const;
 };
 
 }
