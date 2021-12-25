@@ -200,7 +200,8 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                 mysql_database_settings->loadFromQuery(*engine_define); /// higher priority
 
                 return std::make_shared<DatabaseMySQL>(
-                    context, database_name, metadata_path, engine_define, configuration.database, std::move(mysql_database_settings), std::move(mysql_pool));
+                    context, database_name, metadata_path, engine_define, configuration.database,
+                    std::move(mysql_database_settings), std::move(mysql_pool), create.attach);
             }
 
             MySQLClient client(configuration.host, configuration.port, configuration.username, configuration.password);
