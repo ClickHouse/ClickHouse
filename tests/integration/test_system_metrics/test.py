@@ -71,13 +71,19 @@ def test_metrics_storage_buffer_size(start_cluster):
         (
             `str` LowCardinality(String)
         )
-        ENGINE = Buffer('test', 'test_mem_table', 1, 5, 5, 1000, 100000, 100000, 10000000);
+        ENGINE = Buffer('test', 'test_mem_table', 1, 600, 600, 1000, 100000, 100000, 10000000);
     ''')
-    node1.query("INSERT INTO test.buffer_table VALUES('hello');")
-    node1.query("INSERT INTO test.buffer_table VALUES('hello');")
+
     #before flush
+    node1.query("INSERT INTO test.buffer_table VALUES('hello');")
+    assert node1.query("SELECT value FROM system.metrics WHERE metric = 'StorageBufferRows'") == "1\n"
+    assert node1.query("SELECT value FROM system.metrics WHERE metric = 'StorageBufferBytes'") == "24\n"
+
+    node1.query("INSERT INTO test.buffer_table VALUES('hello');")
     assert node1.query("SELECT value FROM system.metrics WHERE metric = 'StorageBufferRows'") == "2\n"
-    time.sleep(6)
-    #after flush
+    assert node1.query("SELECT value FROM system.metrics WHERE metric = 'StorageBufferBytes'") == "25\n"
+
+    #flush
+    node1.query("OPTIMIZE TABLE test.buffer_table")
     assert node1.query("SELECT value FROM system.metrics WHERE metric = 'StorageBufferRows'") == "0\n"
     assert node1.query("SELECT value FROM system.metrics WHERE metric = 'StorageBufferBytes'") == "0\n"
