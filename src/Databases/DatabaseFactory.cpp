@@ -162,7 +162,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
                 mysql_database_settings->loadFromQuery(*engine_define); /// higher priority
 
                 return std::make_shared<DatabaseMySQL>(
-                    context, database_name, metadata_path, engine_define, mysql_database_name, std::move(mysql_database_settings), std::move(mysql_pool));
+                    context, database_name, metadata_path, engine_define, mysql_database_name, std::move(mysql_database_settings), std::move(mysql_pool), create.attach);
             }
 
             const auto & [remote_host_name, remote_port] = parseAddress(host_port, 3306);
