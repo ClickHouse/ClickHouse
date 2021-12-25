@@ -28,7 +28,7 @@ static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
     "host", "port", "user", "password", "db",
     "database", "table", "schema", "replica",
     "update_field", "update_tag", "invalidate_query", "query",
-    "where", "name", "secure", "uri"};
+    "where", "name", "secure", "uri", "collection"};
 
 String ExternalDataSourceConfiguration::toString() const
 {
