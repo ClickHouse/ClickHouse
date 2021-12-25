@@ -83,7 +83,7 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
         {
             LOG_INFO(log, "Exception caught during Azure Read for file {} at attempt {}: {}", path, i, e.Message);
             if (i + 1 == max_single_read_retries)
-                throw e;
+                throw;
 
             sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
             sleep_time_with_backoff_milliseconds *= 2;
@@ -153,7 +153,7 @@ void ReadBufferFromAzureBlobStorage::initialize()
         {
             LOG_INFO(log, "Exception caught during Azure Download for file {} at offset {} at attempt {} : {}", path, offset, i + 1, e.Message);
             if (i + 1 == max_single_download_retries)
-                throw e;
+                throw;
 
             sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
             sleep_time_with_backoff_milliseconds *= 2;
