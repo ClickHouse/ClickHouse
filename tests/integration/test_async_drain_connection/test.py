@@ -28,6 +28,9 @@ def test_filled_async_drain_connection_pool(started_cluster):
             node.query('select * from t where number = 0 limit 2', settings={
                 'sleep_in_receive_cancel_ms': int(10e6),
                 'max_execution_time': 5,
+                # decrease drain_timeout to make test more stable
+                # (another way is to increase max_execution_time, but this will make test slower)
+                'drain_timeout': 1,
             })
 
     any(map(execute_queries, range(10)))
