@@ -491,8 +491,10 @@ bool ParserTableFunctionView::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 
     if (pos->type != TokenType::OpeningRoundBracket)
         return false;
-
     ++pos;
+
+    /// Avoid excessive backtracking.
+    pos.putBarrier();
 
     bool maybe_an_subquery = pos->type == TokenType::OpeningRoundBracket;
 
@@ -1014,14 +1016,19 @@ bool ParserCastAsExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ASTPtr type_node;
 
     if (ParserKeyword("CAST").ignore(pos, expected)
-        && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected)
-        && ParserExpression().parse(pos, expr_node, expected)
-        && ParserKeyword("AS").ignore(pos, expected)
-        && ParserDataType().parse(pos, type_node, expected)
-        && ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+        && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected))
     {
-        node = createFunctionCast(expr_node, type_node);
-        return true;
+        /// Avoid excessive backtracking.
+        pos.putBarrier();
+
+        if (ParserExpression().parse(pos, expr_node, expected)
+            && ParserKeyword("AS").ignore(pos, expected)
+            && ParserDataType().parse(pos, type_node, expected)
+            && ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
+        {
+            node = createFunctionCast(expr_node, type_node);
+            return true;
+        }
     }
 
     return false;
@@ -1042,6 +1049,9 @@ bool ParserSubstringExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     if (pos->type != TokenType::OpeningRoundBracket)
         return false;
     ++pos;
+
+    /// Avoid excessive backtracking.
+    pos.putBarrier();
 
     if (!ParserExpression().parse(pos, expr_node, expected))
         return false;
@@ -1116,6 +1126,9 @@ bool ParserTrimExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
             return false;
         ++pos;
         trim_left = true;
+
+        /// Avoid excessive backtracking.
+        pos.putBarrier();
     }
     else if (ParserKeyword("RTRIM").ignore(pos, expected))
     {
@@ -1123,12 +1136,18 @@ bool ParserTrimExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
             return false;
         ++pos;
         trim_right = true;
+
+        /// Avoid excessive backtracking.
+        pos.putBarrier();
     }
     else if (ParserKeyword("TRIM").ignore(pos, expected))
     {
         if (pos->type != TokenType::OpeningRoundBracket)
             return false;
         ++pos;
+
+        /// Avoid excessive backtracking.
+        pos.putBarrier();
 
         if (ParserKeyword("BOTH").ignore(pos, expected))
         {
@@ -1276,6 +1295,9 @@ bool ParserLeftExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         return false;
     ++pos;
 
+    /// Avoid excessive backtracking.
+    pos.putBarrier();
+
     if (!ParserExpression().parse(pos, expr_node, expected))
         return false;
 
@@ -1314,6 +1336,9 @@ bool ParserRightExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (pos->type != TokenType::OpeningRoundBracket)
         return false;
     ++pos;
+
+    /// Avoid excessive backtracking.
+    pos.putBarrier();
 
     if (!ParserExpression().parse(pos, expr_node, expected))
         return false;
@@ -1355,6 +1380,9 @@ bool ParserExtractExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     if (pos->type != TokenType::OpeningRoundBracket)
         return false;
     ++pos;
+
+    /// Avoid excessive backtracking.
+    pos.putBarrier();
 
     ASTPtr expr;
 
@@ -1403,6 +1431,9 @@ bool ParserDateAddExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     if (pos->type != TokenType::OpeningRoundBracket)
         return false;
     ++pos;
+
+    /// Avoid excessive backtracking.
+    pos.putBarrier();
 
     IntervalKind interval_kind;
     ASTPtr interval_func_node;
@@ -1472,6 +1503,9 @@ bool ParserDateDiffExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     if (pos->type != TokenType::OpeningRoundBracket)
         return false;
     ++pos;
+
+    /// Avoid excessive backtracking.
+    pos.putBarrier();
 
     IntervalKind interval_kind;
     if (!parseIntervalKind(pos, expected, interval_kind))
@@ -1873,6 +1907,9 @@ bool ParserColumnsMatcher::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     if (pos->type != TokenType::OpeningRoundBracket)
         return false;
     ++pos;
+
+    /// Avoid excessive backtracking.
+    pos.putBarrier();
 
     ASTPtr column_list;
     ASTPtr regex_node;

@@ -107,6 +107,9 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!s_select.ignore(pos, expected))
             return false;
 
+        /// Avoid excessive backtracking.
+        pos.putBarrier();
+
         if (s_all.ignore(pos, expected))
             has_all = true;
 
