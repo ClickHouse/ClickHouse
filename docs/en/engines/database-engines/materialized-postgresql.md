@@ -5,15 +5,15 @@ toc_title: MaterializedPostgreSQL
 
 # [experimental] MaterializedPostgreSQL {#materialize-postgresql}
 
-Creates ClickHouse database with an initial data dump of PostgreSQL database tables and starts replication process, i.e. executes background job to apply new changes as they happen on PostgreSQL database tables in the remote PostgreSQL database.
+Creates a ClickHouse database with tables from PostgreSQL database. Firstly, database with engine `MaterializedPostgreSQL` creates a snapshot of PostgreSQL database and loads required tables. Required tables can include any subset of tables from any subset of schemas from specified database. Along with the snapshot database engine acquires LSN and once initial dump of tables is performed - it starts pulling updates from WAL. After database is created, newly added tables to PostgreSQL database are not automatically added to replication. They have to be added manually with `ATTACH TABLE db.table` query.
 
-ClickHouse server works as PostgreSQL replica. It reads WAL and performs DML queries. DDL is not replicated, but can be handled (described below).
+Replication is implemented with PostgreSQL Logical Replication Protocol, which does not allow to replicate DDL, but allows to know whether replication breaking changes happened (column type changes, adding/removing columns). Such changes are detected and according tables stop receiving updates. Such tables can be automatically reloaded in the background in case required setting is turned on. Safest way for now is to use `ATTACH`/ `DETACH` queries to reload table completely. If DDL does not break replication (for example, renaming a column) table will still receive updates (insertion is done by position).
 
 ## Creating a Database {#creating-a-database}
 
 ``` sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
-ENGINE = MaterializedPostgreSQL('host:port', ['database' | database], 'user', 'password') [SETTINGS ...]
+ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password') [SETTINGS ...]
 ```
 
 **Engine Parameters**
@@ -23,50 +23,36 @@ ENGINE = MaterializedPostgreSQL('host:port', ['database' | database], 'user', 'p
 -   `user` — PostgreSQL user.
 -   `password` — User password.
 
+## Example of Use {#example-of-use}
+
+``` sql
+CREATE DATABASE postgresql;
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password');
+
+SHOW TABLES FROM postgres_db;
+
+┌─name───┐
+│ table1 │
+└────────┘
+
+SELECT * FROM postgresql_db.postgres_table;
+```
+
 ## Dynamically adding new tables to replication {#dynamically-adding-table-to-replication}
+
+After `MaterializedPostgreSQL` database is created, it does not automatically detect new tables in according PostgreSQL database. Such tables can be added manually:
 
 ``` sql
 ATTACH TABLE postgres_database.new_table;
 ```
 
-When specifying a specific list of tables in the database using the setting [materialized_postgresql_tables_list](../../operations/settings/settings.md#materialized-postgresql-tables-list), it will be updated to the current state, taking into account the tables which were added by the `ATTACH TABLE` query.
-
 ## Dynamically removing tables from replication {#dynamically-removing-table-from-replication}
+
+It is possible to remove specific tables from replication:
 
 ``` sql
 DETACH TABLE postgres_database.table_to_remove;
 ```
-
-## Settings {#settings}
-
--   [materialized_postgresql_tables_list](../../operations/settings/settings.md#materialized-postgresql-tables-list)
-
--   [materialized_postgresql_schema](../../operations/settings/settings.md#materialized-postgresql-schema)
-
--   [materialized_postgresql_schema_list](../../operations/settings/settings.md#materialized-postgresql-schema-list)
-
--   [materialized_postgresql_allow_automatic_update](../../operations/settings/settings.md#materialized-postgresql-allow-automatic-update)
-
--   [materialized_postgresql_max_block_size](../../operations/settings/settings.md#materialized-postgresql-max-block-size)
-
--   [materialized_postgresql_replication_slot](../../operations/settings/settings.md#materialized-postgresql-replication-slot)
-
--   [materialized_postgresql_snapshot](../../operations/settings/settings.md#materialized-postgresql-snapshot)
-
-``` sql
-CREATE DATABASE database1
-ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
-SETTINGS materialized_postgresql_tables_list = 'table1,table2,table3';
-
-SELECT * FROM database1.table1;
-```
-
-The settings can be changed, if necessary, using a DDL query. But it is impossible to change the setting `materialized_postgresql_tables_list`. To update the list of tables in this setting use the `ATTACH TABLE` query.
-
-``` sql
-ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
-```
-
 
 ## PostgreSQL schema {#schema}
 
@@ -150,13 +136,63 @@ WHERE oid = 'postgres_table'::regclass;
 !!! warning "Warning"
     Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) values is not supported. The default value for the data type will be used.
 
-## Example of Use {#example-of-use}
+## Settings {#settings}
+
+1. materialized_postgresql_tables_list {#materialized-postgresql-tables-list}
+
+Sets a comma-separated list of PostgreSQL database tables, which will be replicated via [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) database engine.
+
+Default value: empty list — means whole PostgreSQL database will be replicated.
+
+2. materialized_postgresql_schema {#materialized-postgresql-schema}
+
+Default value: empty string. (Default schema is used)
+
+3. materialized_postgresql_schema_list {#materialized-postgresql-schema-list}
+
+Default value: empty list. (Default schema is used)
+
+4. materialized_postgresql_allow_automatic_update {#materialized-postgresql-allow-automatic-update}
+
+Allows reloading table in the background, when schema changes are detected. DDL queries on the PostgreSQL side are not replicated via ClickHouse [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) engine, because it is not allowed with PostgreSQL logical replication protocol, but the fact of DDL changes is detected transactionally. In this case, the default behaviour is to stop replicating those tables once DDL is detected. However, if this setting is enabled, then, instead of stopping the replication of those tables, they will be reloaded in the background via database snapshot without data losses and replication will continue for them.
+
+Possible values:
+
+-   0 — The table is not automatically updated in the background, when schema changes are detected.
+-   1 — The table is automatically updated in the background, when schema changes are detected.
+
+Default value: `0`.
+
+5. materialized_postgresql_max_block_size {#materialized-postgresql-max-block-size}
+
+Sets the number of rows collected in memory before flushing data into PostgreSQL database table.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `65536`.
+
+6. materialized_postgresql_replication_slot {#materialized-postgresql-replication-slot}
+
+A user-created replication slot. Must be used together with [materialized_postgresql_snapshot](#materialized-postgresql-snapshot).
+
+7. materialized_postgresql_snapshot {#materialized-postgresql-snapshot}
+
+A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](../../engines/database-engines/materialized-postgresql.md) will be performed. Must be used together with [materialized_postgresql_replication_slot](#materialized-postgresql-replication-slot).
 
 ``` sql
-CREATE DATABASE postgresql_db
-ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password');
+CREATE DATABASE database1
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+SETTINGS materialized_postgresql_tables_list = 'table1,table2,table3';
 
-SELECT * FROM postgresql_db.postgres_table;
+SELECT * FROM database1.table1;
+```
+
+The settings can be changed, if necessary, using a DDL query. But it is impossible to change the setting `materialized_postgresql_tables_list`. To update the list of tables in this setting use the `ATTACH TABLE` query.
+
+``` sql
+ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
 ```
 
 ## Notes {#notes}
@@ -169,7 +205,7 @@ A solution to this is to manage replication slots yourself and define a permanen
 
 Please note that this should be used only if it is actually needed. If there is no real need for that or full understanding why, then it is better to allow the table engine to create and manage its own replication slot.
 
-**Example (from [@bchrobot](https://github.com/bchrobot))** 
+**Example (from [@bchrobot](https://github.com/bchrobot))**
 
 1. Configure replication slot in PostgreSQL.
 
