@@ -99,6 +99,15 @@ public:
 
     Pipe createPipe(
         const std::string & command,
+        const std::vector<std::string> & arguments,
+        Block sample_block,
+        ContextPtr context)
+    {
+        return createPipe(command, arguments, {}, std::move(sample_block), std::move(context), {});
+    }
+
+    Pipe createPipe(
+        const std::string & command,
         Block sample_block,
         ContextPtr context)
     {

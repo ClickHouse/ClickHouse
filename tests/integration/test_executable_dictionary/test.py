@@ -130,3 +130,46 @@ def test_executable_implicit_non_direct_input_bash(started_cluster):
     skip_test_msan(node)
     assert node.query("SELECT dictGet('executable_input_implicit_non_direct_bash', 'result', toUInt64(1))") == 'Key 1\n'
     assert node.query("SELECT dictGet('executable_input_implicit_non_direct_pool_bash', 'result', toUInt64(1))") == 'Key 1\n'
+
+def test_executable_source_python(started_cluster):
+    skip_test_msan(node)
+    assert node.query("SELECT * FROM dictionary(executable_source_simple_key_python) ORDER BY input") == '1\tValue 1\n2\tValue 2\n3\tValue 3\n'
+    assert node.query("SELECT dictGet('executable_source_simple_key_python', 'result', toUInt64(1))") == 'Value 1\n'
+    assert node.query("SELECT dictGet('executable_source_simple_key_python', 'result', toUInt64(2))") == 'Value 2\n'
+    assert node.query("SELECT dictGet('executable_source_simple_key_python', 'result', toUInt64(3))") == 'Value 3\n'
+
+    assert node.query("SELECT * FROM dictionary('executable_source_complex_key_python') ORDER BY input") == '1\tValue 1\n2\tValue 2\n3\tValue 3\n'
+    assert node.query("SELECT dictGet('executable_source_complex_key_python', 'result', tuple(toUInt64(1)))") == 'Value 1\n'
+    assert node.query("SELECT dictGet('executable_source_complex_key_python', 'result', tuple(toUInt64(2)))") == 'Value 2\n'
+    assert node.query("SELECT dictGet('executable_source_complex_key_python', 'result', tuple(toUInt64(3)))") == 'Value 3\n'
+
+def test_executable_source_argument_python(started_cluster):
+    skip_test_msan(node)
+    assert node.query("SELECT * FROM dictionary(executable_source_simple_key_argument_python) ORDER BY input") == '1\tValue 1 1\n2\tValue 1 2\n3\tValue 1 3\n'
+    assert node.query("SELECT dictGet('executable_source_simple_key_argument_python', 'result', toUInt64(1))") == 'Value 1 1\n'
+    assert node.query("SELECT dictGet('executable_source_simple_key_argument_python', 'result', toUInt64(2))") == 'Value 1 2\n'
+    assert node.query("SELECT dictGet('executable_source_simple_key_argument_python', 'result', toUInt64(3))") == 'Value 1 3\n'
+
+    assert node.query("SELECT * FROM dictionary(executable_source_complex_key_argument_python) ORDER BY input") == '1\tValue 1 1\n2\tValue 1 2\n3\tValue 1 3\n'
+    assert node.query("SELECT dictGet('executable_source_complex_key_argument_python', 'result', toUInt64(1))") == 'Value 1 1\n'
+    assert node.query("SELECT dictGet('executable_source_complex_key_argument_python', 'result', toUInt64(2))") == 'Value 1 2\n'
+    assert node.query("SELECT dictGet('executable_source_complex_key_argument_python', 'result', toUInt64(3))") == 'Value 1 3\n'
+
+def test_executable_source_updated_python(started_cluster):
+    skip_test_msan(node)
+    assert node.query("SELECT * FROM dictionary(executable_source_simple_key_update_python) ORDER BY input") == '1\tValue 0 1\n'
+    assert node.query("SELECT dictGet('executable_source_simple_key_update_python', 'result', toUInt64(1))") == 'Value 0 1\n'
+
+    time.sleep(10)
+
+    assert node.query("SELECT * FROM dictionary(executable_source_simple_key_update_python) ORDER BY input") == '1\tValue 1 1\n'
+    assert node.query("SELECT dictGet('executable_source_simple_key_update_python', 'result', toUInt64(1))") == 'Value 1 1\n'
+
+    assert node.query("SELECT * FROM dictionary(executable_source_complex_key_update_python) ORDER BY input") == '1\tValue 0 1\n'
+    assert node.query("SELECT dictGet('executable_source_complex_key_update_python', 'result', toUInt64(1))") == 'Value 0 1\n'
+
+    time.sleep(10)
+
+    assert node.query("SELECT * FROM dictionary(executable_source_complex_key_update_python) ORDER BY input") == '1\tValue 1 1\n'
+    assert node.query("SELECT dictGet('executable_source_complex_key_update_python', 'result', toUInt64(1))") == 'Value 1 1\n'
+
