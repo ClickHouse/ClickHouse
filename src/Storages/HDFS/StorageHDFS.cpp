@@ -53,7 +53,8 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
 }
 
-Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, const String & for_match);
+static Strings listFilesWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, const String & for_match);
+
 
 StorageHDFS::StorageHDFS(
     const String & uri_,
@@ -95,10 +96,10 @@ public:
 
         HDFSBuilderWrapper builder = createHDFSBuilder(uri_without_path + "/", context_->getGlobalContext()->getConfigRef());
         HDFSFSPtr fs = createHDFSFS(builder.get());
-        std::lock_guard lock(mutex);
-        uris = LSWithRegexpMatching("/", fs, path_from_uri);
-        for (size_t i=0; i<uris.size(); i++)
-           uris[i] = uri_without_path + uris[i];
+
+        uris = listFilesWithRegexpMatching("/", fs, path_from_uri);
+        for (auto & elem : uris)
+            elem = uri_without_path + elem;
         uris_iter = uris.begin();
     }
 
@@ -335,7 +336,7 @@ private:
 /* Recursive directory listing with matched paths as a result.
  * Have the same method in StorageFile.
  */
-Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, const String & for_match)
+Strings listFilesWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, const String & for_match)
 {
     const size_t first_glob = for_match.find_first_of("*?{");
 
@@ -368,7 +369,7 @@ Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, c
         {
             if (re2::RE2::FullMatch(file_name, matcher))
             {
-                Strings result_part = LSWithRegexpMatching(fs::path(full_path) / "", fs, suffix_with_globs.substr(next_slash));
+                Strings result_part = listFilesWithRegexpMatching(fs::path(full_path) / "", fs, suffix_with_globs.substr(next_slash));
                 /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
                 std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
             }
