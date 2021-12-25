@@ -9,10 +9,6 @@ namespace DB
 
 class SerializationBool final : public SerializationWrapper
 {
-private:
-    static constexpr char str_true[5] = "true";
-    static constexpr char str_false[6] = "false";
-
 public:
     SerializationBool(const SerializationPtr & nested_);
 
@@ -36,12 +32,6 @@ public:
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
-
-protected:
-    void serializeCustom(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
-    void serializeSimple(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
-    void deserializeImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, std::function<bool(ReadBuffer & buf)> check_end_of_value) const;
-    bool tryDeserializeAllVariants(ColumnUInt8 * column, ReadBuffer & istr) const;
 };
 
 }
