@@ -23,7 +23,6 @@
 #include "Formats/FormatFactory.h"
 
 #include <Common/config_version.h>
-#include <Common/git_info.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/TerminalSize.h>
 #include <Common/clearPasswordFromCommandLine.h>
@@ -108,13 +107,6 @@ namespace ProfileEvents
 
 namespace DB
 {
-namespace GitInfo
-{
-    extern const std::string GIT_SHA1;
-    extern const std::string GIT_BRANCH;
-    extern const std::string GIT_DATE;
-    extern const std::string GIT_COMMIT_SUBJECT;
-}
 
 static void incrementProfileEventsBlock(Block & dst, const Block & src)
 {
@@ -1649,10 +1641,6 @@ void ClientBase::clearTerminal()
 void ClientBase::showClientVersion()
 {
     std::cout << DBMS_NAME << " " + getName() + " version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
-    std::cout << "GIT SHA1: " << GitInfo::GIT_SHA1 << std::endl;
-    std::cout << "GIT BRANCH: " << GitInfo::GIT_BRANCH << std::endl;
-    std::cout << "GIT DATE: " << GitInfo::GIT_DATE << std::endl;
-    std::cout << "GIT COMMIT SUBJECT: " << GitInfo::GIT_COMMIT_SUBJECT << std::endl;
 }
 
 
