@@ -34,6 +34,35 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
+namespace
+{
+
+    void updateCommandIfNeeded(String & command, bool execute_direct, ContextPtr context)
+    {
+        if (!execute_direct)
+            return;
+
+        auto global_context = context->getGlobalContext();
+        auto user_scripts_path = global_context->getUserScriptsPath();
+        auto script_path = user_scripts_path + '/' + command;
+
+        if (!fileOrSymlinkPathStartsWith(script_path, user_scripts_path))
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Executable file {} must be inside user scripts folder {}",
+                command,
+                user_scripts_path);
+
+        if (!std::filesystem::exists(std::filesystem::path(script_path)))
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Executable file {} does not exist inside user scripts folder {}",
+                command,
+                user_scripts_path);
+
+        command = std::move(script_path);
+    }
+
+}
+
 ExecutableDictionarySource::ExecutableDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Configuration & configuration_,
@@ -79,7 +108,11 @@ Pipe ExecutableDictionarySource::loadAll()
 
     LOG_TRACE(log, "loadAll {}", toString());
 
-    return coordinator->createPipe(configuration.command, sample_block, context);
+    const auto & coordinator_configuration = coordinator->getConfiguration();
+    auto command = configuration.command;
+    updateCommandIfNeeded(command, coordinator_configuration.execute_direct, context);
+
+    return coordinator->createPipe(command, configuration.command_arguments, sample_block, context);
 }
 
 Pipe ExecutableDictionarySource::loadUpdatedAll()
@@ -88,14 +121,32 @@ Pipe ExecutableDictionarySource::loadUpdatedAll()
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "ExecutableDictionarySource with implicit_key does not support loadUpdatedAll method");
 
     time_t new_update_time = time(nullptr);
-    SCOPE_EXIT(update_time = new_update_time);
 
-    std::string command_with_update_field = configuration.command;
+    const auto & coordinator_configuration = coordinator->getConfiguration();
+    auto command = configuration.command;
+    updateCommandIfNeeded(command, coordinator_configuration.execute_direct, context);
+
+    auto command_arguments = configuration.command_arguments;
+
     if (update_time)
-        command_with_update_field += " " + configuration.update_field + " " + DB::toString(LocalDateTime(update_time - configuration.update_lag));
+    {
+        auto update_difference = DB::toString(LocalDateTime(update_time - configuration.update_lag));
 
-    LOG_TRACE(log, "loadUpdatedAll {}", command_with_update_field);
-    return coordinator->createPipe(command_with_update_field, sample_block, context);
+        if (coordinator_configuration.execute_direct)
+        {
+            command_arguments.emplace_back(configuration.update_field);
+            command_arguments.emplace_back(std::move(update_difference));
+        }
+        else
+        {
+            command += ' ' + configuration.update_field + ' ' + update_difference;
+        }
+    }
+
+    update_time = new_update_time;
+
+    LOG_TRACE(log, "loadUpdatedAll {}", command);
+    return coordinator->createPipe(command, command_arguments, sample_block, context);
 }
 
 Pipe ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
