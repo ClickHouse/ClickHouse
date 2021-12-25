@@ -1,0 +1,20 @@
+#define _Addr long
+#define _Int64 long
+#define _Reg long
+
+#define __BYTE_ORDER 1234
+#define __LONG_MAX 0x7fffffffffffffffL
+
+#ifndef __cplusplus
+TYPEDEF int wchar_t;
+#endif
+
+#if defined(__FLT_EVAL_METHOD__) && __FLT_EVAL_METHOD__ == 2
+TYPEDEF long double float_t;
+TYPEDEF long double double_t;
+#else
+TYPEDEF float float_t;
+TYPEDEF double double_t;
+#endif
+
+TYPEDEF struct { long long __ll; long double __ld; } max_align_t;

@@ -7,6 +7,17 @@ if (GLIBC_COMPATIBILITY)
     enable_language(ASM)
     include(CheckIncludeFile)
 
+    add_headers_and_sources(musl-network musl-network/src/network)
+    add_library(musl-network STATIC ${musl-network_sources})
+    target_compile_options(musl-network PRIVATE -w)
+    target_include_directories(musl-network PRIVATE
+        musl-network/src/internal
+        musl-network/src/include
+        musl-network/obj/include
+        musl-network/arch/x86_64
+        musl-network/arch/generic
+        musl-network/include)
+
     check_include_file("sys/random.h" HAVE_SYS_RANDOM_H)
 
     add_headers_and_sources(glibc_compatibility .)
@@ -30,6 +41,7 @@ if (GLIBC_COMPATIBILITY)
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fomit-frame-pointer")
 
     add_library(glibc-compatibility STATIC ${glibc_compatibility_sources})
+    target_link_libraries(glibc-compatibility musl-network)
 
     target_no_warning(glibc-compatibility unused-command-line-argument)
     target_no_warning(glibc-compatibility unused-but-set-variable)
@@ -44,7 +56,7 @@ if (GLIBC_COMPATIBILITY)
     target_link_libraries(global-libs INTERFACE glibc-compatibility ${MEMCPY_LIBRARY})
 
     install(
-        TARGETS glibc-compatibility ${MEMCPY_LIBRARY}
+        TARGETS glibc-compatibility musl-network ${MEMCPY_LIBRARY}
         EXPORT global
         ARCHIVE DESTINATION lib
     )
