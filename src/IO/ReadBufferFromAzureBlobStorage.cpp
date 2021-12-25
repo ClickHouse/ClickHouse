@@ -81,7 +81,7 @@ bool ReadBufferFromAzureBlobStorage::nextImpl()
         }
         catch (const Azure::Storage::StorageException & e)
         {
-            LOG_INFO(log, "Exception caught during Azure Read for file {} at attempt {} : {}", path, i, e.Message);
+            LOG_INFO(log, "Exception caught during Azure Read for file {} at attempt {}: {}", path, i, e.Message);
             if (i + 1 == max_single_read_retries)
                 throw e;
 
