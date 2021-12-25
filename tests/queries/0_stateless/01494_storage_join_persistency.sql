@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 DROP TABLE IF EXISTS join;
 
 SELECT '----- Default Settings -----';

@@ -49,6 +49,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 ENV NUM_TRIES=1
 ENV MAX_RUN_TIME=0
 
+
 # Download Minio-related binaries
 RUN wget 'https://dl.min.io/server/minio/release/linux-amd64/minio' \
     && chmod +x ./minio \
@@ -59,5 +60,6 @@ ENV MINIO_ROOT_USER="clickhouse"
 ENV MINIO_ROOT_PASSWORD="clickhouse"
 
 COPY run.sh /
+COPY process_functional_tests_result.py /
 COPY setup_minio.sh /
 CMD ["/bin/bash", "/run.sh"]

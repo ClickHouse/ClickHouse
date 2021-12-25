@@ -1,5 +1,5 @@
 #include <mutex>
-#include <base/bit_cast.h>
+#include <common/bit_cast.h>
 
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <DataTypes/DataTypeArray.h>
@@ -11,7 +11,7 @@
 #include <Common/Arena.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
-#include <base/StringRef.h>
+#include <common/StringRef.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>

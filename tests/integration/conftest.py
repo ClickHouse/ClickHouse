@@ -7,10 +7,8 @@ from helpers.network import _NetworkManager
 
 @pytest.fixture(autouse=True, scope="session")
 def cleanup_environment():
+    _NetworkManager.clean_all_user_iptables_rules()
     try:
-        if int(os.environ.get("PYTEST_CLEANUP_CONTAINERS")) == 1:
-            logging.debug(f"Cleaning all iptables rules")
-            _NetworkManager.clean_all_user_iptables_rules()
         result = run_and_check(['docker ps | wc -l'], shell=True)
         if int(result) > 1:
             if int(os.environ.get("PYTEST_CLEANUP_CONTAINERS")) != 1:

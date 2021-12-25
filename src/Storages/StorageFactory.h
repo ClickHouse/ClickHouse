@@ -6,7 +6,7 @@
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/registerStorages.h>
-#include <Access/Common/AccessType.h>
+#include <Access/AccessType.h>
 #include <unordered_map>
 
 

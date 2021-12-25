@@ -1,4 +1,3 @@
-#include <memory>
 #include <Poco/Net/NetException.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
@@ -10,10 +9,9 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 #include <IO/TimeoutSetter.h>
-#include <Formats/NativeReader.h>
-#include <Formats/NativeWriter.h>
+#include <DataStreams/NativeBlockInputStream.h>
+#include <DataStreams/NativeBlockOutputStream.h>
 #include <Client/Connection.h>
-#include <Client/ConnectionParameters.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
@@ -22,18 +20,18 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/randomSeed.h>
-#include "Core/Block.h"
 #include <Interpreters/ClientInfo.h>
 #include <Compression/CompressionFactory.h>
-#include <QueryPipeline/Pipe.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/Pipe.h>
+#include <Processors/QueryPipeline.h>
 #include <Processors/ISink.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <pcg_random.hpp>
-#include <base/scope_guard.h>
 
-#include <Common/config_version.h>
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config_version.h>
+#    include <Common/config.h>
+#endif
 
 #if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>
@@ -57,35 +55,6 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
     extern const int EMPTY_DATA_PASSED;
-}
-
-Connection::~Connection() = default;
-
-Connection::Connection(const String & host_, UInt16 port_,
-    const String & default_database_,
-    const String & user_, const String & password_,
-    const String & cluster_,
-    const String & cluster_secret_,
-    const String & client_name_,
-    Protocol::Compression compression_,
-    Protocol::Secure secure_,
-    Poco::Timespan sync_request_timeout_)
-    : host(host_), port(port_), default_database(default_database_)
-    , user(user_), password(password_)
-    , cluster(cluster_)
-    , cluster_secret(cluster_secret_)
-    , client_name(client_name_)
-    , compression(compression_)
-    , secure(secure_)
-    , sync_request_timeout(sync_request_timeout_)
-    , log_wrapper(*this)
-{
-    /// Don't connect immediately, only on first need.
-
-    if (user.empty())
-        user = "default";
-
-    setDescription();
 }
 
 
@@ -161,16 +130,10 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     }
     catch (Poco::TimeoutException & e)
     {
-        /// disconnect() will reset the socket, get timeouts before.
-        const std::string & message = fmt::format("{} ({}, receive timeout {} ms, send timeout {} ms)",
-            e.displayText(), getDescription(),
-            socket->getReceiveTimeout().totalMilliseconds(),
-            socket->getSendTimeout().totalMilliseconds());
-
         disconnect();
 
         /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
-        throw NetException(message, ErrorCodes::SOCKET_TIMEOUT);
+        throw NetException(e.displayText() + " (" + getDescription() + ")", ErrorCodes::SOCKET_TIMEOUT);
     }
 }
 
@@ -536,13 +499,12 @@ void Connection::sendQuery(
     maybe_compressed_out.reset();
     block_in.reset();
     block_logs_in.reset();
-    block_profile_events_in.reset();
     block_out.reset();
 
     /// Send empty block which means end of data.
     if (!with_pending_data)
     {
-        sendData(Block(), "", false);
+        sendData(Block());
         out->next();
     }
 }
@@ -564,11 +526,11 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
     if (!block_out)
     {
         if (compression == Protocol::Compression::Enable)
-            maybe_compressed_out = std::make_unique<CompressedWriteBuffer>(*out, compression_codec);
+            maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out, compression_codec);
         else
             maybe_compressed_out = out;
 
-        block_out = std::make_unique<NativeWriter>(*maybe_compressed_out, server_revision, block.cloneEmpty());
+        block_out = std::make_shared<NativeBlockOutputStream>(*maybe_compressed_out, server_revision, block.cloneEmpty());
     }
 
     if (scalar)
@@ -600,14 +562,6 @@ void Connection::sendReadTaskResponse(const String & response)
     writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
     writeVarUInt(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION, *out);
     writeStringBinary(response, *out);
-    out->next();
-}
-
-
-void Connection::sendMergeTreeReadTaskResponse(const PartitionReadResponse & response)
-{
-    writeVarUInt(Protocol::Client::MergeTreeReadTaskResponse, *out);
-    response.serialize(*out);
     out->next();
 }
 
@@ -705,7 +659,7 @@ protected:
         num_rows += chunk.getNumRows();
 
         auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
-        connection.sendData(block, table_data.table_name, false);
+        connection.sendData(block, table_data.table_name);
     }
 
 private:
@@ -721,7 +675,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
     if (data.empty())
     {
         /// Send empty block, which means end of data transfer.
-        sendData(Block(), "", false);
+        sendData(Block());
         return;
     }
 
@@ -740,14 +694,14 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         if (!elem->pipe)
             elem->pipe = elem->creating_pipe_callback();
 
-        QueryPipelineBuilder pipeline;
+        QueryPipeline pipeline;
         pipeline.init(std::move(*elem->pipe));
         elem->pipe.reset();
         pipeline.resize(1);
         auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getHeader(), *this, *elem, std::move(on_cancel));
-        pipeline.setSinks([&](const Block &, QueryPipelineBuilder::StreamType type) -> ProcessorPtr
+        pipeline.setSinks([&](const Block &, QueryPipeline::StreamType type) -> ProcessorPtr
         {
-            if (type != QueryPipelineBuilder::StreamType::Main)
+            if (type != QueryPipeline::StreamType::Main)
                 return nullptr;
             return sink;
         });
@@ -759,11 +713,11 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
 
         /// If table is empty, send empty block with name.
         if (read_rows == 0)
-            sendData(sink->getPort().getHeader(), elem->table_name, false);
+            sendData(sink->getPort().getHeader(), elem->table_name);
     }
 
     /// Send empty block, which means end of data transfer.
-    sendData(Block(), "", false);
+    sendData(Block());
 
     out_bytes = out->count() - out_bytes;
     maybe_compressed_out_bytes = maybe_compressed_out->count() - maybe_compressed_out_bytes;
@@ -880,14 +834,6 @@ Packet Connection::receivePacket()
             case Protocol::Server::ReadTaskRequest:
                 return res;
 
-            case Protocol::Server::MergeTreeReadTaskRequest:
-                res.request = receivePartitionReadRequest();
-                return res;
-
-            case Protocol::Server::ProfileEvents:
-                res.block = receiveProfileEvents();
-                return res;
-
             default:
                 /// In unknown state, disconnect - to not leave unsynchronised connection.
                 disconnect();
@@ -913,18 +859,18 @@ Packet Connection::receivePacket()
 Block Connection::receiveData()
 {
     initBlockInput();
-    return receiveDataImpl(*block_in);
+    return receiveDataImpl(block_in);
 }
 
 
 Block Connection::receiveLogData()
 {
     initBlockLogsInput();
-    return receiveDataImpl(*block_logs_in);
+    return receiveDataImpl(block_logs_in);
 }
 
 
-Block Connection::receiveDataImpl(NativeReader & reader)
+Block Connection::receiveDataImpl(BlockInputStreamPtr & stream)
 {
     String external_table_name;
     readStringBinary(external_table_name, *in);
@@ -932,19 +878,12 @@ Block Connection::receiveDataImpl(NativeReader & reader)
     size_t prev_bytes = in->count();
 
     /// Read one block from network.
-    Block res = reader.read();
+    Block res = stream->read();
 
     if (throttler)
         throttler->add(in->count() - prev_bytes);
 
     return res;
-}
-
-
-Block Connection::receiveProfileEvents()
-{
-    initBlockProfileEventsInput();
-    return receiveDataImpl(*block_profile_events_in);
 }
 
 
@@ -966,7 +905,7 @@ void Connection::initBlockInput()
                 maybe_compressed_in = in;
         }
 
-        block_in = std::make_unique<NativeReader>(*maybe_compressed_in, server_revision);
+        block_in = std::make_shared<NativeBlockInputStream>(*maybe_compressed_in, server_revision);
     }
 }
 
@@ -976,16 +915,7 @@ void Connection::initBlockLogsInput()
     if (!block_logs_in)
     {
         /// Have to return superset of SystemLogsQueue::getSampleBlock() columns
-        block_logs_in = std::make_unique<NativeReader>(*in, server_revision);
-    }
-}
-
-
-void Connection::initBlockProfileEventsInput()
-{
-    if (!block_profile_events_in)
-    {
-        block_profile_events_in = std::make_unique<NativeReader>(*in, server_revision);
+        block_logs_in = std::make_shared<NativeBlockInputStream>(*in, server_revision);
     }
 }
 
@@ -1028,18 +958,11 @@ Progress Connection::receiveProgress() const
 }
 
 
-ProfileInfo Connection::receiveProfileInfo() const
+BlockStreamProfileInfo Connection::receiveProfileInfo() const
 {
-    ProfileInfo profile_info;
+    BlockStreamProfileInfo profile_info;
     profile_info.read(*in);
     return profile_info;
-}
-
-PartitionReadRequest Connection::receivePartitionReadRequest() const
-{
-    PartitionReadRequest request;
-    request.deserialize(*in);
-    return request;
 }
 
 
@@ -1049,21 +972,6 @@ void Connection::throwUnexpectedPacket(UInt64 packet_type, const char * expected
             "Unexpected packet from server " + getDescription() + " (expected " + expected
             + ", got " + String(Protocol::Server::toString(packet_type)) + ")",
             ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
-}
-
-ServerConnectionPtr Connection::createConnection(const ConnectionParameters & parameters, ContextPtr)
-{
-    return std::make_unique<Connection>(
-        parameters.host,
-        parameters.port,
-        parameters.default_database,
-        parameters.user,
-        parameters.password,
-        "", /* cluster */
-        "", /* cluster_secret */
-        "client",
-        parameters.compression,
-        parameters.security);
 }
 
 }

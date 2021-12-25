@@ -1,7 +1,7 @@
-<clickhouse>
+<yandex>
     <remote_url_allow_hosts>
         <host_regexp>^[a-z]*:80$</host_regexp>
         <host_regexp>^[a-z]*\.ru$</host_regexp>
     </remote_url_allow_hosts>
-</clickhouse>
+</yandex>
 

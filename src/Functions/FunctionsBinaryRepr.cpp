@@ -50,7 +50,7 @@ struct HexImpl
             UInt8 byte = x >> offset;
 
             /// Skip leading zeros
-            if (byte == 0 && !was_nonzero && offset) //-V560
+            if (byte == 0 && !was_nonzero && offset)
                 continue;
 
             was_nonzero = true;
@@ -138,7 +138,7 @@ struct BinImpl
             UInt8 byte = x >> offset;
 
             /// Skip leading zeros
-            if (byte == 0 && !was_nonzero && offset) //-V560
+            if (byte == 0 && !was_nonzero && offset)
                 continue;
 
             was_nonzero = true;

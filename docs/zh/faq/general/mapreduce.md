@@ -1,1 +1,0 @@
-../../../en/faq/general/mapreduce.md

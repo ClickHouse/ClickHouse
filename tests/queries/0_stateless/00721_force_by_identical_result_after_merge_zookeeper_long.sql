@@ -1,5 +1,3 @@
--- Tags: long, zookeeper
-
 DROP TABLE IF EXISTS byte_identical_r1;
 DROP TABLE IF EXISTS byte_identical_r2;
 

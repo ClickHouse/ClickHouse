@@ -42,9 +42,6 @@ using ClusterPtr = std::shared_ptr<Cluster>;
 struct MergeTreeDataSelectAnalysisResult;
 using MergeTreeDataSelectAnalysisResultPtr = std::shared_ptr<MergeTreeDataSelectAnalysisResult>;
 
-struct SubqueryForSet;
-using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
-
 struct PrewhereInfo
 {
     /// Actions which are executed in order to alias columns are used for prewhere actions.
@@ -124,7 +121,6 @@ struct ProjectionCandidate
     ReadInOrderOptimizerPtr order_optimizer;
     InputOrderInfoPtr input_order_info;
     ManyExpressionActions group_by_elements_actions;
-    std::shared_ptr<SubqueriesForSets> subqueries_for_sets;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_projection_select_result_ptr;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_normal_select_result_ptr;
 };
@@ -137,7 +133,6 @@ struct SelectQueryInfo
 {
     ASTPtr query;
     ASTPtr view_query; /// Optimized VIEW query
-    ASTPtr original_query; /// Unmodified query for projection analysis
 
     /// Cluster for the query.
     ClusterPtr cluster;

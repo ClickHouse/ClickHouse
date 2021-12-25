@@ -43,13 +43,12 @@ NEED_RERUN_WORKFLOWS = {
     13241696, # PR
     15834118, # Docs
     15522500, # MasterCI
-    15516108, # ReleaseCI
 }
 
 # Individual trusted contirbutors who are not in any trusted organization.
 # Can be changed in runtime: we will append users that we learned to be in
 # a trusted org, to save GitHub API calls.
-TRUSTED_CONTRIBUTORS = {e.lower() for e in [
+TRUSTED_CONTRIBUTORS = {
     "achimbab",
     "adevyatova ",  # DOCSUP
     "Algunenano",   # Raúl Marín, Tinybird
@@ -61,7 +60,6 @@ TRUSTED_CONTRIBUTORS = {e.lower() for e in [
     "bharatnc",     # Newbie, but already with many contributions.
     "bobrik",       # Seasoned contributor, CloundFlare
     "BohuTANG",
-    "cwurm",        # Employee
     "damozhaeva",   # DOCSUP
     "den-crane",
     "gyuton",       # DOCSUP
@@ -90,8 +88,8 @@ TRUSTED_CONTRIBUTORS = {e.lower() for e in [
     "vdimir",       # Employee
     "vzakaznikov",
     "YiuRULE",
-    "zlobober",     # Developer of YT
-]}
+    "zlobober"      # Developer of YT
+}
 
 
 def get_installation_id(jwt_token):
@@ -128,7 +126,7 @@ def get_key_and_app_from_aws():
 
 
 def is_trusted_contributor(pr_user_login, pr_user_orgs):
-    if pr_user_login.lower() in TRUSTED_CONTRIBUTORS:
+    if pr_user_login in TRUSTED_CONTRIBUTORS:
         print(f"User '{pr_user_login}' is trusted")
         return True
 

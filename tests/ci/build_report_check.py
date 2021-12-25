@@ -25,7 +25,7 @@ class BuildResult():
         self.with_coverage = with_coverage
 
 def group_by_artifacts(build_urls):
-    groups = {'deb': [], 'binary': [], 'tgz': [], 'rpm': [], 'performance': []}
+    groups = {'deb': [], 'binary': [], 'tgz': [], 'rpm': [], 'preformance': []}
     for url in build_urls:
         if url.endswith('performance.tgz'):
             groups['performance'].append(url)

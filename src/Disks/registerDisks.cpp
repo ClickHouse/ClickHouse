@@ -2,7 +2,9 @@
 
 #include "DiskFactory.h"
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 namespace DB
 {
@@ -12,10 +14,6 @@ void registerDiskMemory(DiskFactory & factory);
 
 #if USE_AWS_S3
 void registerDiskS3(DiskFactory & factory);
-#endif
-
-#if USE_AZURE_BLOB_STORAGE
-void registerDiskBlobStorage(DiskFactory & factory);
 #endif
 
 #if USE_SSL
@@ -38,10 +36,6 @@ void registerDisks()
 
 #if USE_AWS_S3
     registerDiskS3(factory);
-#endif
-
-#if USE_AZURE_BLOB_STORAGE
-    registerDiskBlobStorage(factory);
 #endif
 
 #if USE_SSL
