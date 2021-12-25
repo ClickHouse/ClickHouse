@@ -153,7 +153,7 @@ void FileChecker::load()
     }
     JSON json(out.str());
 
-    JSON files = json["yandex"];
+    JSON files = json.has("clickhouse") ? json["clickhouse"] : json["yandex"];
     for (const JSON file : files) // NOLINT
         map[unescapeForFileName(file.getName())] = file.getValue()["size"].toUInt();
 }
