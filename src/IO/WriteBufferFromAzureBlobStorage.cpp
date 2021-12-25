@@ -44,7 +44,7 @@ void WriteBufferFromAzureBlobStorage::finalizeImpl()
             if (i == max_tries - 1)
                 throw;
             LOG_INFO(&Poco::Logger::get("WriteBufferFromAzureBlobStorage"),
-                     "Exception caught during finalizing azure storage write at attempt {} : {}", i + 1, e.Message);
+                     "Exception caught during finalizing azure storage write at attempt {}: {}", i + 1, e.Message);
         }
     }
 }
