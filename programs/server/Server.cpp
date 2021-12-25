@@ -84,7 +84,6 @@
 
 #include "config_core.h"
 #include "Common/config_version.h"
-#include "Common/git_info.h"
 
 #if defined(OS_LINUX)
 #    include <sys/mman.h>
@@ -126,14 +125,6 @@ namespace CurrentMetrics
     extern const Metric MemoryTracking;
     extern const Metric MaxDDLEntryID;
     extern const Metric MaxPushedDDLEntryID;
-}
-
-namespace GitInfo
-{
-    extern const std::string GIT_SHA1;
-    extern const std::string GIT_BRANCH;
-    extern const std::string GIT_DATE;
-    extern const std::string GIT_COMMIT_SUBJECT;
 }
 
 namespace fs = std::filesystem;
@@ -405,10 +396,6 @@ int Server::run()
     if (config().hasOption("version"))
     {
         std::cout << DBMS_NAME << " server version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
-        std::cout << "GIT SHA1: " << GitInfo::GIT_SHA1 << std::endl;
-        std::cout << "GIT BRANCH: " << GitInfo::GIT_BRANCH << std::endl;
-        std::cout << "GIT DATE: " << GitInfo::GIT_DATE << std::endl;
-        std::cout << "GIT COMMIT SUBJECT: " << GitInfo::GIT_COMMIT_SUBJECT << std::endl;
         return 0;
     }
     return Application::run(); // NOLINT
