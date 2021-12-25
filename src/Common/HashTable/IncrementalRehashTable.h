@@ -93,6 +93,10 @@ public:
     using iterator = Iter<false>;
     using const_iterator = Iter<true>;
 
+    uint64_t timeme()
+    {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    }
     void moveEntry(size_t n)
     {
         while (n && cur != store[0]->end())
@@ -104,19 +108,29 @@ public:
         if (cur == store[0]->end())
         {
             rehashing = false;
+            auto betm = timeme();
             store[0].swap(store[1]);
+            auto swaptm = timeme();
             store[1]->clear();
+            auto clrtm = timeme();
             store[1]->reserve(store[0]->size() * 2);
+            auto resvtm = timeme();
+            if (resvtm - clrtm > 10 || resvtm - swaptm > 10 || swaptm - betm > 10)
+            {
+                std::cout << "reserve: " << resvtm - clrtm << " swap: " << swaptm - betm << " clear: " << clrtm - swaptm << std::endl;
+            }
             std::cout << "rehash end, size " << store[0]->size() << ", count " << count << std::endl;
         }
     }
     // only insert table 1 if rehashing
     std::pair<iterator,bool> insert(const value_type & t)
     {
-        ++count;
+        //++count;
         if (rehashing)
         {
             auto res = store[1]->insert(t);
+            if (res.second)
+                ++count;
             moveEntry(100);
             return std::make_pair(iterator(this, res.first, 1), res.second);
         }
@@ -125,12 +139,16 @@ public:
             std::cout << "rehash begin, size " << store[0]->size() << ", count " << count << std::endl;
             rehashing = true;
             cur = store[0]->begin();
-            store[1]->reserve(store[0]->size()*2);
-            moveEntry(100);
+            //store[1]->reserve(store[0]->size()*2);
+            //moveEntry(1);
             auto res = store[1]->insert(t);
+            if (res.second)
+                ++count;
             return std::make_pair(iterator(this, res.first, 1), res.second);
         }
         auto res = store[0]->insert(t);
+        if (res.second)
+            ++count;
         return std::make_pair(iterator(this, res.first, 0), res.second);
     }
     size_type erase(const Key & t)
@@ -154,6 +172,7 @@ public:
             res = store[1]->erase(pos.m_iter);
             index = 1;
         }
+        --count;
         return iterator(this, res, index);
     }
     iterator erase(const_iterator pos)
@@ -226,6 +245,7 @@ public:
     {
         store[0]->clear();
         store[1]->clear();
+        count = 0;
     }
     template< class... Args >
     std::pair<iterator,bool> emplace(Args&&... args)
@@ -233,12 +253,16 @@ public:
         if (rehashing) 
         {
             auto res = store[1]->emplace(std::forward<Args>(args)...);
+            if (res.second)
+                ++count;
             moveEntry(100);
             return std::make_pair(iterator(this, res.first, 1), res.second);
         }
         else
         {
             auto res = store[0]->emplace(std::forward<Args>(args)...);
+            if (res.second)
+                ++count;
             return std::make_pair(iterator(this, res.first, 0), res.second);
         }
     }

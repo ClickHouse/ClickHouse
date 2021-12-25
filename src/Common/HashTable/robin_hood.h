@@ -1677,7 +1677,29 @@ public:
         using std::swap;
         swap(o, *this);
     }
+    /*
+    void zero(char *buf, size_t size)
+    {
+        size_t my_start, my_size;
 
+        if (omp_in_parallel())
+        {
+            int id = omp_get_thread_num();
+            int num = omp_get_num_threads();
+            //printf("thread %d\n", num);
+
+            my_start = (id*size)/num;
+            my_size = ((id+1)*size)/num - my_start;
+        }
+        else
+        {
+            my_start = 0;
+            my_size = size;
+        }
+
+        memset(buf + my_start, 0, my_size);
+    }
+    */
     // Clears all data, without resizing.
     void clear() {
         ROBIN_HOOD_TRACE(this)
@@ -1691,8 +1713,13 @@ public:
 
         auto const numElementsWithBuffer = calcNumElementsWithBuffer(mMask + 1);
         // clear everything, then set the sentinel again
-        uint8_t const z = 0;
-        std::fill(mInfo, mInfo + calcNumBytesInfo(numElementsWithBuffer), z);
+        //uint8_t const z = 0;
+        //std::fill(mInfo, mInfo + calcNumBytesInfo(numElementsWithBuffer), z);
+        // #pragma omp parallel
+        //{
+        //    zero(buf, size);
+        //}
+        ::memset(mInfo, 0, calcNumBytesInfo(numElementsWithBuffer));
         mInfo[numElementsWithBuffer] = 1;
 
         mInfoInc = InitialInfoInc;
@@ -2176,13 +2203,20 @@ private:
         return find(e) != end();
     }
 
+    uint64_t timerh()
+    {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    }
+
     void reserve(size_t c, bool forceRehash) {
         ROBIN_HOOD_TRACE(this)
         auto const minElementsAllowed = (std::max)(c, mNumElements);
         auto newSize = InitialNumElements;
+        auto betm = timerh();
         while (calcMaxNumElementsAllowed(newSize) < minElementsAllowed && newSize != 0) {
             newSize *= 2;
         }
+        auto caltm = timerh();
         if (ROBIN_HOOD_UNLIKELY(newSize == 0)) {
             throwOverflowError();
         }
@@ -2193,6 +2227,10 @@ private:
         // continuously allocate for each reserve() call.
         if (forceRehash || newSize > mMask + 1) {
             rehashPowerOfTwo(newSize, false);
+        }
+        auto rehashtm = timerh();
+        if (rehashtm - caltm > 10 || rehashtm - betm > 10) {
+            std::cout << "rehash took ms " << rehashtm - caltm << ", cal time ms " << caltm - betm << std::endl;
         }
     }
 

@@ -13,183 +13,18 @@
 #include <unordered_set>
 #include <vector>
 #include <Common/HashTable/robin_hood.h>
+#include <Common/HashTable/ArrayHashTable.h>
+#include <Common/parallel_hashmap/phmap.h>
 
 namespace DB
 {
-#if 0
-template <typename T>
-class DoubleSet
-{
-public:
-    using US = robin_hood::unordered_set<T>;
-    using inner_iterator = typename US::iterator;
-    using Self = DoubleSet<T>;
-    using value_type = T;
-private:
-    std::shared_ptr<US> store[2];
-    bool rehashing{false};
-    inner_iterator cur; // rehash iterator
-    float max_load_factor = 0.7;
-    std::size_t count{0};
-public:
-    DoubleSet() {
-        store[0] = std::make_shared<US>();
-        //store[0]->reserve(1000000);
-        store[1] = std::make_shared<US>();
-        //store[1]->reserve(2000000);
-    }
-    DoubleSet(const Self & rhs) {
-        store[0] = rhs.store[0];
-        store[1] = rhs.store[1];
-        rehashing = rhs.rehashing;
-        cur = rhs.cur;
-        max_load_factor = rhs.max_load_factor;
-        count = rhs.count;
-    }
-    ~DoubleSet() = default;
-    void reseve(size_t t)
-    {
-        store[0]->reserve(t);
-    }
-    template <bool IsConst>
-    struct Iter
-    {
-    public:
-        using UsPtr = typename std::conditional<IsConst, Self const*, Self*>::type;
-        using difference_type = std::ptrdiff_t;
-        using value_type = typename Self::value_type;
-        using reference = typename std::conditional<IsConst, value_type const&, value_type&>::type;
-        using pointer = typename std::conditional<IsConst, value_type const*, value_type*>::type;
-        using iterator_category = std::forward_iterator_tag;
-        using inner_iter = typename std::conditional<IsConst, typename US::const_iterator, typename US::iterator>::type;
-
-        Iter() = default;
-        Iter(UsPtr ptr, inner_iter iter, int idx) : ref(ptr), m_iter(iter), index(idx) {}
-
-        reference operator*() const { return *m_iter; }
-        pointer operator->() { return &*m_iter; }
-        Iter& operator++() noexcept
-        {
-            ++m_iter;
-            if (index == 0 && ref->rehashing && m_iter == ref->store[index]->end())
-            {
-                m_iter = ref->store[1]->begin();
-            }
-            return *this;
-        }
-        Iter operator++(int) noexcept { Iter tmp = *this; ++(*this); return tmp; }
-        template <bool O>
-        bool operator==(Iter<O> const& o) const noexcept
-        {
-            return m_iter == o.m_iter;
-        }
-        template <bool O>
-        bool operator!=(Iter<O> const& o) const noexcept
-        {
-            return m_iter != o.m_iter;
-        }
-        UsPtr ref;
-        inner_iter m_iter;
-        int index{0};
-    };
-    using iterator = Iter<false>;
-    using const_iterator = Iter<true>;
-
-    void move()
-    {
-        store[1]->insert(*cur);
-        if (++cur == store[0]->end())
-        {
-            rehashing = false;
-            store[0] = store[1];
-            store[1] = std::make_shared<US>();
-            store[1]->reserve(store[0]->size() * 2);
-            std::cout << "rehash end, size " << store[0]->size() << ", count " << count << std::endl;
-        }
-    }
-    std::pair<iterator,bool> insert(const T & t)
-    {
-        ++count;
-        if (rehashing)
-        {
-            auto res = store[1]->insert(t);
-            move();
-            return std::make_pair(iterator(this, res.first, 1), res.second);
-        }
-        if (store[0]->load_factor() > max_load_factor)
-        {
-            std::cout << "rehash begin, size " << store[0]->size() << ", count " << count << std::endl;
-            rehashing = true;
-            cur = store[0]->begin();
-            store[1]->reserve(store[0]->size()*2);
-            move();
-            auto res = store[1]->insert(t);
-            return std::make_pair(iterator(this, res.first, 1), res.second);
-        }
-        auto res = store[0]->insert(t);
-        return std::make_pair(iterator(this, res.first, 0), res.second);
-    }
-    void erase(const T & t)
-    {
-        std::size_t del = 0;
-        del = store[0]->erase(t);
-        if (rehashing)
-        {
-            del += store[1]->erase(t);
-            move();
-        }
-        if (del) --count;
-    }
-    std::size_t size() const
-    {
-        //std::cout << "hash 0 " << store[0]->size() << ", hash 1 " << store[1]->size() << std::endl;
-        return count;
-    }
-    bool empty() const { return count == 0; }
-    const_iterator find(const T & key) const
-    {
-        auto res =  store[0]->find(key);
-        if (res != store[0]->end())
-            return const_iterator(this, res, 0);
-        if (rehashing)
-            return const_iterator(this, store[1]->find(key), 1);
-        return const_iterator(this, store[0]->end(), 0);
-    }
-    bool contains(const T& t) const
-    {
-        if (store[0]->contains(t))
-            return true;
-        if (rehashing && store[1]->contains(t)) {
-            return true;
-        }
-        return false;
-    }
-    const_iterator begin() const
-    {
-        return const_iterator(this, store[0]->begin(), 0);
-    }
-    iterator begin()
-    {
-        return iterator(this, store[0]->begin(), 0);
-    }
-    const_iterator end() const
-    {
-        if (rehashing) {
-            return const_iterator(this, store[1]->end(), 1); 
-        }
-        return const_iterator(this, store[0]->end(), 0); 
-    }
-    size_t htsize()
-    { 
-        return store[0]->size(); 
-    }
-};
-#endif
 struct KeeperStorageRequestProcessor;
 using KeeperStorageRequestProcessorPtr = std::shared_ptr<KeeperStorageRequestProcessor>;
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
 //using ChildrenSet = std::unordered_set<std::string>;
 using ChildrenSet = my_unordered_set<std::string>;
+//using ChildrenSet = array_unordered_set<std::string>;
+//using ChildrenSet = phmap::flat_hash_set<std::string>;
 //using ChildrenSet = DoubleSet<std::string>;
 using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
 

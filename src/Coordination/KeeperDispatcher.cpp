@@ -196,6 +196,17 @@ void KeeperDispatcher::responseThread()
 void KeeperDispatcher::snapshotThread()
 {
     setThreadName("KeeperSnpT");
+#if defined(OS_LINUX)
+    int cpuid = get_nprocs() - 3;
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(cpuid, &cpuset);
+    int rc = pthread_setaffinity_np(pthread_self(),
+                                    sizeof(cpu_set_t), &cpuset);
+    if (rc != 0) {
+      std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n";
+    }
+#endif
     while (!shutdown_called)
     {
         CreateSnapshotTask task;

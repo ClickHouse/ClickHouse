@@ -936,6 +936,8 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
 
 TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
 {
+    {
+
     /// int
     DB::SnapshotableHashTable<IntNode> hello;
     hello.disableSnapshotMode();
@@ -966,7 +968,9 @@ TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
 
     hello.clearOutdatedNodes();
     EXPECT_EQ(hello.getApproximateDataSize(), 0);
+    }
 
+    {
     /// Node
     using Node = DB::KeeperStorage::Node;
     DB::SnapshotableHashTable<Node> world;
@@ -999,6 +1003,7 @@ TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
 
     world.clear();
     EXPECT_EQ(world.getApproximateDataSize(), 0);
+    }
 }
 
 void addNode(DB::KeeperStorage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner=0)
@@ -1480,6 +1485,7 @@ TEST_P(CoordinationTest, TestRotateIntervalChanges)
     }
 
     changelog_3.compact(125);
+    ::usleep(2000000);
     EXPECT_FALSE(fs::exists("./logs/changelog_101_110.bin" + params.extension));
     EXPECT_FALSE(fs::exists("./logs/changelog_111_117.bin" + params.extension));
     EXPECT_FALSE(fs::exists("./logs/changelog_118_124.bin" + params.extension));

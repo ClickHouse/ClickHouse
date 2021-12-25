@@ -149,7 +149,7 @@ private:
 
     void cleanThread();
 
-    void delOneEntry();
+    void delLogsEntry(size_t n);
 
 private:
     const std::string changelogs_dir;

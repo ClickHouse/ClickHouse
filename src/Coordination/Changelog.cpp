@@ -3,6 +3,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ZstdDeflatingAppendableWriteBuffer.h>
+#include <cstdint>
 #include <filesystem>
 #include <unistd.h>
 #include <boost/algorithm/string/split.hpp>
@@ -565,7 +566,7 @@ void Changelog::appendEntry(uint64_t index, const LogEntryPtr & log_entry)
     current_writer->appendRecord(buildRecord(index, log_entry));
     logs[index] = makeClone(log_entry);
     max_log_id = index;
-    //delOneEntry();
+    delLogsEntry(100);
 }
 
 void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
@@ -609,12 +610,14 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
     
     /// Now we can actually override entry at index
     appendEntry(index, log_entry);
-
-    //delOneEntry();
 }
-
+uint64_t mytime()
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+}
 void Changelog::compact(uint64_t up_to_log_index)
 {
+    auto be_time = mytime();
     LOG_INFO(log, "Compact logs up to log index {}, our max log id is {}", up_to_log_index, max_log_id);
 
     bool remove_all_logs = false;
@@ -649,19 +652,25 @@ void Changelog::compact(uint64_t up_to_log_index)
     }
     /// Compaction from the past is possible, so don't make our min_log_id smaller.
     min_log_id = std::max(min_log_id, up_to_log_index + 1);
-    std::erase_if(logs, [up_to_log_index] (const auto & item) { return item.first <= up_to_log_index; });
-    //delOneEntry();
-    //delOneEntry();
+    //std::erase_if(logs, [up_to_log_index] (const auto & item) { return item.first <= up_to_log_index; });
+    delLogsEntry(100);
     if (need_rotate)
         rotate(up_to_log_index + 1);
 
-    LOG_INFO(log, "Compaction up to {} finished new min index {}, new max index {}, actully del index {}, logsize {}", up_to_log_index, min_log_id, max_log_id, cur_del_idx, logs.size());
+    auto end_time = mytime();
+    LOG_INFO(log, "Compaction up to {} finished new min index {}, new max index {}, actully del index {}, logsize {} time {} ms", up_to_log_index, min_log_id, max_log_id, cur_del_idx, logs.size(), end_time - be_time);
 }
 
-void Changelog::delOneEntry()
+void Changelog::delLogsEntry(size_t n)
 {
-    if (cur_del_idx < min_log_id)
-        logs.erase(cur_del_idx++);
+    while (n && cur_del_idx < min_log_id)
+    {
+        if (logs.empty())
+            return;
+        logs.erase(cur_del_idx);
+        --n;
+        ++cur_del_idx;
+    }
 }
 
 LogEntryPtr Changelog::getLastEntry() const
@@ -690,7 +699,7 @@ LogEntriesPtr Changelog::getLogEntriesBetween(uint64_t start, uint64_t end)
         result_pos++;
     }
 
-    delOneEntry();
+    delLogsEntry(100);
     return ret;
 }
 
