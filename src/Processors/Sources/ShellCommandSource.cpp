@@ -24,7 +24,6 @@ namespace ErrorCodes
     extern const int CANNOT_FCNTL;
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
     extern const int CANNOT_SELECT;
-    extern const int CANNOT_CLOSE_FILE;
     extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
 }
 
@@ -129,15 +128,15 @@ public:
             if (-1 == res && errno != EINTR)
                 throwFromErrno("Cannot read from pipe ", ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR);
 
-            if (res == 0) {
+            if (res == 0)
                 break;
-            }
 
             if (res > 0)
                 bytes_read += res;
         }
 
-        if (bytes_read > 0) {
+        if (bytes_read > 0)
+        {
             working_buffer = internal_buffer;
             working_buffer.resize(bytes_read);
         }
@@ -197,7 +196,8 @@ public:
         }
     }
 
-    void reset() const {
+    void reset() const
+    {
         makeFdBlocking(fd);
     }
 
@@ -220,15 +220,16 @@ public:
         : func(std::move(func_))
     {}
 
-    std::unique_ptr<ShellCommand> buildCommand() {
-        if (returned_command) {
+    std::unique_ptr<ShellCommand> buildCommand()
+    {
+        if (returned_command)
             return std::move(returned_command);
-        }
 
         return func();
     }
 
-    void returnCommand(std::unique_ptr<ShellCommand> command) {
+    void returnCommand(std::unique_ptr<ShellCommand> command)
+    {
         returned_command = std::move(command);
     }
 
@@ -316,16 +317,15 @@ namespace
                 if (thread.joinable())
                     thread.join();
 
-            if (command_is_invalid) {
+            if (command_is_invalid)
                 command = nullptr;
-            }
 
-            if (command_holder && process_pool) {
+            if (command_holder && process_pool)
+            {
                 bool valid_command = configuration.read_fixed_number_of_rows && current_read_rows >= configuration.number_of_rows_to_read;
 
-                if (command && valid_command) {
+                if (command && valid_command)
                     command_holder->returnCommand(std::move(command));
-                }
 
                 process_pool->returnObject(std::move(command_holder));
             }
@@ -337,9 +337,8 @@ namespace
         {
             rethrowExceptionDuringSendDataIfNeeded();
 
-            if (configuration.read_fixed_number_of_rows && current_read_rows >= configuration.number_of_rows_to_read) {
+            if (configuration.read_fixed_number_of_rows && current_read_rows >= configuration.number_of_rows_to_read)
                 return {};
-            }
 
             Chunk chunk;
 
