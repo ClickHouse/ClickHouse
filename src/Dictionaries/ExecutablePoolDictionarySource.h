@@ -28,6 +28,7 @@ public:
     struct Configuration
     {
         String command;
+        std::vector<String> command_arguments;
         bool implicit_key;
     };
 
