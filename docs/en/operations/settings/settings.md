@@ -843,7 +843,7 @@ Default value: `251658240`.
 
 ## merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem {#merge-tree-min-bytes-for-concurrent-read-for-remote-filesystem}
 
-If at least as many bytes are read from one file, the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) engine can reads parallelized, when reading from remote filesystem.
+The minimum number of bytes to read from one file before [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) engine can parallelize reading, when reading from remote filesystem.
 
 Possible values:
 
