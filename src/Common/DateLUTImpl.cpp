@@ -3,7 +3,7 @@
 #include <cctz/civil_time.h>
 #include <cctz/time_zone.h>
 #include <cctz/zone_info_source.h>
-#include <base/getResource.h>
+#include <Common/getResource.h>
 #include <Poco/Exception.h>
 
 #include <algorithm>
