@@ -13,9 +13,7 @@ namespace mysqlxx
   * Ссылается на Connection. Если уничтожить Connection, то Query станет некорректным и пользоваться им будет нельзя.
   *
   * Пример использования:
-  *        mysqlxx::Query query = connection.query();
-  *        query << "SELECT 1 AS x, 2 AS y, 3 AS z";
-  *        query << " LIMIT 1";
+  *        mysqlxx::Query query = connection.query("SELECT 1 AS x, 2 AS y, 3 AS z LIMIT 1");
   *        mysqlxx::UseQueryResult result = query.use();
   *
   *        while (mysqlxx::Row row = result.fetch())
@@ -29,13 +27,10 @@ namespace mysqlxx
 class Query
 {
 public:
-    Query(Connection * conn_, const std::string & query_string = "");
+    Query(Connection * conn_, const std::string & query_string);
     Query(const Query & other);
     Query & operator= (const Query & other);
     ~Query();
-
-    /** Сбросить текст запроса. Это используется, если нужно написать новый запрос в том же объекте. */
-    void reset();
 
     /** Выполнить запрос, результат которого не имеет значения (почти всё кроме SELECT). */
     void execute();
@@ -54,24 +49,12 @@ public:
     /// Получить текст запроса (например, для вывода его в лог). См. ещё operator<< ниже.
     std::string str() const
     {
-        return query_buf.str();
-    }
-
-    auto rdbuf() const
-    {
-        return query_buf.rdbuf();
-    }
-
-    template <typename T>
-    inline Query & operator<< (T && x)
-    {
-        query_buf << std::forward<T>(x);
-        return *this;
+        return query;
     }
 
 private:
     Connection * conn;
-    std::ostringstream query_buf;
+    std::string query;
 
     void executeImpl();
 };
@@ -80,7 +63,7 @@ private:
 /// Вывести текст запроса в ostream.
 inline std::ostream & operator<< (std::ostream & ostr, const Query & query)
 {
-    return ostr << query.rdbuf();
+    return ostr << query.str();
 }
 
 
