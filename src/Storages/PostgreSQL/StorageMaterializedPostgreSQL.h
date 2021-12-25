@@ -74,8 +74,6 @@ public:
 
     String getName() const override { return "MaterializedPostgreSQL"; }
 
-    void startup() override;
-
     void shutdown() override;
 
     /// Used only for single MaterializedPostgreSQL storage.
