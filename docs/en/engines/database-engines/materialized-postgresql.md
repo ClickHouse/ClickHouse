@@ -46,6 +46,8 @@ After `MaterializedPostgreSQL` database is created, it does not automatically de
 ATTACH TABLE postgres_database.new_table;
 ```
 
+Warning: before version 21.13 adding table to replication left unremoved temprorary replication slot (named `{db_name}_ch_replication_slot_tmp`). If attaching tables in clickhouse version before 21.13, make sure to delete it manually (`SELECT pg_drop_replication_slot('{db_name}_ch_replication_slot_tmp')`). Otherwise disk usage will grow. Issue is fixed in 21.13.
+
 ## Dynamically removing tables from replication {#dynamically-removing-table-from-replication}
 
 It is possible to remove specific tables from replication:
@@ -250,3 +252,23 @@ SETTINGS
 ```bash
 kubectl exec acid-demo-cluster-0 -c postgres -- su postgres -c 'patronictl failover --candidate acid-demo-cluster-1 --force'
 ```
+
+### Required permissions
+
+1. [CREATE PUBLICATION](https://postgrespro.ru/docs/postgresql/14/sql-createpublication) -- create query privilege.
+
+2. [CREATE_REPLICATION_SLOT](https://postgrespro.ru/docs/postgrespro/10/protocol-replication#PROTOCOL-REPLICATION-CREATE-SLOT) -- replication privelege.
+
+3. [pg_drop_replication_slot](https://postgrespro.ru/docs/postgrespro/9.5/functions-admin#functions-replication) -- replication privilege or superuser.
+
+4. [DROP PUBLICATION](https://postgrespro.ru/docs/postgresql/10/sql-droppublication) -- owner of publication (`username` in MaterializedPostgreSQL engine itself).
+
+It is possible to avoid executing `2` and `3` commands and having those permissions. Use settings `materialized_postgresql_replication_slot` and `materialized_postgresql_snapshot`. But with much care.
+
+Access to tables:
+
+1. pg_publication
+
+2. pg_replication_slots
+
+3. pg_publication_tables
