@@ -21,6 +21,7 @@ public:
     struct Configuration
     {
         std::string command;
+        std::vector<std::string> command_arguments;
         std::string update_field;
         UInt64 update_lag;
         /// Implicit key means that the source script will return only values,

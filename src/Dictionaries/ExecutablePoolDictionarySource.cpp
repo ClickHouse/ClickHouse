@@ -2,6 +2,11 @@
 
 #include <base/logger_useful.h>
 #include <Common/LocalDateTime.h>
+#include <filesystem>
+
+#include <boost/algorithm/string/split.hpp>
+
+#include <Common/filesystemHelpers.h>
 #include <Common/ShellCommand.h>
 
 #include <Processors/Formats/IOutputFormat.h>
@@ -93,6 +98,30 @@ Pipe ExecutablePoolDictionarySource::loadKeys(const Columns & key_columns, const
 
 Pipe ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
 {
+    String command = configuration.command;
+    const auto & coordinator_configuration = coordinator->getConfiguration();
+
+    if (coordinator_configuration.execute_direct)
+    {
+        auto global_context = context->getGlobalContext();
+        auto user_scripts_path = global_context->getUserScriptsPath();
+        auto script_path = user_scripts_path + '/' + command;
+
+        if (!fileOrSymlinkPathStartsWith(script_path, user_scripts_path))
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Executable file {} must be inside user scripts folder {}",
+                command,
+                user_scripts_path);
+
+        if (!std::filesystem::exists(std::filesystem::path(script_path)))
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "Executable file {} does not exist inside user scripts folder {}",
+                command,
+                user_scripts_path);
+
+        command = std::move(script_path);
+    }
+
     auto source = std::make_shared<SourceFromSingleChunk>(block);
     auto shell_input_pipe = Pipe(std::move(source));
 
@@ -103,7 +132,17 @@ Pipe ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
     Pipes shell_input_pipes;
     shell_input_pipes.emplace_back(std::move(shell_input_pipe));
 
-    auto pipe = coordinator->createPipe(configuration.command, std::move(shell_input_pipes), sample_block, context, command_configuration);
+    auto pipe = coordinator->createPipe(
+        command,
+        configuration.command_arguments,
+        std::move(shell_input_pipes),
+        sample_block,
+        context,
+        command_configuration);
+
+    if (configuration.implicit_key)
+        pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(block, pipe.getHeader()));
+
     return pipe;
 }
 
@@ -162,9 +201,22 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
         if (max_execution_time_seconds != 0 && max_command_execution_time > max_execution_time_seconds)
             max_command_execution_time = max_execution_time_seconds;
 
+        bool execute_direct = config.getBool(settings_config_prefix + ".execute_direct", false);
+        std::string command_value = config.getString(settings_config_prefix + ".command");
+        std::vector<String> command_arguments;
+
+        if (execute_direct)
+        {
+            boost::split(command_arguments, command_value, [](char c) { return c == ' '; });
+
+            command_value = std::move(command_arguments[0]);
+            command_arguments.erase(command_arguments.begin());
+        }
+
         ExecutablePoolDictionarySource::Configuration configuration
         {
-            .command = config.getString(settings_config_prefix + ".command"),
+            .command = std::move(command_value),
+            .command_arguments = std::move(command_arguments),
             .implicit_key = config.getBool(settings_config_prefix + ".implicit_key", false),
         };
 
@@ -174,15 +226,14 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
             .command_termination_timeout_seconds = config.getUInt64(settings_config_prefix + ".command_termination_timeout", 10),
             .command_read_timeout_milliseconds = config.getUInt64(settings_config_prefix + ".command_read_timeout", 10000),
             .command_write_timeout_milliseconds = config.getUInt64(settings_config_prefix + ".command_write_timeout", 10000),
-            .pool_size = config.getUInt64(settings_config_prefix + ".size"),
+            .pool_size = config.getUInt64(settings_config_prefix + ".size", 16),
             .max_command_execution_time_seconds = max_command_execution_time,
             .is_executable_pool = true,
             .send_chunk_header = config.getBool(settings_config_prefix + ".send_chunk_header", false),
-            .execute_direct = false
+            .execute_direct = execute_direct
         };
 
         std::shared_ptr<ShellCommandCoordinator> coordinator = std::make_shared<ShellCommandCoordinator>(shell_command_coordinator_configration);
-
         return std::make_unique<ExecutablePoolDictionarySource>(dict_struct, configuration, sample_block, std::move(coordinator), context);
     };
 
