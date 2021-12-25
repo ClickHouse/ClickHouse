@@ -22,7 +22,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = engine
 ```
 
-Creates a table named `table_name` in the `db` database or the current database if `db` is not set, with the structure specified in brackets and the `engine` engine.
+Creates a table named `name` in the `db` database or the current database if `db` is not set, with the structure specified in brackets and the `engine` engine.
 The structure of the table is a list of column descriptions, secondary indexes and constraints . If [primary key](#primary-key) is supported by the engine, it will be indicated as parameter for the table engine.
 
 A column description is `name type` in the simplest case. Example: `RegionID UInt32`.
@@ -189,7 +189,7 @@ CREATE TABLE codec_example
     dt Date CODEC(ZSTD),
     ts DateTime CODEC(LZ4HC),
     float_value Float32 CODEC(NONE),
-    double_value Float64 CODEC(LZ4HC(9)),
+    double_value Float64 CODEC(LZ4HC(9))
     value Float32 CODEC(Delta, ZSTD)
 )
 ENGINE = <Engine>
@@ -206,6 +206,8 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 ```
 
 Codecs can be combined in a pipeline, for example, `CODEC(Delta, Default)`.
+
+To select the best codec combination for you project, pass benchmarks similar to described in the Altinity [New Encodings to Improve ClickHouse Efficiency](https://www.altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse) article. One thing to note is that codec can't be applied for ALIAS column type.
 
 !!! warning "Warning"
     You can’t decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) utility.
@@ -250,47 +252,6 @@ CREATE TABLE codec_example
     slow_values Float32 CODEC(Gorilla)
 )
 ENGINE = MergeTree()
-```
-
-
-### Encryption Codecs {#create-query-encryption-codecs}
-
-These codecs don't actually compress data, but instead encrypt data on disk. These are only available when an encryption key is specified by [encryption](../../../operations/server-configuration-parameters/settings.md#server-settings-encryption) settings. Note that encryption only makes sense at the end of codec pipelines, because encrypted data usually can't be compressed in any meaningful way.
-
-Encryption codecs:
-
--   `CODEC('AES-128-GCM-SIV')` — Encrypts data with AES-128 in [RFC 8452](https://tools.ietf.org/html/rfc8452) GCM-SIV mode. 
--   `CODEC('AES-256-GCM-SIV')` — Encrypts data with AES-256 in GCM-SIV mode. 
-
-These codecs use a fixed nonce and encryption is therefore deterministic. This makes it compatible with deduplicating engines such as [ReplicatedMergeTree](../../../engines/table-engines/mergetree-family/replication.md) but has a weakness: when the same data block is encrypted twice, the resulting ciphertext will be exactly the same so an adversary who can read the disk can see this equivalence (although only the equivalence, without getting its content).
-
-!!! attention "Attention"
-    Most engines including the "*MergeTree" family create index files on disk without applying codecs. This means plaintext will appear on disk if an encrypted column is indexed.
-
-!!! attention "Attention"
-    If you perform a SELECT query mentioning a specific value in an encrypted column (such as in its WHERE clause), the value may appear in [system.query_log](../../../operations/system-tables/query_log.md). You may want to disable the logging.
-    
-**Example**
-
-```sql
-CREATE TABLE mytable 
-(
-    x String Codec(AES_128_GCM_SIV)
-) 
-ENGINE = MergeTree ORDER BY x;
-```
-
-!!!note "Note"
-    If compression needs to be applied, it must be explicitly specified. Otherwise, only encryption will be applied to data.
-
-**Example**
-
-```sql
-CREATE TABLE mytable 
-(
-    x String Codec(Delta, LZ4, AES_128_GCM_SIV)
-) 
-ENGINE = MergeTree ORDER BY x;
 ```
 
 ## Temporary Tables {#temporary-tables}
@@ -400,7 +361,7 @@ You can add a comment to the table when you creating it.
 
 !!!note "Note"
     The comment is supported for all table engines except [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) and [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md).
-
+	
 
 **Syntax**
 
@@ -412,7 +373,7 @@ CREATE TABLE db.table_name
 ENGINE = engine
 COMMENT 'Comment'
 ```
-
+	
 **Example**
 
 Query:

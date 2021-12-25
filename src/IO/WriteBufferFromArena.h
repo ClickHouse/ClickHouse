@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/Arena.h>
-#include <base/StringRef.h>
+#include <common/StringRef.h>
 #include <IO/WriteBuffer.h>
 
 
@@ -15,23 +15,6 @@ namespace DB
   */
 class WriteBufferFromArena final : public WriteBuffer
 {
-public:
-    /// begin_ - start of previously used contiguous memory segment or nullptr (see Arena::allocContinue method).
-    WriteBufferFromArena(Arena & arena_, const char *& begin_)
-        : WriteBuffer(nullptr, 0), arena(arena_), begin(begin_)
-    {
-        nextImpl();
-        pos = working_buffer.begin();
-    }
-
-    StringRef complete()
-    {
-        /// Return over-allocated memory back into arena.
-        arena.rollback(buffer().end() - position());
-        /// Reference to written data.
-        return { position() - count(), count() };
-    }
-
 private:
     Arena & arena;
     const char *& begin;
@@ -62,6 +45,23 @@ private:
         /// internal buffer points to whole memory segment and working buffer - to free space for writing.
         internalBuffer() = Buffer(const_cast<char *>(begin), end);
         buffer() = Buffer(continuation, end);
+    }
+
+public:
+    /// begin_ - start of previously used contiguous memory segment or nullptr (see Arena::allocContinue method).
+    WriteBufferFromArena(Arena & arena_, const char *& begin_)
+        : WriteBuffer(nullptr, 0), arena(arena_), begin(begin_)
+    {
+        nextImpl();
+        pos = working_buffer.begin();
+    }
+
+    StringRef finish()
+    {
+        /// Return over-allocated memory back into arena.
+        arena.rollback(buffer().end() - position());
+        /// Reference to written data.
+        return { position() - count(), count() };
     }
 };
 

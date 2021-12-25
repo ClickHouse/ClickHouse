@@ -63,7 +63,7 @@ read_rows:                     0
 read_bytes:                    0
 peak_memory_usage:             0
 error:                         0
-exception:
+exception:                   
 ```
 
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/part_log) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system-tables/part_log) <!--hide-->

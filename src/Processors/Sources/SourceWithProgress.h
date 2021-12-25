@@ -1,15 +1,11 @@
 #pragma once
 #include <Processors/ISource.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Common/Stopwatch.h>
-#include <QueryPipeline/StreamLocalLimits.h>
-#include <IO/Progress.h>
-
+#include <DataStreams/StreamLocalLimits.h>
 
 namespace DB
 {
-
-class QueryStatus;
-class EnabledQuota;
 
 /// Adds progress to ISource.
 /// This class takes care of limits, quotas, callback on progress and updating performance counters for current thread.
@@ -64,8 +60,6 @@ protected:
     void progress(const Progress & value);
 
     void work() override;
-
-    bool checkTimeLimit() const;
 
 private:
     StreamLocalLimits limits;

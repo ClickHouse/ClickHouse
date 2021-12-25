@@ -124,7 +124,6 @@ bool fileOrSymlinkPathStartsWith(const std::filesystem::path & path, const std::
     /// Make `path` absolute if it was relative and put it into normalized form: remove
     /// `.` and `..` and extra `/`. Path is not canonized because otherwise path will
     /// not be a path of a symlink itself.
-
     String absolute_path = std::filesystem::absolute(path);
     absolute_path = fs::path(absolute_path).lexically_normal(); /// Normalize path.
     String absolute_prefix_path = std::filesystem::absolute(prefix_path);

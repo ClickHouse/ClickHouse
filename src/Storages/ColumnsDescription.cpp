@@ -513,15 +513,12 @@ bool ColumnsDescription::hasColumnOrSubcolumn(GetFlags flags, const String & col
 
 void ColumnsDescription::addSubcolumnsToList(NamesAndTypesList & source_list) const
 {
-    NamesAndTypesList subcolumns_list;
     for (const auto & col : source_list)
     {
         auto range = subcolumns.get<1>().equal_range(col.name);
         if (range.first != range.second)
-            subcolumns_list.insert(subcolumns_list.end(), range.first, range.second);
+            source_list.insert(source_list.end(), range.first, range.second);
     }
-
-    source_list.splice(source_list.end(), std::move(subcolumns_list));
 }
 
 NamesAndTypesList ColumnsDescription::getAllWithSubcolumns() const

@@ -7,6 +7,7 @@ RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get -y install \
         tzdata \
         python3 \
+        libreadline-dev \
         libicu-dev \
         bsdutils \
         gdb \
@@ -18,7 +19,6 @@ RUN apt-get update \
         sqlite3 \
         curl \
         tar \
-        lz4 \
         krb5-user \
         iproute2 \
         lsof \
@@ -49,3 +49,4 @@ RUN mkdir /zookeeper && chmod -R 777 /zookeeper
 
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+

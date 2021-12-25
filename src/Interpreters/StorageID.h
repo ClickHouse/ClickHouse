@@ -1,5 +1,5 @@
 #pragma once
-#include <base/types.h>
+#include <common/types.h>
 #include <Core/UUID.h>
 #include <tuple>
 #include <Parsers/IAST_fwd.h>
@@ -91,9 +91,7 @@ struct StorageID
 
     /// If dictionary has UUID, then use it as dictionary name in ExternalLoader to allow dictionary renaming.
     /// ExternalDictnariesLoader::resolveDictionaryName(...) should be used to access such dictionaries by name.
-    String getInternalDictionaryName() const { return getShortName(); }
-    /// Get short, but unique, name.
-    String getShortName() const;
+    String getInternalDictionaryName() const;
 
 private:
     StorageID() = default;

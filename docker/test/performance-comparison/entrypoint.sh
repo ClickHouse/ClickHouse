@@ -4,13 +4,6 @@ set -ex
 CHPC_CHECK_START_TIMESTAMP="$(date +%s)"
 export CHPC_CHECK_START_TIMESTAMP
 
-S3_URL=${S3_URL:="https://clickhouse-builds.s3.yandex.net"}
-
-COMMON_BUILD_PREFIX="/clickhouse_build_check"
-if [[ $S3_URL == *"s3.amazonaws.com"* ]]; then
-    COMMON_BUILD_PREFIX=""
-fi
-
 # Use the packaged repository to find the revision we will compare to.
 function find_reference_sha
 {
@@ -50,12 +43,9 @@ function find_reference_sha
         # Historically there were various path for the performance test package,
         # test all of them.
         unset found
-        declare -a urls_to_try=("https://s3.amazonaws.com/clickhouse-builds/0/$REF_SHA/performance/performance.tgz"
-                                "https://clickhouse-builds.s3.yandex.net/0/$REF_SHA/clickhouse_build_check/performance/performance.tgz"
-                               )
-        for path in "${urls_to_try[@]}"
+        for path in "https://clickhouse-builds.s3.yandex.net/0/$REF_SHA/"{,clickhouse_build_check/}"performance/performance.tgz"
         do
-            if curl --fail --retry 5 --retry-delay 1 --retry-max-time 15 --head "$path"
+            if curl --fail --head "$path"
             then
                 found="$path"
                 break
@@ -75,11 +65,14 @@ chmod 777 workspace output
 
 cd workspace
 
-# Download the package for the version we are going to test.
-if curl --fail --retry 5 --retry-delay 1 --retry-max-time 15 --head "$S3_URL/$PR_TO_TEST/$SHA_TO_TEST$COMMON_BUILD_PREFIX/performance/performance.tgz"
-then
-    right_path="$S3_URL/$PR_TO_TEST/$SHA_TO_TEST$COMMON_BUILD_PREFIX/performance/performance.tgz"
-fi
+# Download the package for the version we are going to test
+for path in "https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/"{,clickhouse_build_check/}"performance/performance.tgz"
+do
+    if curl --fail --head "$path"
+    then
+        right_path="$path"
+    fi
+done
 
 mkdir right
 wget -nv -nd -c "$right_path" -O- | tar -C right --strip-components=1 -zxv
@@ -109,6 +102,7 @@ then
     base=$(git -C right/ch merge-base pr origin/master)
     git -C right/ch diff --name-only "$base" pr -- . | tee all-changed-files.txt
     git -C right/ch diff --name-only "$base" pr -- tests/performance | tee changed-test-definitions.txt
+    git -C right/ch diff --name-only "$base" pr -- docker/test/performance-comparison | tee changed-test-scripts.txt
     git -C right/ch diff --name-only "$base" pr -- :!tests/performance :!docker/test/performance-comparison | tee other-changed-files.txt
 fi
 
@@ -133,15 +127,6 @@ export PATH
 export REF_PR
 export REF_SHA
 
-# Try to collect some core dumps. I've seen two patterns in Sandbox:
-# 1) |/home/zomb-sandbox/venv/bin/python /home/zomb-sandbox/client/sandbox/bin/coredumper.py %e %p %g %u %s %P %c
-#    Not sure what this script does (puts them to sandbox resources, logs some messages?),
-#    and it's not accessible from inside docker anyway.
-# 2) something like %e.%p.core.dmp. The dump should end up in the workspace directory.
-# At least we remove the ulimit and then try to pack some common file names into output.
-ulimit -c unlimited
-cat /proc/sys/kernel/core_pattern
-
 # Start the main comparison script.
 { \
     time ../download.sh "$REF_PR" "$REF_SHA" "$PR_TO_TEST" "$SHA_TO_TEST" && \
@@ -159,11 +144,8 @@ done
 
 dmesg -T > dmesg.log
 
-ls -lath
-
 7z a '-x!*/tmp' /output/output.7z ./*.{log,tsv,html,txt,rep,svg,columns} \
     {right,left}/{performance,scripts} {{right,left}/db,db0}/preprocessed_configs \
-    report analyze benchmark metrics \
-    ./*.core.dmp ./*.core
+    report analyze benchmark metrics
 
 cp compare.log /output

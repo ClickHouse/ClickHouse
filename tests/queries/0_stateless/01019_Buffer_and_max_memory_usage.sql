@@ -1,5 +1,3 @@
--- Tags: no-replicated-database
-
 DROP TABLE IF EXISTS null_;
 DROP TABLE IF EXISTS buffer_;
 DROP TABLE IF EXISTS aggregation_;

@@ -5,7 +5,7 @@ if (OS_DARWIN AND COMPILER_GCC)
 endif()
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libuv")
-    message (WARNING "submodule contrib/libuv is missing. to fix try run: \n git submodule update --init")
+    message (WARNING "submodule contrib/libuv is missing. to fix try run: \n git submodule update --init --recursive")
     SET(MISSING_INTERNAL_LIBUV_LIBRARY 1)
     return()
 endif()

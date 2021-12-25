@@ -14,21 +14,22 @@
 #include <Poco/DirectoryIterator.h>
 #include <Common/renameat2.h>
 #include <Common/CurrentMetrics.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <filesystem>
 #include <Common/filesystemHelpers.h>
 
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 #if USE_MYSQL
-#    include <Databases/MySQL/MaterializedMySQLSyncThread.h>
-#    include <Storages/StorageMaterializedMySQL.h>
+#    include <Databases/MySQL/MaterializeMySQLSyncThread.h>
+#    include <Storages/StorageMaterializeMySQL.h>
 #endif
 
 #if USE_LIBPQXX
 #    include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
-#    include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -50,7 +51,6 @@ namespace ErrorCodes
     extern const int DATABASE_NOT_EMPTY;
     extern const int DATABASE_ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
-    extern const int HAVE_DEPENDENT_OBJECTS;
 }
 
 TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryTableHolder::Creator & creator, const ASTPtr & query)
@@ -66,9 +66,9 @@ TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryT
         if (create->uuid == UUIDHelpers::Nil)
             create->uuid = UUIDHelpers::generateV4();
         id = create->uuid;
-        create->setTable("_tmp_" + toString(id));
-        global_name = create->getTable();
-        create->setDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
+        create->table = "_tmp_" + toString(id);
+        global_name = create->table;
+        create->database = DatabaseCatalog::TEMPORARY_DATABASE;
     }
     else
     {
@@ -146,6 +146,7 @@ void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 
 void DatabaseCatalog::loadDatabases()
 {
+    loadMarkedAsDroppedTables();
     auto task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this](){ this->dropTableDataTask(); });
     drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(task_holder));
     (*drop_task)->activate();
@@ -240,17 +241,16 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 #if USE_LIBPQXX
         if (!context_->isInternalQuery() && (db_and_table.first->getEngineName() == "MaterializedPostgreSQL"))
         {
-            db_and_table.second = std::make_shared<StorageMaterializedPostgreSQL>(std::move(db_and_table.second), getContext(),
-                                        assert_cast<const DatabaseMaterializedPostgreSQL *>(db_and_table.first.get())->getPostgreSQLDatabaseName(),
-                                        db_and_table.second->getStorageID().table_name);
+            db_and_table.second = std::make_shared<StorageMaterializedPostgreSQL>(std::move(db_and_table.second), getContext());
         }
 #endif
 
 #if USE_MYSQL
-        /// It's definitely not the best place for this logic, but behaviour must be consistent with DatabaseMaterializedMySQL::tryGetTable(...)
-        if (!context_->isInternalQuery() && db_and_table.first->getEngineName() == "MaterializedMySQL")
+        /// It's definitely not the best place for this logic, but behaviour must be consistent with DatabaseMaterializeMySQL::tryGetTable(...)
+        if (db_and_table.first->getEngineName() == "MaterializeMySQL")
         {
-            db_and_table.second = std::make_shared<StorageMaterializedMySQL>(std::move(db_and_table.second), db_and_table.first.get());
+            if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
+                db_and_table.second = std::make_shared<StorageMaterializeMySQL>(std::move(db_and_table.second), db_and_table.first.get());
         }
 #endif
         return db_and_table;
@@ -376,7 +376,7 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
     return db;
 }
 
-void DatabaseCatalog::updateDatabaseName(const String & old_name, const String & new_name, const Strings & tables_in_database)
+void DatabaseCatalog::updateDatabaseName(const String & old_name, const String & new_name)
 {
     std::lock_guard lock{databases_mutex};
     assert(databases.find(new_name) == databases.end());
@@ -385,17 +385,6 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
     auto db = it->second;
     databases.erase(it);
     databases.emplace(new_name, db);
-
-    for (const auto & table_name : tables_in_database)
-    {
-        QualifiedTableName new_table_name{new_name, table_name};
-        auto dependencies = tryRemoveLoadingDependenciesUnlocked(QualifiedTableName{old_name, table_name}, /* check_dependencies */ false);
-        DependenciesInfos new_info;
-        for (const auto & dependency : dependencies)
-            new_info[dependency].dependent_database_objects.insert(new_table_name);
-        new_info[new_table_name].dependencies = std::move(dependencies);
-        mergeDependenciesGraphs(loading_dependencies, new_info);
-    }
 }
 
 DatabasePtr DatabaseCatalog::getDatabase(const String & database_name) const
@@ -785,8 +774,8 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
         if (create)
         {
             String data_path = "store/" + getPathForUUID(table_id.uuid);
-            create->setDatabase(table_id.database_name);
-            create->setTable(table_id.table_name);
+            create->database = table_id.database_name;
+            create->table = table_id.table_name;
             try
             {
                 table = createTableFromAST(*create, table_id.getDatabaseName(), data_path, getContext(), false).second;
@@ -947,119 +936,6 @@ void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
     {
         return tables_marked_dropped_ids.count(uuid) == 0;
     });
-}
-
-void DatabaseCatalog::addLoadingDependencies(const QualifiedTableName & table, TableNamesSet && dependencies)
-{
-    DependenciesInfos new_info;
-    for (const auto & dependency : dependencies)
-        new_info[dependency].dependent_database_objects.insert(table);
-    new_info[table].dependencies = std::move(dependencies);
-    addLoadingDependencies(new_info);
-}
-
-void DatabaseCatalog::addLoadingDependencies(const DependenciesInfos & new_infos)
-{
-    std::lock_guard lock{databases_mutex};
-    mergeDependenciesGraphs(loading_dependencies, new_infos);
-}
-
-DependenciesInfo DatabaseCatalog::getLoadingDependenciesInfo(const StorageID & table_id) const
-{
-    std::lock_guard lock{databases_mutex};
-    auto it = loading_dependencies.find(table_id.getQualifiedName());
-    if (it == loading_dependencies.end())
-        return {};
-    return it->second;
-}
-
-TableNamesSet DatabaseCatalog::tryRemoveLoadingDependencies(const StorageID & table_id, bool check_dependencies, bool is_drop_database)
-{
-    QualifiedTableName removing_table = table_id.getQualifiedName();
-    std::lock_guard lock{databases_mutex};
-    return tryRemoveLoadingDependenciesUnlocked(removing_table, check_dependencies, is_drop_database);
-}
-
-TableNamesSet DatabaseCatalog::tryRemoveLoadingDependenciesUnlocked(const QualifiedTableName & removing_table, bool check_dependencies, bool is_drop_database)
-{
-    auto it = loading_dependencies.find(removing_table);
-    if (it == loading_dependencies.end())
-        return {};
-
-    TableNamesSet & dependent = it->second.dependent_database_objects;
-    if (!dependent.empty())
-    {
-        if (check_dependencies && !is_drop_database)
-            throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "Cannot drop or rename {}, because some tables depend on it: {}",
-                            removing_table, fmt::join(dependent, ", "));
-
-        /// For DROP DATABASE we should ignore dependent tables from the same database.
-        /// TODO unload tables in reverse topological order and remove this code
-        if (check_dependencies)
-        {
-            TableNames from_other_databases;
-            for (const auto & table : dependent)
-                if (table.database != removing_table.database)
-                    from_other_databases.push_back(table);
-
-            if (!from_other_databases.empty())
-                throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "Cannot drop or rename {}, because some tables depend on it: {}",
-                                removing_table, fmt::join(from_other_databases, ", "));
-        }
-
-        for (const auto & table : dependent)
-        {
-            [[maybe_unused]] bool removed = loading_dependencies[table].dependencies.erase(removing_table);
-            assert(removed);
-        }
-        dependent.clear();
-    }
-
-    TableNamesSet dependencies = it->second.dependencies;
-    for (const auto & table : dependencies)
-    {
-        [[maybe_unused]] bool removed = loading_dependencies[table].dependent_database_objects.erase(removing_table);
-        assert(removed);
-    }
-
-    loading_dependencies.erase(it);
-    return dependencies;
-}
-
-void DatabaseCatalog::checkTableCanBeRemovedOrRenamed(const StorageID & table_id) const
-{
-    QualifiedTableName removing_table = table_id.getQualifiedName();
-    std::lock_guard lock{databases_mutex};
-    auto it = loading_dependencies.find(removing_table);
-    if (it == loading_dependencies.end())
-        return;
-
-    const TableNamesSet & dependent = it->second.dependent_database_objects;
-    if (!dependent.empty())
-        throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "Cannot drop or rename {}, because some tables depend on it: {}",
-                            table_id.getNameForLogs(), fmt::join(dependent, ", "));
-}
-
-void DatabaseCatalog::updateLoadingDependencies(const StorageID & table_id, TableNamesSet && new_dependencies)
-{
-    if (new_dependencies.empty())
-        return;
-    QualifiedTableName table_name = table_id.getQualifiedName();
-    std::lock_guard lock{databases_mutex};
-    auto it = loading_dependencies.find(table_name);
-    if (it == loading_dependencies.end())
-        it = loading_dependencies.emplace(table_name, DependenciesInfo{}).first;
-
-    auto & old_dependencies = it->second.dependencies;
-    for (const auto & dependency : old_dependencies)
-        if (!new_dependencies.contains(dependency))
-            loading_dependencies[dependency].dependent_database_objects.erase(table_name);
-
-    for (const auto & dependency : new_dependencies)
-        if (!old_dependencies.contains(dependency))
-            loading_dependencies[dependency].dependent_database_objects.insert(table_name);
-
-    old_dependencies = std::move(new_dependencies);
 }
 
 

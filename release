@@ -60,6 +60,9 @@ then
     elif [[ "$SANITIZER" == "thread" ]]; then VERSION_POSTFIX+="+tsan"
     elif [[ "$SANITIZER" == "memory" ]]; then VERSION_POSTFIX+="+msan"
     elif [[ "$SANITIZER" == "undefined" ]]; then VERSION_POSTFIX+="+ubsan"
+    elif [[ "$SANITIZER" == "libfuzzer" ]]; then
+        VERSION_POSTFIX+="+libfuzzer"
+        MALLOC_OPTS="-DENABLE_TCMALLOC=0 -DENABLE_JEMALLOC=0"
     else
         echo "Unknown value of SANITIZER variable: $SANITIZER"
         exit 3
@@ -68,6 +71,9 @@ then
     export DEB_CC=${DEB_CC=clang-10}
     export DEB_CXX=${DEB_CXX=clang++-10}
     EXTRAPACKAGES="$EXTRAPACKAGES clang-10 lld-10"
+elif [[ $BUILD_TYPE == 'valgrind' ]]; then
+    MALLOC_OPTS="-DENABLE_TCMALLOC=0 -DENABLE_JEMALLOC=0"
+    VERSION_POSTFIX+="+valgrind"
 elif [[ $BUILD_TYPE == 'debug' ]]; then
     CMAKE_BUILD_TYPE=Debug
     VERSION_POSTFIX+="+debug"
@@ -87,7 +93,7 @@ if [ -z "$NO_BUILD" ] ; then
     # Build (only binary packages).
     debuild --preserve-env -e PATH \
     -e DEB_CC=$DEB_CC -e DEB_CXX=$DEB_CXX -e CMAKE_FLAGS="$CMAKE_FLAGS" \
-    -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS} ${DEB_ARCH_FLAG}
+    -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
 fi
 
 if [ -n "$MAKE_RPM" ]; then

@@ -46,18 +46,16 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-template <typename Impl>
+template <typename Impl, typename Name>
 class FunctionsStringSearch : public IFunction
 {
 public:
-    static constexpr auto name = Impl::name;
+    static constexpr auto name = Name::name;
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsStringSearch>(); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return Impl::supports_start_pos; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override
     {
@@ -80,7 +78,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2 || 3 < arguments.size())
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+            throw Exception("Number of arguments for function " + String(Name::name) + " doesn't match: passed "
                 + toString(arguments.size()) + ", should be 2 or 3.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 

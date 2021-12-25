@@ -10,12 +10,12 @@ node = cluster.add_instance('node_default')
 
 system_logs = [
     # disabled by default
+    ('system.part_log', 0),
     ('system.text_log', 0),
 
     # enabled by default
     ('system.query_log', 1),
     ('system.query_thread_log', 1),
-    ('system.part_log', 1),
     ('system.trace_log', 1),
     ('system.metric_log', 1),
 ]
@@ -54,11 +54,3 @@ def test_system_logs_non_empty_queue():
         'log_queries_min_type': 'QUERY_START',
     })
     node.query('SYSTEM FLUSH LOGS')
-
-
-def test_system_suspend():
-    node.query("CREATE TABLE t (x DateTime) ENGINE=Memory;")
-    node.query("INSERT INTO t VALUES (now());")
-    node.query("SYSTEM SUSPEND FOR 1 SECOND;")
-    node.query("INSERT INTO t VALUES (now());")
-    assert "1\n" == node.query("SELECT max(x) - min(x) >= 1 FROM t;")
