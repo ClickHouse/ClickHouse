@@ -71,7 +71,7 @@ def test_metrics_storage_buffer_size(start_cluster):
         (
             `str` LowCardinality(String)
         )
-        ENGINE = Buffer('test', 'test_table', 1, 5, 5, 1000, 100000, 100000, 10000000);
+        ENGINE = Buffer('test', 'test_mem_table', 1, 5, 5, 1000, 100000, 100000, 10000000);
     ''')
     node1.query("INSERT INTO test.buffer_table VALUES('hello');")
     node1.query("INSERT INTO test.buffer_table VALUES('hello');")
