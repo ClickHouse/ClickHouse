@@ -59,3 +59,25 @@ def test_readonly_metrics(start_cluster):
         node1.query("ATTACH TABLE test.test_table")
         assert_eq_with_retry(node1, "SELECT value FROM system.metrics WHERE metric = 'ReadonlyReplica'", "0\n", retry_count=300, sleep_time=1)
 
+def test_metrics_storage_buffer_size(start_cluster):
+    node1.query('''
+        CREATE TABLE test.test_mem_table
+        (
+            `str` LowCardinality(String)
+        )
+        ENGINE = Memory;
+
+        CREATE TABLE test.buffer_table
+        (
+            `str` LowCardinality(String)
+        )
+        ENGINE = Buffer('test', 'test_table', 1, 5, 5, 1000, 100000, 100000, 10000000);
+    ''')
+    node1.query("INSERT INTO test.buffer_table VALUES('hello');")
+    node1.query("INSERT INTO test.buffer_table VALUES('hello');")
+    #before flush
+    assert node1.query("SELECT value FROM system.metrics WHERE metric = 'StorageBufferRows'") == "2\n"
+    time.sleep(6)
+    #after flush
+    assert node1.query("SELECT value FROM system.metrics WHERE metric = 'StorageBufferRows'") == "0\n"
+    assert node1.query("SELECT value FROM system.metrics WHERE metric = 'StorageBufferBytes'") == "0\n"
