@@ -32,7 +32,7 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
 
     client1.send('CREATE TABLE 01062_window_view_event_hop_watch_asc.mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple()')
     client1.expect(prompt)
-    client1.send("CREATE WINDOW VIEW 01062_window_view_event_hop_watch_asc.wv WATERMARK=ASCENDING AS SELECT count(a) AS count, HOP_END(wid) AS w_end FROM 01062_window_view_event_hop_watch_asc.mt GROUP BY HOP(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND, 'US/Samoa') AS wid")
+    client1.send("CREATE WINDOW VIEW 01062_window_view_event_hop_watch_asc.wv WATERMARK=ASCENDING AS SELECT count(a) AS count, hopEnd(wid) AS w_end FROM 01062_window_view_event_hop_watch_asc.mt GROUP BY hop(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND, 'US/Samoa') AS wid")
     client1.expect(prompt)
     
     client1.send('WATCH 01062_window_view_event_hop_watch_asc.wv')

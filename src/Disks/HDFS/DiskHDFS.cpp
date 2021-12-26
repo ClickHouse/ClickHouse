@@ -1,5 +1,6 @@
 #include <Disks/HDFS/DiskHDFS.h>
 #include <Disks/DiskLocal.h>
+#include <Disks/RemoteDisksCommon.h>
 
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
@@ -74,7 +75,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskHDFS::readFile(const String & path, 
 {
     auto metadata = readMeta(path);
 
-    LOG_TRACE(log,
+    LOG_TEST(log,
         "Read from file by path: {}. Existing HDFS objects: {}",
         backQuote(metadata_disk->getPath() + path), metadata.remote_fs_objects.size());
 
@@ -160,17 +161,13 @@ void registerDiskHDFS(DiskFactory & factory)
                       ContextPtr context_,
                       const DisksMap & /*map*/) -> DiskPtr
     {
-        fs::path disk = fs::path(context_->getPath()) / "disks" / name;
-        fs::create_directories(disk);
-
         String uri{config.getString(config_prefix + ".endpoint")};
         checkHDFSURL(uri);
 
         if (uri.back() != '/')
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "HDFS path must ends with '/', but '{}' doesn't.", uri);
 
-        String metadata_path = context_->getPath() + "disks/" + name + "/";
-        auto metadata_disk = std::make_shared<DiskLocal>(name + "-metadata", metadata_path, 0);
+        auto metadata_disk = prepareForLocalMetadata(name, config, config_prefix, context_).second;
 
         return std::make_shared<DiskHDFS>(
             name, uri,

@@ -41,7 +41,7 @@ static void append(std::vector<String> & to, const std::vector<String> & what, s
 static bool parseNumber(const String & description, size_t l, size_t r, size_t & res)
 {
     res = 0;
-    for (size_t pos = l; pos < r; pos ++)
+    for (size_t pos = l; pos < r; ++pos)
     {
         if (!isNumericASCII(description[pos]))
             return false;

@@ -1,7 +1,7 @@
 #include "ExecutablePoolDictionarySource.h"
 
 #include <base/logger_useful.h>
-#include <base/LocalDateTime.h>
+#include <Common/LocalDateTime.h>
 #include <Common/ShellCommand.h>
 
 #include <Formats/formatBlock.h>
@@ -152,7 +152,7 @@ bool ExecutablePoolDictionarySource::hasUpdateField() const
 
 DictionarySourcePtr ExecutablePoolDictionarySource::clone() const
 {
-    return std::make_unique<ExecutablePoolDictionarySource>(*this);
+    return std::make_shared<ExecutablePoolDictionarySource>(*this);
 }
 
 std::string ExecutablePoolDictionarySource::toString() const

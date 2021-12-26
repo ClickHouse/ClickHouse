@@ -5,10 +5,7 @@
 #include <memory>
 #include <Server/IServer.h>
 #include <Core/PostgreSQLProtocol.h>
-
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 namespace DB
 {
