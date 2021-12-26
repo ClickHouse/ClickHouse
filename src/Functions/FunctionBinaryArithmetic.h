@@ -7,37 +7,38 @@
 #include <type_traits>
 #include <base/wide_integer_to_string.h>
 
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesDecimal.h>
+#include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnVector.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeInterval.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Native.h>
 #include <DataTypes/NumberTraits.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnAggregateFunction.h>
-#include <Columns/ColumnNullable.h>
-#include "Core/DecimalFunctions.h"
-#include "IFunction.h"
-#include "FunctionHelpers.h"
-#include "IsOperation.h"
-#include "DivisionUtils.h"
-#include "castTypeToEither.h"
-#include "FunctionFactory.h"
-#include <Common/Arena.h>
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
 #include <base/TypeList.h>
 #include <base/map.h>
+#include <Common/Arena.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
+#include "Core/DecimalFunctions.h"
+#include "DivisionUtils.h"
+#include "FunctionFactory.h"
+#include "FunctionHelpers.h"
+#include "IFunction.h"
+#include "IsOperation.h"
+#include "castTypeToEither.h"
 
 #include <Common/config.h>
 
@@ -134,11 +135,29 @@ public:
         Case<IsDataTypeDecimal<LeftDataType> && IsIntegralOrExtended<RightDataType>, LeftDataType>,
         Case<IsDataTypeDecimal<RightDataType> && IsIntegralOrExtended<LeftDataType>, RightDataType>,
 
+        /// e.g Decimal + Float64 = Float64
+        Case<IsOperation<Operation>::plus && IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>,
+            DataTypeFloat64>,
+        Case<IsOperation<Operation>::plus && IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>,
+            DataTypeFloat64>,
+
+        /// e.g Decimal - Float64 = Float64
+        Case<IsOperation<Operation>::minus && IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>,
+            DataTypeFloat64>,
+        Case<IsOperation<Operation>::multiply && IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>,
+            DataTypeFloat64>,
+
         /// e.g Decimal * Float64 = Float64
         Case<IsOperation<Operation>::multiply && IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>,
-            RightDataType>,
+            DataTypeFloat64>,
         Case<IsOperation<Operation>::multiply && IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>,
-            LeftDataType>,
+            DataTypeFloat64>,
+
+        /// e.g Decimal / Float64 = Float64
+        Case<IsOperation<Operation>::multiply && IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>,
+            DataTypeFloat64>,
+        Case<IsOperation<Operation>::multiply && IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>,
+            DataTypeFloat64>,
 
         /// Decimal <op> Real is not supported (traditional DBs convert Decimal <op> Real to Real)
         Case<IsDataTypeDecimal<LeftDataType> && !IsIntegralOrExtendedOrDecimal<RightDataType>, InvalidType>,
@@ -966,9 +985,9 @@ class FunctionBinaryArithmetic : public IFunction
         const ResultDataType type = [&]
         {
             if constexpr (left_is_decimal && IsFloatingPoint<RightDataType>)
-                return RightDataType();
+                return DataTypeFloat64{};
             else if constexpr (right_is_decimal && IsFloatingPoint<LeftDataType>)
-                return LeftDataType();
+                return DataTypeFloat64{};
             else
                 return decimalResultType<is_multiply, is_division>(left, right);
         }();
@@ -1219,8 +1238,7 @@ public:
                     }
                     else if constexpr ((IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>) ||
                         (IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>))
-                        type_res = std::make_shared<std::conditional_t<IsFloatingPoint<LeftDataType>,
-                            LeftDataType, RightDataType>>();
+                        type_res = std::make_shared<DataTypeFloat64>();
                     else if constexpr (IsDataTypeDecimal<LeftDataType>)
                         type_res = std::make_shared<LeftDataType>(left.getPrecision(), left.getScale());
                     else if constexpr (IsDataTypeDecimal<RightDataType>)
