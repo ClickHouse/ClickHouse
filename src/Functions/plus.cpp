@@ -32,7 +32,12 @@ struct PlusImpl
     template <typename Result = ResultType>
     static inline bool apply(A a, B b, Result & c)
     {
-        return common::addOverflow(static_cast<Result>(a), b, c);
+        if constexpr (std::is_same_v<Result, double>)
+        {
+            c = static_cast<Result>(a) + b;
+        }
+        else
+            return common::addOverflow(static_cast<Result>(a), b, c);
     }
 
 #if USE_EMBEDDED_COMPILER
