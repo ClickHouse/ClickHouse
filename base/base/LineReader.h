@@ -20,6 +20,7 @@ public:
 
         /// Get iterators for the matched range of words if any.
         std::optional<WordsRange> getCompletions(const String & prefix, size_t prefix_length) const;
+        void addWords(const std::vector<std::string> & new_words);
     };
 
     using Patterns = std::vector<const char *>;

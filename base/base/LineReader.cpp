@@ -65,6 +65,27 @@ std::optional<LineReader::Suggest::WordsRange> LineReader::Suggest::getCompletio
         });
 }
 
+void LineReader::Suggest::addWords(const std::vector<std::string> & new_words)
+{
+    for (const auto & new_word : new_words)
+    {
+        if (std::binary_search(words.begin(), words.end(), new_word))
+            continue;
+
+        words.push_back(new_word);
+        words_no_case.push_back(new_word);
+    }
+
+    std::sort(words.begin(), words.end());
+    std::sort(words_no_case.begin(), words_no_case.end(), [](const std::string & str1, const std::string & str2)
+    {
+        return std::lexicographical_compare(begin(str1), end(str1), begin(str2), end(str2), [](const char char1, const char char2)
+        {
+            return std::tolower(char1) < std::tolower(char2);
+        });
+    });
+}
+
 LineReader::LineReader(const String & history_file_path_, bool multiline_, Patterns extenders_, Patterns delimiters_)
     : history_file_path(history_file_path_), multiline(multiline_), extenders(std::move(extenders_)), delimiters(std::move(delimiters_))
 {
