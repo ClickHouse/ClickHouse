@@ -87,6 +87,10 @@ if(USE_RDKAFKA)
     add_headers_and_sources(dbms Storages/Kafka)
 endif()
 
+if(ENABLE_CURL)
+    add_headers_and_sources(dbms Storages/MeiliSearch)
+endif()
+
 if (USE_AMQPCPP)
     add_headers_and_sources(dbms Storages/RabbitMQ)
 endif()
@@ -331,6 +335,10 @@ if (USE_RDKAFKA)
     if(NOT USE_INTERNAL_RDKAFKA_LIBRARY)
         dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${RDKAFKA_INCLUDE_DIR})
     endif()
+endif()
+
+if(ENABLE_CURL)
+    dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${CURL_INCLUDE_DIRS})
 endif()
 
 if (USE_CYRUS_SASL)
