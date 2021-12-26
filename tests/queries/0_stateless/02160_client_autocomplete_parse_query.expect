@@ -1,0 +1,89 @@
+#!/usr/bin/expect -f
+
+log_user 0
+set timeout 60
+set uuid ""
+match_max 100000
+# A default timeout action is to do nothing, change it to fail
+expect_after {
+    timeout {
+        send_user "FAILED (uuid=$uuid)\n"
+        exit 1
+    }
+}
+
+set basedir [file dirname $argv0]
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT"
+expect ":) "
+
+# Make a query
+send -- "set max_distributed"
+expect "set max_distributed"
+
+# Wait for suggestions to load, they are loaded in background
+set is_done 0
+set timeout 1
+while {$is_done == 0} {
+    send -- "\t"
+    expect {
+        "_" {
+            set is_done 1
+        }
+        default {
+            # Reset the expect_after
+        }
+    }
+}
+set timeout 60
+send -- ""
+expect ":) "
+send_user "Completion loaded\n"
+
+# Generate UIUD to avoid matching old database/tables/columns from previous test runs.
+send -- "select 'begin-' || replace(toString(generateUUIDv4()), '-', '') || '-end' format TSV\r"
+expect -re TSV.*TSV.*begin-(.*)-end.*
+set uuid $expect_out(1,string)
+expect ":) "
+send_user "UUID generated\n"
+
+# Create
+send -- "create database new_${uuid}_database\r"
+expect ":) "
+send -- "create table new_${uuid}_table (new_${uuid}_column Int) engine=Null()\r"
+expect ":) "
+send_user "Structure created\n"
+
+# Check completion
+send -- "new_${uuid}_data"
+expect "new_${uuid}_data"
+send -- "\t"
+expect "base"
+send -- ""
+expect ":) "
+send_user "Database completion works\n"
+
+send -- "new_${uuid}_ta"
+expect "new_${uuid}_ta"
+send -- "\t"
+expect "ble"
+send -- ""
+expect ":) "
+send_user "Table completion works\n"
+
+send -- "new_${uuid}_col"
+expect "new_${uuid}_col"
+send -- "\t"
+expect "umn"
+send -- ""
+expect ":) "
+send_user "Column completion works\n"
+
+# Cleanup
+send -- "drop database new_${uuid}_database\r"
+expect ":) "
+send -- "drop table new_${uuid}_table\r"
+expect ":) "
+send_user "Cleanup\n"
+
+send -- ""
+expect eof
