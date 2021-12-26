@@ -300,13 +300,8 @@ private:
 
     static void signalHandler(int signum)
     {
-        static int interrupt_count = 0;
         if (signum == SIGINT)
-            interrupt_count++;
-        if (interrupt_count >= 1)
-        {
             cancel_benchmark = true;
-        }
     }
 
     void runBenchmark()
@@ -350,16 +345,22 @@ private:
             }
         }
 
+        // Setup signal handler to capture additional SIGINTs (in case the user wants to quit immediately).
         signal(SIGINT, signalHandler);
 
+        /// run the interrupt handler thread in background detached and
+        /// block if and until signalHandler notifies and then exit.
         auto interrupt_handler = std::thread{[&]() {
             while (!cancel_benchmark)
             {
             }
+            std::cout << "Second SIGINT received. Quitting immediately."
+                      << "\n";
             _exit(1);
         }};
         interrupt_handler.detach();
 
+        // run the clean up in background detached so it's non-blocking
         auto cleanup = std::thread{[&]() {
             pool.wait();
             total_watch.stop();
