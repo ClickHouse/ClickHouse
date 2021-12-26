@@ -25,8 +25,9 @@ if(Git_FOUND)
       OUTPUT_VARIABLE GIT_BRANCH
       ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
     # The date of the commit
+    SET(ENV{TZ} "UTC")
     execute_process(COMMAND
-      "${GIT_EXECUTABLE}" log -1 --format=%ad --date=local
+      "${GIT_EXECUTABLE}" log -1 --format=%ad --date=iso-local
       WORKING_DIRECTORY "${ClickHouse_SOURCE_DIR}"
       OUTPUT_VARIABLE GIT_DATE
       ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
