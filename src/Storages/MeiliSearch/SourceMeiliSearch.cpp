@@ -5,6 +5,7 @@
 #include "Columns/ColumnString.h"
 #include "Columns/ColumnVector.h"
 #include "Columns/IColumn.h"
+#include "Core/Field.h"
 #include "base/types.h"
 
 namespace DB
@@ -33,6 +34,21 @@ MeiliSearchSource::~MeiliSearchSource() = default;
 
 String quotify(const String& s) {
     return "\"" + s + "\"";
+}
+
+
+
+void insertWithTypeId(MutableColumnPtr& column, JSON kv_pair, const std::string& name, int type_id) {
+    if (type_id == Field::Types::UInt64) {
+        auto value = kv_pair.getWithDefault(name, UInt64());
+        column->insert(value);
+    } else if (type_id == Field::Types::Int64) {
+        auto value = kv_pair.getWithDefault(name, Int64());
+        column->insert(value);
+    } else if (type_id == Field::Types::String) {
+        auto value = kv_pair.getWithDefault(name, String());
+        column->insert(value);
+    }
 }
 
 Chunk MeiliSearchSource::generate()
@@ -76,9 +92,14 @@ Chunk MeiliSearchSource::generate()
         ++cnt_match;
         for (const auto idx : collections::range(0, size)) {
             const auto & name = description.sample_block.getByPosition(idx).name;
-            std::cout << name << " " << description.sample_block.getByPosition(idx).type->getName() << "\n";
-            auto value = kv_pair.getWithDefault(name, def);
-            columns[idx]->insert(value);
+            // std::cout   << name 
+            //             << " " 
+            //             << description.sample_block.getByPosition(idx).type->getName() 
+            //             << " "
+            //             << kv_pair.toString()
+            //             << "\n";
+            Field::Types::Which type_id = description.sample_block.getByPosition(idx).type->getDefault().getType();
+            insertWithTypeId(columns[idx], kv_pair, name, type_id);
         }
     }
 

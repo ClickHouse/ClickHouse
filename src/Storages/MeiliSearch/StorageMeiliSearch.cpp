@@ -3,7 +3,8 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/parseAddress.h>
-#include "QueryPipeline/Pipe.h"
+#include <QueryPipeline/Pipe.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/MeiliSearch/MeiliSearchConnection.h>
 #include <Storages/MeiliSearch/SourceMeiliSearch.h>
 #include <iostream>
@@ -37,7 +38,7 @@ StorageMeiliSearch::StorageMeiliSearch(
 Pipe StorageMeiliSearch::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & query_info,
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
@@ -45,14 +46,20 @@ Pipe StorageMeiliSearch::read(
 {
     metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
 
+    std::set<std::string> ans;
+    std::cout << query_info.query->getQueryKindString() << "\n";
+    query_info.query->collectIdentifierNames(ans);
+    std::cout << "IDENTIFIERS\n";
+    for (const auto& el : ans) {
+        std::cout << el << "\n";
+    }
+
     Block sample_block;
     for (const String & column_name : column_names)
     {
         auto column_data = metadata_snapshot->getColumns().getPhysical(column_name);
         sample_block.insert({ column_data.type, column_data.name });
     }
-
-    std::cout << "MEILI PIPE CREATED\n";
 
     return Pipe(std::make_shared<MeiliSearchSource>(config, sample_block, max_block_size, 0));
 }
@@ -62,7 +69,7 @@ MeiliSearchConfiguration getConfiguration(ASTs engine_args)
 
     if (engine_args.size() != 3) {
         throw Exception(
-                "Storage MeiliSearch requires 3 parameters: MeiliSearch('host:port', index, key).",
+                "Storage MeiliSearch requires 3 parameters: MeiliSearch('url/host:port', index, key).",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     }
 
