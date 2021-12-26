@@ -557,6 +557,8 @@ void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response
             std::lock_guard lock(conn_stats_mutex);
             conn_stats.updateLatency(elapsed);
         }
+
+        operations.erase(response->xid);
         keeper_dispatcher->updateKeeperStatLatency(elapsed);
 
         last_op.set(std::make_unique<LastOp>(LastOp{

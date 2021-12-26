@@ -54,6 +54,7 @@ void ExternalDataSourceConfiguration::set(const ExternalDataSourceConfiguration 
     database = conf.database;
     table = conf.table;
     schema = conf.schema;
+    addresses = conf.addresses;
     addresses_expr = conf.addresses_expr;
 }
 
@@ -86,7 +87,7 @@ std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const
         configuration.username = config.getString(collection_prefix + ".user", "");
         configuration.password = config.getString(collection_prefix + ".password", "");
         configuration.database = config.getString(collection_prefix + ".database", "");
-        configuration.table = config.getString(collection_prefix + ".table", "");
+        configuration.table = config.getString(collection_prefix + ".table", config.getString(collection_prefix + ".collection", ""));
         configuration.schema = config.getString(collection_prefix + ".schema", "");
         configuration.addresses_expr = config.getString(collection_prefix + ".addresses_expr", "");
 

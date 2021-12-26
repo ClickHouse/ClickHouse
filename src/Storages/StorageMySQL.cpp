@@ -4,6 +4,7 @@
 
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
+#include <Storages/MySQL/MySQLHelpers.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Core/Settings.h>
@@ -306,13 +307,7 @@ void registerStorageMySQL(StorageFactory & factory)
         if (!mysql_settings.connection_pool_size)
             throw Exception("connection_pool_size cannot be zero.", ErrorCodes::BAD_ARGUMENTS);
 
-        mysqlxx::PoolWithFailover pool(
-            configuration.database, configuration.addresses,
-            configuration.username, configuration.password,
-            MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
-            mysql_settings.connection_pool_size,
-            mysql_settings.connection_max_tries,
-            mysql_settings.connection_wait_timeout);
+        mysqlxx::PoolWithFailover pool = createMySQLPoolWithFailover(configuration, mysql_settings);
 
         return StorageMySQL::create(
             args.table_id,

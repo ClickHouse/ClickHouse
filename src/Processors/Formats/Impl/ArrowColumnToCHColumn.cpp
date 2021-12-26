@@ -14,7 +14,7 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/NestedUtils.h>
-#include <base/DateLUTImpl.h>
+#include <Common/DateLUTImpl.h>
 #include <base/types.h>
 #include <Processors/Chunk.h>
 #include <Columns/ColumnString.h>
@@ -59,11 +59,12 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
+    extern const int DUPLICATE_COLUMN;
+    extern const int THERE_IS_NO_COLUMN;
+    extern const int UNKNOWN_EXCEPTION;
     extern const int UNKNOWN_TYPE;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
-    extern const int THERE_IS_NO_COLUMN;
-    extern const int BAD_ARGUMENTS;
-    extern const int UNKNOWN_EXCEPTION;
 }
 
 
@@ -519,9 +520,11 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
 void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table)
 {
     NameToColumnPtr name_to_column_ptr;
-    for (const auto& column_name : table->ColumnNames())
+    for (const auto & column_name : table->ColumnNames())
     {
         std::shared_ptr<arrow::ChunkedArray> arrow_column = table->GetColumnByName(column_name);
+        if (!arrow_column)
+            throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Column '{}' is duplicated", column_name);
         name_to_column_ptr[column_name] = arrow_column;
     }
 

@@ -95,6 +95,7 @@ struct FormatSettings
         bool input_format_enum_as_number = false;
         bool input_format_arrays_as_nested_csv = false;
         String null_representation = "\\N";
+        char tuple_delimiter = ',';
     } csv;
 
     struct Custom
@@ -200,6 +201,7 @@ struct FormatSettings
     struct
     {
         bool import_nested = false;
+        int64_t row_batch_size = 100'000;
     } orc;
 
     /// For capnProto format we should determine how to
