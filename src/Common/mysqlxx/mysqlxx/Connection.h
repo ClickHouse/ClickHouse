@@ -154,7 +154,7 @@ public:
     bool ping();
 
     /// Creates query. It can be set with query string or later.
-    Query query(const std::string & str = "");
+    Query query(const std::string & str);
 
     /// Get MySQL C API MYSQL object.
     MYSQL * getDriver();

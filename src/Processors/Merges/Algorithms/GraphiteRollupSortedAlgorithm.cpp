@@ -1,7 +1,7 @@
 #include <Processors/Merges/Algorithms/GraphiteRollupSortedAlgorithm.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <base/DateLUTImpl.h>
-#include <base/DateLUT.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/DateLUT.h>
 #include <DataTypes/DataTypeDateTime.h>
 
 

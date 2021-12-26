@@ -42,6 +42,14 @@ if (CMAKE_CROSSCOMPILING)
         message (FATAL_ERROR "Trying to cross-compile to unsupported system: ${CMAKE_SYSTEM_NAME}!")
     endif ()
 
+    if (USE_MUSL)
+        set (USE_SENTRY OFF CACHE INTERNAL "")
+        set (ENABLE_ODBC OFF CACHE INTERNAL "")
+        set (ENABLE_GRPC OFF CACHE INTERNAL "")
+        set (ENABLE_HDFS OFF CACHE INTERNAL "")
+        set (ENABLE_EMBEDDED_COMPILER OFF CACHE INTERNAL "")
+    endif ()
+
     # Don't know why but CXX_STANDARD doesn't work for cross-compilation
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++20")
 
