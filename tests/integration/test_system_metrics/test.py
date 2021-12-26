@@ -59,6 +59,7 @@ def test_readonly_metrics(start_cluster):
         node1.query("ATTACH TABLE test.test_table")
         assert_eq_with_retry(node1, "SELECT value FROM system.metrics WHERE metric = 'ReadonlyReplica'", "0\n", retry_count=300, sleep_time=1)
 
+#For LowCardinality-columns, the bytes for N rows is not N*size of 1 row.
 def test_metrics_storage_buffer_size(start_cluster):
     node1.query('''
         CREATE TABLE test.test_mem_table
