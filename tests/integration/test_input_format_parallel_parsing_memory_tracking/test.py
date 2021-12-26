@@ -24,7 +24,7 @@ def start_cluster():
 
 
 # max_memory_usage_for_user cannot be used, since the memory for user accounted
-# correctly, only total is not
+# correctly, only total is not (it is set via conf.xml)
 def test_memory_tracking_total():
     instance.query('CREATE TABLE null (row String) ENGINE=Null')
     instance.exec_in_container(['bash', '-c',
