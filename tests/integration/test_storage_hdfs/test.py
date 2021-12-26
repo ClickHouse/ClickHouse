@@ -323,6 +323,28 @@ def test_read_table_with_default(started_cluster):
 
 
 
+def test_hdfsCluster(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
+    dir = '/test_hdfsCluster'
+    exists = fs.exists(dir)
+    if exists:
+        fs.delete(dir, recursive=True)
+    fs.mkdirs(dir)
+    hdfs_api.write_data("/test_hdfsCluster/file1", "1\n")
+    hdfs_api.write_data("/test_hdfsCluster/file2", "2\n")
+    hdfs_api.write_data("/test_hdfsCluster/file3", "3\n")
+
+    actual = node1.query("select id, _file as file_name, _path as file_path from hdfs('hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') order by id")
+    expected = "1\tfile1\thdfs://hdfs1:9000/test_hdfsCluster/file1\n2\tfile2\thdfs://hdfs1:9000/test_hdfsCluster/file2\n3\tfile3\thdfs://hdfs1:9000/test_hdfsCluster/file3\n"
+    assert actual == expected
+
+    actual = node1.query("select id, _file as file_name, _path as file_path from hdfsCluster('test_cluster_two_shards', 'hdfs://hdfs1:9000/test_hdfsCluster/file*', 'TSV', 'id UInt32') order by id")
+    expected = "1\tfile1\thdfs://hdfs1:9000/test_hdfsCluster/file1\n2\tfile2\thdfs://hdfs1:9000/test_hdfsCluster/file2\n3\tfile3\thdfs://hdfs1:9000/test_hdfsCluster/file3\n"
+    assert actual == expected
+    fs.delete(dir, recursive=True)
+
+
 if __name__ == '__main__':
     cluster.start()
     input("Cluster created, press any key to destroy...")

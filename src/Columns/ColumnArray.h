@@ -60,6 +60,7 @@ public:
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
     StringRef getDataAt(size_t n) const override;
+    bool isDefaultAt(size_t n) const override;
     void insertData(const char * pos, size_t length) override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
@@ -142,6 +143,10 @@ public:
             return data->structureEquals(*rhs_concrete->data);
         return false;
     }
+
+    double getRatioOfDefaultRows(double sample_ratio) const override;
+
+    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override;
 
     bool isCollationSupported() const override { return getData().isCollationSupported(); }
 

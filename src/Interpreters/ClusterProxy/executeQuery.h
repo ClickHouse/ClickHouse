@@ -34,7 +34,8 @@ class IStreamFactory;
 ///   - optimize_skip_unused_shards_nesting
 ///
 /// @return new Context with adjusted settings
-ContextMutablePtr updateSettingsForCluster(const Cluster & cluster, ContextPtr context, const Settings & settings, Poco::Logger * log = nullptr);
+ContextMutablePtr updateSettingsForCluster(
+    const Cluster & cluster, ContextPtr context, const Settings & settings, Poco::Logger * log = nullptr);
 
 /// Execute a distributed query, creating a vector of BlockInputStreams, from which the result can be read.
 /// `stream_factory` object encapsulates the logic of creating streams for a different type of query
