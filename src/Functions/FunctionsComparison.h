@@ -15,7 +15,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -1245,7 +1244,7 @@ public:
                 /// Other systems like MySQL and Spark also do as this.
                 if (left_is_float || right_is_float)
                 {
-                    const auto converted_type = DataTypeFactory::instance().get("Float64");
+                    const auto converted_type = std::make_shared<DataTypeFloat64>();
                     ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, converted_type);
                     ColumnPtr c1_converted = castColumn(col_with_type_and_name_right, converted_type);
                     return executeGenericIdenticalTypes(c0_converted.get(), c1_converted.get());
