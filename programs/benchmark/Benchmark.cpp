@@ -50,6 +50,8 @@ namespace ErrorCodes
     extern const int EMPTY_DATA_PASSED;
 }
 
+std::atomic_bool cancel_benchmark = false;
+
 class Benchmark : public Poco::Util::Application
 {
 public:
@@ -258,7 +260,7 @@ private:
     }
 
     /// Try push new query and check cancellation conditions
-    bool tryPushQueryInteractively(const String & query, InterruptListener & interrupt_listener, bool & interrupt_received)
+    bool tryPushQueryInteractively(const String & query, InterruptListener & interrupt_listener)
     {
         bool inserted = false;
 
@@ -282,7 +284,6 @@ private:
             if (interrupt_listener.check())
             {
                 std::cout << "Stopping launch of queries. SIGINT received." << std::endl;
-                interrupt_received = true;
                 return false;
             }
 
@@ -295,6 +296,17 @@ private:
         }
 
         return true;
+    }
+
+    static void signalHandler(int signum)
+    {
+        static int interrupt_count = 0;
+        if (signum == SIGINT)
+            interrupt_count++;
+        if (interrupt_count >= 1)
+        {
+            cancel_benchmark = true;
+        }
     }
 
     void runBenchmark()
@@ -310,8 +322,8 @@ private:
                 connection_entries.reserve(connections.size());
 
                 for (const auto & connection : connections)
-                    connection_entries.emplace_back(std::make_shared<Entry>(
-                            connection->get(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings))));
+                    connection_entries.emplace_back(
+                        std::make_shared<Entry>(connection->get(ConnectionTimeouts::getTCPTimeoutsWithoutFailover(settings))));
 
                 pool.scheduleOrThrowOnError([this, connection_entries]() mutable { thread(connection_entries); });
             }
@@ -326,34 +338,39 @@ private:
         InterruptListener interrupt_listener;
         delay_watch.restart();
 
-        bool interrupt_received = false;
         /// Push queries into queue
         for (size_t i = 0; !max_iterations || i < max_iterations; ++i)
         {
             size_t query_index = randomize ? distribution(generator) : i % queries.size();
 
-            if (!tryPushQueryInteractively(queries[query_index], interrupt_listener, interrupt_received))
+            if (!tryPushQueryInteractively(queries[query_index], interrupt_listener))
             {
                 shutdown = true;
                 break;
             }
         }
 
-        // if an interrupt is received (it's checked in tryPushQueryInteractively function call)
-        // call exit(1) so that the program actually exits on interrupts like SIGINT
-        if (interrupt_received)
-        {
+        signal(SIGINT, signalHandler);
+
+        auto interrupt_handler = std::thread{[&]() {
+            while (!cancel_benchmark)
+            {
+            }
             _exit(1);
-        }
+        }};
+        interrupt_handler.detach();
 
-        pool.wait();
-        total_watch.stop();
+        auto cleanup = std::thread{[&]() {
+            pool.wait();
+            total_watch.stop();
 
-        if (!json_path.empty())
-            reportJSON(comparison_info_total, json_path);
+            if (!json_path.empty())
+                reportJSON(comparison_info_total, json_path);
 
-        printNumberOfQueriesExecuted(queries_executed);
-        report(comparison_info_total);
+            printNumberOfQueriesExecuted(queries_executed);
+            report(comparison_info_total);
+        }};
+        cleanup.detach();
     }
 
 
