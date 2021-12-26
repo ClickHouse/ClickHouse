@@ -792,9 +792,9 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
 
 int mainEntryClickHouseLocal(int argc, char ** argv)
 {
-    DB::LocalServer app;
     try
     {
+        DB::LocalServer app;
         app.init(argc, argv);
         return app.run();
     }
