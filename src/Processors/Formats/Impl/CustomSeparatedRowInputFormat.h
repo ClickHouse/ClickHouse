@@ -20,10 +20,12 @@ public:
     void resetParser() override;
     String getName() const override { return "CustomSeparatedRowInputFormat"; }
 
+    void setReadBuffer(ReadBuffer & in_) override;
+
 private:
     CustomSeparatedRowInputFormat(
         const Block & header_,
-        std::unique_ptr<PeekableReadBuffer> in_,
+        std::unique_ptr<PeekableReadBuffer> in_buf_,
         const Params & params_,
         bool with_names_, bool with_types_, bool ignore_spaces_, const FormatSettings & format_settings_);
     using EscapingRule = FormatSettings::EscapingRule;
@@ -59,9 +61,9 @@ private:
 
     bool checkEndOfRow();
     bool checkForSuffixImpl(bool check_eof);
-    inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(buf); }
+    inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(*buf); }
 
-    PeekableReadBuffer buf;
+    std::unique_ptr<PeekableReadBuffer> buf;
     bool ignore_spaces;
     EscapingRule escaping_rule;
 };

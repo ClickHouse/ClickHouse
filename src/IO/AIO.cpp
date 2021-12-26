@@ -95,7 +95,7 @@ int io_destroy(int ctx)
 
 int io_submit(int ctx, long nr, struct iocb * iocbpp[])
 {
-    for (long i = 0; i < nr; i++)
+    for (long i = 0; i < nr; ++i)
     {
         struct aiocb * iocb = &iocbpp[i]->aio;
 
