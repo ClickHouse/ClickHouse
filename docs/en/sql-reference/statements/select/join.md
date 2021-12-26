@@ -60,7 +60,7 @@ The behavior of ClickHouse server for `ANY JOIN` operations depends on the [any_
 An `ON` section can contain several conditions combined using the `AND` and `OR` operators. Conditions specifying join keys must refer both left and right tables and must use the equality operator. Other conditions may use other logical operators but they must refer either the left or the right table of a query.
 Rows are joined if the whole complex condition is met. If the conditions are not met, still rows may be included in the result depending on the `JOIN` type. Note that if the same conditions are placed in a `WHERE` section and they are not met, then rows are always filtered out from the result.
 
-The `OR` operator inside the` ON` clause works using the hash join algorithm — for each `OR` argument with join keys for` JOIN`, a separate hash table is created, so memory consumption and query execution time grow linearly with an increase in the number of expressions `OR` of the `ON` clause.
+The `OR` operator inside the `ON` clause works using the hash join algorithm — for each `OR` argument with join keys for `JOIN`, a separate hash table is created, so memory consumption and query execution time grow linearly with an increase in the number of expressions `OR` of the `ON` clause.
 
 !!! note "Note"
     If a condition refers columns from different tables, then only the equality operator (`=`) is supported so far.
@@ -109,7 +109,7 @@ Result:
 └──────┴────────┴────────┘
 ```
 
-Query with `INNER` and condition` OR`:
+Query with `INNER` type of a join and condition `OR`:
 
 ``` sql
 CREATE TABLE t1 (`a` Int64, `b` Int64) ENGINE = MergeTree() ORDER BY a;
@@ -135,7 +135,7 @@ Result:
 └───┴────┴─────┘
 ```
 
-Query with `INNER` and condition `OR` and `AND`:
+Query with `INNER` type of a join and condition `OR` and `AND`:
 
 ```
 SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.val > 3;
