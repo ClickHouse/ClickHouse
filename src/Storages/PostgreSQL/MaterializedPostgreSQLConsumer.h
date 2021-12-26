@@ -68,12 +68,18 @@ private:
 
         Buffer(StoragePtr storage) { createEmptyBuffer(storage); }
         void createEmptyBuffer(StoragePtr storage);
+
+        size_t getColumnsNum() const
+        {
+            const auto & sample_block = description.sample_block;
+            return sample_block.columns();
+        }
     };
 
     using Buffers = std::unordered_map<String, Buffer>;
 
     static void insertDefaultValue(Buffer & buffer, size_t column_idx);
-    static void insertValue(Buffer & buffer, const std::string & value, size_t column_idx);
+    void insertValue(Buffer & buffer, const std::string & value, size_t column_idx);
 
     enum class PostgreSQLQuery
     {
@@ -139,6 +145,7 @@ private:
         std::vector<std::pair<Int32, Int32>> column_identifiers;
 
         SchemaData(Int16 number_of_columns_) : number_of_columns(number_of_columns_) {}
+        SchemaData() = default;
     };
 
     /// Cache for table schema data to be able to detect schema changes, because ddl is not
