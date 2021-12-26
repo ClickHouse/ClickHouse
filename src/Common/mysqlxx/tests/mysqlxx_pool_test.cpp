@@ -2,7 +2,6 @@
 
 #include <chrono>
 #include <iostream>
-#include <sstream>
 #include <thread>
 
 
@@ -41,10 +40,7 @@ mysqlxx::Pool::Entry getWithFailover(mysqlxx::Pool & connections_pool)
         std::this_thread::sleep_for(1s);
     }
 
-    std::stringstream message;
-    message << "Connections to all replicas failed: " << connections_pool.getDescription();
-
-    throw Poco::Exception(message.str());
+    throw Poco::Exception("Connections to all replicas failed: " + connections_pool.getDescription());
 }
 }
 
@@ -69,8 +65,7 @@ int main(int, char **)
 
             std::clog << "Preparing query (5s sleep) ...";
             std::this_thread::sleep_for(5s);
-            mysqlxx::Query query = worker->query();
-            query << test_query;
+            mysqlxx::Query query = worker->query(test_query);
             std::clog << "ok" << std::endl;
 
             std::clog << "Querying result (5s sleep) ...";

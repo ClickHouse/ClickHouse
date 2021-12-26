@@ -14,7 +14,6 @@
 #include <Storages/TableLockHolder.h>
 
 #include <Columns/FilterDescription.h>
-#include "Interpreters/ActionsDAG.h"
 
 namespace Poco
 {
@@ -30,7 +29,6 @@ class QueryPlan;
 
 struct TreeRewriterResult;
 using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
-using AggregatorParamsPtr = std::unique_ptr<Aggregator::Params>;
 
 
 /** Interprets the SELECT query. Returns the stream of blocks with the results of the query before `to_stage` stage.
@@ -128,12 +126,6 @@ private:
 
     /// Different stages of query execution.
 
-    void initAggregatorParams(
-        const Block & current_data_stream_header,
-        AggregatorParamsPtr & params_ptr,
-        const AggregateDescriptions & aggregates,
-        bool overflow_row, const Settings & settings,
-        size_t group_by_two_level_threshold, size_t group_by_two_level_threshold_bytes);
     void executeFetchColumns(QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan);
     void executeWhere(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter);
     void executeAggregation(
@@ -164,8 +156,7 @@ private:
     enum class Modificator
     {
         ROLLUP = 0,
-        CUBE = 1,
-        GROUPING_SETS = 2
+        CUBE = 1
     };
 
     void executeRollupOrCube(QueryPlan & query_plan, Modificator modificator);

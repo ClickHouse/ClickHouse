@@ -18,13 +18,6 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
 }
 
-#define THROW_ARROW_NOT_OK(status)                                     \
-    do                                                                 \
-    {                                                                  \
-        if (::arrow::Status _s = (status); !_s.ok())                   \
-            throw Exception(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
-    } while (false)
-
 ORCBlockInputFormat::ORCBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
     : IInputFormat(std::move(header_), in_), format_settings(format_settings_)
 {
@@ -38,11 +31,14 @@ Chunk ORCBlockInputFormat::generate()
         prepareReader();
 
     std::shared_ptr<arrow::RecordBatchReader> batch_reader;
-    arrow::Status reader_status = file_reader->NextStripeReader(format_settings.orc.row_batch_size, include_indices, &batch_reader);
-    if (!reader_status.ok())
-        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to create batch reader: {}", reader_status.ToString());
+    auto result = file_reader->NextStripeReader(format_settings.orc.row_batch_size, include_indices);
+    if (!result.ok())
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to create batch reader: {}", result.status().ToString());
+    batch_reader = std::move(result).ValueOrDie();
     if (!batch_reader)
+    {
         return res;
+    }
 
     std::shared_ptr<arrow::Table> table;
     arrow::Status table_status = batch_reader->ReadAll(&table);
@@ -90,10 +86,15 @@ static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
 
 void ORCBlockInputFormat::prepareReader()
 {
-    THROW_ARROW_NOT_OK(arrow::adapters::orc::ORCFileReader::Open(asArrowFile(*in, format_settings), arrow::default_memory_pool(), &file_reader));
+    auto result = arrow::adapters::orc::ORCFileReader::Open(asArrowFile(*in, format_settings), arrow::default_memory_pool());
+    if (!result.ok())
+        throw Exception(result.status().ToString(), ErrorCodes::BAD_ARGUMENTS);
+    file_reader = std::move(result).ValueOrDie();
 
-    std::shared_ptr<arrow::Schema> schema;
-    THROW_ARROW_NOT_OK(file_reader->ReadSchema(&schema));
+    auto read_schema_result = file_reader->ReadSchema();
+    if (!read_schema_result.ok())
+        throw Exception(read_schema_result.status().ToString(), ErrorCodes::BAD_ARGUMENTS);
+    std::shared_ptr<arrow::Schema> schema = std::move(read_schema_result).ValueOrDie();
 
     arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), "ORC", format_settings.orc.import_nested);
 
