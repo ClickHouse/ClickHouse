@@ -15,6 +15,9 @@
 #if USE_RDKAFKA
 #include <Storages/Kafka/KafkaSettings.h>
 #endif
+#if USE_MYSQL
+#include <Storages/MySQL/MySQLSettings.h>
+#endif
 
 namespace DB
 {
@@ -23,6 +26,8 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
+
+IMPLEMENT_SETTINGS_TRAITS(EmptySettingsTraits, EMPTY_SETTINGS)
 
 String ExternalDataSourceConfiguration::toString() const
 {
@@ -59,7 +64,9 @@ void ExternalDataSourceConfiguration::set(const ExternalDataSourceConfiguration 
 }
 
 
-std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const ASTs & args, ContextPtr context, bool is_database_engine, bool throw_on_no_collection)
+template <typename T>
+std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
+    const ASTs & args, ContextPtr context, bool is_database_engine, bool throw_on_no_collection, const BaseSettings<T> & storage_settings)
 {
     if (args.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
@@ -80,6 +87,15 @@ std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const
                 return std::nullopt;
 
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection->name());
+        }
+
+        SettingsChanges config_settings;
+        for (const auto & setting : storage_settings.all())
+        {
+            const auto & setting_name = setting.getName();
+            auto setting_value = config.getString(collection_prefix + '.' + setting_name, "");
+            if (!setting_value.empty())
+                config_settings.emplace_back(setting_name, setting_value);
         }
 
         configuration.host = config.getString(collection_prefix + ".host", "");
@@ -123,6 +139,7 @@ std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const
                 if (arg_value_literal)
                 {
                     auto arg_value = arg_value_literal->value;
+
                     if (arg_name == "host")
                         configuration.host = arg_value.safeGet<String>();
                     else if (arg_name == "port")
@@ -139,6 +156,8 @@ std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const
                         configuration.schema = arg_value.safeGet<String>();
                     else if (arg_name == "addresses_expr")
                         configuration.addresses_expr = arg_value.safeGet<String>();
+                    else if (storage_settings.has(arg_name))
+                        config_settings.emplace_back(arg_name, arg_value);
                     else
                         non_common_args.emplace_back(std::make_pair(arg_name, arg_value_ast));
                 }
@@ -153,8 +172,7 @@ std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const
             }
         }
 
-        ExternalDataSourceConfig source_config{ .configuration = configuration, .specific_args = non_common_args };
-        return source_config;
+        return ExternalDataSourceInfo{ .configuration = configuration, .specific_args = non_common_args, .settings_changes = config_settings };
     }
     return std::nullopt;
 }
@@ -424,5 +442,15 @@ bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<RabbitMQ
 #if USE_RDKAFKA
 template
 bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<KafkaSettingsTraits> & settings, ContextPtr context);
+#endif
+
+template
+std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
+    const ASTs & args, ContextPtr context, bool is_database_engine, bool throw_on_no_collection, const BaseSettings<EmptySettingsTraits> & storage_settings);
+
+#if USE_MYSQL
+template
+std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
+    const ASTs & args, ContextPtr context, bool is_database_engine, bool throw_on_no_collection, const BaseSettings<MySQLSettingsTraits> & storage_settings);
 #endif
 }

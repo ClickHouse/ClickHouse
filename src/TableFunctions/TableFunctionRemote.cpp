@@ -60,7 +60,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
          * Specific args (remote): sharding_key, or database (in case it is not ASTLiteral).
          * None of the common arguments is empty at this point, it is checked in getExternalDataSourceConfiguration.
          */
-        auto [common_configuration, storage_specific_args] = named_collection.value();
+        auto [common_configuration, storage_specific_args, _] = named_collection.value();
         configuration.set(common_configuration);
 
         for (const auto & [arg_name, arg_value] : storage_specific_args)
