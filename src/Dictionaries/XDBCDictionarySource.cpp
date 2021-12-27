@@ -9,7 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <base/LocalDateTime.h>
+#include <Common/LocalDateTime.h>
 #include <base/logger_useful.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
@@ -162,7 +162,7 @@ bool XDBCDictionarySource::hasUpdateField() const
 
 DictionarySourcePtr XDBCDictionarySource::clone() const
 {
-    return std::make_unique<XDBCDictionarySource>(*this);
+    return std::make_shared<XDBCDictionarySource>(*this);
 }
 
 

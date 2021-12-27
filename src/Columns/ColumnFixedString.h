@@ -175,6 +175,11 @@ public:
         chars.reserve(n * size);
     }
 
+    void resize(size_t size)
+    {
+        chars.resize(n * size);
+    }
+
     void getExtremes(Field & min, Field & max) const override;
 
     bool structureEquals(const IColumn & rhs) const override

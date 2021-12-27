@@ -421,6 +421,9 @@ public:
      */
     UInt8 rb_contains(UInt64 x) const
     {
+        if (!std::is_same_v<T, UInt64> && x > rb_max())
+            return 0;
+
         if (isSmall())
             return small.find(x) != small.end();
         else
@@ -432,6 +435,9 @@ public:
      */
     void rb_remove(UInt64 x)
     {
+        if (!std::is_same_v<T, UInt64> && x > rb_max())
+            return;
+
         if (isSmall())
             toLarge();
 

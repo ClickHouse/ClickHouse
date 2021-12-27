@@ -7,6 +7,7 @@
 #include <IO/WriteBufferFromAzureBlobStorage.h>
 #include <Disks/RemoteDisksCommon.h>
 #include <Common/getRandomASCIIString.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -28,6 +29,25 @@ WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
     finalize();
 }
 
+void WriteBufferFromAzureBlobStorage::finalizeImpl()
+{
+    const size_t max_tries = 3;
+    for (size_t i = 0; i < max_tries; ++i)
+    {
+        try
+        {
+            next();
+            break;
+        }
+        catch (const Azure::Core::RequestFailedException & e)
+        {
+            if (i == max_tries - 1)
+                throw;
+            LOG_INFO(&Poco::Logger::get("WriteBufferFromAzureBlobStorage"),
+                     "Exception caught during finalizing azure storage write at attempt {}: {}", i + 1, e.Message);
+        }
+    }
+}
 
 void WriteBufferFromAzureBlobStorage::nextImpl()
 {
@@ -39,6 +59,7 @@ void WriteBufferFromAzureBlobStorage::nextImpl()
     auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
 
     size_t read = 0;
+    std::vector<std::string> block_ids;
     while (read < len)
     {
         auto part_len = std::min(len - read, max_single_part_upload_size);
@@ -51,16 +72,8 @@ void WriteBufferFromAzureBlobStorage::nextImpl()
 
         read += part_len;
     }
-}
 
-
-void WriteBufferFromAzureBlobStorage::finalizeImpl()
-{
-    next();
-
-    auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
     block_blob_client.CommitBlockList(block_ids);
-    finalized = true;
 }
 
 }

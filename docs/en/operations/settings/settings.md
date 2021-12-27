@@ -1469,7 +1469,7 @@ Possible values:
 
 Default value: `1`.
 
-**See Also** 
+**See Also**
 
 -   [min_count_to_compile_aggregate_expression](#min_count_to_compile_aggregate_expression)
 
@@ -2095,7 +2095,7 @@ Possible values:
 
    - 0 — Optimization disabled.
    - 1 — Optimization enabled.
-   
+
 Default value: `1`.
 
 See also:
@@ -3682,49 +3682,6 @@ Possible values:
 
 Default value: `0`.
 
-## materialized_postgresql_max_block_size {#materialized-postgresql-max-block-size}
-
-Sets the number of rows collected in memory before flushing data into PostgreSQL database table.
-
-Possible values:
-
--   Positive integer.
-
-Default value: `65536`.
-
-## materialized_postgresql_tables_list {#materialized-postgresql-tables-list}
-
-Sets a comma-separated list of PostgreSQL database tables, which will be replicated via [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) database engine.
-
-Default value: empty list — means whole PostgreSQL database will be replicated.
-
-## materialized_postgresql_schema {#materialized-postgresql-schema}
-
-Default value: empty string. (Default schema is used)
-
-## materialized_postgresql_schema_list {#materialized-postgresql-schema-list}
-
-Default value: empty list. (Default schema is used)
-
-## materialized_postgresql_allow_automatic_update {#materialized-postgresql-allow-automatic-update}
-
-Allows reloading table in the background, when schema changes are detected. DDL queries on the PostgreSQL side are not replicated via ClickHouse [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) engine, because it is not allowed with PostgreSQL logical replication protocol, but the fact of DDL changes is detected transactionally. In this case, the default behaviour is to stop replicating those tables once DDL is detected. However, if this setting is enabled, then, instead of stopping the replication of those tables, they will be reloaded in the background via database snapshot without data losses and replication will continue for them.
-
-Possible values:
-
--   0 — The table is not automatically updated in the background, when schema changes are detected.
--   1 — The table is automatically updated in the background, when schema changes are detected.
-
-Default value: `0`.
-
-## materialized_postgresql_replication_slot {#materialized-postgresql-replication-slot}
-
-A user-created replication slot. Must be used together with [materialized_postgresql_snapshot](#materialized-postgresql-snapshot).
-
-## materialized_postgresql_snapshot {#materialized-postgresql-snapshot}
-
-A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](../../engines/database-engines/materialized-postgresql.md) will be performed. Must be used together with [materialized_postgresql_replication_slot](#materialized-postgresql-replication-slot).
-
 ## allow_experimental_projection_optimization {#allow-experimental-projection-optimization}
 
 Enables or disables [projection](../../engines/table-engines/mergetree-family/mergetree.md#projections) optimization when processing `SELECT` queries.
@@ -3993,8 +3950,8 @@ If [wait_for_async_insert](#wait-for-async-insert) is enabled, every client will
 
 Possible values:
 
--   0 — Insertions are made synchronously, one after another. 
--   1 — Multiple asynchronous insertions enabled. 
+-   0 — Insertions are made synchronously, one after another.
+-   1 — Multiple asynchronous insertions enabled.
 
 Default value: `0`.
 
@@ -4066,7 +4023,7 @@ Default value: `0`.
 
 ## alter_partition_verbose_result {#alter-partition-verbose-result}
 
-Enables or disables the display of information about the parts to which the manipulation operations with partitions and parts have been successfully applied. 
+Enables or disables the display of information about the parts to which the manipulation operations with partitions and parts have been successfully applied.
 Applicable to [ATTACH PARTITION|PART](../../sql-reference/statements/alter/partition.md#alter_attach-partition) and to [FREEZE PARTITION](../../sql-reference/statements/alter/partition.md#alter_freeze-partition).
 
 Possible values:
