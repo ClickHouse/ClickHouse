@@ -14,7 +14,7 @@ Tests are good (in general). Good test suite allows fast development iterations,
 
 Some tests can be flaky. The reasons for flakiness are uncountable - most of them are simple timing issues in the test script itself, but sometimes if a test has failed one of a thousand times it can uncover subtle logic errors in code.
 
-The problem is how to deal with flaky tests. Some people may suggest to automatically mute the "annoying" flaky tests. Or to add automatic retries in case of failure. In my opinion, this is all wrong. Instead of trying to ignore flaky tests, we do the opposite: we do maximum efforts to make the tests even more flaky!
+The problem is how to deal with flaky tests. Some people may suggest to automatically mute the "annoying" flaky tests. Or to add automatic retries in case of failure. We believe that this is all wrong. Instead of trying to ignore flaky tests, we do the opposite: we do maximum efforts to make the tests even more flaky!
 
 Our recipes for flaky tests:
 — never mute or restart them; if the test failed once, always look and investigate the cause;
