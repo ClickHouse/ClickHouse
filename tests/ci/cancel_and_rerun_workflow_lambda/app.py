@@ -11,7 +11,6 @@ import boto3
 NEED_RERUN_OR_CANCELL_WORKFLOWS = {
     13241696, # PR
     15834118, # Docs
-    15522500, # MasterCI
     15516108, # ReleaseCI
     15797242, # BackportPR
 }
@@ -86,10 +85,23 @@ WorkflowDescription = namedtuple('WorkflowDescription',
 def get_workflows_description_for_pull_request(pull_request_event):
     head_branch = pull_request_event['head']['ref']
     print("PR", pull_request_event['number'], "has head ref", head_branch)
-    workflows = _exec_get_with_retry(API_URL + f"/actions/runs?branch={head_branch}")
+    workflows_data = []
+    workflows = _exec_get_with_retry(API_URL + f"/actions/runs?branch={head_branch}&event=pull_request&page=1")
+    workflows_data += workflows['workflow_runs']
+    i = 2
+    while len(workflows['workflow_runs']) > 0:
+        workflows = _exec_get_with_retry(API_URL + f"/actions/runs?branch={head_branch}&event=pull_request&page={i}")
+        workflows_data += workflows['workflow_runs']
+        i += 1
+        if i > 30:
+            print("Too many workflows found")
+            break
+
     workflow_descriptions = []
-    for workflow in workflows['workflow_runs']:
-        if workflow['workflow_id'] in NEED_RERUN_OR_CANCELL_WORKFLOWS:
+    for workflow in workflows_data:
+        # unfortunately we cannot filter workflows from forks in request to API so doing it manually
+        if (workflow['head_repository']['full_name'] == pull_request_event['head']['repo']['full_name']
+            and workflow['workflow_id'] in NEED_RERUN_OR_CANCELL_WORKFLOWS):
             workflow_descriptions.append(WorkflowDescription(
                 run_id=workflow['id'],
                 status=workflow['status'],
