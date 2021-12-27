@@ -301,6 +301,20 @@ void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & inf
     LOG_DEBUG(log, "Current node {} registered in cluster {}", current_node_name, info.name);
 }
 
+void ClusterDiscovery::initialUpdate()
+{
+    auto zk = context->getZooKeeper();
+    for (auto & [_, info] : clusters_info)
+    {
+        registerInZk(zk, info);
+        if (!updateCluster(info))
+        {
+            LOG_WARNING(log, "Error on initial cluster '{}' update, will retry in background", info.name);
+            clusters_to_update->set(info.name);
+        }
+    }
+}
+
 void ClusterDiscovery::start()
 {
     if (clusters_info.empty())
@@ -308,17 +322,14 @@ void ClusterDiscovery::start()
         LOG_DEBUG(log, "No defined clusters for discovery");
         return;
     }
-    LOG_DEBUG(log, "Starting working thread");
 
-    auto zk = context->getZooKeeper();
-    for (auto & [_, info] : clusters_info)
+    try
     {
-        registerInZk(zk, info);
-        if (!updateCluster(info))
-        {
-            LOG_WARNING(log, "Error on updating cluster '{}', will retry", info.name);
-            clusters_to_update->set(info.name);
-        }
+        initialUpdate();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Caught exception in cluster discovery initialization");
     }
 
     using namespace std::chrono_literals;
