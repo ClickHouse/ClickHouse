@@ -310,7 +310,7 @@ public:
 
         FunctionLike func_like;
 
-        for (size_t row = 0; row < input_rows_count; row++)
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
             size_t element_start_row = row != 0 ? column_array.getOffsets()[row-1] : 0;
             size_t elem_size = column_array.getOffsets()[row]- element_start_row;
@@ -457,7 +457,7 @@ public:
 
         IColumn::Offset current_offset = 0;
 
-        for (size_t row = 0; row < input_rows_count; row++)
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
             size_t element_start_row = row != 0 ? nested_column.getOffsets()[row-1] : 0;
             size_t element_size = nested_column.getOffsets()[row]- element_start_row;
@@ -492,7 +492,7 @@ public:
             auto res = func_like.executeImpl(new_arguments, result_type, input_rows_count);
             const auto & container = checkAndGetColumn<ColumnUInt8>(res.get())->getData();
 
-            for (size_t row_num = 0; row_num < element_size; row_num++)
+            for (size_t row_num = 0; row_num < element_size; ++row_num)
             {
                 if (container[row_num] == 1)
                 {

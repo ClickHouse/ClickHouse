@@ -7,7 +7,7 @@
 #include <base/logger_useful.h>
 #include <base/errnoToString.h>
 #include <Common/ClickHouseRevision.h>
-#include <base/LocalDateTime.h>
+#include <Common/LocalDateTime.h>
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/LimitReadBuffer.h>
