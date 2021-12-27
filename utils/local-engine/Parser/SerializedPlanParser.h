@@ -64,12 +64,15 @@ static const std::map<std::string, std::string> SCALAR_FUNCTIONS = {
     {"AND", "and"},
     {"LESS_THAN_OR_EQUAL", "lessOrEquals"},
     {"LESS_THAN", "less"},
-    {"MULTIPLY", "multiply"}
+    {"MULTIPLY", "multiply"},
+    {"SUM", "sum"}
 };
 
 class SerializedPlanParser
 {
 public:
+    SerializedPlanParser(const ContextPtr & context);
+    static void initFunctionEnv();
     DB::QueryPlanPtr parse(std::string& plan);
     DB::QueryPlanPtr parse(std::unique_ptr<io::substrait::Plan> plan);
 
@@ -79,15 +82,15 @@ public:
 private:
     static DB::NamesAndTypesList blockToNameAndTypeList(const DB::Block & header);
     DB::QueryPlanPtr parseOp(const io::substrait::Rel &rel);
-    DB::ActionsDAGPtr parseFunction(const DataStream & input, const io::substrait::Expression &rel, std::string & result_name, DB::ActionsDAGPtr actions_dag = nullptr);
-    DB::QueryPlanStepPtr parseAggregate(const io::substrait::AggregateRel &rel);
+    DB::ActionsDAGPtr parseFunction(const DataStream & input, const io::substrait::Expression &rel, std::string & result_name, DB::ActionsDAGPtr actions_dag = nullptr, bool keep_result = false);
+    DB::QueryPlanStepPtr parseAggregate(DB::QueryPlan & plan, const io::substrait::AggregateRel &rel);
     const DB::ActionsDAG::Node * parseArgument(DB::ActionsDAGPtr action_dag, const io::substrait::Expression &rel);
     std::string getUniqueName(std::string name)
     {
         return name + "_" + std::to_string(name_no++);
     }
 
-    Aggregator::Params getAggregateFunction(Block & header, ColumnNumbers & keys, AggregateDescriptions & aggregates)
+    Aggregator::Params getAggregateParam(const Block & header, const ColumnNumbers & keys, const AggregateDescriptions & aggregates)
     {
         Settings settings;
         return Aggregator::Params(
@@ -101,7 +104,7 @@ private:
             settings.group_by_two_level_threshold_bytes,
             settings.max_bytes_before_external_group_by,
             settings.empty_result_for_aggregation_by_empty_set,
-            context->getTemporaryVolume(),
+            nullptr,
             settings.max_threads,
             settings.min_free_disk_space_for_temporary_data,
             settings.compile_aggregate_expressions,

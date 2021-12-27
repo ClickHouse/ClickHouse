@@ -71,7 +71,7 @@ jint JNI_OnLoad(JavaVM * vm, void * reserved)
     local_engine_executor_field_id = env->GetFieldID(local_engine_class, "nativeExecutor", "J");
 
     spark_row_info_class = CreateGlobalClassReference(env, "Lio/kyligence/jni/engine/SparkRowInfo;");
-    spark_row_info_constructor = env->GetMethodID(spark_row_info_class, "<init>", "([J[JJ)V");
+    spark_row_info_constructor = env->GetMethodID(spark_row_info_class, "<init>", "([J[JJJ)V");
     return JNI_VERSION_1_8;
 }
 
@@ -107,7 +107,8 @@ void Java_io_kyligence_jni_engine_LocalEngine_execute(JNIEnv * env, jobject obj)
     jbyte * plan_address = env->GetByteArrayElements(*plan, nullptr);
     std::string plan_string;
     plan_string.assign(reinterpret_cast<const char *>(plan_address), plan_size);
-    dbms::SerializedPlanParser parser;
+    auto context =  dbms::Context::createGlobal(dbms::Context::createShared().get());
+    dbms::SerializedPlanParser parser(context);
     auto query_plan = parser.parse(plan_string);
     dbms::LocalExecutor * executor = new dbms::LocalExecutor();
     executor->execute(std::move(query_plan));
@@ -132,10 +133,11 @@ jobject Java_io_kyligence_jni_engine_LocalEngine_next(JNIEnv * env, jobject obj)
     const auto *lengths_src = reinterpret_cast<const jlong*>(spark_row_info->getLengths().data());
     env->SetLongArrayRegion(lengths_arr, 0, spark_row_info->getNumRows(), lengths_src);
     int64_t address = reinterpret_cast<int64_t>(spark_row_info->getBufferAddress());
+    int64_t column_number = reinterpret_cast<int64_t>(spark_row_info->getNumCols());
 
     jobject spark_row_info_object = env->NewObject(
         spark_row_info_class, spark_row_info_constructor,
-        offsets_arr, lengths_arr, address);
+        offsets_arr, lengths_arr, address, column_number);
 
     return spark_row_info_object;
 }

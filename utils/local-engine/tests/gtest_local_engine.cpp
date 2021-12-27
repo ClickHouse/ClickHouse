@@ -13,7 +13,7 @@
 TEST(TestSelect, ReadRel)
 {
     dbms::SerializedSchemaBuilder schema_builder;
-    auto schema = schema_builder
+    auto* schema = schema_builder
         .column("sepal_length", "FP64")
         .column("sepal_width", "FP64")
         .column("petal_length", "FP64")
@@ -21,7 +21,7 @@ TEST(TestSelect, ReadRel)
         .column("type", "I64").column("type_string", "String")
         .build();
     dbms::SerializedPlanBuilder plan_builder;
-    auto plan = plan_builder.files(  TEST_DATA(/data/iris.parquet), std::move(schema)).build();
+    auto plan = plan_builder.read(  TEST_DATA(/data/iris.parquet), std::move(schema)).build();
 
     std::ofstream output;
     output.open(TEST_DATA(/../java/src/test/resources/plan.txt), std::fstream::in | std::fstream::out | std::fstream::trunc);
@@ -34,7 +34,9 @@ TEST(TestSelect, ReadRel)
     ASSERT_EQ(plan->relations_size(), 1);
     std::cout << "start execute" <<std::endl;
     dbms::LocalExecutor local_executor;
-    dbms::SerializedPlanParser parser;
+    dbms::SerializedPlanParser::initFunctionEnv();
+    auto context =  dbms::Context::createGlobal(dbms::Context::createShared().get());
+    dbms::SerializedPlanParser parser(context);
     auto query_plan = parser.parse(std::move(plan));
     local_executor.execute(std::move(query_plan));
     ASSERT_TRUE(local_executor.hasNext());
@@ -48,10 +50,98 @@ TEST(TestSelect, ReadRel)
         ASSERT_EQ(spark_row_info->getNumRows(), block->rows());
     }
 }
-
+bool inside_main=true;
 TEST(TestSelect, TestFilter)
 {
-    
+    dbms::SerializedSchemaBuilder schema_builder;
+    auto* schema = schema_builder
+                        .column("sepal_length", "FP64")
+                        .column("sepal_width", "FP64")
+                        .column("petal_length", "FP64")
+                        .column("petal_width", "FP64")
+                        .column("type", "I64").column("type_string", "String")
+                        .build();
+    dbms::SerializedPlanBuilder plan_builder;
+    auto * mul_exp = dbms::scalarFunction(dbms::MULTIPLY,
+                                             {dbms::selection(3),
+                                              dbms::literal(0.8)});
+    auto * less_exp = dbms::scalarFunction(dbms::LESS_THAN, {
+                                                           mul_exp,
+                                                           dbms::literal(5.0)
+                                                                               });
+
+    auto plan = plan_builder
+                    .registerSupportedFunctions()
+                    .filter(less_exp)
+                    .read(TEST_DATA(/data/iris.parquet), std::move(schema)).build();
+//    ASSERT_TRUE(plan->relations(0).has_read());
+    ASSERT_EQ(plan->relations_size(), 1);
+    std::cout << "start execute" <<std::endl;
+    dbms::LocalExecutor local_executor;
+    dbms::SerializedPlanParser::initFunctionEnv();
+    auto context =  dbms::Context::createGlobal(dbms::Context::createShared().get());
+    dbms::SerializedPlanParser parser(context);
+    auto query_plan = parser.parse(std::move(plan));
+    local_executor.execute(std::move(query_plan));
+    ASSERT_TRUE(local_executor.hasNext());
+    while (local_executor.hasNext())
+    {
+        std::cout << "fetch batch" << std::endl;
+        local_engine::SparkRowInfoPtr spark_row_info = local_executor.next();
+        ASSERT_EQ(spark_row_info->getNumRows(), 99);
+        local_engine::SparkColumnToCHColumn converter;
+        auto block = converter.convertCHColumnToSparkRow(*spark_row_info, local_executor.getHeader());
+        ASSERT_EQ(spark_row_info->getNumRows(), block->rows());
+    }
+}
+
+TEST(TestSelect, TestAgg)
+{
+    dbms::SerializedSchemaBuilder schema_builder;
+    auto* schema = schema_builder
+                        .column("sepal_length", "FP64")
+                        .column("sepal_width", "FP64")
+                        .column("petal_length", "FP64")
+                        .column("petal_width", "FP64")
+                        .column("type", "I64").column("type_string", "String")
+                        .build();
+    dbms::SerializedPlanBuilder plan_builder;
+    auto * mul_exp = dbms::scalarFunction(dbms::MULTIPLY,
+                                          {dbms::selection(3),
+                                           dbms::literal(0.8)});
+    auto * less_exp = dbms::scalarFunction(dbms::LESS_THAN, {
+                                                                mul_exp,
+                                                                dbms::literal(5.0)
+                                                            });
+    auto * mul_exp2 = dbms::scalarFunction(dbms::MULTIPLY,
+                                          {dbms::selection(3),
+                                           dbms::literal(1.1)});
+    auto * measure = dbms::measureFunction(dbms::SUM, {dbms::selection(3)});
+    auto plan = plan_builder
+                    .registerSupportedFunctions()
+                    .aggregate({}, {measure})
+                    .filter(less_exp)
+                    .read(TEST_DATA(/data/iris.parquet), std::move(schema)).build();
+    //    ASSERT_TRUE(plan->relations(0).has_read());
+    ASSERT_EQ(plan->relations_size(), 1);
+    std::cout << "start execute" <<std::endl;
+    dbms::LocalExecutor local_executor;
+    dbms::SerializedPlanParser::initFunctionEnv();
+    auto context =  dbms::Context::createGlobal(dbms::Context::createShared().get());
+    dbms::SerializedPlanParser parser(context);
+    auto query_plan = parser.parse(std::move(plan));
+    local_executor.execute(std::move(query_plan));
+    ASSERT_TRUE(local_executor.hasNext());
+    while (local_executor.hasNext())
+    {
+        std::cout << "fetch batch" << std::endl;
+        local_engine::SparkRowInfoPtr spark_row_info = local_executor.next();
+        ASSERT_EQ(spark_row_info->getNumRows(), 1);
+        ASSERT_EQ(spark_row_info->getNumCols(), 1);
+        local_engine::SparkColumnToCHColumn converter;
+        auto block = converter.convertCHColumnToSparkRow(*spark_row_info, local_executor.getHeader());
+        ASSERT_EQ(spark_row_info->getNumRows(), block->rows());
+    }
 }
 
 TEST(TestSelect, PerformanceTest)
@@ -62,7 +152,7 @@ TEST(TestSelect, PerformanceTest)
     for (int i=0; i < 10; i++)
     {
         dbms::SerializedSchemaBuilder schema_builder;
-        auto schema = schema_builder
+        auto *schema = schema_builder
                           .column("l_orderkey", "I64")
                           .column("l_partkey", "I64")
                           .column("l_suppkey", "I64")
@@ -81,11 +171,12 @@ TEST(TestSelect, PerformanceTest)
                           //                      .column("l_comment", "String")
                           .build();
         dbms::SerializedPlanBuilder plan_builder;
-        auto plan = plan_builder.files("/home/kyligence/Documents/intel-gazelle-test.snappy.parquet", std::move(schema)).build();
+        auto plan = plan_builder.read("/home/kyligence/Documents/intel-gazelle-test.snappy.parquet", std::move(schema)).build();
 
         ASSERT_TRUE(plan->relations(0).has_read());
         ASSERT_EQ(plan->relations_size(), 1);
-        dbms::SerializedPlanParser parser;
+        auto context =  dbms::Context::createGlobal(dbms::Context::createShared().get());
+        dbms::SerializedPlanParser parser(context);
         auto query_plan = parser.parse(std::move(plan));
         std::cout << "start execute" << std::endl;
         dbms::LocalExecutor local_executor;

@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/WriteBufferFromString.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Formats/Impl/ArrowBlockOutputFormat.h>
@@ -17,6 +16,10 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <AggregateFunctions/registerAggregateFunctions.h>
+#include <Functions/registerFunctions.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Interpreters/Context.h>
 #include <sys/stat.h>
 
 namespace substrait = io::substrait;
@@ -86,7 +89,7 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parse(std::unique_ptr<io::substrait
 {
     if (plan->mappings_size() > 0)
     {
-        for (auto mapping : plan->mappings())
+        for (const auto& mapping : plan->mappings())
         {
             if (mapping.has_function_mapping())
             {
@@ -121,7 +124,7 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parseOp(const io::substrait::Rel & 
             const auto & filter = rel.filter();
             DB::QueryPlanPtr query_plan = parseOp(filter.input());
             std::string filter_name;
-            auto actions_dag = parseFunction(query_plan->getCurrentDataStream(), filter.condition(), filter_name);
+            auto actions_dag = parseFunction(query_plan->getCurrentDataStream(), filter.condition(), filter_name, nullptr, true);
             auto filter_step = std::make_unique<DB::FilterStep>(query_plan->getCurrentDataStream(), actions_dag, filter_name, true);
             query_plan->addStep(std::move(filter_step));
             return query_plan;
@@ -142,7 +145,7 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parseOp(const io::substrait::Rel & 
         case substrait::Rel::RelTypeCase::kAggregate: {
             const auto & aggregate = rel.aggregate();
             DB::QueryPlanPtr query_plan = parseOp(aggregate.input());
-            auto aggregate_step = parseAggregate(aggregate);
+            auto aggregate_step = parseAggregate(*query_plan, aggregate);
             query_plan->addStep(std::move(aggregate_step));
             return query_plan;
         }
@@ -166,8 +169,65 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parseOp(const io::substrait::Rel & 
     }
 }
 
-DB::QueryPlanStepPtr dbms::SerializedPlanParser::parseAggregate(const io::substrait::AggregateRel & rel)
+DB::AggregateFunctionPtr getAggregateFunction(const std::string & name, DB::DataTypes arg_types)
 {
+    auto & factory = DB::AggregateFunctionFactory::instance();
+    DB::AggregateFunctionProperties properties;
+    return factory.get(name, arg_types, DB::Array{}, properties);
+}
+
+DB::QueryPlanStepPtr dbms::SerializedPlanParser::parseAggregate(DB::QueryPlan & plan, const io::substrait::AggregateRel & rel)
+{
+    auto input = plan.getCurrentDataStream();
+    DB::ActionsDAGPtr expression = std::make_shared<ActionsDAG>(blockToNameAndTypeList(input.header));
+    std::vector<std::string> measure_names;
+    for (const auto& measure : rel.measures())
+    {
+        assert(measure.measure().args_size() == 1 && "only support one argument aggregate function");
+        auto arg = measure.measure().args(0);
+        if (arg.has_scalar_function()) {
+            std::string name;
+            parseFunction(input, arg, name, expression, true);
+            measure_names.emplace_back(name);
+        }
+        else if (arg.has_selection())
+        {
+            auto name = input.header.getByPosition(arg.selection().direct_reference().struct_field().field()).name;
+            measure_names.emplace_back(name);
+        }
+        else
+        {
+            throw std::runtime_error("unsupported aggregate argument type.");
+        }
+    }
+    auto expression_before_aggregate = std::make_unique<DB::ExpressionStep>(input, expression);
+    plan.addStep(std::move(expression_before_aggregate));
+
+    // TODO need support grouping key
+    auto aggregates = DB::AggregateDescriptions();
+    for (int i = 0; i < rel.measures_size(); ++i)
+    {
+        const auto& measure = rel.measures(i);
+        DB::AggregateDescription agg;
+        auto function_name = this->function_mapping.at(std::to_string(measure.measure().id().id()));
+        agg.column_name = function_name +"(" + measure_names.at(i) + ")";
+        agg.arguments = DB::ColumnNumbers{plan.getCurrentDataStream().header.getPositionByName(measure_names.at(i))};
+        agg.argument_names = DB::Names{measure_names.at(i)};
+        agg.function = ::getAggregateFunction(function_name, {plan.getCurrentDataStream().header.getByName(measure_names.at(i)).type});
+        aggregates.push_back(agg);
+    }
+
+    auto aggregating_step = std::make_unique<AggregatingStep>(
+        plan.getCurrentDataStream(),
+        this->getAggregateParam(plan.getCurrentDataStream().header, {}, aggregates),
+        true,
+        1000000,
+        1,
+        1,
+        false,
+        nullptr,
+        DB::SortDescription());
+    return aggregating_step;
 }
 
 DB::NamesAndTypesList dbms::SerializedPlanParser::blockToNameAndTypeList(const DB::Block & header)
@@ -194,7 +254,7 @@ void join(DB::ActionsDAG::NodeRawConstPtrs v, char c, std::string & s)
 
 
 DB::ActionsDAGPtr dbms::SerializedPlanParser::parseFunction(
-    const DataStream & input, const io::substrait::Expression & rel, std::string & result_name, DB::ActionsDAGPtr actions_dag)
+    const DataStream & input, const io::substrait::Expression & rel, std::string & result_name, DB::ActionsDAGPtr actions_dag, bool keep_result)
 {
     assert(rel.has_scalar_function() && "the root of expression should be a scalar function");
     const auto & scalar_function = rel.scalar_function();
@@ -222,7 +282,9 @@ DB::ActionsDAGPtr dbms::SerializedPlanParser::parseFunction(
     std::string args_name;
     join(args, ',', args_name);
     result_name = function_name + "(" + args_name + ")";
-    actions_dag->addFunction(function_builder, args, result_name);
+    const auto* function_node = &actions_dag->addFunction(function_builder, args, result_name);
+    if (keep_result)
+        actions_dag->addOrReplaceInIndex(*function_node);
     return actions_dag;
 }
 
@@ -236,21 +298,18 @@ const DB::ActionsDAG::Node * dbms::SerializedPlanParser::parseArgument(DB::Actio
             {
                 case io::substrait::Expression_Literal::kFp64: {
                     auto type = std::make_shared<DB::DataTypeFloat64>();
-                    auto const_node = action_dag->addInput(ColumnWithTypeAndName(
+                    return &action_dag->addColumn(ColumnWithTypeAndName(
                         type->createColumnConst(1, literal.fp64()), type, getUniqueName(std::to_string(literal.fp64()))));
-                    return action_dag->tryFindInIndex(const_node.result_name);
                 }
                 case io::substrait::Expression_Literal::kString: {
                     auto type = std::make_shared<DB::DataTypeString>();
-                    auto const_node = action_dag->addInput(
+                    return &action_dag->addColumn(
                         ColumnWithTypeAndName(type->createColumnConst(1, literal.string()), type, getUniqueName(literal.string())));
-                    return action_dag->tryFindInIndex(const_node.result_name);
                 }
                 case io::substrait::Expression_Literal::kI32: {
                     auto type = std::make_shared<DB::DataTypeInt32>();
-                    auto const_node = action_dag->addInput(ColumnWithTypeAndName(
+                    return &action_dag->addColumn(ColumnWithTypeAndName(
                         type->createColumnConst(1, literal.i32()), type, getUniqueName(std::to_string(literal.i32()))));
-                    return action_dag->tryFindInIndex(const_node.result_name);
                 }
                 default:
                     throw std::runtime_error("unsupported constant type " + std::to_string(literal.literal_type_case()));
@@ -276,6 +335,15 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parse(std::string & plan)
     plan_ptr->ParseFromString(plan);
     return parse(std::move(plan_ptr));
 }
+void dbms::SerializedPlanParser::initFunctionEnv()
+{
+    dbms::registerFunctions();
+    dbms::registerAggregateFunctions();
+}
+dbms::SerializedPlanParser::SerializedPlanParser(const DB::ContextPtr & context) : context(context)
+{
+}
+//dbms::ContextPtr dbms::SerializedPlanParser::context = dbms::Context::createGlobal(dbms::Context::createShared().get());
 DB::Chunk DB::BatchParquetFileSource::generate()
 {
     while (!finished_generate)
