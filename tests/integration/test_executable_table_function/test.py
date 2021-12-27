@@ -1,6 +1,5 @@
 import os
 import sys
-import time
 
 import pytest
 
@@ -211,104 +210,104 @@ def test_executable_storage_input_slow_python(started_cluster):
     assert node.query_and_get_error("SELECT * FROM test_table")
     node.query("DROP TABLE test_table")
 
-# def test_executable_pool_storage_input_python(started_cluster):
-#     skip_test_msan(node)
+def test_executable_function_input_multiple_pipes_python(started_cluster):
+    skip_test_msan(node)
 
-#     query = "CREATE TABLE test_table (value String) ENGINE=ExecutablePool('test_input_pool.py', 'TabSeparated', {source}) SETTINGS send_chunk_header=1, pool_size=1"
+    query = "CREATE TABLE test_table (value String) ENGINE=Executable('test_input_multiple_pipes.py', 'TabSeparated', {source})"
 
-#     node.query("DROP TABLE IF EXISTS test_table")
-#     node.query(query.format(source='(SELECT 1)'))
+    node.query("DROP TABLE IF EXISTS test_table")
+    node.query(query.format(source='(SELECT 1), (SELECT 2), (SELECT 3)'))
+    assert node.query("SELECT * FROM test_table") == 'Key from 4 fd 3\nKey from 3 fd 2\nKey from 0 fd 1\n'
+    node.query("DROP TABLE test_table")
 
-#     assert node.query("SELECT * FROM test_table") == 'Key 1\n'
-#     assert node.query("SELECT * FROM test_table") == 'Key 1\n'
-#     assert node.query("SELECT * FROM test_table") == 'Key 1\n'
+    node.query(query.format(source='(SELECT id FROM test_data_table), (SELECT 2), (SELECT 3)'))
+    assert node.query("SELECT * FROM test_table") == 'Key from 4 fd 3\nKey from 3 fd 2\nKey from 0 fd 0\nKey from 0 fd 1\nKey from 0 fd 2\n'
+    node.query("DROP TABLE test_table")
 
-#     node.query("DROP TABLE test_table")
+def test_executable_pool_storage_input_python(started_cluster):
+    skip_test_msan(node)
 
-#     node.query(query.format(source='(SELECT id FROM test_data_table)'))
+    query = "CREATE TABLE test_table (value String) ENGINE=ExecutablePool('test_input_pool.py', 'TabSeparated', {source}) SETTINGS send_chunk_header=1, pool_size=1"
 
-#     assert node.query("SELECT * FROM test_table") == 'Key 0\nKey 1\nKey 2\n'
-#     assert node.query("SELECT * FROM test_table") == 'Key 0\nKey 1\nKey 2\n'
-#     assert node.query("SELECT * FROM test_table") == 'Key 0\nKey 1\nKey 2\n'
+    node.query("DROP TABLE IF EXISTS test_table")
+    node.query(query.format(source='(SELECT 1)'))
 
-#     node.query("DROP TABLE test_table")
+    assert node.query("SELECT * FROM test_table") == 'Key 1\n'
+    assert node.query("SELECT * FROM test_table") == 'Key 1\n'
+    assert node.query("SELECT * FROM test_table") == 'Key 1\n'
 
-# def test_executable_pool_storage_input_sum_python(started_cluster):
-#     skip_test_msan(node)
+    node.query("DROP TABLE test_table")
 
-#     query = "CREATE TABLE test_table (value UInt64) ENGINE=ExecutablePool('test_input_sum_pool.py', 'TabSeparated', {source}) SETTINGS send_chunk_header=1, pool_size=1"
+    node.query(query.format(source='(SELECT id FROM test_data_table)'))
 
-#     node.query("DROP TABLE IF EXISTS test_table")
-#     node.query(query.format(source='(SELECT 1, 1)'))
+    assert node.query("SELECT * FROM test_table") == 'Key 0\nKey 1\nKey 2\n'
+    assert node.query("SELECT * FROM test_table") == 'Key 0\nKey 1\nKey 2\n'
+    assert node.query("SELECT * FROM test_table") == 'Key 0\nKey 1\nKey 2\n'
 
-#     assert node.query("SELECT * FROM test_table") == '2\n'
-#     assert node.query("SELECT * FROM test_table") == '2\n'
-#     assert node.query("SELECT * FROM test_table") == '2\n'
+    node.query("DROP TABLE test_table")
 
-#     node.query("DROP TABLE test_table")
+def test_executable_pool_storage_input_sum_python(started_cluster):
+    skip_test_msan(node)
 
-#     node.query(query.format(source='(SELECT id, id FROM test_data_table)'))
+    query = "CREATE TABLE test_table (value UInt64) ENGINE=ExecutablePool('test_input_sum_pool.py', 'TabSeparated', {source}) SETTINGS send_chunk_header=1, pool_size=1"
 
-#     assert node.query("SELECT * FROM test_table") == '0\n2\n4\n'
-#     assert node.query("SELECT * FROM test_table") == '0\n2\n4\n'
-#     assert node.query("SELECT * FROM test_table") == '0\n2\n4\n'
+    node.query("DROP TABLE IF EXISTS test_table")
+    node.query(query.format(source='(SELECT 1, 1)'))
 
-#     node.query("DROP TABLE test_table")
+    assert node.query("SELECT * FROM test_table") == '2\n'
+    assert node.query("SELECT * FROM test_table") == '2\n'
+    assert node.query("SELECT * FROM test_table") == '2\n'
 
-# def test_executable_pool_storage_input_argument_python(started_cluster):
-#     skip_test_msan(node)
+    node.query("DROP TABLE test_table")
 
-#     query = "CREATE TABLE test_table (value String) ENGINE=ExecutablePool('test_input_argument_pool.py 1', 'TabSeparated', {source}) SETTINGS send_chunk_header=1, pool_size=1"
+    node.query(query.format(source='(SELECT id, id FROM test_data_table)'))
 
-#     node.query("DROP TABLE IF EXISTS test_table")
-#     node.query(query.format(source='(SELECT 1)'))
+    assert node.query("SELECT * FROM test_table") == '0\n2\n4\n'
+    assert node.query("SELECT * FROM test_table") == '0\n2\n4\n'
+    assert node.query("SELECT * FROM test_table") == '0\n2\n4\n'
 
-#     assert node.query("SELECT * FROM test_table") == 'Key 1 1\n'
-#     assert node.query("SELECT * FROM test_table") == 'Key 1 1\n'
-#     assert node.query("SELECT * FROM test_table") == 'Key 1 1\n'
+    node.query("DROP TABLE test_table")
 
-#     node.query("DROP TABLE test_table")
+def test_executable_pool_storage_input_argument_python(started_cluster):
+    skip_test_msan(node)
 
-#     node.query(query.format(source='(SELECT id FROM test_data_table)'))
+    query = "CREATE TABLE test_table (value String) ENGINE=ExecutablePool('test_input_argument_pool.py 1', 'TabSeparated', {source}) SETTINGS send_chunk_header=1, pool_size=1"
 
-#     assert node.query("SELECT * FROM test_table") == 'Key 1 0\nKey 1 1\nKey 1 2\n'
-#     assert node.query("SELECT * FROM test_table") == 'Key 1 0\nKey 1 1\nKey 1 2\n'
-#     assert node.query("SELECT * FROM test_table") == 'Key 1 0\nKey 1 1\nKey 1 2\n'
+    node.query("DROP TABLE IF EXISTS test_table")
+    node.query(query.format(source='(SELECT 1)'))
 
-#     node.query("DROP TABLE test_table")
+    assert node.query("SELECT * FROM test_table") == 'Key 1 1\n'
+    assert node.query("SELECT * FROM test_table") == 'Key 1 1\n'
+    assert node.query("SELECT * FROM test_table") == 'Key 1 1\n'
 
-# def test_executable_pool_storage_input_multiple_blocks_python(started_cluster):
-#     skip_test_msan(node)
+    node.query("DROP TABLE test_table")
 
-#     query = "CREATE TABLE test_table (value String) ENGINE=ExecutablePool('test_input_multiple_blocks_pool.py', 'TabSeparated', {source}) SETTINGS send_chunk_header=1, pool_size=1"
+    node.query(query.format(source='(SELECT id FROM test_data_table)'))
 
-#     node.query("DROP TABLE IF EXISTS test_table")
-#     node.query(query.format(source='(SELECT 1)'))
+    assert node.query("SELECT * FROM test_table") == 'Key 1 0\nKey 1 1\nKey 1 2\n'
+    assert node.query("SELECT * FROM test_table") == 'Key 1 0\nKey 1 1\nKey 1 2\n'
+    assert node.query("SELECT * FROM test_table") == 'Key 1 0\nKey 1 1\nKey 1 2\n'
 
-#     assert node.query("SELECT * FROM test_table") == 'Key 1\n'
-#     assert node.query("SELECT * FROM test_table") == 'Key 1\n'
-#     assert node.query("SELECT * FROM test_table") == 'Key 1\n'
+    node.query("DROP TABLE test_table")
 
-#     node.query("DROP TABLE test_table")
+def test_executable_pool_storage_input_python(started_cluster):
+    skip_test_msan(node)
 
-#     node.query(query.format(source='(SELECT id FROM test_data_table)'))
+    query = "CREATE TABLE test_table (value String) ENGINE=ExecutablePool('test_input_multiple_pipes_pool.py', 'TabSeparated', {source}) SETTINGS send_chunk_header=1, pool_size=1"
 
-#     assert node.query("SELECT * FROM test_table") == 'Key 0\nKey 1\nKey 2\n'
-#     assert node.query("SELECT * FROM test_table") == 'Key 0\nKey 1\nKey 2\n'
-#     assert node.query("SELECT * FROM test_table") == 'Key 0\nKey 1\nKey 2\n'
+    node.query("DROP TABLE IF EXISTS test_table")
+    node.query(query.format(source='(SELECT 1), (SELECT 2), (SELECT 3)'))
 
-#     node.query("DROP TABLE test_table")
+    assert node.query("SELECT * FROM test_table") == 'Key from 4 fd 3\nKey from 3 fd 2\nKey from 0 fd 1\n'
+    assert node.query("SELECT * FROM test_table") == 'Key from 4 fd 3\nKey from 3 fd 2\nKey from 0 fd 1\n'
+    assert node.query("SELECT * FROM test_table") == 'Key from 4 fd 3\nKey from 3 fd 2\nKey from 0 fd 1\n'
 
-# def test_executable_pool_storage(started_cluster):
-#     skip_test_msan(node)
-#     node.query("DROP TABLE IF EXISTS test_table")
-#     node.query("CREATE TABLE test_table (value String) ENGINE=ExecutablePool('test_input_process_pool.sh', 'TabSeparated', (SELECT 1))")
-#     assert node.query("SELECT * FROM test_table") == 'Key 1\n'
-#     node.query("DROP TABLE test_table")
+    node.query("DROP TABLE test_table")
 
-# def test_executable_pool_storage_multiple_pipes(started_cluster):
-#     skip_test_msan(node)
-#     node.query("DROP TABLE IF EXISTS test_table")
-#     node.query("CREATE TABLE test_table (value String) ENGINE=ExecutablePool('test_input_process_pool_multiple_pipes.sh', 'TabSeparated', (SELECT 1), (SELECT 2), (SELECT 3))")
-#     assert node.query("SELECT * FROM test_table") == 'Key from 4 fd 3\nKey from 3 fd 2\nKey from 0 fd 1\n'
-#     node.query("DROP TABLE test_table")
+    node.query(query.format(source='(SELECT id FROM test_data_table), (SELECT 2), (SELECT 3)'))
+
+    assert node.query("SELECT * FROM test_table") == 'Key from 4 fd 3\nKey from 3 fd 2\nKey from 0 fd 0\nKey from 0 fd 1\nKey from 0 fd 2\n'
+    assert node.query("SELECT * FROM test_table") == 'Key from 4 fd 3\nKey from 3 fd 2\nKey from 0 fd 0\nKey from 0 fd 1\nKey from 0 fd 2\n'
+    assert node.query("SELECT * FROM test_table") == 'Key from 4 fd 3\nKey from 3 fd 2\nKey from 0 fd 0\nKey from 0 fd 1\nKey from 0 fd 2\n'
+
+    node.query("DROP TABLE test_table")
