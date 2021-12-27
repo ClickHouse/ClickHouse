@@ -1,5 +1,6 @@
 #include "PartMetaCache.h"
 
+#if USE_ROCKSDB
 #include <rocksdb/db.h>
 #include <Disks/IDisk.h>
 #include <IO/HashingReadBuffer.h>
@@ -132,3 +133,4 @@ String PartMetaCache::getFullRelativePath() const
 }
 
 }
+#endif

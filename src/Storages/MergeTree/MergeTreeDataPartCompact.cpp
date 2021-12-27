@@ -91,7 +91,6 @@ void MergeTreeDataPartCompact::calculateEachColumnSizes(ColumnSizeByName & /*eac
         total_size.marks += mrk_checksum->second.file_size;
 }
 
-// load marks from meta cache
 void MergeTreeDataPartCompact::loadIndexGranularity()
 {
     String full_path = getFullRelativePath();

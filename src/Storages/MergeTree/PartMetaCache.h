@@ -1,5 +1,8 @@
 #pragma once
 
+#include "config_core.h"
+
+#if USE_ROCKSDB
 #include <city.h>
 #include <Core/Types.h>
 #include <Interpreters/Context.h>
@@ -43,3 +46,4 @@ private:
 };
 
 }
+#endif

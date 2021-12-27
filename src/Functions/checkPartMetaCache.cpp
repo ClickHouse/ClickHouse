@@ -1,6 +1,8 @@
+#include "config_core.h"
+
+#if USE_ROCKSDB
+
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionHelpers.h>
-#include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeString.h>
@@ -14,8 +16,6 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
-#include <Common/Macros.h>
-#include <Common/TypePromotion.h>
 #include <Common/hex.h>
 #include <Core/Field.h>
 
@@ -155,3 +155,4 @@ void registerFunctionCheckPartMetaCache(FunctionFactory & factory)
 }
 
 }
+#endif

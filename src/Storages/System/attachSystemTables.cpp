@@ -68,7 +68,6 @@
 #include <Storages/System/StorageSystemUserDirectories.h>
 #include <Storages/System/StorageSystemPrivileges.h>
 #include <Storages/System/StorageSystemAsynchronousInserts.h>
-#include <Storages/System/StorageSystemMergeTreeMetaCache.h>
 
 #ifdef OS_LINUX
 #include <Storages/System/StorageSystemStackTrace.h>
@@ -76,6 +75,7 @@
 
 #if USE_ROCKSDB
 #include <Storages/RocksDB/StorageSystemRocksDB.h>
+#include <Storages/System/StorageSystemMergeTreeMetaCache.h>
 #endif
 
 

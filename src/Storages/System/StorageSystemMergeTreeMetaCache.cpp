@@ -1,3 +1,6 @@
+#include <Storages/System/StorageSystemMergeTreeMetaCache.h>
+
+#if USE_ROCKSDB
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -7,9 +10,9 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Storages/System/StorageSystemMergeTreeMetaCache.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Common/typeid_cast.h>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -137,3 +140,4 @@ void StorageSystemMergeTreeMetaCache::fillData(MutableColumns & res_columns, Con
 }
 
 }
+#endif
