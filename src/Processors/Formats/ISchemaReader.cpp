@@ -55,12 +55,12 @@ NamesAndTypesList IRowSchemaReader::readSchema()
     if (data_types.empty())
         throw Exception(ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot read rows from the data");
 
-    /// If column names weren't set, use default names 'column_1', 'column_2', ...
+    /// If column names weren't set, use default names 'c1', 'c2', ...
     if (column_names.empty())
     {
         column_names.reserve(data_types.size());
         for (size_t i = 0; i != data_types.size(); ++i)
-            column_names.push_back("column_" + std::to_string(i + 1));
+            column_names.push_back("c" + std::to_string(i + 1));
     }
     /// If column names were set, check that the number of names match the number of types.
     else if (column_names.size() != data_types.size())

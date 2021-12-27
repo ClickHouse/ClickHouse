@@ -88,9 +88,13 @@ static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
 }
 
 static void getFileReaderAndSchema(
-    ReadBuffer & in, std::unique_ptr<arrow::adapters::orc::ORCFileReader> & file_reader, std::shared_ptr<arrow::Schema> & schema, const FormatSettings & format_settings)
+    ReadBuffer & in,
+    std::unique_ptr<arrow::adapters::orc::ORCFileReader> & file_reader,
+    std::shared_ptr<arrow::Schema> & schema,
+    const FormatSettings & format_settings,
+    std::atomic<int> & is_stopped)
 {
-    auto arrow_file = asArrowFile(*in, format_settings, is_stopped);
+    auto arrow_file = asArrowFile(in, format_settings, is_stopped);
     if (is_stopped)
         return;
 
@@ -108,7 +112,9 @@ static void getFileReaderAndSchema(
 void ORCBlockInputFormat::prepareReader()
 {
     std::shared_ptr<arrow::Schema> schema;
-    getFileReaderAndSchema(*in, file_reader, schema, format_settings);
+    getFileReaderAndSchema(*in, file_reader, schema, format_settings, is_stopped);
+    if (is_stopped)
+        return;
 
     arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), "ORC", format_settings.orc.import_nested);
 
@@ -143,7 +149,8 @@ NamesAndTypesList ORCSchemaReader::readSchema()
 {
     std::unique_ptr<arrow::adapters::orc::ORCFileReader> file_reader;
     std::shared_ptr<arrow::Schema> schema;
-    getFileReaderAndSchema(in, file_reader, schema, format_settings);
+    std::atomic<int> is_stopped = 0;
+    getFileReaderAndSchema(in, file_reader, schema, format_settings, is_stopped);
     auto header = ArrowColumnToCHColumn::arrowSchemaToCHHeader(*schema, "ORC");
     return header.getNamesAndTypesList();
 }
