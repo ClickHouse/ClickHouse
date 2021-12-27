@@ -339,10 +339,10 @@ private:
             std::forward_as_tuple());
 
         Cell & cell = it->second;
+        auto value_weight = mapped ? weight_function(*mapped) : 0;
 
         if (inserted)
         {
-            auto value_weight = mapped ? weight_function(*mapped) : 0;
             if (!removeOverflow(value_weight))
             {
                 // cannot find enough space to put in the new value
@@ -364,6 +364,8 @@ private:
         {
             if (!evict_policy.canRelease(cell.value))
                 return false;
+            if (value_weight > cell.size && !removeOverflow(value_weight - cell.size))
+                return false;
             evict_policy.release(cell.value); // release the old value. this action is empty in default policy.
             current_size -= cell.size;
             queue.splice(queue.end(), queue, cell.queue_iterator);
@@ -373,7 +375,6 @@ private:
         cell.size = cell.value ? weight_function(*cell.value) : 0;
         current_size += cell.size;
 
-        removeOverflow();
         return true;
     }
 
