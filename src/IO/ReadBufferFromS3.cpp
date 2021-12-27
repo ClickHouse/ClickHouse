@@ -119,7 +119,9 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
     Aws::S3::Model::GetObjectRequest req;
     req.SetBucket(bucket);
     req.SetKey(key);
-    req.SetRange(fmt::format("bytes={}-", offset));
+
+    if (offset)
+        req.SetRange(fmt::format("bytes={}-", offset));
 
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 
