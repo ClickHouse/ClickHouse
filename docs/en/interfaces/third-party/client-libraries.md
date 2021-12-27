@@ -68,5 +68,7 @@ toc_title: Client Libraries
     -   [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
 -   Haskell
     -   [hdbc-clickhouse](https://github.com/zaneli/hdbc-clickhouse)
+-   Bash
+    -   [clickhouse-util](https://github.com/peter279k/clickhouse-util)
 
 [Original article](https://clickhouse.com/docs/en/interfaces/third-party/client_libraries/) <!--hide-->
