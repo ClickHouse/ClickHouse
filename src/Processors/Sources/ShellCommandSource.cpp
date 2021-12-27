@@ -299,9 +299,9 @@ namespace
                 if (configuration.read_number_of_rows_from_process_output)
                 {
                     /// TODO: Move to generate
-                    readText(configuration.number_of_rows_to_read, command->out);
+                    readText(configuration.number_of_rows_to_read, timeout_command_out);
                     char dummy;
-                    readChar(dummy, command->out);
+                    readChar(dummy, timeout_command_out);
                 }
 
                 max_block_size = configuration.number_of_rows_to_read;

@@ -1,3 +1,5 @@
 #!/bin/bash
 
-echo "1"
+printf "Key 0\n";
+printf "Key 1\n";
+printf "Key 2\n";
