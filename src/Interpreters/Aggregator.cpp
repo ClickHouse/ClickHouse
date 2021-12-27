@@ -177,22 +177,6 @@ namespace ErrorCodes
 }
 
 
-AggregatedDataVariants::~AggregatedDataVariants()
-{
-    if (aggregator && !aggregator->all_aggregates_has_trivial_destructor)
-    {
-        try
-        {
-            aggregator->destroyAllAggregateStates(*this);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-}
-
-
 void AggregatedDataVariants::convertToTwoLevel()
 {
     if (aggregator)
@@ -295,6 +279,23 @@ private:
     Params::StatsCollectingParams params;
     std::atomic<size_t> observed_size;
 };
+
+AggregatedDataVariants::~AggregatedDataVariants()
+{
+    if (aggregator)
+    {
+        try
+        {
+            aggregator->stats_updater->addToObservedHashTableSize(size());
+            if (!aggregator->all_aggregates_has_trivial_destructor)
+                aggregator->destroyAllAggregateStates(*this);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+}
 
 Block Aggregator::getHeader(bool final) const
 {
@@ -1540,10 +1541,7 @@ void Aggregator::convertToBlockImpl(
 
 
 template <typename Mapped>
-inline void Aggregator::insertAggregatesIntoColumns(
-    Mapped & mapped,
-    MutableColumns & final_aggregate_columns,
-    Arena * arena) const
+inline void Aggregator::insertAggregatesIntoColumns(Mapped & mapped, MutableColumns & final_aggregate_columns, Arena * arena) const
 {
     /** Final values of aggregate functions are inserted to columns.
       * Then states of aggregate functions, that are not longer needed, are destroyed.
