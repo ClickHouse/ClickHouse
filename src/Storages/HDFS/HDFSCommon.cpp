@@ -22,7 +22,7 @@ namespace ErrorCodes
 }
 
 const String HDFSBuilderWrapper::CONFIG_PREFIX = "hdfs";
-const String HDFS_URL_REGEXP = "^hdfs://[^:/]*:[0-9]*/.*";
+const String HDFS_URL_REGEXP = "^hdfs://[^/]*/.*";
 
 void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration & config,
     const String & config_path, bool isUser)

@@ -103,7 +103,7 @@ void WriteBufferToKafkaProducer::countRow(const Columns & columns, size_t curren
                     producer->poll(timeout);
                     continue;
                 }
-                throw e;
+                throw;
             }
 
             break;
@@ -126,7 +126,7 @@ void WriteBufferToKafkaProducer::flush()
         {
             if (e.get_error() == RD_KAFKA_RESP_ERR__TIMED_OUT)
                 continue;
-            throw e;
+            throw;
         }
 
         break;

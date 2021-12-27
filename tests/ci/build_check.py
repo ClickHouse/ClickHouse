@@ -116,7 +116,11 @@ def create_json_artifact(temp_path, build_name, log_url, build_urls, build_confi
         "status": success,
     }
 
-    with open(os.path.join(temp_path, "build_urls_" + build_name + '.json'), 'w') as build_links:
+    json_name = "build_urls_" + build_name + '.json'
+
+    print ("Dump json report", result, "to", json_name, "with env", "build_urls_{build_name}")
+
+    with open(os.path.join(temp_path, json_name), 'w') as build_links:
         json.dump(result, build_links)
 
 

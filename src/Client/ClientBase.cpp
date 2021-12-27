@@ -8,8 +8,8 @@
 #include <unordered_map>
 
 #include <base/argsToConfig.h>
-#include <base/DateLUT.h>
-#include <base/LocalDate.h>
+#include <Common/DateLUT.h>
+#include <Common/LocalDate.h>
 #include <base/LineReader.h>
 #include <base/scope_guard_safe.h>
 #include "Common/Exception.h"
@@ -561,7 +561,7 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
 
     try
     {
-        processParsedSingleQuery(full_query, query_to_execute, parsed_query);
+        processParsedSingleQuery(full_query, query_to_execute, parsed_query, echo_queries);
     }
     catch (Exception & e)
     {

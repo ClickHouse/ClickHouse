@@ -1541,7 +1541,7 @@ class ClickHouseCluster:
                 if os.path.exists(self.mysql_dir):
                     shutil.rmtree(self.mysql_dir)
                 os.makedirs(self.mysql_logs_dir)
-                os.chmod(self.mysql_logs_dir, stat.S_IRWXO)
+                os.chmod(self.mysql_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 subprocess_check_call(self.base_mysql_cmd + common_opts)
                 self.up_called = True
                 self.wait_mysql_to_start()
@@ -1551,7 +1551,7 @@ class ClickHouseCluster:
                 if os.path.exists(self.mysql8_dir):
                     shutil.rmtree(self.mysql8_dir)
                 os.makedirs(self.mysql8_logs_dir)
-                os.chmod(self.mysql8_logs_dir, stat.S_IRWXO)
+                os.chmod(self.mysql8_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 subprocess_check_call(self.base_mysql8_cmd + common_opts)
                 self.wait_mysql8_to_start()
 
@@ -1560,7 +1560,7 @@ class ClickHouseCluster:
                 if os.path.exists(self.mysql_cluster_dir):
                     shutil.rmtree(self.mysql_cluster_dir)
                 os.makedirs(self.mysql_cluster_logs_dir)
-                os.chmod(self.mysql_cluster_logs_dir, stat.S_IRWXO)
+                os.chmod(self.mysql_cluster_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 subprocess_check_call(self.base_mysql_cluster_cmd + common_opts)
                 self.up_called = True
@@ -1571,7 +1571,7 @@ class ClickHouseCluster:
                 if os.path.exists(self.postgres_dir):
                     shutil.rmtree(self.postgres_dir)
                 os.makedirs(self.postgres_logs_dir)
-                os.chmod(self.postgres_logs_dir, stat.S_IRWXO)
+                os.chmod(self.postgres_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 subprocess_check_call(self.base_postgres_cmd + common_opts)
                 self.up_called = True
@@ -1580,11 +1580,11 @@ class ClickHouseCluster:
             if self.with_postgres_cluster and self.base_postgres_cluster_cmd:
                 print('Setup Postgres')
                 os.makedirs(self.postgres2_logs_dir)
-                os.chmod(self.postgres2_logs_dir, stat.S_IRWXO)
+                os.chmod(self.postgres2_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 os.makedirs(self.postgres3_logs_dir)
-                os.chmod(self.postgres3_logs_dir, stat.S_IRWXO)
+                os.chmod(self.postgres3_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 os.makedirs(self.postgres4_logs_dir)
-                os.chmod(self.postgres4_logs_dir, stat.S_IRWXO)
+                os.chmod(self.postgres4_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 subprocess_check_call(self.base_postgres_cluster_cmd + common_opts)
                 self.up_called = True
                 self.wait_postgres_cluster_to_start()
@@ -1605,7 +1605,7 @@ class ClickHouseCluster:
             if self.with_rabbitmq and self.base_rabbitmq_cmd:
                 logging.debug('Setup RabbitMQ')
                 os.makedirs(self.rabbitmq_logs_dir)
-                os.chmod(self.rabbitmq_logs_dir, stat.S_IRWXO)
+                os.chmod(self.rabbitmq_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 for i in range(5):
                     subprocess_check_call(self.base_rabbitmq_cmd + common_opts + ['--renew-anon-volumes'])
@@ -1618,7 +1618,7 @@ class ClickHouseCluster:
             if self.with_hdfs and self.base_hdfs_cmd:
                 logging.debug('Setup HDFS')
                 os.makedirs(self.hdfs_logs_dir)
-                os.chmod(self.hdfs_logs_dir, stat.S_IRWXO)
+                os.chmod(self.hdfs_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 subprocess_check_call(self.base_hdfs_cmd + common_opts)
                 self.up_called = True
                 self.make_hdfs_api()
@@ -1627,7 +1627,7 @@ class ClickHouseCluster:
             if self.with_kerberized_hdfs and self.base_kerberized_hdfs_cmd:
                 logging.debug('Setup kerberized HDFS')
                 os.makedirs(self.hdfs_kerberized_logs_dir)
-                os.chmod(self.hdfs_kerberized_logs_dir, stat.S_IRWXO)
+                os.chmod(self.hdfs_kerberized_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 run_and_check(self.base_kerberized_hdfs_cmd + common_opts)
                 self.up_called = True
                 self.make_hdfs_api(kerberized=True)
@@ -1689,7 +1689,7 @@ class ClickHouseCluster:
 
             if self.with_jdbc_bridge and self.base_jdbc_bridge_cmd:
                 os.makedirs(self.jdbc_driver_logs_dir)
-                os.chmod(self.jdbc_driver_logs_dir, stat.S_IRWXO)
+                os.chmod(self.jdbc_driver_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 subprocess_check_call(self.base_jdbc_bridge_cmd + ['up', '-d'])
                 self.up_called = True

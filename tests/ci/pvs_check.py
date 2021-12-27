@@ -87,7 +87,7 @@ if __name__ == "__main__":
             logging.info("Run Ok")
 
     if retcode != 0:
-        commit.create_status(context=NAME, description='PVS report failed to build', state='failure',
+        commit.create_status(context=NAME, description='PVS report failed to build', state='error',
                              target_url=f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID}")
         sys.exit(1)
 
@@ -102,7 +102,7 @@ if __name__ == "__main__":
                 break
 
         if not index_html:
-            commit.create_status(context=NAME, description='PVS report failed to build', state='failure',
+            commit.create_status(context=NAME, description='PVS report failed to build', state='error',
                                  target_url=f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID}")
             sys.exit(1)
 
