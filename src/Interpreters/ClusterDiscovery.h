@@ -81,6 +81,8 @@ private:
         }
     };
 
+    void initialUpdate();
+
     void registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & info);
 
     Strings getNodeNames(zkutil::ZooKeeperPtr & zk,
