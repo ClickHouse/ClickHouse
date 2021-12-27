@@ -884,8 +884,9 @@ public:
     /// Remove local files and remote files if needed
     virtual bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name, bool is_freezed);
 
-    /// Store some metadata for freezed part if needed
-    virtual void freezeMetaData(DiskPtr disk, DataPartPtr part, String backup_part_path) const;
+    /// Store metadata for replicated tables
+    /// Do nothing for non-replicated tables
+    virtual void createAndStoreFreezeMetadata(DiskPtr disk, DataPartPtr part, String backup_part_path) const;
 
     /// Parts that currently submerging (merging to bigger parts) or emerging
     /// (to be appeared after merging finished). These two variables have to be used

@@ -497,6 +497,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
     createNewZooKeeperNodes();
     syncPinnedPartUUIDs();
+
+    createTableSharedID();
 }
 
 
@@ -7087,12 +7089,18 @@ std::unique_ptr<MergeTreeSettings> StorageReplicatedMergeTree::getDefaultSetting
 }
 
 
-String StorageReplicatedMergeTree::getTableUniqID() const
+String StorageReplicatedMergeTree::getTableSharedID() const
 {
-    if (table_global_id == UUIDHelpers::Nil)
+    return toString(table_shared_id);
+}
+
+
+void StorageReplicatedMergeTree::createTableSharedID()
+{
+    if (table_shared_id == UUIDHelpers::Nil)
     {
         zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
-        String zookeeper_table_id_path = fs::path(zookeeper_path) / "table_id";
+        String zookeeper_table_id_path = fs::path(zookeeper_path) / "table_shared_id";
         String id;
         if (!zookeeper->tryGet(zookeeper_table_id_path, id))
         {
@@ -7116,10 +7124,8 @@ String StorageReplicatedMergeTree::getTableUniqID() const
             }
         }
 
-        table_global_id = parseFromString<UUID>(id);
+        table_shared_id = parseFromString<UUID>(id);
     }
-
-    return toString(table_global_id);
 }
 
 
@@ -7138,7 +7144,7 @@ void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part)
     String id = part.getUniqueId();
     boost::replace_all(id, "/", "_");
 
-    Strings zc_zookeeper_paths = getZeroCopyPartPath(*getDefaultSettings(), disk->getType(), getTableUniqID(),
+    Strings zc_zookeeper_paths = getZeroCopyPartPath(*getSettings(), disk->getType(), getTableSharedID(),
         part.name, zookeeper_path);
     for (const auto & zc_zookeeper_path : zc_zookeeper_paths)
     {
@@ -7168,11 +7174,11 @@ bool StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & par
     if (!zookeeper)
         return true;
 
-    auto ref_count = part.getRefCount();
+    auto ref_count = part.getNumberOfRefereneces();
     if (ref_count > 0) /// Keep part shard info for frozen backups
         return false;
 
-    return unlockSharedDataById(part.getUniqueId(), getTableUniqID(), name, replica_name, disk, zookeeper, *getDefaultSettings(), log,
+    return unlockSharedDataById(part.getUniqueId(), getTableSharedID(), name, replica_name, disk, zookeeper, *getSettings(), log,
         zookeeper_path);
 }
 
@@ -7264,7 +7270,7 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
     if (!zookeeper)
         return best_replica;
 
-    Strings zc_zookeeper_paths = getZeroCopyPartPath(*getDefaultSettings(), disk_type, getTableUniqID(), part.name,
+    Strings zc_zookeeper_paths = getZeroCopyPartPath(*getSettings(), disk_type, getTableSharedID(), part.name,
             zookeeper_path);
 
     std::set<String> replicas;
@@ -7598,6 +7604,9 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(const zkutil::ZooKeeperP
 }
 
 
+namespace
+{
+
 struct FreezeMetaData
 {
 public:
@@ -7607,7 +7616,7 @@ public:
         is_remote = storage.isRemote();
         replica_name = storage.getReplicaName();
         zookeeper_name = storage.getZooKeeperName();
-        table_uuid = storage.getTableUniqID();
+        table_shared_id = storage.getTableSharedID();
     }
 
     void save(DiskPtr disk, const String & path) const
@@ -7624,7 +7633,7 @@ public:
         buffer->write("\n", 1);
         writeString(zookeeper_name, *buffer);
         buffer->write("\n", 1);
-        writeString(table_uuid, *buffer);
+        writeString(table_shared_id, *buffer);
         buffer->write("\n", 1);
     }
 
@@ -7649,7 +7658,7 @@ public:
         DB::assertChar('\n', *buffer);
         readString(zookeeper_name, *buffer);
         DB::assertChar('\n', *buffer);
-        readString(table_uuid, *buffer);
+        readString(table_shared_id, *buffer);
         DB::assertChar('\n', *buffer);
         return true;
     }
@@ -7671,9 +7680,10 @@ public:
     bool is_remote;
     String replica_name;
     String zookeeper_name;
-    String table_uuid;
+    String table_shared_id;
 };
 
+}
 
 bool StorageReplicatedMergeTree::removeDetachedPart(DiskPtr disk, const String & path, const String & part_name, bool is_freezed)
 {
@@ -7685,14 +7695,14 @@ bool StorageReplicatedMergeTree::removeDetachedPart(DiskPtr disk, const String &
             if (meta.load(disk, path))
             {
                 FreezeMetaData::clean(disk, path);
-                return removeSharedDetachedPart(disk, path, part_name, meta.table_uuid, meta.zookeeper_name, meta.replica_name, "");
+                return removeSharedDetachedPart(disk, path, part_name, meta.table_shared_id, meta.zookeeper_name, meta.replica_name, "");
             }
         }
         else
         {
-            String table_uuid = getTableUniqID();
+            String table_id = getTableSharedID();
 
-            return removeSharedDetachedPart(disk, path, part_name, table_uuid, zookeeper_name, replica_name, zookeeper_path);
+            return removeSharedDetachedPart(disk, path, part_name, table_id, zookeeper_name, replica_name, zookeeper_path);
         }
     }
 
@@ -7703,30 +7713,11 @@ bool StorageReplicatedMergeTree::removeDetachedPart(DiskPtr disk, const String &
 
 
 bool StorageReplicatedMergeTree::removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name, const String & table_uuid,
-    const String & detached_zookeeper_name, const String & detached_replica_name, const String & detached_zookeeper_path)
+    const String &, const String & detached_replica_name, const String & detached_zookeeper_path)
 {
     bool keep_shared = false;
 
-    static constexpr auto default_zookeeper_name = "default";
-    zkutil::ZooKeeperPtr zookeeper;
-    if (detached_zookeeper_name == default_zookeeper_name)
-    {
-        zookeeper = getContext()->getZooKeeper();
-    }
-    else
-    {
-        try
-        {
-            zookeeper = getContext()->getAuxiliaryZooKeeper(detached_zookeeper_name);
-        }
-        catch (const Exception & e)
-        {
-            if (e.code() != ErrorCodes::BAD_ARGUMENTS)
-                throw;
-            /// No more stored non-default zookeeper
-            zookeeper = nullptr;
-        }
-    }
+    zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
 
     if (zookeeper)
     {
@@ -7752,7 +7743,7 @@ bool StorageReplicatedMergeTree::removeSharedDetachedPart(DiskPtr disk, const St
 }
 
 
-void StorageReplicatedMergeTree::freezeMetaData(DiskPtr disk, DataPartPtr, String backup_part_path) const
+void StorageReplicatedMergeTree::createAndStoreFreezeMetadata(DiskPtr disk, DataPartPtr, String backup_part_path) const
 {
     if (disk->supportZeroCopyReplication())
     {

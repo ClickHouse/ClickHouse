@@ -511,6 +511,7 @@ void ReplicatedMergeTreeSink::commitPart(
         waitForQuorum(zookeeper, part->name, quorum_info.status_path, quorum_info.is_active_node_value);
     }
 
+    /// Cleanup shared locks made with old name
     part->cleanupOldName(old_part_name);
 }
 

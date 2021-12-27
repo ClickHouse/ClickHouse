@@ -2572,6 +2572,7 @@ bool MergeTreeData::renameTempPartAndReplace(
             out_covered_parts->emplace_back(std::move(covered_part));
     }
 
+    /// Cleanup shared locks made with old name
     part->cleanupOldName(old_part_name);
 
     return true;
@@ -5216,7 +5217,9 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
         localBackup(disk, src_part_path, backup_part_path);
 
-        freezeMetaData(disk, part, backup_part_path);
+        // Store metadata for replicated table.
+        // Do nothing for non-replocated.
+        createAndStoreFreezeMetadata(disk, part, backup_part_path);
 
         disk->removeFileIfExists(fs::path(backup_part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
 
@@ -5235,7 +5238,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     return result;
 }
 
-void MergeTreeData::freezeMetaData(DiskPtr, DataPartPtr, String) const
+void MergeTreeData::createAndStoreFreezeMetadata(DiskPtr, DataPartPtr, String) const
 {
 
 }
