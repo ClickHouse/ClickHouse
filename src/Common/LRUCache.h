@@ -148,20 +148,20 @@ public:
         /// Insert the new value only if the token is still in present in insert_tokens.
         /// (The token may be absent because of a concurrent reset() call).
         bool is_value_loaded = false;
-        bool is_value_updated = false;
+        bool is_value_loaded_and_set = false;
         auto token_it = insert_tokens.find(key);
         if (token_it != insert_tokens.end() && token_it->second.get() == token)
         {
             // setImpl() may fail, but the final behavior seems not be affected
             // next call of getOrTrySet() will still call load_func()
-            is_value_updated = setImpl(key, token->value, cache_lock);
+            is_value_loaded_and_set = setImpl(key, token->value, cache_lock);
             is_value_loaded = true;
         }
 
         if (!token->cleaned_up)
             token_holder.cleanup(token_lock, cache_lock);
 
-        return {token->value, is_value_loaded, is_value_updated};
+        return {token->value, is_value_loaded, is_value_loaded_and_set};
     }
 
     /// If key is not in cache or the element can be released, return is true. otherwise, return is false
@@ -363,11 +363,7 @@ private:
         else
         {
             if (!evict_policy.canRelease(cell.value))
-            {
-                // the old value is referred by someone, cannot release now
-                // in default policy, it is always true.
                 return false;
-            }
             evict_policy.release(cell.value); // release the old value. this action is empty in default policy.
             current_size -= cell.size;
             queue.splice(queue.end(), queue, cell.queue_iterator);
@@ -377,6 +373,7 @@ private:
         cell.size = cell.value ? weight_function(*cell.value) : 0;
         current_size += cell.size;
 
+        removeOverflow();
         return true;
     }
 
