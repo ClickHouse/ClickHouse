@@ -117,9 +117,6 @@ namespace
     }
 }
 
-static Strings listFilesWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, const String & for_match);
-
-
 StorageHDFS::StorageHDFS(
     const String & uri_,
     const StorageID & table_id_,
@@ -187,14 +184,8 @@ class HDFSSource::DisclosedGlobIterator::Impl
 public:
     Impl(ContextPtr context_, const String & uri)
     {
-        const size_t begin_of_path = uri.find('/', uri.find("//") + 2);
-        const String path_from_uri = uri.substr(begin_of_path);
-        const String uri_without_path = uri.substr(0, begin_of_path); /// ends without '/'
-
-        HDFSBuilderWrapper builder = createHDFSBuilder(uri_without_path + "/", context_->getGlobalContext()->getConfigRef());
-        HDFSFSPtr fs = createHDFSFS(builder.get());
-
-        uris = listFilesWithRegexpMatching("/", fs, path_from_uri);
+        const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(uri);
+        uris = getPathsList(path_from_uri, uri_without_path, context_);
         for (auto & elem : uris)
             elem = uri_without_path + elem;
         uris_iter = uris.begin();

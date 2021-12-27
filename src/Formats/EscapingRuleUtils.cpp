@@ -288,13 +288,7 @@ DataTypePtr determineDataTypeByEscapingRule(const String & field, const FormatSe
             return parsed ? type : nullptr;
         }
         case FormatSettings::EscapingRule::JSON:
-        {
-            Poco::JSON::Parser parser;
-            String json = "{\"field\" : " + field + "}";
-            auto var = parser.parse(json);
-            Poco::JSON::Object::Ptr object = var.extract<Poco::JSON::Object::Ptr>();
-            return getDataTypeFromJSONField(object->get("field"));
-        }
+            return getDataTypeFromJSONField(field);
         case FormatSettings::EscapingRule::CSV:
         {
             if (field.empty() || field == format_settings.csv.null_representation)
