@@ -50,12 +50,14 @@ public:
     using Key = TKey;
     using Mapped = TMapped;
     using MappedPtr = std::shared_ptr<Mapped>;
-    
+
     struct Result
     {
         MappedPtr value;
+        // if key is in cache, cache_miss is true
         bool cache_miss = true;
-        // set_successful is not trustworthy for getOrSet, because removeOverflow is called right after putting key in cache
+        // set_successful is false in default
+        // when value is loaded by load_fun in getOrSet(), and setImpl returns true, set_successful = true
         bool set_successful = false;
     };
 
@@ -97,13 +99,6 @@ public:
         return setImpl(key, mapped, lock);
     }
 
-    template <typename LoadFunc>
-    std::pair<MappedPtr, bool> getOrSet(const Key & key, LoadFunc && load_func)
-    {
-        auto result = getOrTrySet(key, std::move(load_func));
-        return std::make_pair(result.value, result.cache_miss);
-    }
-
     /// If the value for the key is in the cache, returns it. If it is not, calls load_func() to
     /// produce it, saves the result in the cache and returns it.
     /// Only one of several concurrent threads calling getOrTrySet() will call load_func(),
@@ -112,7 +107,7 @@ public:
     /// set of concurrent threads will then try to call its load_func etc.
     ///
     template <typename LoadFunc>
-    Result getOrTrySet(const Key &key, LoadFunc && load_func)
+    Result getOrSet(const Key &key, LoadFunc && load_func)
     {
         InsertTokenHolder token_holder;
         {
