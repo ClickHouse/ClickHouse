@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <set>
 #include <Common/HashTable/robin_hood.h>
 #include <Common/HashTable/ArrayHashTable.h>
 #include <Common/parallel_hashmap/phmap.h>
@@ -24,7 +25,7 @@ using ResponseCallback = std::function<void(const Coordination::ZooKeeperRespons
 //using ChildrenSet = std::unordered_set<std::string>;
 using ChildrenSet = my_unordered_set<std::string>;
 //using ChildrenSet = array_unordered_set<std::string>;
-//using ChildrenSet = phmap::flat_hash_set<std::string>;
+//using ChildrenSet = std::set<std::string>;
 //using ChildrenSet = DoubleSet<std::string>;
 using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
 

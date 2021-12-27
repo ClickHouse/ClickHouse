@@ -1,11 +1,11 @@
-#include "../HashTable/IncrementalRehashTable.h"
-//// test 
+#include <iostream>
 #include <sys/time.h>
 #include <unordered_map>
 #include <string>
 #include <unordered_set>
 #include <cassert>
-#include <iostream>
+#include <chrono>
+#include "IncrementalRehashTable.h"
 
 int64_t timeit()
 {
@@ -39,7 +39,7 @@ int main()
     }
     #endif
     {
-        int N = 30000000;
+        int N = 500000;
         auto btime = timeit();
         for (int i = 0; i < N; ++i)
             mp.insert(robin_hood::pair(std::make_pair(std::string("abcd" + std::to_string(i)), i)));

@@ -949,7 +949,7 @@ private:
     using DataPool = detail::NodeAllocator<value_type, 4, 16384, IsFlat>;
 
     // type needs to be wider than uint8_t.
-    using InfoType = uint32_t;
+    using InfoType = uint16_t;
 
     // DataNode ////////////////////////////////////////////////////////
 
@@ -2202,7 +2202,8 @@ private:
         ROBIN_HOOD_TRACE(this)
         return find(e) != end();
     }
-
+    #include <chrono>
+    #include <iostream>
     uint64_t timerh()
     {
         return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
@@ -2485,6 +2486,8 @@ private:
     }
 
     void destroy() {
+        std::cout << "destroy in robin hood, isflat&trival " << IsFlat && std::is_trivially_destructible<Node>::value;
+        std::cout << std::endl;
         if (0 == mMask) {
             // don't deallocate!
             return;
@@ -2499,6 +2502,7 @@ private:
         // [-Werror=free-nonheap-object]
         if (mKeyVals != reinterpret_cast_no_cast_align_warning<Node*>(&mMask)) {
             ROBIN_HOOD_LOG("std::free")
+            std::cout << "std::free" << std::endl;
             std::free(mKeyVals);
         }
     }

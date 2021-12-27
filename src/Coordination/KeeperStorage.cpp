@@ -24,9 +24,10 @@ namespace ErrorCodes
 static String parentPath(const String & path)
 {
     auto rslash_pos = path.rfind('/');
-    if (rslash_pos > 0)
+    if (rslash_pos > 0) [[likely]]
         return path.substr(0, rslash_pos);
-    return "/";
+    else
+        return "/";
 }
 
 static std::string getBaseName(const String & path)

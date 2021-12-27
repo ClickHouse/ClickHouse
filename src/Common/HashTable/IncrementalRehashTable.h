@@ -25,7 +25,7 @@ private:
     std::shared_ptr<US> store[2];
     bool rehashing{false};
     inner_iterator cur; // rehash iterator
-    float max_load_factor = static_cast<float>(MaxLoadFactor100 - 3)/100.0;
+    float max_load_factor = static_cast<float>(MaxLoadFactor100 - 5)/100.0;
     std::size_t count{0};
 public:
     IncrementalRehashTable()
@@ -47,7 +47,7 @@ public:
     void reserve(size_t t)
     {
         store[0]->reserve(t);
-        store[1]->reserve(t * 2);
+        //store[1]->reserve(t * 2);
     }
     template <bool IsConst>
     struct Iter
@@ -108,25 +108,16 @@ public:
         if (cur == store[0]->end())
         {
             rehashing = false;
-            auto betm = timeme();
             store[0].swap(store[1]);
-            auto swaptm = timeme();
-            store[1]->clear();
-            auto clrtm = timeme();
-            store[1]->reserve(store[0]->size() * 2);
-            auto resvtm = timeme();
-            if (resvtm - clrtm > 10 || resvtm - swaptm > 10 || swaptm - betm > 10)
-            {
-                std::cout << "reserve: " << resvtm - clrtm << " swap: " << swaptm - betm << " clear: " << clrtm - swaptm << std::endl;
-            }
-            std::cout << "rehash end, size " << store[0]->size() << ", count " << count << std::endl;
+            store[1].reset(new US());
+            std::cout << "rehash end, size " << store[0]->size() << ", load " << store[0]->load_factor() << std::endl;
         }
     }
     // only insert table 1 if rehashing
     std::pair<iterator,bool> insert(const value_type & t)
     {
         //++count;
-        if (rehashing)
+        if (rehashing) [[unlikely]]
         {
             auto res = store[1]->insert(t);
             if (res.second)
@@ -134,22 +125,25 @@ public:
             moveEntry(100);
             return std::make_pair(iterator(this, res.first, 1), res.second);
         }
-        if (store[0]->load_factor() > max_load_factor)
+        if (store[0]->load_factor() > max_load_factor && count > 1000000) [[unlikely]]
         {
-            std::cout << "rehash begin, size " << store[0]->size() << ", count " << count << std::endl;
+            std::cout << "rehash begin, size " << store[0]->size() << ", load " << store[0]->load_factor() << std::endl;
             rehashing = true;
             cur = store[0]->begin();
-            //store[1]->reserve(store[0]->size()*2);
-            //moveEntry(1);
+            store[1]->reserve(store[0]->size() * 2);
             auto res = store[1]->insert(t);
             if (res.second)
                 ++count;
+            moveEntry(10);
             return std::make_pair(iterator(this, res.first, 1), res.second);
         }
-        auto res = store[0]->insert(t);
-        if (res.second)
-            ++count;
-        return std::make_pair(iterator(this, res.first, 0), res.second);
+        else [[likely]]
+        {
+            auto res = store[0]->insert(t);
+            if (res.second)
+                ++count;
+            return std::make_pair(iterator(this, res.first, 0), res.second);
+        }
     }
     size_type erase(const Key & t)
     {
@@ -273,14 +267,14 @@ public:
 };
 
 template <typename Key, typename Hash = robin_hood::hash<Key>, typename KeyEqual = std::equal_to<Key>,
-          size_t MaxLoadFactor100 = 80>
+          size_t MaxLoadFactor100 = 90>
 using my_unordered_set = IncrementalRehashTable<sizeof(Key) <= sizeof(size_t) * 6 &&
                                         std::is_nothrow_move_constructible<Key>::value &&
                                         std::is_nothrow_move_assignable<Key>::value,
                                     MaxLoadFactor100, Key, void, Hash, KeyEqual>;
 
 template <typename Key, typename T, typename Hash = robin_hood::hash<Key>,
-          typename KeyEqual = std::equal_to<Key>, size_t MaxLoadFactor100 = 80>
+          typename KeyEqual = std::equal_to<Key>, size_t MaxLoadFactor100 = 90>
 using my_unordered_map = IncrementalRehashTable<sizeof(robin_hood::pair<Key, T>) <= sizeof(size_t) * 6 &&
                       std::is_nothrow_move_constructible<robin_hood::pair<Key, T>>::value &&
                       std::is_nothrow_move_assignable<robin_hood::pair<Key, T>>::value,
