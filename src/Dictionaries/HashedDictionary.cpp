@@ -6,12 +6,9 @@
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
 
-#include <Processors/Sources/SourceWithProgress.h>
-
-#include <Dictionaries//DictionarySource.h>
+#include <Dictionaries/DictionaryBlockInputStream.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
-#include <base/logger_useful.h>
 
 namespace
 {
@@ -64,7 +61,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
     const DataTypes & key_types [[maybe_unused]],
     const ColumnPtr & default_values_column) const
 {
-    if (dictionary_key_type == DictionaryKeyType::Complex)
+    if (dictionary_key_type == DictionaryKeyType::complex)
         dict_struct.validateKeyTypes(key_types);
 
     ColumnPtr result;
@@ -166,7 +163,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getColumn(
 template <DictionaryKeyType dictionary_key_type, bool sparse>
 ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::hasKeys(const Columns & key_columns, const DataTypes & key_types) const
 {
-    if (dictionary_key_type == DictionaryKeyType::Complex)
+    if (dictionary_key_type == DictionaryKeyType::complex)
         dict_struct.validateKeyTypes(key_types);
 
     DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
@@ -213,7 +210,7 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::hasKeys(const Co
 template <DictionaryKeyType dictionary_key_type, bool sparse>
 ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchy(ColumnPtr key_column [[maybe_unused]], const DataTypePtr &) const
 {
-    if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
+    if constexpr (dictionary_key_type == DictionaryKeyType::simple)
     {
         PaddedPODArray<UInt64> keys_backup_storage;
         const auto & keys = getColumnVectorData(this, key_column, keys_backup_storage);
@@ -261,7 +258,7 @@ ColumnUInt8::Ptr HashedDictionary<dictionary_key_type, sparse>::isInHierarchy(
     ColumnPtr in_key_column [[maybe_unused]],
     const DataTypePtr &) const
 {
-    if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
+    if constexpr (dictionary_key_type == DictionaryKeyType::simple)
     {
         PaddedPODArray<UInt64> keys_backup_storage;
         const auto & keys = getColumnVectorData(this, key_column, keys_backup_storage);
@@ -312,7 +309,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getDescendants(
     const DataTypePtr &,
     size_t level [[maybe_unused]]) const
 {
-    if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
+    if constexpr (dictionary_key_type == DictionaryKeyType::simple)
     {
         PaddedPODArray<UInt64> keys_backup;
         const auto & keys = getColumnVectorData(this, key_column, keys_backup);
@@ -370,14 +367,11 @@ void HashedDictionary<dictionary_key_type, sparse>::updateData()
 
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        QueryPipeline pipeline(source_ptr->loadUpdatedAll());
+        auto stream = source_ptr->loadUpdatedAll();
+        stream->readPrefix();
 
-        PullingPipelineExecutor executor(pipeline);
-        Block block;
-        while (executor.pull(block))
+        while (const auto block = stream->read())
         {
-            convertToFullIfSparse(block);
-
             /// We are using this to keep saved data if input stream consists of multiple blocks
             if (!update_field_loaded_block)
                 update_field_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());
@@ -389,14 +383,15 @@ void HashedDictionary<dictionary_key_type, sparse>::updateData()
                 saved_column->insertRangeFrom(update_column, 0, update_column.size());
             }
         }
+        stream->readSuffix();
     }
     else
     {
-        auto pipe = source_ptr->loadUpdatedAll();
-        mergeBlockWithPipe<dictionary_key_type>(
+        auto stream = source_ptr->loadUpdatedAll();
+        mergeBlockWithStream<dictionary_key_type>(
             dict_struct.getKeysSize(),
             *update_field_loaded_block,
-            std::move(pipe));
+            stream);
     }
 
     if (update_field_loaded_block)
@@ -565,15 +560,15 @@ void HashedDictionary<dictionary_key_type, sparse>::loadData()
     {
         std::atomic<size_t> new_size = 0;
 
-        QueryPipeline pipeline;
+        BlockInputStreamPtr stream;
         if (configuration.preallocate)
-            pipeline = QueryPipeline(source_ptr->loadAllWithSizeHint(&new_size));
+            stream = source_ptr->loadAllWithSizeHint(&new_size);
         else
-            pipeline = QueryPipeline(source_ptr->loadAll());
+            stream = source_ptr->loadAll();
 
-        PullingPipelineExecutor executor(pipeline);
-        Block block;
-        while (executor.pull(block))
+        stream->readPrefix();
+
+        while (const auto block = stream->read())
         {
             if (configuration.preallocate && new_size)
             {
@@ -589,6 +584,8 @@ void HashedDictionary<dictionary_key_type, sparse>::loadData()
 
             blockToAttributes(block);
         }
+
+        stream->readSuffix();
     }
     else
         updateData();
@@ -645,7 +642,7 @@ void HashedDictionary<dictionary_key_type, sparse>::calculateBytesAllocated()
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
-Pipe HashedDictionary<dictionary_key_type, sparse>::read(const Names & column_names, size_t max_block_size, size_t num_streams) const
+BlockInputStreamPtr HashedDictionary<dictionary_key_type, sparse>::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
     PaddedPODArray<HashedDictionary::KeyType> keys;
 
@@ -674,25 +671,10 @@ Pipe HashedDictionary<dictionary_key_type, sparse>::read(const Names & column_na
         });
     }
 
-    ColumnsWithTypeAndName key_columns;
-
-    if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-        key_columns = {ColumnWithTypeAndName(getColumnFromPODArray(keys), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
+    if constexpr (dictionary_key_type == DictionaryKeyType::simple)
+        return std::make_shared<DictionaryBlockInputStream>(shared_from_this(), max_block_size, std::move(keys), column_names);
     else
-        key_columns = deserializeColumnsWithTypeAndNameFromKeys(dict_struct, keys, 0, keys.size());
-
-    std::shared_ptr<const IDictionary> dictionary = shared_from_this();
-    auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns), max_block_size);
-
-    Pipes pipes;
-
-    for (size_t i = 0; i < num_streams; ++i)
-    {
-        auto source = std::make_shared<DictionarySource>(coordinator);
-        pipes.emplace_back(Pipe(std::move(source)));
-    }
-
-    return Pipe::unitePipes(std::move(pipes));
+        return std::make_shared<DictionaryBlockInputStream>(shared_from_this(), max_block_size, keys, column_names);
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
@@ -726,10 +708,10 @@ void HashedDictionary<dictionary_key_type, sparse>::getAttributeContainer(size_t
     });
 }
 
-template class HashedDictionary<DictionaryKeyType::Simple, true>;
-template class HashedDictionary<DictionaryKeyType::Simple, false>;
-template class HashedDictionary<DictionaryKeyType::Complex, true>;
-template class HashedDictionary<DictionaryKeyType::Complex, false>;
+template class HashedDictionary<DictionaryKeyType::simple, true>;
+template class HashedDictionary<DictionaryKeyType::simple, false>;
+template class HashedDictionary<DictionaryKeyType::complex, true>;
+template class HashedDictionary<DictionaryKeyType::complex, false>;
 
 void registerDictionaryHashed(DictionaryFactory & factory)
 {
@@ -741,9 +723,9 @@ void registerDictionaryHashed(DictionaryFactory & factory)
                              DictionaryKeyType dictionary_key_type,
                              bool sparse) -> DictionaryPtr
     {
-        if (dictionary_key_type == DictionaryKeyType::Simple && dict_struct.key)
+        if (dictionary_key_type == DictionaryKeyType::simple && dict_struct.key)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is not supported for simple key hashed dictionary");
-        else if (dictionary_key_type == DictionaryKeyType::Complex && dict_struct.id)
+        else if (dictionary_key_type == DictionaryKeyType::complex && dict_struct.id)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is not supported for complex key hashed dictionary");
 
         if (dict_struct.range_min || dict_struct.range_max)
@@ -758,7 +740,7 @@ void registerDictionaryHashed(DictionaryFactory & factory)
 
         std::string dictionary_layout_name;
 
-        if (dictionary_key_type == DictionaryKeyType::Simple)
+        if (dictionary_key_type == DictionaryKeyType::simple)
             dictionary_layout_name = "hashed";
         else
             dictionary_layout_name = "complex_key_hashed";
@@ -771,32 +753,32 @@ void registerDictionaryHashed(DictionaryFactory & factory)
 
         HashedDictionaryStorageConfiguration configuration{preallocate, require_nonempty, dict_lifetime};
 
-        if (dictionary_key_type == DictionaryKeyType::Simple)
+        if (dictionary_key_type == DictionaryKeyType::simple)
         {
             if (sparse)
-                return std::make_unique<HashedDictionary<DictionaryKeyType::Simple, true>>(dict_id, dict_struct, std::move(source_ptr), configuration);
+                return std::make_unique<HashedDictionary<DictionaryKeyType::simple, true>>(dict_id, dict_struct, std::move(source_ptr), configuration);
             else
-                return std::make_unique<HashedDictionary<DictionaryKeyType::Simple, false>>(dict_id, dict_struct, std::move(source_ptr), configuration);
+                return std::make_unique<HashedDictionary<DictionaryKeyType::simple, false>>(dict_id, dict_struct, std::move(source_ptr), configuration);
         }
         else
         {
             if (sparse)
-                return std::make_unique<HashedDictionary<DictionaryKeyType::Complex, true>>(dict_id, dict_struct, std::move(source_ptr), configuration);
+                return std::make_unique<HashedDictionary<DictionaryKeyType::complex, true>>(dict_id, dict_struct, std::move(source_ptr), configuration);
             else
-                return std::make_unique<HashedDictionary<DictionaryKeyType::Complex, false>>(dict_id, dict_struct, std::move(source_ptr), configuration);
+                return std::make_unique<HashedDictionary<DictionaryKeyType::complex, false>>(dict_id, dict_struct, std::move(source_ptr), configuration);
         }
     };
 
     using namespace std::placeholders;
 
     factory.registerLayout("hashed",
-        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr /* global_context */, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::Simple, /* sparse = */ false); }, false);
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr /* context */, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::simple, /* sparse = */ false); }, false);
     factory.registerLayout("sparse_hashed",
-        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr /* global_context */, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::Simple, /* sparse = */ true); }, false);
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr /* context */, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::simple, /* sparse = */ true); }, false);
     factory.registerLayout("complex_key_hashed",
-        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr /* global_context */, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::Complex, /* sparse = */ false); }, true);
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr /* context */, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::complex, /* sparse = */ false); }, true);
     factory.registerLayout("complex_key_sparse_hashed",
-        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr /* global_context */, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::Complex, /* sparse = */ true); }, true);
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr /* context */, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::complex, /* sparse = */ true); }, true);
 
 }
 

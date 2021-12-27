@@ -72,12 +72,12 @@ public:
         set.merge(this->data(rhs).value);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         this->data(place).value.write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version  */, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
     {
         auto & set = this->data(place).value;
         set.resize(reserved);
@@ -132,8 +132,8 @@ private:
 
 public:
     AggregateFunctionTopKGeneric(
-        UInt64 threshold_, UInt64 load_factor, const DataTypes & argument_types_, const Array & params)
-        : IAggregateFunctionDataHelper<AggregateFunctionTopKGenericData, AggregateFunctionTopKGeneric<is_plain_column, is_weighted>>(argument_types_, params)
+        UInt64 threshold_, UInt64 load_factor, const DataTypePtr & input_data_type_, const Array & params)
+        : IAggregateFunctionDataHelper<AggregateFunctionTopKGenericData, AggregateFunctionTopKGeneric<is_plain_column, is_weighted>>({input_data_type_}, params)
         , threshold(threshold_), reserved(load_factor * threshold), input_data_type(this->argument_types[0]) {}
 
     String getName() const override { return is_weighted ? "topKWeighted" : "topK"; }
@@ -148,12 +148,12 @@ public:
         return true;
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         this->data(place).value.write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
     {
         auto & set = this->data(place).value;
         set.clear();

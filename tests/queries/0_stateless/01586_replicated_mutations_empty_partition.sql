@@ -1,5 +1,3 @@
--- Tags: replica
-
 DROP TABLE IF EXISTS replicated_mutations_empty_partitions;
 
 CREATE TABLE replicated_mutations_empty_partitions

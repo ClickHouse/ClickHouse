@@ -1,18 +1,16 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
 
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnNullable.h>
+#include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Common/FieldVisitorConvertToNumber.h>
-#include <Columns/MaskOperations.h>
 #include <Common/typeid_cast.h>
-#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Common/FieldVisitors.h>
 
 #include <algorithm>
 
@@ -509,109 +507,10 @@ DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTyp
             : result_type;
 }
 
-template <bool inverted>
-static void applyTernaryLogicImpl(const IColumn::Filter & mask, IColumn::Filter & null_bytemap)
-{
-    for (size_t i = 0; i != mask.size(); ++i)
-    {
-        UInt8 value = mask[i];
-        if constexpr (inverted)
-            value = !value;
-
-        if (null_bytemap[i] && value)
-            null_bytemap[i] = 0;
-    }
-}
-
-template <typename Name>
-static void applyTernaryLogic(const IColumn::Filter & mask, IColumn::Filter & null_bytemap)
-{
-    if (Name::name == NameAnd::name)
-        applyTernaryLogicImpl<true>(mask, null_bytemap);
-    else if (Name::name == NameOr::name)
-        applyTernaryLogicImpl<false>(mask, null_bytemap);
-}
-
-template <typename Impl, typename Name>
-ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const
-{
-    if (Name::name != NameAnd::name && Name::name != NameOr::name)
-        throw Exception("Function " + getName() + " doesn't support short circuit execution", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-    /// Let's denote x_i' = maskedExecute(x_i, mask).
-    /// 1) AND(x_0, x_1, x_2, ..., x_n)
-    /// We will support mask_i = x_0 & x_1 & ... & x_i.
-    /// Base:
-    /// mask_0 is 1 everywhere, x_0' = x_0.
-    /// Iteration:
-    /// mask_i = extractMask(mask_{i - 1}, x_{i - 1}')
-    /// x_i' = maskedExecute(x_i, mask)
-    /// Also we will treat NULL as 1 if x_i' is Nullable
-    /// to support ternary logic.
-    /// The result is mask_n.
-    ///
-    /// 1) OR(x_0, x_1, x_2, ..., x_n)
-    /// We will support mask_i = !x_0 & !x_1 & ... & !x_i.
-    /// mask_0 is 1 everywhere, x_0' = x_0.
-    /// mask = extractMask(mask, !x_{i - 1}')
-    /// x_i' = maskedExecute(x_i, mask)
-    /// Also we will treat NULL as 0 if x_i' is Nullable
-    /// to support ternary logic.
-    /// The result is !mask_n.
-
-    bool inverted = Name::name != NameAnd::name;
-    UInt8 null_value = UInt8(Name::name == NameAnd::name);
-    IColumn::Filter mask(arguments[0].column->size(), 1);
-
-    /// If result is nullable, we need to create null bytemap of the resulting column.
-    /// We will fill it while extracting mask from arguments.
-    std::unique_ptr<IColumn::Filter> nulls;
-    if (result_type->isNullable())
-        nulls = std::make_unique<IColumn::Filter>(arguments[0].column->size(), 0);
-
-    MaskInfo mask_info;
-    for (size_t i = 1; i <= arguments.size(); ++i)
-    {
-        if (inverted)
-            mask_info = extractInvertedMask(mask, arguments[i - 1].column, nulls.get(), null_value);
-        else
-            mask_info = extractMask(mask, arguments[i - 1].column, nulls.get(), null_value);
-
-        /// If mask doesn't have ones, we don't need to execute the rest arguments,
-        /// because the result won't change.
-        if (!mask_info.has_ones || i == arguments.size())
-            break;
-
-        maskedExecute(arguments[i], mask, mask_info);
-    }
-    /// For OR function we need to inverse mask to get the resulting column.
-    if (inverted)
-        inverseMask(mask, mask_info);
-
-    if (nulls)
-        applyTernaryLogic<Name>(mask, *nulls);
-
-    MutableColumnPtr res = ColumnUInt8::create();
-    typeid_cast<ColumnUInt8 *>(res.get())->getData() = std::move(mask);
-
-    if (!nulls)
-        return res;
-
-    MutableColumnPtr bytemap = ColumnUInt8::create();
-    typeid_cast<ColumnUInt8 *>(bytemap.get())->getData() = std::move(*nulls);
-    return ColumnNullable::create(std::move(res), std::move(bytemap));
-}
-
 template <typename Impl, typename Name>
 ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
-    const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
-    ColumnsWithTypeAndName arguments = std::move(args);
-
-    /// Special implementation for short-circuit arguments.
-    if (checkShortCircuitArguments(arguments) != -1)
-        return executeShortCircuit(arguments, result_type);
-
     ColumnRawPtrs args_in;
     for (const auto & arg_index : arguments)
         args_in.push_back(arg_index.column.get());

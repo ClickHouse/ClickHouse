@@ -195,14 +195,16 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
         throw Exception("Cancelled moving parts.", ErrorCodes::ABORTED);
 
     auto settings = data->getSettings();
-    auto part = moving_part.part;
-    auto disk = moving_part.reserved_space->getDisk();
-    LOG_DEBUG(log, "Cloning part {} from {} to {}", part->name, part->volume->getDisk()->getName(), disk->getName());
 
+    auto part = moving_part.part;
+    LOG_TRACE(log, "Cloning part {}", part->name);
+
+    auto disk = moving_part.reserved_space->getDisk();
     const String directory_to_move = "moving";
-    if (disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication)
+    if (settings->allow_remote_fs_zero_copy_replication)
     {
-        /// Try zero-copy replication and fallback to default copy if it's not possible
+        /// Try to fetch part from S3 without copy and fallback to default copy
+        /// if it's not possible
         moving_part.part->assertOnDisk();
         String path_to_clone = fs::path(data->getRelativeDataPath()) / directory_to_move / "";
         String relative_path = part->relative_path;
@@ -228,7 +230,6 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
     LOG_TRACE(log, "Part {} was cloned to {}", part->name, cloned_part->getFullPath());
 
     cloned_part->loadColumnsChecksumsIndexes(true, true);
-    cloned_part->modification_time = disk->getLastModified(cloned_part->getFullRelativePath()).epochTime();
     return cloned_part;
 
 }

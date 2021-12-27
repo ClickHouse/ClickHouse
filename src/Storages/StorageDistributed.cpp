@@ -4,13 +4,13 @@
 
 #include <Disks/IDisk.h>
 
-#include <QueryPipeline/RemoteQueryExecutor.h>
+#include <DataStreams/RemoteBlockInputStream.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 
-#include <Storages/Distributed/DistributedSink.h>
+#include <Storages/Distributed/DistributedBlockOutputStream.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/AlterCommands.h>
 
@@ -26,17 +26,15 @@
 
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/IAST.h>
+#include <Parsers/queryToString.h>
 
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -55,13 +53,12 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Functions/IFunction.h>
 
-#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sources/NullSource.h>
-#include <Processors/Sources/RemoteSource.h>
-#include <Processors/Sinks/EmptySink.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/NullSink.h>
 
 #include <Core/Field.h>
 #include <Core/Settings.h>
@@ -110,7 +107,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INFINITE_LOOP;
-    extern const int ILLEGAL_FINAL;
     extern const int TYPE_MISMATCH;
     extern const int TOO_MANY_ROWS;
     extern const int UNABLE_TO_SKIP_UNUSED_SHARDS;
@@ -270,11 +266,91 @@ void replaceConstantExpressions(
     visitor.visit(node);
 }
 
+/// This is the implementation of optimize_distributed_group_by_sharding_key.
+/// It returns up to which stage the query can be processed on a shard, which
+/// is one of the following:
+/// - QueryProcessingStage::Complete
+/// - QueryProcessingStage::WithMergeableStateAfterAggregation
+/// - QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit
+/// - none (in this case regular WithMergeableState should be used)
+std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, bool extremes, const Names & sharding_key_columns)
+{
+    const auto & select = query_info.query->as<ASTSelectQuery &>();
+
+    auto sharding_block_has = [&](const auto & exprs) -> bool
+    {
+        std::unordered_set<std::string> expr_columns;
+        for (auto & expr : exprs)
+        {
+            auto id = expr->template as<ASTIdentifier>();
+            if (!id)
+                continue;
+            expr_columns.emplace(id->name());
+        }
+
+        for (const auto & column : sharding_key_columns)
+        {
+            if (!expr_columns.contains(column))
+                return false;
+        }
+
+        return true;
+    };
+
+    // GROUP BY qualifiers
+    // - TODO: WITH TOTALS can be implemented
+    // - TODO: WITH ROLLUP can be implemented (I guess)
+    if (select.group_by_with_totals || select.group_by_with_rollup || select.group_by_with_cube)
+        return {};
+
+    // Window functions are not supported.
+    if (query_info.has_window)
+        return {};
+
+    // TODO: extremes support can be implemented
+    if (extremes)
+        return {};
+
+    // DISTINCT
+    if (select.distinct)
+    {
+        if (!sharding_block_has(select.select()->children))
+            return {};
+    }
+
+    // GROUP BY
+    const ASTPtr group_by = select.groupBy();
+    if (!group_by)
+    {
+        if (!select.distinct)
+            return {};
+    }
+    else
+    {
+        if (!sharding_block_has(group_by->children))
+            return {};
+    }
+
+    // ORDER BY
+    const ASTPtr order_by = select.orderBy();
+    if (order_by)
+        return QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+
+    // LIMIT BY
+    // LIMIT
+    // OFFSET
+    if (select.limitBy() || select.limitLength() || select.limitOffset())
+        return QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+
+    // Only simple SELECT FROM GROUP BY sharding_key can use Complete state.
+    return QueryProcessingStage::Complete;
+}
+
 size_t getClusterQueriedNodes(const Settings & settings, const ClusterPtr & cluster)
 {
     size_t num_local_shards = cluster->getLocalShardCount();
     size_t num_remote_shards = cluster->getRemoteShardCount();
-    return (num_remote_shards + num_local_shards) * settings.max_parallel_replicas;
+    return (num_remote_shards * settings.max_parallel_replicas) + num_local_shards;
 }
 
 }
@@ -406,22 +482,17 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     ClusterPtr cluster = getCluster();
     query_info.cluster = cluster;
 
-    size_t nodes = getClusterQueriedNodes(settings, cluster);
-
     /// Always calculate optimized cluster here, to avoid conditions during read()
     /// (Anyway it will be calculated in the read())
-    if (nodes > 1 && settings.optimize_skip_unused_shards)
+    if (getClusterQueriedNodes(settings, cluster) > 1 && settings.optimize_skip_unused_shards)
     {
         ClusterPtr optimized_cluster = getOptimizedCluster(local_context, metadata_snapshot, query_info.query);
         if (optimized_cluster)
         {
             LOG_DEBUG(log, "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): {}",
                     makeFormattedListOfShards(optimized_cluster));
-
             cluster = optimized_cluster;
             query_info.optimized_cluster = cluster;
-
-            nodes = getClusterQueriedNodes(settings, cluster);
         }
         else
         {
@@ -443,11 +514,12 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         {
             /// NOTE: distributed_group_by_no_merge=1 does not respect distributed_push_down_limit
             /// (since in this case queries processed separately and the initiator is just a proxy in this case).
-            if (to_stage != QueryProcessingStage::Complete)
-                throw Exception("Queries with distributed_group_by_no_merge=1 should be processed to Complete stage", ErrorCodes::LOGICAL_ERROR);
             return QueryProcessingStage::Complete;
         }
     }
+
+    if (settings.distributed_push_down_limit)
+        return QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 
     /// Nested distributed query cannot return Complete stage,
     /// since the parent query need to aggregate the results after.
@@ -456,113 +528,23 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 
     /// If there is only one node, the query can be fully processed by the
     /// shard, initiator will work as a proxy only.
-    if (nodes == 1)
-    {
-        /// In case the query was processed to
-        /// WithMergeableStateAfterAggregation/WithMergeableStateAfterAggregationAndLimit
-        /// (which are greater the Complete stage)
-        /// we cannot return Complete (will break aliases and similar),
-        /// relevant for Distributed over Distributed
-        return std::max(to_stage, QueryProcessingStage::Complete);
-    }
-    else if (nodes == 0)
-    {
-        /// In case of 0 shards, the query should be processed fully on the initiator,
-        /// since we need to apply aggregations.
-        /// That's why we need to return FetchColumns.
-        return QueryProcessingStage::FetchColumns;
-    }
+    if (getClusterQueriedNodes(settings, cluster) == 1)
+        return QueryProcessingStage::Complete;
 
-    auto optimized_stage = getOptimizedQueryProcessingStage(query_info, settings);
-    if (optimized_stage)
+    if (settings.optimize_skip_unused_shards &&
+        settings.optimize_distributed_group_by_sharding_key &&
+        has_sharding_key &&
+        (settings.allow_nondeterministic_optimize_skip_unused_shards || sharding_key_is_deterministic))
     {
-        if (*optimized_stage == QueryProcessingStage::Complete)
-            return std::min(to_stage, *optimized_stage);
-        return *optimized_stage;
+        auto stage = getOptimizedQueryProcessingStage(query_info, settings.extremes, sharding_key_expr->getRequiredColumns());
+        if (stage)
+        {
+            LOG_DEBUG(log, "Force processing stage to {}", QueryProcessingStage::toString(*stage));
+            return *stage;
+        }
     }
 
     return QueryProcessingStage::WithMergeableState;
-}
-
-std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, const Settings & settings) const
-{
-    bool optimize_sharding_key_aggregation =
-        settings.optimize_skip_unused_shards &&
-        settings.optimize_distributed_group_by_sharding_key &&
-        has_sharding_key &&
-        (settings.allow_nondeterministic_optimize_skip_unused_shards || sharding_key_is_deterministic);
-
-    QueryProcessingStage::Enum default_stage = QueryProcessingStage::WithMergeableStateAfterAggregation;
-    if (settings.distributed_push_down_limit)
-        default_stage = QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
-
-    const auto & select = query_info.query->as<ASTSelectQuery &>();
-
-    auto expr_contains_sharding_key = [&](const auto & exprs) -> bool
-    {
-        std::unordered_set<std::string> expr_columns;
-        for (auto & expr : exprs)
-        {
-            auto id = expr->template as<ASTIdentifier>();
-            if (!id)
-                continue;
-            expr_columns.emplace(id->name());
-        }
-
-        for (const auto & column : sharding_key_expr->getRequiredColumns())
-        {
-            if (!expr_columns.contains(column))
-                return false;
-        }
-
-        return true;
-    };
-
-    // GROUP BY qualifiers
-    // - TODO: WITH TOTALS can be implemented
-    // - TODO: WITH ROLLUP can be implemented (I guess)
-    if (select.group_by_with_totals || select.group_by_with_rollup || select.group_by_with_cube)
-        return {};
-    // Window functions are not supported.
-    if (query_info.has_window)
-        return {};
-    // TODO: extremes support can be implemented
-    if (settings.extremes)
-        return {};
-
-    // DISTINCT
-    if (select.distinct)
-    {
-        if (!optimize_sharding_key_aggregation || !expr_contains_sharding_key(select.select()->children))
-            return {};
-    }
-
-    // GROUP BY
-    const ASTPtr group_by = select.groupBy();
-    if (!query_info.syntax_analyzer_result->aggregates.empty() || group_by)
-    {
-        if (!optimize_sharding_key_aggregation || !group_by || !expr_contains_sharding_key(group_by->children))
-            return {};
-    }
-
-    // LIMIT BY
-    if (const ASTPtr limit_by = select.limitBy())
-    {
-        if (!optimize_sharding_key_aggregation || !expr_contains_sharding_key(limit_by->children))
-            return {};
-    }
-
-    // ORDER BY
-    if (const ASTPtr order_by = select.orderBy())
-        return default_stage;
-
-    // LIMIT
-    // OFFSET
-    if (select.limitLength() || select.limitOffset())
-        return default_stage;
-
-    // Only simple SELECT FROM GROUP BY sharding_key can use Complete state.
-    return QueryProcessingStage::Complete;
 }
 
 Pipe StorageDistributed::read(
@@ -591,10 +573,6 @@ void StorageDistributed::read(
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    const auto * select_query = query_info.query->as<ASTSelectQuery>();
-    if (select_query->final() && local_context->getSettingsRef().allow_experimental_parallel_reading_from_replicas)
-        throw Exception(ErrorCodes::ILLEGAL_FINAL, "Final modifier is not allowed together with parallel reading from replicas feature");
-
     const auto & modified_query_ast = rewriteSelectQuery(
         query_info.query, remote_database, remote_table, remote_table_function_ptr);
 
@@ -612,25 +590,25 @@ void StorageDistributed::read(
         return;
     }
 
+    const Scalars & scalars = local_context->hasQueryContext() ? local_context->getQueryContext()->getScalars() : Scalars{};
+
     bool has_virtual_shard_num_column = std::find(column_names.begin(), column_names.end(), "_shard_num") != column_names.end();
     if (has_virtual_shard_num_column && !isVirtualColumn("_shard_num", metadata_snapshot))
         has_virtual_shard_num_column = false;
 
-    StorageID main_table = StorageID::createEmpty();
-    if (!remote_table_function_ptr)
-        main_table = StorageID{remote_database, remote_table};
-
-    ClusterProxy::SelectStreamFactory select_stream_factory =
-        ClusterProxy::SelectStreamFactory(
+    ClusterProxy::SelectStreamFactory select_stream_factory = remote_table_function_ptr
+        ? ClusterProxy::SelectStreamFactory(
+            header, processed_stage, remote_table_function_ptr, scalars, has_virtual_shard_num_column, local_context->getExternalTables())
+        : ClusterProxy::SelectStreamFactory(
             header,
             processed_stage,
-            has_virtual_shard_num_column);
+            StorageID{remote_database, remote_table},
+            scalars,
+            has_virtual_shard_num_column,
+            local_context->getExternalTables());
 
-    ClusterProxy::executeQuery(
-        query_plan, header, processed_stage,
-        main_table, remote_table_function_ptr,
-        select_stream_factory, log, modified_query_ast,
-        local_context, query_info,
+    ClusterProxy::executeQuery(query_plan, select_stream_factory, log,
+        modified_query_ast, local_context, query_info,
         sharding_key_expr, sharding_key_column_name,
         query_info.cluster);
 
@@ -640,7 +618,7 @@ void StorageDistributed::read(
 }
 
 
-SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+BlockOutputStreamPtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
     auto cluster = getCluster();
     const auto & settings = local_context->getSettingsRef();
@@ -678,13 +656,13 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
         columns_to_send = metadata_snapshot->getSampleBlockNonMaterialized().getNames();
 
     /// DistributedBlockOutputStream will not own cluster, but will own ConnectionPools of the cluster
-    return std::make_shared<DistributedSink>(
+    return std::make_shared<DistributedBlockOutputStream>(
         local_context, *this, metadata_snapshot, cluster, insert_sync, timeout,
         StorageID{remote_database, remote_table}, columns_to_send);
 }
 
 
-QueryPipelineBuilderPtr StorageDistributed::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)
+QueryPipelinePtr StorageDistributed::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)
 {
     const Settings & settings = local_context->getSettingsRef();
     std::shared_ptr<StorageDistributed> storage_src;
@@ -728,25 +706,16 @@ QueryPipelineBuilderPtr StorageDistributed::distributedWrite(const ASTInsertQuer
     const auto & cluster = getCluster();
     const auto & shards_info = cluster->getShardsInfo();
 
-    std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines;
+    std::vector<std::unique_ptr<QueryPipeline>> pipelines;
 
-    String new_query_str;
-    {
-        WriteBufferFromOwnString buf;
-        IAST::FormatSettings ast_format_settings(buf, /*one_line*/ true);
-        ast_format_settings.always_quote_identifiers = true;
-        new_query->IAST::format(ast_format_settings);
-        new_query_str = buf.str();
-    }
-
+    String new_query_str = queryToString(new_query);
     for (size_t shard_index : collections::range(0, shards_info.size()))
     {
         const auto & shard_info = shards_info[shard_index];
         if (shard_info.isLocal())
         {
             InterpreterInsertQuery interpreter(new_query, local_context);
-            pipelines.emplace_back(std::make_unique<QueryPipelineBuilder>());
-            pipelines.back()->init(interpreter.execute().pipeline);
+            pipelines.emplace_back(std::make_unique<QueryPipeline>(interpreter.execute().pipeline));
         }
         else
         {
@@ -757,18 +726,17 @@ QueryPipelineBuilderPtr StorageDistributed::distributedWrite(const ASTInsertQuer
                     "Expected exactly one connection for shard " + toString(shard_info.shard_num), ErrorCodes::LOGICAL_ERROR);
 
             ///  INSERT SELECT query returns empty block
-            auto remote_query_executor
-                = std::make_shared<RemoteQueryExecutor>(shard_info.pool, std::move(connections), new_query_str, Block{}, local_context);
-            pipelines.emplace_back(std::make_unique<QueryPipelineBuilder>());
-            pipelines.back()->init(Pipe(std::make_shared<RemoteSource>(remote_query_executor, false, settings.async_socket_for_remote)));
-            pipelines.back()->setSinks([](const Block & header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
+            auto in_stream = std::make_shared<RemoteBlockInputStream>(std::move(connections), new_query_str, Block{}, local_context);
+            pipelines.emplace_back(std::make_unique<QueryPipeline>());
+            pipelines.back()->init(Pipe(std::make_shared<SourceFromInputStream>(std::move(in_stream))));
+            pipelines.back()->setSinks([](const Block & header, QueryPipeline::StreamType) -> ProcessorPtr
             {
                 return std::make_shared<EmptySink>(header);
             });
         }
     }
 
-    return std::make_unique<QueryPipelineBuilder>(QueryPipelineBuilder::unitePipelines(std::move(pipelines)));
+    return std::make_unique<QueryPipeline>(QueryPipeline::unitePipelines(std::move(pipelines)));
 }
 
 
@@ -777,13 +745,14 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
     auto name_deps = getDependentViewsByColumn(local_context);
     for (const auto & command : commands)
     {
-        if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
-            && command.type != AlterCommand::Type::DROP_COLUMN && command.type != AlterCommand::Type::COMMENT_COLUMN
-            && command.type != AlterCommand::Type::RENAME_COLUMN && command.type != AlterCommand::Type::COMMENT_TABLE)
+        if (command.type != AlterCommand::Type::ADD_COLUMN
+            && command.type != AlterCommand::Type::MODIFY_COLUMN
+            && command.type != AlterCommand::Type::DROP_COLUMN
+            && command.type != AlterCommand::Type::COMMENT_COLUMN
+            && command.type != AlterCommand::Type::RENAME_COLUMN)
 
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
-                command.type, getName());
-
+            throw Exception("Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
+                ErrorCodes::NOT_IMPLEMENTED);
         if (command.type == AlterCommand::DROP_COLUMN && !command.clear)
         {
             const auto & deps_mv = name_deps[command.column_name];
@@ -798,7 +767,7 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
     }
 }
 
-void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &)
+void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_context, TableLockHolder &)
 {
     auto table_id = getStorageID();
 
@@ -1152,18 +1121,6 @@ ActionLock StorageDistributed::getActionLock(StorageActionBlockType type)
     return {};
 }
 
-void StorageDistributed::flush()
-{
-    try
-    {
-        flushClusterNodesAllData(getContext());
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Cannot flush");
-    }
-}
-
 void StorageDistributed::flushClusterNodesAllData(ContextPtr local_context)
 {
     /// Sync SYSTEM FLUSH DISTRIBUTED with TRUNCATE
@@ -1319,15 +1276,13 @@ void registerStorageDistributed(StorageFactory & factory)
 
         String cluster_name = getClusterNameAndMakeLiteral(engine_args[0]);
 
-        const ContextPtr & context = args.getContext();
-        const ContextPtr & local_context = args.getLocalContext();
-
-        engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], local_context);
-        engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], local_context);
+        engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.getLocalContext());
+        engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.getLocalContext());
 
         String remote_database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
         String remote_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
 
+        const ContextPtr & local_context = args.getLocalContext();
         const auto & sharding_key = engine_args.size() >= 4 ? engine_args[3] : nullptr;
         String storage_policy = "default";
         if (engine_args.size() >= 5)
@@ -1339,7 +1294,7 @@ void registerStorageDistributed(StorageFactory & factory)
         /// Check that sharding_key exists in the table and has numeric type.
         if (sharding_key)
         {
-            auto sharding_expr = buildShardingKeyExpression(sharding_key, context, args.columns.getAllPhysical(), true);
+            auto sharding_expr = buildShardingKeyExpression(sharding_key, args.getContext(), args.columns.getAllPhysical(), true);
             const Block & block = sharding_expr->getSampleBlock();
 
             if (block.columns() != 1)
@@ -1370,16 +1325,6 @@ void registerStorageDistributed(StorageFactory & factory)
                 "bytes_to_throw_insert cannot be less or equal to bytes_to_delay_insert (since it is handled first)");
         }
 
-        /// Set default values from the distributed_directory_monitor_* global context settings.
-        if (!distributed_settings.monitor_batch_inserts.changed)
-            distributed_settings.monitor_batch_inserts = context->getSettingsRef().distributed_directory_monitor_batch_inserts;
-        if (!distributed_settings.monitor_split_batch_on_failure.changed)
-            distributed_settings.monitor_split_batch_on_failure = context->getSettingsRef().distributed_directory_monitor_split_batch_on_failure;
-        if (!distributed_settings.monitor_sleep_time_ms.changed)
-            distributed_settings.monitor_sleep_time_ms = Poco::Timespan(context->getSettingsRef().distributed_directory_monitor_sleep_time_ms);
-        if (!distributed_settings.monitor_max_sleep_time_ms.changed)
-            distributed_settings.monitor_max_sleep_time_ms = Poco::Timespan(context->getSettingsRef().distributed_directory_monitor_max_sleep_time_ms);
-
         return StorageDistributed::create(
             args.table_id,
             args.columns,
@@ -1388,7 +1333,7 @@ void registerStorageDistributed(StorageFactory & factory)
             remote_database,
             remote_table,
             cluster_name,
-            context,
+            args.getContext(),
             sharding_key,
             storage_policy,
             args.relative_data_path,

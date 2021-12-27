@@ -1,12 +1,11 @@
 #pragma once
 
-#include <base/time.h>
-#include <base/types.h>
-#include <base/defines.h>
+#include <common/defines.h>
+#include <common/time.h>
+#include <common/types.h>
 
 #include <cassert>
 #include <atomic>
-#include <memory>
 
 
 inline UInt64 clock_gettime_ns(clockid_t clock_type = CLOCK_MONOTONIC)
@@ -39,7 +38,7 @@ public:
     /** CLOCK_MONOTONIC works relatively efficient (~15 million calls/sec) and doesn't lead to syscall.
       * Pass CLOCK_MONOTONIC_COARSE, if you need better performance with acceptable cost of several milliseconds of inaccuracy.
       */
-    explicit Stopwatch(clockid_t clock_type_ = CLOCK_MONOTONIC) : clock_type(clock_type_) { start(); }
+    Stopwatch(clockid_t clock_type_ = CLOCK_MONOTONIC) : clock_type(clock_type_) { start(); }
 
     void start()                       { start_ns = nanoseconds(); is_running = true; }
     void stop()                        { stop_ns = nanoseconds(); is_running = false; }
@@ -60,13 +59,11 @@ private:
     UInt64 nanoseconds() const { return clock_gettime_ns_adjusted(start_ns, clock_type); }
 };
 
-using StopwatchUniquePtr = std::unique_ptr<Stopwatch>;
-
 
 class AtomicStopwatch
 {
 public:
-    explicit AtomicStopwatch(clockid_t clock_type_ = CLOCK_MONOTONIC) : clock_type(clock_type_) { restart(); }
+    AtomicStopwatch(clockid_t clock_type_ = CLOCK_MONOTONIC) : clock_type(clock_type_) { restart(); }
 
     void restart()                     { start_ns = nanoseconds(0); }
     UInt64 elapsed() const
@@ -101,11 +98,11 @@ public:
     {
         AtomicStopwatch * parent = nullptr;
 
-        Lock() = default;
+        Lock() {}
 
-        explicit operator bool() const { return parent != nullptr; }
+        operator bool() const { return parent != nullptr; }
 
-        explicit Lock(AtomicStopwatch * parent_) : parent(parent_) {}
+        Lock(AtomicStopwatch * parent_) : parent(parent_) {}
 
         Lock(Lock &&) = default;
 

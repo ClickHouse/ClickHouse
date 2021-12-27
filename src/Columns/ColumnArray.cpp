@@ -8,12 +8,11 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
-#include <Columns/MaskOperations.h>
 
-#include <base/unaligned.h>
-#include <base/sort.h>
+#include <common/unaligned.h>
+#include <common/sort.h>
 
-#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <DataStreams/ColumnGathererStream.h>
 
 #include <Common/Exception.h>
 #include <Common/Arena.h>
@@ -179,13 +178,6 @@ StringRef ColumnArray::getDataAt(size_t n) const
     StringRef last = getData().getDataAtWithTerminatingZero(offset_of_last_elem);
 
     return StringRef(first.data, last.data + last.size - first.data);
-}
-
-
-bool ColumnArray::isDefaultAt(size_t n) const
-{
-    const auto & offsets_data = getOffsets();
-    return offsets_data[n] == offsets_data[static_cast<ssize_t>(n) - 1];
 }
 
 
@@ -393,8 +385,11 @@ bool ColumnArray::hasEqualValues() const
     return hasEqualValuesImpl<ColumnArray>();
 }
 
+namespace
+{
+
 template <bool positive>
-struct ColumnArray::Cmp
+struct Cmp
 {
     const ColumnArray & parent;
     int nan_direction_hint;
@@ -410,13 +405,12 @@ struct ColumnArray::Cmp
             res = parent.compareAtWithCollation(lhs, rhs, parent, nan_direction_hint, *collator);
         else
             res = parent.compareAt(lhs, rhs, parent, nan_direction_hint);
-
-        if constexpr (positive)
-            return res;
-        else
-            return -res;
+        return positive ? res : -res;
     }
 };
+
+}
+
 
 void ColumnArray::reserve(size_t n)
 {
@@ -555,35 +549,6 @@ ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) con
     if (typeid_cast<const ColumnTuple *>(data.get()))      return filterTuple(filt, result_size_hint);
     if (typeid_cast<const ColumnNullable *>(data.get()))   return filterNullable(filt, result_size_hint);
     return filterGeneric(filt, result_size_hint);
-}
-
-void ColumnArray::expand(const IColumn::Filter & mask, bool inverted)
-{
-    auto & offsets_data = getOffsets();
-    if (mask.size() < offsets_data.size())
-        throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
-
-    int index = mask.size() - 1;
-    int from = offsets_data.size() - 1;
-    offsets_data.resize(mask.size());
-    UInt64 last_offset = offsets_data[from];
-    while (index >= 0)
-    {
-        offsets_data[index] = last_offset;
-        if (!!mask[index] ^ inverted)
-        {
-            if (from < 0)
-                throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
-
-            --from;
-            last_offset = offsets_data[from];
-        }
-
-        --index;
-    }
-
-    if (from != -1)
-        throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);
 }
 
 template <typename T>
@@ -768,7 +733,39 @@ ColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_size_hint
 
 ColumnPtr ColumnArray::permute(const Permutation & perm, size_t limit) const
 {
-    return permuteImpl(*this, perm, limit);
+    size_t size = getOffsets().size();
+
+    if (limit == 0)
+        limit = size;
+    else
+        limit = std::min(size, limit);
+
+    if (perm.size() < limit)
+        throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+    if (limit == 0)
+        return ColumnArray::create(data);
+
+    Permutation nested_perm(getOffsets().back());
+
+    auto res = ColumnArray::create(data->cloneEmpty());
+
+    Offsets & res_offsets = res->getOffsets();
+    res_offsets.resize(limit);
+    size_t current_offset = 0;
+
+    for (size_t i = 0; i < limit; ++i)
+    {
+        for (size_t j = 0; j < sizeAt(perm[i]); ++j)
+            nested_perm[current_offset + j] = offsetAt(perm[i]) + j;
+        current_offset += sizeAt(perm[i]);
+        res_offsets[i] = current_offset;
+    }
+
+    if (current_offset != 0)
+        res->data = data->permute(nested_perm, current_offset);
+
+    return res;
 }
 
 ColumnPtr ColumnArray::index(const IColumn & indexes, size_t limit) const
@@ -779,9 +776,8 @@ ColumnPtr ColumnArray::index(const IColumn & indexes, size_t limit) const
 template <typename T>
 ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit) const
 {
-    assert(limit <= indexes.size());
     if (limit == 0)
-        return ColumnArray::create(data->cloneEmpty());
+        return ColumnArray::create(data);
 
     /// Convert indexes to UInt64 in case of overflow.
     auto nested_indexes_column = ColumnUInt64::create();
@@ -829,6 +825,82 @@ void ColumnArray::getPermutationImpl(size_t limit, Permutation & res, Comparator
         std::sort(res.begin(), res.end(), less);
 }
 
+template <typename Comparator>
+void ColumnArray::updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_range, Comparator cmp) const
+{
+    if (equal_range.empty())
+        return;
+
+    if (limit >= size() || limit >= equal_range.back().second)
+        limit = 0;
+
+    size_t number_of_ranges = equal_range.size();
+
+    if (limit)
+        --number_of_ranges;
+
+    auto less = [&cmp](size_t lhs, size_t rhs){ return cmp(lhs, rhs) < 0; };
+
+    EqualRanges new_ranges;
+    for (size_t i = 0; i < number_of_ranges; ++i)
+    {
+        const auto & [first, last] = equal_range[i];
+
+        std::sort(res.begin() + first, res.begin() + last, less);
+        auto new_first = first;
+
+        for (auto j = first + 1; j < last; ++j)
+        {
+            if (cmp(res[new_first], res[j]) != 0)
+            {
+                if (j - new_first > 1)
+                    new_ranges.emplace_back(new_first, j);
+
+                new_first = j;
+            }
+        }
+
+        if (last - new_first > 1)
+            new_ranges.emplace_back(new_first, last);
+    }
+
+    if (limit)
+    {
+        const auto & [first, last] = equal_range.back();
+
+        if (limit < first || limit > last)
+            return;
+
+        /// Since then we are working inside the interval.
+        partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
+        auto new_first = first;
+        for (auto j = first + 1; j < limit; ++j)
+        {
+            if (cmp(res[new_first], res[j]) != 0)
+            {
+                if (j - new_first > 1)
+                    new_ranges.emplace_back(new_first, j);
+
+                new_first = j;
+            }
+        }
+        auto new_last = limit;
+        for (auto j = limit; j < last; ++j)
+        {
+            if (cmp(res[new_first], res[j]) == 0)
+            {
+                std::swap(res[new_last], res[j]);
+                ++new_last;
+            }
+        }
+        if (new_last - new_first > 1)
+        {
+            new_ranges.emplace_back(new_first, new_last);
+        }
+    }
+    equal_range = std::move(new_ranges);
+}
+
 void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
 {
     if (reverse)
@@ -874,16 +946,6 @@ ColumnPtr ColumnArray::compress() const
         {
             return ColumnArray::create(data_compressed->decompress(), offsets_compressed->decompress());
         });
-}
-
-double ColumnArray::getRatioOfDefaultRows(double sample_ratio) const
-{
-    return getRatioOfDefaultRowsImpl<ColumnArray>(sample_ratio);
-}
-
-void ColumnArray::getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const
-{
-    return getIndicesOfNonDefaultRowsImpl<ColumnArray>(indices, from, limit);
 }
 
 

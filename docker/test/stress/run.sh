@@ -1,31 +1,8 @@
 #!/bin/bash
 # shellcheck disable=SC2094
 # shellcheck disable=SC2086
-# shellcheck disable=SC2024
 
 set -x
-
-# Thread Fuzzer allows to check more permutations of possible thread scheduling
-# and find more potential issues.
-
-export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
-export THREAD_FUZZER_SLEEP_PROBABILITY=0.1
-export THREAD_FUZZER_SLEEP_TIME_US=100000
-
-export THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY=1
-export THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY=1
-export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY=1
-export THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY=1
-
-export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY=0.001
-export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY=0.001
-export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY=0.001
-export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY=0.001
-export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US=10000
-export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US=10000
-export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US=10000
-export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US=10000
-
 
 dpkg -i package_folder/clickhouse-common-static_*.deb
 dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
@@ -38,12 +15,6 @@ function configure()
     # install test configs
     /usr/share/clickhouse-test/config/install.sh
 
-    # avoid too slow startup
-    sudo cat /etc/clickhouse-server/config.d/keeper_port.xml | sed "s|<snapshot_distance>100000</snapshot_distance>|<snapshot_distance>10000</snapshot_distance>|" > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
-    sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
-    sudo chown clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
-    sudo chgrp clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
-
     # for clickhouse-server (via service)
     echo "ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_interval_ms=10000'" >> /etc/environment
     # for clickhouse-client
@@ -53,44 +24,12 @@ function configure()
     sudo chown root: /var/lib/clickhouse
 
     # Set more frequent update period of asynchronous metrics to more frequently update information about real memory usage (less chance of OOM).
-    echo "<clickhouse><asynchronous_metrics_update_period_s>1</asynchronous_metrics_update_period_s></clickhouse>" \
+    echo "<yandex><asynchronous_metrics_update_period_s>1</asynchronous_metrics_update_period_s></yandex>" \
         > /etc/clickhouse-server/config.d/asynchronous_metrics_update_period_s.xml
 
-    local total_mem
-    total_mem=$(awk '/MemTotal/ { print $(NF-1) }' /proc/meminfo) # KiB
-    total_mem=$(( total_mem*1024 )) # bytes
     # Set maximum memory usage as half of total memory (less chance of OOM).
-    #
-    # But not via max_server_memory_usage but via max_memory_usage_for_user,
-    # so that we can override this setting and execute service queries, like:
-    # - hung check
-    # - show/drop database
-    # - ...
-    #
-    # So max_memory_usage_for_user will be a soft limit, and
-    # max_server_memory_usage will be hard limit, and queries that should be
-    # executed regardless memory limits will use max_memory_usage_for_user=0,
-    # instead of relying on max_untracked_memory
-    local max_server_mem
-    max_server_mem=$((total_mem*75/100)) # 75%
-    echo "Setting max_server_memory_usage=$max_server_mem"
-    cat > /etc/clickhouse-server/config.d/max_server_memory_usage.xml <<EOL
-<clickhouse>
-    <max_server_memory_usage>${max_server_mem}</max_server_memory_usage>
-</clickhouse>
-EOL
-    local max_users_mem
-    max_users_mem=$((total_mem*50/100)) # 50%
-    echo "Setting max_memory_usage_for_user=$max_users_mem"
-    cat > /etc/clickhouse-server/users.d/max_memory_usage_for_user.xml <<EOL
-<clickhouse>
-    <profiles>
-        <default>
-            <max_memory_usage_for_user>${max_users_mem}</max_memory_usage_for_user>
-        </default>
-    </profiles>
-</clickhouse>
-EOL
+    echo "<yandex><max_server_memory_usage_to_ram_ratio>0.5</max_server_memory_usage_to_ram_ratio></yandex>" \
+        > /etc/clickhouse-server/config.d/max_server_memory_usage_to_ram_ratio.xml
 }
 
 function stop()
@@ -114,49 +53,28 @@ function start()
     counter=0
     until clickhouse-client --query "SELECT 1"
     do
-        if [ "$counter" -gt 240 ]
+        if [ "$counter" -gt 120 ]
         then
             echo "Cannot start clickhouse-server"
             cat /var/log/clickhouse-server/stdout.log
             tail -n1000 /var/log/clickhouse-server/stderr.log
-            tail -n100000 /var/log/clickhouse-server/clickhouse-server.log | grep -F -v -e '<Warning> RaftInstance:' -e '<Information> RaftInstance' | tail -n1000
+            tail -n1000 /var/log/clickhouse-server/clickhouse-server.log
             break
         fi
         # use root to match with current uid
-        clickhouse start --user root >/var/log/clickhouse-server/stdout.log 2>>/var/log/clickhouse-server/stderr.log
+        clickhouse start --user root >/var/log/clickhouse-server/stdout.log 2>/var/log/clickhouse-server/stderr.log
         sleep 0.5
         counter=$((counter + 1))
     done
 
-    # Set follow-fork-mode to parent, because we attach to clickhouse-server, not to watchdog
-    # and clickhouse-server can do fork-exec, for example, to run some bridge.
-    # Do not set nostop noprint for all signals, because some it may cause gdb to hang,
-    # explicitly ignore non-fatal signals that are used by server.
-    # Number of SIGRTMIN can be determined only in runtime.
-    RTMIN=$(kill -l SIGRTMIN)
     echo "
-set follow-fork-mode parent
-handle SIGHUP nostop noprint pass
-handle SIGINT nostop noprint pass
-handle SIGQUIT nostop noprint pass
-handle SIGPIPE nostop noprint pass
-handle SIGTERM nostop noprint pass
-handle SIGUSR1 nostop noprint pass
-handle SIGUSR2 nostop noprint pass
-handle SIG$RTMIN nostop noprint pass
-info signals
+set follow-fork-mode child
+handle all noprint
+handle SIGSEGV stop print
+handle SIGBUS stop print
+handle SIGABRT stop print
 continue
-backtrace full
-info locals
-info registers
-disassemble /s
-up
-info locals
-disassemble /s
-up
-info locals
-disassemble /s
-p \"done\"
+thread apply all backtrace
 detach
 quit
 " > script.gdb
@@ -164,10 +82,7 @@ quit
     # FIXME Hung check may work incorrectly because of attached gdb
     # 1. False positives are possible
     # 2. We cannot attach another gdb to get stacktraces if some queries hung
-    gdb -batch -command script.gdb -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log &
-    sleep 5
-    # gdb will send SIGSTOP, spend some time loading debug info and then send SIGCONT, wait for it (up to send_timeout, 300s)
-    time clickhouse-client --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
+    gdb -batch -command script.gdb -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" >> /test_output/gdb.log &
 }
 
 configure
@@ -175,7 +90,7 @@ configure
 start
 
 # shellcheck disable=SC2086 # No quotes because I want to split it into words.
-/s3downloader --url-prefix "$S3_URL" --dataset-names $DATASETS
+/s3downloader --dataset-names $DATASETS
 chmod 777 -R /var/lib/clickhouse
 clickhouse-client --query "ATTACH DATABASE IF NOT EXISTS datasets ENGINE = Ordinary"
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test"
@@ -203,62 +118,51 @@ clickhouse-client --query "SELECT 'Server successfully started', 'OK'" >> /test_
 [ -f /var/log/clickhouse-server/stderr.log ] || echo -e "Stderr log does not exist\tFAIL"
 
 # Print Fatal log messages to stdout
-zgrep -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.log*
+zgrep -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.log
 
 # Grep logs for sanitizer asserts, crashes and other critical errors
 
 # Sanitizer asserts
-grep -Fa "==================" /var/log/clickhouse-server/stderr.log | grep -v "in query:" >> /test_output/tmp
-grep -Fa "WARNING" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
-zgrep -Fav "ASan doesn't fully support makecontext/swapcontext functions" /test_output/tmp > /dev/null \
+zgrep -Fa "==================" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
+zgrep -Fa "WARNING" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
+zgrep -Fav "ASan doesn't fully support makecontext/swapcontext functions" > /dev/null \
     && echo -e 'Sanitizer assert (in stderr.log)\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No sanitizer asserts\tOK' >> /test_output/test_results.tsv
 rm -f /test_output/tmp
 
 # OOM
-zgrep -Fa " <Fatal> Application: Child process was terminated by signal 9" /var/log/clickhouse-server/clickhouse-server.log* > /dev/null \
+zgrep -Fa " <Fatal> Application: Child process was terminated by signal 9" /var/log/clickhouse-server/clickhouse-server.log > /dev/null \
     && echo -e 'OOM killer (or signal 9) in clickhouse-server.log\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No OOM messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
 
 # Logical errors
-zgrep -Fa "Code: 49, e.displayText() = DB::Exception:" /var/log/clickhouse-server/clickhouse-server.log* > /dev/null \
+zgrep -Fa "Code: 49, e.displayText() = DB::Exception:" /var/log/clickhouse-server/clickhouse-server.log > /dev/null \
     && echo -e 'Logical error thrown (see clickhouse-server.log)\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No logical errors\tOK' >> /test_output/test_results.tsv
 
 # Crash
-zgrep -Fa "########################################" /var/log/clickhouse-server/clickhouse-server.log* > /dev/null \
+zgrep -Fa "########################################" /var/log/clickhouse-server/clickhouse-server.log > /dev/null \
     && echo -e 'Killed by signal (in clickhouse-server.log)\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'Not crashed\tOK' >> /test_output/test_results.tsv
 
 # It also checks for crash without stacktrace (printed by watchdog)
-zgrep -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.log* > /dev/null \
+zgrep -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.log > /dev/null \
     && echo -e 'Fatal message in clickhouse-server.log\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No fatal messages in clickhouse-server.log\tOK' >> /test_output/test_results.tsv
 
 zgrep -Fa "########################################" /test_output/* > /dev/null \
     && echo -e 'Killed by signal (output files)\tFAIL' >> /test_output/test_results.tsv
 
-zgrep -Fa " received signal " /test_output/gdb.log > /dev/null \
-    && echo -e 'Found signal in gdb.log\tFAIL' >> /test_output/test_results.tsv
-
 # Put logs into /test_output/
 for log_file in /var/log/clickhouse-server/clickhouse-server.log*
 do
     pigz < "${log_file}" > /test_output/"$(basename ${log_file})".gz
-    # FIXME: remove once only github actions will be left
-    rm "${log_file}"
 done
 
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 mv /var/log/clickhouse-server/stderr.log /test_output/
-
-# Replace the engine with Ordinary to avoid extra symlinks stuff in artifacts.
-# (so that clickhouse-local --path can read it w/o extra care).
-sed -i -e "s/ATTACH DATABASE _ UUID '[^']*'/ATTACH DATABASE system/" -e "s/Atomic/Ordinary/" /var/lib/clickhouse/metadata/system.sql
-for table in query_log trace_log; do
-    sed -i "s/ATTACH TABLE _ UUID '[^']*'/ATTACH TABLE $table/" /var/lib/clickhouse/metadata/system/${table}.sql
-    tar -chf /test_output/${table}_dump.tar /var/lib/clickhouse/metadata/system.sql /var/lib/clickhouse/metadata/system/${table}.sql /var/lib/clickhouse/data/system/${table} ||:
-done
+tar -chf /test_output/query_log_dump.tar /var/lib/clickhouse/data/system/query_log ||:
+tar -chf /test_output/trace_log_dump.tar /var/lib/clickhouse/data/system/trace_log ||:
 
 # Write check result into check_status.tsv
 clickhouse-local --structure "test String, res String" -q "SELECT 'failure', test FROM table WHERE res != 'OK' order by (lower(test) like '%hung%') LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv

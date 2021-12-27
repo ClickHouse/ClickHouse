@@ -7,89 +7,19 @@ toc_title: "Массивы"
 
 ## empty {#function-empty}
 
-Проверяет, является ли входной массив пустым.
+Возвращает 1 для пустого массива, и 0 для непустого массива.
+Тип результата - UInt8.
+Функция также работает для строк.
 
-**Синтаксис**
-
-``` sql
-empty([x])
-```
-
-Массив считается пустым, если он не содержит ни одного элемента.
-
-!!! note "Примечание"
-    Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT empty(arr) FROM TABLE` преобразуется к запросу `SELECT arr.size0 = 0 FROM TABLE`.
-
-Функция также поддерживает работу с типами [String](string-functions.md#empty) и [UUID](uuid-functions.md#empty).
-
-**Параметры**
-
--   `[x]` — массив на входе функции. [Array](../data-types/array.md).
-
-**Возвращаемое значение**
-
--   Возвращает `1` для пустого массива или `0` — для непустого массива.
-
-Тип: [UInt8](../data-types/int-uint.md).
-
-**Пример**
-
-Запрос:
-
-```sql
-SELECT empty([]);
-```
-
-Ответ:
-
-```text
-┌─empty(array())─┐
-│              1 │
-└────────────────┘
-```
+Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT empty(arr) FROM table` преобразуется к запросу `SELECT arr.size0 = 0 FROM TABLE`.
 
 ## notEmpty {#function-notempty}
 
-Проверяет, является ли входной массив непустым.
+Возвращает 0 для пустого массива, и 1 для непустого массива.
+Тип результата - UInt8.
+Функция также работает для строк.
 
-**Синтаксис**
-
-``` sql
-notEmpty([x])
-```
-
-Массив считается непустым, если он содержит хотя бы один элемент.
-
-!!! note "Примечание"
-    Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT notEmpty(arr) FROM table` преобразуется к запросу `SELECT arr.size0 != 0 FROM TABLE`.
-
-Функция также поддерживает работу с типами [String](string-functions.md#notempty) и [UUID](uuid-functions.md#notempty).
-
-**Параметры**
-
--   `[x]` — массив на входе функции. [Array](../data-types/array.md).
-
-**Возвращаемое значение**
-
--   Возвращает `1` для непустого массива или `0` — для пустого массива.
-
-Тип: [UInt8](../data-types/int-uint.md).
-
-**Пример**
-
-Запрос:
-
-```sql
-SELECT notEmpty([1,2]);
-```
-
-Результат:
-
-```text
-┌─notEmpty([1, 2])─┐
-│                1 │
-└──────────────────┘
-```
+Функцию можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` функция читает только подстолбец [size0](../../sql-reference/data-types/array.md#array-size) вместо чтения и обработки всего столбца массива. Запрос `SELECT notEmpty(arr) FROM table` преобразуется к запросу `SELECT arr.size0 != 0 FROM TABLE`.
 
 ## length {#array_functions-length}
 
@@ -132,15 +62,18 @@ range([start, ] end [, step])
 -   `end` — конец диапазона. Обязательный аргумент. Должен быть больше, чем `start`. Тип: [UInt](../data-types/int-uint.md)
 -   `step` — шаг обхода. Необязательный аргумент. По умолчанию равен `1`. Тип: [UInt](../data-types/int-uint.md)
 
+
 **Возвращаемые значения**
 
 -   массив `UInt` чисел от `start` до `end - 1` с шагом `step`
+
 
 **Особенности реализации**
 
 -   Не поддерживаются отрицательные значения аргументов: `start`, `end`, `step` имеют тип `UInt`.
 
--   Если в результате запроса создаются массивы суммарной длиной больше, чем количество элементов, указанное настройкой [function_range_max_elements_in_block](../../operations/settings/settings.md#settings-function_range_max_elements_in_block), то генерируется исключение.
+-   Если в результате запроса создаются массивы суммарной длиной больше 100 000 000 элементов, то генерируется исключение.
+
 
 **Примеры**
 
@@ -816,7 +749,7 @@ arrayDifference(array)
 
 **Аргументы**
 
--   `array` – [массив](https://clickhouse.com/docs/ru/data_types/array/).
+-   `array` – [массив](https://clickhouse.tech/docs/ru/data_types/array/).
 
 **Возвращаемое значение**
 
@@ -866,7 +799,7 @@ arrayDistinct(array)
 
 **Аргументы**
 
--   `array` – [массив](https://clickhouse.com/docs/ru/data_types/array/).
+-   `array` – [массив](https://clickhouse.tech/docs/ru/data_types/array/).
 
 **Возвращаемое значение**
 
@@ -906,7 +839,7 @@ SELECT arrayEnumerateDense([10, 20, 10, 30])
 
 ## arrayIntersect(arr) {#array-functions-arrayintersect}
 
-Принимает несколько массивов, возвращает массив с элементами, присутствующими во всех исходных массивах.
+Принимает несколько массивов, возвращает массив с элементами, присутствующими во всех исходных массивах. Элементы на выходе следуют в порядке следования в первом массиве.
 
 Пример:
 

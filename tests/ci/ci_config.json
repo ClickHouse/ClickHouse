@@ -1,7 +1,7 @@
 {
     "build_config": [
         {
-            "compiler": "clang-13",
+            "compiler": "clang-11",
             "build-type": "",
             "sanitizer": "",
             "package-type": "deb",
@@ -12,7 +12,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-13",
+            "compiler": "clang-11",
             "build-type": "",
             "sanitizer": "",
             "package-type": "performance",
@@ -22,7 +22,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "gcc-11",
+            "compiler": "gcc-10",
             "build-type": "",
             "sanitizer": "",
             "package-type": "binary",
@@ -32,7 +32,7 @@
             "with_coverage": false
         },
         {
-            "compiler": "clang-13",
+            "compiler": "clang-11",
             "build-type": "",
             "sanitizer": "",
             "package-type": "binary",
@@ -45,7 +45,7 @@
     "tests_config": {
         "Testflows check": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -57,7 +57,7 @@
         },
         "Release": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -69,7 +69,7 @@
         },
         "ClickHouse Keeper Jepsen": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "binary",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",

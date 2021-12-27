@@ -4,6 +4,7 @@
 #include <memory>
 #include <variant>
 #include <optional>
+
 #include <sparsehash/sparse_hash_map>
 
 #include <Common/HashTable/HashMap.h>
@@ -34,7 +35,8 @@ template <DictionaryKeyType dictionary_key_type, bool sparse>
 class HashedDictionary final : public IDictionary
 {
 public:
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, UInt64, StringRef>;
+    static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by hashed dictionary");
 
     HashedDictionary(
         const StorageID & dict_id_,
@@ -45,11 +47,11 @@ public:
 
     std::string getTypeName() const override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::Simple && sparse)
+        if constexpr (dictionary_key_type == DictionaryKeyType::simple && sparse)
             return "SparseHashed";
-        else if constexpr (dictionary_key_type == DictionaryKeyType::Simple && !sparse)
+        else if constexpr (dictionary_key_type == DictionaryKeyType::simple && !sparse)
             return "Hashed";
-        else if constexpr (dictionary_key_type == DictionaryKeyType::Complex && sparse)
+        else if constexpr (dictionary_key_type == DictionaryKeyType::complex && sparse)
             return "ComplexKeySparseHashed";
         else
             return "ComplexKeyHashed";
@@ -78,7 +80,7 @@ public:
         return std::make_shared<HashedDictionary<dictionary_key_type, sparse>>(getDictionaryID(), dict_struct, source_ptr->clone(), configuration, update_field_loaded_block);
     }
 
-    DictionarySourcePtr getSource() const override { return source_ptr; }
+    const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
     const DictionaryLifetime & getLifetime() const override { return configuration.lifetime; }
 
@@ -100,7 +102,7 @@ public:
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
-    bool hasHierarchy() const override { return dictionary_key_type == DictionaryKeyType::Simple && dict_struct.hierarchical_attribute_index.has_value(); }
+    bool hasHierarchy() const override { return dictionary_key_type == DictionaryKeyType::simple && dict_struct.hierarchical_attribute_index.has_value(); }
 
     ColumnPtr getHierarchy(ColumnPtr key_column, const DataTypePtr & hierarchy_attribute_type) const override;
 
@@ -114,31 +116,28 @@ public:
         const DataTypePtr & key_type,
         size_t level) const override;
 
-    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
     template <typename Value>
     using CollectionTypeNonSparse = std::conditional_t<
-        dictionary_key_type == DictionaryKeyType::Simple,
+        dictionary_key_type == DictionaryKeyType::simple,
         HashMap<UInt64, Value>,
         HashMapWithSavedHash<StringRef, Value, DefaultHash<StringRef>>>;
 
-    /// Here we use sparse_hash_map with DefaultHash<> for the following reasons:
-    ///
-    /// - DefaultHash<> is used for HashMap
-    /// - DefaultHash<> (from HashTable/Hash.h> works better then std::hash<>
-    ///   in case of sequential set of keys, but with random access to this set, i.e.
-    ///
-    ///       SELECT number FROM numbers(3000000) ORDER BY rand()
-    ///
-    ///   And even though std::hash<> works better in some other cases,
-    ///   DefaultHash<> is preferred since the difference for this particular
-    ///   case is significant, i.e. it can be 10x+.
+#if !defined(ARCADIA_BUILD)
+    template <typename Key, typename Value>
+    using SparseHashMap = google::sparse_hash_map<Key, Value, DefaultHash<Key>>;
+#else
+        template <typename Key, typename Value>
+        using SparseHashMap = google::sparsehash::sparse_hash_map<Key, Value, DefaultHash<Key>>;
+#endif
+
     template <typename Value>
     using CollectionTypeSparse = std::conditional_t<
-        dictionary_key_type == DictionaryKeyType::Simple,
-        google::sparse_hash_map<UInt64, Value, DefaultHash<KeyType>>,
-        google::sparse_hash_map<StringRef, Value, DefaultHash<KeyType>>>;
+        dictionary_key_type == DictionaryKeyType::simple,
+        SparseHashMap<UInt64, Value>,
+        SparseHashMap<StringRef, Value>>;
 
     template <typename Value>
     using CollectionType = std::conditional_t<sparse, CollectionTypeSparse<Value>, CollectionTypeNonSparse<Value>>;
@@ -220,10 +219,10 @@ private:
     Arena complex_key_arena;
 };
 
-extern template class HashedDictionary<DictionaryKeyType::Simple, false>;
-extern template class HashedDictionary<DictionaryKeyType::Simple, true>;
+extern template class HashedDictionary<DictionaryKeyType::simple, false>;
+extern template class HashedDictionary<DictionaryKeyType::simple, true>;
 
-extern template class HashedDictionary<DictionaryKeyType::Complex, false>;
-extern template class HashedDictionary<DictionaryKeyType::Complex, true>;
+extern template class HashedDictionary<DictionaryKeyType::complex, false>;
+extern template class HashedDictionary<DictionaryKeyType::complex, true>;
 
 }

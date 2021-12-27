@@ -2,15 +2,16 @@
 
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnSparse.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/Field.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/Exception.h>
-#include <base/types.h>
+#include <common/types.h>
 
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 #include <cstddef>
 #include <memory>
@@ -73,27 +74,11 @@ public:
     /// Get the data type of internal state. By default it is AggregateFunction(name(params), argument_types...).
     virtual DataTypePtr getStateType() const;
 
-    /// Returns true if two aggregate functions have the same state representation in memory and the same serialization,
-    /// so state of one aggregate function can be safely used with another.
-    /// Examples:
-    ///  - quantile(x), quantile(a)(x), quantile(b)(x) - parameter doesn't affect state and used for finalization only
-    ///  - foo(x) and fooIf(x) - If combinator doesn't affect state
-    /// By default returns true only if functions have exactly the same names, combinators and parameters.
-    virtual bool haveSameStateRepresentation(const IAggregateFunction & rhs) const;
-
-    bool haveEqualArgumentTypes(const IAggregateFunction & rhs) const;
-
     /// Get type which will be used for prediction result in case if function is an ML method.
     virtual DataTypePtr getReturnTypeToPredict() const
     {
         throw Exception("Prediction is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
-
-    virtual bool isVersioned() const { return false; }
-
-    virtual size_t getVersionFromRevision(size_t /* revision */) const { return 0; }
-
-    virtual size_t getDefaultVersion() const { return 0; }
 
     virtual ~IAggregateFunction() = default;
 
@@ -127,10 +112,10 @@ public:
     virtual void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const = 0;
 
     /// Serializes state (to transmit it over the network, for example).
-    virtual void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version = std::nullopt) const = 0;
+    virtual void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const = 0;
 
     /// Deserializes state. This function is called only for empty (just created) states.
-    virtual void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version = std::nullopt, Arena * arena = nullptr) const = 0;
+    virtual void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const = 0;
 
     /// Returns true if a function requires Arena to handle own states (see add(), merge(), deserialize()).
     virtual bool allocatesMemoryInArena() const = 0;
@@ -182,13 +167,6 @@ public:
         Arena * arena,
         ssize_t if_argument_pos = -1) const = 0;
 
-    /// The version of "addBatch", that handle sparse columns as arguments.
-    virtual void addBatchSparse(
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const IColumn ** columns,
-        Arena * arena) const = 0;
-
     virtual void mergeBatch(
         size_t batch_size,
         AggregateDataPtr * places,
@@ -201,12 +179,7 @@ public:
     virtual void addBatchSinglePlace(
         size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1) const = 0;
 
-    /// The version of "addBatchSinglePlace", that handle sparse columns as arguments.
-    virtual void addBatchSparseSinglePlace(
-        AggregateDataPtr place, const IColumn ** columns, Arena * arena) const = 0;
-
     /** The same for single place when need to aggregate only filtered data.
-      * Instead of using an if-column, the condition is combined inside the null_map
       */
     virtual void addBatchSinglePlaceNotNull(
         size_t batch_size,
@@ -379,22 +352,6 @@ public:
         }
     }
 
-    void addBatchSparse(
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const IColumn ** columns,
-        Arena * arena) const override
-    {
-        const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
-        const auto * values = &column_sparse.getValuesColumn();
-        size_t batch_size = column_sparse.size();
-        auto offset_it = column_sparse.begin();
-
-        for (size_t i = 0; i < batch_size; ++i, ++offset_it)
-            static_cast<const Derived *>(this)->add(places[offset_it.getCurrentRow()] + place_offset,
-                                                    &values, offset_it.getValueIndex(), arena);
-    }
-
     void mergeBatch(
         size_t batch_size,
         AggregateDataPtr * places,
@@ -424,19 +381,6 @@ public:
             for (size_t i = 0; i < batch_size; ++i)
                 static_cast<const Derived *>(this)->add(place, columns, i, arena);
         }
-    }
-
-    void addBatchSparseSinglePlace(
-        AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
-    {
-        /// TODO: add values and defaults separately if order of adding isn't important.
-        const auto & column_sparse = assert_cast<const ColumnSparse &>(*columns[0]);
-        const auto * values = &column_sparse.getValuesColumn();
-        size_t batch_size = column_sparse.size();
-        auto offset_it = column_sparse.begin();
-
-        for (size_t i = 0; i < batch_size; ++i, ++offset_it)
-            static_cast<const Derived *>(this)->add(place, &values, offset_it.getValueIndex(), arena);
     }
 
     void addBatchSinglePlaceNotNull(

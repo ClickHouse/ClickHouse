@@ -23,7 +23,6 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int TOP_AND_LIMIT_TOGETHER;
     extern const int WITH_TIES_WITHOUT_ORDER_BY;
-    extern const int OFFSET_FETCH_WITHOUT_ORDER_BY;
 }
 
 
@@ -50,7 +49,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_by("BY");
     ParserKeyword s_rollup("ROLLUP");
     ParserKeyword s_cube("CUBE");
-    ParserKeyword s_grouping_sets("GROUPING SETS");
     ParserKeyword s_top("TOP");
     ParserKeyword s_with_ties("WITH TIES");
     ParserKeyword s_offset("OFFSET");
@@ -66,7 +64,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserNotEmptyExpressionList exp_list_for_select_clause(true);    /// Allows aliases without AS keyword.
     ParserExpressionWithOptionalAlias exp_elem(false);
     ParserOrderByExpressionList order_list;
-    ParserGroupingSetsExpressionList grouping_sets_list;
 
     ParserToken open_bracket(TokenType::OpeningRoundBracket);
     ParserToken close_bracket(TokenType::ClosingRoundBracket);
@@ -186,39 +183,24 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             select_query->group_by_with_rollup = true;
         else if (s_cube.ignore(pos, expected))
             select_query->group_by_with_cube = true;
-        else if (s_grouping_sets.ignore(pos, expected))
-            select_query->group_by_with_grouping_sets = true;
 
-        if ((select_query->group_by_with_rollup || select_query->group_by_with_cube || select_query->group_by_with_grouping_sets) &&
-            !open_bracket.ignore(pos, expected))
+        if ((select_query->group_by_with_rollup || select_query->group_by_with_cube) && !open_bracket.ignore(pos, expected))
             return false;
 
-        if (select_query->group_by_with_grouping_sets)
-        {
-            if (!grouping_sets_list.parse(pos, group_expression_list, expected))
-                return false;
-        }
-        else
-        {
-            if (!exp_list.parse(pos, group_expression_list, expected))
-                return false;
-        }
+        if (!exp_list.parse(pos, group_expression_list, expected))
+            return false;
 
-
-        if ((select_query->group_by_with_rollup || select_query->group_by_with_cube || select_query->group_by_with_grouping_sets) &&
-            !close_bracket.ignore(pos, expected))
+        if ((select_query->group_by_with_rollup || select_query->group_by_with_cube) && !close_bracket.ignore(pos, expected))
             return false;
     }
 
-    /// WITH ROLLUP, CUBE, GROUPING SETS or TOTALS
+    /// WITH ROLLUP, CUBE or TOTALS
     if (s_with.ignore(pos, expected))
     {
         if (s_rollup.ignore(pos, expected))
             select_query->group_by_with_rollup = true;
         else if (s_cube.ignore(pos, expected))
             select_query->group_by_with_cube = true;
-        else if (s_grouping_sets.ignore(pos, expected))
-            select_query->group_by_with_grouping_sets = true;
         else if (s_totals.ignore(pos, expected))
             select_query->group_by_with_totals = true;
         else
@@ -341,7 +323,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             /// OFFSET FETCH clause must exists with "ORDER BY"
             if (!order_expression_list)
-                throw Exception("Can not use OFFSET FETCH clause without ORDER BY", ErrorCodes::OFFSET_FETCH_WITHOUT_ORDER_BY);
+                return false;
 
             if (s_first.ignore(pos, expected))
             {

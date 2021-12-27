@@ -1,7 +1,7 @@
-<clickhouse>
+<yandex>
     <grpc_port>9100</grpc_port>
     <grpc replace="replace">
         <!-- Enable if you want very detailed logs -->
         <verbose_logs>false</verbose_logs>
     </grpc>
-</clickhouse>
+</yandex>

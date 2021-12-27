@@ -16,7 +16,7 @@
 #include "Poco/StreamCopier.h"
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <re2/re2.h>
 
 #include <boost/algorithm/string.hpp>
@@ -89,7 +89,6 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
 
 PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & clientConfiguration)
     : per_request_configuration(clientConfiguration.perRequestConfiguration)
-    , error_report(clientConfiguration.error_report)
     , timeouts(ConnectionTimeouts(
           Poco::Timespan(clientConfiguration.connectTimeoutMs * 1000), /// connection timeout.
           Poco::Timespan(clientConfiguration.requestTimeoutMs * 1000), /// send timeout.
@@ -119,7 +118,7 @@ void PocoHTTPClient::makeRequestInternal(
     Poco::Logger * log = &Poco::Logger::get("AWSClient");
 
     auto uri = request.GetUri().GetURIString();
-    LOG_TEST(log, "Make request to: {}", uri);
+    LOG_DEBUG(log, "Make request to: {}", uri);
 
     enum class S3MetricType
     {
@@ -166,14 +165,15 @@ void PocoHTTPClient::makeRequestInternal(
         for (unsigned int attempt = 0; attempt <= s3_max_redirects; ++attempt)
         {
             Poco::URI target_uri(uri);
-            HTTPSessionPtr session;
+
+            /// Reverse proxy can replace host header with resolved ip address instead of host name.
+            /// This can lead to request signature difference on S3 side.
+            auto session = makeHTTPSession(target_uri, timeouts, false);
+
             auto request_configuration = per_request_configuration(request);
 
             if (!request_configuration.proxyHost.empty())
             {
-                /// Reverse proxy can replace host header with resolved ip address instead of host name.
-                /// This can lead to request signature difference on S3 side.
-                session = makeHTTPSession(target_uri, timeouts, /* resolve_host = */ false);
                 bool use_tunnel = request_configuration.proxyScheme == Aws::Http::Scheme::HTTP && target_uri.getScheme() == "https";
 
                 session->setProxy(
@@ -183,11 +183,6 @@ void PocoHTTPClient::makeRequestInternal(
                     use_tunnel
                 );
             }
-            else
-            {
-                session = makeHTTPSession(target_uri, timeouts, /* resolve_host = */ true);
-            }
-
 
             Poco::Net::HTTPRequest poco_request(Poco::Net::HTTPRequest::HTTP_1_1);
 
@@ -251,7 +246,7 @@ void PocoHTTPClient::makeRequestInternal(
 
             if (request.GetContentBody())
             {
-                LOG_TEST(log, "Writing request body.");
+                LOG_TRACE(log, "Writing request body.");
 
                 if (attempt > 0) /// rewind content body buffer.
                 {
@@ -259,24 +254,24 @@ void PocoHTTPClient::makeRequestInternal(
                     request.GetContentBody()->seekg(0);
                 }
                 auto size = Poco::StreamCopier::copyStream(*request.GetContentBody(), request_body_stream);
-                LOG_TEST(log, "Written {} bytes to request body", size);
+                LOG_DEBUG(log, "Written {} bytes to request body", size);
             }
 
-            LOG_TEST(log, "Receiving response...");
+            LOG_TRACE(log, "Receiving response...");
             auto & response_body_stream = session->receiveResponse(poco_response);
 
             watch.stop();
             ProfileEvents::increment(select_metric(S3MetricType::Microseconds), watch.elapsedMicroseconds());
 
             int status_code = static_cast<int>(poco_response.getStatus());
-            LOG_TEST(log, "Response status: {}, {}", status_code, poco_response.getReason());
+            LOG_DEBUG(log, "Response status: {}, {}", status_code, poco_response.getReason());
 
             if (poco_response.getStatus() == Poco::Net::HTTPResponse::HTTP_TEMPORARY_REDIRECT)
             {
                 auto location = poco_response.get("location");
                 remote_host_filter.checkURL(Poco::URI(location));
                 uri = location;
-                LOG_TEST(log, "Redirecting request to new location: {}", location);
+                LOG_DEBUG(log, "Redirecting request to new location: {}", location);
 
                 ProfileEvents::increment(select_metric(S3MetricType::Redirects));
 
@@ -292,7 +287,7 @@ void PocoHTTPClient::makeRequestInternal(
                 response->AddHeader(header_name, header_value);
                 headers_ss << header_name << ": " << header_value << "; ";
             }
-            LOG_TEST(log, "Received headers: {}", headers_ss.str());
+            LOG_DEBUG(log, "Received headers: {}", headers_ss.str());
 
             if (status_code == 429 || status_code == 503)
             { // API throttling
@@ -301,8 +296,6 @@ void PocoHTTPClient::makeRequestInternal(
             else if (status_code >= 300)
             {
                 ProfileEvents::increment(select_metric(S3MetricType::Errors));
-                if (status_code >= 500 && error_report)
-                    error_report(request_configuration);
             }
 
             response->SetResponseBody(response_body_stream, session);

@@ -7,10 +7,8 @@ import os
 import sys
 import time
 from github import Github
-
-from env_helper import REPO_COPY, TEMP_PATH, CACHES_PATH, IMAGES_PATH
 from s3_helper import S3Helper
-from pr_info import PRInfo
+from pr_info import PRInfo, get_event
 from get_robot_token import get_best_robot_token
 from version_helper import get_version_from_repo, update_version_local
 from ccache_utils import get_ccache_if_not_exists, upload_ccache
@@ -78,23 +76,15 @@ def get_image_name(build_config):
         return 'clickhouse/deb-builder'
 
 
-def build_clickhouse(packager_cmd, logs_path, build_output_path):
+def build_clickhouse(packager_cmd, logs_path):
     build_log_path = os.path.join(logs_path, 'build_log.log')
     with TeePopen(packager_cmd, build_log_path) as process:
         retcode = process.wait()
-        if os.path.exists(build_output_path):
-            build_results = os.listdir(build_output_path)
-        else:
-            build_results = []
-
         if retcode == 0:
-            if len(build_results) != 0:
-                logging.info("Built successfully")
-            else:
-                logging.info("Success exit code, but no build artifacts => build failed")
+            logging.info("Built successfully")
         else:
             logging.info("Build failed")
-    return build_log_path, retcode == 0 and len(build_results) > 0
+    return build_log_path, retcode == 0
 
 
 def get_build_results_if_exists(s3_helper, s3_prefix):
@@ -122,9 +112,9 @@ def create_json_artifact(temp_path, build_name, log_url, build_urls, build_confi
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    repo_path = REPO_COPY
-    temp_path = TEMP_PATH
-    caches_path = CACHES_PATH
+    repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
+    temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
+    caches_path = os.getenv("CACHES_PATH", temp_path)
 
     build_check_name = sys.argv[1]
     build_name = sys.argv[2]
@@ -134,7 +124,7 @@ if __name__ == "__main__":
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    pr_info = PRInfo()
+    pr_info = PRInfo(get_event())
 
     logging.info("Repo copy path %s", repo_path)
 
@@ -146,10 +136,8 @@ if __name__ == "__main__":
     if 'release' in pr_info.labels or 'release-lts' in pr_info.labels:
         # for release pull requests we use branch names prefixes, not pr numbers
         release_or_pr = pr_info.head_ref
-    elif pr_info.number == 0 and build_config['package_type'] != "performance":
-        # for pushes to master - major version, but not for performance builds
-        # they havily relies on a fixed path for build package and nobody going
-        # to deploy them somewhere, so it's ok.
+    elif pr_info.number == 0:
+        # for pushes to master - major version
         release_or_pr = ".".join(version.as_tuple()[:2])
     else:
         # PR number for anything else
@@ -169,11 +157,11 @@ if __name__ == "__main__":
                 log_url = 'https://s3.amazonaws.com/clickhouse-builds/' +  url.replace('+', '%2B').replace(' ', '%20')
             else:
                 build_urls.append('https://s3.amazonaws.com/clickhouse-builds/' + url.replace('+', '%2B').replace(' ', '%20'))
-        create_json_artifact(temp_path, build_name, log_url, build_urls, build_config, 0, len(build_urls) > 0)
+        create_json_artifact(temp_path, build_name, log_url, build_urls, build_config, 0, True)
         sys.exit(0)
 
     image_name = get_image_name(build_config)
-    docker_image = get_image_with_version(IMAGES_PATH, image_name)
+    docker_image = get_image_with_version(os.getenv("IMAGES_PATH"), image_name)
     image_version = docker_image.version
 
     logging.info("Got version from repo %s", version.get_version_string())
@@ -201,10 +189,6 @@ if __name__ == "__main__":
         logging.info("cache was not fetched, will create empty dir")
         os.makedirs(ccache_path)
 
-    if build_config['package_type'] == "performance" and pr_info.number != 0:
-        # because perf tests store some information about git commits
-        subprocess.check_call(f"cd {repo_path} && git fetch origin master:master", shell=True)
-
     packager_cmd = get_packager_cmd(build_config, os.path.join(repo_path, "docker/packager"), build_output_path, version.get_version_string(), image_version, ccache_path, pr_info)
     logging.info("Going to run packager with %s", packager_cmd)
 
@@ -213,7 +197,7 @@ if __name__ == "__main__":
         os.makedirs(build_clickhouse_log)
 
     start = time.time()
-    log_path, success = build_clickhouse(packager_cmd, build_clickhouse_log, build_output_path)
+    log_path, success = build_clickhouse(packager_cmd, build_clickhouse_log)
     elapsed = int(time.time() - start)
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {build_output_path}", shell=True)
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {ccache_path}", shell=True)

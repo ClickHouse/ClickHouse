@@ -23,14 +23,6 @@ public:
 
     String getName() const override { return "JSONEachRowRowOutputFormat"; }
 
-public:
-    /// Content-Type to set when sending HTTP response.
-    String getContentType() const override
-    {
-        return settings.json.array_of_rows ? "application/json; charset=UTF-8" : "application/x-ndjson; charset=UTF-8" ;
-    }
-
-protected:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writeFieldDelimiter() override;
     void writeRowStartDelimiter() override;
@@ -39,6 +31,7 @@ protected:
     void writePrefix() override;
     void writeSuffix() override;
 
+protected:
     /// No totals and extremes.
     void consumeTotals(Chunk) override {}
     void consumeExtremes(Chunk) override {}

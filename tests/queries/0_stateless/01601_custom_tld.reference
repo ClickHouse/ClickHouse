@@ -22,13 +22,3 @@ foobar.com
 foobar.com
 foobar.com
 xx.blogspot.co.at
--- www
-www.foo
-foo
--- vector
-xx.blogspot.co.at
-
--- no new line
-foo.bar
-a.foo.bar
-foo.baz

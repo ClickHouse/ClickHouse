@@ -7,11 +7,9 @@ import sys
 
 from github import Github
 
-from env_helper import GITHUB_REPOSITORY, TEMP_PATH, REPO_COPY, REPORTS_PATH, GITHUB_SERVER_URL, \
-    GITHUB_RUN_ID
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
-from pr_info import PRInfo
+from pr_info import PRInfo, get_event
 from build_download_helper import get_build_name_for_check, get_build_urls
 from docker_pull_helper import get_image_with_version
 from commit_status_helper import post_commit_status
@@ -28,7 +26,7 @@ def get_run_command(pr_number, sha, download_url, workspace_path, image):
           f'{image}'
 
 def get_commit(gh, commit_sha):
-    repo = gh.get_repo(GITHUB_REPOSITORY)
+    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
     commit = repo.get_commit(commit_sha)
     return commit
 
@@ -37,16 +35,16 @@ if __name__ == "__main__":
 
     stopwatch = Stopwatch()
 
-    temp_path = TEMP_PATH
-    repo_path = REPO_COPY
-    reports_path = REPORTS_PATH
+    temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
+    repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
+    reports_path = os.getenv("REPORTS_PATH", "./reports")
 
     check_name = sys.argv[1]
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    pr_info = PRInfo()
+    pr_info = PRInfo(get_event())
 
     gh = Github(get_best_robot_token())
 
@@ -108,7 +106,7 @@ if __name__ == "__main__":
             logging.info("Exception uploading file %s text %s", f, ex)
             paths[f] = ''
 
-    report_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID}"
+    report_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
     if paths['runlog.log']:
         report_url = paths['runlog.log']
     if paths['main.log']:

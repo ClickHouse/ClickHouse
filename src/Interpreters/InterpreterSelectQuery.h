@@ -3,10 +3,10 @@
 #include <memory>
 
 #include <Core/QueryProcessingStage.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
-#include <Interpreters/PreparedSets.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/ReadInOrderOptimizer.h>
@@ -14,7 +14,6 @@
 #include <Storages/TableLockHolder.h>
 
 #include <Columns/FilterDescription.h>
-#include "Interpreters/ActionsDAG.h"
 
 namespace Poco
 {
@@ -30,7 +29,6 @@ class QueryPlan;
 
 struct TreeRewriterResult;
 using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
-using AggregatorParamsPtr = std::unique_ptr<Aggregator::Params>;
 
 
 /** Interprets the SELECT query. Returns the stream of blocks with the results of the query before `to_stage` stage.
@@ -54,6 +52,13 @@ public:
         const SelectQueryOptions &,
         const Names & required_result_column_names_ = Names{});
 
+    /// Read data not from the table specified in the query, but from the prepared source `input`.
+    InterpreterSelectQuery(
+        const ASTPtr & query_ptr_,
+        ContextPtr context_,
+        const BlockInputStreamPtr & input_,
+        const SelectQueryOptions & = {});
+
     /// Read data not from the table specified in the query, but from the prepared pipe `input`.
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
@@ -68,13 +73,6 @@ public:
         const StoragePtr & storage_,
         const StorageMetadataPtr & metadata_snapshot_ = nullptr,
         const SelectQueryOptions & = {});
-
-    /// Read data not from the table specified in the query, but from the specified `storage_`.
-    InterpreterSelectQuery(
-        const ASTPtr & query_ptr_,
-        ContextPtr context_,
-        const SelectQueryOptions &,
-        PreparedSets prepared_sets_);
 
     ~InterpreterSelectQuery() override;
 
@@ -93,7 +91,7 @@ public:
 
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
 
-    SelectQueryExpressionAnalyzer * getQueryAnalyzer() const { return query_analyzer.get(); }
+    const SelectQueryExpressionAnalyzer * getQueryAnalyzer() const { return query_analyzer.get(); }
 
     const ExpressionAnalysisResult & getAnalysisResult() const { return analysis_result; }
 
@@ -110,12 +108,12 @@ private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
         ContextPtr context_,
+        const BlockInputStreamPtr & input_,
         std::optional<Pipe> input_pipe,
         const StoragePtr & storage_,
         const SelectQueryOptions &,
         const Names & required_result_column_names = {},
-        const StorageMetadataPtr & metadata_snapshot_ = nullptr,
-        PreparedSets prepared_sets_ = {});
+        const StorageMetadataPtr & metadata_snapshot_ = nullptr);
 
     ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
 
@@ -124,16 +122,10 @@ private:
 
     Block getSampleBlockImpl();
 
-    void executeImpl(QueryPlan & query_plan, std::optional<Pipe> prepared_pipe);
+    void executeImpl(QueryPlan & query_plan, const BlockInputStreamPtr & prepared_input, std::optional<Pipe> prepared_pipe);
 
     /// Different stages of query execution.
 
-    void initAggregatorParams(
-        const Block & current_data_stream_header,
-        AggregatorParamsPtr & params_ptr,
-        const AggregateDescriptions & aggregates,
-        bool overflow_row, const Settings & settings,
-        size_t group_by_two_level_threshold, size_t group_by_two_level_threshold_bytes);
     void executeFetchColumns(QueryProcessingStage::Enum processing_stage, QueryPlan & query_plan);
     void executeWhere(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool remove_filter);
     void executeAggregation(
@@ -164,8 +156,7 @@ private:
     enum class Modificator
     {
         ROLLUP = 0,
-        CUBE = 1,
-        GROUPING_SETS = 2
+        CUBE = 1
     };
 
     void executeRollupOrCube(QueryPlan & query_plan, Modificator modificator);
@@ -207,13 +198,11 @@ private:
     TableLockHolder table_lock;
 
     /// Used when we read from prepared input, not table or subquery.
+    BlockInputStreamPtr input;
     std::optional<Pipe> input_pipe;
 
     Poco::Logger * log;
     StorageMetadataPtr metadata_snapshot;
-
-    /// Reuse already built sets for multiple passes of analysis, possibly across interpreters.
-    PreparedSets prepared_sets;
 };
 
 }

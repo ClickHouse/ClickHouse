@@ -22,8 +22,8 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
 }
 
-ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_, bool stream_, const FormatSettings & format_settings_)
-    : IInputFormat(header_, in_), stream{stream_}, format_settings(format_settings_)
+ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & header_, bool stream_)
+    : IInputFormat(header_, in_), stream{stream_}
 {
 }
 
@@ -85,7 +85,7 @@ void ArrowBlockInputFormat::prepareReader()
 
     if (stream)
     {
-        auto stream_reader_status = arrow::ipc::RecordBatchStreamReader::Open(std::make_unique<ArrowInputStreamFromReadBuffer>(*in));
+        auto stream_reader_status = arrow::ipc::RecordBatchStreamReader::Open(std::make_unique<ArrowInputStreamFromReadBuffer>(in));
         if (!stream_reader_status.ok())
             throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
                 "Error while opening a table: {}", stream_reader_status.status().ToString());
@@ -94,7 +94,7 @@ void ArrowBlockInputFormat::prepareReader()
     }
     else
     {
-        auto file_reader_status = arrow::ipc::RecordBatchFileReader::Open(asArrowFile(*in, format_settings));
+        auto file_reader_status = arrow::ipc::RecordBatchFileReader::Open(asArrowFile(in));
         if (!file_reader_status.ok())
             throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
                 "Error while opening a table: {}", file_reader_status.status().ToString());
@@ -102,7 +102,7 @@ void ArrowBlockInputFormat::prepareReader()
         schema = file_reader->schema();
     }
 
-    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), "Arrow", format_settings.arrow.import_nested);
+    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), std::move(schema), "Arrow");
 
     if (stream)
         record_batch_total = -1;
@@ -112,26 +112,26 @@ void ArrowBlockInputFormat::prepareReader()
     record_batch_current = 0;
 }
 
-void registerInputFormatArrow(FormatFactory & factory)
+void registerInputFormatProcessorArrow(FormatFactory & factory)
 {
-    factory.registerInputFormat(
+    factory.registerInputFormatProcessor(
         "Arrow",
         [](ReadBuffer & buf,
            const Block & sample,
            const RowInputFormatParams & /* params */,
-           const FormatSettings & format_settings)
+           const FormatSettings & /* format_settings */)
         {
-            return std::make_shared<ArrowBlockInputFormat>(buf, sample, false, format_settings);
+            return std::make_shared<ArrowBlockInputFormat>(buf, sample, false);
         });
     factory.markFormatAsColumnOriented("Arrow");
-    factory.registerInputFormat(
+    factory.registerInputFormatProcessor(
         "ArrowStream",
         [](ReadBuffer & buf,
            const Block & sample,
            const RowInputFormatParams & /* params */,
-           const FormatSettings & format_settings)
+           const FormatSettings & /* format_settings */)
         {
-            return std::make_shared<ArrowBlockInputFormat>(buf, sample, true, format_settings);
+            return std::make_shared<ArrowBlockInputFormat>(buf, sample, true);
         });
 }
 
@@ -141,7 +141,7 @@ void registerInputFormatArrow(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerInputFormatArrow(FormatFactory &)
+void registerInputFormatProcessorArrow(FormatFactory &)
 {
 }
 }

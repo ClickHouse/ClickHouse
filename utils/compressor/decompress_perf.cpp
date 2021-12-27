@@ -1,7 +1,7 @@
 #include <lz4.h>
 #include <string.h>
 #include <optional>
-#include <base/types.h>
+#include <common/types.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -17,7 +17,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/memcpySmall.h>
-#include <base/unaligned.h>
+#include <common/unaligned.h>
 
 
 /** for i in *.bin; do ./decompress_perf < $i > /dev/null; done

@@ -114,12 +114,9 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
     if (groupBy())
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "GROUP BY" << (s.hilite ? hilite_none : "");
-        if (!group_by_with_grouping_sets)
-        {
-            s.one_line
+        s.one_line
             ? groupBy()->formatImpl(s, state, frame)
             : groupBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
-        }
     }
 
     if (group_by_with_rollup)
@@ -127,18 +124,6 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 
     if (group_by_with_cube)
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH CUBE" << (s.hilite ? hilite_none : "");
-
-    if (group_by_with_grouping_sets)
-    {
-        frame.surround_each_list_element_with_parens = true;
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "GROUPING SETS" << (s.hilite ? hilite_none : "");
-        s.ostr << " (";
-        s.one_line
-        ? groupBy()->formatImpl(s, state, frame)
-        : groupBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
-        s.ostr << ")";
-        frame.surround_each_list_element_with_parens = false;
-    }
 
     if (group_by_with_totals)
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH TOTALS" << (s.hilite ? hilite_none : "");
@@ -334,15 +319,23 @@ bool ASTSelectQuery::withFill() const
 }
 
 
-std::pair<ASTPtr, bool> ASTSelectQuery::arrayJoinExpressionList() const
+ASTPtr ASTSelectQuery::arrayJoinExpressionList(bool & is_left) const
 {
     const ASTArrayJoin * array_join = getFirstArrayJoin(*this);
     if (!array_join)
         return {};
 
-    bool is_left = (array_join->kind == ASTArrayJoin::Kind::Left);
-    return {array_join->expression_list, is_left};
+    is_left = (array_join->kind == ASTArrayJoin::Kind::Left);
+    return array_join->expression_list;
 }
+
+
+ASTPtr ASTSelectQuery::arrayJoinExpressionList() const
+{
+    bool is_left;
+    return arrayJoinExpressionList(is_left);
+}
+
 
 const ASTTablesInSelectQueryElement * ASTSelectQuery::join() const
 {

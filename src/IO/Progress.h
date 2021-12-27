@@ -2,10 +2,11 @@
 
 #include <atomic>
 #include <cstddef>
-#include <functional>
-#include <base/types.h>
+#include <common/types.h>
 
 #include <Core/Defines.h>
+#include <Common/Stopwatch.h>
+
 
 namespace DB
 {
@@ -118,13 +119,5 @@ struct Progress
         *this = std::move(other);
     }
 };
-
-
-/** Callback to track the progress of the query.
-  * Used in QueryPipeline and Context.
-  * The function takes the number of rows in the last block, the number of bytes in the last block.
-  * Note that the callback can be called from different threads.
-  */
-using ProgressCallback = std::function<void(const Progress & progress)>;
 
 }

@@ -276,30 +276,14 @@ inline void trimLeft(std::string_view & str, char c = ' ')
         str.remove_prefix(1);
 }
 
-inline void trimLeft(std::string & str, char c = ' ')
-{
-    str.erase(0, str.find_first_not_of(c));
-}
-
 inline void trimRight(std::string_view & str, char c = ' ')
 {
     while (str.ends_with(c))
         str.remove_suffix(1);
 }
 
-inline void trimRight(std::string & str, char c = ' ')
-{
-    str.erase(str.find_last_not_of(c) + 1);
-}
-
 inline void trim(std::string_view & str, char c = ' ')
 {
     trimLeft(str, c);
     trimRight(str, c);
-}
-
-inline void trim(std::string & str, char c = ' ')
-{
-    trimRight(str, c);
-    trimLeft(str, c);
 }

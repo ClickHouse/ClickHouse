@@ -1,30 +1,31 @@
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Core/SortCursor.h>
-#include <base/range.h>
+#include <common/range.h>
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+
 AggregatingInOrderTransform::AggregatingInOrderTransform(
-    Block header,
-    AggregatingTransformParamsPtr params_,
-    const SortDescription & group_by_description_,
-    size_t max_block_size_, size_t max_block_bytes_)
-    : AggregatingInOrderTransform(std::move(header), std::move(params_),
-        group_by_description_, max_block_size_, max_block_bytes_,
-        std::make_unique<ManyAggregatedData>(1), 0)
+    Block header, AggregatingTransformParamsPtr params_,
+    const SortDescription & group_by_description_, size_t res_block_size_)
+    : AggregatingInOrderTransform(std::move(header), std::move(params_)
+    , group_by_description_, res_block_size_, std::make_unique<ManyAggregatedData>(1), 0)
 {
 }
 
 AggregatingInOrderTransform::AggregatingInOrderTransform(
     Block header, AggregatingTransformParamsPtr params_,
-    const SortDescription & group_by_description_,
-    size_t max_block_size_, size_t max_block_bytes_,
+    const SortDescription & group_by_description_, size_t res_block_size_,
     ManyAggregatedDataPtr many_data_, size_t current_variant)
     : IProcessor({std::move(header)}, {params_->getCustomHeader(false)})
-    , max_block_size(max_block_size_)
-    , max_block_bytes(max_block_bytes_)
+    , res_block_size(res_block_size_)
     , params(std::move(params_))
     , group_by_description(group_by_description_)
     , aggregate_columns(params->params.aggregates_size)
@@ -47,18 +48,8 @@ AggregatingInOrderTransform::AggregatingInOrderTransform(
 
 AggregatingInOrderTransform::~AggregatingInOrderTransform() = default;
 
-static Int64 getCurrentMemoryUsage()
-{
-    Int64 current_memory_usage = 0;
-    if (auto * memory_tracker = CurrentThread::getMemoryTracker())
-        current_memory_usage = memory_tracker->get();
-    return current_memory_usage;
-}
-
 void AggregatingInOrderTransform::consume(Chunk chunk)
 {
-    Int64 initial_memory_usage = getCurrentMemoryUsage();
-
     size_t rows = chunk.getNumRows();
     if (rows == 0)
         return;
@@ -86,7 +77,6 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
 
     size_t key_end = 0;
     size_t key_begin = 0;
-
     /// If we don't have a block we create it and fill with first key
     if (!cur_block_size)
     {
@@ -104,7 +94,6 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         ++cur_block_size;
     }
 
-    Int64 current_memory_usage = 0;
 
     /// Will split block into segments with the same key
     while (key_end != rows)
@@ -123,18 +112,44 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         if (key_begin != key_end)
             params->aggregator.executeOnIntervalWithoutKeyImpl(variants.without_key, key_begin, key_end, aggregate_function_instructions.data(), variants.aggregates_pool);
 
-        current_memory_usage = getCurrentMemoryUsage() - initial_memory_usage;
-
         /// We finalize last key aggregation state if a new key found.
         if (key_end != rows)
         {
             params->aggregator.addSingleKeyToAggregateColumns(variants, res_aggregate_columns);
 
-            /// If max_block_size is reached we have to stop consuming and generate the block. Save the extra rows into new chunk.
-            if (cur_block_size >= max_block_size || cur_block_bytes + current_memory_usage >= max_block_bytes)
+            /// If res_block_size is reached we have to stop consuming and generate the block. Save the extra rows into new chunk.
+            if (cur_block_size == res_block_size)
             {
-                cur_block_bytes += current_memory_usage;
-                finalizeCurrentChunk(std::move(chunk), key_end);
+                Columns source_columns = chunk.detachColumns();
+
+                for (auto & source_column : source_columns)
+                    source_column = source_column->cut(key_end, rows - key_end);
+
+                current_chunk = Chunk(source_columns, rows - key_end);
+                src_rows -= current_chunk.getNumRows();
+                block_end_reached = true;
+                need_generate = true;
+                cur_block_size = 0;
+
+                variants.without_key = nullptr;
+
+                /// Arenas cannot be destroyed here, since later, in FinalizingSimpleTransform
+                /// there will be finalizeChunk(), but even after
+                /// finalizeChunk() we cannot destroy arena, since some memory
+                /// from Arena still in use, so we attach it to the Chunk to
+                /// remove it once it will be consumed.
+                if (params->final)
+                {
+                    if (variants.aggregates_pools.size() != 1)
+                        throw Exception("Too much arenas", ErrorCodes::LOGICAL_ERROR);
+
+                    Arenas arenas(1, std::make_shared<Arena>());
+                    std::swap(variants.aggregates_pools, arenas);
+                    variants.aggregates_pool = variants.aggregates_pools.at(0).get();
+
+                    chunk.setChunkInfo(std::make_shared<AggregatedArenasChunkInfo>(std::move(arenas)));
+                }
+
                 return;
             }
 
@@ -146,25 +161,9 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         key_begin = key_end;
     }
 
-    cur_block_bytes += current_memory_usage;
     block_end_reached = false;
 }
 
-void AggregatingInOrderTransform::finalizeCurrentChunk(Chunk chunk, size_t key_end)
-{
-    size_t rows = chunk.getNumRows();
-    Columns source_columns = chunk.detachColumns();
-
-    for (auto & source_column : source_columns)
-        source_column = source_column->cut(key_end, rows - key_end);
-
-    current_chunk = Chunk(source_columns, rows - key_end);
-    src_rows -= current_chunk.getNumRows();
-
-    block_end_reached = true;
-    need_generate = true;
-    variants.without_key = nullptr;
-}
 
 void AggregatingInOrderTransform::work()
 {
@@ -219,7 +218,6 @@ IProcessor::Status AggregatingInOrderTransform::prepare()
                 src_rows, res_rows, formatReadableSizeWithBinarySuffix(src_bytes));
             return Status::Finished;
         }
-
         if (input.isFinished())
         {
             is_consume_finished = true;
@@ -231,10 +229,8 @@ IProcessor::Status AggregatingInOrderTransform::prepare()
         input.setNeeded();
         return Status::NeedData;
     }
-
     assert(!is_consume_finished);
     current_chunk = input.pull(true /* set_not_needed */);
-    convertToFullIfSparse(current_chunk);
     return Status::Ready;
 }
 
@@ -249,24 +245,14 @@ void AggregatingInOrderTransform::generate()
     Block res = res_header.cloneEmpty();
 
     for (size_t i = 0; i < res_key_columns.size(); ++i)
+    {
         res.getByPosition(i).column = std::move(res_key_columns[i]);
-
+    }
     for (size_t i = 0; i < res_aggregate_columns.size(); ++i)
+    {
         res.getByPosition(i + res_key_columns.size()).column = std::move(res_aggregate_columns[i]);
-
+    }
     to_push_chunk = convertToChunk(res);
-
-    /// Clear arenas to allow to free them, when chunk will reach the end of pipeline.
-    /// It's safe clear them here, because columns with aggregate functions already holds them.
-    variants.aggregates_pools = { std::make_shared<Arena>() };
-    variants.aggregates_pool = variants.aggregates_pools.at(0).get();
-
-    /// Pass info about used memory by aggregate functions further.
-    to_push_chunk.setChunkInfo(std::make_shared<ChunkInfoWithAllocatedBytes>(cur_block_bytes));
-
-    cur_block_bytes = 0;
-    cur_block_size = 0;
-
     res_rows += to_push_chunk.getNumRows();
     need_generate = false;
 }

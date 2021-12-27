@@ -1,12 +1,14 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
+#endif
 
 #if USE_AWS_S3
 
 #include <atomic>
 #include <optional>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include "Disks/DiskFactory.h"
 #include "Disks/Executor.h"
 
@@ -68,15 +70,17 @@ public:
         String name_,
         String bucket_,
         String s3_root_path_,
-        DiskPtr metadata_disk_,
-        ContextPtr context_,
+        String metadata_path_,
         SettingsPtr settings_,
         GetDiskSettings settings_getter_);
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
-        const ReadSettings & settings,
-        std::optional<size_t> size) const override;
+        size_t buf_size,
+        size_t estimated_size,
+        size_t aio_threshold,
+        size_t mmap_threshold,
+        MMappedFileCache * mmap_cache) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -93,24 +97,24 @@ public:
     void createHardLink(const String & src_path, const String & dst_path) override;
     void createHardLink(const String & src_path, const String & dst_path, bool send_metadata);
 
-    DiskType getType() const override { return DiskType::S3; }
-    bool isRemote() const override { return true; }
-
-    bool supportZeroCopyReplication() const override { return true; }
+    DiskType::Type getType() const override { return DiskType::Type::S3; }
 
     void shutdown() override;
 
     void startup() override;
 
+    /// Return some uniq string for file
+    /// Required for distinguish different copies of the same part on S3
+    String getUniqueId(const String & path) const override;
+
     /// Check file exists and ClickHouse has an access to it
-    /// Overrode in remote disk
-    /// Required for remote disk to ensure that replica has access to data written by other node
+    /// Required for S3 to ensure that replica has access to data wroten by other node
     bool checkUniqueId(const String & id) const override;
 
     /// Dumps current revision counter into file 'revision.txt' at given path.
     void onFreeze(const String & path) override;
 
-    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String &, const DisksMap &) override;
+    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context) override;
 
 private:
     void createFileOperationObject(const String & operation_name, UInt64 revision, const ObjectMetadata & metadata);
@@ -168,7 +172,7 @@ private:
     inline static const String RESTORE_FILE_NAME = "restore";
 
     /// Key has format: ../../r{revision}-{operation}
-    const re2::RE2 key_regexp {".*/r(\\d+)-(\\w+)$"};
+    const re2::RE2 key_regexp {".*/r(\\d+)-(\\w+).*"};
 
     /// Object contains information about schema version.
     inline static const String SCHEMA_VERSION_OBJECT = ".SCHEMA_VERSION";
@@ -176,8 +180,6 @@ private:
     static constexpr int RESTORABLE_SCHEMA_VERSION = 1;
     /// Directories with data.
     const std::vector<String> data_roots {"data", "store"};
-
-    ContextPtr context;
 };
 
 }

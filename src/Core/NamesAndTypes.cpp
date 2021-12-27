@@ -1,5 +1,4 @@
 #include <Core/NamesAndTypes.h>
-#include <Common/HashTable/HashMap.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -7,7 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
+#include <sparsehash/dense_hash_map>
 
 
 namespace DB
@@ -42,17 +41,6 @@ String NameAndTypePair::getSubcolumnName() const
         return "";
 
     return name.substr(*subcolumn_delimiter_position + 1, name.size() - *subcolumn_delimiter_position);
-}
-
-String NameAndTypePair::dump() const
-{
-    WriteBufferFromOwnString out;
-    out << "name: " << name << "\n"
-        << "type: " << type->getName() << "\n"
-        << "name in storage: " << getNameInStorage() << "\n"
-        << "type in storage: " << getTypeInStorage()->getName();
-
-    return out.str();
 }
 
 void NamesAndTypesList::readText(ReadBuffer & buf)
@@ -175,7 +163,12 @@ NamesAndTypesList NamesAndTypesList::filter(const Names & names) const
 NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
 {
     /// NOTE: It's better to make a map in `IStorage` than to create it here every time again.
-    HashMapWithSavedHash<StringRef, const DataTypePtr *, StringRefHash> types;
+#if !defined(ARCADIA_BUILD)
+    google::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> types;
+#else
+    google::sparsehash::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> types;
+#endif
+    types.set_empty_key(StringRef());
 
     for (const auto & column : *this)
         types[column.name] = &column.type;
@@ -183,11 +176,10 @@ NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
     NamesAndTypesList res;
     for (const String & name : names)
     {
-        const auto * it = types.find(name);
+        auto it = types.find(name);
         if (it == types.end())
-            throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "No column {}", name);
-
-        res.emplace_back(name, *it->getMapped());
+            throw Exception("No column " + name, ErrorCodes::THERE_IS_NO_COLUMN);
+        res.emplace_back(name, *it->second);
     }
 
     return res;

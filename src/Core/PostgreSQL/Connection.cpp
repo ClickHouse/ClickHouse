@@ -1,8 +1,5 @@
 #include "Connection.h"
-
-#if USE_LIBPQXX
-#include <base/logger_useful.h>
-
+#include <common/logger_useful.h>
 
 namespace postgres
 {
@@ -42,6 +39,7 @@ void Connection::execWithRetry(const std::function<void(pqxx::nontransaction &)>
 pqxx::connection & Connection::getRef()
 {
     connect();
+    assert(connection != nullptr);
     return *connection;
 }
 
@@ -74,5 +72,3 @@ void Connection::connect()
         updateConnection();
 }
 }
-
-#endif

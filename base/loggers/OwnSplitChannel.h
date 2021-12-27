@@ -18,11 +18,9 @@ public:
     /// Makes an extended message from msg and passes it to the client logs queue and child (if possible)
     void log(const Poco::Message & msg) override;
     /// Adds a child channel
-    void addChannel(Poco::AutoPtr<Poco::Channel> channel, const std::string & name);
+    void addChannel(Poco::AutoPtr<Poco::Channel> channel);
 
     void addTextLog(std::shared_ptr<DB::TextLog> log, int max_priority);
-
-    void setLevel(const std::string & name, int level);
 
 private:
     void logSplit(const Poco::Message & msg);
@@ -31,7 +29,7 @@ private:
     using ChannelPtr = Poco::AutoPtr<Poco::Channel>;
     /// Handler and its pointer casted to extended interface
     using ExtendedChannelPtrPair = std::pair<ChannelPtr, ExtendedLogChannel *>;
-    std::map<std::string, ExtendedChannelPtrPair> channels;
+    std::vector<ExtendedChannelPtrPair> channels;
 
     std::mutex text_log_mutex;
 

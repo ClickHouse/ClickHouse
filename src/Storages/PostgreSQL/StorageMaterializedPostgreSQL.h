@@ -1,28 +1,28 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
 #include "config_core.h"
+#endif
 
 #if USE_LIBPQXX
 #include "PostgreSQLReplicationHandler.h"
 #include "MaterializedPostgreSQLSettings.h"
 
 #include <Parsers/IAST.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <base/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 #include <memory>
 
 
 namespace DB
 {
-
-/** TODO list:
- * - Actually I think we can support ddl even though logical replication does not fully support it.
- *   But some basic ddl like adding/dropping columns, changing column type, column names -- is manageable.
- */
 
 /** Case of single MaterializedPostgreSQL table engine.
  *
@@ -49,6 +49,7 @@ namespace DB
  *
  * All database methods, apart from tryGetTable(), are devoted only to nested table.
  * NOTE: It makes sense to allow rename method for MaterializedPostgreSQL table via database method.
+ * TODO: Make sure replication-to-table data channel is done only by relation_id.
  *
  * Also main table has the same InMemoryMetadata as its nested table, so if metadata of nested table changes - main table also has
  * to update its metadata, because all read requests are passed to MaterializedPostgreSQL table and then it redirects read
@@ -56,7 +57,7 @@ namespace DB
  *
  * When there is a need to update table structure, there will be created a new MaterializedPostgreSQL table with its own nested table,
  * it will have updated table schema and all data will be loaded from scratch in the background, while previous table with outadted table
- * structure will still serve read requests. When data is loaded, nested tables will be swapped, metadata of materialized table will be
+ * structure will still serve read requests. When data is loaded, nested tables will be swapped, metadata of metarialzied table will be
  * updated according to nested table.
  *
 **/
@@ -66,11 +67,9 @@ class StorageMaterializedPostgreSQL final : public shared_ptr_helper<StorageMate
     friend struct shared_ptr_helper<StorageMaterializedPostgreSQL>;
 
 public:
-    StorageMaterializedPostgreSQL(const StorageID & table_id_, ContextPtr context_,
-                                const String & postgres_database_name, const String & postgres_table_name);
+    StorageMaterializedPostgreSQL(const StorageID & table_id_, ContextPtr context_);
 
-    StorageMaterializedPostgreSQL(StoragePtr nested_storage_, ContextPtr context_,
-                                const String & postgres_database_name, const String & postgres_table_name);
+    StorageMaterializedPostgreSQL(StoragePtr nested_storage_, ContextPtr context_);
 
     String getName() const override { return "MaterializedPostgreSQL"; }
 
@@ -99,11 +98,7 @@ public:
     /// only once - when nested table is successfully created and is never changed afterwards.
     bool hasNested() { return has_nested.load(); }
 
-    void createNestedIfNeeded(PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override);
-
-    ASTPtr getCreateNestedTableQuery(PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override);
-
-    std::shared_ptr<ASTExpressionList> getColumnsExpressionList(const NamesAndTypesList & columns) const;
+    void createNestedIfNeeded(PostgreSQLTableStructurePtr table_structure);
 
     StoragePtr getNested() const;
 
@@ -118,9 +113,13 @@ public:
 
     StorageID getNestedStorageID() const;
 
-    void set(StoragePtr nested_storage);
+    void setNestedStorageID(const StorageID & id) { nested_table_id.emplace(id); }
 
     static std::shared_ptr<Context> makeNestedTableContext(ContextPtr from_context);
+
+    /// Get nested table (or throw if it does not exist), set in-memory metadata (taken from nested table)
+    /// for current table, set has_nested = true.
+    StoragePtr prepare();
 
     bool supportsFinal() const override { return true; }
 
@@ -141,9 +140,9 @@ private:
 
     ASTPtr getColumnDeclaration(const DataTypePtr & data_type) const;
 
-    String getNestedTableName() const;
+    ASTPtr getCreateNestedTableQuery(PostgreSQLTableStructurePtr table_structure);
 
-    Poco::Logger * log;
+    String getNestedTableName() const;
 
     /// Not nullptr only for single MaterializedPostgreSQL storage, because for MaterializedPostgreSQL
     /// database engine there is one replication handler for all tables.

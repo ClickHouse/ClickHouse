@@ -1,7 +1,7 @@
 #include <Access/LDAPClient.h>
 #include <Common/Exception.h>
-#include <base/scope_guard.h>
-#include <base/logger_useful.h>
+#include <common/scope_guard.h>
+#include <common/logger_useful.h>
 
 #include <Poco/Logger.h>
 #include <boost/algorithm/string/predicate.hpp>
@@ -448,7 +448,7 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
                                 vals = nullptr;
                             });
 
-                            for (size_t i = 0; vals[i]; ++i)
+                            for (std::size_t i = 0; vals[i]; i++)
                             {
                                 if (vals[i]->bv_val && vals[i]->bv_len > 0)
                                     result.emplace(vals[i]->bv_val, vals[i]->bv_len);
@@ -473,7 +473,7 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
                         referrals = nullptr;
                     });
 
-                    for (size_t i = 0; referrals[i]; ++i)
+                    for (std::size_t i = 0; referrals[i]; i++)
                     {
                         LOG_WARNING(&Poco::Logger::get("LDAPClient"), "Received reference during LDAP search but not following it: {}", referrals[i]);
                     }

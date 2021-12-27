@@ -18,7 +18,6 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <unordered_map>
 
 namespace DB
 {
@@ -197,7 +196,7 @@ namespace
 
             Disjunction result;
 
-            auto add_dnf = [&](const auto & dnf)
+            auto add_dnf = [&](const auto &dnf)
             {
                 if (dnf.size() > limit)
                 {
@@ -322,7 +321,6 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
 
     if (const auto * fn = node->as<ASTFunction>())
     {
-        std::unordered_map<std::string, bool> always_false_map;
         const auto dnf = analyzeFunction(fn, target_expr, limit);
 
         if (dnf.empty() || !limit)
@@ -353,41 +351,7 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
 
         for (const auto & conjunct : dnf)
         {
-            Block block;
-
-            for (const auto & elem : conjunct)
-            {
-                if (!block.has(elem.name))
-                {
-                    block.insert(elem);
-                }
-                else
-                {
-                    /// Conjunction of condition on column equality to distinct values can never be satisfied.
-
-                    const ColumnWithTypeAndName & prev = block.getByName(elem.name);
-
-                    if (isColumnConst(*prev.column) && isColumnConst(*elem.column))
-                    {
-                        Field prev_value = assert_cast<const ColumnConst &>(*prev.column).getField();
-                        Field curr_value = assert_cast<const ColumnConst &>(*elem.column).getField();
-
-                        if (!always_false_map.count(elem.name))
-                        {
-                            always_false_map[elem.name] = prev_value != curr_value;
-                        }
-                        else
-                        {
-                            auto & always_false = always_false_map[elem.name];
-                            /// If at least one of conjunct is not always false, we should preserve this.
-                            if (always_false)
-                            {
-                                always_false = prev_value != curr_value;
-                            }
-                        }
-                    }
-                }
-            }
+            Block block(conjunct);
 
             // Block should contain all required columns from `target_expr`
             if (!has_required_columns(block))
@@ -412,11 +376,6 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
                 return {};
             }
         }
-
-        bool any_always_false = std::any_of(always_false_map.begin(), always_false_map.end(), [](const auto & v) { return v.second; });
-        if (any_always_false)
-            return Blocks{};
-
     }
     else if (const auto * literal = node->as<ASTLiteral>())
     {
