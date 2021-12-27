@@ -30,6 +30,9 @@ Chunk ORCBlockInputFormat::generate()
     if (!file_reader)
         prepareReader();
 
+    if (is_stopped)
+        return {};
+
     std::shared_ptr<arrow::RecordBatchReader> batch_reader;
     auto result = file_reader->NextStripeReader(format_settings.orc.row_batch_size, include_indices);
     if (!result.ok())
@@ -86,7 +89,11 @@ static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
 
 void ORCBlockInputFormat::prepareReader()
 {
-    auto result = arrow::adapters::orc::ORCFileReader::Open(asArrowFile(*in, format_settings), arrow::default_memory_pool());
+    auto arrow_file = asArrowFile(*in, format_settings, is_stopped);
+    if (is_stopped)
+        return;
+
+    auto result = arrow::adapters::orc::ORCFileReader::Open(std::move(arrow_file), arrow::default_memory_pool());
     if (!result.ok())
         throw Exception(result.status().ToString(), ErrorCodes::BAD_ARGUMENTS);
     file_reader = std::move(result).ValueOrDie();
