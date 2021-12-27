@@ -440,9 +440,9 @@ def test_database_with_single_non_default_schema(started_cluster):
     print('DETACH-ATTACH')
     detached_table_name = "postgresql_replica_1"
     instance.query(f"DETACH TABLE {materialized_db}.{detached_table_name}")
-    assert instance.contains_in_log("from publication, because table does not exist in PostgreSQL") == False
+    assert not instance.contains_in_log("from publication, because table does not exist in PostgreSQL")
     instance.query(f"ATTACH TABLE {materialized_db}.{detached_table_name}")
-    check_tables_are_synchronized(f"{detached_table_name}", postgres_database=clickhouse_postgres_db);
+    check_tables_are_synchronized(detached_table_name, postgres_database=clickhouse_postgres_db);
 
     drop_materialized_db()
 
@@ -513,10 +513,10 @@ def test_database_with_multiple_non_default_schemas_1(started_cluster):
     print('DETACH-ATTACH')
     detached_table_name = "postgresql_replica_1"
     instance.query(f"DETACH TABLE {materialized_db}.`{schema_name}.{detached_table_name}`")
-    assert instance.contains_in_log("from publication, because table does not exist in PostgreSQL") == False
+    assert not instance.contains_in_log("from publication, because table does not exist in PostgreSQL")
     instance.query(f"ATTACH TABLE {materialized_db}.`{schema_name}.{detached_table_name}`")
     assert_show_tables("test_schema.postgresql_replica_0\ntest_schema.postgresql_replica_1\ntest_schema.postgresql_replica_2\ntest_schema.postgresql_replica_3\ntest_schema.postgresql_replica_4\n")
-    check_tables_are_synchronized(f"{detached_table_name}", schema_name=schema_name, postgres_database=clickhouse_postgres_db);
+    check_tables_are_synchronized(detached_table_name, schema_name=schema_name, postgres_database=clickhouse_postgres_db);
 
     drop_materialized_db()
 
@@ -594,7 +594,7 @@ def test_database_with_multiple_non_default_schemas_2(started_cluster):
     detached_table_schema = "schema0"
     clickhouse_postgres_db = f'clickhouse_postgres_db0'
     instance.query(f"DETACH TABLE {materialized_db}.`{detached_table_schema}.{detached_table_name}`")
-    assert instance.contains_in_log("from publication, because table does not exist in PostgreSQL") == False
+    assert not instance.contains_in_log("from publication, because table does not exist in PostgreSQL")
     instance.query(f"ATTACH TABLE {materialized_db}.`{detached_table_schema}.{detached_table_name}`")
     assert_show_tables("schema0.postgresql_replica_0\nschema0.postgresql_replica_1\nschema1.postgresql_replica_0\nschema1.postgresql_replica_1\n")
     check_tables_are_synchronized(f"postgresql_replica_{altered_table}", schema_name=detached_table_schema, postgres_database=clickhouse_postgres_db);
