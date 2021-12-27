@@ -14,7 +14,6 @@
 #include <Storages/Cache/RemoteFileMetadataFactory.h>
 #include <IO/WriteHelpers.h>
 
-namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event ExternalDataSourceLocalCacheReadBytes;
