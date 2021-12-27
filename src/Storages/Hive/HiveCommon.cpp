@@ -112,7 +112,7 @@ void HiveMetastoreClient::clearTableMetadata(const String & db_name, const Strin
     HiveTableMetadataPtr metadata = table_metadata_cache.get(cache_key);
     if (metadata)
     {
-        if (!table_metadata_cache.tryDel(cache_key))
+        if (!table_metadata_cache.tryRemove(cache_key))
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Try to clear table metadata failed.");
         }

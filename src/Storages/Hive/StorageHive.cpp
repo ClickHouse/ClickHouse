@@ -19,7 +19,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <IO/ReadBufferFromString.h>
-#include <Storages/RemoteReadBufferCache.h>
+#include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -160,10 +160,15 @@ public:
 
                 /// Use local cache for remote storage if enabled.
                 std::unique_ptr<ReadBuffer> remote_read_buf;
-                if (RemoteReadBufferCache::instance().isInitialized() && getContext()->getSettingsRef().use_local_cache_for_remote_storage)
+                if (ExternalDataSourceCache::instance().isInitialized() && getContext()->getSettingsRef().use_local_cache_for_remote_storage)
+                {
+                    size_t buff_size = raw_read_buf->internalBuffer().size();
+                    if (buff_size == 0)
+                        buff_size = DBMS_DEFAULT_BUFFER_SIZE;
                     remote_read_buf = RemoteReadBuffer::create(getContext(),
                         std::make_shared<StorageHiveMetadata>("Hive", getNameNodeCluster(hdfs_namenode_url), uri_with_path, curr_file->getSize(), curr_file->getLastModTs()),
-                        std::move(raw_read_buf));
+                        std::move(raw_read_buf), buff_size);
+                }
                 else
                     remote_read_buf = std::move(raw_read_buf);
 

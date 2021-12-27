@@ -115,6 +115,7 @@ if (USE_HDFS)
     add_headers_and_sources(dbms Disks/HDFS)
 endif()
 
+add_headers_and_sources(dbms Storages/Cache)
 if (USE_HIVE)
     add_headers_and_sources(dbms Storages/Hive)
 endif()
