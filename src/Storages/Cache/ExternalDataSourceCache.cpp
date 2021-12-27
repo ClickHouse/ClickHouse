@@ -41,23 +41,8 @@ RemoteReadBuffer::~RemoteReadBuffer()
         file_cache_controller->deallocFile(std::move(file_buffer));
 }
 
-std::unique_ptr<ReadBuffer> RemoteReadBuffer::create(ContextPtr context, IRemoteFileMetadataPtr remote_file_metadata, std::unique_ptr<ReadBuffer> read_buffer)
+std::unique_ptr<ReadBuffer> RemoteReadBuffer::create(ContextPtr context, IRemoteFileMetadataPtr remote_file_metadata, std::unique_ptr<ReadBuffer> read_buffer, size_t buff_size)
 {
-    auto * log = &Poco::Logger::get("RemoteReadBuffer");
-    size_t buff_size = DBMS_DEFAULT_BUFFER_SIZE;
-    if (read_buffer)
-        buff_size = read_buffer->internalBuffer().size();
-    /*
-     * in the new implement of ReadBufferFromHDFS, buffer size is 0.
-     *
-     * in the common case, we don't read bytes from readbuffer directly, so set buff_size = DBMS_DEFAULT_BUFFER_SIZE
-     * is OK.
-     *
-     * we need be careful with the case  without local file reader.
-     */
-    if (buff_size == 0)
-        buff_size = DBMS_DEFAULT_BUFFER_SIZE;
-
     auto remote_path = remote_file_metadata->remote_path;
     auto remote_read_buffer = std::make_unique<RemoteReadBuffer>(buff_size);
     ErrorCodes::ErrorCode error;
@@ -65,8 +50,6 @@ std::unique_ptr<ReadBuffer> RemoteReadBuffer::create(ContextPtr context, IRemote
     std::tie(remote_read_buffer->file_cache_controller, read_buffer, error) = ExternalDataSourceCache::instance().createReader(context, remote_file_metadata, read_buffer);
     if (remote_read_buffer->file_cache_controller == nullptr)
     {
-        LOG_ERROR(log, "Failed to allocate local file for remote path: {}, reason: {}.", remote_path, error);
-        // read_buffer is the input one.
         return read_buffer;
     }
     else
@@ -120,7 +103,10 @@ off_t RemoteReadBuffer::getPosition()
 
 ExternalDataSourceCache::ExternalDataSourceCache() = default;
 
-ExternalDataSourceCache::~ExternalDataSourceCache() = default;
+ExternalDataSourceCache::~ExternalDataSourceCache()
+{
+    recover_task_holder->deactivate();
+}
 
 ExternalDataSourceCache & ExternalDataSourceCache::instance()
 {

@@ -58,7 +58,7 @@ public:
      * enough data be downloaded.
      * If the file has finished download, the process would unblocked
      */
-    ErrorCodes::ErrorCode waitMoreData(size_t start_offset_, size_t end_offset_);
+    void waitMoreData(size_t start_offset_, size_t end_offset_);
 
     inline size_t size() const { return current_offset; }
 
@@ -85,7 +85,6 @@ public:
 private:
     // flush file and status information
     void flush(bool need_flush_status = false);
-    bool loadInnerInformation(const std::filesystem::path & file_path);
 
     BackgroundSchedulePool::TaskHolder download_task_holder;
     void backgroundDownload(ReadBufferPtr remote_read_buffer);
