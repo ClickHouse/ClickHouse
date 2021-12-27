@@ -6,6 +6,7 @@
 #include <base/logger_useful.h>
 #include <base/sleep.h>
 #include <base/errnoToString.h>
+#include <Common/ErrorCodes.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/hex.h>
