@@ -32,9 +32,10 @@ static void BM_CHColumnToSparkRow(benchmark::State& state) {
                           //                      .column("l_comment", "String")
                           .build();
         dbms::SerializedPlanBuilder plan_builder;
-        auto plan = plan_builder.files("/home/kyligence/Documents/test-dataset/intel-gazelle-test-"+std::to_string(state.range(0))+".snappy.parquet", std::move(schema)).build();
-
-        auto query_plan = dbms::SerializedPlanParser::parse(std::move(plan));
+        auto plan = plan_builder.read("/home/kyligence/Documents/test-dataset/intel-gazelle-test-"+std::to_string(state.range(0))+".snappy.parquet", std::move(schema)).build();
+        auto context =  dbms::Context::createGlobal(dbms::Context::createShared().get());
+        dbms::SerializedPlanParser parser(context);
+        auto query_plan = parser.parse(std::move(plan));
         dbms::LocalExecutor local_executor;
         state.ResumeTiming();
         local_executor.execute(std::move(query_plan));
@@ -68,9 +69,10 @@ static void BM_CHColumnToSparkRowWithString(benchmark::State& state) {
                                                 .column("l_comment", "String")
                           .build();
         dbms::SerializedPlanBuilder plan_builder;
-        auto plan = plan_builder.files("/home/kyligence/Documents/test-dataset/intel-gazelle-test-"+std::to_string(state.range(0))+".snappy.parquet", std::move(schema)).build();
-
-        auto query_plan = dbms::SerializedPlanParser::parse(std::move(plan));
+        auto plan = plan_builder.read("/home/kyligence/Documents/test-dataset/intel-gazelle-test-"+std::to_string(state.range(0))+".snappy.parquet", std::move(schema)).build();
+        auto context =  dbms::Context::createGlobal(dbms::Context::createShared().get());
+        dbms::SerializedPlanParser parser(context);
+        auto query_plan = parser.parse(std::move(plan));
         dbms::LocalExecutor local_executor;
         state.ResumeTiming();
         local_executor.execute(std::move(query_plan));
@@ -104,9 +106,11 @@ static void BM_SparkRowToCHColumn(benchmark::State& state) {
                           //                      .column("l_comment", "String")
                           .build();
         dbms::SerializedPlanBuilder plan_builder;
-        auto plan = plan_builder.files("/home/kyligence/Documents/test-dataset/intel-gazelle-test-"+std::to_string(state.range(0))+".snappy.parquet", std::move(schema)).build();
+        auto plan = plan_builder.read("/home/kyligence/Documents/test-dataset/intel-gazelle-test-"+std::to_string(state.range(0))+".snappy.parquet", std::move(schema)).build();
 
-        auto query_plan = dbms::SerializedPlanParser::parse(std::move(plan));
+        auto context =  dbms::Context::createGlobal(dbms::Context::createShared().get());
+        dbms::SerializedPlanParser parser(context);
+        auto query_plan = parser.parse(std::move(plan));
         dbms::LocalExecutor local_executor;
 
         local_executor.execute(std::move(query_plan));
