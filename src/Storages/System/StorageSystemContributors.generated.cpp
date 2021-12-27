@@ -197,6 +197,7 @@ const char * auto_contributors[] {
     "BSD_Conqueror",
     "bseng",
     "Bulat Gaifullin",
+    "bullet1337",
     "Carbyn",
     "cekc",
     "centos7",
