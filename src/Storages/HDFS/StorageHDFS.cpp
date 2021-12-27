@@ -176,6 +176,12 @@ HDFSSource::HDFSSource(
     initialize();
 }
 
+void HDFSSource::onCancel()
+{
+    if (reader)
+        reader->cancel();
+}
+
 bool HDFSSource::initialize()
 {
     current_path = (*file_iterator)();

@@ -107,6 +107,12 @@ namespace
         };
         using URIInfoPtr = std::shared_ptr<URIInfo>;
 
+        void onCancel() override
+        {
+            if (reader)
+                reader->cancel();
+        }
+
         StorageURLSource(
             URIInfoPtr uri_info_,
             const std::string & http_method,
