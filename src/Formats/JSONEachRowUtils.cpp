@@ -15,8 +15,6 @@
 
 #include <base/find_symbols.h>
 
-#include <base/logger_useful.h>
-
 namespace DB
 {
 namespace ErrorCodes

@@ -10,5 +10,3 @@
 #cmakedefine01 USE_ARROW
 #cmakedefine01 USE_PROTOBUF
 #cmakedefine01 USE_MSGPACK
-#cmakedefine01 USE_SIMDJSON
-#cmakedefine01 USE_RAPIDJSON
