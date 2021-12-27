@@ -168,23 +168,27 @@ void registerStorageExecutable(StorageFactory & factory)
                 max_command_execution_time = max_execution_time_seconds;
 
             settings.max_command_execution_time = max_command_execution_time;
-            if (args.storage_def->settings)
-                settings.loadFromQuery(*args.storage_def);
         }
+
+        if (args.storage_def->settings)
+            settings.loadFromQuery(*args.storage_def);
 
         auto global_context = args.getContext()->getGlobalContext();
         return StorageExecutable::create(args.table_id, format, settings, input_queries, columns, constraints);
     };
 
+    StorageFactory::StorageFeatures storage_features;
+    storage_features.supports_settings = true;
+
     factory.registerStorage("Executable", [&](const StorageFactory::Arguments & args)
     {
         return register_storage(args, false /*is_executable_pool*/);
-    });
+    }, storage_features);
 
     factory.registerStorage("ExecutablePool", [&](const StorageFactory::Arguments & args)
     {
         return register_storage(args, true /*is_executable_pool*/);
-    });
+    }, storage_features);
 }
 
 };
