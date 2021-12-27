@@ -141,6 +141,10 @@ void StorageMergeTree::startup()
 
 void StorageMergeTree::flush()
 {
+    if (flush_called)
+        return;
+
+    flush_called = true;
     flushAllInMemoryPartsIfNeeded();
 }
 
