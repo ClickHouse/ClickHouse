@@ -114,9 +114,6 @@ public:
     /// The name of the table.
     StorageID getStorageID() const;
 
-    /// Unique ID, synchronized between replicas for replicated storage
-    virtual String getTableUniqID() const { return ""; }
-
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
 

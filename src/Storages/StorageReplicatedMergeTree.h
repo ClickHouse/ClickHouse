@@ -274,9 +274,11 @@ public:
 
     bool createEmptyPartInsteadOfLost(zkutil::ZooKeeperPtr zookeeper, const String & lost_part_name);
 
+    // Return default or custom zookeeper name for table
     String getZooKeeperName() const { return zookeeper_name; }
 
-    virtual String getTableUniqID() const override;
+    // Return table id, common for different replicas
+    String getTableSharedID() const;
 
 private:
     std::atomic_bool are_restoring_replica {false};
@@ -745,7 +747,10 @@ private:
     bool removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name, const String & table_uuid,
         const String & zookeeper_name, const String & replica_name, const String & zookeeper_path);
 
-    void freezeMetaData(DiskPtr disk, DataPartPtr part, String backup_part_path) const override;
+    void createAndStoreFreezeMetadata(DiskPtr disk, DataPartPtr part, String backup_part_path) const override;
+
+    // Create table id if needed
+    void createTableSharedID();
 
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
@@ -765,8 +770,7 @@ protected:
         bool allow_renaming_);
 
     /// Global ID, synced via ZooKeeper between replicas
-    /// mutable because can getted from ZooKeeper when required
-    mutable UUID table_global_id;
+    UUID table_shared_id;
 };
 
 String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info);

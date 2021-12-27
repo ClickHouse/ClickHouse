@@ -1623,7 +1623,7 @@ String IMergeTreeDataPart::getUniqueId() const
 }
 
 
-UInt32 IMergeTreeDataPart::getRefCount() const
+UInt32 IMergeTreeDataPart::getNumberOfRefereneces() const
 {
     return volume->getDisk()->getRefCount(fs::path(getFullRelativePath()) / "checksums.txt");
 }
