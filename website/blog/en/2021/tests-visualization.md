@@ -10,7 +10,7 @@ Test suites and testing infrastructure are one of the main assets of ClickHouse.
 
 We also save the results of all test runs into the database in ClickHouse. We started collecting results in June 2020, and we have 1 777 608 240 records so far. Now we run around 5 to 9 million tests every day.
 
-Tests are good (in general). A good test suite allows for fast development iterations, stable releases, and accepts more contributions from the community. We love tests. If there's something strange in ClickHouse, what are we gonna do? Write more tests.
+Tests are good (in general). A good test suite allows for fast development iterations, stable releases, and to accept more contributions from the community. We love tests. If there's something strange in ClickHouse, what are we gonna do? Write more tests.
 
 Some tests can be flaky. The reasons for flakiness are uncountable - most of them are simple timing issues in the test script itself, but sometimes if a test has failed one of a thousand times it can uncover subtle logic errors in code.
 
