@@ -101,7 +101,7 @@ public:
 
     /// If the value for the key is in the cache, returns it. If it is not, calls load_func() to
     /// produce it, saves the result in the cache and returns it.
-    /// Only one of several concurrent threads calling getOrTrySet() will call load_func(),
+    /// Only one of several concurrent threads calling getOrSet() will call load_func(),
     /// others will wait for that call to complete and will use its result (this helps prevent cache stampede).
     /// Exceptions occurring in load_func will be propagated to the caller. Another thread from the
     /// set of concurrent threads will then try to call its load_func etc.
