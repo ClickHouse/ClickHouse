@@ -8,9 +8,9 @@
 
 #include <type_traits>
 
-#include <base/DateLUT.h>
-#include <base/LocalDate.h>
-#include <base/LocalDateTime.h>
+#include <Common/DateLUT.h>
+#include <Common/LocalDate.h>
+#include <Common/LocalDateTime.h>
 #include <base/StringRef.h>
 #include <base/arithmeticOverflow.h>
 #include <base/unit.h>
@@ -899,13 +899,8 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
     {
         /// Unix timestamp with subsecond precision, already scaled to integer.
         /// For disambiguation we support only time since 2001-09-09 01:46:40 UTC and less than 30 000 years in future.
-
-        for (size_t i = 0; i < scale; ++i)
-        {
-            components.fractional *= 10;
-            components.fractional += components.whole % 10;
-            components.whole /= 10;
-        }
+        components.fractional =  components.whole % common::exp10_i32(scale);
+        components.whole = components.whole / common::exp10_i32(scale);
     }
 
     datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale);

@@ -1,16 +1,7 @@
 # This file is a modified version of contrib/libuv/CMakeLists.txt
 
-include(CMakeDependentOption)
-
 set (SOURCE_DIR "${CMAKE_SOURCE_DIR}/contrib/libuv")
 set (BINARY_DIR "${CMAKE_BINARY_DIR}/contrib/libuv")
-
-
-if(CMAKE_C_COMPILER_ID MATCHES "AppleClang|Clang|GNU")
-  list(APPEND uv_cflags -fvisibility=hidden --std=gnu89)
-  list(APPEND uv_cflags -Wall -Wextra -Wstrict-prototypes)
-  list(APPEND uv_cflags -Wno-unused-parameter)
-endif()
 
 set(uv_sources
     src/fs-poll.c
@@ -76,7 +67,7 @@ endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   list(APPEND uv_defines _GNU_SOURCE _POSIX_C_SOURCE=200112)
-  list(APPEND uv_libraries dl rt)
+  list(APPEND uv_libraries rt)
   list(APPEND uv_sources
        src/unix/linux-core.c
        src/unix/linux-inotify.c
