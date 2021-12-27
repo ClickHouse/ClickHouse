@@ -1,5 +1,5 @@
 #include <Storages/Hive/StorageHiveMetadata.h>
-#include <Storages/RemoteFileMetadataFactory.h>
+#include <Storages/Cache/RemoteFileMetadataFactory.h>
 #include <Common/Exception.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Parser.h>
@@ -38,7 +38,7 @@ bool StorageHiveMetadata::fromString(const String &buf)
 
 String StorageHiveMetadata::getVersion() const
 {
-    return std::to_string(getLastModificationTimestamp());
+    return std::to_string(last_modification_timestamp);
 }
 
 void registerStorageHiveMetadataCreator()

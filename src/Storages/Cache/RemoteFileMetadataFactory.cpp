@@ -1,4 +1,4 @@
-#include <Storages/RemoteFileMetadataFactory.h>
+#include <Storages/Cache/RemoteFileMetadataFactory.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -34,7 +34,7 @@ void RemoteFileMetadataFactory::registerRemoteFileMatadataCreator(const String &
     class_creators[name] = creator;
 }
 
-void registerStorageHiveMetadataCreator();
+extern void registerStorageHiveMetadataCreator();
 
 void registerRemoteFileMatadataCreators()
 {
