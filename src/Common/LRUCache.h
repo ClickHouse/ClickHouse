@@ -343,13 +343,6 @@ private:
 
         if (inserted)
         {
-            if (!removeOverflow(value_weight))
-            {
-                // cannot find enough space to put in the new value
-                cells.erase(it);
-                return false;
-            }
-
             try
             {
                 cell.queue_iterator = queue.insert(queue.end(), key);
@@ -358,6 +351,14 @@ private:
             {
                 cells.erase(it);
                 throw;
+            }
+
+            if (!removeOverflow())
+            {
+                // overflow is caused by inserting this element.
+                queue.erase(cell.queue_iterator);
+                cells.erase(it);
+                return false;
             }
         }
         else
