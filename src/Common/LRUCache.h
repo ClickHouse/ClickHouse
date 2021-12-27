@@ -372,7 +372,7 @@ private:
         }
 
         cell.value = mapped;
-        cell.size = cell.value ? weight_function(*cell.value) : 0;
+        cell.size = value_weight;
         current_size += cell.size;
 
         return true;
