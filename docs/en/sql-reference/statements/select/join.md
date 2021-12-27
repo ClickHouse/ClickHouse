@@ -55,7 +55,7 @@ The behavior of ClickHouse server for `ANY JOIN` operations depends on the [any_
 - [join_on_disk_max_files_to_merge](../../../operations/settings/settings.md#join_on_disk_max_files_to_merge)
 - [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys)
 
-## ON Section Conditions {on-section-conditions}
+## ON Section Conditions {#on-section-conditions}
 
 An `ON` section can contain several conditions combined using the `AND` and `OR` operators. Conditions specifying join keys must refer both left and right tables and must use the equality operator. Other conditions may use other logical operators but they must refer either the left or the right table of a query.
 
@@ -109,7 +109,6 @@ Result:
 │ B    │ Text B │     15 │
 └──────┴────────┴────────┘
 ```
-
 Query with `INNER` type of a join and condition with `OR`:
 
 ``` sql
@@ -151,7 +150,6 @@ Result:
 │ 4 │ -4 │   4 │
 └───┴────┴─────┘
 ```
-
 ## ASOF JOIN Usage {#asof-join-usage}
 
 `ASOF JOIN` is useful when you need to join records that have no exact match.
