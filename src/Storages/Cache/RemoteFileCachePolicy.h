@@ -13,7 +13,7 @@ struct RemoteFileCacheEvictPolicy
 {
     bool canRelease(std::shared_ptr<RemoteCacheController> cache) const
     {
-        return (!cache || cache->closable());
+        return !cache || cache->closable();
     }
     void release(std::shared_ptr<RemoteCacheController>  cache)
     {

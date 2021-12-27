@@ -7,16 +7,10 @@
 #include <mutex>
 #include <atomic>
 #include <base/logger_useful.h>
-#include <Common/Exception.h>
 
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int CANNOT_RELEASE;
-}
-
 template <typename T>
 struct TrivialWeightFunction
 {
@@ -27,15 +21,13 @@ struct TrivialWeightFunction
 };
 
 template <typename T>
-struct TrivialLRUCacheEvitPolicy
+struct TrivialLRUCacheEvictPolicy
 {
-    // To note that the arg could be null
     inline bool canRelease(std::shared_ptr<T>) const
     {
         return true;
     }
 
-    // To note that the arg could be null
     inline void release(std::shared_ptr<T>)
     {
     }
@@ -51,13 +43,21 @@ template <typename TKey,
          typename TMapped,
          typename HashFunction = std::hash<TKey>,
          typename WeightFunction = TrivialWeightFunction<TMapped>,
-         typename EvictPolicy = TrivialLRUCacheEvitPolicy<TMapped>>
+         typename EvictPolicy = TrivialLRUCacheEvictPolicy<TMapped>>
 class LRUCache
 {
 public:
     using Key = TKey;
     using Mapped = TMapped;
     using MappedPtr = std::shared_ptr<Mapped>;
+    
+    struct Result
+    {
+        MappedPtr value;
+        bool cache_miss = true;
+        // set_successful is not trustworthy for getOrSet, because removeOverflow is called right after putting key in cache
+        bool set_successful = false;
+    };
 
     /** Initialize LRUCache with max_size and max_elements_size.
       * max_elements_size == 0 means no elements size restrictions.
@@ -97,12 +97,11 @@ public:
         return setImpl(key, mapped, lock);
     }
 
-    /// Returns std::pair of the cached value and a bool indicating whether the value was produced during this call.
     template <typename LoadFunc>
     std::pair<MappedPtr, bool> getOrSet(const Key & key, LoadFunc && load_func)
     {
-        auto [value, is_loaded, _] = getOrTrySet(key, std::move(load_func));
-        return std::make_pair(value, is_loaded);
+        auto result = getOrTrySet(key, std::move(load_func));
+        return std::make_pair(result.value, result.cache_miss);
     }
 
     /// If the value for the key is in the cache, returns it. If it is not, calls load_func() to
@@ -112,12 +111,8 @@ public:
     /// Exceptions occurring in load_func will be propagated to the caller. Another thread from the
     /// set of concurrent threads will then try to call its load_func etc.
     ///
-    /// return std::tuple is <MappedPtr, is_value_loaded, is_value_updated>, where
-    ///  - is_value_loaded indicates whether the value was produce during this call
-    ///  - is_value_updated indicates whether the value is updated in the cache when is_value_loaded = true.
-    ///    if is_value_loaded = false, is_value_updated = false
     template <typename LoadFunc>
-    std::tuple<MappedPtr, bool, bool> getOrTrySet(const Key &key, LoadFunc && load_func)
+    Result getOrTrySet(const Key &key, LoadFunc && load_func)
     {
         InsertTokenHolder token_holder;
         {
@@ -353,7 +348,6 @@ private:
         if (inserted)
         {
             auto value_weight = mapped ? weight_function(*mapped) : 0;
-            // move removeOverflow() ahead here. In default, the final result is the same as the old implementation
             if (!removeOverflow(value_weight))
             {
                 // cannot find enough space to put in the new value
@@ -375,7 +369,7 @@ private:
         {
             if (!evict_policy.canRelease(cell.value))
             {
-                // the old value is refered by someone, cannot release now
+                // the old value is referred by someone, cannot release now
                 // in default policy, it is always true.
                 return false;
             }

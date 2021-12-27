@@ -1,6 +1,8 @@
 #include <Storages/Cache/RemoteCacheController.h>
 #include <Storages/Cache/ExternalDataSourceCache.h>
 #include <Storages/Cache/RemoteFileMetadataFactory.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadSettings.h>
 #include <Poco/JSON/JSON.h>
@@ -15,20 +17,6 @@ namespace ErrorCodes
     extern const int OK;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int END_OF_FILE;
-}
-
-bool RemoteCacheController::loadInnerInformation(const fs::path & file_path)
-{
-    if (!fs::exists(file_path))
-        return false;
-    std::ifstream info_file(file_path);
-    Poco::JSON::Parser info_parser;
-    auto info_json = info_parser.parse(info_file).extract<Poco::JSON::Object::Ptr>();
-    file_status = static_cast<LocalFileStatus>(info_json->get("file_status").convert<Int32>());
-    metadata_class = info_json->get("metadata_class").convert<String>();
-    info_file.close();
-    return true;
 }
 
 std::shared_ptr<RemoteCacheController> RemoteCacheController::recover(const std::filesystem::path & local_path_)
@@ -37,13 +25,12 @@ std::shared_ptr<RemoteCacheController> RemoteCacheController::recover(const std:
 
     if (!std::filesystem::exists(local_path_ / "data.bin"))
     {
-        LOG_TRACE(log, "Invalid cached directory:{}", local_path_.string());
+        LOG_TRACE(log, "Invalid cached directory: {}", local_path_.string());
         return nullptr;
     }
 
     auto cache_controller = std::make_shared<RemoteCacheController>(nullptr, local_path_, 0);
-    if (!cache_controller->loadInnerInformation(local_path_ / "info.txt")
-            || cache_controller->file_status != DOWNLOADED)
+    if (cache_controller->file_status != DOWNLOADED)
     {
         LOG_INFO(log, "Recover cached file failed. local path:{}", local_path_.string());
         return nullptr;
@@ -67,12 +54,11 @@ std::shared_ptr<RemoteCacheController> RemoteCacheController::recover(const std:
                 local_path_.string());
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid metadata class:{}", cache_controller->metadata_class);
     }
-    std::ifstream metadata_file(local_path_ / "metadata.txt");
-    if (!cache_controller->file_metadata_ptr->fromString(std::string((std::istreambuf_iterator<char>(metadata_file)),
-                    std::istreambuf_iterator<char>())))
+    ReadBufferFromFile file_readbuffer((local_path_ / "metadata.txt").string());
+    std::string metadata_content;
+    readStringUntilEOF(metadata_content, file_readbuffer);
+    if (!cache_controller->file_metadata_ptr->fromString(metadata_content))
     {
-        LOG_ERROR(log, "Cannot load the metadata. The cached file is invalid and will be remove. path:{}",
-                local_path_.string());
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid metadata file({}) for meta class {}", local_path_.string(), cache_controller->metadata_class);
     }
 
@@ -93,7 +79,7 @@ RemoteCacheController::RemoteCacheController(
     , current_offset(0)
 {
     // on recover, file_metadata_ptr is null, but it will be allocated after loading from metadata.txt
-    // when we allocate a whole new file cache ， file_metadata_ptr must not be null.
+    // when we allocate a whole new file cache，file_metadata_ptr must not be null.
     if (file_metadata_ptr)
     {
         metadata_class = file_metadata_ptr->getName();
@@ -102,9 +88,22 @@ RemoteCacheController::RemoteCacheController(
         metadata_file_writer->write(str_buf.c_str(), str_buf.size());
         metadata_file_writer->close();
     }
+    else
+    {
+        auto info_path = local_path_ / "info.txt";
+        if (fs::exists(info_path))
+        {
+            std::ifstream info_file(info_path);
+            Poco::JSON::Parser info_parser;
+            auto info_json = info_parser.parse(info_file).extract<Poco::JSON::Object::Ptr>();
+            file_status = static_cast<LocalFileStatus>(info_json->get("file_status").convert<Int32>());
+            metadata_class = info_json->get("metadata_class").convert<String>();
+            info_file.close();
+        }
+    }
 }
 
-ErrorCodes::ErrorCode RemoteCacheController::waitMoreData(size_t start_offset_, size_t end_offset_)
+void RemoteCacheController::waitMoreData(size_t start_offset_, size_t end_offset_)
 {
     std::unique_lock lock{mutex};
     if (file_status == DOWNLOADED)
@@ -113,7 +112,7 @@ ErrorCodes::ErrorCode RemoteCacheController::waitMoreData(size_t start_offset_, 
         if (start_offset_ >= current_offset)
         {
             lock.unlock();
-            return ErrorCodes::END_OF_FILE;
+            return;
         }
     }
     else // block until more data is ready
@@ -121,18 +120,17 @@ ErrorCodes::ErrorCode RemoteCacheController::waitMoreData(size_t start_offset_, 
         if (current_offset >= end_offset_)
         {
             lock.unlock();
-            return ErrorCodes::OK;
+            return;
         }
         else
             more_data_signal.wait(lock, [this, end_offset_] { return file_status == DOWNLOADED || current_offset >= end_offset_; });
     }
     lock.unlock();
-    return ErrorCodes::OK;
 }
 
 bool RemoteCacheController::isModified(IRemoteFileMetadataPtr file_metadata_)
 {
-    return !(file_metadata_ptr->getVersion() == file_metadata_->getVersion());
+    return file_metadata_ptr->getVersion() != file_metadata_->getVersion();
 }
 
 void RemoteCacheController::startBackgroundDownload(std::unique_ptr<ReadBuffer> in_readbuffer_, BackgroundSchedulePool & thread_pool)
