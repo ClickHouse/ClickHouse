@@ -79,6 +79,8 @@ public:
     DB::BatchParquetFileSourcePtr parseReadRealWithLocalFile(const io::substrait::ReadRel& rel);
     DB::Block parseNameStruct(const io::substrait::Type_NamedStruct& struct_);
     DB::DataTypePtr parseType(const io::substrait::Type& type);
+
+    static ContextPtr global_context;
 private:
     static DB::NamesAndTypesList blockToNameAndTypeList(const DB::Block & header);
     DB::QueryPlanPtr parseOp(const io::substrait::Rel &rel);
@@ -115,6 +117,7 @@ private:
     int name_no = 0;
     std::unordered_map<std::string, std::string> function_mapping;
     ContextPtr context;
+
 //    DB::QueryPlanPtr query_plan;
 
 };

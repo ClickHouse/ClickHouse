@@ -9,6 +9,7 @@
 #include <Parser/CHColumnToSparkRow.h>
 #include <Poco/URI.h>
 
+using namespace dbms;
 
 TEST(TestSelect, ReadRel)
 {
@@ -79,8 +80,7 @@ TEST(TestSelect, TestFilter)
     std::cout << "start execute" <<std::endl;
     dbms::LocalExecutor local_executor;
     dbms::SerializedPlanParser::initFunctionEnv();
-    auto context =  dbms::Context::createGlobal(dbms::Context::createShared().get());
-    dbms::SerializedPlanParser parser(context);
+    dbms::SerializedPlanParser parser(SerializedPlanParser::global_context);
     auto query_plan = parser.parse(std::move(plan));
     local_executor.execute(std::move(query_plan));
     ASSERT_TRUE(local_executor.hasNext());
@@ -127,8 +127,7 @@ TEST(TestSelect, TestAgg)
     std::cout << "start execute" <<std::endl;
     dbms::LocalExecutor local_executor;
     dbms::SerializedPlanParser::initFunctionEnv();
-    auto context =  dbms::Context::createGlobal(dbms::Context::createShared().get());
-    dbms::SerializedPlanParser parser(context);
+    dbms::SerializedPlanParser parser(SerializedPlanParser::global_context);
     auto query_plan = parser.parse(std::move(plan));
     local_executor.execute(std::move(query_plan));
     ASSERT_TRUE(local_executor.hasNext());
@@ -175,8 +174,7 @@ TEST(TestSelect, PerformanceTest)
 
         ASSERT_TRUE(plan->relations(0).has_read());
         ASSERT_EQ(plan->relations_size(), 1);
-        auto context =  dbms::Context::createGlobal(dbms::Context::createShared().get());
-        dbms::SerializedPlanParser parser(context);
+        dbms::SerializedPlanParser parser(SerializedPlanParser::global_context);
         auto query_plan = parser.parse(std::move(plan));
         std::cout << "start execute" << std::endl;
         dbms::LocalExecutor local_executor;

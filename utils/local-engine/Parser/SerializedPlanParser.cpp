@@ -343,7 +343,7 @@ void dbms::SerializedPlanParser::initFunctionEnv()
 dbms::SerializedPlanParser::SerializedPlanParser(const DB::ContextPtr & context) : context(context)
 {
 }
-//dbms::ContextPtr dbms::SerializedPlanParser::context = dbms::Context::createGlobal(dbms::Context::createShared().get());
+dbms::ContextPtr dbms::SerializedPlanParser::global_context = dbms::Context::createGlobal(dbms::Context::createShared().get());
 DB::Chunk DB::BatchParquetFileSource::generate()
 {
     while (!finished_generate)

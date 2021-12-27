@@ -42,7 +42,7 @@ public:
 
 private:
     void setInputToPrev(io::substrait::Rel * input);
-    io::substrait::Rel * prev_rel;
+    io::substrait::Rel * prev_rel = nullptr;
     std::unique_ptr<io::substrait::Plan> plan;
 };
 
