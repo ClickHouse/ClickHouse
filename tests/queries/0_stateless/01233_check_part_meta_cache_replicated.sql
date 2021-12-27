@@ -4,7 +4,7 @@ set replication_alter_partitions_sync = 2;
 DROP DATABASE IF EXISTS test_meta_cache on cluster preonline_hk5;
 DROP TABLE IF EXISTS test_meta_cache.check_part_meta_cache on cluster preonline_hk5;
 CREATE DATABASE test_meta_cache on cluster preonline_hk5 ENGINE = Ordinary;
-CREATE TABLE test_meta_cache.check_part_meta_cache on cluster preonline_hk5 ( p Date, k UInt64, v1 UInt64, v2 Int64) ENGINE ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/test_meta_cache/check_part_meta_cache', '{replica}') PARTITION BY toYYYYMM(p) ORDER BY k;
+CREATE TABLE test_meta_cache.check_part_meta_cache on cluster preonline_hk5 ( p Date, k UInt64, v1 UInt64, v2 Int64) ENGINE ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/{database}/check_part_meta_cache', '{replica}') PARTITION BY toYYYYMM(p) ORDER BY k;
 with arrayJoin(checkPartMetaCache('test_meta_cache', 'check_part_meta_cache')) as info select count(1), countIf(info.5 = 0);
 
 -- Insert first batch of data.

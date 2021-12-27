@@ -94,11 +94,13 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event ContextLock;
-    extern const Event CompiledCacheSizeBytes;
+
+#if USE_ROCKSDB
     extern const Event RocksdbPut;
     extern const Event RocksdbGet;
     extern const Event RocksdbDelete;
     extern const Event RocksdbSeek;
+#endif
 }
 
 namespace CurrentMetrics
@@ -278,8 +280,10 @@ struct ContextSharedPart
 
     Context::ConfigReloadCallback config_reload_callback;
 
+#if USE_ROCKSDB
     /// MergeTree metadata cache stored in rocksdb.
     MergeTreeMetaCachePtr merge_tree_meta_cache;
+#endif
 
     ContextSharedPart()
         : access_control(std::make_unique<AccessControl>()), macros(std::make_unique<Macros>())
@@ -392,12 +396,14 @@ struct ContextSharedPart
             /// Stop zookeeper connection
             zookeeper.reset();
 
-            /// Shutdown meta file cache 
+#if USE_ROCKSDB
+            /// Shutdown meta file cache
             if (merge_tree_meta_cache)
             {
                 merge_tree_meta_cache->shutdown();
                 merge_tree_meta_cache.reset();
             }
+#endif
         }
 
         /// Can be removed w/o context lock
@@ -441,6 +447,7 @@ SharedContextHolder::SharedContextHolder(std::unique_ptr<ContextSharedPart> shar
 
 void SharedContextHolder::reset() { shared.reset(); }
 
+#if USE_ROCKSDB
 MergeTreeMetaCache::Status MergeTreeMetaCache::put(const String & key, const String & value)
 {
     auto options = rocksdb::WriteOptions();
@@ -491,6 +498,7 @@ void MergeTreeMetaCache::shutdown()
         rocksdb->Close();
     }
 }
+#endif
 
 ContextMutablePtr Context::createGlobal(ContextSharedPart * shared)
 {
@@ -2309,6 +2317,7 @@ void Context::initializeTraceCollector()
     shared->initializeTraceCollector(getTraceLog());
 }
 
+#if USE_ROCKSDB
 void Context::initializeMergeTreeMetaCache(const String & dir, size_t size)
 {
     rocksdb::Options options;
@@ -2328,6 +2337,7 @@ void Context::initializeMergeTreeMetaCache(const String & dir, size_t size)
     }
     shared->merge_tree_meta_cache = std::make_shared<MergeTreeMetaCache>(db);
 }
+#endif
 
 bool Context::hasTraceCollector() const
 {

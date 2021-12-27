@@ -748,7 +748,9 @@ if (ThreadFuzzer::instance().isEffective())
         /// Directory with metadata of tables, which was marked as dropped by Atomic database
         fs::create_directories(path / "metadata_dropped/");
 
+#if USE_ROCKSDB
         fs::create_directories(path / "rocksdb/");
+#endif
     }
 
 

@@ -1,5 +1,8 @@
 #pragma once
 
+#include "config_core.h"
+
+#if USE_ROCKSDB
 #include <base/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
@@ -27,3 +30,4 @@ protected:
 };
 
 }
+#endif

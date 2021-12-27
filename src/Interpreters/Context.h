@@ -1,5 +1,6 @@
 #pragma once
 
+#include "config_core.h"
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
@@ -15,8 +16,11 @@
 #include <Common/isLocalAddress.h>
 #include <base/types.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+
+#if USE_ROCKSDB
 #include <rocksdb/db.h>
 #include <rocksdb/table.h>
+#endif
 
 #include "config_core.h"
 
@@ -179,6 +183,7 @@ private:
     std::unique_ptr<ContextSharedPart> shared;
 };
 
+#if USE_ROCKSDB
 class MergeTreeMetaCache
 {
 public:
@@ -199,6 +204,7 @@ private:
     Poco::Logger * log = &Poco::Logger::get("MergeTreeMetaCache");
 };
 using MergeTreeMetaCachePtr = std::shared_ptr<MergeTreeMetaCache>;
+#endif
 
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
@@ -699,7 +705,9 @@ public:
 
     UInt32 getZooKeeperSessionUptime() const;
 
+#if USE_ROCKSDB
     MergeTreeMetaCachePtr getMergeTreeMetaCache() const;
+#endif
 
 
 #if USE_NURAFT
@@ -788,7 +796,9 @@ public:
     /// Call after initialization before using trace collector.
     void initializeTraceCollector();
 
+#if USE_ROCKSDB
     void initializeMergeTreeMetaCache(const String & dir, size_t size);
+#endif
 
     bool hasTraceCollector() const;
 

@@ -107,6 +107,7 @@ void MergeTreeDataPartWide::loadIndexGranularity()
     String full_path = getFullRelativePath();
     index_granularity_info.changeGranularityIfRequired(volume->getDisk(), full_path);
 
+
     if (columns.empty())
         throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 

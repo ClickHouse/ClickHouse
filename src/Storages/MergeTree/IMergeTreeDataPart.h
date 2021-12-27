@@ -50,7 +50,7 @@ public:
         PUT, // override set
         DROP, // remove keys
     };
-    
+
     static String modifyCacheTypeToString(ModifyCacheType type)
     {
         switch (type)
