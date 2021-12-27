@@ -50,7 +50,7 @@ public:
     using Key = TKey;
     using Mapped = TMapped;
     using MappedPtr = std::shared_ptr<Mapped>;
-    
+
     struct Result
     {
         MappedPtr value;

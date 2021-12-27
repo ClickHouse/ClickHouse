@@ -14,7 +14,6 @@ namespace DB
 namespace fs = std::filesystem;
 namespace ErrorCodes
 {
-    extern const int OK;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
@@ -39,7 +38,7 @@ std::shared_ptr<RemoteCacheController> RemoteCacheController::recover(const std:
     {
         cache_controller->file_metadata_ptr = RemoteFileMetadataFactory::instance().get(cache_controller->metadata_class);
     }
-    catch(const Exception & e)
+    catch (const Exception & e)
     {
         LOG_ERROR(log, "Get metadata class failed for {}. {}", cache_controller->metadata_class, e.message());
         cache_controller->file_metadata_ptr = nullptr;
