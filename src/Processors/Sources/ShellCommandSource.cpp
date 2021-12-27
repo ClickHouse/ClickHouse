@@ -568,8 +568,18 @@ Pipe ShellCommandCoordinator::createPipe(
         tasks.emplace_back(std::move(task));
     }
 
-    Pipe pipe(std::make_unique<ShellCommandSource>(
-        context, configuration.format, configuration.command_read_timeout_milliseconds, std::move(sample_block), std::move(process), std::move(tasks), source_configuration, std::move(process_holder), process_pool));
+    auto source = std::make_unique<ShellCommandSource>(
+        context,
+        configuration.format,
+        configuration.command_read_timeout_milliseconds,
+        std::move(sample_block),
+        std::move(process),
+        std::move(tasks),
+        source_configuration,
+        std::move(process_holder),
+        process_pool);
+    auto pipe = Pipe(std::move(source));
+
     return pipe;
 }
 

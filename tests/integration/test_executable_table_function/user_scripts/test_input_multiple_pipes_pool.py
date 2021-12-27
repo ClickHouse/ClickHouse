@@ -7,55 +7,39 @@ if __name__ == '__main__':
     fd3 = os.fdopen(3)
     fd4 = os.fdopen(4)
 
-    for chunk_header in fd4:
-        fd4_chunk_length = int(chunk_header)
-        print(str(fd4_chunk_length), end='\n')
+    lines = []
+
+    for chunk_header_fd4 in fd4:
+        fd4_chunk_length = int(chunk_header_fd4)
 
         while fd4_chunk_length != 0:
-            line = sys.stdin.readline()
+            line = fd4.readline()
             fd4_chunk_length -= 1
-            print("Key from fd 4 " + line, end='')
+            lines.append("Key from 4 fd " + line)
 
-        sys.stdout.flush()
-
-        for chunk_header in fd3:
-            fd3_chunk_length = int(chunk_header)
-            print(str(fd3_chunk_length), end='\n')
+        for chunk_header_fd3 in fd3:
+            fd3_chunk_length = int(chunk_header_fd3)
 
             while fd3_chunk_length != 0:
-                line = sys.stdin.readline()
+                line = fd3.readline()
                 fd3_chunk_length -= 1
-                print("Key from fd 3 " + line, end='')
-
-            sys.stdout.flush()
+                lines.append("Key from 3 fd " + line)
 
             for chunk_header in sys.stdin:
                 chunk_length = int(chunk_header)
-                print(str(chunk_length), end='\n')
 
                 while chunk_length != 0:
                     line = sys.stdin.readline()
                     chunk_length -= 1
-                    print("Key " + line, end='')
+                    lines.append("Key from 0 fd " + line)
 
-                sys.stdout.flush()
+                break
+            break
 
-#!/usr/bin/python3
+        print(str(len(lines)), end='\n')
 
-import sys
-import os
+        for line in lines:
+            print(line, end='')
+        lines.clear()
 
-if __name__ == '__main__':
-    fd3 = os.fdopen(3)
-    fd4 = os.fdopen(4)
-
-    for line in fd4:
-        print("Key from 4 fd " + line, end='')
-
-    for line in fd3:
-        print("Key from 3 fd " + line, end='')
-
-    for line in sys.stdin:
-        print("Key from 0 fd " + line, end='')
-
-    sys.stdout.flush()
+        sys.stdout.flush()

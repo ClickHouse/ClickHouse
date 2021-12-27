@@ -18,6 +18,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -101,6 +102,38 @@ Pipe StorageExecutable::read(
     {
         InterpreterSelectWithUnionQuery interpreter(input_query, context, {});
         inputs.emplace_back(QueryPipelineBuilder::getPipe(interpreter.buildQueryPipeline()));
+    }
+
+    if (settings.is_executable_pool)
+    {
+        /// For executable pool we read data from input streams and convert it to single blocks streams.
+        size_t inputs_size = inputs.size();
+        for (size_t i = 0; i < inputs_size; ++i)
+        {
+            auto && input = inputs[i];
+            QueryPipeline input_pipeline(std::move(input));
+            PullingPipelineExecutor input_pipeline_executor(input_pipeline);
+
+            auto header = input_pipeline_executor.getHeader();
+            auto result_block = header.cloneEmpty();
+
+            size_t result_block_columns = result_block.columns();
+
+            Block result;
+            while (input_pipeline_executor.pull(result))
+            {
+                for (size_t result_block_index = 0; result_block_index < result_block_columns; ++result_block_index)
+                {
+                    auto & block_column = result.safeGetByPosition(result_block_index);
+                    auto & result_block_column = result_block.safeGetByPosition(result_block_index);
+
+                    result_block_column.column->assumeMutable()->insertRangeFrom(*block_column.column, 0, block_column.column->size());
+                }
+            }
+
+            auto source = std::make_shared<SourceFromSingleChunk>(std::move(result_block));
+            inputs[i] = Pipe(std::move(source));
+        }
     }
 
     auto sample_block = metadata_snapshot->getSampleBlock();
