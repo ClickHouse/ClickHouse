@@ -69,12 +69,6 @@ function renderResponse(response) {
     document.body.style.height = canvas.height + 10 + 'px';
 
     let ctx = canvas.getContext('2d');
-
-    ctx.imageSmoothingEnabled = false;
-    ctx.mozImageSmoothingEnabled = false;
-    ctx.webkitImageSmoothingEnabled = false;
-    ctx.msImageSmoothingEnabled = false;
-
     let image = ctx.createImageData(canvas.width, canvas.height);
     let pixels = image.data;
 
@@ -122,8 +116,6 @@ canvas.addEventListener('mousemove', event => {
     let test = test_names[canvas.height - y][0];
 
     let pixel = canvas.getContext('2d').getImageData(x, y, 1, 1).data;
-
-    console.log(pixel);
 
     let info = document.getElementById('info');
 
