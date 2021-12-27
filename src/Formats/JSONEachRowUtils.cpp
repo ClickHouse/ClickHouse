@@ -110,7 +110,8 @@ static String readJSONEachRowLineIntoStringImpl(ReadBuffer & in)
     return String(memory.data(), memory.size());
 }
 
-DataTypePtr getDataTypeFromJSONFieldImpl(const SimdJSONParser::Element & field)
+template <class Element>
+DataTypePtr getDataTypeFromJSONFieldImpl(const Element & field)
 {
     if (field.isNull())
         return nullptr;
