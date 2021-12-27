@@ -65,3 +65,12 @@ CREATE TABLE xxxx_null (`ts` Nullable(DateTime)) ENGINE = MergeTree ORDER BY toS
 INSERT INTO xxxx_null SELECT '2021-11-11 00:00:00';
 SELECT * FROM xxxx_null WHERE ts > '2021-10-11 00:00:00';
 DROP TABLE xxxx_null;
+
+-- nullable keys are forbidden when `allow_nullable_key = 0`
+CREATE TABLE invalid_null (id Nullable(String)) ENGINE = MergeTree ORDER BY id; -- { serverError 44 }
+CREATE TABLE invalid_lc_null (id LowCardinality(Nullable(String))) ENGINE = MergeTree ORDER BY id; -- { serverError 44 }
+CREATE TABLE invalid_array_null (id Array(Nullable(String))) ENGINE = MergeTree ORDER BY id; -- { serverError 44 }
+CREATE TABLE invalid_tuple_null (id Tuple(Nullable(String), UInt8)) ENGINE = MergeTree ORDER BY id; -- { serverError 44 }
+CREATE TABLE invalid_map_null (id Map(UInt8, Nullable(String))) ENGINE = MergeTree ORDER BY id; -- { serverError 44 }
+CREATE TABLE invalid_simple_agg_state_null (id SimpleAggregateFunction(sum, Nullable(UInt64))) ENGINE = MergeTree ORDER BY id; -- { serverError 44 }
+-- AggregateFunctions are not comparable and cannot be used in key expressions. No need to test it.
