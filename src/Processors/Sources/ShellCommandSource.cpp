@@ -107,8 +107,7 @@ class TimeoutReadBufferFromFileDescriptor : public BufferWithOwnMemory<ReadBuffe
 {
 public:
     explicit TimeoutReadBufferFromFileDescriptor(int fd_, size_t timeout_milliseconds_)
-        : BufferWithOwnMemory<ReadBuffer>()
-        , fd(fd_)
+        : fd(fd_)
         , timeout_milliseconds(timeout_milliseconds_)
     {
         makeFdNonBlocking(fd);
@@ -167,8 +166,7 @@ class TimeoutWriteBufferFromFileDescriptor : public BufferWithOwnMemory<WriteBuf
 {
 public:
     explicit TimeoutWriteBufferFromFileDescriptor(int fd_, size_t timeout_milliseconds_)
-        : BufferWithOwnMemory<WriteBuffer>()
-        , fd(fd_)
+        : fd(fd_)
         , timeout_milliseconds(timeout_milliseconds_)
     {
         makeFdNonBlocking(fd);
@@ -253,16 +251,19 @@ namespace
         using SendDataTask = std::function<void(void)>;
 
         ShellCommandSource(
-            ContextPtr context,
-            const std::string & format,
+            ContextPtr context_,
+            const std::string & format_,
             size_t command_read_timeout_milliseconds,
-            const Block & sample_block,
+            const Block & sample_block_,
             std::unique_ptr<ShellCommand> && command_,
             std::vector<SendDataTask> && send_data_tasks = {},
             const ShellCommandSourceConfiguration & configuration_ = {},
             std::unique_ptr<ShellCommandHolder> && command_holder_ = nullptr,
             std::shared_ptr<ProcessPool> process_pool_ = nullptr)
-            : SourceWithProgress(sample_block)
+            : SourceWithProgress(sample_block_)
+            , context(context_)
+            , format(format_)
+            , sample_block(sample_block_)
             , command(std::move(command_))
             , configuration(configuration_)
             , timeout_command_out(command->out.getFD(), command_read_timeout_milliseconds)
@@ -275,6 +276,7 @@ namespace
                 {
                     try
                     {
+                        std::cerr << "SendDataThread task start" << std::endl;
                         task();
                     }
                     catch (...)
@@ -298,10 +300,8 @@ namespace
 
                 if (configuration.read_number_of_rows_from_process_output)
                 {
-                    /// TODO: Move to generate
-                    readText(configuration.number_of_rows_to_read, timeout_command_out);
-                    char dummy;
-                    readChar(dummy, timeout_command_out);
+                    /// Initialize executor in generate
+                    return;
                 }
 
                 max_block_size = configuration.number_of_rows_to_read;
@@ -337,8 +337,22 @@ namespace
         {
             rethrowExceptionDuringSendDataIfNeeded();
 
-            if (configuration.read_fixed_number_of_rows && current_read_rows >= configuration.number_of_rows_to_read)
-                return {};
+            if (configuration.read_fixed_number_of_rows)
+            {
+                if (!executor && configuration.read_number_of_rows_from_process_output)
+                {
+                    readText(configuration.number_of_rows_to_read, timeout_command_out);
+                    char dummy;
+                    readChar(dummy, timeout_command_out);
+
+                    size_t max_block_size = configuration.number_of_rows_to_read;
+                    pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, sample_block, max_block_size)));
+                    executor = std::make_unique<PullingPipelineExecutor>(pipeline);
+                }
+
+                if (current_read_rows >= configuration.number_of_rows_to_read)
+                    return {};
+            }
 
             Chunk chunk;
 
@@ -388,6 +402,10 @@ namespace
             }
         }
 
+        ContextPtr context;
+        std::string format;
+        Block sample_block;
+
         std::unique_ptr<ShellCommand> command;
         ShellCommandSourceConfiguration configuration;
 
@@ -424,6 +442,8 @@ namespace
 
         void transform(Chunk & chunk) override
         {
+            std::cerr << "SendingChunkHeaderTransform::transform " << chunk.getNumRows() << std::endl;
+
             writeText(chunk.getNumRows(), *buffer);
             writeChar('\n', *buffer);
         }
