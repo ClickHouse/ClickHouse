@@ -238,15 +238,17 @@ SinkToStoragePtr StorageMySQL::write(const ASTPtr & /*query*/, const StorageMeta
 }
 
 
-StorageMySQLConfiguration StorageMySQL::getConfiguration(ASTs engine_args, ContextPtr context_)
+StorageMySQLConfiguration StorageMySQL::getConfiguration(ASTs engine_args, ContextPtr context_, MySQLBaseSettings & storage_settings)
 {
     StorageMySQLConfiguration configuration;
 
-    if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context_))
+    if (auto named_collection = getExternalDataSourceConfiguration(
+            engine_args, context_, /* is_database_engine */false, /* throw_on_no_collection */true, storage_settings))
     {
-        auto [common_configuration, storage_specific_args] = named_collection.value();
+        auto [common_configuration, storage_specific_args, settings_changes] = named_collection.value();
         configuration.set(common_configuration);
         configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
+        storage_settings.applyChanges(settings_changes);
 
         for (const auto & [arg_name, arg_value] : storage_specific_args)
         {
@@ -298,9 +300,9 @@ void registerStorageMySQL(StorageFactory & factory)
 {
     factory.registerStorage("MySQL", [](const StorageFactory::Arguments & args)
     {
-        auto configuration = StorageMySQL::getConfiguration(args.engine_args, args.getLocalContext());
-
         MySQLSettings mysql_settings; /// TODO: move some arguments from the arguments to the SETTINGS.
+        auto configuration = StorageMySQL::getConfiguration(args.engine_args, args.getLocalContext(), mysql_settings);
+
         if (args.storage_def->settings)
             mysql_settings.loadFromQuery(*args.storage_def);
 

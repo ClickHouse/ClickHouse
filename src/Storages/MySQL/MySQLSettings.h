@@ -25,11 +25,14 @@ class ASTStorage;
 DECLARE_SETTINGS_TRAITS(MySQLSettingsTraits, LIST_OF_MYSQL_SETTINGS)
 
 
+using MySQLBaseSettings = BaseSettings<MySQLSettingsTraits>;
+
 /** Settings for the MySQL family of engines.
   */
-struct MySQLSettings : public BaseSettings<MySQLSettingsTraits>
+struct MySQLSettings : public MySQLBaseSettings
 {
     void loadFromQuery(ASTStorage & storage_def);
 };
+
 
 }
