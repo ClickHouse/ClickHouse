@@ -354,14 +354,14 @@ void Aggregator::compileAggregateFunctionsIfNeeded()
 
         if (auto * compilation_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
         {
-            auto [compiled_function_cache_entry, _] = compilation_cache->getOrSet(aggregate_functions_description_hash_key, [&] ()
+            auto result = compilation_cache->getOrSet(aggregate_functions_description_hash_key, [&] ()
             {
                 LOG_TRACE(log, "Compile expression {}", functions_description);
 
                 auto compiled_aggregate_functions = compileAggregateFunctions(getJITInstance(), functions_to_compile, functions_description);
                 return std::make_shared<CompiledAggregateFunctionsHolder>(std::move(compiled_aggregate_functions));
             });
-
+            auto compiled_function_cache_entry = result.value;
             compiled_aggregate_functions_holder = std::static_pointer_cast<CompiledAggregateFunctionsHolder>(compiled_function_cache_entry);
         }
         else

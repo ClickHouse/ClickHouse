@@ -63,12 +63,12 @@ public:
     {
         auto result = Base::getOrSet(key, std::forward<LoadFunc>(load));
 
-        if (result.second)
+        if (result.cache_miss)
             ProfileEvents::increment(ProfileEvents::UncompressedCacheMisses);
         else
             ProfileEvents::increment(ProfileEvents::UncompressedCacheHits);
 
-        return result.first;
+        return result.value;
     }
 
 private:

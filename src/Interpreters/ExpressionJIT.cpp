@@ -296,12 +296,13 @@ static FunctionBasePtr compile(
 
     if (auto * compilation_cache = CompiledExpressionCacheFactory::instance().tryGetCache())
     {
-        auto [compiled_function_cache_entry, _] = compilation_cache->getOrSet(hash_key, [&] ()
+        auto result = compilation_cache->getOrSet(hash_key, [&] ()
         {
             LOG_TRACE(getLogger(), "Compile expression {}", llvm_function->getName());
             auto compiled_function = compileFunction(getJITInstance(), *llvm_function);
             return std::make_shared<CompiledFunctionHolder>(compiled_function);
         });
+        auto compiled_function_cache_entry = result.value;
 
         std::shared_ptr<CompiledFunctionHolder> compiled_function_holder = std::static_pointer_cast<CompiledFunctionHolder>(compiled_function_cache_entry);
         llvm_function->setCompiledFunction(std::move(compiled_function_holder));
