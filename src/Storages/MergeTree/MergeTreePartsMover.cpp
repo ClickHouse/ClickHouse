@@ -122,7 +122,7 @@ bool MergeTreePartsMover::selectPartsForMove(
     time_t time_of_move = time(nullptr);
 
     auto metadata_snapshot = data->getInMemoryMetadataPtr();
-    
+
     if (need_to_move.empty() && !metadata_snapshot->hasAnyMoveTTL())
         return false;
 
