@@ -276,7 +276,6 @@ namespace
                 {
                     try
                     {
-                        std::cerr << "SendDataThread task start" << std::endl;
                         task();
                     }
                     catch (...)
@@ -442,8 +441,6 @@ namespace
 
         void transform(Chunk & chunk) override
         {
-            std::cerr << "SendingChunkHeaderTransform::transform " << chunk.getNumRows() << std::endl;
-
             writeText(chunk.getNumRows(), *buffer);
             writeChar('\n', *buffer);
         }
