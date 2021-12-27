@@ -117,6 +117,7 @@ ClickHouse Keeper also provides 4lw commands which are almost the same with Zook
 The 4lw commands has a white list configuration `four_letter_word_white_list` which has default value "conf,cons,crst,envi,ruok,srst,srvr,stat,wchc,wchs,dirs,mntr,isro".
 
 You can issue the commands to ClickHouse Keeper via telnet or nc, at the client port.
+
 ```
 echo mntr | nc localhost 9181
 ```
