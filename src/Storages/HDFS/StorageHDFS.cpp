@@ -443,7 +443,7 @@ Pipe StorageHDFS::read(
 {
     bool need_path_column = false;
     bool need_file_column = false;
-    
+
     for (const auto & column : column_names)
     {
         if (column == "_path")
