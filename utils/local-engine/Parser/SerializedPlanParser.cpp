@@ -1,12 +1,17 @@
 #include "SerializedPlanParser.h"
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Core/Block.h>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
+#include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/registerFunctions.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Formats/Impl/ArrowBlockOutputFormat.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
@@ -16,10 +21,7 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <AggregateFunctions/registerAggregateFunctions.h>
-#include <Functions/registerFunctions.h>
-#include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Interpreters/Context.h>
+#include <DataTypes/DataTypeDate.h>
 #include <sys/stat.h>
 
 namespace substrait = io::substrait;
@@ -307,30 +309,42 @@ const DB::ActionsDAG::Node * dbms::SerializedPlanParser::parseArgument(DB::Actio
 {
     switch (rel.rex_type_case())
     {
-        case io::substrait::Expression::RexTypeCase::kLiteral: {
+        case io::substrait::Expression::RexTypeCase::kLiteral:
+        {
             const auto & literal = rel.literal();
             switch (literal.literal_type_case())
             {
-                case io::substrait::Expression_Literal::kFp64: {
+                case io::substrait::Expression_Literal::kFp64:
+                {
                     auto type = std::make_shared<DB::DataTypeFloat64>();
                     return &action_dag->addColumn(ColumnWithTypeAndName(
                         type->createColumnConst(1, literal.fp64()), type, getUniqueName(std::to_string(literal.fp64()))));
                 }
-                case io::substrait::Expression_Literal::kString: {
+                case io::substrait::Expression_Literal::kString:
+                {
                     auto type = std::make_shared<DB::DataTypeString>();
                     return &action_dag->addColumn(
                         ColumnWithTypeAndName(type->createColumnConst(1, literal.string()), type, getUniqueName(literal.string())));
                 }
-                case io::substrait::Expression_Literal::kI32: {
+                case io::substrait::Expression_Literal::kI32:
+                {
                     auto type = std::make_shared<DB::DataTypeInt32>();
                     return &action_dag->addColumn(ColumnWithTypeAndName(
                         type->createColumnConst(1, literal.i32()), type, getUniqueName(std::to_string(literal.i32()))));
+                }
+                case io::substrait::Expression_Literal::kDate:
+                {
+
+                    auto type = std::make_shared<DB::DataTypeDate>();
+                    return &action_dag->addColumn(ColumnWithTypeAndName(
+                        type->createColumnConst(1, literal.date()), type, getUniqueName(std::to_string(literal.date()))));
                 }
                 default:
                     throw std::runtime_error("unsupported constant type " + std::to_string(literal.literal_type_case()));
             }
         }
-        case io::substrait::Expression::RexTypeCase::kSelection: {
+        case io::substrait::Expression::RexTypeCase::kSelection:
+        {
             if (!rel.selection().has_direct_reference() || !rel.selection().direct_reference().has_struct_field())
             {
                 throw std::runtime_error("Can only have direct struct references in selections");

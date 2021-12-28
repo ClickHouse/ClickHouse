@@ -56,6 +56,12 @@ SchemaPtr SerializedSchemaBuilder::build()
             t->mutable_fp64()->set_nullability(
                 this->nullability_map[name] ? io::substrait::Type_Nullability_NULLABLE : io::substrait::Type_Nullability_REQUIRED);
         }
+        else if (type == "Date")
+        {
+            auto * t = type_struct->mutable_types()->Add();
+            t->mutable_date()->set_nullability(
+                this->nullability_map[name] ? io::substrait::Type_Nullability_NULLABLE : io::substrait::Type_Nullability_REQUIRED);
+        }
         else
         {
             throw "doesn't support type " + type;
@@ -204,6 +210,14 @@ io::substrait::Expression * literal(std::string value)
     io::substrait::Expression * rel = new io::substrait::Expression();
     auto * literal = rel->mutable_literal();
     literal->set_string(value);
+    return rel;
+}
+
+io::substrait::Expression* literalDate(int32_t value)
+{
+    io::substrait::Expression * rel = new io::substrait::Expression();
+    auto * literal = rel->mutable_literal();
+    literal->set_date(value);
     return rel;
 }
 }

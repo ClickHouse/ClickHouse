@@ -15,7 +15,8 @@ enum Function
     LESS_THAN_OR_EQUAL,
     LESS_THAN,
     MULTIPLY,
-    SUM
+    SUM,
+    TO_DATE
 };
 
 using SchemaPtr = io::substrait::Type_NamedStruct *;
@@ -31,7 +32,8 @@ public:
             .registerFunction(LESS_THAN_OR_EQUAL, "LESS_THAN_OR_EQUAL")
             .registerFunction(LESS_THAN, "LESS_THAN")
             .registerFunction(MULTIPLY, "MULTIPLY")
-            .registerFunction(SUM, "SUM");
+            .registerFunction(SUM, "SUM")
+            .registerFunction(TO_DATE, "TO_DATE");
         return *this;
     }
     SerializedPlanBuilder& registerFunction(int id, std::string name);
@@ -76,6 +78,7 @@ io::substrait::AggregateRel_Measure * measureFunction(int32_t id, ExpressionList
 io::substrait::Expression* literal(double_t value);
 io::substrait::Expression* literal(int32_t value);
 io::substrait::Expression* literal(std::string value);
+io::substrait::Expression* literalDate(int32_t value);
 
 io::substrait::Expression * selection(int32_t field_id);
 

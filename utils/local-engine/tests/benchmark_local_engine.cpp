@@ -103,7 +103,7 @@ static void BM_TPCH_Q6(benchmark::State& state) {
 //                          .column("l_tax", "FP64")
                           //                      .column("l_returnflag", "String")
                           //                      .column("l_linestatus", "String")
-                          .column("l_shipdate_new", "FP64")
+                          .column("l_shipdate_new", "Date")
 //                          .column("l_commitdate_new", "FP64")
 //                          .column("l_receiptdate_new", "FP64")
                           //                      .column("l_shipinstruct", "String")
@@ -130,9 +130,9 @@ static void BM_TPCH_Q6(benchmark::State& state) {
                                                                                                                                                                                                                                                     }),
                                                                                                                                                                                                                           scalarFunction(IS_NOT_NULL, {selection(1)})
                                                                                                                                                                                                                       }),
-                                                                                                                                                                                            dbms::scalarFunction(GREATER_THAN_OR_EQUAL, {selection(4), literal(8766.0)})
+                                                                                                                                                                                            dbms::scalarFunction(GREATER_THAN_OR_EQUAL, {selection(4), literalDate(8766)})
                                                                                                                                                                                         }),
-                                                                                                                                                              scalarFunction(LESS_THAN, {selection(4), literal(9131.0)})
+                                                                                                                                                              scalarFunction(LESS_THAN, {selection(4), literalDate(9131)})
                                                                                                                                                           }),
                                                                                                                                 scalarFunction(GREATER_THAN_OR_EQUAL, {selection(3), literal(0.05)})
                                                                                                                             }),
@@ -274,7 +274,7 @@ static void BM_SparkRowToCHColumnWithString(benchmark::State& state) {
 }
 
 //BENCHMARK(BM_CHColumnToSparkRow)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
-BENCHMARK(BM_SimpleAggregate)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
+//BENCHMARK(BM_SimpleAggregate)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 BENCHMARK(BM_TPCH_Q6)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_CHColumnToSparkRowWithString)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_SparkRowToCHColumn)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);

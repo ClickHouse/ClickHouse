@@ -65,7 +65,8 @@ static const std::map<std::string, std::string> SCALAR_FUNCTIONS = {
     {"LESS_THAN_OR_EQUAL", "lessOrEquals"},
     {"LESS_THAN", "less"},
     {"MULTIPLY", "multiply"},
-    {"SUM", "sum"}
+    {"SUM", "sum"},
+    {"TO_DATE", "toDate"}
 };
 
 class SerializedPlanParser
