@@ -87,7 +87,7 @@ private:
 class NativeSchemaReader : public ISchemaReader
 {
 public:
-    NativeSchemaReader(ReadBuffer & in_) : ISchemaReader(in_) {}
+    explicit NativeSchemaReader(ReadBuffer & in_) : ISchemaReader(in_) {}
 
     NamesAndTypesList readSchema() override
     {

@@ -47,7 +47,7 @@ private:
 class ProtobufSchemaReader : public IExternalSchemaReader
 {
 public:
-    ProtobufSchemaReader(const FormatSettings & format_settings);
+    explicit ProtobufSchemaReader(const FormatSettings & format_settings);
 
     NamesAndTypesList readSchema() override;
 
