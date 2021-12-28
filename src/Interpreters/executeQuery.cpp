@@ -556,9 +556,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         auto * insert_query = ast->as<ASTInsertQuery>();
 
-        if (insert_query && insert_query->table_id)
-            /// Resolve database before trying to use async insert feature - to properly hash the query.
+        /// Resolve database before trying to use async insert feature - to properly hash the query.
+        if (insert_query)
+        {
+            if (!insert_query->table_id)
+                insert_query->table_id = StorageID{insert_query->getDatabase(), insert_query->getTable()};
+
             insert_query->table_id = context->resolveStorageID(insert_query->table_id);
+        }
 
         if (insert_query && insert_query->select)
         {
@@ -607,7 +612,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             quota = context->getQuota();
             if (quota)
+            {
                 quota->used(QuotaType::QUERY_INSERTS, 1);
+                quota->used(QuotaType::QUERIES, 1);
+            }
+
+            const auto & table_id = insert_query->table_id;
+            if (!table_id.empty())
+                context->setInsertionTable(table_id);
         }
         else
         {
@@ -719,7 +731,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     elem.query_views = info.views;
                 }
 
-                if (interpreter)
+                if (async_insert)
+                    InterpreterInsertQuery::extendQueryLogElemImpl(elem, context);
+                else if (interpreter)
                     interpreter->extendQueryLogElem(elem, ast, context, query_database, query_table);
 
                 if (settings.log_query_settings)

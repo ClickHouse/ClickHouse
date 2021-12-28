@@ -17,8 +17,9 @@ ${CLICKHOUSE_CLIENT} -q "SELECT * FROM async_inserts_2156 ORDER BY id"
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
 
-${CLICKHOUSE_CLIENT} -q "SELECT query, Settings['async_insert'], Settings['wait_for_async_insert'] FROM system.query_log \
-    WHERE event_date = today() AND current_database = '$CLICKHOUSE_DATABASE' \
+${CLICKHOUSE_CLIENT} -q "SELECT query, arrayExists(x -> x LIKE '%async_inserts_2156', tables), \
+        query_kind, Settings['async_insert'], Settings['wait_for_async_insert'] FROM system.query_log \
+    WHERE event_date >= yesterday() AND current_database = '$CLICKHOUSE_DATABASE' \
     AND query ILIKE 'INSERT INTO async_inserts_2156 VALUES%' AND type = 'QueryFinish' \
     ORDER BY query_start_time_microseconds"
 
