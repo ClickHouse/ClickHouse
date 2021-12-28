@@ -4,9 +4,6 @@ FROM clickhouse/test-base:$FROM_TAG
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.4.20200302/clickhouse-odbc-1.1.4-Linux.tar.gz"
 
-RUN echo "deb [trusted=yes] http://repo.mysql.com/apt/ubuntu/ bionic mysql-5.7" >> /etc/apt/sources.list \
-    && apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 8C718D3B5072E1F5
-
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
         apt-get install --yes --no-install-recommends \
@@ -31,7 +28,7 @@ RUN apt-get update -y \
             tree \
             unixodbc \
             wget \
-            mysql-client=5.7* \
+            mysql-client=8.0* \
             postgresql-client \
             sqlite3
 
