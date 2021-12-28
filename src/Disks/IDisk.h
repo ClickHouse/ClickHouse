@@ -252,16 +252,16 @@ public:
     /// Used for work with custom metadata.
     virtual std::unique_ptr<ReadBufferFromFileBase> readMetaFile(
         const String & path,
-        const ReadSettings & settings = ReadSettings{},
-        std::optional<size_t> size = {}) const;
+        const ReadSettings & settings,
+        std::optional<size_t> size) const;
 
     /// Open the local file for write and return WriteBufferFromFileBase object.
     /// Overridden in IDiskRemote.
     /// Used for work with custom metadata.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeMetaFile(
         const String & path,
-        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        WriteMode mode = WriteMode::Rewrite);
+        size_t buf_size,
+        WriteMode mode);
 
     virtual void removeMetaFileIfExists(const String & path);
 

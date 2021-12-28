@@ -138,13 +138,13 @@ public:
 
     virtual std::unique_ptr<ReadBufferFromFileBase> readMetaFile(
         const String & path,
-        const ReadSettings & settings = ReadSettings{},
-        std::optional<size_t> size = {}) const override;
+        const ReadSettings & settings,
+        std::optional<size_t> size) const override;
 
     virtual std::unique_ptr<WriteBufferFromFileBase> writeMetaFile(
         const String & path,
-        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        WriteMode mode = WriteMode::Rewrite) override;
+        size_t buf_size,
+        WriteMode mode) override;
 
     virtual void removeMetaFileIfExists(
         const String & path) override;
