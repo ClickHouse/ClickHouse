@@ -42,6 +42,9 @@ bool ACLMap::ACLsComparator::operator()(const Coordination::ACLs & left, const C
 
 uint64_t ACLMap::convertACLs(const Coordination::ACLs & acls)
 {
+    if (acls.empty())
+        return 0;
+
     if (acl_to_num.count(acls))
         return acl_to_num[acls];
 
