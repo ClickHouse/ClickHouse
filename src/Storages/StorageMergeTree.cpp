@@ -141,18 +141,16 @@ void StorageMergeTree::startup()
 
 void StorageMergeTree::flush()
 {
-    if (flush_called)
+    if (flush_called.exchange(true))
         return;
 
-    flush_called = true;
     flushAllInMemoryPartsIfNeeded();
 }
 
 void StorageMergeTree::shutdown()
 {
-    if (shutdown_called)
+    if (shutdown_called.exchange(true))
         return;
-    shutdown_called = true;
 
     /// Unlock all waiting mutations
     {
