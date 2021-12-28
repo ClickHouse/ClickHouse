@@ -1355,7 +1355,6 @@ void IMergeTreeDataPart::assertMetaCacheDropped(bool include_projection) const
                 }
             }
         }
-        // LOG_WARNING(storage.log, "cache of file {} does't belong to any part", file);
     }
 }
 
