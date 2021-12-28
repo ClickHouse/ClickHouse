@@ -1,6 +1,5 @@
 #pragma once
 
-#include "config_core.h"
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
@@ -17,12 +16,12 @@
 #include <base/types.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
+#include "config_core.h"
+
 #if USE_ROCKSDB
 #include <rocksdb/db.h>
 #include <rocksdb/table.h>
 #endif
-
-#include "config_core.h"
 
 #include <boost/container/flat_set.hpp>
 #include <functional>
