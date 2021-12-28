@@ -303,6 +303,7 @@ private:
     /// A flag, used to distinguish between user query and internal query to a database engine (MaterializedPostgreSQL).
     bool is_internal_query = false;
 
+    inline static ContextPtr global_context_instance;
 
 public:
     // Top-level OpenTelemetry trace context for the query. Makes sense only for a query context.
@@ -628,6 +629,8 @@ public:
     bool hasSessionContext() const { return !session_context.expired(); }
 
     ContextMutablePtr getGlobalContext() const;
+
+    static ContextPtr getGlobalContextInstance() { return global_context_instance; }
 
     bool hasGlobalContext() const { return !global_context.expired(); }
     bool isGlobalContext() const

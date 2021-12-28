@@ -1,6 +1,11 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TransactionVersionMetadata.h>
+#include <Interpreters/Context.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromString.h>
 #include <Common/Exception.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <Core/ServerUUID.h>
 #include <base/logger_useful.h>
 
@@ -21,10 +26,187 @@ TransactionLog & TransactionLog::instance()
 TransactionLog::TransactionLog()
     : log(&Poco::Logger::get("TransactionLog"))
 {
-    latest_snapshot = Tx::MaxReservedCSN;
-    csn_counter = Tx::MaxReservedCSN;
+    global_context = Context::getGlobalContextInstance();
+    zookeeper_path = "/test/clickhouse/txn_log";
+
+    loadLogFromZooKeeper();
+
+    updating_thread = ThreadFromGlobalPool(&TransactionLog::runUpdatingThread, this);
+}
+
+TransactionLog::~TransactionLog()
+{
+    stop_flag.store(true);
+    log_updated_event->set();
+    updating_thread.join();
+}
+
+UInt64 TransactionLog::parseCSN(const String & csn_node_name)
+{
+    ReadBufferFromString buf{csn_node_name};
+    assertString("csn-", buf);
+    UInt64 res;
+    readText(res, buf);
+    assertEOF(buf);
+    return res;
+}
+
+TransactionID TransactionLog::parseTID(const String & csn_node_content)
+{
+    TransactionID tid = Tx::EmptyTID;
+    if (csn_node_content.empty())
+        return tid;
+
+    ReadBufferFromString buf{csn_node_content};
+    assertChar('(', buf);
+    readText(tid.start_csn, buf);
+    assertString(", ", buf);
+    readText(tid.local_tid, buf);
+    assertString(", ", buf);
+    readText(tid.host_id, buf);
+    assertChar(')', buf);
+    assertEOF(buf);
+    return tid;
+}
+
+String TransactionLog::writeTID(const TransactionID & tid)
+{
+    WriteBufferFromOwnString buf;
+    writeChar('(', buf);
+    writeText(tid.start_csn, buf);
+    writeCString(", ", buf);
+    writeText(tid.local_tid, buf);
+    writeCString(", ", buf);
+    writeText(tid.host_id, buf);
+    writeChar(')', buf);
+    return buf.str();
+}
+
+
+void TransactionLog::loadEntries(Strings::const_iterator beg, Strings::const_iterator end)
+{
+    std::vector<std::future<Coordination::GetResponse>> futures;
+    size_t entries_count = std::distance(beg, end);
+    if (!entries_count)
+        return;
+
+    String last_entry = *std::prev(end);
+    LOG_TRACE(log, "Loading {} entries from {}: {}..{}", entries_count, zookeeper_path, *beg, last_entry);
+    futures.reserve(entries_count);
+    for (auto it = beg; it != end; ++it)
+        futures.emplace_back(zookeeper->asyncGet(fs::path(zookeeper_path) / *it));
+
+    std::vector<std::pair<TIDHash, CSN>> loaded;
+    loaded.reserve(entries_count);
+    auto it = beg;
+    for (size_t i = 0; i < entries_count; ++i, ++it)
+    {
+        auto res = futures[i].get();
+        CSN csn = parseCSN(*it);
+        TransactionID tid = parseTID(res.data);
+        loaded.emplace_back(tid.getHash(), csn);
+        LOG_TEST(log, "Got entry {} -> {}", tid, csn);
+    }
+    futures.clear();
+
+    /// Use noexcept here to exit on unexpected exceptions (SIGABRT is better that broken state in memory)
+    auto insert = [&]() noexcept
+    {
+        for (const auto & entry : loaded)
+            if (entry.first != Tx::EmptyTID.getHash())
+            tid_to_csn.emplace(entry.first, entry.second);
+        last_loaded_entry = last_entry;
+        latest_snapshot = loaded.back().second;
+    };
+
+    MemoryTracker::LockExceptionInThread blocker(VariableContext::Global);
+    std::lock_guard lock{commit_mutex};
+    insert();
+}
+
+void TransactionLog::loadLogFromZooKeeper()
+{
+    assert(!zookeeper);
+    assert(tid_to_csn.empty());
+    assert(last_loaded_entry.empty());
+    zookeeper = global_context->getZooKeeper();
+
+    /// We do not write local_tid_counter to disk or zk and maintain it only in memory.
+    /// Create empty entry to allocate new CSN to safely start counting from the beginning and avoid TID duplication.
+    /// TODO It's possible to skip this step in come cases (especially for multi-host configuration).
+    Coordination::Error code = zookeeper->tryCreate(zookeeper_path + "/csn-", "", zkutil::CreateMode::PersistentSequential);
+    if (code != Coordination::Error::ZOK)
+    {
+        assert(code == Coordination::Error::ZNONODE);
+        zookeeper->createAncestors(zookeeper_path);
+        Coordination::Requests ops;
+        ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "", zkutil::CreateMode::Persistent));
+        for (size_t i = 0; i <= Tx::MaxReservedCSN; ++i)
+            ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/csn-", "", zkutil::CreateMode::PersistentSequential));
+        Coordination::Responses res;
+        code = zookeeper->tryMulti(ops, res);
+        if (code != Coordination::Error::ZNODEEXISTS)
+            zkutil::KeeperMultiException::check(code, ops, res);
+    }
+
+    /// TODO Split log into "subdirectories" to:
+    /// 1. fetch it more optimal way (avoid listing all CSNs on further incremental updates)
+    /// 2. simplify log rotation
+    /// 3. support 64-bit CSNs on top of Apache ZooKeeper (it uses Int32 for sequential numbers)
+    Strings entries_list = zookeeper->getChildren(zookeeper_path, nullptr, log_updated_event);
+    assert(!entries_list.empty());
+    std::sort(entries_list.begin(), entries_list.end());
+    loadEntries(entries_list.begin(), entries_list.end());
+    assert(!last_loaded_entry.empty());
+    assert(latest_snapshot == parseCSN(last_loaded_entry));
     local_tid_counter = Tx::MaxReservedLocalTID;
 }
+
+void TransactionLog::runUpdatingThread()
+{
+    while (true)
+    {
+        try
+        {
+            log_updated_event->wait();
+            if (stop_flag.load())
+                return;
+
+            if (!zookeeper)
+                zookeeper = global_context->getZooKeeper();
+
+            loadNewEntries();
+        }
+        catch (const Coordination::Exception & e)
+        {
+            LOG_ERROR(log, getCurrentExceptionMessage(true));
+            /// TODO better backoff
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+            if (Coordination::isHardwareError(e.code))
+                zookeeper = nullptr;
+            log_updated_event->set();
+        }
+        catch (...)
+        {
+            LOG_ERROR(log, getCurrentExceptionMessage(true));
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+            log_updated_event->set();
+        }
+    }
+}
+
+void TransactionLog::loadNewEntries()
+{
+    Strings entries_list = zookeeper->getChildren(zookeeper_path, nullptr, log_updated_event);
+    assert(!entries_list.empty());
+    std::sort(entries_list.begin(), entries_list.end());
+    auto it = std::upper_bound(entries_list.begin(), entries_list.end(), last_loaded_entry);
+    loadEntries(it, entries_list.end());
+    assert(last_loaded_entry == entries_list.back());
+    assert(latest_snapshot == parseCSN(last_loaded_entry));
+    latest_snapshot.notify_all();
+}
+
 
 Snapshot TransactionLog::getLatestSnapshot() const
 {
@@ -61,16 +243,22 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn)
     }
     else
     {
-        LOG_TRACE(log, "Committing transaction {}{}", txn->tid, txn->dumpDescription());
-        std::lock_guard lock{commit_mutex};
-        new_csn = 1 + csn_counter.fetch_add(1);
-        bool inserted = tid_to_csn.try_emplace(txn->tid.getHash(), new_csn).second;     /// Commit point
-        if (!inserted)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "I's a bug: TID {} {} exists", txn->tid.getHash(), txn->tid);
-        latest_snapshot.store(new_csn, std::memory_order_relaxed);
-    }
+        LOG_TEST(log, "Committing transaction {}{}", txn->tid, txn->dumpDescription());
+        /// TODO handle connection loss
+        /// TODO support batching
+        String path_created = zookeeper->create(zookeeper_path + "/csn-", writeTID(txn->tid), zkutil::CreateMode::PersistentSequential);    /// Commit point
+        new_csn = parseCSN(path_created.substr(zookeeper_path.size() + 1));
+        LOG_INFO(log, "Transaction {} committed with CSN={}", txn->tid, new_csn);
 
-    LOG_INFO(log, "Transaction {} committed with CSN={}", txn->tid, new_csn);
+        /// Wait for committed changes to become actually visible, so the next transaction will see changes
+        /// TODO it's optional, add a setting for this
+        auto current_latest_snapshot = latest_snapshot.load();
+        while (current_latest_snapshot < new_csn)
+        {
+            latest_snapshot.wait(current_latest_snapshot);
+            current_latest_snapshot = latest_snapshot.load();
+        }
+    }
 
     txn->afterCommit(new_csn);
 
