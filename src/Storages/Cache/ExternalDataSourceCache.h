@@ -31,9 +31,9 @@ namespace DB
 class LocalFileHolder
 {
 public:
-    LocalFileHolder(std::shared_ptr<RemoteCacheController> cache_controller);
+    explicit LocalFileHolder(std::shared_ptr<RemoteCacheController> cache_controller);
     ~LocalFileHolder();
-    
+
     std::shared_ptr<RemoteCacheController> file_cache_controller;
     std::unique_ptr<ReadBufferFromFileBase> file_buffer;
 };
