@@ -7,13 +7,13 @@ int main()
     auto shared_context = Context::createShared();
     auto global_context = Context::createGlobal(shared_context.get());
     global_context->makeGlobalContext();
-    global_context->initializeMergeTreeMetaCache("./db/", 256 << 20);
+    global_context->initializeMergeTreeMetadataCache("./db/", 256 << 20);
 
-    auto cache = global_context->getMergeTreeMetaCache();
+    auto cache = global_context->getMergeTreeMetadataCache();
 
     std::vector<String> files
         = {"columns.txt", "checksums.txt", "primary.idx", "count.txt", "partition.dat", "minmax_p.idx", "default_compression_codec.txt"};
-    String prefix = "data/test_meta_cache/check_part_meta_cache/201806_1_1_0_4/";
+    String prefix = "data/test_metadata_cache/check_part_metadata_cache/201806_1_1_0_4/";
 
     for (const auto & file : files)
     {

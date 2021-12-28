@@ -1,4 +1,4 @@
-#include "PartMetaCache.h"
+#include "PartMetadataCache.h"
 
 #if USE_ROCKSDB
 #include <rocksdb/db.h>
@@ -11,8 +11,8 @@
 
 namespace ProfileEvents
 {
-    extern const Event MergeTreeMetaCacheHit;
-    extern const Event MergeTreeMetaCacheMiss;
+    extern const Event MergeTreeMetadataCacheHit;
+    extern const Event MergeTreeMetadataCacheMiss;
 }
 
 namespace ErrorCodes
@@ -24,13 +24,13 @@ namespace DB
 {
 
 std::unique_ptr<SeekableReadBuffer>
-PartMetaCache::readOrSetMeta(const DiskPtr & disk, const String & file_name, String & value)
+PartMetadataCache::readOrSetMeta(const DiskPtr & disk, const String & file_name, String & value)
 {
     String file_path = fs::path(getFullRelativePath()) / file_name;
     auto status = cache->get(file_path, value);
     if (!status.ok())
     {
-        ProfileEvents::increment(ProfileEvents::MergeTreeMetaCacheMiss);
+        ProfileEvents::increment(ProfileEvents::MergeTreeMetadataCacheMiss);
         if (!disk->exists(file_path))
         {
             return nullptr;
@@ -45,12 +45,12 @@ PartMetaCache::readOrSetMeta(const DiskPtr & disk, const String & file_name, Str
     }
     else
     {
-        ProfileEvents::increment(ProfileEvents::MergeTreeMetaCacheHit);
+        ProfileEvents::increment(ProfileEvents::MergeTreeMetadataCacheHit);
     }
     return std::make_unique<ReadBufferFromString>(value);
 }
 
-void PartMetaCache::setMetas(const DiskPtr & disk, const Strings & file_names)
+void PartMetadataCache::setMetas(const DiskPtr & disk, const Strings & file_names)
 {
     String text;
     String read_value;
@@ -76,7 +76,7 @@ void PartMetaCache::setMetas(const DiskPtr & disk, const Strings & file_names)
     }
 }
 
-void PartMetaCache::dropMetas(const Strings & file_names)
+void PartMetadataCache::dropMetas(const Strings & file_names)
 {
     for (const auto & file_name : file_names)
     {
@@ -93,7 +93,7 @@ void PartMetaCache::dropMetas(const Strings & file_names)
     }
 }
 
-void PartMetaCache::setMeta(const String & file_name, const String & value)
+void PartMetadataCache::setMeta(const String & file_name, const String & value)
 {
     String file_path = fs::path(getFullRelativePath()) / file_name;
     String read_value;
@@ -112,7 +112,7 @@ void PartMetaCache::setMeta(const String & file_name, const String & value)
     }
 }
 
-void PartMetaCache::getFilesAndCheckSums(Strings & files, std::vector<uint128> & checksums) const
+void PartMetadataCache::getFilesAndCheckSums(Strings & files, std::vector<uint128> & checksums) const
 {
     String prefix = fs::path(getFullRelativePath()) / "";
     Strings values;
@@ -127,7 +127,7 @@ void PartMetaCache::getFilesAndCheckSums(Strings & files, std::vector<uint128> &
     }
 }
 
-String PartMetaCache::getFullRelativePath() const
+String PartMetadataCache::getFullRelativePath() const
 {
     return fs::path(relative_data_path) / (parent_part ? parent_part->relative_path : "") / relative_path / "";
 }

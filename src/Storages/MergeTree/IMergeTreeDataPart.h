@@ -14,7 +14,7 @@
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
-#include <Storages/MergeTree/PartMetaCache.h>
+#include <Storages/MergeTree/PartMetadataCache.h>
 
 #include <shared_mutex>
 
@@ -64,7 +64,7 @@ public:
         }
     }
 
-    using uint128 = PartMetaCache::uint128;
+    using uint128 = PartMetadataCache::uint128;
 #endif
 
     static constexpr auto DATA_FILE_EXTENSION = ".bin";
@@ -162,7 +162,7 @@ public:
     void assertOnDisk() const;
 
 #if USE_ROCKSDB
-    void assertMetaCacheDropped(bool include_projection = false) const;
+    void assertMetadataCacheDropped(bool include_projection = false) const;
 #endif
 
     void remove() const;
@@ -326,7 +326,7 @@ public:
         }
 
 #if USE_ROCKSDB
-        void load(const MergeTreeData & data, const PartMetaCachePtr & meta_cache, const DiskPtr & disk, const String & part_path);
+        void load(const MergeTreeData & data, const PartMetadataCachePtr & metadata_cache, const DiskPtr & disk, const String & part_path);
 #else
         void load(const MergeTreeData & data, const DiskPtr & disk, const String & part_path);
 #endif
@@ -401,7 +401,7 @@ public:
     String getRelativePathForPrefix(const String & prefix, bool detached = false) const;
 
 #if USE_ROCKSDB
-    virtual void checkMetaCache(Strings & files, std::vector<uint128> & cache_checksums, std::vector<uint128> & disk_checksums) const;
+    virtual void checkMetadataCache(Strings & files, std::vector<uint128> & cache_checksums, std::vector<uint128> & disk_checksums) const;
 #endif
 
     bool isProjectionPart() const { return parent_part != nullptr; }
@@ -475,8 +475,11 @@ protected:
 
     std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 
+    /// Disabled when USE_ROCKSDB is OFF, or use_metadata_cache is set true in merge tree settings
+    bool use_metadata_cache = false;
+
 #if USE_ROCKSDB
-    mutable PartMetaCachePtr meta_cache;
+    mutable PartMetadataCachePtr metadata_cache;
 #endif
 
     void removeIfNeeded();
@@ -555,7 +558,7 @@ private:
     CompressionCodecPtr detectDefaultCompressionCodec() const;
 
 #if USE_ROCKSDB
-    void modifyAllMetaCaches(ModifyCacheType type, bool include_projection = false) const;
+    void modifyAllMetadataCaches(ModifyCacheType type, bool include_projection = false) const;
     IMergeTreeDataPart::uint128 getActualChecksumByFile(const String & file_path) const;
 #endif
 

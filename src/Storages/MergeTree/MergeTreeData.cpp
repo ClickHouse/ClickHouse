@@ -317,6 +317,17 @@ MergeTreeData::MergeTreeData(
         LOG_WARNING(log, "{} Settings 'min_rows_for_wide_part', 'min_bytes_for_wide_part', "
             "'min_rows_for_compact_part' and 'min_bytes_for_compact_part' will be ignored.", reason);
 
+#if !USE_ROCKSDB
+    if (settings->use_metadata_cache)
+    {
+        LOG_WARNING(
+            log,
+            "Can't use merge tree metadata cache if clickhouse was compiled without rocksdb."
+            "set use_metadata_cache to false forcely");
+        settings->use_metadata_cache = false;
+    }
+#endif
+
     common_assignee_trigger = [this] (bool delay) noexcept
     {
         if (delay)

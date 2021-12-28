@@ -7,7 +7,7 @@
 #include <Core/Field.h>
 
 #if USE_ROCKSDB
-#include <Storages/MergeTree/PartMetaCache.h>
+#include <Storages/MergeTree/PartMetadataCache.h>
 #endif
 
 namespace DB
@@ -42,7 +42,7 @@ public:
     void serializeText(const MergeTreeData & storage, WriteBuffer & out, const FormatSettings & format_settings) const;
 
 #if USE_ROCKSDB
-    void load(const MergeTreeData & storage, const PartMetaCachePtr & meta_cache, const DiskPtr & disk, const String & part_path);
+    void load(const MergeTreeData & storage, const PartMetadataCachePtr & metadata_cache, const DiskPtr & disk, const String & part_path);
 #else
     void load(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path);
 #endif

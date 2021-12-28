@@ -823,7 +823,7 @@ if (ThreadFuzzer::instance().isEffective())
     /// initialize meta file cache
     {
         size_t size = config().getUInt64("meta_file_cache_size", 256 << 20);
-        global_context->initializeMergeTreeMetaCache(path_str + "/" + "rocksdb", size);
+        global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
     }
 #endif
 
