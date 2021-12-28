@@ -2080,10 +2080,12 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
     return zookeeper->second;
 }
 
+#if USE_ROCKSDB
 MergeTreeMetaCachePtr Context::getMergeTreeMetaCache() const
 {
     return shared->merge_tree_meta_cache;
 }
+#endif
 
 void Context::resetZooKeeper() const
 {

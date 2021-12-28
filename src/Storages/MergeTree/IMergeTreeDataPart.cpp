@@ -63,8 +63,13 @@ static std::unique_ptr<ReadBufferFromFileBase> openForReading(const DiskPtr & di
     return disk->readFile(path, ReadSettings().adjustBufferSize(file_size), file_size);
 }
 
+#if USE_ROCKSDB
 void IMergeTreeDataPart::MinMaxIndex::load(
     const MergeTreeData & data, const PartMetaCachePtr & cache, const DiskPtr & disk, const String & /*part_path*/)
+#else
+void IMergeTreeDataPart::MinMaxIndex::load(
+    const MergeTreeData & data, const DiskPtr & disk, const String & part_path)
+#endif
 {
     auto metadata_snapshot = data.getInMemoryMetadataPtr();
     const auto & partition_key = metadata_snapshot->getPartitionKey();
@@ -76,15 +81,20 @@ void IMergeTreeDataPart::MinMaxIndex::load(
     hyperrectangle.reserve(minmax_idx_size);
     for (size_t i = 0; i < minmax_idx_size; ++i)
     {
+#if USE_ROCKSDB
         String file_name = "minmax_" + escapeForFileName(minmax_column_names[i]) + ".idx";
         String value;
-        auto buf = cache->readOrSetMeta(disk, file_name, value);
+        auto file = cache->readOrSetMeta(disk, file_name, value);
+#else
+        String file_name = fs::path(part_path) / ("minmax_" + escapeForFileName(minmax_column_names[i]) + ".idx");
+        auto file = openForReading(disk, file_name);
+#endif
         auto serialization = minmax_column_types[i]->getDefaultSerialization();
 
         Field min_val;
-        serialization->deserializeBinary(min_val, *buf);
+        serialization->deserializeBinary(min_val, *file);
         Field max_val;
-        serialization->deserializeBinary(max_val, *buf);
+        serialization->deserializeBinary(max_val, *file);
 
         // NULL_LAST
         if (min_val.isNull())
@@ -301,9 +311,10 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , index_granularity_info(storage_, part_type_)
     , part_type(part_type_)
     , parent_part(parent_part_)
+#if USE_ROCKSDB
     , meta_cache(std::make_shared<PartMetaCache>(
           storage.getContext()->getMergeTreeMetaCache(), storage.relative_data_path, relative_path, parent_part))
-
+#endif
 {
     if (parent_part)
         state = State::Committed;
@@ -329,9 +340,10 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , index_granularity_info(storage_, part_type_)
     , part_type(part_type_)
     , parent_part(parent_part_)
+#if USE_ROCKSDB
     , meta_cache(std::make_shared<PartMetaCache>(
           storage.getContext()->getMergeTreeMetaCache(), storage.relative_data_path, relative_path, parent_part))
-
+#endif
 {
     if (parent_part)
         state = State::Committed;
@@ -738,8 +750,13 @@ void IMergeTreeDataPart::loadIndex()
         }
 
         String index_path = fs::path(getFullRelativePath()) / "primary.idx";
+
+#if USE_ROCKSDB
         String value;
-        auto index_buf = meta_cache->readOrSetMeta(volume->getDisk(), "primary.idx", value);
+        auto index_file = meta_cache->readOrSetMeta(volume->getDisk(), "primary.idx", value);
+#else
+        auto index_file = openForReading(volume->getDisk(), index_path);
+#endif
 
         size_t marks_count = index_granularity.getMarksCount();
 
@@ -749,7 +766,7 @@ void IMergeTreeDataPart::loadIndex()
 
         for (size_t i = 0; i < marks_count; ++i) //-V756
             for (size_t j = 0; j < key_size; ++j)
-                key_serializations[j]->deserializeBinary(*loaded_index[j], *index_buf);
+                key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file);
 
         for (size_t i = 0; i < key_size; ++i)
         {
@@ -760,7 +777,7 @@ void IMergeTreeDataPart::loadIndex()
                     ErrorCodes::CANNOT_READ_ALL_DATA);
         }
 
-        if (!index_buf->eof())
+        if (!index_file->eof())
             throw Exception("Index file " + fullPath(volume->getDisk(), index_path) + " is unexpectedly long", ErrorCodes::EXPECTED_END_OF_FILE);
 
         index.assign(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
@@ -804,18 +821,25 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
         return;
     }
 
-    String v;
     String path = fs::path(getFullRelativePath()) / DEFAULT_COMPRESSION_CODEC_FILE_NAME;
-    auto in_buf = meta_cache->readOrSetMeta(volume->getDisk(), DEFAULT_COMPRESSION_CODEC_FILE_NAME, v);
-    if (!in_buf)
+
+#if USE_ROCKSDB
+    String v;
+    auto file_buf = meta_cache->readOrSetMeta(volume->getDisk(), DEFAULT_COMPRESSION_CODEC_FILE_NAME, v);
+    if (!file_buf)
+#else
+    if (!volume->getDisk()->exists(path))
+#endif
     {
         default_codec = detectDefaultCompressionCodec();
     }
     else
     {
-
+#if !USE_ROCKSDB
+        auto file_buf = openForReading(volume->getDisk(), path);
+#endif
         String codec_line;
-        readEscapedStringUntilEOL(codec_line, *in_buf);
+        readEscapedStringUntilEOL(codec_line, *file_buf);
 
         ReadBufferFromString buf(codec_line);
 
@@ -912,7 +936,11 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
     {
         String path = getFullRelativePath();
         if (!parent_part)
+#if USE_ROCKSDB
             partition.load(storage, meta_cache, volume->getDisk(), path);
+#else
+            partition.load(storage, volume->getDisk(), path);
+#endif
 
         if (!isEmpty())
         {
@@ -920,7 +948,11 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
                 // projection parts don't have minmax_idx, and it's always initialized
                 minmax_idx->initialized = true;
             else
+#if USE_ROCKSDB
                 minmax_idx->load(storage, meta_cache, volume->getDisk(), path);
+#else
+                minmax_idx->load(storage, volume->getDisk(), path);
+#endif
         }
         if (parent_part)
             return;
@@ -950,12 +982,20 @@ void IMergeTreeDataPart::appendFilesOfPartitionAndMinMaxIndex(Strings & files) c
 
 void IMergeTreeDataPart::loadChecksums(bool require)
 {
-    const String path = fs::path(getFullRelativePath()) / "checksums.txt";
 
+#if USE_ROCKSDB
     String value;
     auto buf = meta_cache->readOrSetMeta(volume->getDisk(), "checksums.txt", value);
     if (buf)
+#else
+    const String path = fs::path(getFullRelativePath()) / "checksums.txt";
+    if (volume->getDisk()->exists(path))
+#endif
     {
+
+#if !USE_ROCKSDB
+        auto buf = openForReading(volume->getDisk(), path);
+#endif
         if (checksums.read(*buf))
         {
             assertEOF(*buf);
@@ -1008,6 +1048,7 @@ void IMergeTreeDataPart::loadRowsCount()
     }
     else if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || part_type == Type::COMPACT || parent_part)
     {
+#if USE_ROCKSDB
         String v;
         auto buf = meta_cache->readOrSetMeta(volume->getDisk(), "count.txt", v);
         if (!buf)
@@ -1015,6 +1056,12 @@ void IMergeTreeDataPart::loadRowsCount()
 
         readIntText(rows_count, *buf);
         assertEOF(*buf);
+#else
+        if (!volume->getDisk()->exists(path))
+            throw Exception("No count.txt in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
+
+        read_rows_count();
+#endif
 
 #ifndef NDEBUG
         /// columns have to be loaded
@@ -1117,10 +1164,18 @@ void IMergeTreeDataPart::appendFilesOfRowsCount(Strings & files) const
 void IMergeTreeDataPart::loadTTLInfos()
 {
     String path = fs::path(getFullRelativePath()) / "ttl.txt";
+#if USE_ROCKSDB
     String v;
     auto in = meta_cache->readOrSetMeta(volume->getDisk(), "ttl.txt", v);
     if (in)
+#else
+    if (volume->getDisk()->exists(path))
+#endif
     {
+
+#if !USE_ROCKSDB
+        auto in = openForReading(volume->getDisk(), path);
+#endif
         assertString("ttl format version: ", *in);
         size_t format_version;
         readText(format_version, *in);
@@ -1150,11 +1205,18 @@ void IMergeTreeDataPart::appendFilesOfTTLInfos(Strings & files) const
 
 void IMergeTreeDataPart::loadUUID()
 {
+#if USE_ROCKSDB
     String v;
-    String path = fs::path(getFullRelativePath()) / UUID_FILE_NAME;
     auto in = meta_cache->readOrSetMeta(volume->getDisk(), UUID_FILE_NAME, v);
     if (in)
+#else
+    String path = fs::path(getFullRelativePath()) / UUID_FILE_NAME;
+    if (volume->getDisk()->exists(path))
+#endif
     {
+#if !USE_ROCKSDB
+        auto in = openForReading(volume->getDisk(), path);
+#endif
         readText(uuid, *in);
         if (uuid == UUIDHelpers::Nil)
             throw Exception("Unexpected empty " + String(UUID_FILE_NAME) + " in part: " + name, ErrorCodes::LOGICAL_ERROR);
@@ -1174,9 +1236,13 @@ void IMergeTreeDataPart::loadColumns(bool require)
         metadata_snapshot = metadata_snapshot->projections.get(name).metadata;
     NamesAndTypesList loaded_columns;
 
+#if USE_ROCKSDB
     String v;
     auto in = meta_cache->readOrSetMeta(volume->getDisk(), "columns.txt", v);
     if (!in)
+#else
+    if (!volume->getDisk()->exists(path))
+#endif
     {
         /// We can get list of columns only from columns.txt in compact parts.
         if (require || part_type == Type::COMPACT)
@@ -1192,14 +1258,18 @@ void IMergeTreeDataPart::loadColumns(bool require)
             throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
         {
-            auto out = volume->getDisk()->writeFile(path + ".tmp", 4096);
-            loaded_columns.writeText(*out);
+            auto buf = volume->getDisk()->writeFile(path + ".tmp", 4096);
+            loaded_columns.writeText(*buf);
         }
         volume->getDisk()->moveFile(path + ".tmp", path);
     }
     else
     {
+#if USE_ROCKSDB
         loaded_columns.readText(*in);
+#else
+        loaded_columns.readText(*volume->getDisk()->readFile(path));
+#endif
 
         for (const auto & column : loaded_columns)
         {
@@ -1278,14 +1348,18 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
         }
     }
 
+#if USE_ROCKSDB
     modifyAllMetaCaches(ModifyCacheType::DROP, true);
-// #ifndef NDEBUG
     assertMetaCacheDropped(true);
-// #endif
+#endif
+
     volume->getDisk()->setLastModified(from, Poco::Timestamp::fromEpochTime(time(nullptr)));
     volume->getDisk()->moveDirectory(from, to);
     relative_path = new_relative_path;
+
+#if USE_ROCKSDB
     modifyAllMetaCaches(ModifyCacheType::PUT, true);
+#endif
 
     SyncGuardPtr sync_guard;
     if (storage.getSettings()->fsync_part_directory)
@@ -1294,7 +1368,7 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     storage.lockSharedData(*this);
 }
 
-
+#if USE_ROCKSDB
 void IMergeTreeDataPart::modifyAllMetaCaches(ModifyCacheType type, bool include_projection) const
 {
     Strings files;
@@ -1357,6 +1431,7 @@ void IMergeTreeDataPart::assertMetaCacheDropped(bool include_projection) const
         }
     }
 }
+#endif
 
 std::optional<bool> IMergeTreeDataPart::keepSharedDataInDecoupledStorage() const
 {
@@ -1395,10 +1470,10 @@ void IMergeTreeDataPart::remove() const
         return;
     }
 
+#if USE_ROCKSDB
     modifyAllMetaCaches(ModifyCacheType::DROP);
-// #ifndef NDEBUG
     assertMetaCacheDropped();
-// #endif
+#endif
 
     /** Atomic directory removal:
       * - rename directory to temporary name;
@@ -1503,10 +1578,10 @@ void IMergeTreeDataPart::remove() const
 
 void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_shared_data) const
 {
+#if USE_ROCKSDB
     modifyAllMetaCaches(ModifyCacheType::DROP);
-// #ifndef NDEBUG
     assertMetaCacheDropped();
-// #endif
+#endif
 
     String to = parent_to + "/" + relative_path;
     auto disk = volume->getDisk();
@@ -1594,7 +1669,6 @@ String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix)
                                        prefix) != DetachedPartInfo::DETACH_REASONS.end());
     return "detached/" + getRelativePathForPrefix(prefix, /* detached */ true);
 }
-
 
 void IMergeTreeDataPart::renameToDetached(const String & prefix) const
 {
@@ -1848,6 +1922,7 @@ String IMergeTreeDataPart::getZeroLevelPartBlockID() const
     return info.partition_id + "_" + toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
 }
 
+#if USE_ROCKSDB
 IMergeTreeDataPart::uint128 IMergeTreeDataPart::getActualChecksumByFile(const String & file_path) const
 {
     String file_name = std::filesystem::path(file_path).filename();
@@ -1912,6 +1987,7 @@ void IMergeTreeDataPart::checkMetaCache(Strings & files, std::vector<uint128> & 
         disk_checksums.push_back(disk_checksum);
     }
 }
+#endif
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)
 {

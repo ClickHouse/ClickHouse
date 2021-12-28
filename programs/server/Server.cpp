@@ -754,11 +754,13 @@ if (ThreadFuzzer::instance().isEffective())
     }
 
 
+#if USE_ROCKSDB
     /// initialize meta file cache
     {
         size_t size = config().getUInt64("meta_file_cache_size", 256 << 20);
         global_context->initializeMergeTreeMetaCache(path_str + "/" + "rocksdb", size);
     }
+#endif
 
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
         throw Exception("Both http and https interserver ports are specified", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
