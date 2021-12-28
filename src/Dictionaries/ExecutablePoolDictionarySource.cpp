@@ -35,7 +35,7 @@ ExecutablePoolDictionarySource::ExecutablePoolDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Configuration & configuration_,
     Block & sample_block_,
-    std::shared_ptr<ShellCommandCoordinator> coordinator_,
+    std::shared_ptr<ShellCommandSourceCoordinator> coordinator_,
     ContextPtr context_)
     : dict_struct(dict_struct_)
     , configuration(configuration_)
@@ -220,7 +220,7 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
             .implicit_key = config.getBool(settings_config_prefix + ".implicit_key", false),
         };
 
-        ShellCommandCoordinator::Configuration shell_command_coordinator_configration
+        ShellCommandSourceCoordinator::Configuration shell_command_coordinator_configration
         {
             .format = config.getString(settings_config_prefix + ".format"),
             .command_termination_timeout_seconds = config.getUInt64(settings_config_prefix + ".command_termination_timeout", 10),
@@ -233,7 +233,7 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
             .execute_direct = execute_direct
         };
 
-        std::shared_ptr<ShellCommandCoordinator> coordinator = std::make_shared<ShellCommandCoordinator>(shell_command_coordinator_configration);
+        auto coordinator = std::make_shared<ShellCommandSourceCoordinator>(shell_command_coordinator_configration);
         return std::make_unique<ExecutablePoolDictionarySource>(dict_struct, configuration, sample_block, std::move(coordinator), context);
     };
 

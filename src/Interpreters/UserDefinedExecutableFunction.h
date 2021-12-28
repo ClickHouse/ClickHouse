@@ -25,7 +25,7 @@ public:
 
     UserDefinedExecutableFunction(
         const UserDefinedExecutableFunctionConfiguration & configuration_,
-        std::shared_ptr<ShellCommandCoordinator> coordinator_,
+        std::shared_ptr<ShellCommandSourceCoordinator> coordinator_,
         const ExternalLoadableLifetime & lifetime_);
 
     const ExternalLoadableLifetime & getLifetime() const override
@@ -58,7 +58,7 @@ public:
         return configuration;
     }
 
-    std::shared_ptr<ShellCommandCoordinator> getCoordinator() const
+    std::shared_ptr<ShellCommandSourceCoordinator> getCoordinator() const
     {
         return coordinator;
     }
@@ -75,7 +75,7 @@ public:
 
 private:
     UserDefinedExecutableFunctionConfiguration configuration;
-    std::shared_ptr<ShellCommandCoordinator> coordinator;
+    std::shared_ptr<ShellCommandSourceCoordinator> coordinator;
     ExternalLoadableLifetime lifetime;
 };
 

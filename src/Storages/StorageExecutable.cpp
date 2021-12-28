@@ -34,6 +34,40 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+namespace
+{
+    void transformToSingleBlockSources(Pipes & inputs)
+    {
+        size_t inputs_size = inputs.size();
+        for (size_t i = 0; i < inputs_size; ++i)
+        {
+            auto && input = inputs[i];
+            QueryPipeline input_pipeline(std::move(input));
+            PullingPipelineExecutor input_pipeline_executor(input_pipeline);
+
+            auto header = input_pipeline_executor.getHeader();
+            auto result_block = header.cloneEmpty();
+
+            size_t result_block_columns = result_block.columns();
+
+            Block result;
+            while (input_pipeline_executor.pull(result))
+            {
+                for (size_t result_block_index = 0; result_block_index < result_block_columns; ++result_block_index)
+                {
+                    auto & block_column = result.safeGetByPosition(result_block_index);
+                    auto & result_block_column = result_block.safeGetByPosition(result_block_index);
+
+                    result_block_column.column->assumeMutable()->insertRangeFrom(*block_column.column, 0, block_column.column->size());
+                }
+            }
+
+            auto source = std::make_shared<SourceFromSingleChunk>(std::move(result_block));
+            inputs[i] = Pipe(std::move(source));
+        }
+    }
+}
+
 StorageExecutable::StorageExecutable(
     const StorageID & table_id_,
     const String & format,
@@ -51,7 +85,7 @@ StorageExecutable::StorageExecutable(
     storage_metadata.setConstraints(constraints);
     setInMemoryMetadata(storage_metadata);
 
-    ShellCommandCoordinator::Configuration configuration
+    ShellCommandSourceCoordinator::Configuration configuration
     {
         .format = format,
         .command_termination_timeout_seconds = settings.command_termination_timeout,
@@ -66,7 +100,7 @@ StorageExecutable::StorageExecutable(
         .execute_direct = true
     };
 
-    coordinator = std::make_unique<ShellCommandCoordinator>(std::move(configuration));
+    coordinator = std::make_unique<ShellCommandSourceCoordinator>(std::move(configuration));
 }
 
 Pipe StorageExecutable::read(
@@ -104,44 +138,16 @@ Pipe StorageExecutable::read(
         inputs.emplace_back(QueryPipelineBuilder::getPipe(interpreter.buildQueryPipeline()));
     }
 
+    /// For executable pool we read data from input streams and convert it to single blocks streams.
     if (settings.is_executable_pool)
-    {
-        /// For executable pool we read data from input streams and convert it to single blocks streams.
-        size_t inputs_size = inputs.size();
-        for (size_t i = 0; i < inputs_size; ++i)
-        {
-            auto && input = inputs[i];
-            QueryPipeline input_pipeline(std::move(input));
-            PullingPipelineExecutor input_pipeline_executor(input_pipeline);
-
-            auto header = input_pipeline_executor.getHeader();
-            auto result_block = header.cloneEmpty();
-
-            size_t result_block_columns = result_block.columns();
-
-            Block result;
-            while (input_pipeline_executor.pull(result))
-            {
-                for (size_t result_block_index = 0; result_block_index < result_block_columns; ++result_block_index)
-                {
-                    auto & block_column = result.safeGetByPosition(result_block_index);
-                    auto & result_block_column = result_block.safeGetByPosition(result_block_index);
-
-                    result_block_column.column->assumeMutable()->insertRangeFrom(*block_column.column, 0, block_column.column->size());
-                }
-            }
-
-            auto source = std::make_shared<SourceFromSingleChunk>(std::move(result_block));
-            inputs[i] = Pipe(std::move(source));
-        }
-    }
+        transformToSingleBlockSources(inputs);
 
     auto sample_block = metadata_snapshot->getSampleBlock();
 
     ShellCommandSourceConfiguration configuration;
     configuration.max_block_size = max_block_size;
 
-    if (coordinator->getConfiguration().is_executable_pool)
+    if (settings.is_executable_pool)
     {
         configuration.read_fixed_number_of_rows = true;
         configuration.read_number_of_rows_from_process_output = true;

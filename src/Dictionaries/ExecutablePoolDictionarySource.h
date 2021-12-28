@@ -36,7 +36,7 @@ public:
         const DictionaryStructure & dict_struct_,
         const Configuration & configuration_,
         Block & sample_block_,
-        std::shared_ptr<ShellCommandCoordinator> coordinator_,
+        std::shared_ptr<ShellCommandSourceCoordinator> coordinator_,
         ContextPtr context_);
 
     ExecutablePoolDictionarySource(const ExecutablePoolDictionarySource & other);
@@ -71,7 +71,7 @@ private:
     const Configuration configuration;
 
     Block sample_block;
-    std::shared_ptr<ShellCommandCoordinator> coordinator;
+    std::shared_ptr<ShellCommandSourceCoordinator> coordinator;
     ContextPtr context;
     Poco::Logger * log;
 };

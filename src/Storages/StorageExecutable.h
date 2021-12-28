@@ -23,7 +23,7 @@ public:
 
     String getName() const override
     {
-        if (coordinator->getConfiguration().is_executable_pool)
+        if (settings.is_executable_pool)
             return "ExecutablePool";
         else
             return "Executable";
@@ -52,7 +52,7 @@ private:
     ExecutableSettings settings;
     std::vector<ASTPtr> input_queries;
     Poco::Logger * log;
-    std::unique_ptr<ShellCommandCoordinator> coordinator;
+    std::unique_ptr<ShellCommandSourceCoordinator> coordinator;
 };
 
 }
