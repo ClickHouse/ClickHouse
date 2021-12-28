@@ -44,6 +44,9 @@ Chunk ParquetBlockInputFormat::generate()
     if (!file_reader)
         prepareReader();
 
+    if (is_stopped)
+        return {};
+
     if (row_group_current >= row_group_total)
         return res;
 
@@ -93,7 +96,11 @@ static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
 
 void ParquetBlockInputFormat::prepareReader()
 {
-    THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(asArrowFile(*in, format_settings), arrow::default_memory_pool(), &file_reader));
+    auto arrow_file = asArrowFile(*in, format_settings, is_stopped);
+    if (is_stopped)
+        return;
+
+    THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(std::move(arrow_file), arrow::default_memory_pool(), &file_reader));
     row_group_total = file_reader->num_row_groups();
     row_group_current = 0;
 

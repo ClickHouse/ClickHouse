@@ -37,6 +37,9 @@ Chunk ArrowBlockInputFormat::generate()
         if (!stream_reader)
             prepareReader();
 
+        if (is_stopped)
+            return {};
+
         batch_result = stream_reader->Next();
         if (batch_result.ok() && !(*batch_result))
             return res;
@@ -45,6 +48,9 @@ Chunk ArrowBlockInputFormat::generate()
     {
         if (!file_reader)
             prepareReader();
+
+        if (is_stopped)
+            return {};
 
         if (record_batch_current >= record_batch_total)
             return res;
@@ -94,7 +100,11 @@ void ArrowBlockInputFormat::prepareReader()
     }
     else
     {
-        auto file_reader_status = arrow::ipc::RecordBatchFileReader::Open(asArrowFile(*in, format_settings));
+        auto arrow_file = asArrowFile(*in, format_settings, is_stopped);
+        if (is_stopped)
+            return;
+
+        auto file_reader_status = arrow::ipc::RecordBatchFileReader::Open(std::move(arrow_file));
         if (!file_reader_status.ok())
             throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
                 "Error while opening a table: {}", file_reader_status.status().ToString());
