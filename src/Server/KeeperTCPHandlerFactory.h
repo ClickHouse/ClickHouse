@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Server/KeeperTCPHandler.h>
-#include <Poco/Net/TCPServerConnectionFactory.h>
+#include <Server/TCPServerConnectionFactory.h>
 #include <Poco/Net/NetException.h>
 #include <base/logger_useful.h>
 #include <Server/IServer.h>
@@ -10,7 +10,7 @@
 namespace DB
 {
 
-class KeeperTCPHandlerFactory : public Poco::Net::TCPServerConnectionFactory
+class KeeperTCPHandlerFactory : public TCPServerConnectionFactory
 {
 private:
     IServer & server;
@@ -29,7 +29,7 @@ public:
     {
     }
 
-    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket) override
+    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer &) override
     {
         try
         {
