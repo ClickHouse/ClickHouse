@@ -50,6 +50,7 @@ ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(ContextPtr c
 
     if (!columns)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table structure not returned");
+
     return ColumnsDescription{*columns};
 }
 
