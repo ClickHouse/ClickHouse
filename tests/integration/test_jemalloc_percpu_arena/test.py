@@ -48,20 +48,14 @@ def skip_if_jemalloc_disabled():
         SELECT value FROM system.build_options WHERE name = 'USE_JEMALLOC'"
     """).strip()
     if output != b'ON' and output != b'1':
-        return True
-
-    return False
+        pytest.skip(f'Compiled w/o jemalloc (USE_JEMALLOC={output})')
 
 # Ensure that clickhouse works even when number of online CPUs
 # (_SC_NPROCESSORS_ONLN) is smaller then available (_SC_NPROCESSORS_CONF).
 #
 # Refs: https://github.com/jemalloc/jemalloc/pull/2181
 def test_jemalloc_percpu_arena():
-    # TODO: revert me when https://github.com/ClickHouse/ClickHouse/pull/33162
-    # will be ready
-    if skip_if_jemalloc_disabled():
-        print("Jemalloc disabled, exiting")
-        return
+    skip_if_jemalloc_disabled()
 
     assert multiprocessing.cpu_count() > CPU_ID
 
