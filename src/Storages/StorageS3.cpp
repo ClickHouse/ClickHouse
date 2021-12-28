@@ -222,6 +222,13 @@ StorageS3Source::StorageS3Source(
 }
 
 
+void StorageS3Source::onCancel()
+{
+    if (reader)
+        reader->cancel();
+}
+
+
 bool StorageS3Source::initialize()
 {
     String current_key = (*file_iterator)();

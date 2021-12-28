@@ -118,6 +118,8 @@ public:
 
     Chunk generate() override;
 
+    void onCancel() override;
+
 private:
     StorageHDFSPtr storage;
     StorageMetadataPtr metadata_snapshot;
