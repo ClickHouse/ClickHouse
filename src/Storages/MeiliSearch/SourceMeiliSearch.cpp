@@ -16,27 +16,36 @@ namespace ErrorCodes
     extern const int MEILISEARCH_EXCEPTION;
 }
 
-MeiliSearchSource::MeiliSearchSource(
-    const MeiliSearchConfiguration& config,
-    const Block & sample_block,
-    UInt64 max_block_size_,
-    UInt64 offset_)
-    : SourceWithProgress(sample_block.cloneEmpty()) 
-    , connection(config)
-    , max_block_size{max_block_size_}
-    , offset{offset_}
-{
-    description.init(sample_block);
-}
-
-
-MeiliSearchSource::~MeiliSearchSource() = default;
-
 String quotify(const String& s) {
     return "\"" + s + "\"";
 }
 
+MeiliSearchSource::MeiliSearchSource(
+    const MeiliSearchConfiguration& config,
+    const Block & sample_block,
+    UInt64 max_block_size_,
+    UInt64 offset_,
+    std::unordered_map<String, String> query_params_)
+    : SourceWithProgress(sample_block.cloneEmpty()) 
+    , connection(config)
+    , max_block_size{max_block_size_}
+    , query_params{query_params_}
+    , offset{offset_}
+{
+    description.init(sample_block);
 
+    String columns_to_get = "[";
+    for (const auto& col : description.sample_block) {
+        columns_to_get += quotify(col.name) + ",";
+    }
+    columns_to_get.back() = ']';
+
+    query_params[quotify("attributesToRetrieve")] = columns_to_get;
+    query_params[quotify("limit")] = std::to_string(max_block_size);
+}
+
+
+MeiliSearchSource::~MeiliSearchSource() = default;
 
 void insertWithTypeId(MutableColumnPtr& column, JSON kv_pair, const std::string& name, int type_id) {
     if (type_id == Field::Types::UInt64) {
@@ -63,20 +72,7 @@ Chunk MeiliSearchSource::generate()
     for (const auto i : collections::range(0, size))
         columns[i] = description.sample_block.getByPosition(i).column->cloneEmpty();
 
-    std::vector<std::pair<String, String>> query_params;
-
-    String columns_to_get = "[";
-
-    for (const auto& col : description.sample_block) {
-        columns_to_get += quotify(col.name) + ",";
-    }
-
-    columns_to_get.back() = ']';
-
-    query_params.push_back({quotify("attributesToRetrieve"), columns_to_get});
-    query_params.push_back({quotify("limit"), std::to_string(max_block_size)});
-    query_params.push_back({quotify("offset"), std::to_string(offset)});
-
+    query_params[quotify("offset")] = std::to_string(offset);
     auto response = connection.searchQuery(query_params);
 
     JSON jres = JSON(response).begin();
