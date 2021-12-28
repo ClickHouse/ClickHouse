@@ -278,9 +278,8 @@ ASTPtr PostgreSQLReplicationHandler::getCreateNestedTableQuery(StorageMaterializ
 {
     postgres::Connection connection(connection_info);
     pqxx::nontransaction tx(connection.getRef());
-    auto table_structure = std::make_unique<PostgreSQLTableStructure>(fetchPostgreSQLTableStructure(tx, table_name, postgres_schema, true, true, true));
-    if (!table_structure)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to get PostgreSQL table structure");
+    auto [postgres_table_schema, postgres_table_name] = getSchemaAndTableName(table_name);
+    auto table_structure = std::make_unique<PostgreSQLTableStructure>(fetchPostgreSQLTableStructure(tx, postgres_table_name, postgres_table_schema, true, true, true));
 
     auto table_override = tryGetTableOverride(current_database_name, table_name);
     return storage->getCreateNestedTableQuery(std::move(table_structure), table_override ? table_override->as<ASTTableOverride>() : nullptr);
@@ -516,17 +515,25 @@ void PostgreSQLReplicationHandler::dropPublication(pqxx::nontransaction & tx)
 
 void PostgreSQLReplicationHandler::addTableToPublication(pqxx::nontransaction & ntx, const String & table_name)
 {
-    std::string query_str = fmt::format("ALTER PUBLICATION {} ADD TABLE ONLY {}", publication_name, doubleQuoteString(table_name));
+    std::string query_str = fmt::format("ALTER PUBLICATION {} ADD TABLE ONLY {}", publication_name, doubleQuoteWithSchema(table_name));
     ntx.exec(query_str);
-    LOG_TRACE(log, "Added table `{}` to publication `{}`", table_name, publication_name);
+    LOG_TRACE(log, "Added table {} to publication `{}`", doubleQuoteWithSchema(table_name), publication_name);
 }
 
 
 void PostgreSQLReplicationHandler::removeTableFromPublication(pqxx::nontransaction & ntx, const String & table_name)
 {
-    std::string query_str = fmt::format("ALTER PUBLICATION {} DROP TABLE ONLY {}", publication_name, doubleQuoteString(table_name));
-    ntx.exec(query_str);
-    LOG_TRACE(log, "Removed table `{}` from publication `{}`", table_name, publication_name);
+    try
+    {
+        std::string query_str = fmt::format("ALTER PUBLICATION {} DROP TABLE ONLY {}", publication_name, doubleQuoteWithSchema(table_name));
+        ntx.exec(query_str);
+        LOG_TRACE(log, "Removed table `{}` from publication `{}`", doubleQuoteWithSchema(table_name), publication_name);
+    }
+    catch (const pqxx::undefined_table &)
+    {
+        /// Removing table from replication must succeed even if table does not exist in PostgreSQL.
+        LOG_WARNING(log, "Did not remove table {} from publication, because table does not exist in PostgreSQL", doubleQuoteWithSchema(table_name), publication_name);
+    }
 }
 
 
