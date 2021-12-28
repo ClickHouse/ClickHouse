@@ -4,7 +4,7 @@
         <source>
             <executable>
                 <format>TabSeparated</format>
-                <command>test_input.sh</command>
+                <command>input.sh</command>
                 <execute_direct>1</execute_direct>
             </executable>
         </source>
@@ -28,7 +28,7 @@
         <source>
             <executable_pool>
                 <format>TabSeparated</format>
-                <command>test_input.sh</command>
+                <command>input.sh</command>
                 <execute_direct>1</execute_direct>
             </executable_pool>
         </source>
@@ -52,7 +52,7 @@
         <source>
             <executable>
                 <format>TabSeparated</format>
-                <command>test_input_implicit.sh</command>
+                <command>input_implicit.sh</command>
                 <execute_direct>1</execute_direct>
                 <implicit_key>1</implicit_key>
             </executable>
@@ -77,7 +77,7 @@
         <source>
             <executable_pool>
                 <format>TabSeparated</format>
-                <command>test_input_implicit.sh</command>
+                <command>input_implicit.sh</command>
                 <execute_direct>1</execute_direct>
                 <implicit_key>1</implicit_key>
             </executable_pool>

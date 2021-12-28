@@ -7,7 +7,7 @@
             <type>UInt64</type>
         </argument>
         <format>TabSeparated</format>
-        <command>test_input.sh</command>
+        <command>input.sh</command>
     </function>
 
     <function>
@@ -18,7 +18,7 @@
             <type>UInt64</type>
         </argument>
         <format>TabSeparated</format>
-        <command>test_input.sh</command>
+        <command>input.sh</command>
     </function>
 
     <function>
@@ -29,7 +29,7 @@
             <type>UInt64</type>
         </argument>
         <format>TabSeparated</format>
-        <command>test_input.py</command>
+        <command>input.py</command>
     </function>
 
     <function>
@@ -40,7 +40,7 @@
             <type>UInt64</type>
         </argument>
         <format>TabSeparated</format>
-        <command>test_input.py</command>
+        <command>input.py</command>
     </function>
 
     <function>
@@ -52,7 +52,7 @@
         </argument>
         <format>TabSeparated</format>
         <send_chunk_header>1</send_chunk_header>
-        <command>test_input_chunk_header.py</command>
+        <command>input_chunk_header.py</command>
     </function>
 
     <function>
@@ -64,7 +64,7 @@
         </argument>
         <format>TabSeparated</format>
         <send_chunk_header>1</send_chunk_header>
-        <command>test_input_chunk_header.py</command>
+        <command>input_chunk_header.py</command>
     </function>
 
     <function>
@@ -78,7 +78,7 @@
             <type>UInt64</type>
         </argument>
         <format>TabSeparated</format>
-        <command>test_input_sum.py</command>
+        <command>input_sum.py</command>
     </function>
 
     <function>
@@ -92,7 +92,7 @@
             <type>UInt64</type>
         </argument>
         <format>TabSeparated</format>
-        <command>test_input_sum.py</command>
+        <command>input_sum.py</command>
     </function>
 
     <function>
@@ -103,7 +103,7 @@
             <type>UInt64</type>
         </argument>
         <format>TabSeparated</format>
-        <command>test_input_argument.py 1</command>
+        <command>input_argument.py 1</command>
     </function>
 
     <function>
@@ -114,7 +114,7 @@
             <type>UInt64</type>
         </argument>
         <format>TabSeparated</format>
-        <command>test_input_argument.py 1</command>
+        <command>input_argument.py 1</command>
     </function>
 
     <function>
@@ -125,7 +125,7 @@
             <type>UInt64</type>
         </argument>
         <format>TabSeparated</format>
-        <command>test_input_slow.py</command>
+        <command>input_slow.py</command>
         <command_termination_timeout>1</command_termination_timeout>
         <command_read_timeout>1000</command_read_timeout>
     </function>
@@ -138,7 +138,7 @@
             <type>UInt64</type>
         </argument>
         <format>TabSeparated</format>
-        <command>test_input_slow.py</command>
+        <command>input_slow.py</command>
         <command_termination_timeout>1</command_termination_timeout>
         <command_read_timeout>1000</command_read_timeout>
     </function>
@@ -151,7 +151,7 @@
             <type>UInt64</type>
         </argument>
         <format>TabSeparated</format>
-        <command>test_input_signalled.py</command>
+        <command>input_signalled.py</command>
         <command_termination_timeout>1</command_termination_timeout>
         <command_read_timeout>1000</command_read_timeout>
     </function>
@@ -164,7 +164,7 @@
             <type>UInt64</type>
         </argument>
         <format>TabSeparated</format>
-        <command>test_input_signalled.py</command>
+        <command>input_signalled.py</command>
         <command_termination_timeout>1</command_termination_timeout>
         <command_read_timeout>1000</command_read_timeout>
     </function>

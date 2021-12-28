@@ -4,7 +4,7 @@
         <source>
             <executable>
                 <format>TabSeparated</format>
-                <command>test_input_chunk_header.py</command>
+                <command>input_chunk_header.py</command>
                 <execute_direct>1</execute_direct>
                 <send_chunk_header>1</send_chunk_header>
             </executable>
@@ -29,7 +29,7 @@
         <source>
             <executable_pool>
                 <format>TabSeparated</format>
-                <command>test_input_chunk_header.py</command>
+                <command>input_chunk_header.py</command>
                 <execute_direct>1</execute_direct>
                 <send_chunk_header>1</send_chunk_header>
             </executable_pool>
@@ -54,7 +54,7 @@
         <source>
             <executable>
                 <format>TabSeparated</format>
-                <command>test_input_implicit_chunk_header.py</command>
+                <command>input_implicit_chunk_header.py</command>
                 <execute_direct>1</execute_direct>
                 <implicit_key>1</implicit_key>
                 <send_chunk_header>1</send_chunk_header>
@@ -80,7 +80,7 @@
         <source>
             <executable_pool>
                 <format>TabSeparated</format>
-                <command>test_input_implicit_chunk_header.py</command>
+                <command>input_implicit_chunk_header.py</command>
                 <execute_direct>1</execute_direct>
                 <implicit_key>1</implicit_key>
                 <send_chunk_header>1</send_chunk_header>
