@@ -34,7 +34,7 @@ GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_US
 - `user` — Пользователь ClickHouse.
 
 `WITH ADMIN OPTION` присваивает привилегию [ADMIN OPTION](#admin-option-privilege) пользователю или роли.
-`WITH REPLACE OPTION` заменяет все старые роли новыми ролями для пользователя `user` или `role`, Если не указано, добавьте новые роли в старые.
+`WITH REPLACE OPTION` заменяет все старые роли новыми ролями для пользователя `user` или `role`, если не указано, добавляет новые новые роли.
 
 ## Использование {#grant-usage}
 
