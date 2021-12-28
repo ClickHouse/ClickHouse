@@ -23,7 +23,7 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int CANNOT_FCNTL;
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
-    extern const int CANNOT_SELECT;
+    extern const int CANNOT_POLL;
     extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
 }
 
@@ -91,7 +91,7 @@ static bool pollFd(int fd, size_t timeout_milliseconds, int events)
             }
             else
             {
-                throwFromErrno("Cannot select", ErrorCodes::CANNOT_SELECT);
+                throwFromErrno("Cannot poll", ErrorCodes::CANNOT_POLL);
             }
         }
         else
@@ -451,14 +451,14 @@ namespace
 
 }
 
-ShellCommandCoordinator::ShellCommandCoordinator(const Configuration & configuration_)
+ShellCommandSourceCoordinator::ShellCommandSourceCoordinator(const Configuration & configuration_)
     : configuration(configuration_)
 {
     if (configuration.is_executable_pool)
         process_pool = std::make_shared<ProcessPool>(configuration.pool_size ? configuration.pool_size : std::numeric_limits<size_t>::max());
 }
 
-Pipe ShellCommandCoordinator::createPipe(
+Pipe ShellCommandSourceCoordinator::createPipe(
     const std::string & command,
     const std::vector<std::string> & arguments,
     std::vector<Pipe> && input_pipes,

@@ -36,7 +36,7 @@ struct ShellCommandSourceConfiguration
     size_t max_block_size = DEFAULT_BLOCK_SIZE;
 };
 
-class ShellCommandCoordinator
+class ShellCommandSourceCoordinator
 {
 public:
 
@@ -72,7 +72,7 @@ public:
 
     };
 
-    explicit ShellCommandCoordinator(const Configuration & configuration_);
+    explicit ShellCommandSourceCoordinator(const Configuration & configuration_);
 
     const Configuration & getConfiguration() const
     {

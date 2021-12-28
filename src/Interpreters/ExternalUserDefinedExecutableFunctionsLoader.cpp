@@ -57,7 +57,7 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
 
     String type = config.getString(key_in_config + ".type");
 
-    bool is_executable_pool;
+    bool is_executable_pool = false;
 
     if (type == "executable")
         is_executable_pool = false;
@@ -130,7 +130,7 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
         .result_type = std::move(result_type), //-V1030
     };
 
-    ShellCommandCoordinator::Configuration shell_command_coordinator_configration
+    ShellCommandSourceCoordinator::Configuration shell_command_coordinator_configration
     {
         .format = std::move(format), //-V1030
         .command_termination_timeout_seconds = command_termination_timeout_seconds,
@@ -143,7 +143,7 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
         .execute_direct = execute_direct
     };
 
-    std::shared_ptr<ShellCommandCoordinator> coordinator = std::make_shared<ShellCommandCoordinator>(shell_command_coordinator_configration);
+    auto coordinator = std::make_shared<ShellCommandSourceCoordinator>(shell_command_coordinator_configration);
     return std::make_shared<UserDefinedExecutableFunction>(function_configuration, std::move(coordinator), lifetime);
 }
 

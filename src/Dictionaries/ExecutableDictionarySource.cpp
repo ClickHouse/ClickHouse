@@ -66,7 +66,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Configuration & configuration_,
     Block & sample_block_,
-    std::shared_ptr<ShellCommandCoordinator> coordinator_,
+    std::shared_ptr<ShellCommandSourceCoordinator> coordinator_,
     ContextPtr context_)
     : log(&Poco::Logger::get("ExecutableDictionarySource"))
     , dict_struct(dict_struct_)
@@ -166,29 +166,9 @@ Pipe ExecutableDictionarySource::loadKeys(const Columns & key_columns, const std
 
 Pipe ExecutableDictionarySource::getStreamForBlock(const Block & block)
 {
-    String command = configuration.command;
     const auto & coordinator_configuration = coordinator->getConfiguration();
-
-    if (coordinator_configuration.execute_direct)
-    {
-        auto global_context = context->getGlobalContext();
-        auto user_scripts_path = global_context->getUserScriptsPath();
-        auto script_path = user_scripts_path + '/' + command;
-
-        if (!fileOrSymlinkPathStartsWith(script_path, user_scripts_path))
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Executable file {} must be inside user scripts folder {}",
-                command,
-                user_scripts_path);
-
-        if (!std::filesystem::exists(std::filesystem::path(script_path)))
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                "Executable file {} does not exist inside user scripts folder {}",
-                command,
-                user_scripts_path);
-
-        command = std::move(script_path);
-    }
+    String command = configuration.command;
+    updateCommandIfNeeded(command, coordinator_configuration.execute_direct, context);
 
     auto source = std::make_shared<SourceFromSingleChunk>(block);
     auto shell_input_pipe = Pipe(std::move(source));
@@ -273,7 +253,7 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
             .implicit_key = config.getBool(settings_config_prefix + ".implicit_key", false),
         };
 
-        ShellCommandCoordinator::Configuration shell_command_coordinator_configration
+        ShellCommandSourceCoordinator::Configuration shell_command_coordinator_configration
         {
             .format = config.getString(settings_config_prefix + ".format"),
             .command_termination_timeout_seconds = config.getUInt64(settings_config_prefix + ".command_termination_timeout", 10),
@@ -284,7 +264,7 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
             .execute_direct = config.getBool(settings_config_prefix + ".execute_direct", false)
         };
 
-        std::shared_ptr<ShellCommandCoordinator> coordinator = std::make_shared<ShellCommandCoordinator>(shell_command_coordinator_configration);
+        auto coordinator = std::make_shared<ShellCommandSourceCoordinator>(shell_command_coordinator_configration);
         return std::make_unique<ExecutableDictionarySource>(dict_struct, configuration, sample_block, std::move(coordinator), context);
     };
 
