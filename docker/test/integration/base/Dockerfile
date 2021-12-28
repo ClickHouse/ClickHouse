@@ -29,9 +29,22 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
+# Architecture of the image when BuildKit/buildx is used
+ARG TARGETARCH
 
-# Install MySQL ODBC driver
-RUN curl 'https://downloads.mysql.com/archives/get/p/10/file/mysql-connector-odbc-8.0.21-linux-glibc2.12-x86-64bit.tar.gz' --location --output 'mysql-connector.tar.gz' && tar -xzf mysql-connector.tar.gz && cd mysql-connector-odbc-8.0.21-linux-glibc2.12-x86-64bit/lib && mv * /usr/local/lib && ln -s /usr/local/lib/libmyodbc8a.so /usr/lib/x86_64-linux-gnu/odbc/libmyodbc.so
+# Install MySQL ODBC driver from RHEL rpm
+RUN arch=${TARGETARCH:-amd64} \
+  && case $arch in \
+      amd64) rarch=x86_64 ;; \
+      arm64) rarch=aarch64 ;; \
+    esac \
+  && cd /tmp \
+  && curl -o mysql-odbc.rpm "https://cdn.mysql.com/Downloads/Connector-ODBC/8.0/mysql-connector-odbc-8.0.27-1.el8.${rarch}.rpm" \
+  && rpm2archive mysql-odbc.rpm \
+  && tar xf mysql-odbc.rpm.tgz -C / ./usr/lib64/ \
+  && LINK_DIR=$(dpkg -L libodbc1 | grep '^/usr/lib/.*-linux-gnu/odbc$') \
+  && ln -s /usr/lib64/libmyodbc8a.so "$LINK_DIR" \
+  && ln -s /usr/lib64/libmyodbc8a.so "$LINK_DIR"/libmyodbc.so
 
 # Unfortunately this is required for a single test for conversion data from zookeeper to clickhouse-keeper.
 # ZooKeeper is not started by default, but consumes some space in containers.
