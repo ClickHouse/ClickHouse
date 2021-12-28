@@ -152,6 +152,12 @@ If you do not have `service` command, run as
 $ sudo /etc/init.d/clickhouse-server start
 ```
 
+If you have `systemctl` command, run as
+
+``` bash
+$ sudo systemctl start clickhouse-server.service
+```
+
 See the logs in the `/var/log/clickhouse-server/` directory.
 
 If the server does not start, check the configurations in the file `/etc/clickhouse-server/config.xml`.
