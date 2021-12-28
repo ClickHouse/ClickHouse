@@ -4,41 +4,16 @@ log_user 0
 set timeout 60
 set uuid ""
 match_max 100000
-# A default timeout action is to do nothing, change it to fail
 expect_after {
-    timeout {
-        exit 1
-    }
+    # Do not ignore eof from read.
+    eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    timeout { exit 1 }
 }
 
 set basedir [file dirname $argv0]
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT"
-# wait until the process will be spawned to avoid terminating "expect" with "eof":
-#
-#     send: sending "set max_distributed" to { exp4 }
-#
-#     expect: does "" (spawn_id exp4) match glob pattern ":)"? no
-#     expect: read eof
-#     expect: set expect_out(spawn_id) "exp0"
-#     expect: set expect_out(buffer) ""
-#     send: sending "set max_distributed" to { exp4 }
-#
-#     expect: does "" (spawn_id exp4) match glob pattern "set max_distributed"? no
-#
-#
-# NOTE: this is especially important since random database has "_" prefix,
-# and this may break the whole test (see expect "_" below).
-set is_done 0
-while {$is_done == 0} {
-    send -- "\t"
-    expect {
-        ":) " {
-            set is_done 1
-        }
-        default {
-        }
-    }
-}
+expect ":) "
 
 # Make a query
 send -- "set max_distributed"
