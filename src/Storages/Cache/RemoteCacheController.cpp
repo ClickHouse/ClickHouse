@@ -31,6 +31,9 @@ std::shared_ptr<RemoteCacheController> RemoteCacheController::recover(const std:
     auto cache_controller = std::make_shared<RemoteCacheController>(nullptr, local_path_, 0);
     if (cache_controller->file_status != DOWNLOADED)
     {
+        // do not load this invalid cached file and clear it. the clear action is in
+        // ExternalDataSourceCache::recoverTask(), because deleting directories during iteration will
+        // cause unexpected behaviors
         LOG_INFO(log, "Recover cached file failed. local path:{}", local_path_.string());
         return nullptr;
     }
@@ -45,12 +48,6 @@ std::shared_ptr<RemoteCacheController> RemoteCacheController::recover(const std:
     }
     if (!cache_controller->file_metadata_ptr)
     {
-        // do not load this invalid cached file and clear it. the clear action is in
-        // ExternalDataSourceCache::recoverCachedFilesMetadata(), because deleting directories during iteration will
-        // cause unexpected behaviors
-        LOG_ERROR(log, "Cannot create the metadata class : {}. The cached file is invalid and will be remove. path:{}",
-                cache_controller->metadata_class,
-                local_path_.string());
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid metadata class:{}", cache_controller->metadata_class);
     }
     ReadBufferFromFile file_readbuffer((local_path_ / "metadata.txt").string());

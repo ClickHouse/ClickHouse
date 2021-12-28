@@ -24,10 +24,7 @@ namespace DB
 namespace fs = std::filesystem;
 namespace ErrorCodes
 {
-    extern const int OK;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_INIT;
-    extern const int DISK_OVERFLOW;
 }
 
 
@@ -45,9 +42,8 @@ std::unique_ptr<ReadBuffer> RemoteReadBuffer::create(ContextPtr context, IRemote
 {
     auto remote_path = remote_file_metadata->remote_path;
     auto remote_read_buffer = std::make_unique<RemoteReadBuffer>(buff_size);
-    ErrorCodes::ErrorCode error;
 
-    std::tie(remote_read_buffer->file_cache_controller, read_buffer, error) = ExternalDataSourceCache::instance().createReader(context, remote_file_metadata, read_buffer);
+    std::tie(remote_read_buffer->file_cache_controller, read_buffer) = ExternalDataSourceCache::instance().createReader(context, remote_file_metadata, read_buffer);
     if (remote_read_buffer->file_cache_controller == nullptr)
     {
         return read_buffer;
@@ -114,17 +110,14 @@ ExternalDataSourceCache & ExternalDataSourceCache::instance()
     return instance;
 }
 
-void ExternalDataSourceCache::recoverCachedFilesMetadata(
-    const fs::path & current_path,
-    size_t current_depth,
-    size_t max_depth)
+void ExternalDataSourceCache::recoverTask()
 {
-    if (current_depth >= max_depth)
+    std::vector<fs::path> invalid_paths;
+    for (auto const & group_dir : fs::directory_iterator{root_dir})
     {
-        std::vector<fs::path> invalid_paths;
-        for (auto const & dir : fs::directory_iterator{current_path})
+        for (auto const & cache_dir : fs::directory_iterator{group_dir.path()})
         {
-            String path = dir.path();
+            String path = cache_dir.path();
             auto cache_controller = RemoteCacheController::recover(path);
             if (!cache_controller)
             {
@@ -136,22 +129,9 @@ void ExternalDataSourceCache::recoverCachedFilesMetadata(
                 invalid_paths.emplace_back(path);
             }
         }
-        for (auto & path : invalid_paths)
-        {
-            fs::remove_all(path);
-        }
-        return;
     }
-
-    for (auto const & dir : fs::directory_iterator{current_path})
-    {
-        recoverCachedFilesMetadata(dir.path(), current_depth + 1, max_depth);
-    }
-}
-
-void ExternalDataSourceCache::recoverTask()
-{
-    recoverCachedFilesMetadata(root_dir, 1, 2);
+    for (auto & path : invalid_paths)
+        fs::remove_all(path);
     initialized = true;
     LOG_INFO(log, "Recovered from directory:{}", root_dir);
 }
@@ -191,14 +171,14 @@ String ExternalDataSourceCache::calculateLocalPath(IRemoteFileMetadataPtr metada
     return fs::path(root_dir) / hashcode_str.substr(0, 3) / hashcode_str;
 }
 
-std::tuple<RemoteCacheControllerPtr, std::unique_ptr<ReadBuffer>, ErrorCodes::ErrorCode>
+std::pair<RemoteCacheControllerPtr, std::unique_ptr<ReadBuffer>>
 ExternalDataSourceCache::createReader(ContextPtr context, IRemoteFileMetadataPtr remote_file_metadata, std::unique_ptr<ReadBuffer> & read_buffer)
 {
     // If something is wrong on startup, rollback to read from the original ReadBuffer
     if (!isInitialized())
     {
         LOG_ERROR(log, "ExternalDataSourceCache has not been initialized");
-        return {nullptr, std::move(read_buffer), ErrorCodes::NOT_INIT};
+        return {nullptr, std::move(read_buffer)};
     }
 
     auto remote_path = remote_file_metadata->remote_path;
@@ -221,7 +201,7 @@ ExternalDataSourceCache::createReader(ContextPtr context, IRemoteFileMetadataPtr
         }
         else
         {
-            return {cache, nullptr, ErrorCodes::OK};
+            return {cache, nullptr};
         }
     }
 
@@ -235,10 +215,10 @@ ExternalDataSourceCache::createReader(ContextPtr context, IRemoteFileMetadataPtr
         LOG_ERROR(log, "Insert the new cache failed. new file size:{}, current total size:{}",
                 remote_file_metadata->file_size,
                 lru_caches->weight());
-        return {nullptr, std::move(read_buffer), ErrorCodes::DISK_OVERFLOW};
+        return {nullptr, std::move(read_buffer)};
     }
     new_cache->startBackgroundDownload(std::move(read_buffer), context->getSchedulePool());
-    return {new_cache, nullptr, ErrorCodes::OK};
+    return {new_cache, nullptr};
 }
 
 }
