@@ -43,5 +43,12 @@ timeout $TIMEOUT bash -c create_drop_thread 2> /dev/null &
 
 wait
 
+for i in $(seq 1 10); do
+    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test_table$num" 2>/dev/null
+    while  [ $? -ne 0 ]; do
+        $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS test_table$num" 2>/dev/null
+    done
+done
+
 # still alive
 $CLICKHOUSE_CLIENT --query "SELECT 1"
