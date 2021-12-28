@@ -435,25 +435,57 @@ Similar to `interserver_http_host`, except that this hostname can be used by oth
 
 ## interserver_http_credentials {#server-settings-interserver-http-credentials}
 
-The username and password used to authenticate during [replication](../../engines/table-engines/mergetree-family/replication.md) with the Replicated\* engines. These credentials are used only for communication between replicas and are unrelated to credentials for ClickHouse clients. The server is checking these credentials for connecting replicas and use the same credentials when connecting to other replicas. So, these credentials should be set the same for all replicas in a cluster.
-By default, the authentication is not used.
+A username and a password used to connect to other servers during [replication](../../engines/table-engines/mergetree-family/replication.md). Also the server authenticates other replicas using these credentials. So, `interserver_http_credentials` must be the same for all replicas in a cluster.
+
+By default, if `interserver_http_credentials` section is omitted, authentication is not used during replication.
 
 !!! note "Note"
-    These credentials are common for replication through `HTTP` and `HTTPS`.
+    `interserver_http_credentials` settings do not relate to a ClickHouse client credentials [configuration](../../interfaces/cli.md#configuration_files).
 
-This section contains the following parameters:
+!!! note "Note"
+    These credentials are common for replication via `HTTP` and `HTTPS`.
 
--   `user` — username.
--   `password` — password.
+The section contains the following parameters:
 
-**Example**
+-   `user` — Username.
+-   `password` — Password.
+-   `allow_empty` — If `true`, then other replicas are allowed to connect without authentication even if credentials are set. If `false`, then connections without authentication are refused. Default value: `false`.
+-   `old` — Contains old `user` and `password` used during credential rotation. Several `old` sections can be specified.
+
+**Credentials Rotation**
+
+ClickHouse supports dynamic interserver credentials rotation without stopping all replicas at the same time to update their configuration. Credentials can be changed in several steps.
+
+To enable authentication, set `interserver_http_credentials.allow_empty` to `true` and add credentials. This allows connections with authentication and without it.
+
+``` xml
+<interserver_http_credentials>
+    <user>admin</user>
+    <password>111</password>
+    <allow_empty>true</allow_empty>
+</interserver_http_credentials>
+```
+
+After configuring all replicas set `allow_empty` to `false` or remove this setting. It makes authentication with new credentials mandatory.
+
+To change existing credentials, move the username and the password to `interserver_http_credentials.old` section and update `user` and `password` with new values. At this point the server uses new credentials to connect to other replicas and accepts connections with either new or old credentials. 
 
 ``` xml
 <interserver_http_credentials>
     <user>admin</user>
     <password>222</password>
+    <old>
+        <user>admin</user>
+        <password>111</password>
+    </old>
+    <old>
+        <user>temp</user>
+        <password>000</password>
+    </old>
 </interserver_http_credentials>
 ```
+
+When new credentials are applied to all replicas, old credentials may be removed.
 
 ## keep_alive_timeout {#keep-alive-timeout}
 

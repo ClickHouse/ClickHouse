@@ -424,6 +424,11 @@ if (OS_LINUX AND NOT SANITIZE)
     set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
 endif ()
 
+# Increase stack size on Musl. We need big stack for our recursive-descend parser.
+if (USE_MUSL)
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,stack-size=2097152")
+endif ()
+
 include(cmake/dbms_glob_sources.cmake)
 
 if (OS_LINUX OR OS_ANDROID)
@@ -451,6 +456,11 @@ if (MAKE_STATIC_LIBRARIES)
     endif ()
 else ()
     set (CMAKE_POSITION_INDEPENDENT_CODE ON)
+    # This is required for clang on Arch linux, that uses PIE by default.
+    # See enable-SSP-and-PIE-by-default.patch [1].
+    #
+    #   [1]: https://github.com/archlinux/svntogit-packages/blob/6e681aa860e65ad46a1387081482eb875c2200f2/trunk/enable-SSP-and-PIE-by-default.patch
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -no-pie")
 endif ()
 
 if (ENABLE_TESTS)

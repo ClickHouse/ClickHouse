@@ -311,7 +311,7 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
 
     try
     {
-        user_id = global_context->getAccessControl().login(credentials_, address.host());
+        user_id = global_context->getAccessControl().authenticate(credentials_, address.host());
         LOG_DEBUG(log, "{} Authenticated with global context as user {}",
                 toString(auth_id), user_id ? toString(*user_id) : "<EMPTY>");
     }
