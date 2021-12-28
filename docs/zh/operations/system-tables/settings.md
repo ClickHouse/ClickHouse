@@ -1,27 +1,22 @@
----
-machine_translated: true
-machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
----
+# system.settings {#system-tables-system-settings}
 
-# 系统。设置 {#system-tables-system-settings}
-
-包含有关当前用户的会话设置的信息。
+包含当前用户会话设置的相关信息。
 
 列:
 
--   `name` ([字符串](../../sql-reference/data-types/string.md)) — Setting name.
--   `value` ([字符串](../../sql-reference/data-types/string.md)) — Setting value.
--   `changed` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows whether a setting is changed from its default value.
--   `description` ([字符串](../../sql-reference/data-types/string.md)) — Short setting description.
--   `min` ([可为空](../../sql-reference/data-types/nullable.md)([字符串](../../sql-reference/data-types/string.md))) — Minimum value of the setting, if any is set via [制约因素](../../operations/settings/constraints-on-settings.md#constraints-on-settings). 如果设置没有最小值，则包含 [NULL](../../sql-reference/syntax.md#null-literal).
--   `max` ([可为空](../../sql-reference/data-types/nullable.md)([字符串](../../sql-reference/data-types/string.md))) — Maximum value of the setting, if any is set via [制约因素](../../operations/settings/constraints-on-settings.md#constraints-on-settings). 如果设置没有最大值，则包含 [NULL](../../sql-reference/syntax.md#null-literal).
--   `readonly` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows whether the current user can change the setting:
-    -   `0` — Current user can change the setting.
-    -   `1` — Current user can't change the setting.
+-   `name` ([字符串](../../sql-reference/data-types/string.md)) — 设置名称。
+-   `value` ([字符串](../../sql-reference/data-types/string.md)) — 设置的值。
+-   `changed` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 显示该设置是否从其默认值修改。
+-   `description` ([字符串](../../sql-reference/data-types/string.md)) — 该设置的简要描述。
+-   `min` ([可为空](../../sql-reference/data-types/nullable.md)([字符串](../../sql-reference/data-types/string.md))) — 该设置的最小值，如果有最小值，则是通过[约束](../../operations/settings/constraints-on-settings.md#constraints-on-settings)设置的。如果该设置没有最小值，则包含 [NULL](../../sql-reference/syntax.md#null-literal).
+-   `max` ([可为空](../../sql-reference/data-types/nullable.md)([字符串](../../sql-reference/data-types/string.md))) — 该设置的最大值, 如果有最大值，则是通过[约束](../../operations/settings/constraints-on-settings.md#constraints-on-settings)设置的。如果该设置没有最大值，则包含 [NULL](../../sql-reference/syntax.md#null-literal).
+-   `readonly` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 当前用户是否可以修改该设置:
+    -   `0` — 当前用户可以修改此设置.
+    -   `1` — 当前用户不能修改此设置.
 
 **示例**
 
-下面的示例演示如何获取有关名称包含的设置的信息 `min_i`.
+下面的例子显示了如何获得设置名称中包含`min_i`的设置信息。
 
 ``` sql
 SELECT *
@@ -37,10 +32,10 @@ WHERE name LIKE '%min_i%'
 └─────────────────────────────────────────────┴───────────┴─────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────┴──────┴──────────┘
 ```
 
-使用 `WHERE changed` 可以是有用的，例如，当你想检查:
+比如，当你想要检查以下情况时，使用 `WHERE changed` 会很有用:
 
--   配置文件中的设置是否正确加载并正在使用。
--   在当前会话中更改的设置。
+-   配置文件中的设置是否正确加载，并正在使用。
+-   在当前会话中更改过的设置。
 
 <!-- -->
 
@@ -52,4 +47,6 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 
 -   [设置](../../operations/settings/index.md#session-settings-intro)
 -   [查询权限](../../operations/settings/permissions-for-queries.md#settings_readonly)
--   [对设置的限制](../../operations/settings/constraints-on-settings.md)
+-   [对设置的约束](../../operations/settings/constraints-on-settings.md)
+
+[原文](https://clickhouse.com/docs/zh/operations/system-tables/settings) <!--hide-->
