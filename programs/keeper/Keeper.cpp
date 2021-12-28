@@ -6,6 +6,7 @@
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Coordination/Defines.h>
 #include <Common/Config/ConfigReloader.h>
+#include <Server/TCPServer.h>
 #include <filesystem>
 #include <IO/UseSSL.h>
 #include <Core/ServerUUID.h>
@@ -379,11 +380,11 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
             socket.setReceiveTimeout(settings.receive_timeout);
             socket.setSendTimeout(settings.send_timeout);
             servers->emplace_back(
+                listen_host,
                 port_name,
-                std::make_unique<Poco::Net::TCPServer>(
-                    new KeeperTCPHandlerFactory(*this, false), server_pool, socket, new Poco::Net::TCPServerParams));
-
-            LOG_INFO(log, "Listening for connections to Keeper (tcp): {}", address.toString());
+                "Keeper (tcp): " + address.toString(),
+                std::make_unique<TCPServer>(
+                    new KeeperTCPHandlerFactory(*this, false), server_pool, socket));
         });
 
         const char * secure_port_name = "keeper_server.tcp_port_secure";
@@ -395,10 +396,11 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
             socket.setReceiveTimeout(settings.receive_timeout);
             socket.setSendTimeout(settings.send_timeout);
             servers->emplace_back(
+                listen_host,
                 secure_port_name,
-                std::make_unique<Poco::Net::TCPServer>(
-                    new KeeperTCPHandlerFactory(*this, true), server_pool, socket, new Poco::Net::TCPServerParams));
-            LOG_INFO(log, "Listening for connections to Keeper with secure protocol (tcp_secure): {}", address.toString());
+                "Keeper with secure protocol (tcp_secure): " + address.toString(),
+                std::make_unique<TCPServer>(
+                    new KeeperTCPHandlerFactory(*this, true), server_pool, socket));
 #else
             UNUSED(port);
             throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
@@ -408,7 +410,10 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     }
 
     for (auto & server : *servers)
+    {
         server.start();
+        LOG_INFO(log, "Listening for {}", server.getDescription());
+    }
 
     zkutil::EventPtr unused_event = std::make_shared<Poco::Event>();
     zkutil::ZooKeeperNodeCache unused_cache([] { return nullptr; });
