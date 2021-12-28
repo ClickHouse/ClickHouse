@@ -56,8 +56,6 @@ private:
 
     Processors aggregating;
 
-    Poco::Logger * log = &Poco::Logger::get("AggregatingStep");
-
 };
 
 }

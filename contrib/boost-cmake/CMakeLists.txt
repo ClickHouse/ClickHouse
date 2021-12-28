@@ -1,9 +1,7 @@
 option (USE_INTERNAL_BOOST_LIBRARY "Use internal Boost library" ON)
 
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
-    # 1.70 like in contrib/boost
-    # 1.71 on CI
-    set(BOOST_VERSION 1.71)
+    set(BOOST_VERSION 1.78)
 
     find_package(Boost ${BOOST_VERSION} COMPONENTS
         system
@@ -66,9 +64,11 @@ if (NOT EXTERNAL_BOOST_FOUND)
 
     set (SRCS_FILESYSTEM
         "${LIBRARY_DIR}/libs/filesystem/src/codecvt_error_category.cpp"
+        "${LIBRARY_DIR}/libs/filesystem/src/directory.cpp"
+        "${LIBRARY_DIR}/libs/filesystem/src/exception.cpp"
         "${LIBRARY_DIR}/libs/filesystem/src/operations.cpp"
-        "${LIBRARY_DIR}/libs/filesystem/src/path_traits.cpp"
         "${LIBRARY_DIR}/libs/filesystem/src/path.cpp"
+        "${LIBRARY_DIR}/libs/filesystem/src/path_traits.cpp"
         "${LIBRARY_DIR}/libs/filesystem/src/portability.cpp"
         "${LIBRARY_DIR}/libs/filesystem/src/unique_path.cpp"
         "${LIBRARY_DIR}/libs/filesystem/src/utf8_codecvt_facet.cpp"
@@ -126,24 +126,11 @@ if (NOT EXTERNAL_BOOST_FOUND)
     # regex
 
     set (SRCS_REGEX
-        "${LIBRARY_DIR}/libs/regex/src/c_regex_traits.cpp"
-        "${LIBRARY_DIR}/libs/regex/src/cpp_regex_traits.cpp"
-        "${LIBRARY_DIR}/libs/regex/src/cregex.cpp"
-        "${LIBRARY_DIR}/libs/regex/src/fileiter.cpp"
-        "${LIBRARY_DIR}/libs/regex/src/icu.cpp"
-        "${LIBRARY_DIR}/libs/regex/src/instances.cpp"
-        "${LIBRARY_DIR}/libs/regex/src/internals.hpp"
         "${LIBRARY_DIR}/libs/regex/src/posix_api.cpp"
         "${LIBRARY_DIR}/libs/regex/src/regex_debug.cpp"
-        "${LIBRARY_DIR}/libs/regex/src/regex_raw_buffer.cpp"
-        "${LIBRARY_DIR}/libs/regex/src/regex_traits_defaults.cpp"
         "${LIBRARY_DIR}/libs/regex/src/regex.cpp"
         "${LIBRARY_DIR}/libs/regex/src/static_mutex.cpp"
-        "${LIBRARY_DIR}/libs/regex/src/usinstances.cpp"
-        "${LIBRARY_DIR}/libs/regex/src/w32_regex_traits.cpp"
-        "${LIBRARY_DIR}/libs/regex/src/wc_regex_traits.cpp"
         "${LIBRARY_DIR}/libs/regex/src/wide_posix_api.cpp"
-        "${LIBRARY_DIR}/libs/regex/src/winstances.cpp"
     )
 
     add_library (_boost_regex ${SRCS_REGEX})
@@ -166,7 +153,6 @@ if (NOT EXTERNAL_BOOST_FOUND)
 
     set (SRCS_CONTEXT
         "${LIBRARY_DIR}/libs/context/src/dummy.cpp"
-        "${LIBRARY_DIR}/libs/context/src/execution_context.cpp"
         "${LIBRARY_DIR}/libs/context/src/posix/stack_traits.cpp"
     )
 

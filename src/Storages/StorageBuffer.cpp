@@ -455,10 +455,8 @@ static void appendBlock(const Block & from, Block & to)
     size_t rows = from.rows();
     size_t bytes = from.bytes();
 
-    CurrentMetrics::add(CurrentMetrics::StorageBufferRows, rows);
-    CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, bytes);
-
     size_t old_rows = to.rows();
+    size_t old_bytes = to.bytes();
 
     MutableColumnPtr last_col;
     try
@@ -468,6 +466,8 @@ static void appendBlock(const Block & from, Block & to)
         if (to.rows() == 0)
         {
             to = from;
+            CurrentMetrics::add(CurrentMetrics::StorageBufferRows, rows);
+            CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, bytes);
         }
         else
         {
@@ -480,6 +480,8 @@ static void appendBlock(const Block & from, Block & to)
 
                 to.getByPosition(column_no).column = std::move(last_col);
             }
+            CurrentMetrics::add(CurrentMetrics::StorageBufferRows, rows);
+            CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, to.bytes() - old_bytes);
         }
     }
     catch (...)

@@ -32,6 +32,8 @@ public:
     void nextImpl() override;
 
 private:
+    void finalizeImpl() override;
+
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
     size_t max_single_part_upload_size;
     const String blob_path;
