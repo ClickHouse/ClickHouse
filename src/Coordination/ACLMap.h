@@ -31,6 +31,7 @@ private:
     ACLToNumMap acl_to_num;
     NumToACLMap num_to_acl;
     UsageCounter usage_counter;
+    uint64_t max_acl_id{1};
 public:
 
     /// Convert ACL to number. If it's new ACL than adds it to map
@@ -43,7 +44,7 @@ public:
     /// Mapping from numbers to ACLs vectors. Used during serialization.
     const NumToACLMap & getMapping() const { return num_to_acl; }
 
-    /// Add mapping to ACLMap. Used during deserialization.
+    /// Add mapping to ACLMap. Used during deserialization from snapshot.
     void addMapping(uint64_t acls_id, const Coordination::ACLs & acls);
 
     /// Add/remove usage of some id. Used to remove unused ACLs.
