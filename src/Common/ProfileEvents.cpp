@@ -284,7 +284,8 @@
     M(MergeTreeMetaCacheHit, "Number of times the read of meta file was done from MergeTree meta cache") \
     M(MergeTreeMetaCacheMiss, "Number of times the read of meta file was not done from MergeTree meta cache") \
     \
-
+    M(MainConfigLoads, "Number of times the main configuration was reloaded.") \
+    \
 
 namespace ProfileEvents
 {
