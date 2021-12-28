@@ -38,6 +38,8 @@ private:
 
     MeiliSearchConfiguration config;
 
+    Poco::Logger* log;
+
 };
 
 }

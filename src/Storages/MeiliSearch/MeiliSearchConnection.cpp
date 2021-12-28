@@ -21,7 +21,7 @@ static size_t writeCallback(void *contents, size_t size, size_t nmemb, void *use
     return size * nmemb;
 }
 
-String MeiliSearchConnection::searchQuery(const std::vector<std::pair<String, String>>& query_params) const {
+String MeiliSearchConnection::searchQuery(const std::unordered_map<String, String>& query_params) const {
 
     CURLcode ret_code;
     CURL *hnd;

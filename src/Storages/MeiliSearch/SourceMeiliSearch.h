@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unordered_map>
 #include <Processors/Chunk.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Core/ExternalResultDescription.h>
@@ -15,7 +16,8 @@ public:
         const MeiliSearchConfiguration& config,
         const Block & sample_block,
         UInt64 max_block_size_,
-        UInt64 offset_);
+        UInt64 offset_,
+        std::unordered_map<String, String> query_params_);
 
     ~MeiliSearchSource() override;
 
@@ -27,6 +29,7 @@ private:
     MeiliSearchConnection connection;
     const UInt64 max_block_size;
     ExternalResultDescription description;
+    std::unordered_map<String, String> query_params;
 
     UInt64 offset;
     bool all_read = false;
