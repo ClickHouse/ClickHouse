@@ -172,8 +172,9 @@ static void validateConfigKeys(
     dict_config.keys(config_prefix, config_keys);
     for (const auto & config_key : config_keys)
     {
-        if (!allowed_keys.contains(config_key))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected key `{}` in dictionary source configuration", config_key);
+        if (allowed_keys.contains(config_key) || config_key.starts_with("replica"))
+            continue;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected key `{}` in dictionary source configuration", config_key);
     }
 }
 
@@ -205,7 +206,7 @@ std::optional<ExternalDataSourceConfiguration> getExternalDataSourceConfiguratio
         if (configuration.host.empty() || configuration.port == 0 || configuration.username.empty() || configuration.table.empty())
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Named collection of connection parameters is missing some of the parameters and dictionary parameters are added");
+                            "Named collection of connection parameters is missing some of the parameters and dictionary parameters are not added");
         }
         return configuration;
     }
