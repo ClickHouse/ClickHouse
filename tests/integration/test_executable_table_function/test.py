@@ -39,57 +39,57 @@ def started_cluster():
 
 def test_executable_function_no_input_bash(started_cluster):
     skip_test_msan(node)
-    assert node.query("SELECT * FROM executable('test_no_input.sh', 'TabSeparated', 'value String')") == 'Key 0\nKey 1\nKey 2\n'
+    assert node.query("SELECT * FROM executable('no_input.sh', 'TabSeparated', 'value String')") == 'Key 0\nKey 1\nKey 2\n'
 
 def test_executable_function_no_input_python(started_cluster):
     skip_test_msan(node)
-    assert node.query("SELECT * FROM executable('test_no_input.py', 'TabSeparated', 'value String')") == 'Key 0\nKey 1\nKey 2\n'
+    assert node.query("SELECT * FROM executable('no_input.py', 'TabSeparated', 'value String')") == 'Key 0\nKey 1\nKey 2\n'
 
 def test_executable_function_input_bash(started_cluster):
     skip_test_msan(node)
 
-    query = "SELECT * FROM executable('test_input.sh', 'TabSeparated', 'value String', {source})"
+    query = "SELECT * FROM executable('input.sh', 'TabSeparated', 'value String', {source})"
     assert node.query(query.format(source='(SELECT 1)')) == 'Key 1\n'
     assert node.query(query.format(source='(SELECT id FROM test_data_table)')) == 'Key 0\nKey 1\nKey 2\n'
 
 def test_executable_function_input_python(started_cluster):
     skip_test_msan(node)
 
-    query = "SELECT * FROM executable('test_input.py', 'TabSeparated', 'value String', {source})"
+    query = "SELECT * FROM executable('input.py', 'TabSeparated', 'value String', {source})"
     assert node.query(query.format(source='(SELECT 1)')) == 'Key 1\n'
     assert node.query(query.format(source='(SELECT id FROM test_data_table)')) == 'Key 0\nKey 1\nKey 2\n'
 
 def test_executable_function_input_sum_python(started_cluster):
     skip_test_msan(node)
 
-    query = "SELECT * FROM executable('test_input_sum.py', 'TabSeparated', 'value UInt64', {source})"
+    query = "SELECT * FROM executable('input_sum.py', 'TabSeparated', 'value UInt64', {source})"
     assert node.query(query.format(source='(SELECT 1, 1)')) == '2\n'
     assert node.query(query.format(source='(SELECT id, id FROM test_data_table)')) == '0\n2\n4\n'
 
 def test_executable_function_input_argument_python(started_cluster):
     skip_test_msan(node)
 
-    query = "SELECT * FROM executable('test_input_argument.py 1', 'TabSeparated', 'value String', {source})"
+    query = "SELECT * FROM executable('input_argument.py 1', 'TabSeparated', 'value String', {source})"
     assert node.query(query.format(source='(SELECT 1)')) == 'Key 1 1\n'
     assert node.query(query.format(source='(SELECT id FROM test_data_table)')) == 'Key 1 0\nKey 1 1\nKey 1 2\n'
 
 def test_executable_function_input_signalled_python(started_cluster):
     skip_test_msan(node)
 
-    query = "SELECT * FROM executable('test_input_signalled.py', 'TabSeparated', 'value String', {source})"
+    query = "SELECT * FROM executable('input_signalled.py', 'TabSeparated', 'value String', {source})"
     assert node.query(query.format(source='(SELECT 1)')) == ''
     assert node.query(query.format(source='(SELECT id FROM test_data_table)')) == ''
 
 def test_executable_function_input_slow_python(started_cluster):
     skip_test_msan(node)
 
-    query = "SELECT * FROM executable('test_input_slow.py', 'TabSeparated', 'value String', {source})"
+    query = "SELECT * FROM executable('input_slow.py', 'TabSeparated', 'value String', {source})"
     assert node.query_and_get_error(query.format(source='(SELECT 1)'))
     assert node.query_and_get_error(query.format(source='(SELECT id FROM test_data_table)'))
 
 def test_executable_function_input_multiple_pipes_python(started_cluster):
     skip_test_msan(node)
-    query = "SELECT * FROM executable('test_input_multiple_pipes.py', 'TabSeparated', 'value String', {source})"
+    query = "SELECT * FROM executable('input_multiple_pipes.py', 'TabSeparated', 'value String', {source})"
     actual = node.query(query.format(source='(SELECT 1), (SELECT 2), (SELECT 3)'))
     expected = 'Key from 4 fd 3\nKey from 3 fd 2\nKey from 0 fd 1\n'
     assert actual == expected
@@ -101,21 +101,21 @@ def test_executable_function_input_multiple_pipes_python(started_cluster):
 def test_executable_storage_no_input_bash(started_cluster):
     skip_test_msan(node)
     node.query("DROP TABLE IF EXISTS test_table")
-    node.query("CREATE TABLE test_table (value String) ENGINE=Executable('test_no_input.sh', 'TabSeparated')")
+    node.query("CREATE TABLE test_table (value String) ENGINE=Executable('no_input.sh', 'TabSeparated')")
     assert node.query("SELECT * FROM test_table") == 'Key 0\nKey 1\nKey 2\n'
     node.query("DROP TABLE test_table")
 
 def test_executable_storage_no_input_python(started_cluster):
     skip_test_msan(node)
     node.query("DROP TABLE IF EXISTS test_table")
-    node.query("CREATE TABLE test_table (value String) ENGINE=Executable('test_no_input.py', 'TabSeparated')")
+    node.query("CREATE TABLE test_table (value String) ENGINE=Executable('no_input.py', 'TabSeparated')")
     assert node.query("SELECT * FROM test_table") == 'Key 0\nKey 1\nKey 2\n'
     node.query("DROP TABLE test_table")
 
 def test_executable_storage_input_bash(started_cluster):
     skip_test_msan(node)
 
-    query = "CREATE TABLE test_table (value String) ENGINE=Executable('test_input.sh', 'TabSeparated', {source})"
+    query = "CREATE TABLE test_table (value String) ENGINE=Executable('input.sh', 'TabSeparated', {source})"
 
     node.query("DROP TABLE IF EXISTS test_table")
     node.query(query.format(source='(SELECT 1)'))
@@ -129,7 +129,7 @@ def test_executable_storage_input_bash(started_cluster):
 def test_executable_storage_input_python(started_cluster):
     skip_test_msan(node)
 
-    query = "CREATE TABLE test_table (value String) ENGINE=Executable('test_input.py', 'TabSeparated', {source})"
+    query = "CREATE TABLE test_table (value String) ENGINE=Executable('input.py', 'TabSeparated', {source})"
 
     node.query("DROP TABLE IF EXISTS test_table")
     node.query(query.format(source='(SELECT 1)'))
@@ -143,7 +143,7 @@ def test_executable_storage_input_python(started_cluster):
 def test_executable_storage_input_send_chunk_header_python(started_cluster):
     skip_test_msan(node)
 
-    query = "CREATE TABLE test_table (value String) ENGINE=Executable('test_input_chunk_header.py', 'TabSeparated', {source}) SETTINGS send_chunk_header=1"
+    query = "CREATE TABLE test_table (value String) ENGINE=Executable('input_chunk_header.py', 'TabSeparated', {source}) SETTINGS send_chunk_header=1"
 
     node.query("DROP TABLE IF EXISTS test_table")
     node.query(query.format(source='(SELECT 1)'))
@@ -157,7 +157,7 @@ def test_executable_storage_input_send_chunk_header_python(started_cluster):
 def test_executable_storage_input_sum_python(started_cluster):
     skip_test_msan(node)
 
-    query = "CREATE TABLE test_table (value UInt64) ENGINE=Executable('test_input_sum.py', 'TabSeparated', {source})"
+    query = "CREATE TABLE test_table (value UInt64) ENGINE=Executable('input_sum.py', 'TabSeparated', {source})"
 
     node.query("DROP TABLE IF EXISTS test_table")
     node.query(query.format(source='(SELECT 1, 1)'))
@@ -171,7 +171,7 @@ def test_executable_storage_input_sum_python(started_cluster):
 def test_executable_storage_input_argument_python(started_cluster):
     skip_test_msan(node)
 
-    query = "CREATE TABLE test_table (value String) ENGINE=Executable('test_input_argument.py 1', 'TabSeparated', {source})"
+    query = "CREATE TABLE test_table (value String) ENGINE=Executable('input_argument.py 1', 'TabSeparated', {source})"
 
     node.query("DROP TABLE IF EXISTS test_table")
     node.query(query.format(source='(SELECT 1)'))
@@ -185,7 +185,7 @@ def test_executable_storage_input_argument_python(started_cluster):
 def test_executable_storage_input_signalled_python(started_cluster):
     skip_test_msan(node)
 
-    query = "CREATE TABLE test_table (value String) ENGINE=Executable('test_input_signalled.py', 'TabSeparated', {source})"
+    query = "CREATE TABLE test_table (value String) ENGINE=Executable('input_signalled.py', 'TabSeparated', {source})"
 
     node.query("DROP TABLE IF EXISTS test_table")
     node.query(query.format(source='(SELECT 1)'))
@@ -199,7 +199,7 @@ def test_executable_storage_input_signalled_python(started_cluster):
 def test_executable_storage_input_slow_python(started_cluster):
     skip_test_msan(node)
 
-    query = "CREATE TABLE test_table (value String) ENGINE=Executable('test_input_slow.py', 'TabSeparated', {source}) SETTINGS command_read_timeout=2500"
+    query = "CREATE TABLE test_table (value String) ENGINE=Executable('input_slow.py', 'TabSeparated', {source}) SETTINGS command_read_timeout=2500"
 
     node.query("DROP TABLE IF EXISTS test_table")
     node.query(query.format(source='(SELECT 1)'))
@@ -213,7 +213,7 @@ def test_executable_storage_input_slow_python(started_cluster):
 def test_executable_function_input_multiple_pipes_python(started_cluster):
     skip_test_msan(node)
 
-    query = "CREATE TABLE test_table (value String) ENGINE=Executable('test_input_multiple_pipes.py', 'TabSeparated', {source})"
+    query = "CREATE TABLE test_table (value String) ENGINE=Executable('input_multiple_pipes.py', 'TabSeparated', {source})"
 
     node.query("DROP TABLE IF EXISTS test_table")
     node.query(query.format(source='(SELECT 1), (SELECT 2), (SELECT 3)'))
@@ -227,7 +227,7 @@ def test_executable_function_input_multiple_pipes_python(started_cluster):
 def test_executable_pool_storage_input_python(started_cluster):
     skip_test_msan(node)
 
-    query = "CREATE TABLE test_table (value String) ENGINE=ExecutablePool('test_input_pool.py', 'TabSeparated', {source}) SETTINGS send_chunk_header=1, pool_size=1"
+    query = "CREATE TABLE test_table (value String) ENGINE=ExecutablePool('input_pool.py', 'TabSeparated', {source}) SETTINGS send_chunk_header=1, pool_size=1"
 
     node.query("DROP TABLE IF EXISTS test_table")
     node.query(query.format(source='(SELECT 1)'))
@@ -249,7 +249,7 @@ def test_executable_pool_storage_input_python(started_cluster):
 def test_executable_pool_storage_input_sum_python(started_cluster):
     skip_test_msan(node)
 
-    query = "CREATE TABLE test_table (value UInt64) ENGINE=ExecutablePool('test_input_sum_pool.py', 'TabSeparated', {source}) SETTINGS send_chunk_header=1, pool_size=1"
+    query = "CREATE TABLE test_table (value UInt64) ENGINE=ExecutablePool('input_sum_pool.py', 'TabSeparated', {source}) SETTINGS send_chunk_header=1, pool_size=1"
 
     node.query("DROP TABLE IF EXISTS test_table")
     node.query(query.format(source='(SELECT 1, 1)'))
@@ -271,7 +271,7 @@ def test_executable_pool_storage_input_sum_python(started_cluster):
 def test_executable_pool_storage_input_argument_python(started_cluster):
     skip_test_msan(node)
 
-    query = "CREATE TABLE test_table (value String) ENGINE=ExecutablePool('test_input_argument_pool.py 1', 'TabSeparated', {source}) SETTINGS send_chunk_header=1, pool_size=1"
+    query = "CREATE TABLE test_table (value String) ENGINE=ExecutablePool('input_argument_pool.py 1', 'TabSeparated', {source}) SETTINGS send_chunk_header=1, pool_size=1"
 
     node.query("DROP TABLE IF EXISTS test_table")
     node.query(query.format(source='(SELECT 1)'))
@@ -293,7 +293,7 @@ def test_executable_pool_storage_input_argument_python(started_cluster):
 def test_executable_pool_storage_input_python(started_cluster):
     skip_test_msan(node)
 
-    query = "CREATE TABLE test_table (value String) ENGINE=ExecutablePool('test_input_multiple_pipes_pool.py', 'TabSeparated', {source}) SETTINGS send_chunk_header=1, pool_size=1"
+    query = "CREATE TABLE test_table (value String) ENGINE=ExecutablePool('input_multiple_pipes_pool.py', 'TabSeparated', {source}) SETTINGS send_chunk_header=1, pool_size=1"
 
     node.query("DROP TABLE IF EXISTS test_table")
     node.query(query.format(source='(SELECT 1), (SELECT 2), (SELECT 3)'))

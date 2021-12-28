@@ -4,7 +4,7 @@
         <source>
             <executable>
                 <format>TabSeparated</format>
-                <command>test_input_slow.py</command>
+                <command>input_slow.py</command>
                 <execute_direct>1</execute_direct>
                 <command_read_timeout>1000</command_read_timeout>
             </executable>
@@ -29,7 +29,7 @@
         <source>
             <executable_pool>
                 <format>TabSeparated</format>
-                <command>test_input_slow.py</command>
+                <command>input_slow.py</command>
                 <execute_direct>1</execute_direct>
                 <command_read_timeout>1000</command_read_timeout>
             </executable_pool>
@@ -54,7 +54,7 @@
         <source>
             <executable>
                 <format>TabSeparated</format>
-                <command>test_input_implicit_slow.py</command>
+                <command>input_implicit_slow.py</command>
                 <execute_direct>1</execute_direct>
                 <implicit_key>1</implicit_key>
                 <command_read_timeout>1000</command_read_timeout>
@@ -80,7 +80,7 @@
         <source>
             <executable_pool>
                 <format>TabSeparated</format>
-                <command>test_input_implicit_slow.py</command>
+                <command>input_implicit_slow.py</command>
                 <execute_direct>1</execute_direct>
                 <implicit_key>1</implicit_key>
                 <command_read_timeout>1000</command_read_timeout>
