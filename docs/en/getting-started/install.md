@@ -143,6 +143,12 @@ On Gentoo, you can just use `emerge clickhouse` to install ClickHouse from sourc
 To start the server as a daemon, run:
 
 ``` bash
+$ sudo clickhouse start
+```
+
+There are also another ways to run ClickHouse:
+
+``` bash
 $ sudo service clickhouse-server start
 ```
 
