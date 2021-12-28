@@ -27,15 +27,23 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-
-RemoteReadBuffer::RemoteReadBuffer(size_t buff_size) : BufferWithOwnMemory<SeekableReadBufferWithSize>(buff_size)
+LocalFileHolder::LocalFileHolder(std::shared_ptr<RemoteCacheController> cache_controller):file_cache_controller(cache_controller)
 {
+    file_buffer = file_cache_controller->allocFile();
+    if (!file_buffer)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Create file readbuffer failed. {}",
+                file_cache_controller->getLocalPath().string());
+
 }
 
-RemoteReadBuffer::~RemoteReadBuffer()
+LocalFileHolder::~LocalFileHolder()
 {
     if (file_cache_controller)
         file_cache_controller->deallocFile(std::move(file_buffer));
+}
+
+RemoteReadBuffer::RemoteReadBuffer(size_t buff_size) : BufferWithOwnMemory<SeekableReadBufferWithSize>(buff_size)
+{
 }
 
 std::unique_ptr<ReadBuffer> RemoteReadBuffer::create(ContextPtr context, IRemoteFileMetadataPtr remote_file_metadata, std::unique_ptr<ReadBuffer> read_buffer, size_t buff_size)
@@ -43,48 +51,40 @@ std::unique_ptr<ReadBuffer> RemoteReadBuffer::create(ContextPtr context, IRemote
     auto remote_path = remote_file_metadata->remote_path;
     auto remote_read_buffer = std::make_unique<RemoteReadBuffer>(buff_size);
 
-    std::tie(remote_read_buffer->file_cache_controller, read_buffer) = ExternalDataSourceCache::instance().createReader(context, remote_file_metadata, read_buffer);
-    if (remote_read_buffer->file_cache_controller == nullptr)
-    {
+    std::tie(remote_read_buffer->local_file_holder, read_buffer) = ExternalDataSourceCache::instance().createReader(context, remote_file_metadata, read_buffer);
+    if (remote_read_buffer->local_file_holder == nullptr)
         return read_buffer;
-    }
-    else
-    {
-        remote_read_buffer->file_buffer = remote_read_buffer->file_cache_controller->allocFile();
-        if (!remote_read_buffer->file_buffer)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Create file readbuffer failed. {}",
-                    remote_read_buffer->file_cache_controller->getLocalPath().string());
-    }
     remote_read_buffer->remote_file_size = remote_file_metadata->file_size;
     return remote_read_buffer;
 }
 
 bool RemoteReadBuffer::nextImpl()
 {
-    auto start_offset = file_buffer->getPosition();
-    auto end_offset = start_offset + file_buffer->internalBuffer().size();
-    file_cache_controller->waitMoreData(start_offset, end_offset);
+    auto start_offset = local_file_holder->file_buffer->getPosition();
+    auto end_offset = start_offset + local_file_holder->file_buffer->internalBuffer().size();
+    local_file_holder->file_cache_controller->waitMoreData(start_offset, end_offset);
 
-    auto status = file_buffer->next();
+    auto status = local_file_holder->file_buffer->next();
     if (status)
     {
-        BufferBase::set(file_buffer->buffer().begin(),
-                file_buffer->buffer().size(),
-                file_buffer->offset());
-        ProfileEvents::increment(ProfileEvents::ExternalDataSourceLocalCacheReadBytes, file_buffer->available());
+        BufferBase::set(local_file_holder->file_buffer->buffer().begin(),
+                local_file_holder->file_buffer->buffer().size(),
+                local_file_holder->file_buffer->offset());
+        ProfileEvents::increment(ProfileEvents::ExternalDataSourceLocalCacheReadBytes, local_file_holder->file_buffer->available());
     }
     return status;
 }
 
 off_t RemoteReadBuffer::seek(off_t offset, int whence)
 {
-    if (!file_buffer)
+    if (!local_file_holder->file_buffer)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot call seek() in this buffer. It's a bug!");
     /*
      * Need to wait here. For example, the current file has been download at position X, but here we try to seek to
      * postition Y (Y > X), it would fail.
      */
-    file_cache_controller->waitMoreData(offset, offset + file_buffer->internalBuffer().size());
+    auto & file_buffer = local_file_holder->file_buffer;
+    local_file_holder->file_cache_controller->waitMoreData(offset, offset + file_buffer->internalBuffer().size());
     auto ret = file_buffer->seek(offset, whence);
     BufferBase::set(file_buffer->buffer().begin(),
             file_buffer->buffer().size(),
@@ -94,7 +94,7 @@ off_t RemoteReadBuffer::seek(off_t offset, int whence)
 
 off_t RemoteReadBuffer::getPosition()
 {
-    return file_buffer->getPosition();
+    return local_file_holder->file_buffer->getPosition();
 }
 
 ExternalDataSourceCache::ExternalDataSourceCache() = default;
@@ -171,7 +171,7 @@ String ExternalDataSourceCache::calculateLocalPath(IRemoteFileMetadataPtr metada
     return fs::path(root_dir) / hashcode_str.substr(0, 3) / hashcode_str;
 }
 
-std::pair<RemoteCacheControllerPtr, std::unique_ptr<ReadBuffer>>
+std::pair<std::unique_ptr<LocalFileHolder>, std::unique_ptr<ReadBuffer>>
 ExternalDataSourceCache::createReader(ContextPtr context, IRemoteFileMetadataPtr remote_file_metadata, std::unique_ptr<ReadBuffer> & read_buffer)
 {
     // If something is wrong on startup, rollback to read from the original ReadBuffer
@@ -201,7 +201,7 @@ ExternalDataSourceCache::createReader(ContextPtr context, IRemoteFileMetadataPtr
         }
         else
         {
-            return {cache, nullptr};
+            return {std::make_unique<LocalFileHolder>(cache), nullptr};
         }
     }
 
@@ -218,7 +218,7 @@ ExternalDataSourceCache::createReader(ContextPtr context, IRemoteFileMetadataPtr
         return {nullptr, std::move(read_buffer)};
     }
     new_cache->startBackgroundDownload(std::move(read_buffer), context->getSchedulePool());
-    return {new_cache, nullptr};
+    return {std::make_unique<LocalFileHolder>(new_cache), nullptr};
 }
 
 }
