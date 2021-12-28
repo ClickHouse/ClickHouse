@@ -283,7 +283,7 @@ struct ContextSharedPart
     Context::ConfigReloadCallback config_reload_callback;
 
 #if USE_ROCKSDB
-    /// MergeTree metadata cache stored in rocksdb.
+    /// Global merge tree metadata cache, stored in rocksdb.
     MergeTreeMetadataCachePtr merge_tree_metadata_cache;
 #endif
 
@@ -399,7 +399,7 @@ struct ContextSharedPart
             zookeeper.reset();
 
 #if USE_ROCKSDB
-            /// Shutdown meta file cache
+            /// Shutdown merge tree metadata cache
             if (merge_tree_metadata_cache)
             {
                 merge_tree_metadata_cache->shutdown();

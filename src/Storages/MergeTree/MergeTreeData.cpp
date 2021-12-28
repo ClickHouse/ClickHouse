@@ -206,6 +206,7 @@ MergeTreeData::MergeTreeData(
     , parts_mover(this)
     , background_operations_assignee(*this, BackgroundJobsAssignee::Type::DataProcessing, getContext())
     , background_moves_assignee(*this, BackgroundJobsAssignee::Type::Moving, getContext())
+    , use_metadata_cache(getSettings()->use_metadata_cache)
 {
     context_->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
 
@@ -318,13 +319,13 @@ MergeTreeData::MergeTreeData(
             "'min_rows_for_compact_part' and 'min_bytes_for_compact_part' will be ignored.", reason);
 
 #if !USE_ROCKSDB
-    if (settings->use_metadata_cache)
+    if (use_metadata_cache)
     {
         LOG_WARNING(
             log,
             "Can't use merge tree metadata cache if clickhouse was compiled without rocksdb."
             "set use_metadata_cache to false forcely");
-        settings->use_metadata_cache = false;
+        use_metadata_cache = false;
     }
 #endif
 

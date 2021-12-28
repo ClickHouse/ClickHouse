@@ -373,7 +373,7 @@ void MergeTreePartition::load(const MergeTreeData & storage, const DiskPtr & dis
     if (metadata_cache)
     {
         String v;
-        file = metadata_cache->readOrSetMeta(disk, "partition.dat", v);
+        file = metadata_cache->readOrSet(disk, "partition.dat", v);
     }
     else
     {

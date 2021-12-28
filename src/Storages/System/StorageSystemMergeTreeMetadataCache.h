@@ -12,8 +12,7 @@ namespace DB
 class Context;
 
 
-/** Implements `merge_tree_metadata_cache` system table, which allows you to view the metadata cache data in rocksdb for debugging purposes.
-  */
+/// Implements `merge_tree_metadata_cache` system table, which allows you to view the metadata cache data in rocksdb for testing purposes.
 class StorageSystemMergeTreeMetadataCache : public shared_ptr_helper<StorageSystemMergeTreeMetadataCache>, public IStorageSystemOneBlock<StorageSystemMergeTreeMetadataCache>
 {
     friend struct shared_ptr_helper<StorageSystemMergeTreeMetadataCache>;

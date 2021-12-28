@@ -99,7 +99,7 @@ public:
         if (!data || !data->getSettings()->use_metadata_cache)
             throw Exception("The table in function " + getName() + " must be in MergeTree Family", ErrorCodes::ILLEGAL_COLUMN);
 
-        /// Fill in result
+        /// Fill in checking results.
         auto col_result = result_type->createColumn();
         auto & col_arr = assert_cast<ColumnArray &>(*col_result);
         auto & col_tuple = assert_cast<ColumnTuple &>(col_arr.getData());
