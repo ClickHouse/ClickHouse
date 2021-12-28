@@ -290,7 +290,53 @@ def test_executable_pool_storage_input_argument_python(started_cluster):
 
     node.query("DROP TABLE test_table")
 
-def test_executable_pool_storage_input_python(started_cluster):
+def test_executable_pool_storage_input_signalled_python(started_cluster):
+    skip_test_msan(node)
+
+    query = "CREATE TABLE test_table (value String) ENGINE=ExecutablePool('input_signalled_pool.py', 'TabSeparated', {source}) SETTINGS send_chunk_header=1, pool_size=1"
+
+    node.query("DROP TABLE IF EXISTS test_table")
+    node.query(query.format(source='(SELECT 1)'))
+
+    assert node.query_and_get_error("SELECT * FROM test_table")
+    assert node.query_and_get_error("SELECT * FROM test_table")
+    assert node.query_and_get_error("SELECT * FROM test_table")
+
+    node.query("DROP TABLE test_table")
+
+    node.query(query.format(source='(SELECT id FROM test_data_table)'))
+
+    assert node.query_and_get_error("SELECT * FROM test_table")
+    assert node.query_and_get_error("SELECT * FROM test_table")
+    assert node.query_and_get_error("SELECT * FROM test_table")
+
+    node.query("DROP TABLE test_table")
+
+def test_executable_pool_storage_input_slow_python(started_cluster):
+    skip_test_msan(node)
+
+    query = """CREATE TABLE test_table (value String)
+        ENGINE=ExecutablePool('input_slow_pool.py', 'TabSeparated', {source})
+        SETTINGS send_chunk_header=1, pool_size=1, command_read_timeout=2500"""
+
+    node.query("DROP TABLE IF EXISTS test_table")
+    node.query(query.format(source='(SELECT 1)'))
+
+    assert node.query_and_get_error("SELECT * FROM test_table")
+    assert node.query_and_get_error("SELECT * FROM test_table")
+    assert node.query_and_get_error("SELECT * FROM test_table")
+
+    node.query("DROP TABLE test_table")
+
+    node.query(query.format(source='(SELECT id FROM test_data_table)'))
+
+    assert node.query_and_get_error("SELECT * FROM test_table")
+    assert node.query_and_get_error("SELECT * FROM test_table")
+    assert node.query_and_get_error("SELECT * FROM test_table")
+
+    node.query("DROP TABLE test_table")
+
+def test_executable_pool_storage_input_multiple_pipes_python(started_cluster):
     skip_test_msan(node)
 
     query = "CREATE TABLE test_table (value String) ENGINE=ExecutablePool('input_multiple_pipes_pool.py', 'TabSeparated', {source}) SETTINGS send_chunk_header=1, pool_size=1"
@@ -309,5 +355,27 @@ def test_executable_pool_storage_input_python(started_cluster):
     assert node.query("SELECT * FROM test_table") == 'Key from 4 fd 3\nKey from 3 fd 2\nKey from 0 fd 0\nKey from 0 fd 1\nKey from 0 fd 2\n'
     assert node.query("SELECT * FROM test_table") == 'Key from 4 fd 3\nKey from 3 fd 2\nKey from 0 fd 0\nKey from 0 fd 1\nKey from 0 fd 2\n'
     assert node.query("SELECT * FROM test_table") == 'Key from 4 fd 3\nKey from 3 fd 2\nKey from 0 fd 0\nKey from 0 fd 1\nKey from 0 fd 2\n'
+
+    node.query("DROP TABLE test_table")
+
+def test_executable_pool_storage_input_count_python(started_cluster):
+    skip_test_msan(node)
+
+    query = "CREATE TABLE test_table (value String) ENGINE=ExecutablePool('input_count_pool.py', 'TabSeparated', {source}) SETTINGS send_chunk_header=1, pool_size=1"
+
+    node.query("DROP TABLE IF EXISTS test_table")
+    node.query(query.format(source='(SELECT 1)'))
+
+    assert node.query("SELECT * FROM test_table") == '1\n'
+    assert node.query("SELECT * FROM test_table") == '1\n'
+    assert node.query("SELECT * FROM test_table") == '1\n'
+
+    node.query("DROP TABLE test_table")
+
+    node.query(query.format(source='(SELECT number FROM system.numbers LIMIT 250000)'))
+
+    assert node.query("SELECT * FROM test_table") == '250000\n'
+    assert node.query("SELECT * FROM test_table") == '250000\n'
+    assert node.query("SELECT * FROM test_table") == '250000\n'
 
     node.query("DROP TABLE test_table")
