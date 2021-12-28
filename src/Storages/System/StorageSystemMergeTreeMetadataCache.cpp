@@ -1,4 +1,4 @@
-#include <Storages/System/StorageSystemMergeTreeMetaCache.h>
+#include <Storages/System/StorageSystemMergeTreeMetadataCache.h>
 
 #if USE_ROCKSDB
 #include <DataTypes/DataTypeDateTime.h>
@@ -20,7 +20,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-NamesAndTypesList StorageSystemMergeTreeMetaCache::getNamesAndTypes()
+NamesAndTypesList StorageSystemMergeTreeMetadataCache::getNamesAndTypes()
 {
     return {
         {"key", std::make_shared<DataTypeString>()},
@@ -95,19 +95,19 @@ static String extractKey(const ASTPtr & query, bool& precise)
 }
 
 
-void StorageSystemMergeTreeMetaCache::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const
+void StorageSystemMergeTreeMetadataCache::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const
 {
     bool precise = false;
     String key = extractKey(query_info.query, precise);
     if (key.empty())
         throw Exception(
-            "SELECT from system.merge_tree_meta_cache table must contain condition like key = 'key' or key LIKE 'prefix%' in WHERE clause.", ErrorCodes::BAD_ARGUMENTS);
+            "SELECT from system.merge_tree_metadata_cache table must contain condition like key = 'key' or key LIKE 'prefix%' in WHERE clause.", ErrorCodes::BAD_ARGUMENTS);
 
-    auto cache = context->getMergeTreeMetaCache();
+    auto cache = context->getMergeTreeMetadataCache();
     if (precise)
     {
         String value;
-        if (cache->get(key, value) != MergeTreeMetaCache::Status::OK())
+        if (cache->get(key, value) != MergeTreeMetadataCache::Status::OK())
             return;
 
         size_t col_num = 0;
@@ -119,7 +119,7 @@ void StorageSystemMergeTreeMetaCache::fillData(MutableColumns & res_columns, Con
         String target = extractFixedPrefixFromLikePattern(key);
         if (target.empty())
             throw Exception(
-                "SELECT from system.merge_tree_meta_cache table must contain condition like key = 'key' or key LIKE 'prefix%' in WHERE clause.", ErrorCodes::BAD_ARGUMENTS);
+                "SELECT from system.merge_tree_metadata_cache table must contain condition like key = 'key' or key LIKE 'prefix%' in WHERE clause.", ErrorCodes::BAD_ARGUMENTS);
 
         Strings keys;
         Strings values;

@@ -183,14 +183,14 @@ private:
 };
 
 #if USE_ROCKSDB
-class MergeTreeMetaCache
+class MergeTreeMetadataCache
 {
 public:
     using Status = rocksdb::Status;
 
-    explicit MergeTreeMetaCache(rocksdb::DB * rocksdb_) : rocksdb{rocksdb_} { }
-    MergeTreeMetaCache(const MergeTreeMetaCache &) = delete;
-    MergeTreeMetaCache & operator=(const MergeTreeMetaCache &) = delete;
+    explicit MergeTreeMetadataCache(rocksdb::DB * rocksdb_) : rocksdb{rocksdb_} { }
+    MergeTreeMetadataCache(const MergeTreeMetadataCache &) = delete;
+    MergeTreeMetadataCache & operator=(const MergeTreeMetadataCache &) = delete;
 
     Status put(const String & key, const String & value);
     Status del(const String & key);
@@ -200,9 +200,9 @@ public:
     void shutdown();
 private:
     std::unique_ptr<rocksdb::DB> rocksdb;
-    Poco::Logger * log = &Poco::Logger::get("MergeTreeMetaCache");
+    Poco::Logger * log = &Poco::Logger::get("MergeTreeMetadataCache");
 };
-using MergeTreeMetaCachePtr = std::shared_ptr<MergeTreeMetaCache>;
+using MergeTreeMetadataCachePtr = std::shared_ptr<MergeTreeMetadataCache>;
 #endif
 
 /** A set of known objects that can be used in the query.
@@ -705,7 +705,7 @@ public:
     UInt32 getZooKeeperSessionUptime() const;
 
 #if USE_ROCKSDB
-    MergeTreeMetaCachePtr getMergeTreeMetaCache() const;
+    MergeTreeMetadataCachePtr getMergeTreeMetadataCache() const;
 #endif
 
 
@@ -799,7 +799,7 @@ public:
     void initializeTraceCollector();
 
 #if USE_ROCKSDB
-    void initializeMergeTreeMetaCache(const String & dir, size_t size);
+    void initializeMergeTreeMetadataCache(const String & dir, size_t size);
 #endif
 
     bool hasTraceCollector() const;

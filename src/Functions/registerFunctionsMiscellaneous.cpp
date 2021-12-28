@@ -82,7 +82,7 @@ void registerFunctionZooKeeperSessionUptime(FunctionFactory &);
 void registerFunctionGetOSKernelVersion(FunctionFactory &);
 
 #if USE_ROCKSDB
-void registerFunctionCheckPartMetaCache(FunctionFactory &);
+void registerFunctionCheckPartMetadataCache(FunctionFactory &);
 #endif
 
 #if USE_ICU
@@ -172,7 +172,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionGetOSKernelVersion(factory);
 
 #if USE_ROCKSDB
-    registerFunctionCheckPartMetaCache(factory);
+    registerFunctionCheckPartMetadataCache(factory);
 #endif
 
 #if USE_ICU

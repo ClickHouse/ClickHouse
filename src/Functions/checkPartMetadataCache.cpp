@@ -21,14 +21,13 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
-class FunctionCheckPartMetaCache: public IFunction, WithContext
+class FunctionCheckPartMetadataCache : public IFunction, WithContext
 {
 public:
     using uint128 = IMergeTreeDataPart::uint128;
@@ -37,22 +36,18 @@ public:
     using DataPartStates = MergeTreeData::DataPartStates;
 
 
-    static constexpr auto name = "checkPartMetaCache";
-    static FunctionPtr create(ContextPtr context_)
-    {
-        return std::make_shared<FunctionCheckPartMetaCache>(context_);
-    }
+    static constexpr auto name = "checkPartMetadataCache";
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionCheckPartMetadataCache>(context_); }
 
-    static constexpr DataPartStates part_states = {
-        DataPartState::Committed,
-        DataPartState::Temporary,
-        DataPartState::PreCommitted,
-        DataPartState::Outdated,
-        DataPartState::Deleting,
-        DataPartState::DeleteOnDestroy
-    };
+    static constexpr DataPartStates part_states
+        = {DataPartState::Committed,
+           DataPartState::Temporary,
+           DataPartState::PreCommitted,
+           DataPartState::Outdated,
+           DataPartState::Deleting,
+           DataPartState::DeleteOnDestroy};
 
-    explicit FunctionCheckPartMetaCache(ContextPtr context_): WithContext(context_) {}
+    explicit FunctionCheckPartMetadataCache(ContextPtr context_) : WithContext(context_) { }
 
     String getName() const override { return name; }
 
@@ -76,44 +71,44 @@ public:
         DataTypePtr cache_checksum_type = std::make_unique<DataTypeFixedString>(32);
         DataTypePtr disk_checksum_type = std::make_unique<DataTypeFixedString>(32);
         DataTypePtr match_type = std::make_unique<DataTypeUInt8>();
-        DataTypePtr tuple_type = std::make_unique<DataTypeTuple>(DataTypes{key_type, state_type, cache_checksum_type, disk_checksum_type, match_type});
+        DataTypePtr tuple_type
+            = std::make_unique<DataTypeTuple>(DataTypes{key_type, state_type, cache_checksum_type, disk_checksum_type, match_type});
         return std::make_shared<DataTypeArray>(tuple_type);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        // get database name
+        /// Get database name
         const auto * arg_database = arguments[0].column.get();
-        const ColumnString * column_database  = checkAndGetColumnConstData<ColumnString>(arg_database);
-        if (! column_database)
+        const ColumnString * column_database = checkAndGetColumnConstData<ColumnString>(arg_database);
+        if (!column_database)
             throw Exception("The first argument of function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_COLUMN);
         String database_name = column_database->getDataAt(0).toString();
 
-        // get table name
+        /// Get table name
         const auto * arg_table = arguments[1].column.get();
         const ColumnString * column_table = checkAndGetColumnConstData<ColumnString>(arg_table);
-        if (! column_table)
+        if (!column_table)
             throw Exception("The second argument of function " + getName() + " must be constant String", ErrorCodes::ILLEGAL_COLUMN);
         String table_name = column_table->getDataAt(0).toString();
 
-        // get storage
+        /// Get storage
         StorageID storage_id(database_name, table_name);
         auto storage = DatabaseCatalog::instance().getTable(storage_id, getContext());
         auto data = std::dynamic_pointer_cast<MergeTreeData>(storage);
-        if (! data)
+        if (!data || !data->getSettings()->use_metadata_cache)
             throw Exception("The table in function " + getName() + " must be in MergeTree Family", ErrorCodes::ILLEGAL_COLUMN);
 
-        // fill in result
+        /// Fill in result
         auto col_result = result_type->createColumn();
-        auto& col_arr = assert_cast<ColumnArray&>(*col_result);
-        col_arr.reserve(1);
-        auto& col_tuple = assert_cast<ColumnTuple&>(col_arr.getData());
+        auto & col_arr = assert_cast<ColumnArray &>(*col_result);
+        auto & col_tuple = assert_cast<ColumnTuple &>(col_arr.getData());
         col_tuple.reserve(data->fileNumberOfDataParts(part_states));
-        auto& col_key = assert_cast<ColumnString&>(col_tuple.getColumn(0));
-        auto& col_state = assert_cast<ColumnString&>(col_tuple.getColumn(1));
-        auto& col_cache_checksum = assert_cast<ColumnFixedString&>(col_tuple.getColumn(2));
-        auto& col_disk_checksum = assert_cast<ColumnFixedString&>(col_tuple.getColumn(3));
-        auto& col_match = assert_cast<ColumnUInt8&>(col_tuple.getColumn(4));
+        auto & col_key = assert_cast<ColumnString &>(col_tuple.getColumn(0));
+        auto & col_state = assert_cast<ColumnString &>(col_tuple.getColumn(1));
+        auto & col_cache_checksum = assert_cast<ColumnFixedString &>(col_tuple.getColumn(2));
+        auto & col_disk_checksum = assert_cast<ColumnFixedString &>(col_tuple.getColumn(3));
+        auto & col_match = assert_cast<ColumnUInt8 &>(col_tuple.getColumn(4));
         auto parts = data->getDataParts(part_states);
         for (const auto & part : parts)
             executePart(part, col_key, col_state, col_cache_checksum, col_disk_checksum, col_match);
@@ -121,21 +116,26 @@ public:
         return result_type->createColumnConst(input_rows_count, col_arr[0]);
     }
 
-    static void executePart(const DataPartPtr& part, ColumnString& col_key, ColumnString& col_state,
-        ColumnFixedString& col_cache_checksum, ColumnFixedString& col_disk_checksum, ColumnUInt8& col_match)
+    static void executePart(
+        const DataPartPtr & part,
+        ColumnString & col_key,
+        ColumnString & col_state,
+        ColumnFixedString & col_cache_checksum,
+        ColumnFixedString & col_disk_checksum,
+        ColumnUInt8 & col_match)
     {
         Strings keys;
         auto state_view = part->stateString();
         String state(state_view.data(), state_view.size());
         std::vector<uint128> cache_checksums;
         std::vector<uint128> disk_checksums;
-        uint8_t match  = 0;
+        uint8_t match = 0;
         size_t file_number = part->fileNumberOfColumnsChecksumsIndexes();
         keys.reserve(file_number);
         cache_checksums.reserve(file_number);
         disk_checksums.reserve(file_number);
 
-        part->checkMetaCache(keys, cache_checksums, disk_checksums);
+        part->checkMetadataCache(keys, cache_checksums, disk_checksums);
         for (size_t i = 0; i < keys.size(); ++i)
         {
             col_key.insert(keys[i]);
@@ -149,10 +149,9 @@ public:
     }
 };
 
-void registerFunctionCheckPartMetaCache(FunctionFactory & factory)
+void registerFunctionCheckPartMetadataCache(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionCheckPartMetaCache>();
+    factory.registerFunction<FunctionCheckPartMetadataCache>();
 }
-
 }
 #endif

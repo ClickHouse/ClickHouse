@@ -277,14 +277,14 @@
     \
     M(AsynchronousReadWaitMicroseconds, "Time spent in waiting for asynchronous reads.") \
     \
-    M(RocksdbGet, "Number of rocksdb reads(used for merge tree metadata cache)") \
-    M(RocksdbPut, "Number of rocksdb puts(used for merge tree metadata cache)") \
-    M(RocksdbDelete, "Number of rocksdb deletes(used for merge tree metadata cache)") \
-    M(RocksdbSeek, "Number of rocksdb seeks(used for merge tree metadata cache)") \
-    M(MergeTreeMetaCacheHit, "Number of times the read of meta file was done from MergeTree meta cache") \
-    M(MergeTreeMetaCacheMiss, "Number of times the read of meta file was not done from MergeTree meta cache") \
-    \
     M(MainConfigLoads, "Number of times the main configuration was reloaded.") \
+    \
+    M(MergeTreeMetadataCacheGet, "Number of rocksdb reads(used for merge tree metadata cache)") \
+    M(MergeTreeMetadataCachePut, "Number of rocksdb puts(used for merge tree metadata cache)") \
+    M(MergeTreeMetadataCacheDelete, "Number of rocksdb deletes(used for merge tree metadata cache)") \
+    M(MergeTreeMetadataCacheSeek, "Number of rocksdb seeks(used for merge tree metadata cache)") \
+    M(MergeTreeMetadataCacheHit, "Number of times the read of meta file was done from MergeTree metadata cache") \
+    M(MergeTreeMetadataCacheMiss, "Number of times the read of meta file was not done from MergeTree metadata cache") \
     \
 
 namespace ProfileEvents
