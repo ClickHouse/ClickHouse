@@ -80,6 +80,10 @@ DB::DataTypePtr dbms::SerializedPlanParser::parseType(const io::substrait::Type 
     {
         return factory.get("Float64");
     }
+    else if (type.has_date())
+    {
+        return factory.get("Date");
+    }
     else
     {
         throw std::runtime_error("doesn't support type " + type.DebugString());
@@ -133,13 +137,24 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parseOp(const io::substrait::Rel & 
             const auto & project = rel.project();
             DB::QueryPlanPtr query_plan = parseOp(project.input());
             const auto & expressions = project.expressions();
+            auto actions_dag = std::make_shared<ActionsDAG>(blockToNameAndTypeList(query_plan->getCurrentDataStream().header));
+            DB::NamesWithAliases required_columns;
             for (const auto & expr : expressions)
             {
-                std::string result_name;
-                auto expression_step = std::make_unique<DB::ExpressionStep>(
-                    query_plan->getCurrentDataStream(), parseFunction(query_plan->getCurrentDataStream(), expr, result_name));
-                query_plan->addStep(std::move(expression_step));
+                if (expr.has_selection())
+                {
+                    const auto * field = actions_dag->getInputs()[expr.selection().direct_reference().struct_field().field() - 1];
+                    required_columns.emplace_back(DB::NameWithAlias (field->result_name, field->result_name));
+                }
+                else
+                {
+                    throw std::runtime_error("unsupported projection type");
+                }
             }
+            actions_dag->project(required_columns);
+            auto expression_step = std::make_unique<DB::ExpressionStep>(
+                query_plan->getCurrentDataStream(), actions_dag);
+            query_plan->addStep(std::move(expression_step));
             return query_plan;
         }
         case substrait::Rel::RelTypeCase::kAggregate: {

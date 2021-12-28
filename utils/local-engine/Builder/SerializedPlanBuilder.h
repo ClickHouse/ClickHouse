@@ -36,6 +36,7 @@ public:
     }
     SerializedPlanBuilder& registerFunction(int id, std::string name);
     SerializedPlanBuilder& filter(io::substrait::Expression* condition);
+    SerializedPlanBuilder& project(std::vector<io::substrait::Expression*> projections);
     SerializedPlanBuilder& aggregate(std::vector<int32_t> keys, std::vector<io::substrait::AggregateRel_Measure *> aggregates);
     SerializedPlanBuilder& read(std::string path, SchemaPtr schema);
     std::unique_ptr<io::substrait::Plan> build();

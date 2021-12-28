@@ -4,12 +4,12 @@ public class SparkRowInfo {
     public long[] offsets;
     public long[] lengths;
     public long memoryAddress;
-    public long column_number;
+    public long fieldsNum;
 
-    public SparkRowInfo(long[] offsets, long[] lengths, long memoryAddress, long column_number) {
+    public SparkRowInfo(long[] offsets, long[] lengths, long memoryAddress, long fieldsNum) {
         this.offsets = offsets;
         this.lengths = lengths;
         this.memoryAddress = memoryAddress;
-        this.column_number = column_number;
+        this.fieldsNum = fieldsNum;
     }
 }

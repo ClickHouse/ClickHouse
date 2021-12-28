@@ -87,6 +87,72 @@ static void BM_SimpleAggregate(benchmark::State& state) {
     }
 }
 
+static void BM_TPCH_Q6(benchmark::State& state) {
+    for (auto _: state)
+    {
+        state.PauseTiming();
+        dbms::SerializedSchemaBuilder schema_builder;
+        auto schema = schema_builder
+//                          .column("l_orderkey", "I64")
+//                          .column("l_partkey", "I64")
+//                          .column("l_suppkey", "I64")
+//                          .column("l_linenumber", "I32")
+                          .column("l_quantity", "FP64")
+                          .column("l_extendedprice", "FP64")
+                          .column("l_discount", "FP64")
+//                          .column("l_tax", "FP64")
+                          //                      .column("l_returnflag", "String")
+                          //                      .column("l_linestatus", "String")
+                          .column("l_shipdate_new", "FP64")
+//                          .column("l_commitdate_new", "FP64")
+//                          .column("l_receiptdate_new", "FP64")
+                          //                      .column("l_shipinstruct", "String")
+                          //                      .column("l_shipmode", "String")
+                          //                      .column("l_comment", "String")
+                          .build();
+        dbms::SerializedPlanBuilder plan_builder;
+        auto *agg_mul = dbms::scalarFunction(dbms::MULTIPLY, {dbms::selection(2), dbms::selection(3)});
+        auto * measure1 = dbms::measureFunction(dbms::SUM, {agg_mul});
+        auto * measure2 = dbms::measureFunction(dbms::SUM, {dbms::selection(2)});
+        auto * measure3 = dbms::measureFunction(dbms::SUM, {dbms::selection(1)});
+        auto plan = plan_builder.registerSupportedFunctions()
+                        .aggregate({}, {measure1, measure2, measure3})
+                        .project({dbms::selection(1), dbms::selection(2), dbms::selection(3)})
+                        .filter(dbms::scalarFunction(dbms::AND, {
+                                                                    dbms::scalarFunction(AND, {
+                                                                                                  dbms::scalarFunction(AND, {
+                                                                                                                                dbms::scalarFunction(AND, {
+                                                                                                                                                              dbms::scalarFunction(AND, {
+                                                                                                                                                                                            dbms::scalarFunction(AND, {
+                                                                                                                                                                                                                          dbms::scalarFunction(AND, {
+                                                                                                                                                                                                                                                        scalarFunction(IS_NOT_NULL, {selection(4)}),
+                                                                                                                                                                                                                                                        scalarFunction(IS_NOT_NULL, {selection(3)})
+                                                                                                                                                                                                                                                    }),
+                                                                                                                                                                                                                          scalarFunction(IS_NOT_NULL, {selection(1)})
+                                                                                                                                                                                                                      }),
+                                                                                                                                                                                            dbms::scalarFunction(GREATER_THAN_OR_EQUAL, {selection(4), literal(8766.0)})
+                                                                                                                                                                                        }),
+                                                                                                                                                              scalarFunction(LESS_THAN, {selection(4), literal(9131.0)})
+                                                                                                                                                          }),
+                                                                                                                                scalarFunction(GREATER_THAN_OR_EQUAL, {selection(3), literal(0.05)})
+                                                                                                                            }),
+                                                                                                  scalarFunction(LESS_THAN_OR_EQUAL, {selection(3), literal(0.07)})
+                                                                                              }),
+                                                                    scalarFunction(LESS_THAN, {selection(1), literal(24.0)})
+                                                                }))
+                        .read("/home/kyligence/Documents/test-dataset/intel-gazelle-test-"+std::to_string(state.range(0))+".snappy.parquet", std::move(schema)).build();
+        dbms::SerializedPlanParser parser(SerializedPlanParser::global_context);
+        auto query_plan = parser.parse(std::move(plan));
+        dbms::LocalExecutor local_executor;
+        state.ResumeTiming();
+        local_executor.execute(std::move(query_plan));
+        while (local_executor.hasNext())
+        {
+            local_engine::SparkRowInfoPtr spark_row_info = local_executor.next();
+        }
+    }
+}
+
 static void BM_CHColumnToSparkRowWithString(benchmark::State& state) {
     for (auto _: state)
     {
@@ -207,8 +273,9 @@ static void BM_SparkRowToCHColumnWithString(benchmark::State& state) {
     }
 }
 
-BENCHMARK(BM_CHColumnToSparkRow)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
+//BENCHMARK(BM_CHColumnToSparkRow)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_SimpleAggregate)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
+BENCHMARK(BM_TPCH_Q6)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_CHColumnToSparkRowWithString)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_SparkRowToCHColumn)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_SparkRowToCHColumnWithString)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);

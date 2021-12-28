@@ -147,6 +147,17 @@ SerializedPlanBuilder & SerializedPlanBuilder::aggregate(std::vector<int32_t> ke
     this->prev_rel = rel;
     return *this;
 }
+SerializedPlanBuilder & SerializedPlanBuilder::project(std::vector<io::substrait::Expression *> projections)
+{
+    io::substrait::Rel * project = new io::substrait::Rel();
+    for (auto * expr : projections)
+    {
+        project->mutable_project()->mutable_expressions()->AddAllocated(expr);
+    }
+    setInputToPrev(project);
+    this->prev_rel = project;
+    return *this;
+}
 
 
 io::substrait::Expression * selection(int32_t field_id)
