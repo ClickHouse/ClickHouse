@@ -388,8 +388,8 @@ def test_bad_configuration(started_cluster):
         LAYOUT(HASHED());
     ''')
 
-    result = node1.query_and_get_error("SELECT dictGetUInt32(postgres_dict, 'value', toUInt64(1))")
-    assert 'Unexpected key in config: dbbb' in result
+    node1.query_and_get_error("SELECT dictGetUInt32(postgres_dict, 'value', toUInt64(1))")
+    assert node1.contains_in_log('Unexpected key `dbbb`')
 
 
 if __name__ == '__main__':
