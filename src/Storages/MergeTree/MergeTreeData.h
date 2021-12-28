@@ -972,6 +972,7 @@ protected:
     /// And for ReplicatedMergeTree we don't have LogEntry type for this operation.
     BackgroundJobsAssignee background_operations_assignee;
     BackgroundJobsAssignee background_moves_assignee;
+    bool use_metadata_cache;
 
     /// Strongly connected with two fields above.
     /// Every task that is finished will ask to assign a new one into an executor.

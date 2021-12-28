@@ -30,11 +30,11 @@ public:
     }
 
     std::unique_ptr<SeekableReadBuffer>
-    readOrSetMeta(const DiskPtr & disk, const String & file_name, String & value);
-    void setMetas(const DiskPtr & disk, const Strings & file_names);
-    void dropMetas(const Strings & file_names);
-    void setMeta(const String & file_name, const String & value);
-    void getFilesAndCheckSums(Strings & file_names, std::vector<uint128> & checksums) const;
+    readOrSet(const DiskPtr & disk, const String & file_name, String & value);
+    void batchSet(const DiskPtr & disk, const Strings & file_names);
+    void batchDelete(const Strings & file_names);
+    void set(const String & file_name, const String & value);
+    void getFilesAndCheckSums(Strings & files, std::vector<uint128> & checksums) const;
 
 private:
     std::string getFullRelativePath() const;

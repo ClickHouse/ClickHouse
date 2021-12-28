@@ -708,7 +708,6 @@ public:
     MergeTreeMetadataCachePtr getMergeTreeMetadataCache() const;
 #endif
 
-
 #if USE_NURAFT
     std::shared_ptr<KeeperDispatcher> & getKeeperDispatcher() const;
 #endif

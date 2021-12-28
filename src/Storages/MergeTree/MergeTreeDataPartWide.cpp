@@ -268,7 +268,7 @@ void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_col
     }
 }
 
-// Do not cache mark files of part, because cache other meta files is enough to speed up loading.
+/// We don't cache mark files of part, because cache other meta files is enough to speed up loading.
 void MergeTreeDataPartWide::appendFilesOfIndexGranularity(Strings& /* files */) const
 {
 }

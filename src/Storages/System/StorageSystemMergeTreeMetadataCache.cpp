@@ -82,8 +82,7 @@ static bool extractKeyImpl(const IAST & elem, String & res, bool & precise)
 }
 
 
-/** Retrieve from the query a condition of the form `key= 'key'`, from conjunctions in the WHERE clause.
-  */
+/// Retrieve from the query a condition of the form `key= 'key'`, from conjunctions in the WHERE clause.
 static String extractKey(const ASTPtr & query, bool& precise)
 {
     const auto & select = query->as<ASTSelectQuery &>();

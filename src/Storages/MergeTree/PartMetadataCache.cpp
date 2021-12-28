@@ -24,7 +24,7 @@ namespace DB
 {
 
 std::unique_ptr<SeekableReadBuffer>
-PartMetadataCache::readOrSetMeta(const DiskPtr & disk, const String & file_name, String & value)
+PartMetadataCache::readOrSet(const DiskPtr & disk, const String & file_name, String & value)
 {
     String file_path = fs::path(getFullRelativePath()) / file_name;
     auto status = cache->get(file_path, value);
@@ -50,7 +50,7 @@ PartMetadataCache::readOrSetMeta(const DiskPtr & disk, const String & file_name,
     return std::make_unique<ReadBufferFromString>(value);
 }
 
-void PartMetadataCache::setMetas(const DiskPtr & disk, const Strings & file_names)
+void PartMetadataCache::batchSet(const DiskPtr & disk, const Strings & file_names)
 {
     String text;
     String read_value;
@@ -76,7 +76,7 @@ void PartMetadataCache::setMetas(const DiskPtr & disk, const Strings & file_name
     }
 }
 
-void PartMetadataCache::dropMetas(const Strings & file_names)
+void PartMetadataCache::batchDelete(const Strings & file_names)
 {
     for (const auto & file_name : file_names)
     {
@@ -93,7 +93,7 @@ void PartMetadataCache::dropMetas(const Strings & file_names)
     }
 }
 
-void PartMetadataCache::setMeta(const String & file_name, const String & value)
+void PartMetadataCache::set(const String & file_name, const String & value)
 {
     String file_path = fs::path(getFullRelativePath()) / file_name;
     String read_value;
@@ -116,7 +116,6 @@ void PartMetadataCache::getFilesAndCheckSums(Strings & files, std::vector<uint12
 {
     String prefix = fs::path(getFullRelativePath()) / "";
     Strings values;
-    values.reserve(files.capacity());
     cache->getByPrefix(prefix, files, values);
     size_t size = files.size();
     for (size_t i = 0; i < size; ++i)
