@@ -559,10 +559,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         /// Resolve database before trying to use async insert feature - to properly hash the query.
         if (insert_query)
         {
-            if (!insert_query->table_id)
-                insert_query->table_id = StorageID{insert_query->getDatabase(), insert_query->getTable()};
-
-            insert_query->table_id = context->resolveStorageID(insert_query->table_id);
+            if (insert_query->table_id)
+                insert_query->table_id = context->resolveStorageID(insert_query->table_id);
+            else if (auto table = insert_query->getTable(); !table.empty())
+                insert_query->table_id = context->resolveStorageID(StorageID{insert_query->getDatabase(), table});
         }
 
         if (insert_query && insert_query->select)
