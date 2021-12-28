@@ -160,6 +160,13 @@ namespace
     };
 }
 
+#if !USE_ROCKSDB
+static std::unique_ptr<ReadBufferFromFileBase> openForReading(const DiskPtr & disk, const String & path)
+{
+    size_t file_size = disk->getFileSize(path);
+    return disk->readFile(path, ReadSettings().adjustBufferSize(file_size), file_size);
+}
+#endif
 
 String MergeTreePartition::getID(const MergeTreeData & storage) const
 {
@@ -350,7 +357,11 @@ void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffe
     }
 }
 
+#if USE_ROCKSDB
 void MergeTreePartition::load(const MergeTreeData & storage, const PartMetaCachePtr & meta_cache, const DiskPtr & disk, const String & part_path)
+#else
+void MergeTreePartition::load(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path)
+#endif
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     if (!metadata_snapshot->hasPartitionKey())
@@ -359,11 +370,16 @@ void MergeTreePartition::load(const MergeTreeData & storage, const PartMetaCache
     const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, storage.getContext()).sample_block;
     auto partition_file_path = part_path + "partition.dat";
 
+#if USE_ROCKSDB
     String v;
-    auto buf = meta_cache->readOrSetMeta(disk, "partition.dat", v);
+    auto file = meta_cache->readOrSetMeta(disk, "partition.dat", v);
+#else
+    auto file = openForReading(disk, partition_file_path);
+#endif
+
     value.resize(partition_key_sample.columns());
     for (size_t i = 0; i < partition_key_sample.columns(); ++i)
-        partition_key_sample.getByPosition(i).type->getDefaultSerialization()->deserializeBinary(value[i], *buf);
+        partition_key_sample.getByPosition(i).type->getDefaultSerialization()->deserializeBinary(value[i], *file);
 }
 
 void MergeTreePartition::store(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const

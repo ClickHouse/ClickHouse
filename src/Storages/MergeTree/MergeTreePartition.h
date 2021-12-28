@@ -4,8 +4,11 @@
 #include <Disks/IDisk.h>
 #include <IO/WriteBuffer.h>
 #include <Storages/KeyDescription.h>
-#include <Storages/MergeTree/PartMetaCache.h>
 #include <Core/Field.h>
+
+#if USE_ROCKSDB
+#include <Storages/MergeTree/PartMetaCache.h>
+#endif
 
 namespace DB
 {
@@ -38,7 +41,12 @@ public:
 
     void serializeText(const MergeTreeData & storage, WriteBuffer & out, const FormatSettings & format_settings) const;
 
+#if USE_ROCKSDB
     void load(const MergeTreeData & storage, const PartMetaCachePtr & meta_cache, const DiskPtr & disk, const String & part_path);
+#else
+    void load(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path);
+#endif
+
     void store(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const;
     void store(const Block & partition_key_sample, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const;
 

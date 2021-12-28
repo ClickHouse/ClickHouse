@@ -45,6 +45,8 @@ class UncompressedCache;
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>
 {
 public:
+
+#if USE_ROCKSDB
     enum ModifyCacheType
     {
         PUT, // override set
@@ -62,6 +64,9 @@ public:
         }
     }
 
+    using uint128 = PartMetaCache::uint128;
+#endif
+
     static constexpr auto DATA_FILE_EXTENSION = ".bin";
 
     using Checksums = MergeTreeDataPartChecksums;
@@ -77,7 +82,6 @@ public:
     using IndexSizeByName = std::unordered_map<std::string, ColumnSize>;
 
     using Type = MergeTreeDataPartType;
-    using uint128 = PartMetaCache::uint128;
 
 
     IMergeTreeDataPart(
@@ -157,7 +161,9 @@ public:
     /// Throws an exception if part is not stored in on-disk format.
     void assertOnDisk() const;
 
+#if USE_ROCKSDB
     void assertMetaCacheDropped(bool include_projection = false) const;
+#endif
 
     void remove() const;
 
@@ -319,7 +325,12 @@ public:
         {
         }
 
+#if USE_ROCKSDB
         void load(const MergeTreeData & data, const PartMetaCachePtr & meta_cache, const DiskPtr & disk, const String & part_path);
+#else
+        void load(const MergeTreeData & data, const DiskPtr & disk, const String & part_path);
+#endif
+
         void store(const MergeTreeData & data, const DiskPtr & disk, const String & part_path, Checksums & checksums) const;
         void store(const Names & column_names, const DataTypes & data_types, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
 
@@ -389,7 +400,9 @@ public:
 
     String getRelativePathForPrefix(const String & prefix, bool detached = false) const;
 
+#if USE_ROCKSDB
     virtual void checkMetaCache(Strings & files, std::vector<uint128> & cache_checksums, std::vector<uint128> & disk_checksums) const;
+#endif
 
     bool isProjectionPart() const { return parent_part != nullptr; }
 
@@ -462,7 +475,9 @@ protected:
 
     std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 
+#if USE_ROCKSDB
     mutable PartMetaCachePtr meta_cache;
+#endif
 
     void removeIfNeeded();
 
@@ -535,13 +550,14 @@ private:
 
     void appendFilesOfDefaultCompressionCodec(Strings & files) const;
 
-    void modifyAllMetaCaches(ModifyCacheType type, bool include_projection = false) const;
-
     /// Found column without specific compression and return codec
     /// for this column with default parameters.
     CompressionCodecPtr detectDefaultCompressionCodec() const;
 
+#if USE_ROCKSDB
+    void modifyAllMetaCaches(ModifyCacheType type, bool include_projection = false) const;
     IMergeTreeDataPart::uint128 getActualChecksumByFile(const String & file_path) const;
+#endif
 
     mutable State state{State::Temporary};
 };

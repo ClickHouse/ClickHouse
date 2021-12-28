@@ -166,12 +166,12 @@ IMergeTreeDataPart::Checksum MergeTreeDataPartInMemory::calculateBlockChecksum()
     return checksum;
 }
 
-// No mark files for part in memory
+/// No mark files for part in memory
 void MergeTreeDataPartInMemory::appendFilesOfIndexGranularity(Strings& /* files */) const
 {
 }
 
-// No mark files for part in memory
+/// No mark files for part in memory
 Strings MergeTreeDataPartInMemory::getIndexGranularityFiles() const
 {
     return {};

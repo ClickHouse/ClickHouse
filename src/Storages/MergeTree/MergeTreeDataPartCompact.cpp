@@ -192,12 +192,12 @@ MergeTreeDataPartCompact::~MergeTreeDataPartCompact()
     removeIfNeeded();
 }
 
-// Do not cache mark file, because cache other meta files is enough to speed up loading.
+/// Do not cache mark file, because cache other meta files is enough to speed up loading.
 void MergeTreeDataPartCompact::appendFilesOfIndexGranularity(Strings& /* files */) const
 {
 }
 
-// find all connected file and do modification
+/// find all connected file and do modification
 Strings MergeTreeDataPartCompact::getIndexGranularityFiles() const
 {
     auto marks_file = index_granularity_info.getMarksFilePath("data");
