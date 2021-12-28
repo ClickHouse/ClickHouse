@@ -1,1 +1,0 @@
-../../../en/faq/general/operations/multi-region-replication.md
