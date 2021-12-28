@@ -182,18 +182,19 @@ void ProgressIndication::writeProgress()
 
     written_progress_chars = message.count() - prefix_size - (strlen(indicator) - 2); /// Don't count invisible output (escape sequences).
 
+    /// Display resource usage if possible.
     std::string profiling_msg;
 
-    // If approximate cores number is known, display it.
     double cpu_usage = getCPUUsage();
-    if (cpu_usage > 0)
+    auto [memory_usage, max_host_usage] = getMemoryUsage();
+
+    if (cpu_usage > 0 || memory_usage > 0)
     {
         WriteBufferFromOwnString profiling_msg_builder;
 
         profiling_msg_builder << "(" << fmt::format("{:.1f}", cpu_usage) << " CPU";
 
-        auto [memory_usage, max_host_usage] = getMemoryUsage();
-        if (memory_usage != 0)
+        if (memory_usage > 0)
             profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(memory_usage) << " RAM";
         if (max_host_usage < memory_usage)
             profiling_msg_builder << ", " << formatReadableSizeWithDecimalSuffix(max_host_usage) << " max/host";
