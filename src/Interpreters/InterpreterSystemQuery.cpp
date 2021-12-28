@@ -469,7 +469,7 @@ void InterpreterSystemQuery::restoreReplica()
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESTORE_REPLICA, table_id);
 
-    const zkutil::ZooKeeperPtr& zookeeper = getContext()->getZooKeeper();
+    const zkutil::ZooKeeperPtr & zookeeper = getContext()->getZooKeeper();
 
     if (zookeeper->expired())
         throw Exception(ErrorCodes::NO_ZOOKEEPER,

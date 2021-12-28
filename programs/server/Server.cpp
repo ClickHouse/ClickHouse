@@ -919,7 +919,7 @@ if (ThreadFuzzer::instance().isEffective())
             // in a lot of places. For now, disable updating log configuration without server restart.
             //setTextLog(global_context->getTextLog());
             updateLevels(*config, logger());
-            global_context->setClustersConfig(config);
+            global_context->setClustersConfig(config, has_zookeeper);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros", log));
             global_context->setExternalAuthenticatorsConfig(*config);
 
@@ -1433,6 +1433,15 @@ if (ThreadFuzzer::instance().isEffective())
                 LOG_INFO(log, "Listening for {}", server.getDescription());
             }
             LOG_INFO(log, "Ready for connections.");
+        }
+
+        try
+        {
+            global_context->startClusterDiscovery();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Caught exception while starting cluster discovery");
         }
 
         SCOPE_EXIT_SAFE({
