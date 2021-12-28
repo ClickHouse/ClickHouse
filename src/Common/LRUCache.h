@@ -152,8 +152,6 @@ public:
         auto token_it = insert_tokens.find(key);
         if (token_it != insert_tokens.end() && token_it->second.get() == token)
         {
-            // setImpl() may fail, but the final behavior seems not be affected
-            // next call of getOrTrySet() will still call load_func()
             is_value_loaded_and_set = setImpl(key, token->value, cache_lock);
             is_value_loaded = true;
         }
