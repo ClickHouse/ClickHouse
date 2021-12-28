@@ -22,6 +22,7 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_COLUMN;
     extern const int CANNOT_DETACH_DICTIONARY_AS_TABLE;
     extern const int DICTIONARY_ALREADY_EXISTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
