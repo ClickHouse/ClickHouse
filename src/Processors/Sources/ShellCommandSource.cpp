@@ -336,27 +336,27 @@ namespace
         {
             rethrowExceptionDuringSendDataIfNeeded();
 
-            if (configuration.read_fixed_number_of_rows)
-            {
-                if (!executor && configuration.read_number_of_rows_from_process_output)
-                {
-                    readText(configuration.number_of_rows_to_read, timeout_command_out);
-                    char dummy;
-                    readChar(dummy, timeout_command_out);
-
-                    size_t max_block_size = configuration.number_of_rows_to_read;
-                    pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, sample_block, max_block_size)));
-                    executor = std::make_unique<PullingPipelineExecutor>(pipeline);
-                }
-
-                if (current_read_rows >= configuration.number_of_rows_to_read)
-                    return {};
-            }
-
             Chunk chunk;
 
             try
             {
+                if (configuration.read_fixed_number_of_rows)
+                {
+                    if (!executor && configuration.read_number_of_rows_from_process_output)
+                    {
+                        readText(configuration.number_of_rows_to_read, timeout_command_out);
+                        char dummy;
+                        readChar(dummy, timeout_command_out);
+
+                        size_t max_block_size = configuration.number_of_rows_to_read;
+                        pipeline = QueryPipeline(Pipe(context->getInputFormat(format, timeout_command_out, sample_block, max_block_size)));
+                        executor = std::make_unique<PullingPipelineExecutor>(pipeline);
+                    }
+
+                    if (current_read_rows >= configuration.number_of_rows_to_read)
+                        return {};
+                }
+
                 if (!executor->pull(chunk))
                     return {};
 
@@ -396,7 +396,7 @@ namespace
             std::lock_guard<std::mutex> lock(send_data_lock);
             if (exception_during_send_data)
             {
-                command = nullptr;
+                command_is_invalid = true;
                 std::rethrow_exception(exception_during_send_data);
             }
         }
