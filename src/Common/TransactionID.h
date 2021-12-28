@@ -22,7 +22,7 @@ namespace Tx
     const CSN UnknownCSN = 0;
     const CSN PrehistoricCSN = 1;
     const CSN CommittingCSN = 2; /// TODO do we really need it?
-    const CSN MaxReservedCSN = 16;
+    const CSN MaxReservedCSN = 2;
 
     const LocalTID PrehistoricLocalTID = 1;
     const LocalTID MaxReservedLocalTID = 16;

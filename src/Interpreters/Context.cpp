@@ -435,6 +435,8 @@ ContextMutablePtr Context::createGlobal(ContextSharedPart * shared)
 
 void Context::initGlobal()
 {
+    assert(!global_context_instance);
+    global_context_instance = shared_from_this();
     DatabaseCatalog::init(shared_from_this());
 }
 
