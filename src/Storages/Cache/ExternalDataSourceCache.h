@@ -28,12 +28,21 @@
 
 namespace DB
 {
+class LocalFileHolder
+{
+public:
+    LocalFileHolder(std::shared_ptr<RemoteCacheController> cache_controller);
+    ~LocalFileHolder();
+    
+    std::shared_ptr<RemoteCacheController> file_cache_controller;
+    std::unique_ptr<ReadBufferFromFileBase> file_buffer;
+};
 
 class RemoteReadBuffer : public BufferWithOwnMemory<SeekableReadBufferWithSize>
 {
 public:
     explicit RemoteReadBuffer(size_t buff_size);
-    ~RemoteReadBuffer() override;
+    ~RemoteReadBuffer() override = default;
     static std::unique_ptr<ReadBuffer> create(ContextPtr contex, IRemoteFileMetadataPtr remote_file_metadata, std::unique_ptr<ReadBuffer> read_buffer, size_t buff_size);
 
     bool nextImpl() override;
@@ -42,8 +51,7 @@ public:
     std::optional<size_t> getTotalSize() override { return remote_file_size; }
 
 private:
-    std::shared_ptr<RemoteCacheController> file_cache_controller;
-    std::unique_ptr<ReadBufferFromFileBase> file_buffer;
+    std::unique_ptr<LocalFileHolder> local_file_holder;
     size_t remote_file_size = 0;
 };
 
@@ -60,7 +68,7 @@ public:
 
     inline bool isInitialized() const { return initialized; }
 
-    std::pair<RemoteCacheControllerPtr, std::unique_ptr<ReadBuffer>>
+    std::pair<std::unique_ptr<LocalFileHolder>, std::unique_ptr<ReadBuffer>>
     createReader(ContextPtr context, IRemoteFileMetadataPtr remote_file_metadata, std::unique_ptr<ReadBuffer> & read_buffer);
 
     void updateTotalSize(size_t size) { total_size += size; }
