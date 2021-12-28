@@ -7622,7 +7622,7 @@ public:
     void save(DiskPtr disk, const String & path) const
     {
         auto file_path = getFileName(path);
-        auto buffer = disk->writeMetaFile(file_path);
+        auto buffer = disk->writeMetaFile(file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
         writeIntText(version, *buffer);
         buffer->write("\n", 1);
         writeBoolText(is_replicated, *buffer);
@@ -7642,7 +7642,7 @@ public:
         auto file_path = getFileName(path);
         if (!disk->exists(file_path))
             return false;
-        auto buffer = disk->readMetaFile(file_path);
+        auto buffer = disk->readMetaFile(file_path, ReadSettings(), {});
         readIntText(version, *buffer);
         if (version != 1)
         {
