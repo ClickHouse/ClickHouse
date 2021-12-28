@@ -60,7 +60,7 @@ public:
 
     inline bool isInitialized() const { return initialized; }
 
-    std::tuple<RemoteCacheControllerPtr, std::unique_ptr<ReadBuffer>, ErrorCodes::ErrorCode>
+    std::pair<RemoteCacheControllerPtr, std::unique_ptr<ReadBuffer>>
     createReader(ContextPtr context, IRemoteFileMetadataPtr remote_file_metadata, std::unique_ptr<ReadBuffer> & read_buffer);
 
     void updateTotalSize(size_t size) { total_size += size; }
@@ -84,10 +84,5 @@ private:
 
     BackgroundSchedulePool::TaskHolder recover_task_holder;
     void recoverTask();
-    void recoverCachedFilesMetadata(
-        const std::filesystem::path & current_path,
-        size_t current_depth,
-        size_t max_depth);
 };
-
 }
