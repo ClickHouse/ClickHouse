@@ -671,3 +671,17 @@ def test_truncate_table(started_cluster):
     assert(len(list(minio.list_objects(started_cluster.minio_bucket, 'truncate/'))) == 0)
     assert instance.query("SELECT * FROM {}".format(name)) == ""
 
+
+def test_empty_file(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+
+    name = "empty"
+    url = f'http://{started_cluster.minio_ip}:{MINIO_INTERNAL_PORT}/{bucket}/{name}'
+
+    minio = started_cluster.minio_client
+    minio.put_object(bucket, name, io.BytesIO(b""), 0)
+
+    table_function = f"s3('{url}', 'CSV', 'id Int32')"
+    result = instance.query(f"SELECT count() FROM {table_function}")
+    assert(int(result) == 0)
