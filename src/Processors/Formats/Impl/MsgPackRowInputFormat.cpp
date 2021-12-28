@@ -375,8 +375,8 @@ void MsgPackRowInputFormat::setReadBuffer(ReadBuffer & in_)
     IInputFormat::setReadBuffer(in_);
 }
 
-MsgPackSchemaReader::MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings & forma_settings_)
-    : IRowSchemaReader(buf, forma_settings_.max_rows_to_read_for_schema_inference), buf(in_), number_of_columns(forma_settings_.msgpack.number_of_columns)
+MsgPackSchemaReader::MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
+    : IRowSchemaReader(buf, format_settings_.max_rows_to_read_for_schema_inference), buf(in_), number_of_columns(format_settings_.msgpack.number_of_columns)
 {
     if (!number_of_columns)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "You must specify setting input_format_msgpack_number_of_columns to extract table schema from MsgPack data");
