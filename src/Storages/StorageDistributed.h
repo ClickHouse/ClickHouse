@@ -53,6 +53,10 @@ public:
     bool supportsSubcolumns() const override { return true; }
     StoragePolicyPtr getStoragePolicy() const override;
 
+    /// Do not apply moving to PREWHERE optimization for distributed tables,
+    /// because we can't be sure that underlying table supports PREWHERE.
+    bool canMoveConditionsToPrewhere() const override { return false; }
+
     bool isRemote() const override { return true; }
 
     QueryProcessingStage::Enum
