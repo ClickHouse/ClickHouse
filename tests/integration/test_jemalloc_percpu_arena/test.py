@@ -50,7 +50,6 @@ def skip_if_jemalloc_disabled():
     if output != b'ON' and output != b'1':
         pytest.skip(f'Compiled w/o jemalloc (USE_JEMALLOC={output})')
 
-
 # Ensure that clickhouse works even when number of online CPUs
 # (_SC_NPROCESSORS_ONLN) is smaller then available (_SC_NPROCESSORS_CONF).
 #
