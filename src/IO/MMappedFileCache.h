@@ -48,12 +48,12 @@ public:
     MappedPtr getOrSet(const Key & key, LoadFunc && load)
     {
         auto result = Base::getOrSet(key, load);
-        if (result.cache_miss)
+        if (result.second)
             ProfileEvents::increment(ProfileEvents::MMappedFileCacheMisses);
         else
             ProfileEvents::increment(ProfileEvents::MMappedFileCacheHits);
 
-        return result.value;
+        return result.first;
     }
 };
 

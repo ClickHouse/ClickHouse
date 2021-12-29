@@ -1033,7 +1033,7 @@ std::shared_ptr<Block> MergeJoin::loadRightBlock(size_t pos) const
             return std::make_shared<Block>(input.block_in->read());
         };
 
-        return cached_right_blocks->getOrSet(pos, load_func).value;
+        return cached_right_blocks->getOrSet(pos, load_func).first;
     }
     else
         return loaded_right_blocks[pos];

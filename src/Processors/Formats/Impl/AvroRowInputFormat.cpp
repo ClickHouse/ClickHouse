@@ -650,7 +650,7 @@ public:
 
     avro::ValidSchema getSchema(uint32_t id)
     {
-        auto [schema, loaded, _] = schema_cache.getOrSet(
+        auto [schema, loaded] = schema_cache.getOrSet(
             id,
             [this, id](){ return std::make_shared<avro::ValidSchema>(fetchSchema(id)); }
         );
@@ -727,7 +727,7 @@ static LRUCache<std::string, ConfluentSchemaRegistry>  schema_registry_cache(SCH
 static std::shared_ptr<ConfluentSchemaRegistry> getConfluentSchemaRegistry(const FormatSettings & format_settings)
 {
     const auto & base_url = format_settings.avro.schema_registry_url;
-    auto [schema_registry, loaded, _] = schema_registry_cache.getOrSet(
+    auto [schema_registry, loaded] = schema_registry_cache.getOrSet(
         base_url,
         [base_url]()
         {
