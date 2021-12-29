@@ -1476,6 +1476,18 @@ class ClickHouseCluster:
 
             common_opts = ['--verbose', 'up', '-d']
 
+            images_pull_cmd = self.base_cmd + ['pull']
+            # sometimes dockerhub/proxy can be flaky
+            for i in range(5):
+                try:
+                    run_and_check(images_pull_cmd)
+                    break
+                except Exception as ex:
+                    if i == 4:
+                        raise ex
+                    logging.info("Got exception pulling images: %s", ex)
+                    time.sleep(i * 3)
+
             if self.with_zookeeper_secure and self.base_zookeeper_cmd:
                 logging.debug('Setup ZooKeeper Secure')
                 logging.debug(f'Creating internal ZooKeeper dirs: {self.zookeeper_dirs_to_create}')
@@ -1527,7 +1539,7 @@ class ClickHouseCluster:
                 if os.path.exists(self.mysql_dir):
                     shutil.rmtree(self.mysql_dir)
                 os.makedirs(self.mysql_logs_dir)
-                os.chmod(self.mysql_logs_dir, stat.S_IRWXO)
+                os.chmod(self.mysql_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 subprocess_check_call(self.base_mysql_cmd + common_opts)
                 self.up_called = True
                 self.wait_mysql_to_start()
@@ -1537,7 +1549,7 @@ class ClickHouseCluster:
                 if os.path.exists(self.mysql8_dir):
                     shutil.rmtree(self.mysql8_dir)
                 os.makedirs(self.mysql8_logs_dir)
-                os.chmod(self.mysql8_logs_dir, stat.S_IRWXO)
+                os.chmod(self.mysql8_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 subprocess_check_call(self.base_mysql8_cmd + common_opts)
                 self.wait_mysql8_to_start()
 
@@ -1546,7 +1558,7 @@ class ClickHouseCluster:
                 if os.path.exists(self.mysql_cluster_dir):
                     shutil.rmtree(self.mysql_cluster_dir)
                 os.makedirs(self.mysql_cluster_logs_dir)
-                os.chmod(self.mysql_cluster_logs_dir, stat.S_IRWXO)
+                os.chmod(self.mysql_cluster_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 subprocess_check_call(self.base_mysql_cluster_cmd + common_opts)
                 self.up_called = True
@@ -1557,7 +1569,7 @@ class ClickHouseCluster:
                 if os.path.exists(self.postgres_dir):
                     shutil.rmtree(self.postgres_dir)
                 os.makedirs(self.postgres_logs_dir)
-                os.chmod(self.postgres_logs_dir, stat.S_IRWXO)
+                os.chmod(self.postgres_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 subprocess_check_call(self.base_postgres_cmd + common_opts)
                 self.up_called = True
@@ -1566,11 +1578,11 @@ class ClickHouseCluster:
             if self.with_postgres_cluster and self.base_postgres_cluster_cmd:
                 print('Setup Postgres')
                 os.makedirs(self.postgres2_logs_dir)
-                os.chmod(self.postgres2_logs_dir, stat.S_IRWXO)
+                os.chmod(self.postgres2_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 os.makedirs(self.postgres3_logs_dir)
-                os.chmod(self.postgres3_logs_dir, stat.S_IRWXO)
+                os.chmod(self.postgres3_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 os.makedirs(self.postgres4_logs_dir)
-                os.chmod(self.postgres4_logs_dir, stat.S_IRWXO)
+                os.chmod(self.postgres4_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 subprocess_check_call(self.base_postgres_cluster_cmd + common_opts)
                 self.up_called = True
                 self.wait_postgres_cluster_to_start()
@@ -1591,7 +1603,7 @@ class ClickHouseCluster:
             if self.with_rabbitmq and self.base_rabbitmq_cmd:
                 logging.debug('Setup RabbitMQ')
                 os.makedirs(self.rabbitmq_logs_dir)
-                os.chmod(self.rabbitmq_logs_dir, stat.S_IRWXO)
+                os.chmod(self.rabbitmq_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 for i in range(5):
                     subprocess_check_call(self.base_rabbitmq_cmd + common_opts + ['--renew-anon-volumes'])
@@ -1604,7 +1616,7 @@ class ClickHouseCluster:
             if self.with_hdfs and self.base_hdfs_cmd:
                 logging.debug('Setup HDFS')
                 os.makedirs(self.hdfs_logs_dir)
-                os.chmod(self.hdfs_logs_dir, stat.S_IRWXO)
+                os.chmod(self.hdfs_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 subprocess_check_call(self.base_hdfs_cmd + common_opts)
                 self.up_called = True
                 self.make_hdfs_api()
@@ -1613,7 +1625,7 @@ class ClickHouseCluster:
             if self.with_kerberized_hdfs and self.base_kerberized_hdfs_cmd:
                 logging.debug('Setup kerberized HDFS')
                 os.makedirs(self.hdfs_kerberized_logs_dir)
-                os.chmod(self.hdfs_kerberized_logs_dir, stat.S_IRWXO)
+                os.chmod(self.hdfs_kerberized_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
                 run_and_check(self.base_kerberized_hdfs_cmd + common_opts)
                 self.up_called = True
                 self.make_hdfs_api(kerberized=True)
@@ -1669,7 +1681,7 @@ class ClickHouseCluster:
 
             if self.with_jdbc_bridge and self.base_jdbc_bridge_cmd:
                 os.makedirs(self.jdbc_driver_logs_dir)
-                os.chmod(self.jdbc_driver_logs_dir, stat.S_IRWXO)
+                os.chmod(self.jdbc_driver_logs_dir, stat.S_IRWXU | stat.S_IRWXO)
 
                 subprocess_check_call(self.base_jdbc_bridge_cmd + ['up', '-d'])
                 self.up_called = True
@@ -2043,7 +2055,8 @@ class ClickHouseInstance:
                                                            user=user, password=password, database=database)
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
-    def http_query(self, sql, data=None, params=None, user=None, password=None, expect_fail_and_get_error=False):
+    def http_query(self, sql, data=None, params=None, user=None, password=None, expect_fail_and_get_error=False,
+                   port=8123, timeout=None, retry_strategy=None):
         logging.debug(f"Executing query {sql} on {self.name} via HTTP interface")
         if params is None:
             params = {}
@@ -2057,12 +2070,19 @@ class ClickHouseInstance:
             auth = requests.auth.HTTPBasicAuth(user, password)
         elif user:
             auth = requests.auth.HTTPBasicAuth(user, '')
-        url = "http://" + self.ip_address + ":8123/?" + urllib.parse.urlencode(params)
+        url = f"http://{self.ip_address}:{port}/?" + urllib.parse.urlencode(params)
 
-        if data:
-            r = requests.post(url, data, auth=auth)
+        if retry_strategy is None:
+            requester = requests
         else:
-            r = requests.get(url, auth=auth)
+            adapter = requests.adapters.HTTPAdapter(max_retries=retry_strategy)
+            requester = requests.Session()
+            requester.mount("https://", adapter)
+            requester.mount("http://", adapter)
+        if data:
+            r = requester.post(url, data, auth=auth, timeout=timeout)
+        else:
+            r = requester.get(url, auth=auth, timeout=timeout)
 
         def http_code_and_message():
             code = r.status_code

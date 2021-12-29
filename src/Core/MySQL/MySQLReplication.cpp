@@ -5,7 +5,7 @@
 #include <IO/MySQLBinlogEventReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
-#include <base/DateLUT.h>
+#include <Common/DateLUT.h>
 #include <Common/FieldVisitorToString.h>
 #include <Core/MySQL/PacketsGeneric.h>
 #include <Core/MySQL/PacketsProtocolText.h>
@@ -159,7 +159,7 @@ namespace MySQLReplication
         payload.ignore(1);
 
         column_count = readLengthEncodedNumber(payload);
-        for (auto i = 0U; i < column_count; i++)
+        for (auto i = 0U; i < column_count; ++i)
         {
             UInt8 v = 0x00;
             payload.readStrict(reinterpret_cast<char *>(&v), 1);
@@ -188,7 +188,7 @@ namespace MySQLReplication
     {
         auto pos = 0;
         column_meta.reserve(column_count);
-        for (auto i = 0U; i < column_count; i++)
+        for (auto i = 0U; i < column_count; ++i)
         {
             UInt16 typ = column_type[i];
             switch (typ)
@@ -230,6 +230,7 @@ namespace MySQLReplication
                     pos += 2;
                     break;
                 }
+                case MYSQL_TYPE_BIT:
                 case MYSQL_TYPE_VARCHAR:
                 case MYSQL_TYPE_VAR_STRING: {
                     /// Little-Endian
@@ -255,7 +256,7 @@ namespace MySQLReplication
         out << "Table Len: " << std::to_string(this->table_len) << '\n';
         out << "Table: " << this->table << '\n';
         out << "Column Count: " << this->column_count << '\n';
-        for (auto i = 0U; i < column_count; i++)
+        for (UInt32 i = 0; i < column_count; ++i)
         {
             out << "Column Type [" << i << "]: " << std::to_string(column_type[i]) << ", Meta: " << column_meta[i] << '\n';
         }
@@ -312,7 +313,7 @@ namespace MySQLReplication
         UInt32 null_index = 0;
 
         UInt32 re_count = 0;
-        for (auto i = 0U; i < number_columns; i++)
+        for (UInt32 i = 0; i < number_columns; ++i)
         {
             if (bitmap[i])
                 re_count++;
@@ -321,7 +322,7 @@ namespace MySQLReplication
         boost::dynamic_bitset<> columns_null_set;
         readBitmap(payload, columns_null_set, re_count);
 
-        for (auto i = 0U; i < number_columns; i++)
+        for (UInt32 i = 0; i < number_columns; ++i)
         {
             UInt32 field_len = 0;
 
@@ -523,7 +524,7 @@ namespace MySQLReplication
                                     res += (val ^ (mask & compressed_integer_align_numbers[compressed_integers]));
                                 }
 
-                                for (auto k = 0U; k < uncompressed_integers; k++)
+                                for (size_t k = 0; k < uncompressed_integers; ++k)
                                 {
                                     UInt32 val = 0;
                                     readBigEndianStrict(payload, reinterpret_cast<char *>(&val), 4);
@@ -536,7 +537,7 @@ namespace MySQLReplication
                                 size_t uncompressed_decimals = scale / digits_per_integer;
                                 size_t compressed_decimals = scale - (uncompressed_decimals * digits_per_integer);
 
-                                for (auto k = 0U; k < uncompressed_decimals; k++)
+                                for (size_t k = 0; k < uncompressed_decimals; ++k)
                                 {
                                     UInt32 val = 0;
                                     readBigEndianStrict(payload, reinterpret_cast<char *>(&val), 4);
@@ -582,6 +583,15 @@ namespace MySQLReplication
                             payload.readStrict(reinterpret_cast<char *>(&val), 2);
                             row.push_back(Field{UInt16{val}});
                         }
+                        break;
+                    }
+                    case MYSQL_TYPE_BIT:
+                    {
+                        UInt32 bits = ((meta >> 8) * 8) + (meta & 0xff);
+                        UInt32 size = (bits + 7) / 8;
+                        UInt64 val = 0UL;
+                        readBigEndianStrict(payload, reinterpret_cast<char *>(&val), size);
+                        row.push_back(val);
                         break;
                     }
                     case MYSQL_TYPE_VARCHAR:
@@ -669,7 +679,7 @@ namespace MySQLReplication
         header.dump(out);
         out << "Schema: " << this->schema << '\n';
         out << "Table: " << this->table << '\n';
-        for (auto i = 0U; i < rows.size(); i++)
+        for (size_t i = 0; i < rows.size(); ++i)
         {
             out << "Row[" << i << "]: " << applyVisitor(to_string, rows[i]) << '\n';
         }

@@ -41,9 +41,9 @@ ClickHouse Keeper development started in Sep 2020, more than a year ago. It was 
 
 **How does this help you?**
 
-ClickHouse Keeper is a drop-in replacement for ZooKeeper. It implements ZooKeeper wire protocol and data model, but does it better.
+ClickHouse Keeper is a drop-in replacement for ZooKeeper. It implements the ZooKeeper wire protocol and data model, but does it better.
 
-In contrast to ZooKeeper, there are no issues with zxid overflow or packet sizes. It has better memory usage and it does not require JVM tuning (because it does not use JVM). Logs and snapshots are compressed (about 10x typical) and checksummed. It can run as a separate process or directly inside clickhouse-server. You can use it with ClickHouse or with your Kafkas and Hadoops as well.
+In contrast to ZooKeeper, there are no issues with zxid overflow or packet sizes. It has better memory usage and it does not require JVM tuning (because it does not use the JVM). Logs and snapshots are compressed (by about 10x typically) and checksummed. It can run as a separate process or directly inside clickhouse-server. You can use it with ClickHouse or with your Kafkas and Hadoops as well.
 
 [More info](http://presentations.clickhouse.tech/meetup54/keeper.pdf).
 
@@ -54,11 +54,11 @@ When using the table engines `File`, `URL`, and `HDFS` ClickHouse now supports p
 
 Similarly, when exporting data from ClickHouse using the `file`, `url`, and `hdfs` table functions you can now specify that the data is to be partitioned into multiple files using a `PARTITION BY` clause. For example, `INSERT INTO TABLE FUNCTION file('path/hits_{_partition_id}', 'TSV', 'columns...') PARTITION BY toYYYYMM(EventDate) VALUES ...` will create as many files as there are unique months in the dataset.
 
-The `s3` table function has supported partitioned writes since ClickHouse 21.10.
+The `s3` table function has already supported partitioned writes since ClickHouse 21.10.
 
 **How does this help you?**
 
-If data is split into multiple files, then `SELECT` query will be automatically parallelized. Example:
+If data is split into multiple files, `SELECT` queries will be automatically parallelized. For example:
 
 ```
 SELECT user_id, count() FROM s3(
@@ -68,7 +68,7 @@ SELECT user_id, count() FROM s3(
     'user_id UInt64, ...')
 ```
 
-You can even parallelize data processing across distributed compute cluster if you use `s3Cluster` table function:
+You can even parallelize data processing across a distributed compute cluster if you use the `s3Cluster` table function:
 
 ```
 SELECT user_id, count() FROM s3Cluster(
@@ -79,7 +79,7 @@ SELECT user_id, count() FROM s3Cluster(
     'user_id UInt64, ...')
 ```
 
-It can also be used for integrations with external data processing tools that consumes data from `s3`.
+It can also be used for integration with external data processing tools that consume data from `s3`.
 
 
 ## FROM INFILE in clickhouse-client now supports glob patterns and parallel reading
@@ -91,18 +91,18 @@ INSERT INTO my_table FROM INFILE '*.csv.gz' FORMAT CSV
 ```
 
 Glob patterns support `*`, `?` and `{n..m}` with `{1..10}` or (aligned) `{01..10}` forms.
-This query will be automatically parallelized, it will also automatically detect compression format from file extension and decompress transparently.
+This query will be automatically parallelized and it will also automatically detect the compression format from the file extension and decompress transparently.
 
 This improvement is done by **Arthur Filatenkov**.
 
 **How does this help you?**
 
-Now you don't have to recall how to write parallel for loop in your command line shell. clickhouse-client will do everything for you, it works intuitively and fast.
+Now you don't have to recall how to write a parallel for loop in your command line shell. clickhouse-client will do everything for you, it works intuitively and fast.
 
 
 ## Support for INTERVAL operator inside WITH FILL modifier for ORDER BY clause
 
-What's the... WITH FILL modifier in ORDER BY clause? Just look at the example.
+What's the... `WITH FILL` modifier in the `ORDER BY` clause? Take a look at the example:
 
 ```
 :) SELECT EventDate, count() FROM test.hits WHERE CounterID = 2841673 GROUP BY EventDate ORDER BY EventDate
@@ -115,10 +115,10 @@ What's the... WITH FILL modifier in ORDER BY clause? Just look at the example.
 └────────────┴─────────┘
 ```
 
-We have the report with Mar 17th, 19th, 21th, 22th. But Mar 18th and 20th are missing, because there is no data for these dates.
+We have the report with Mar 17th, 19th, 21st, and 22nd. But Mar 18th and 20th are missing, because there is no data for these dates.
 And this is how it works in all SQL databases.
 
-But ClickHouse also has quite unique and neat `WITH FILL` modifier for `ORDER BY clause`.
+But ClickHouse also has a quite unique and neat `WITH FILL` modifier for the `ORDER BY` clause.
 
 You just write:
 ```
@@ -140,12 +140,12 @@ And missing data is automatically filled.
 You can also add `FROM` and `TO`:
 
 ```
-ORDER BY date WITH FILL FROM '2014-03-01'::Date TO '2014-03-31'::Date STEP 1;
+ORDER BY EventDate WITH FILL FROM '2014-03-01'::Date TO '2014-03-31'::Date STEP 1;
 ```
 
 And it will automatically fill missing rows in the report.
 
-The STEP can be arbitrary number. But what to do if you want fill missing dates for report by months? You cannot just write STEP 30 or STEP 31 because months contain different number of days...
+The `STEP` can be an arbitrary number. But what can you do if you want to fill missing dates for a report by months? You cannot just write `STEP 30` or `STEP 31` because different months contain different number of days...
 
 Since ClickHouse version 21.12 you can do it like this:
 
@@ -155,16 +155,16 @@ ORDER BY EventDate WITH FILL STEP INTERVAL 1 MONTH
 
 `INTERVAL` is a standard SQL operator, you can use SECOND, MINUTE, HOUR, DAY, WEEK, MONTH, QUARTER and YEAR.
 
-This is implemented by **Anton Popov** who is the author of "WITH FILL" feature.
+This is implemented by **Anton Popov** who is the author of the "WITH FILL" feature.
 
 **How does this help you?**
 
-It allows to avoid postprocessing step for your reports.
+It allows you to avoid a postprocessing step for your reports.
 
 
 ## Add Support For "Identifier" Table and Database Query Parameters
 
-ClickHouse has support for parameterized queries.
+ClickHouse has support for parameterized queries. For example:
 
 ```
 SELECT uniq(user_id) FROM table WHERE website = {name:String}
@@ -178,7 +178,7 @@ curl https://clickhouse-server:8443/?param_name=upyachka -d 'SELECT uniq(user_id
 
 You can even create customized API handlers for clickhouse-server based on prepared queries.
 
-Since version 21.12 we introduce support for using parameters for tables and databases in your queries. This is implemented with `Identifier` table parameter:
+In version 21.12 we introduce support for using parameters for tables and databases in your queries. This is implemented with the `Identifier` table parameter:
 
 ```
 SELECT uniq(user_id) FROM {tbl:Identifier}
@@ -188,7 +188,7 @@ Identifier parameters also work for CREATE, DROP and all DDL queries. This is im
 
 **How does this help you?**
 
-Let ClickHouse do the heavy-lifting and keep your scripts safe and secure.
+Let ClickHouse do the heavy lifting and keep your scripts safe and secure.
 
 
 ## Bool Data Type
@@ -220,7 +220,7 @@ CREATE TABLE
 ) ...
 ```
 
-Constraints are checked on INSERT. In this example we validate the URL and check that Domain column actually contains the domain of URL.
+Constraints are checked on `INSERT`. In this example we validate the URL and check that the `Domain` column actually contains the domain of the URL.
 
 Since version 21.12 constraints can also automatically optimize your queries! For example, if you write:
 
@@ -234,19 +234,19 @@ The query can be automatically rewritten to:
 SELECT count() FROM hits WHERE Domain = 'ghe.clickhouse.tech'
 ```
 
-because `Domain` column is smaller, more compressable, will be faster to read and it does not require calculation of the domain from URL.
-The only thing you need is to enable the `optimize_using_constraints` and `optimize_substitute_columns` settings.
+Because the `Domain` column is smaller and more compressable it will be faster to read and does not require calculation of the domain from the URL.
+The only thing you need to do is to enable the `optimize_using_constraints` and `optimize_substitute_columns` settings.
 
-As a bonus, new type of constraints is introduced: `ASSUME`.
+As a bonus, we introduced a new type of constraint: `ASSUME`.
 
 ```
 CONSTRAINT my_constraint ASSUME Domain = domainWithoutWWW(URL)
 ```
 
-This type of constraint will not check anything on INSERT, but still use the assumption to optimize the queries.
+This type of constraint will not check anything on `INSERT` but still use the assumption to optimize the queries.
 
 It can also do logical inference, simplify the conditions and remove the conditions that are proved to be satisfied by constraints.
-It is controlled by `convert_query_to_cnf` setting. You can also enable `optimize_append_index` setting. With this setting ClickHouse will derive more consitions on the table primary key.
+It is controlled by the `convert_query_to_cnf` setting. You can also enable `optimize_append_index`. With this setting ClickHouse will derive more conditions on the table primary key.
 
 The idea is so powerful that we cannot resist adding one more feature: *indices for hypothesis*.
 
@@ -267,11 +267,11 @@ Rather than tell all your users to change their queries you can use a table cons
 
 ## Read Large Remote Files In Chunks
 
-ClickHouse combines fast query engine and efficient data storage. It also allows to integrate external data sources for data import and export or even to process external datasets on the fly without the need for data import or preprocessing.
+ClickHouse combines a fast query engine and efficient data storage. It also allows to integrate external data sources for data import and export or even to process external datasets on the fly without the need for data import or preprocessing.
 
 When reading large files in `Parquet`, `ORC`, and `Arrow` format using the `s3`, `url`, and `hdfs` table functions, ClickHouse will now automatically choose whether to read the entire file at once or read parts of it incrementally. This is now enabled by default and the setting `remote_read_min_bytes_for_seek` controls when to switch from reading it all to reading in chunks. The default is 1MiB.
 
-`Parquet`, `ORC`, and `Arrow` are column-oriented formats (quite similar to ClickHouse Native format) and now we can read only requested columns even if they are being read from remote HTTP server with the `url` table function (range requests will be performed to skip unneeded data).
+`Parquet`, `ORC`, and `Arrow` are column-oriented formats (quite similar to the ClickHouse Native format) and now we can read only requested columns even if they are being read from a remote HTTP server with the `url` table function (range requests will be performed to skip unneeded data).
 
 This feature is implemented by **Kseniia Sumarokova**.
 
@@ -282,4 +282,4 @@ In previous versions, when reading files in Arrow-based formats from remote loca
 
 ## ... And Many More
 
-Read the [full changelog](https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md) for 21.12 "Christmas" release for the full list of the gifts from [ClickHouse Team](https://clickhouse.com/careers/).
+Read the [full changelog](https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md) for the 21.12 "Christmas" release for the full list of gifts from the [ClickHouse Team](https://clickhouse.com/company/).

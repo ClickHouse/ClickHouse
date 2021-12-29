@@ -10,7 +10,6 @@
 
 #include <IO/S3Common.h>
 
-#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -25,7 +24,6 @@
 #include <Storages/PartitionedSink.h>
 
 #include <IO/ReadBufferFromS3.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
 
@@ -54,12 +52,9 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
-
-#include <boost/algorithm/string.hpp>
 
 
 static const String PARTITION_ID_WILDCARD = "{_partition_id}";
@@ -74,6 +69,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int S3_ERROR;
     extern const int UNEXPECTED_EXPRESSION;
+    extern const int CANNOT_OPEN_FILE;
 }
 
 class IOutputFormat;
@@ -226,6 +222,13 @@ StorageS3Source::StorageS3Source(
 }
 
 
+void StorageS3Source::onCancel()
+{
+    if (reader)
+        reader->cancel();
+}
+
+
 bool StorageS3Source::initialize()
 {
     String current_key = (*file_iterator)();
@@ -312,6 +315,9 @@ public:
         , sample_block(sample_block_)
         , format_settings(format_settings_)
     {
+        if (key.find_first_of("*?{") != std::string::npos)
+            throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "S3 key '{}' contains globs, so the table is in readonly mode", key);
+
         write_buf = wrapWriteBufferWithCompressionMethod(
             std::make_unique<WriteBufferFromS3>(client, bucket, key, min_upload_part_size, max_single_part_upload_size), compression_method, 3);
         writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context, {}, format_settings);

@@ -21,6 +21,7 @@
 #include <Processors/Transforms/CheckConstraintsTransform.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Storages/StorageDistributed.h>
@@ -374,7 +375,7 @@ BlockIO InterpreterInsertQuery::execute()
             pipeline = interpreter_watch.buildQueryPipeline();
         }
 
-        for (size_t i = 0; i < out_streams_size; i++)
+        for (size_t i = 0; i < out_streams_size; ++i)
         {
             auto out = buildChainImpl(table, metadata_snapshot, query_sample_block, nullptr, nullptr);
             out_chains.emplace_back(std::move(out));
@@ -400,6 +401,13 @@ BlockIO InterpreterInsertQuery::execute()
         pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
         {
             return std::make_shared<ExpressionTransform>(in_header, actions);
+        });
+
+        /// We need to convert Sparse columns to full, because it's destination storage
+        /// may not support it may have different settings for applying Sparse serialization.
+        pipeline.addSimpleTransform([&](const Block & in_header) -> ProcessorPtr
+        {
+            return std::make_shared<MaterializingTransform>(in_header);
         });
 
         size_t num_select_threads = pipeline.getNumThreads();
@@ -458,7 +466,7 @@ StorageID InterpreterInsertQuery::getDatabaseTable() const
 }
 
 
-void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr context_) const
+void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, ContextPtr context_)
 {
     elem.query_kind = "Insert";
     const auto & insert_table = context_->getInsertionTable();
@@ -467,6 +475,11 @@ void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
         elem.query_databases.insert(insert_table.getDatabaseName());
         elem.query_tables.insert(insert_table.getFullNameNotQuoted());
     }
+}
+
+void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr context_) const
+{
+    extendQueryLogElemImpl(elem, context_);
 }
 
 }
