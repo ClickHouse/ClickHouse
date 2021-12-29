@@ -37,7 +37,7 @@ Internal coordination settings are located in `<keeper_server>.<coordination_set
 
 -    `operation_timeout_ms` — Timeout for a single client operation (ms) (default: 10000).
 -    `min_session_timeout_ms` — Min timeout for client session (ms) (default: 10000).
--    `max_session_timeout_ms` — Max timeout for client session (ms) (default: 30000).
+-    `max_session_timeout_ms` — Max timeout for client session (ms) (default: 100000).
 -    `dead_session_check_period_ms` — How often ClickHouse Keeper check dead sessions and remove them (ms) (default: 500).
 -    `heart_beat_interval_ms` — How often a ClickHouse Keeper leader will send heartbeats to followers (ms) (default: 500).
 -    `election_timeout_lower_bound_ms` — If the follower didn't receive heartbeats from the leader in this interval, then it can initiate leader election (default: 1000).
