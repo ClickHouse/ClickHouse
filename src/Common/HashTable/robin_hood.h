@@ -2217,7 +2217,7 @@ private:
         while (calcMaxNumElementsAllowed(newSize) < minElementsAllowed && newSize != 0) {
             newSize *= 2;
         }
-        auto caltm = timerh();
+        //auto caltm = timerh();
         if (ROBIN_HOOD_UNLIKELY(newSize == 0)) {
             throwOverflowError();
         }
