@@ -338,6 +338,8 @@ def test_postgres_odbc_hashed_dictionary_with_schema(started_cluster):
     cursor.execute("truncate table clickhouse.test_table")
     cursor.execute("insert into clickhouse.test_table values(1, 1, 'hello'),(2, 2, 'world')")
     node1.query("SYSTEM RELOAD DICTIONARY postgres_odbc_hashed")
+    node1.exec_in_container(["ss", "-K", "dport", "postgresql"], privileged=True, user='root')
+    node1.query("SYSTEM RELOAD DICTIONARY postgres_odbc_hashed")
     assert_eq_with_retry(node1, "select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(1))", "hello")
     assert_eq_with_retry(node1, "select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(2))", "world")
 
