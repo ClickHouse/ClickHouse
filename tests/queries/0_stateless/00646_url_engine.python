@@ -156,6 +156,7 @@ def test_select(table_name="", schema="str String,numuint UInt32,numint Int32,do
     if table_name:
         get_ch_answer("drop table if exists {}".format(table_name))
 
+
 def test_insert(table_name="", schema="str String,numuint UInt32,numint Int32,double Float64", requests_insert=[], requests_select=[], answers=[]):
     with open(CSV_DATA, 'w') as f: # flush test file
         f.write('')

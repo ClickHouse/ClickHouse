@@ -817,9 +817,19 @@ If the number of rows to be read from a file of a [MergeTree](../../engines/tabl
 
 Possible values:
 
--   Any positive integer.
+-   Positive integer.
 
-Default value: 163840.
+Default value: `163840`.
+
+## merge_tree_min_rows_for_concurrent_read_for_remote_filesystem {#merge-tree-min-rows-for-concurrent-read-for-remote-filesystem}
+
+The minimum number of lines to read from one file before [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) engine can parallelize reading, when reading from remote filesystem.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `163840`.
 
 ## merge_tree_min_bytes_for_concurrent_read {#setting-merge-tree-min-bytes-for-concurrent-read}
 
@@ -827,9 +837,19 @@ If the number of bytes to read from one file of a [MergeTree](../../engines/tabl
 
 Possible value:
 
--   Any positive integer.
+-   Positive integer.
 
-Default value: 251658240.
+Default value: `251658240`.
+
+## merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem {#merge-tree-min-bytes-for-concurrent-read-for-remote-filesystem}
+
+The minimum number of bytes to read from one file before [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) engine can parallelize reading, when reading from remote filesystem.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `251658240`.
 
 ## merge_tree_min_rows_for_seek {#setting-merge-tree-min-rows-for-seek}
 
@@ -3133,6 +3153,12 @@ Possible values:
 - 0 — `Nullable`-type expressions are not allowed in keys.
 
 Default value: `0`.
+
+!!! warning "Warning"
+    Nullable primary key usually indicates bad design. It is forbidden in almost all main stream DBMS. The feature is mainly for [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) and is not heavily tested. Use with care.
+
+!!! warning "Warning"
+    Do not enable this feature in version `<= 21.8`. It's not properly implemented and may lead to server crash.
 
 ## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
 

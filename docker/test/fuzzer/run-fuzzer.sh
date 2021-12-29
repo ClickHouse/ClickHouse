@@ -52,9 +52,21 @@ function clone
 
 }
 
+function wget_with_retry
+{
+    for _ in 1 2 3 4; do
+        if wget -nv -nd -c "$1";then
+            return 0
+        else
+            sleep 0.5
+        fi
+    done
+    return 1
+}
+
 function download
 {
-    wget -nv -nd -c "$BINARY_URL_TO_DOWNLOAD"
+    wget_with_retry "$BINARY_URL_TO_DOWNLOAD"
 
     chmod +x clickhouse
     ln -s ./clickhouse ./clickhouse-server

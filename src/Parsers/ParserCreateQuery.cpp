@@ -557,33 +557,42 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             }
         }
     }
+    /** Create queries without list of columns:
+      *  - CREATE|ATTACH TABLE ... AS ...
+      *  - CREATE|ATTACH TABLE ... ENGINE = engine
+      */
     else
     {
         storage_p.parse(pos, storage, expected);
 
-        if (!s_as.ignore(pos, expected))
-            return false;
-
-        if (!select_p.parse(pos, select, expected)) /// AS SELECT ...
+        /// CREATE|ATTACH TABLE ... AS ...
+        if (s_as.ignore(pos, expected))
         {
-            /// ENGINE can not be specified for table functions.
-            if (storage || !table_function_p.parse(pos, as_table_function, expected))
+            if (!select_p.parse(pos, select, expected)) /// AS SELECT ...
             {
-                /// AS [db.]table
-                if (!name_p.parse(pos, as_table, expected))
-                    return false;
-
-                if (s_dot.ignore(pos, expected))
+                /// ENGINE can not be specified for table functions.
+                if (storage || !table_function_p.parse(pos, as_table_function, expected))
                 {
-                    as_database = as_table;
+                    /// AS [db.]table
                     if (!name_p.parse(pos, as_table, expected))
                         return false;
-                }
 
-                /// Optional - ENGINE can be specified.
-                if (!storage)
-                    storage_p.parse(pos, storage, expected);
+                    if (s_dot.ignore(pos, expected))
+                    {
+                        as_database = as_table;
+                        if (!name_p.parse(pos, as_table, expected))
+                            return false;
+                    }
+
+                    /// Optional - ENGINE can be specified.
+                    if (!storage)
+                        storage_p.parse(pos, storage, expected);
+                }
             }
+        }
+        else if (!storage)
+        {
+            return false;
         }
     }
     auto comment = parseComment(pos, expected);

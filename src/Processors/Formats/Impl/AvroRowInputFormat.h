@@ -13,6 +13,7 @@
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Processors/Formats/IRowInputFormat.h>
+#include <Processors/Formats/ISchemaReader.h>
 
 #include <avro/DataFile.hh>
 #include <avro/Decoder.hh>
@@ -158,6 +159,20 @@ private:
     avro::InputStreamPtr input_stream;
     avro::DecoderPtr decoder;
     FormatSettings format_settings;
+};
+
+class AvroSchemaReader : public ISchemaReader
+{
+public:
+    AvroSchemaReader(ReadBuffer & in_, bool confluent_, const FormatSettings & format_settings_);
+
+    NamesAndTypesList readSchema() override;
+
+private:
+    DataTypePtr avroNodeToDataType(avro::NodePtr node);
+
+    bool confluent;
+    const FormatSettings format_settings;
 };
 
 }
