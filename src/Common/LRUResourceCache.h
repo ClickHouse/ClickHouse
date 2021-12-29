@@ -51,6 +51,7 @@ public:
             {
                 hits++;
                 it->second.reference_count += 1;
+                queue.splice(queue.end(), queue, it->second.queue_iterator);
                 return it->second.value;
             }
             misses++;
