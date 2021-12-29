@@ -7,7 +7,7 @@
 
         <coordination_settings>
             <operation_timeout_ms>5000</operation_timeout_ms>
-            <session_timeout_ms>10000</session_timeout_ms>
+            <max_session_timeout_ms>10000</max_session_timeout_ms>
             <raft_logs_level>trace</raft_logs_level>
             <snapshot_distance>100</snapshot_distance>
             <stale_log_gap>10</stale_log_gap>
