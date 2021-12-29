@@ -122,7 +122,7 @@ if __name__ == "__main__":
 
     logging.info("Start at PR number %s, commit sha %s labels %s", pr_info.number, pr_info.sha, pr_info.labels)
 
-    if pr_info.number != 0 and 'jepsen-test' not in pr_info.labels():
+    if pr_info.number != 0 and 'jepsen-test' not in pr_info.labels:
         logging.info("Not jepsen test label in labels list, skipping")
         sys.exit(0)
 
