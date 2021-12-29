@@ -20,7 +20,7 @@ $CLICKHOUSE_CLIENT -nm -q """
     insert into data_01810 select * from numbers(50);
     drop table data_01810 settings log_queries=1;
     system flush logs;
-    select throwIf(length(thread_ids)<50) from system.query_log where event_date = today() and current_database = currentDatabase() and query = 'drop table data_01810 settings log_queries=1;' and type = 'QueryFinish' format Null;
+    select throwIf(length(thread_ids)<50) from system.query_log where event_date >= yesterday() and current_database = currentDatabase() and query = 'drop table data_01810 settings log_queries=1;' and type = 'QueryFinish' format Null;
 """
 
 # ReplicatedMergeTree
@@ -31,7 +31,7 @@ $CLICKHOUSE_CLIENT -nm -q """
     insert into rep_data_01810 select * from numbers(50);
     drop table rep_data_01810 settings log_queries=1;
     system flush logs;
-    select throwIf(length(thread_ids)<50) from system.query_log where event_date = today() and current_database = currentDatabase() and query = 'drop table rep_data_01810 settings log_queries=1;' and type = 'QueryFinish' format Null;
+    select throwIf(length(thread_ids)<50) from system.query_log where event_date >= yesterday() and current_database = currentDatabase() and query = 'drop table rep_data_01810 settings log_queries=1;' and type = 'QueryFinish' format Null;
 """
 
 $CLICKHOUSE_CLIENT -nm -q "drop database ordinary_$CLICKHOUSE_DATABASE"

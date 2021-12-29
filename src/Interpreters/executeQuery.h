@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/QueryProcessingStage.h>
-#include <DataStreams/BlockIO.h>
+#include <QueryPipeline/BlockIO.h>
 #include <Interpreters/Context_fwd.h>
 #include <Formats/FormatSettings.h>
 

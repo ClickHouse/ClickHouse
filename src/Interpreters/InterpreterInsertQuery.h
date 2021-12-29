@@ -1,7 +1,6 @@
 #pragma once
 
-#include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/BlockIO.h>
+#include <QueryPipeline/BlockIO.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -41,6 +40,7 @@ public:
         ThreadStatus * thread_status = nullptr,
         std::atomic_uint64_t * elapsed_counter_ms = nullptr);
 
+    static void extendQueryLogElemImpl(QueryLogElement & elem, ContextPtr context_);
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context_) const override;
 
     StoragePtr getTable(ASTInsertQuery & query);

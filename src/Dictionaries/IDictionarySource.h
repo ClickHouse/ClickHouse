@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 
 #include <vector>
 #include <atomic>
@@ -10,8 +10,7 @@
 namespace DB
 {
 class IDictionarySource;
-using DictionarySourcePtr = std::unique_ptr<IDictionarySource>;
-using SharedDictionarySourcePtr = std::shared_ptr<IDictionarySource>;
+using DictionarySourcePtr = std::shared_ptr<IDictionarySource>;
 
 /** Data-provider interface for external dictionaries,
 *    abstracts out the data source (file, MySQL, ClickHouse, external program, network request et cetera)

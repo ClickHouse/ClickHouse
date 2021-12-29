@@ -20,14 +20,9 @@
 #include <base/argsToConfig.h>
 #include <base/find_symbols.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
+#include <Common/config_version.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
-#include <Common/NetException.h>
-#include <Common/Config/ConfigProcessor.h>
-#include <Common/PODArray.h>
 #include <Common/TerminalSize.h>
 #include <Common/Config/configReadClient.h>
 #include "Common/MemoryTracker.h"
@@ -35,17 +30,13 @@
 #include <Core/QueryProcessingStage.h>
 #include <Client/TestHint.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <Poco/Util/Application.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/UseSSL.h>
-
-#include <DataStreams/NullBlockOutputStream.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
@@ -53,16 +44,12 @@
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/formatAST.h>
 
 #include <Interpreters/InterpreterSetQuery.h>
 
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/registerFormats.h>
-#include <Formats/FormatFactory.h>
 #include "TestTags.h"
 
 #ifndef __clang__
@@ -71,10 +58,7 @@
 
 namespace CurrentMetrics
 {
-    extern const Metric Revision;
-    extern const Metric VersionInteger;
     extern const Metric MemoryTracking;
-    extern const Metric MaxDDLEntryID;
 }
 
 namespace fs = std::filesystem;
@@ -89,7 +73,6 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int TOO_DEEP_RECURSION;
     extern const int NETWORK_ERROR;
-    extern const int UNRECOGNIZED_ARGUMENTS;
     extern const int AUTHENTICATION_FAILED;
 }
 
@@ -98,7 +81,6 @@ void Client::processError(const String & query) const
 {
     if (server_exception)
     {
-        bool print_stack_trace = config().getBool("stacktrace", false);
         fmt::print(stderr, "Received exception from server (version {}):\n{}\n",
                 server_version,
                 getExceptionMessage(*server_exception, print_stack_trace, true));
@@ -237,7 +219,7 @@ bool Client::executeMultiQuery(const String & all_queries_text)
                 {
                     // Surprisingly, this is a client error. A server error would
                     // have been reported w/o throwing (see onReceiveSeverException()).
-                    client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+                    client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
                     have_error = true;
                 }
                 // Check whether the error (or its absence) matches the test hints
@@ -343,7 +325,9 @@ std::vector<String> Client::loadWarningMessages()
 {
     std::vector<String> messages;
     connection->sendQuery(connection_parameters.timeouts, "SELECT message FROM system.warnings", "" /* query_id */,
-                          QueryProcessingStage::Complete, nullptr, nullptr, false);
+                          QueryProcessingStage::Complete,
+                          &global_context->getSettingsRef(),
+                          &global_context->getClientInfo(), false);
     while (true)
     {
         Packet packet = connection->receivePacket();
@@ -442,6 +426,7 @@ try
 
     processConfig();
 
+    /// Includes delayed_interactive.
     if (is_interactive)
     {
         clearTerminal();
@@ -450,28 +435,28 @@ try
 
     connect();
 
-    if (is_interactive)
+    /// Load Warnings at the beginning of connection
+    if (is_interactive && !config().has("no-warnings"))
     {
-        /// Load Warnings at the beginning of connection
-        if (!config().has("no-warnings"))
+        try
         {
-            try
+            std::vector<String> messages = loadWarningMessages();
+            if (!messages.empty())
             {
-                std::vector<String> messages = loadWarningMessages();
-                if (!messages.empty())
-                {
-                    std::cout << "Warnings:" << std::endl;
-                    for (const auto & message : messages)
-                        std::cout << " * " << message << std::endl;
-                    std::cout << std::endl;
-                }
-            }
-            catch (...)
-            {
-                /// Ignore exception
+                std::cout << "Warnings:" << std::endl;
+                for (const auto & message : messages)
+                    std::cout << " * " << message << std::endl;
+                std::cout << std::endl;
             }
         }
+        catch (...)
+        {
+            /// Ignore exception
+        }
+    }
 
+    if (is_interactive && !delayed_interactive)
+    {
         runInteractive();
     }
     else
@@ -495,14 +480,17 @@ try
             // case so that at least we don't lose an error.
             return -1;
         }
+
+        if (delayed_interactive)
+            runInteractive();
     }
 
     return 0;
 }
 catch (const Exception & e)
 {
-    bool print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
-    std::cerr << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
+    bool need_print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
+    std::cerr << getExceptionMessage(e, need_print_stack_trace, true) << std::endl << std::endl;
     /// If exception code isn't zero, we should return non-zero return code anyway.
     return e.code() ? e.code() : -1;
 }
@@ -568,8 +556,7 @@ void Client::connect()
     if (is_interactive)
     {
         std::cout << "Connected to " << server_name << " server version " << server_version << " revision " << server_revision << "."
-                    << std::endl
-                    << std::endl;
+                    << std::endl << std::endl;
 
         auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
         auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
@@ -716,16 +703,16 @@ bool Client::processWithFuzzing(const String & full_query)
             throw;
     }
 
+    if (!orig_ast)
+    {
+        // Can't continue after a parsing error
+        return true;
+    }
+
     // `USE db` should not be executed
     // since this will break every query after `DROP db`
     if (orig_ast->as<ASTUseQuery>())
     {
-        return true;
-    }
-
-    if (!orig_ast)
-    {
-        // Can't continue after a parsing error
         return true;
     }
 
@@ -825,7 +812,7 @@ bool Client::processWithFuzzing(const String & full_query)
             // uniformity.
             // Surprisingly, this is a client exception, because we get the
             // server exception w/o throwing (see onReceiveException()).
-            client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+            client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
             have_error = true;
         }
 
@@ -996,7 +983,7 @@ void Client::printHelpMessage(const OptionsDescription & options_description)
 }
 
 
-void Client::addAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
+void Client::addOptions(OptionsDescription & options_description)
 {
     /// Main commandline options related to client functionality and all parameters from Settings.
     options_description.main_description->add_options()
@@ -1014,14 +1001,10 @@ void Client::addAndCheckOptions(OptionsDescription & options_description, po::va
         ("password", po::value<std::string>()->implicit_value("\n", ""), "password")
         ("ask-password", "ask-password")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
-        ("pager", po::value<std::string>(), "pager")
         ("testmode,T", "enable test hints in comments")
 
         ("max_client_network_bandwidth", po::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
         ("compression", po::value<bool>(), "enable or disable compression")
-
-        ("log-level", po::value<std::string>(), "client log level")
-        ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
 
         ("query-fuzzer-runs", po::value<int>()->default_value(0), "After executing every SELECT query, do random mutations in it and run again specified number of times. This is used for testing to discover unexpected corner cases.")
         ("interleave-queries-file", po::value<std::vector<std::string>>()->multitoken(),
@@ -1053,14 +1036,6 @@ void Client::addAndCheckOptions(OptionsDescription & options_description, po::va
     (
         "types", po::value<std::string>(), "types"
     );
-
-    cmd_settings.addProgramOptions(options_description.main_description.value());
-    /// Parse main commandline options.
-    po::parsed_options parsed = po::command_line_parser(arguments).options(options_description.main_description.value()).run();
-    auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
-    if (unrecognized_options.size() > 1)
-        throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[1]);
-    po::store(parsed, options);
 }
 
 
@@ -1126,8 +1101,6 @@ void Client::processOptions(const OptionsDescription & options_description,
         config().setString("host", options["host"].as<std::string>());
     if (options.count("interleave-queries-file"))
         interleave_queries_files = options["interleave-queries-file"].as<std::vector<std::string>>();
-    if (options.count("pager"))
-        config().setString("pager", options["pager"].as<std::string>());
     if (options.count("port") && !options["port"].defaulted())
         config().setInt("port", options["port"].as<int>());
     if (options.count("secure"))
@@ -1146,8 +1119,6 @@ void Client::processOptions(const OptionsDescription & options_description,
         max_client_network_bandwidth = options["max_client_network_bandwidth"].as<int>();
     if (options.count("compression"))
         config().setBool("compression", options["compression"].as<bool>());
-    if (options.count("server_logs_file"))
-        server_logs_file = options["server_logs_file"].as<std::string>();
     if (options.count("no-warnings"))
         config().setBool("no-warnings", true);
 
@@ -1182,11 +1153,11 @@ void Client::processConfig()
     /// - stdin is not a terminal. In this case queries are read from it.
     /// - -qf (--queries-file) command line option is present.
     ///   The value of the option is used as file with query (or of multiple queries) to execute.
-    if (stdin_is_a_tty && !config().has("query") && queries_files.empty())
-    {
-        if (config().has("query") && config().has("queries-file"))
-            throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
 
+    delayed_interactive = config().has("interactive") && (config().has("query") || config().has("queries-file"));
+    if (stdin_is_a_tty
+        && (delayed_interactive || (!config().has("query") && queries_files.empty())))
+    {
         is_interactive = true;
     }
     else
@@ -1199,6 +1170,7 @@ void Client::processConfig()
         if (!query_id.empty())
             global_context->setCurrentQueryId(query_id);
     }
+    print_stack_trace = config().getBool("stacktrace", false);
 
     if (config().has("multiquery"))
         is_multiquery = true;
@@ -1238,15 +1210,15 @@ int mainEntryClickHouseClient(int argc, char ** argv)
         client.init(argc, argv);
         return client.run();
     }
-    catch (const boost::program_options::error & e)
-    {
-        std::cerr << "Bad arguments: " << e.what() << std::endl;
-        return 1;
-    }
     catch (const DB::Exception & e)
     {
         std::cerr << DB::getExceptionMessage(e, false) << std::endl;
         return 1;
+    }
+    catch (const boost::program_options::error & e)
+    {
+        std::cerr << "Bad arguments: " << e.what() << std::endl;
+        return DB::ErrorCodes::BAD_ARGUMENTS;
     }
     catch (...)
     {

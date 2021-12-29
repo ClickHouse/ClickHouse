@@ -32,11 +32,6 @@ public:
 
     bool canBeInsideNullable() const override { return false; }
 
-    DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
-    ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const override;
-    SerializationPtr getSubcolumnSerialization(
-        const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const override;
-
     MutableColumnPtr createColumn() const override;
 
     Field getDefault() const override;

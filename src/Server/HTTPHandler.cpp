@@ -35,9 +35,7 @@
 #include <base/scope_guard.h>
 #include <Server/HTTP/HTTPResponse.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #include <Poco/Base64Decoder.h>
 #include <Poco/Base64Encoder.h>
@@ -495,10 +493,7 @@ void HTTPHandler::processQuery(
     }
 
     // Parse the OpenTelemetry traceparent header.
-    // Disable in Arcadia -- it interferes with the
-    // test_clickhouse.TestTracing.test_tracing_via_http_proxy[traceparent] test.
     ClientInfo client_info = session->getClientInfo();
-#if !defined(ARCADIA_BUILD)
     if (request.has("traceparent"))
     {
         std::string opentelemetry_traceparent = request.get("traceparent");
@@ -512,7 +507,6 @@ void HTTPHandler::processQuery(
         }
         client_info.client_trace_context.tracestate = request.get("tracestate", "");
     }
-#endif
 
     auto context = session->makeQueryContext(std::move(client_info));
 
@@ -725,9 +719,16 @@ void HTTPHandler::processQuery(
     context->checkSettingsConstraints(settings_changes);
     context->applySettingsChanges(settings_changes);
 
-    // Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
+    /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
     context->setCurrentQueryId(params.get("query_id", request.get("X-ClickHouse-Query-Id", "")));
 
+    /// Initialize query scope, once query_id is initialized.
+    /// (To track as much allocations as possible)
+    query_scope.emplace(context);
+
+    /// NOTE: this may create pretty huge allocations that will not be accounted in trace_log,
+    /// because memory_profiler_sample_probability/memory_profiler_step are not applied yet,
+    /// they will be applied in ProcessList::insert() from executeQuery() itself.
     const auto & query = getQuery(request, params, context);
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
     in = has_external_data ? std::move(in_param) : std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
@@ -775,7 +776,7 @@ void HTTPHandler::processQuery(
 
     if (settings.readonly > 0 && settings.cancel_http_readonly_queries_on_client_close)
     {
-        append_callback([context = context, &request](const Progress &)
+        append_callback([&context, &request](const Progress &)
         {
             /// Assume that at the point this method is called no one is reading data from the socket any more:
             /// should be true for read-only queries.
@@ -785,8 +786,6 @@ void HTTPHandler::processQuery(
     }
 
     customizeContext(request, context);
-
-    query_scope.emplace(context);
 
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
         [&response] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
@@ -934,6 +933,15 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         SCOPE_EXIT({
             request_credentials.reset(); // ...so that the next requests on the connection have to always start afresh in case of exceptions.
         });
+
+        /// Check if exception was thrown in used_output.finalize().
+        /// In this case used_output can be in invalid state and we
+        /// cannot write in it anymore. So, just log this exception.
+        if (used_output.isFinalized())
+        {
+            tryLogCurrentException(log, "Cannot flush data to client");
+            return;
+        }
 
         tryLogCurrentException(log);
 

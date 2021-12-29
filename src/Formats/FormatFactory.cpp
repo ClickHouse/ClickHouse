@@ -1,20 +1,20 @@
 #include <Formats/FormatFactory.h>
 
 #include <algorithm>
-#include <Common/Exception.h>
-#include <Interpreters/Context.h>
 #include <Core/Settings.h>
-#include <DataStreams/MaterializingBlockOutputStream.h>
 #include <Formats/FormatSettings.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
-#include <Processors/Formats/OutputStreamToOutputFormat.h>
-#include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
-#include <Processors/Formats/Impl/ParallelParsingInputFormat.h>
 #include <Processors/Formats/Impl/ParallelFormattingOutputFormat.h>
+#include <Processors/Formats/Impl/ParallelParsingInputFormat.h>
+#include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Poco/URI.h>
+#include <Common/Exception.h>
 
+#include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadHelpers.h>
 
 namespace DB
@@ -53,14 +53,15 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.avro.output_sync_interval = settings.output_format_avro_sync_interval;
     format_settings.avro.schema_registry_url = settings.format_avro_schema_registry_url.toString();
     format_settings.avro.string_column_pattern = settings.output_format_avro_string_column_pattern.toString();
+    format_settings.avro.output_rows_in_file = settings.output_format_avro_rows_in_file;
     format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
     format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
     format_settings.csv.crlf_end_of_line = settings.output_format_csv_crlf_end_of_line;
     format_settings.csv.delimiter = settings.format_csv_delimiter;
-    format_settings.csv.empty_as_default = settings.input_format_defaults_for_omitted_fields;
+    format_settings.csv.tuple_delimiter = settings.format_csv_delimiter;
+    format_settings.csv.empty_as_default = settings.input_format_csv_empty_as_default;
     format_settings.csv.input_format_enum_as_number = settings.input_format_csv_enum_as_number;
-    format_settings.csv.null_representation = settings.output_format_csv_null_representation;
-    format_settings.csv.unquoted_null_literal_as_null = settings.input_format_csv_unquoted_null_literal_as_null;
+    format_settings.csv.null_representation = settings.format_csv_null_representation;
     format_settings.csv.input_format_arrays_as_nested_csv = settings.input_format_csv_arrays_as_nested_csv;
     format_settings.custom.escaping_rule = settings.format_custom_escaping_rule;
     format_settings.custom.field_delimiter = settings.format_custom_field_delimiter;
@@ -71,6 +72,8 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.custom.row_between_delimiter = settings.format_custom_row_between_delimiter;
     format_settings.date_time_input_format = settings.date_time_input_format;
     format_settings.date_time_output_format = settings.date_time_output_format;
+    format_settings.bool_true_representation = settings.bool_true_representation;
+    format_settings.bool_false_representation = settings.bool_false_representation;
     format_settings.enable_streaming = settings.output_format_enable_streaming;
     format_settings.import_nested_json = settings.input_format_import_nested_json;
     format_settings.input_allow_errors_num = settings.input_format_allow_errors_num;
@@ -103,15 +106,20 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.tsv.crlf_end_of_line = settings.output_format_tsv_crlf_end_of_line;
     format_settings.tsv.empty_as_default = settings.input_format_tsv_empty_as_default;
     format_settings.tsv.input_format_enum_as_number = settings.input_format_tsv_enum_as_number;
-    format_settings.tsv.null_representation = settings.output_format_tsv_null_representation;
+    format_settings.tsv.null_representation = settings.format_tsv_null_representation;
     format_settings.values.accurate_types_of_literals = settings.input_format_values_accurate_types_of_literals;
     format_settings.values.deduce_templates_of_expressions = settings.input_format_values_deduce_templates_of_expressions;
     format_settings.values.interpret_expressions = settings.input_format_values_interpret_expressions;
     format_settings.with_names_use_header = settings.input_format_with_names_use_header;
+    format_settings.with_types_use_header = settings.input_format_with_types_use_header;
     format_settings.write_statistics = settings.output_format_write_statistics;
     format_settings.arrow.low_cardinality_as_dictionary = settings.output_format_arrow_low_cardinality_as_dictionary;
     format_settings.arrow.import_nested = settings.input_format_arrow_import_nested;
     format_settings.orc.import_nested = settings.input_format_orc_import_nested;
+    format_settings.orc.row_batch_size = settings.input_format_orc_row_batch_size;
+    format_settings.defaults_for_omitted_fields = settings.input_format_defaults_for_omitted_fields;
+    format_settings.capn_proto.enum_comparing_mode = settings.format_capn_proto_enum_comparising_mode;
+    format_settings.seekable_read = settings.input_format_allow_seeks;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
@@ -140,7 +148,7 @@ InputFormatPtr FormatFactory::getInput(
     auto format_settings = _format_settings
         ? *_format_settings : getFormatSettings(context);
 
-    if (!getCreators(name).input_processor_creator)
+    if (!getCreators(name).input_creator)
     {
         throw Exception("Format " + name + " is not suitable for input (with processors)", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
     }
@@ -168,7 +176,7 @@ InputFormatPtr FormatFactory::getInput(
 
     if (parallel_parsing)
     {
-        const auto & input_getter = getCreators(name).input_processor_creator;
+        const auto & input_getter = getCreators(name).input_creator;
 
         RowInputFormatParams row_input_format_params;
         row_input_format_params.max_block_size = max_block_size;
@@ -193,69 +201,6 @@ InputFormatPtr FormatFactory::getInput(
     return format;
 }
 
-BlockOutputStreamPtr FormatFactory::getOutputStreamParallelIfPossible(
-    const String & name,
-    WriteBuffer & buf,
-    const Block & sample,
-    ContextPtr context,
-    WriteCallback callback,
-    const std::optional<FormatSettings> & _format_settings) const
-{
-    const auto & output_getter = getCreators(name).output_processor_creator;
-
-    const Settings & settings = context->getSettingsRef();
-    bool parallel_formatting = settings.output_format_parallel_formatting;
-    auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
-
-    if (output_getter && parallel_formatting && getCreators(name).supports_parallel_formatting
-        && !settings.output_format_json_array_of_rows)
-    {
-        auto formatter_creator = [output_getter, sample, callback, format_settings]
-            (WriteBuffer & output) -> OutputFormatPtr
-            { return output_getter(output, sample, {std::move(callback)}, format_settings);};
-
-        ParallelFormattingOutputFormat::Params params{buf, sample, formatter_creator, settings.max_threads};
-        auto format = std::make_shared<ParallelFormattingOutputFormat>(params);
-
-        /// Enable auto-flush for streaming mode. Currently it is needed by INSERT WATCH query.
-        if (format_settings.enable_streaming)
-            format->setAutoFlush();
-
-        return std::make_shared<MaterializingBlockOutputStream>(std::make_shared<OutputStreamToOutputFormat>(format), sample);
-    }
-
-    return getOutputStream(name, buf, sample, context, callback, _format_settings);
-}
-
-
-BlockOutputStreamPtr FormatFactory::getOutputStream(
-    const String & name,
-    WriteBuffer & buf,
-    const Block & sample,
-    ContextPtr context,
-    WriteCallback callback,
-    const std::optional<FormatSettings> & _format_settings) const
-{
-    auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
-
-    if (!getCreators(name).output_processor_creator)
-    {
-        const auto & output_getter = getCreators(name).output_creator;
-        if (!output_getter)
-            throw Exception("Format " + name + " is not suitable for output", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT);
-
-        /**  Materialization is needed, because formats can use the functions `IDataType`,
-          *  which only work with full columns.
-          */
-        return std::make_shared<MaterializingBlockOutputStream>(
-            output_getter(buf, sample, std::move(callback), format_settings),
-            sample);
-    }
-
-    auto format = getOutputFormat(name, buf, sample, context, std::move(callback), _format_settings);
-    return std::make_shared<MaterializingBlockOutputStream>(std::make_shared<OutputStreamToOutputFormat>(format), sample);
-}
-
 
 InputFormatPtr FormatFactory::getInputFormat(
     const String & name,
@@ -265,7 +210,7 @@ InputFormatPtr FormatFactory::getInputFormat(
     UInt64 max_block_size,
     const std::optional<FormatSettings> & _format_settings) const
 {
-    const auto & input_getter = getCreators(name).input_processor_creator;
+    const auto & input_getter = getCreators(name).input_creator;
     if (!input_getter)
         throw Exception("Format " + name + " is not suitable for input", ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_INPUT);
 
@@ -291,6 +236,18 @@ InputFormatPtr FormatFactory::getInputFormat(
     return format;
 }
 
+static void addExistingProgressToOutputFormat(OutputFormatPtr format, ContextPtr context)
+{
+    auto element_id = context->getProcessListElement();
+    if (element_id)
+    {
+        /// While preparing the query there might have been progress (for example in subscalar subqueries) so add it here
+        auto current_progress = element_id->getProgressIn();
+        Progress read_progress{current_progress.read_rows, current_progress.read_bytes, current_progress.total_rows_to_read};
+        format->onProgress(read_progress);
+    }
+}
+
 OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
     const String & name,
     WriteBuffer & buf,
@@ -299,7 +256,7 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
     WriteCallback callback,
     const std::optional<FormatSettings> & _format_settings) const
 {
-    const auto & output_getter = getCreators(name).output_processor_creator;
+    const auto & output_getter = getCreators(name).output_creator;
     if (!output_getter)
         throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output (with processors)", name);
 
@@ -319,7 +276,9 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
         if (context->hasQueryContext() && settings.log_queries)
             context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
 
-        return std::make_shared<ParallelFormattingOutputFormat>(builder);
+        auto format = std::make_shared<ParallelFormattingOutputFormat>(builder);
+        addExistingProgressToOutputFormat(format, context);
+        return format;
     }
 
     return getOutputFormat(name, buf, sample, context, callback, _format_settings);
@@ -334,7 +293,7 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     WriteCallback callback,
     const std::optional<FormatSettings> & _format_settings) const
 {
-    const auto & output_getter = getCreators(name).output_processor_creator;
+    const auto & output_getter = getCreators(name).output_creator;
     if (!output_getter)
         throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output (with processors)", name);
 
@@ -359,29 +318,34 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     if (auto * mysql = typeid_cast<MySQLOutputFormat *>(format.get()))
         mysql->setContext(context);
 
+    addExistingProgressToOutputFormat(format, context);
+
     return format;
+}
+
+String FormatFactory::getContentType(
+    const String & name,
+    ContextPtr context,
+    const std::optional<FormatSettings> & _format_settings) const
+{
+    const auto & output_getter = getCreators(name).output_creator;
+    if (!output_getter)
+        throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output (with processors)", name);
+
+    auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
+
+    Block empty_block;
+    RowOutputFormatParams empty_params;
+    WriteBufferFromOwnString empty_buffer;
+    auto format = output_getter(empty_buffer, empty_block, empty_params, format_settings);
+
+    return format->getContentType();
 }
 
 
 void FormatFactory::registerInputFormat(const String & name, InputCreator input_creator)
 {
     auto & target = dict[name].input_creator;
-    if (target)
-        throw Exception("FormatFactory: Input format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
-    target = std::move(input_creator);
-}
-
-void FormatFactory::registerOutputFormat(const String & name, OutputCreator output_creator)
-{
-    auto & target = dict[name].output_creator;
-    if (target)
-        throw Exception("FormatFactory: Output format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
-    target = std::move(output_creator);
-}
-
-void FormatFactory::registerInputFormatProcessor(const String & name, InputProcessorCreator input_creator)
-{
-    auto & target = dict[name].input_processor_creator;
     if (target)
         throw Exception("FormatFactory: Input format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
     target = std::move(input_creator);
@@ -395,9 +359,9 @@ void FormatFactory::registerNonTrivialPrefixAndSuffixChecker(const String & name
     target = std::move(non_trivial_prefix_and_suffix_checker);
 }
 
-void FormatFactory::registerOutputFormatProcessor(const String & name, OutputProcessorCreator output_creator)
+void FormatFactory::registerOutputFormat(const String & name, OutputCreator output_creator)
 {
-    auto & target = dict[name].output_processor_creator;
+    auto & target = dict[name].output_creator;
     if (target)
         throw Exception("FormatFactory: Output format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
     target = std::move(output_creator);
@@ -439,13 +403,13 @@ bool FormatFactory::checkIfFormatIsColumnOriented(const String & name)
 bool FormatFactory::isInputFormat(const String & name) const
 {
     auto it = dict.find(name);
-    return it != dict.end() && (it->second.input_creator || it->second.input_processor_creator);
+    return it != dict.end() && it->second.input_creator;
 }
 
 bool FormatFactory::isOutputFormat(const String & name) const
 {
     auto it = dict.find(name);
-    return it != dict.end() && (it->second.output_creator || it->second.output_processor_creator);
+    return it != dict.end() && it->second.output_creator;
 }
 
 FormatFactory & FormatFactory::instance()

@@ -338,7 +338,7 @@
 
 <body>
     <div id="inputs">
-        <input class="monospace shadow" id="url" type="text" value="http://localhost:8123/" /><input class="monospace shadow" id="user" type="text" value="default" /><input class="monospace shadow" id="password" type="password" />
+        <input class="monospace shadow" id="url" type="text" value="http://localhost:8123/" placeholder="url" /><input class="monospace shadow" id="user" type="text" value="default" placeholder="user" /><input class="monospace shadow" id="password" type="password" placeholder="password" />
     </div>
     <div>
         <textarea autofocus spellcheck="false" class="monospace shadow" id="query"></textarea>
@@ -549,13 +549,38 @@
 
         document.getElementById('logo-container').style.display = 'block';
     }
+    
+    function formatReadable(number = 0, decimals = 2, units = []) {
+        const k = 1000;
+        const i = number ? Math.floor(Math.log(number) / Math.log(k)) : 0;
+        const unit = units[i];
+        const dm = unit ? decimals : 0;
+        return Number(number / Math.pow(k, i)).toFixed(dm) + unit;
+    }
+
+    function formatReadableBytes(bytes) {
+        const units = [' B', ' KB', ' MB', ' GB', ' TB', ' PB', ' EB', ' ZB', ' YB'];
+
+        return formatReadable(bytes, 2, units);
+    }
+
+    function formatReadableRows(rows) {
+        const units = ['', ' thousand', ' million', ' billion', ' trillion', ' quadrillion'];
+
+        return formatReadable(rows, 2, units);
+    }
 
     function renderResult(response)
     {
         clear();
 
         let stats = document.getElementById('stats');
-        stats.innerText = 'Elapsed: ' + response.statistics.elapsed.toFixed(3) + " sec, read " + response.statistics.rows_read + " rows.";
+        const seconds = response.statistics.elapsed.toFixed(3);
+        const rows = response.statistics.rows_read;
+        const bytes = response.statistics.bytes_read;
+        const formatted_bytes = formatReadableBytes(bytes);
+        const formatted_rows = formatReadableRows(rows);
+        stats.innerText = `Elapsed: ${seconds} sec, read ${formatted_rows} rows, ${formatted_bytes}.`;
 
         /// We can also render graphs if user performed EXPLAIN PIPELINE graph=1.
         if (response.data.length > 3 && response.data[0][0] === "digraph" && document.getElementById('query').value.match(/^\s*EXPLAIN/i)) {

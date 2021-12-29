@@ -2,7 +2,6 @@
 
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
 
@@ -64,11 +63,14 @@ RabbitMQSource::RabbitMQSource(
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
 {
+    storage.incrementReader();
 }
 
 
 RabbitMQSource::~RabbitMQSource()
 {
+    storage.decrementReader();
+
     if (!buffer)
         return;
 

@@ -37,10 +37,9 @@ protected:
     void processError(const String & query) const override;
     String getName() const override { return "local"; }
 
-    String getQueryTextPrefix() override;
     void printHelpMessage(const OptionsDescription & options_description) override;
 
-    void addAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments) override;
+    void addOptions(OptionsDescription & options_description) override;
     void processOptions(const OptionsDescription & options_description, const CommandLineOptions & options,
                         const std::vector<Arguments> &) override;
     void processConfig() override;

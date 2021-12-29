@@ -1,5 +1,5 @@
 ---
-toc_priority: 69
+toc_priority: 70
 toc_title: Testing
 ---
 
@@ -106,20 +106,20 @@ Build ClickHouse. Run ClickHouse from the terminal: change directory to `program
 
 Note that all clickhouse tools (server, client, etc) are just symlinks to a single binary named `clickhouse`. You can find this binary at `programs/clickhouse`. All tools can also be invoked as `clickhouse tool` instead of `clickhouse-tool`.
 
-Alternatively you can install ClickHouse package: either stable release from Yandex repository or you can build package for yourself with `./release` in ClickHouse sources root. Then start the server with `sudo service clickhouse-server start` (or stop to stop the server). Look for logs at `/etc/clickhouse-server/clickhouse-server.log`.
+Alternatively you can install ClickHouse package: either stable release from ClickHouse repository or you can build package for yourself with `./release` in ClickHouse sources root. Then start the server with `sudo clickhouse start` (or stop to stop the server). Look for logs at `/etc/clickhouse-server/clickhouse-server.log`.
 
 When ClickHouse is already installed on your system, you can build a new `clickhouse` binary and replace the existing binary:
 
 ``` bash
-$ sudo service clickhouse-server stop
+$ sudo clickhouse stop
 $ sudo cp ./clickhouse /usr/bin/
-$ sudo service clickhouse-server start
+$ sudo clickhouse start
 ```
 
 Also you can stop system clickhouse-server and run your own with the same configuration but with logging to terminal:
 
 ``` bash
-$ sudo service clickhouse-server stop
+$ sudo clickhouse stop
 $ sudo -u clickhouse /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
 ```
 
@@ -257,9 +257,9 @@ There are five variants (Debug, ASan, TSan, MSan, UBSan).
 
 Thread Fuzzer (please don't mix up with Thread Sanitizer) is another kind of fuzzing that allows to randomize thread order of execution. It helps to find even more special cases.
 
-## Security Audit {#security-audit}
+## Security Audit
 
-People from Yandex Security Team do some basic overview of ClickHouse capabilities from the security standpoint.
+People from Yandex Security Team did some basic overview of ClickHouse capabilities from the security standpoint.
 
 ## Static Analyzers {#static-analyzers}
 
@@ -326,15 +326,11 @@ There is automated check for flaky tests. It runs all new tests 100 times (for f
 
 ## Testflows
 
-[Testflows](https://testflows.com/) is an enterprise-grade testing framework. It is used by Altinity for some of the tests and we run these tests in our CI.
-
-## Yandex Checks (only for Yandex employees)
-
-These checks are importing ClickHouse code into Yandex internal monorepository, so ClickHouse codebase can be used as a library by other products at Yandex (YT and YDB). Note that clickhouse-server itself is not being build from internal repo and unmodified open-source build is used for Yandex applications.
+[Testflows](https://testflows.com/) is an enterprise-grade open-source testing framework, which is used to test a subset of ClickHouse.
 
 ## Test Automation {#test-automation}
 
-We run tests with Yandex internal CI and job automation system named “Sandbox”.
+We run tests with [GitHub Actions](https://github.com/features/actions).
 
 Build jobs and tests are run in Sandbox on per commit basis. Resulting packages and test results are published in GitHub and can be downloaded by direct links. Artifacts are stored for several months. When you send a pull request on GitHub, we tag it as “can be tested” and our CI system will build ClickHouse packages (release, debug, with address sanitizer, etc) for you.
 

@@ -69,7 +69,7 @@ function test_distributed_push_down_limit_with_query_log()
         system flush logs;
         select read_rows from system.query_log
             where
-                event_date = today()
+                event_date >= yesterday()
                 and query_kind = 'Select' /* exclude DESC TABLE */
                 and initial_query_id = '$query_id' and initial_query_id != query_id;
     " | xargs # convert new lines to spaces

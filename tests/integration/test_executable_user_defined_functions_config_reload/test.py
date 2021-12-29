@@ -17,9 +17,9 @@ def copy_file_to_container(local_path, dist_path, container_id):
     os.system("docker cp {local} {cont_id}:{dist}".format(local=local_path, cont_id=container_id, dist=dist_path))
 
 
-config = '''<yandex>
+config = '''<clickhouse>
     <user_defined_executable_functions_config>/etc/clickhouse-server/functions/{user_defined_executable_functions_config}</user_defined_executable_functions_config>
-</yandex>'''
+</clickhouse>'''
 
 
 @pytest.fixture(scope="module")
@@ -28,6 +28,8 @@ def started_cluster():
         cluster.start()
 
         copy_file_to_container(os.path.join(SCRIPT_DIR, 'functions/.'), '/etc/clickhouse-server/functions', node.docker_id)
+        copy_file_to_container(os.path.join(SCRIPT_DIR, 'user_scripts/.'), '/var/lib/clickhouse/user_scripts', node.docker_id)
+
         node.restart_clickhouse()
 
         yield cluster

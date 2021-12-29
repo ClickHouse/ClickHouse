@@ -1,15 +1,15 @@
 #pragma once
 
+#include <memory>
+#include <mutex>
+
 #include <Core/Names.h>
+#include <Columns/ColumnsNumber.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/StorageID.h>
-#include <Columns/ColumnsNumber.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <DataTypes/IDataType.h>
-
-#include <memory>
-#include <mutex>
 
 
 namespace DB
@@ -19,7 +19,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-struct IDictionary;
+class IDictionary;
 using DictionaryPtr = std::unique_ptr<IDictionary>;
 
 /** DictionaryKeyType provides IDictionary client information about
@@ -47,8 +47,9 @@ enum class DictionarySpecialKeyType
 /**
  * Base class for Dictionaries implementation.
  */
-struct IDictionary : public IExternalLoadable
+class IDictionary : public IExternalLoadable
 {
+public:
     explicit IDictionary(const StorageID & dictionary_id_)
     : dictionary_id(dictionary_id_)
     , full_name(dictionary_id.getInternalDictionaryName())
@@ -99,7 +100,7 @@ struct IDictionary : public IExternalLoadable
 
     virtual double getLoadFactor() const = 0;
 
-    virtual const IDictionarySource * getSource() const = 0;
+    virtual DictionarySourcePtr getSource() const = 0;
 
     virtual const DictionaryStructure & getStructure() const = 0;
 
@@ -110,7 +111,7 @@ struct IDictionary : public IExternalLoadable
       */
     virtual DictionaryKeyType getKeyType() const = 0;
 
-    virtual DictionarySpecialKeyType getSpecialKeyType() const { return DictionarySpecialKeyType::None;}
+    virtual DictionarySpecialKeyType getSpecialKeyType() const { return DictionarySpecialKeyType::None; }
 
     /** Subclass must validate key columns and keys types
       * and return column representation of dictionary attribute.
@@ -194,13 +195,13 @@ struct IDictionary : public IExternalLoadable
                         getDictionaryID().getNameForLogs());
     }
 
-    virtual Pipe read(const Names & column_names, size_t max_block_size) const = 0;
+    virtual Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const = 0;
 
     bool supportUpdates() const override { return true; }
 
     bool isModified() const override
     {
-        const auto * source = getSource();
+        const auto source = getSource();
         return source && source->isModified();
     }
 
@@ -216,12 +217,25 @@ struct IDictionary : public IExternalLoadable
         return std::static_pointer_cast<const IDictionary>(IExternalLoadable::shared_from_this());
     }
 
+    void setDictionaryComment(String new_comment)
+    {
+        std::lock_guard lock{name_mutex};
+        dictionary_comment = std::move(new_comment);
+    }
+
+    String getDictionaryComment() const
+    {
+        std::lock_guard lock{name_mutex};
+        return dictionary_comment;
+    }
+
 private:
     mutable std::mutex name_mutex;
     mutable StorageID dictionary_id;
 
 protected:
     const String full_name;
+    String dictionary_comment;
 };
 
 }

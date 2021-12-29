@@ -41,6 +41,7 @@ public:
         RESET_SETTING,
         MODIFY_QUERY,
         REMOVE_TTL,
+        REMOVE_SAMPLE_BY,
 
         ADD_INDEX,
         DROP_INDEX,
@@ -229,6 +230,12 @@ public:
     bool isSettingsAlter() const;
 
     bool isFreezeAlter() const;
+
+    bool isAttachAlter() const;
+
+    bool isFetchAlter() const;
+
+    bool isDropPartitionAlter() const;
 
     String getID(char) const override;
 

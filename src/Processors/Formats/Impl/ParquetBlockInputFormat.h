@@ -1,7 +1,5 @@
 #pragma once
-#if !defined(ARCADIA_BUILD)
-#    include "config_formats.h"
-#endif
+#include "config_formats.h"
 #if USE_PARQUET
 
 #include <Processors/Formats/IInputFormat.h>
@@ -25,13 +23,16 @@ public:
 
     String getName() const override { return "ParquetBlockInputFormat"; }
 
-protected:
+private:
     Chunk generate() override;
 
-private:
     void prepareReader();
 
-private:
+    void onCancel() override
+    {
+        is_stopped = 1;
+    }
+
     std::unique_ptr<parquet::arrow::FileReader> file_reader;
     int row_group_total = 0;
     // indices of columns to read from Parquet file
@@ -39,6 +40,8 @@ private:
     std::unique_ptr<ArrowColumnToCHColumn> arrow_column_to_ch_column;
     int row_group_current = 0;
     const FormatSettings format_settings;
+
+    std::atomic<int> is_stopped{0};
 };
 
 }

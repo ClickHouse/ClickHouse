@@ -1,6 +1,3 @@
--- Tags: no-replicated-database
--- Tag no-replicated-database: Unsupported type of ALTER query
-
 DROP TABLE IF EXISTS test.partitions;
 CREATE TABLE test.partitions (EventDate Date, CounterID UInt32) ENGINE = MergeTree(EventDate, CounterID, 8192);
 INSERT INTO test.partitions SELECT EventDate + UserID % 365 AS EventDate, CounterID FROM test.hits WHERE CounterID = 1704509;

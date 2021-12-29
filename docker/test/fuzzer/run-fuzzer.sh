@@ -1,5 +1,5 @@
 #!/bin/bash
-# shellcheck disable=SC2086,SC2001
+# shellcheck disable=SC2086,SC2001,SC2046,SC2030,SC2031
 
 set -eux
 set -o pipefail
@@ -13,24 +13,60 @@ script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 echo "$script_dir"
 repo_dir=ch
 BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-13_debug_none_bundled_unsplitted_disable_False_binary"}
+BINARY_URL_TO_DOWNLOAD=${BINARY_URL_TO_DOWNLOAD:="https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/$BINARY_TO_DOWNLOAD/clickhouse"}
 
 function clone
 {
-    # The download() function is dependent on CI binaries anyway, so we can take
-    # the repo from the CI as well. For local runs, start directly from the "fuzz"
-    # stage.
-    rm -rf ch ||:
-    mkdir ch ||:
-    wget -nv -nd -c "https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/repo/clickhouse_no_subs.tar.gz"
-    tar -C ch --strip-components=1 -xf clickhouse_no_subs.tar.gz
+    # For local runs, start directly from the "fuzz" stage.
+    rm -rf "$repo_dir" ||:
+    mkdir "$repo_dir" ||:
+
+    git clone --depth 1 https://github.com/ClickHouse/ClickHouse.git -- "$repo_dir" 2>&1 | ts '%Y-%m-%d %H:%M:%S'
+    (
+        cd "$repo_dir"
+        if [ "$PR_TO_TEST" != "0" ]; then
+            if git fetch --depth 1 origin "+refs/pull/$PR_TO_TEST/merge"; then
+                git checkout FETCH_HEAD
+                echo "Checked out pull/$PR_TO_TEST/merge ($(git rev-parse FETCH_HEAD))"
+            else
+                git fetch --depth 1 origin "+refs/pull/$PR_TO_TEST/head"
+                git checkout "$SHA_TO_TEST"
+                echo "Checked out nominal SHA $SHA_TO_TEST for PR $PR_TO_TEST"
+            fi
+            git diff --name-only master HEAD | tee ci-changed-files.txt
+        else
+            if [ -v SHA_TO_TEST ]; then
+                git fetch --depth 2 origin "$SHA_TO_TEST"
+                git checkout "$SHA_TO_TEST"
+                echo "Checked out nominal SHA $SHA_TO_TEST for master"
+            else
+                git fetch --depth 2 origin
+                echo "Using default repository head $(git rev-parse HEAD)"
+            fi
+            git diff --name-only HEAD~1 HEAD | tee ci-changed-files.txt
+        fi
+        cd -
+    )
+
     ls -lath ||:
+
+}
+
+function wget_with_retry
+{
+    for _ in 1 2 3 4; do
+        if wget -nv -nd -c "$1";then
+            return 0
+        else
+            sleep 0.5
+        fi
+    done
+    return 1
 }
 
 function download
 {
-    wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/$BINARY_TO_DOWNLOAD/clickhouse" &
-    wget -nv -nd -c "https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/repo/ci-changed-files.txt" &
-    wait
+    wget_with_retry "$BINARY_URL_TO_DOWNLOAD"
 
     chmod +x clickhouse
     ln -s ./clickhouse ./clickhouse-server
@@ -53,7 +89,7 @@ function configure
 
 function watchdog
 {
-    sleep 3600
+    sleep 1800
 
     echo "Fuzzing run has timed out"
     for _ in {1..10}
@@ -113,7 +149,7 @@ function fuzz
 
     # Obtain the list of newly added tests. They will be fuzzed in more extreme way than other tests.
     # Don't overwrite the NEW_TESTS_OPT so that it can be set from the environment.
-    NEW_TESTS="$(sed -n 's!\(^tests/queries/0_stateless/.*\.sql\(\.j2\)\?\)$!ch/\1!p' ci-changed-files.txt | sort -R)"
+    NEW_TESTS="$(sed -n 's!\(^tests/queries/0_stateless/.*\.sql\(\.j2\)\?\)$!ch/\1!p' $repo_dir/ci-changed-files.txt | sort -R)"
     # ci-changed-files.txt contains also files that has been deleted/renamed, filter them out.
     NEW_TESTS="$(filter_exists_and_template $NEW_TESTS)"
     if [[ -n "$NEW_TESTS" ]]
@@ -131,21 +167,47 @@ function fuzz
 
     kill -0 $server_pid
 
+    # Set follow-fork-mode to parent, because we attach to clickhouse-server, not to watchdog
+    # and clickhouse-server can do fork-exec, for example, to run some bridge.
+    # Do not set nostop noprint for all signals, because some it may cause gdb to hang,
+    # explicitly ignore non-fatal signals that are used by server.
+    # Number of SIGRTMIN can be determined only in runtime.
+    RTMIN=$(kill -l SIGRTMIN)
     echo "
-set follow-fork-mode child
-handle all noprint
-handle SIGSEGV stop print
-handle SIGBUS stop print
+set follow-fork-mode parent
+handle SIGHUP nostop noprint pass
+handle SIGINT nostop noprint pass
+handle SIGQUIT nostop noprint pass
+handle SIGPIPE nostop noprint pass
+handle SIGTERM nostop noprint pass
+handle SIGUSR1 nostop noprint pass
+handle SIGUSR2 nostop noprint pass
+handle SIG$RTMIN nostop noprint pass
+info signals
 continue
-thread apply all backtrace
-continue
+backtrace full
+info locals
+info registers
+disassemble /s
+up
+info locals
+disassemble /s
+up
+info locals
+disassemble /s
+p \"done\"
+detach
+quit
 " > script.gdb
 
-    gdb -batch -command script.gdb -p $server_pid &
+    gdb -batch -command script.gdb -p $server_pid  &
+    sleep 5
+    # gdb will send SIGSTOP, spend some time loading debug info and then send SIGCONT, wait for it (up to send_timeout, 300s)
+    time clickhouse-client --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
 
     # Check connectivity after we attach gdb, because it might cause the server
-    # to freeze and the fuzzer will fail.
-    for _ in {1..60}
+    # to freeze and the fuzzer will fail. In debug build it can take a lot of time.
+    for _ in {1..180}
     do
         sleep 1
         if clickhouse-client --query "select 1"
@@ -165,6 +227,7 @@ continue
         --receive_data_timeout_ms=10000 \
         --stacktrace \
         --query-fuzzer-runs=1000 \
+        --testmode \
         --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) \
         $NEW_TESTS_OPT \
         > >(tail -n 100000 > fuzzer.log) \
@@ -232,6 +295,12 @@ continue
         task_exit_code=0
         echo "success" > status.txt
         echo "OK" > description.txt
+    elif [ "$fuzzer_exit_code" == "137" ]
+    then
+        # Killed.
+        task_exit_code=$fuzzer_exit_code
+        echo "failure" > status.txt
+        echo "Killed" > description.txt
     else
         # The server was alive, but the fuzzer returned some error. This might
         # be some client-side error detected by fuzzing, or a problem in the

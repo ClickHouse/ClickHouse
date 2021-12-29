@@ -1,7 +1,5 @@
 #pragma once
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
+#include "config_functions.h"
 
 #if USE_BASE64
 #    include <Columns/ColumnConst.h>

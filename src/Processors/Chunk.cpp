@@ -1,6 +1,7 @@
 #include <Processors/Chunk.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <Columns/ColumnSparse.h>
 
 namespace DB
 {
@@ -113,6 +114,22 @@ void Chunk::addColumn(ColumnPtr column)
     columns.emplace_back(std::move(column));
 }
 
+void Chunk::addColumn(size_t position, ColumnPtr column)
+{
+    if (position >= columns.size())
+        throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND,
+                        "Position {} out of bound in Chunk::addColumn(), max position = {}",
+                        position, columns.size() - 1);
+    if (empty())
+        num_rows = column->size();
+    else if (column->size() != num_rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Invalid number of rows in Chunk column {}: expected {}, got {}",
+                        column->getName(), num_rows, column->size());
+
+    columns.emplace(columns.begin() + position, std::move(column));
+}
+
 void Chunk::erase(size_t position)
 {
     if (columns.empty())
@@ -167,6 +184,16 @@ const ChunkMissingValues::RowsBitMask & ChunkMissingValues::getDefaultsBitmask(s
     if (it != rows_mask_by_column_id.end())
         return it->second;
     return none;
+}
+
+void convertToFullIfSparse(Chunk & chunk)
+{
+    size_t num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    for (auto & column : columns)
+        column = recursiveRemoveSparse(column);
+
+    chunk.setColumns(std::move(columns), num_rows);
 }
 
 }

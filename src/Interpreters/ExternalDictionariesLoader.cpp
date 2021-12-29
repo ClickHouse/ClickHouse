@@ -6,9 +6,7 @@
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #if USE_MYSQL
 #   include <mysqlxx/PoolFactory.h>
@@ -85,6 +83,30 @@ DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary {} config not found", backQuote(dictionary_name));
 
     return ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
+}
+
+QualifiedTableName ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, ContextPtr query_context) const
+{
+    auto qualified_name = QualifiedTableName::tryParseFromString(dictionary_name);
+    if (!qualified_name)
+    {
+        QualifiedTableName qualified_dictionary_name;
+        qualified_dictionary_name.table = dictionary_name;
+        return qualified_dictionary_name;
+    }
+
+    /// If dictionary was not qualified with database name, try to resolve dictionary as xml dictionary.
+    if (qualified_name->database.empty() && !has(qualified_name->table))
+    {
+        std::string current_database_name = query_context->getCurrentDatabase();
+        std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name, current_database_name);
+
+        /// If after qualify dictionary_name with default_database_name we find it, add default_database to qualified name.
+        if (has(resolved_name))
+            qualified_name->database = std::move(current_database_name);
+    }
+
+    return *qualified_name;
 }
 
 std::string ExternalDictionariesLoader::resolveDictionaryName(const std::string & dictionary_name, const std::string & current_database_name) const

@@ -42,6 +42,10 @@ public:
 
     void renameInMemory(const StorageID & new_table_id) override;
 
+    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const override;
+
+    void alter(const AlterCommands & params, ContextPtr alter_context, AlterLockHolder &) override;
+
     Poco::Timestamp getUpdateTime() const;
     LoadablesConfigurationPtr getConfiguration() const;
 
@@ -89,6 +93,7 @@ private:
         const StorageID & table_id_,
         const String & dictionary_name_,
         const DictionaryStructure & dictionary_structure,
+        const String & comment,
         Location location_,
         ContextPtr context_);
 

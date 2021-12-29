@@ -5,15 +5,13 @@
 #include <Core/ServerUUID.h>
 #include <Common/SymbolIndex.h>
 #include <Common/DNSResolver.h>
-#include <base/DateLUT.h>
+#include <Common/DateLUT.h>
 
 #if defined(OS_LINUX)
 #    include <Poco/Environment.h>
 #endif
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
+#include <Common/config_version.h>
 
 
 namespace DB
