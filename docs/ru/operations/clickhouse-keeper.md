@@ -152,7 +152,7 @@ zk_followers    0
 zk_synced_followers     0
 ```
 
-- `srvr`: Выводит полную информацию о сервере.
+- `srvr`: Выводит информацию о сервере: его версию, роль участника кворума и т.п.
 
 ```
 ClickHouse Keeper version: v21.11.1.1-prestable-7a4a0b0edef0ad6e0aa662cd3b90c3f4acf796e7
