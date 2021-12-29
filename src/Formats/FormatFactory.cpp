@@ -383,6 +383,26 @@ void FormatFactory::registerNonTrivialPrefixAndSuffixChecker(const String & name
     target = std::move(non_trivial_prefix_and_suffix_checker);
 }
 
+void FormatFactory::registerSuffixChecker(const String & name, SuffixChecker suffix_checker)
+{
+    auto & target = dict[name].suffix_checker;
+    if (target)
+        throw Exception("FormatFactory: Suffix checker " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
+    target = std::move(suffix_checker);
+}
+
+void FormatFactory::markFormatWithSuffix(const String & name)
+{
+    registerSuffixChecker(name, [](const FormatSettings &){ return true; });
+}
+
+bool FormatFactory::checkIfFormatHasSuffix(const String & name, ContextPtr context, const std::optional<FormatSettings> & format_settings_)
+{
+    auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
+    auto & suffix_checker = dict[name].suffix_checker;
+    return suffix_checker && suffix_checker(format_settings);
+}
+
 void FormatFactory::registerOutputFormat(const String & name, OutputCreator output_creator)
 {
     auto & target = dict[name].output_creator;

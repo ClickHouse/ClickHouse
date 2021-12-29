@@ -14,9 +14,8 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 
-#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
-#include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -27,7 +26,6 @@
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <Storages/PartitionedSink.h>
-
 
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatFactory.h>
@@ -52,6 +50,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ACCESS_DENIED;
+    extern const int DATABASE_ACCESS_DENIED;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 namespace
@@ -130,20 +129,23 @@ StorageHDFS::StorageHDFS(
     ASTPtr partition_by_)
     : IStorage(table_id_)
     , WithContext(context_)
-    , uri(uri_)
+    , uris({uri_})
     , format_name(format_name_)
     , compression_method(compression_method_)
     , distributed_processing(distributed_processing_)
     , partition_by(partition_by_)
 {
-    context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
-    checkHDFSURL(uri);
+    context_->getRemoteHostFilter().checkURL(Poco::URI(uri_));
+    checkHDFSURL(uri_);
+
+    String path = uri_.substr(uri_.find('/', uri_.find("//") + 2));
+    is_path_with_globs = path.find_first_of("*?{") != std::string::npos;
 
     StorageInMemoryMetadata storage_metadata;
 
     if (columns_.empty())
     {
-        auto columns = getTableStructureFromData(format_name, uri, compression_method, context_);
+        auto columns = getTableStructureFromData(format_name, uri_, compression_method, context_);
         storage_metadata.setColumns(columns);
     }
     else
@@ -208,6 +210,25 @@ private:
     Strings::iterator uris_iter;
 };
 
+class HDFSSource::URISIterator::Impl
+{
+public:
+    Impl(const std::vector<const String> & uris_) : uris(uris_), index(0)
+    {
+    }
+
+    String next()
+    {
+        if (index == uris.size())
+            return "";
+        return uris[index++];
+    }
+
+private:
+    const std::vector<const String> & uris;
+    size_t index;
+};
+
 Block HDFSSource::getHeader(const StorageMetadataPtr & metadata_snapshot, bool need_path_column, bool need_file_column)
 {
     auto header = metadata_snapshot->getSampleBlock();
@@ -241,6 +262,15 @@ String HDFSSource::DisclosedGlobIterator::next()
     return pimpl->next();
 }
 
+HDFSSource::URISIterator::URISIterator(const std::vector<const String> & uris_)
+    : pimpl(std::make_shared<HDFSSource::URISIterator::Impl>(uris_))
+{
+}
+
+String HDFSSource::URISIterator::next()
+{
+    return pimpl->next();
+}
 
 HDFSSource::HDFSSource(
     StorageHDFSPtr storage_,
@@ -275,9 +305,8 @@ bool HDFSSource::initialize()
     current_path = (*file_iterator)();
     if (current_path.empty())
         return false;
-    const size_t begin_of_path = current_path.find('/', current_path.find("//") + 2);
-    const String path_from_uri = current_path.substr(begin_of_path);
-    const String uri_without_path = current_path.substr(0, begin_of_path);
+
+    const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(current_path);
 
     auto compression = chooseCompressionMethod(path_from_uri, storage->compression_method);
     read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(uri_without_path, path_from_uri, getContext()->getGlobalContext()->getConfigRef()), compression);
@@ -460,13 +489,21 @@ Pipe StorageHDFS::read(
                 return callback();
         });
     }
-    else
+    else if (is_path_with_globs)
     {
         /// Iterate through disclosed globs and make a source for each file
-        auto glob_iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(context_, uri);
+        auto glob_iterator = std::make_shared<HDFSSource::DisclosedGlobIterator>(context_, uris[0]);
         iterator_wrapper = std::make_shared<HDFSSource::IteratorWrapper>([glob_iterator]()
         {
             return glob_iterator->next();
+        });
+    }
+    else
+    {
+        auto uris_iterator = std::make_shared<HDFSSource::URISIterator>(uris);
+        iterator_wrapper = std::make_shared<HDFSSource::IteratorWrapper>([uris_iterator]()
+        {
+            return uris_iterator->next();
         });
     }
 
@@ -496,9 +533,44 @@ Pipe StorageHDFS::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
+SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_)
 {
-    bool has_wildcards = uri.find(PartitionedSink::PARTITION_ID_WILDCARD) != String::npos;
+    if (is_path_with_globs)
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "URI '{}' contains globs, so the table is in readonly mode", uris.back());
+
+    String current_uri = uris.back();
+
+    const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(current_uri);
+
+    HDFSBuilderWrapper builder = createHDFSBuilder(uri_without_path + "/", context_->getGlobalContext()->getConfigRef());
+    HDFSFSPtr fs = createHDFSFS(builder.get());
+
+    bool truncate_on_insert = context_->getSettingsRef().hdfs_truncate_on_insert;
+    if (!truncate_on_insert && !hdfsExists(fs.get(), path_from_uri.c_str()))
+    {
+        if (context_->getSettingsRef().hdfs_create_new_file_on_insert)
+        {
+            auto pos = uris[0].find_first_of('.', uris[0].find_last_of('/'));
+            size_t index = uris.size();
+            String new_uri;
+            do
+            {
+                new_uri = uris[0].substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : uris[0].substr(pos));
+                ++index;
+            }
+            while (!hdfsExists(fs.get(), new_uri.c_str()));
+            uris.push_back(new_uri);
+            current_uri = new_uri;
+        }
+        else
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "File with path {} already exists. If you want to overwrite it, enable setting hdfs_truncate_on_insert, "
+                "if you want to create new file on each insert, enable setting hdfs_create_new_file_on_insert",
+                path_from_uri);
+    }
+
+    bool has_wildcards = current_uri.find(PartitionedSink::PARTITION_ID_WILDCARD) != String::npos;
     const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
     auto partition_by_ast = insert_query ? (insert_query->partition_by ? insert_query->partition_by : partition_by) : nullptr;
     bool is_partitioned_implementation = partition_by_ast && has_wildcards;
@@ -507,34 +579,37 @@ SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataP
     {
         return std::make_shared<PartitionedHDFSSink>(
             partition_by_ast,
-            uri,
+            current_uri,
             format_name,
             metadata_snapshot->getSampleBlock(),
-            getContext(),
-            chooseCompressionMethod(uri, compression_method));
+            context_,
+            chooseCompressionMethod(current_uri, compression_method));
     }
     else
     {
-        return std::make_shared<HDFSSink>(uri,
+        return std::make_shared<HDFSSink>(current_uri,
             format_name,
             metadata_snapshot->getSampleBlock(),
-            getContext(),
-            chooseCompressionMethod(uri, compression_method));
+            context_,
+            chooseCompressionMethod(current_uri, compression_method));
     }
 }
 
 void StorageHDFS::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
 {
-    const size_t begin_of_path = uri.find('/', uri.find("//") + 2);
-    const String path = uri.substr(begin_of_path);
-    const String url = uri.substr(0, begin_of_path);
+    const size_t begin_of_path = uris[0].find('/', uris[0].find("//") + 2);
+    const String url = uris[0].substr(0, begin_of_path);
 
     HDFSBuilderWrapper builder = createHDFSBuilder(url + "/", local_context->getGlobalContext()->getConfigRef());
     HDFSFSPtr fs = createHDFSFS(builder.get());
 
-    int ret = hdfsDelete(fs.get(), path.data(), 0);
-    if (ret)
-        throw Exception(ErrorCodes::ACCESS_DENIED, "Unable to truncate hdfs table: {}", std::string(hdfsGetLastError()));
+    for (const auto & uri : uris)
+    {
+        const String path = uri.substr(begin_of_path);
+        int ret = hdfsDelete(fs.get(), path.data(), 0);
+        if (ret)
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Unable to truncate hdfs table: {}", std::string(hdfsGetLastError()));
+    }
 }
 
 
