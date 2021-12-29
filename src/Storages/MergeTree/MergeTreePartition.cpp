@@ -370,10 +370,10 @@ void MergeTreePartition::load(const MergeTreeData & storage, const DiskPtr & dis
 
     std::unique_ptr<SeekableReadBuffer> file;
 #if USE_ROCKSDB
+    String _;
     if (metadata_cache)
     {
-        String v;
-        file = metadata_cache->readOrSet(disk, "partition.dat", v);
+        file = metadata_cache->readOrSet(disk, "partition.dat", _);
     }
     else
     {
