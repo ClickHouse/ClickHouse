@@ -253,7 +253,7 @@ public:
     /// Get best replica having this partition on a same type remote disk
     String getSharedDataReplica(const IMergeTreeDataPart & part, DiskType disk_type) const;
 
-    inline String getReplicaName() const override { return replica_name; }
+    inline String getReplicaName() const { return replica_name; }
 
     /// Restores table metadata if ZooKeeper lost it.
     /// Used only on restarted readonly replicas (not checked). All active (Committed) parts are moved to detached/

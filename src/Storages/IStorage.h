@@ -138,9 +138,6 @@ public:
     /// Returns true if the storage replicates SELECT, INSERT and ALTER commands among replicas.
     virtual bool supportsReplication() const { return false; }
 
-    /// Returns replica name for replicated storage
-    virtual String getReplicaName() const { return ""; }
-
     /// Returns true if the storage supports parallel insert.
     virtual bool supportsParallelInsert() const { return false; }
 
