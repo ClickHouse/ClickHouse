@@ -136,6 +136,9 @@ TEST(TestSelect, TestAgg)
         local_engine::SparkColumnToCHColumn converter;
         auto block = converter.convertCHColumnToSparkRow(*spark_row_info, local_executor.getHeader());
         ASSERT_EQ(spark_row_info->getNumRows(), block->rows());
+        auto reader = SparkRowReader(spark_row_info->getNumCols());
+        reader.pointTo(reinterpret_cast<int64_t>(spark_row_info->getBufferAddress() + spark_row_info->getOffsets()[1]), spark_row_info->getLengths()[0]);
+        std::cout << "result: " << reader.getDouble(0) << std::endl;
     }
 }
 
