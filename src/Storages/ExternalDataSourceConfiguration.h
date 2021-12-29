@@ -88,7 +88,7 @@ struct URLBasedDataSourceConfiguration
     String url;
     String format;
     String compression_method = "auto";
-    String structure;
+    String structure = "auto";
 
     std::vector<std::pair<String, Field>> headers;
     String http_method;

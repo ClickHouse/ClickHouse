@@ -2,6 +2,7 @@
 
 #include <TableFunctions/ITableFunctionFileLike.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
 
 
 namespace DB
@@ -9,7 +10,7 @@ namespace DB
 
 class Context;
 
-/* url(source, format, structure) - creates a temporary storage from url
+/* url(source, format[, structure, compression]) - creates a temporary storage from url
  */
 class TableFunctionURL : public ITableFunctionFileLike
 {
@@ -20,6 +21,8 @@ public:
         return name;
     }
 
+    ColumnsDescription getActualTableStructure(ContextPtr context) const override;
+
 protected:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
@@ -28,6 +31,8 @@ private:
         const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
         const std::string & table_name, const String & compression_method_) const override;
     const char * getStorageTypeName() const override { return "URL"; }
+
+    ReadWriteBufferFromHTTP::HTTPHeaderEntries getHeaders() const;
 
     URLBasedDataSourceConfiguration configuration;
 };
