@@ -29,6 +29,11 @@ public:
 protected:
     Chunk generate() override;
 
+    void onCancel() override
+    {
+        is_stopped = 1;
+    }
+
 private:
 
     // TODO: check that this class implements every part of its parent
@@ -45,6 +50,8 @@ private:
     const FormatSettings format_settings;
 
     void prepareReader();
+
+    std::atomic<int> is_stopped{0};
 };
 
 }

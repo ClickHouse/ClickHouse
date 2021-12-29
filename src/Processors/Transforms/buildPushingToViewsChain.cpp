@@ -3,6 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/ProcessList.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -14,6 +15,7 @@
 #include <Storages/StorageValues.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
@@ -22,6 +24,12 @@
 
 #include <atomic>
 #include <chrono>
+
+namespace ProfileEvents
+{
+    extern const Event SelectedBytes;
+    extern const Event SelectedRows;
+}
 
 namespace DB
 {
@@ -83,11 +91,26 @@ public:
     String getName() const override { return "ExecutingInnerQueryFromView"; }
 
 protected:
-    void transform(Chunk & chunk) override;
+    void onConsume(Chunk chunk) override;
+    GenerateResult onGenerate() override;
 
 private:
     ViewsDataPtr views_data;
     ViewRuntimeData & view;
+
+    struct State
+    {
+        QueryPipeline pipeline;
+        PullingPipelineExecutor executor;
+
+        explicit State(QueryPipeline pipeline_)
+            : pipeline(std::move(pipeline_))
+            , executor(pipeline)
+        {
+        }
+    };
+
+    std::optional<State> state;
 };
 
 /// Insert into LiveView.
@@ -389,7 +412,7 @@ Chain buildPushingToViewsChain(
     return result_chain;
 }
 
-static void process(Block & block, ViewRuntimeData & view, const ViewsData & views_data)
+static QueryPipeline process(Block block, ViewRuntimeData & view, const ViewsData & views_data)
 {
     const auto & context = views_data.context;
 
@@ -400,7 +423,7 @@ static void process(Block & block, ViewRuntimeData & view, const ViewsData & vie
     local_context->addViewSource(StorageValues::create(
         views_data.source_storage_id,
         views_data.source_metadata_snapshot->getColumns(),
-        block,
+        std::move(block),
         views_data.source_storage->getVirtuals()));
 
     /// We need keep InterpreterSelectQuery, until the processing will be finished, since:
@@ -436,23 +459,7 @@ static void process(Block & block, ViewRuntimeData & view, const ViewsData & vie
         pipeline.getHeader(),
         std::make_shared<ExpressionActions>(std::move(converting))));
 
-    pipeline.setProgressCallback([context](const Progress & progress)
-    {
-        CurrentThread::updateProgressIn(progress);
-        if (auto callback = context->getProgressCallback())
-            callback(progress);
-    });
-
-    auto query_pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline));
-    PullingPipelineExecutor executor(query_pipeline);
-    if (!executor.pull(block))
-    {
-        block.clear();
-        return;
-    }
-
-    if (executor.pull(block))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Single chunk is expected from view inner query {}", view.query);
+    return QueryPipelineBuilder::getPipeline(std::move(pipeline));
 }
 
 static void logQueryViews(std::list<ViewRuntimeData> & views, ContextPtr context)
@@ -550,13 +557,32 @@ ExecutingInnerQueryFromViewTransform::ExecutingInnerQueryFromViewTransform(
 {
 }
 
-void ExecutingInnerQueryFromViewTransform::transform(Chunk & chunk)
+void ExecutingInnerQueryFromViewTransform::onConsume(Chunk chunk)
 {
     auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
-    process(block, view, *views_data);
-    chunk.setColumns(block.getColumns(), block.rows());
+    state.emplace(process(block, view, *views_data));
 }
 
+
+ExecutingInnerQueryFromViewTransform::GenerateResult ExecutingInnerQueryFromViewTransform::onGenerate()
+{
+    GenerateResult res;
+    if (!state.has_value())
+        return res;
+
+    res.is_done = false;
+    while (!res.is_done)
+    {
+        res.is_done = !state->executor.pull(res.chunk);
+        if (res.chunk)
+            break;
+    }
+
+    if (res.is_done)
+        state.reset();
+
+    return res;
+}
 
 PushingToLiveViewSink::PushingToLiveViewSink(const Block & header, StorageLiveView & live_view_, StoragePtr storage_holder_, ContextPtr context_)
     : SinkToStorage(header)
@@ -570,7 +596,11 @@ void PushingToLiveViewSink::consume(Chunk chunk)
 {
     Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
     StorageLiveView::writeIntoLiveView(live_view, getHeader().cloneWithColumns(chunk.detachColumns()), context);
-    CurrentThread::updateProgressIn(local_progress);
+    auto * process = context->getProcessListElement();
+    if (process)
+        process->updateProgressIn(local_progress);
+    ProfileEvents::increment(ProfileEvents::SelectedRows, local_progress.read_rows);
+    ProfileEvents::increment(ProfileEvents::SelectedBytes, local_progress.read_bytes);
 }
 
 
@@ -589,7 +619,11 @@ void PushingToWindowViewSink::consume(Chunk chunk)
     Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
     StorageWindowView::writeIntoWindowView(
         window_view, getHeader().cloneWithColumns(chunk.detachColumns()), context);
-    CurrentThread::updateProgressIn(local_progress);
+    auto * process = context->getProcessListElement();
+    if (process)
+        process->updateProgressIn(local_progress);
+    ProfileEvents::increment(ProfileEvents::SelectedRows, local_progress.read_rows);
+    ProfileEvents::increment(ProfileEvents::SelectedBytes, local_progress.read_bytes);
 }
 
 

@@ -29,10 +29,13 @@ namespace
                 return nullptr;
 
             DictionaryStructure dictionary_structure = ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
+            auto comment = load_result.config->config->getString("dictionary.comment", "");
+
             return StorageDictionary::create(
                 StorageID(database_name, load_result.name),
                 load_result.name,
                 dictionary_structure,
+                comment,
                 StorageDictionary::Location::DictionaryDatabase,
                 context);
         }

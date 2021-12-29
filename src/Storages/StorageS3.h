@@ -68,6 +68,8 @@ public:
 
     Chunk generate() override;
 
+    void onCancel() override;
+
 private:
     String name;
     String bucket;

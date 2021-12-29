@@ -50,6 +50,10 @@ const char * auto_config_build[]
     "USE_KRB5", "@USE_KRB5@",
     "USE_FILELOG", "@USE_FILELOG@",
     "USE_BZIP2", "@USE_BZIP2@",
+    "GIT_HASH", "@GIT_HASH@",
+    "GIT_BRANCH", "@GIT_BRANCH@",
+    "GIT_DATE", "@GIT_DATE@",
+    "GIT_COMMIT_SUBJECT", "@GIT_COMMIT_SUBJECT@",
 
     nullptr, nullptr
 };

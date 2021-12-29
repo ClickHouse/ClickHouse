@@ -321,7 +321,7 @@ ColumnPtr IExecutableFunction::execute(const ColumnsWithTypeAndName & arguments,
                 return res->cloneResized(input_rows_count);
 
             /// If default of sparse column is changed after execution of function, convert to full column.
-            if (!res->isDefaultAt(0))
+            if (!result_type->supportsSparseSerialization() || !res->isDefaultAt(0))
             {
                 const auto & offsets_data = assert_cast<const ColumnVector<UInt64> &>(*sparse_offsets).getData();
                 return res->createWithOffsets(offsets_data, (*res)[0], input_rows_count, /*shift=*/ 1);
