@@ -83,6 +83,38 @@ TEST(LRUResourceCache, evict_on_weight)
     ASSERT_TRUE(val != nullptr);
 }
 
+TEST(LRUResourceCache, evict_on_weight_v2)
+{
+    using MyCache = DB::LRUResourceCache<int, int, MyWeight>;
+    auto mcache = MyCache(5, 10);
+    int x = 2;
+    auto load_int = [&] { return std::make_shared<int>(x); };
+    auto val = mcache.acquire(1, load_int);
+    mcache.release(1);
+
+    val = mcache.acquire(2, load_int);
+    mcache.release(2);
+
+    val = mcache.acquire(1);
+    mcache.release(1);
+
+    x = 3;
+    val = mcache.acquire(3, load_int);
+    ASSERT_TRUE(val != nullptr);
+
+    auto w = mcache.weight();
+    ASSERT_EQ(w, 5);
+    auto n = mcache.size();
+    ASSERT_EQ(n, 2);
+
+    val = mcache.acquire(1);
+    ASSERT_TRUE(val != nullptr);
+    val = mcache.acquire(2);
+    ASSERT_TRUE(val == nullptr);
+    val = mcache.acquire(3);
+    ASSERT_TRUE(val != nullptr);
+}
+
 TEST(LRUResourceCache, evict_on_size)
 {
     using MyCache = DB::LRUResourceCache<int, int>;
