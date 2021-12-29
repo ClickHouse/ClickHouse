@@ -17,6 +17,10 @@ public:
 
     std::string getFileName() const override;
 
+    void preFinalize() override { impl->preFinalize(); }
+
+    const WriteBuffer & getImpl() const { return *impl; }
+
 protected:
     void finalizeImpl() override;
 

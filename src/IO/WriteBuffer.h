@@ -109,6 +109,8 @@ public:
         next();
     }
 
+    virtual void preFinalize() {}
+
     /// Write the last data.
     void finalize()
     {

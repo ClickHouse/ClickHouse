@@ -5,6 +5,7 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnSparse.h>
+#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -547,6 +548,12 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
                 writeFinalMark(*it, offset_columns, serialize_settings.path);
         }
     }
+
+    for (auto & stream : column_streams)
+    {
+        stream.second->preFinalize();
+    }
+
     for (auto & stream : column_streams)
     {
         stream.second->finalize();

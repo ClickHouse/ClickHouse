@@ -262,6 +262,8 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
     LOG_TRACE(log, "{} to file by path: {}. S3 path: {}",
               mode == WriteMode::Rewrite ? "Write" : "Append", backQuote(metadata_disk->getPath() + path), remote_fs_root_path + s3_path);
 
+    ThreadPool * writer = &getThreadPoolWriter();
+
     auto s3_buffer = std::make_unique<WriteBufferFromS3>(
         settings->client,
         bucket,
@@ -269,7 +271,8 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
         settings->s3_min_upload_part_size,
         settings->s3_max_single_part_upload_size,
         std::move(object_metadata),
-        buf_size);
+        buf_size,
+        writer);
 
     return std::make_unique<WriteIndirectBufferFromRemoteFS<WriteBufferFromS3>>(std::move(s3_buffer), std::move(metadata), s3_path);
 }
