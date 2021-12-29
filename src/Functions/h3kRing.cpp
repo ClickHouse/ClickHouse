@@ -101,6 +101,7 @@ public:
                 }
             }
             dst_offsets[row] = current_offset;
+            hindex_vec.clear();
         }
 
         return dst;
