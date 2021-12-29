@@ -49,12 +49,16 @@ def test_merge_doesnt_work_without_zookeeper(start_cluster):
 
     node1.query("INSERT INTO test_table VALUES ('2018-10-01', 1), ('2018-10-02', 2), ('2018-10-03', 3)")
     node1.query("INSERT INTO test_table VALUES ('2018-10-01', 4), ('2018-10-02', 5), ('2018-10-03', 6)")
-    assert node1.query("SELECT count(*) from system.parts where table = 'test_table'") == "2\n"
+    assert node1.query("SELECT count(*) from system.parts where table = 'test_table' and active") == "2\n"
 
     with PartitionManager() as pm:
         node1.query("OPTIMIZE TABLE test_table FINAL")
         pm.drop_instance_zk_connections(node1)
-        time.sleep(10)  # > old_parts_lifetime
-        assert node1.query("SELECT count(*) from system.parts where table = 'test_table'") == "3\n"
+        # unfortunately we can be too fast and delete node before partition with ZK
+        if node1.query("SELECT count(*) from system.parts where table = 'test_table'") == "1\n":
+            print("We were too fast and deleted parts before partition with ZK")
+        else:
+            time.sleep(10)  # > old_parts_lifetime
+            assert node1.query("SELECT count(*) from system.parts where table = 'test_table'") == "3\n"
 
     assert_eq_with_retry(node1, "SELECT count(*) from system.parts where table = 'test_table' and active = 1", "1")

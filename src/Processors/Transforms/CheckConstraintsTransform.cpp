@@ -35,7 +35,7 @@ CheckConstraintsTransform::CheckConstraintsTransform(
 }
 
 
-void CheckConstraintsTransform::transform(Chunk & chunk)
+void CheckConstraintsTransform::onConsume(Chunk chunk)
 {
     if (chunk.getNumRows() > 0)
     {
@@ -123,6 +123,7 @@ void CheckConstraintsTransform::transform(Chunk & chunk)
     }
 
     rows_written += chunk.getNumRows();
+    cur_chunk = std::move(chunk);
 }
 
 }

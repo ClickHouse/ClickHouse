@@ -86,6 +86,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Interpreters/SynonymsExtensions.h>
 #include <Interpreters/Lemmatizers.h>
+#include <Interpreters/ClusterDiscovery.h>
 #include <filesystem>
 
 
@@ -254,6 +255,7 @@ struct ContextSharedPart
     std::shared_ptr<Clusters> clusters;
     ConfigurationPtr clusters_config;                        /// Stores updated configs
     mutable std::mutex clusters_mutex;                       /// Guards clusters and clusters_config
+    std::unique_ptr<ClusterDiscovery> cluster_discovery;
 
     std::shared_ptr<AsynchronousInsertQueue> async_insert_queue;
     std::map<String, UInt16> server_ports;
@@ -2195,11 +2197,22 @@ std::shared_ptr<Clusters> Context::getClusters() const
     return shared->clusters;
 }
 
+void Context::startClusterDiscovery()
+{
+    if (!shared->cluster_discovery)
+        return;
+    shared->cluster_discovery->start();
+}
+
 
 /// On repeating calls updates existing clusters and adds new clusters, doesn't delete old clusters
-void Context::setClustersConfig(const ConfigurationPtr & config, const String & config_name)
+void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_discovery, const String & config_name)
 {
     std::lock_guard lock(shared->clusters_mutex);
+    if (config->getBool("allow_experimental_cluster_discovery", false) && enable_discovery && !shared->cluster_discovery)
+    {
+        shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, getGlobalContext());
+    }
 
     /// Do not update clusters if this part of config wasn't changed.
     if (shared->clusters && isSameConfiguration(*config, *shared->clusters_config, config_name))
@@ -2209,7 +2222,7 @@ void Context::setClustersConfig(const ConfigurationPtr & config, const String & 
     shared->clusters_config = config;
 
     if (!shared->clusters)
-        shared->clusters = std::make_unique<Clusters>(*shared->clusters_config, settings, config_name);
+        shared->clusters = std::make_shared<Clusters>(*shared->clusters_config, settings, config_name);
     else
         shared->clusters->updateClusters(*shared->clusters_config, settings, config_name, old_clusters_config);
 }

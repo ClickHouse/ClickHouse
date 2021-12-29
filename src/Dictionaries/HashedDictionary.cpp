@@ -591,7 +591,9 @@ void HashedDictionary<dictionary_key_type, sparse>::loadData()
         }
     }
     else
+    {
         updateData();
+    }
 
     if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,

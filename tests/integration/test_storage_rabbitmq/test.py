@@ -67,8 +67,8 @@ def rabbitmq_cluster():
 def rabbitmq_setup_teardown():
     print("RabbitMQ is available - running test")
     yield  # run test
-    for table_name in ['view', 'consumer', 'rabbitmq']:
-        instance.query(f'DROP TABLE IF EXISTS test.{table_name}')
+    instance.query('DROP DATABASE test NO DELAY')
+    instance.query('CREATE DATABASE test')
 
 
 # Tests
