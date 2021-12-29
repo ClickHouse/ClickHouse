@@ -247,6 +247,7 @@ public:
     }
 
     const char * getQueryKindString() const override { return "Alter"; }
+    virtual QueryKind getQueryKind() const override { return QueryKind::Alter; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

@@ -46,6 +46,7 @@ public:
     }
 
     const char * getQueryKindString() const override { return "Drop"; }
+    virtual QueryKind getQueryKind() const override { return QueryKind::Drop; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
