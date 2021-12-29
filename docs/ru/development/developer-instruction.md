@@ -68,7 +68,7 @@ ClickHouse не работает и не собирается на 32-битны
 
 Вы также можете клонировать репозиторий по протоколу https:
 
-    git clone --recursive https://github.com/ClickHouse/ClickHouse.git
+    git clone https://github.com/ClickHouse/ClickHouse.git
 
 Этот вариант не подходит для отправки изменений на сервер. Вы можете временно его использовать, а затем добавить ssh ключи и заменить адрес репозитория с помощью команды `git remote`.
 
