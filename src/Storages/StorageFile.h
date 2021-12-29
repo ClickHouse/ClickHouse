@@ -120,6 +120,8 @@ private:
     size_t total_bytes_to_read = 0;
 
     String path_for_partitioned_write;
+
+    bool is_path_with_globs = false;
 };
 
 }

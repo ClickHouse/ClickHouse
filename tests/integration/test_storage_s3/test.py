@@ -915,3 +915,45 @@ def test_empty_file(started_cluster):
     result = instance.query(f"SELECT count() FROM {table_function}")
     assert(int(result) == 0)
 
+
+def test_overwrite(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+
+    table_function = f"s3(s3_parquet, structure='a Int32, b String', format='Parquet')"
+    instance.query(f"create table test_overwrite as {table_function}")
+    instance.query(f"truncate table test_overwrite")
+    instance.query(f"insert into test_overwrite select number, randomString(100) from numbers(50) settings s3_truncate_on_insert=1")
+    instance.query_and_get_error(f"insert into test_overwrite select number, randomString(100) from numbers(100)")
+    instance.query(f"insert into test_overwrite select number, randomString(100) from numbers(200) settings s3_truncate_on_insert=1")
+
+    result = instance.query(f"select count() from test_overwrite")
+    assert(int(result) == 200)
+
+
+def test_create_new_files_on_insert(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+
+    table_function = f"s3(s3_parquet, structure='a Int32, b String', format='Parquet')"
+    instance.query(f"create table test_multiple_inserts as {table_function}")
+    instance.query(f"truncate table test_multiple_inserts")
+    instance.query(f"insert into test_multiple_inserts select number, randomString(100) from numbers(10)")
+    instance.query(f"insert into test_multiple_inserts select number, randomString(100) from numbers(20) settings s3_create_new_file_on_insert=1")
+    instance.query(f"insert into test_multiple_inserts select number, randomString(100) from numbers(30) settings s3_create_new_file_on_insert=1")
+    
+    result = instance.query(f"select count() from test_multiple_inserts")
+    assert(int(result) == 60)
+
+    instance.query(f"drop table test_multiple_inserts")
+
+    table_function = f"s3(s3_parquet_gz, structure='a Int32, b String', format='Parquet')"
+    instance.query(f"create table test_multiple_inserts as {table_function}")
+    instance.query(f"truncate table test_multiple_inserts")
+    instance.query(f"insert into test_multiple_inserts select number, randomString(100) from numbers(10)")
+    instance.query(f"insert into test_multiple_inserts select number, randomString(100) from numbers(20) settings s3_create_new_file_on_insert=1")
+    instance.query(f"insert into test_multiple_inserts select number, randomString(100) from numbers(30) settings s3_create_new_file_on_insert=1")
+    
+    result = instance.query(f"select count() from test_multiple_inserts")
+    assert(int(result) == 60)
+
