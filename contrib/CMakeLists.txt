@@ -301,6 +301,7 @@ endif()
 
 if (USE_STATS)
     add_subdirectory (stats-cmake)
+    add_subdirectory (gcem)
 endif()
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
