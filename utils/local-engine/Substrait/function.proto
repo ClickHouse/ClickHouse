@@ -1,152 +1,146 @@
 syntax = "proto3";
 
-package io.substrait;
+package substrait;
 
-import "type.proto";
-import "parameterized_types.proto";
-import "type_expressions.proto";
-import "extensions.proto";
+import "substrait/type.proto";
+import "substrait/parameterized_types.proto";
+import "substrait/type_expressions.proto";
 
 option java_multiple_files = true;
-
+option java_package = "io.substrait.proto";
+option csharp_namespace = "Substrait.Protobuf";
 
 // List of function signatures available.
 message FunctionSignature {
 
-    message FinalArgVariadic {
-        // the minimum number of arguments allowed for the list of final arguments (inclusive).
-        int64 min_args = 1;
+  message FinalArgVariadic {
+    // the minimum number of arguments allowed for the list of final arguments
+    // (inclusive).
+    int64 min_args = 1;
 
-        // the maximum number of arguments allowed for the list of final arguments (exclusive)
-        int64 max_args = 2;
+    // the maximum number of arguments allowed for the list of final arguments
+    // (exclusive)
+    int64 max_args = 2;
 
-        // the type of parameterized type consistency
-        ParameterConsistency consistency = 3;
+    // the type of parameterized type consistency
+    ParameterConsistency consistency = 3;
 
-        enum ParameterConsistency {
-            UNKNOWN = 0;
+    enum ParameterConsistency {
+      PARAMETER_CONSISTENCY_UNSPECIFIED = 0;
 
-            // All argument must be the same concrete type.
-            CONSISTENT = 1;
+      // All argument must be the same concrete type.
+      PARAMETER_CONSISTENCY_CONSISTENT = 1;
 
-            // Each argument can be any possible concrete type afforded by the bounds of any parameter defined in
-            // the arguments specification.
-            INCONSISTENT = 2;
-        }
+      // Each argument can be any possible concrete type afforded by the bounds
+      // of any parameter defined in the arguments specification.
+      PARAMETER_CONSISTENCY_INCONSISTENT = 2;
+    }
+  }
+
+  message FinalArgNormal {}
+
+  message Scalar {
+    repeated Argument arguments = 2;
+    repeated string name = 3;
+    Description description = 4;
+
+    bool deterministic = 7;
+    bool session_dependent = 8;
+
+    DerivationExpression output_type = 9;
+
+    oneof final_variable_behavior {
+      FinalArgVariadic variadic = 10;
+      FinalArgNormal normal = 11;
     }
 
-    message FinalArgNormal {}
+    repeated Implementation implementations = 12;
+  }
 
-    message Scalar {
-        Extensions.FunctionId id = 1;
-        repeated Argument arguments = 2;
-        repeated string name = 3;
-        Description description = 4;
+  message Aggregate {
+    repeated Argument arguments = 2;
+    string name = 3;
+    Description description = 4;
 
-        bool deterministic = 7;
-        bool session_dependent = 8;
+    bool deterministic = 7;
+    bool session_dependent = 8;
 
-        DerivationExpression output_type = 9;
+    DerivationExpression output_type = 9;
 
-        oneof final_variable_behavior {
-            FinalArgVariadic variadic = 10;
-            FinalArgNormal normal = 11;
-        }
-
-        repeated Implementation implementations = 12;
+    oneof final_variable_behavior {
+      FinalArgVariadic variadic = 10;
+      FinalArgNormal normal = 11;
     }
 
-    message Aggregate {
-        Extensions.FunctionId id = 1;
-        repeated Argument arguments = 2;
-        repeated string name = 3;
-        Description description = 4;
+    bool ordered = 14;
+    uint64 max_set = 12;
+    Type intermediate_type = 13;
 
-        bool deterministic = 7;
-        bool session_dependent = 8;
+    repeated Implementation implementations = 15;
+  }
 
-        DerivationExpression output_type = 9;
+  message Window {
+    repeated Argument arguments = 2;
+    repeated string name = 3;
+    Description description = 4;
 
-        oneof final_variable_behavior {
-            FinalArgVariadic variadic = 10;
-            FinalArgNormal normal = 11;
-        }
+    bool deterministic = 7;
+    bool session_dependent = 8;
 
-        bool ordered = 14;
-        uint64 max_set = 12;
-        Type intermediate_type = 13;
+    DerivationExpression intermediate_type = 9;
+    DerivationExpression output_type = 10;
+    oneof final_variable_behavior {
+      FinalArgVariadic variadic = 16;
+      FinalArgNormal normal = 17;
+    }
+    bool ordered = 11;
+    uint64 max_set = 12;
+    WindowType window_type = 14;
+    repeated Implementation implementations = 15;
 
-        repeated Implementation implementations = 15;
+    enum WindowType {
+      WINDOW_TYPE_UNSPECIFIED = 0;
+      WINDOW_TYPE_STREAMING = 1;
+      WINDOW_TYPE_PARTITION = 2;
+    }
+  }
+
+  message Description {
+    string language = 1;
+    string body = 2;
+  }
+
+  message Implementation {
+
+    Type type = 1;
+    string uri = 2;
+
+    enum Type {
+      TYPE_UNSPECIFIED = 0;
+      TYPE_WEB_ASSEMBLY = 1;
+      TYPE_TRINO_JAR = 2;
+    }
+  }
+
+  message Argument {
+    string name = 1;
+
+    oneof argument_kind {
+      ValueArgument value = 2;
+      TypeArgument type = 3;
+      EnumArgument enum = 4;
     }
 
-    message Window {
-        Extensions.FunctionId id = 1;
-        repeated Argument arguments = 2;
-        repeated string name = 3;
-        Description description = 4;
-
-        bool deterministic = 7;
-        bool session_dependent = 8;
-
-        DerivationExpression intermediate_type = 9;
-        DerivationExpression output_type = 10;
-        oneof final_variable_behavior {
-            FinalArgVariadic variadic = 16;
-            FinalArgNormal normal = 17;
-        }
-        bool ordered = 11;
-        uint64 max_set = 12;
-        WindowType window_type = 14;
-        repeated Implementation implementations = 15;
-
-        enum WindowType {
-            UNKNOWN = 0;
-            STREAMING = 1;
-            PARTITION = 2;
-        }
+    message ValueArgument {
+      ParameterizedType type = 1;
+      bool constant = 2;
     }
 
-    message Description {
-        string language = 1;
-        string body = 2;
+    message TypeArgument { ParameterizedType type = 1; }
+
+    message EnumArgument {
+      repeated string options = 1;
+      bool optional = 2;
     }
-
-    message Implementation {
-
-        Type type = 1;
-        string uri = 2;
-
-        enum Type {
-            UNKNOWN = 0;
-            WEB_ASSEMBLY = 1;
-            TRINO_JAR = 2;
-        }
-    }
-
-    message Argument {
-        string name = 1;
-
-        oneof argument_kind {
-            ValueArgument value = 2;
-            TypeArgument type = 3;
-            EnumArgument enum = 4;
-        }
-
-        message ValueArgument {
-            ParameterizedType type = 1;
-            bool constant = 2;
-        }
-
-        message TypeArgument {
-            ParameterizedType type = 1;
-        }
-
-        message EnumArgument {
-            repeated string options = 1;
-            bool optional = 2;
-        }
-
-    }
-
+  }
 }
-

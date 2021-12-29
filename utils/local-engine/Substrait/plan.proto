@@ -1,20 +1,44 @@
 syntax = "proto3";
 
-package io.substrait;
+package substrait;
 
-import "relations.proto";
-import "extensions.proto";
+import "substrait/relations.proto";
+import "substrait/extensions/extensions.proto";
 
 option java_multiple_files = true;
+option java_package = "io.substrait.proto";
+option csharp_namespace = "Substrait.Protobuf";
 
+// Either a relation or root relation
+message PlanRel {
+  oneof rel_type {
+    // Any relation
+    Rel rel = 1;
+    // The root of a relation tree
+    RelRoot root = 2;
+  }
+}
 
 // Describe a set of operations to complete.
 // For compactness sake, identifiers are normalized at the plan level.
 message Plan {
 
-    repeated Extensions.Extension extensions = 1;
-    repeated Extensions.Mapping mappings = 2;
-    repeated Rel relations = 3;
+  // a list of yaml specifications this plan may depend on
+  repeated substrait.extensions.SimpleExtensionURI extension_uris = 1;
 
+  // a list of extensions this plan may depend on
+  repeated substrait.extensions.SimpleExtensionDeclaration extensions = 2;
+
+  // one or more relation trees that are associated with this plan.
+  repeated PlanRel relations = 3;
+
+  // additional extensions associated with this plan.
+  substrait.extensions.AdvancedExtension advanced_extensions = 4;
+
+  // A list of com.google.Any entities that this plan may use. Can be used to
+  // warn if some embedded message types are unknown. Note that this list may
+  // include message types that are ignorable (optimizations) or that are
+  // unused. In many cases, a consumer may be able to work with a plan even if
+  // one or more message types defined here are unknown.
+  repeated string expected_type_urls = 5;
 }
-

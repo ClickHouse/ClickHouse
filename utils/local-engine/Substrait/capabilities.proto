@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package substrait;
+
+option java_multiple_files = true;
+option java_package = "io.substrait.proto";
+option csharp_namespace = "Substrait.Protobuf";
+
+// Defines a set of Capabilities that a system (producer or consumer) supports.
+message Capabilities {
+
+  // List of Substrait versions this system supports
+  repeated string substrait_versions = 1;
+
+  // list of com.google.Any message types this system supports for advanced
+  // extensions.
+  repeated string advanced_extension_type_urls = 2;
+
+  // list of simple extensions this system supports.
+  repeated SimpleExtension simple_extensions = 3;
+
+  message SimpleExtension {
+    string uri = 1;
+    repeated string function_keys = 2;
+    repeated string type_keys = 3;
+    repeated string type_variation_keys = 4;
+  }
+}

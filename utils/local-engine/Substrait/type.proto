@@ -1,181 +1,194 @@
 syntax = "proto3";
-package io.substrait;
-
-import "extensions.proto";
+package substrait;
 
 option java_multiple_files = true;
+option java_package = "io.substrait.proto";
+option csharp_namespace = "Substrait.Protobuf";
 
 message Type {
 
-    oneof kind {
-        Boolean bool = 1;
-        I8 i8 = 2;
-        I16 i16 = 3;
-        I32 i32 = 5;
-        I64 i64 = 7;
-        FP32 fp32 = 10;
-        FP64 fp64 = 11;
-        String string = 12;
-        Binary binary = 13;
-        Timestamp timestamp = 14;
-        Date date = 16;
-        Time time = 17;
-        IntervalYear interval_year = 19;
-        IntervalDay interval_day = 20;
-        TimestampTZ timestamp_tz = 29;
-        UUID uuid = 32;
+  oneof kind {
+    Boolean bool = 1;
+    I8 i8 = 2;
+    I16 i16 = 3;
+    I32 i32 = 5;
+    I64 i64 = 7;
+    FP32 fp32 = 10;
+    FP64 fp64 = 11;
+    String string = 12;
+    Binary binary = 13;
+    Timestamp timestamp = 14;
+    Date date = 16;
+    Time time = 17;
+    IntervalYear interval_year = 19;
+    IntervalDay interval_day = 20;
+    TimestampTZ timestamp_tz = 29;
+    UUID uuid = 32;
 
-        FixedChar fixed_char = 21;
-        VarChar varchar = 22;
-        FixedBinary fixed_binary = 23;
-        Decimal decimal = 24;
+    FixedChar fixed_char = 21;
+    VarChar varchar = 22;
+    FixedBinary fixed_binary = 23;
+    Decimal decimal = 24;
 
-        Struct struct = 25;
-        List list = 27;
-        Map map = 28;
+    Struct struct = 25;
+    List list = 27;
+    Map map = 28;
 
-        Extensions.TypeId user_defined = 31;
-    }
+    uint32 user_defined_type_reference = 31;
+  }
 
-    enum Nullability {
-        NULLABLE = 0;
-        REQUIRED = 1;
-    }
+  enum Nullability {
+    NULLABILITY_UNSPECIFIED = 0;
+    NULLABILITY_NULLABLE = 1;
+    NULLABILITY_REQUIRED = 2;
+  }
 
-    message Boolean {
-        Variation variation = 1;
-        Nullability nullability = 2;
-    }
-    message I8 {
-        Variation variation = 1;
-        Nullability nullability = 2;
-    }
+  message Boolean {
+    uint32 type_variation_reference = 1;
+    Nullability nullability = 2;
+  }
+  message I8 {
+    uint32 type_variation_reference = 1;
+    Nullability nullability = 2;
+  }
 
-    message I16 {
-        Variation variation = 1;
-        Nullability nullability = 2;
-    }
+  message I16 {
+    uint32 type_variation_reference = 1;
+    Nullability nullability = 2;
+  }
 
-    message I32 {
-        Variation variation = 1;
-        Nullability nullability = 2;
-    }
+  message I32 {
+    uint32 type_variation_reference = 1;
+    Nullability nullability = 2;
+  }
 
-    message I64 {
-        Variation variation = 1;
-        Nullability nullability = 2;
-    }
+  message I64 {
+    uint32 type_variation_reference = 1;
+    Nullability nullability = 2;
+  }
 
-    message FP32 {
-        Variation variation = 1;
-        Nullability nullability = 2;
-    }
+  message FP32 {
+    uint32 type_variation_reference = 1;
+    Nullability nullability = 2;
+  }
 
-    message FP64 {
-        Variation variation = 1;
-        Nullability nullability = 2;
-    }
+  message FP64 {
+    uint32 type_variation_reference = 1;
+    Nullability nullability = 2;
+  }
 
-    message String {
-        Variation variation = 1;
-        Nullability nullability = 2;
-    }
+  message String {
+    uint32 type_variation_reference = 1;
+    Nullability nullability = 2;
+  }
 
-    message Binary {
-        Variation variation = 1;
-        Nullability nullability = 2;
-    }
+  message Binary {
+    uint32 type_variation_reference = 1;
+    Nullability nullability = 2;
+  }
 
-    message Timestamp {
-        Variation variation = 1;
-        Nullability nullability = 2;
-    }
+  message Timestamp {
+    uint32 type_variation_reference = 1;
+    Nullability nullability = 2;
+  }
 
-    message Date {
-        Variation variation = 1;
-        Nullability nullability = 2;
-    }
+  message Date {
+    uint32 type_variation_reference = 1;
+    Nullability nullability = 2;
+  }
 
-    message Time {
-        Variation variation = 1;
-        Nullability nullability = 2;
-    }
+  message Time {
+    uint32 type_variation_reference = 1;
+    Nullability nullability = 2;
+  }
 
-    message TimestampTZ {
-        Variation variation = 1;
-        Nullability nullability = 2;
-    }
+  message TimestampTZ {
+    uint32 type_variation_reference = 1;
+    Nullability nullability = 2;
+  }
 
-    message IntervalYear {
-        Variation variation = 1;
-        Nullability nullability = 2;
-    }
+  message IntervalYear {
+    uint32 type_variation_reference = 1;
+    Nullability nullability = 2;
+  }
 
-    message IntervalDay {
-        Variation variation = 1;
-        Nullability nullability = 2;
-    }
+  message IntervalDay {
+    uint32 type_variation_reference = 1;
+    Nullability nullability = 2;
+  }
 
-    message UUID {
-        Variation variation = 1;
-        Nullability nullability = 2;
-    }
+  message UUID {
+    uint32 type_variation_reference = 1;
+    Nullability nullability = 2;
+  }
 
-    // Start compound types.
-    message FixedChar {
-        int32 length = 1;
-        Variation variation = 2;
-        Nullability nullability = 3;
-    }
+  // Start compound types.
+  message FixedChar {
+    int32 length = 1;
+    uint32 type_variation_reference = 2;
+    Nullability nullability = 3;
+  }
 
-    message VarChar {
-        int32 length = 1;
-        Variation variation = 2;
-        Nullability nullability = 3;
-    }
+  message VarChar {
+    int32 length = 1;
+    uint32 type_variation_reference = 2;
+    Nullability nullability = 3;
+  }
 
-    message FixedBinary {
-        int32 length = 1;
-        Variation variation = 2;
-        Nullability nullability = 3;
-    }
+  message FixedBinary {
+    int32 length = 1;
+    uint32 type_variation_reference = 2;
+    Nullability nullability = 3;
+  }
 
-    message Decimal {
-        int32 scale = 1;
-        int32 precision = 2;
-        Variation variation = 3;
-        Nullability nullability = 4;
-    }
+  message Decimal {
+    int32 scale = 1;
+    int32 precision = 2;
+    uint32 type_variation_reference = 3;
+    Nullability nullability = 4;
+  }
 
-    message Struct {
-        repeated Type types = 1;
-        Variation variation = 2;
-        Nullability nullability = 3;
-    }
+  message Struct {
+    repeated Type types = 1;
+    uint32 type_variation_reference = 2;
+    Nullability nullability = 3;
+  }
 
-    message NamedStruct {
-        // list of names in dfs order
-        repeated string names = 1;
-        Struct struct = 2;
-    }
+  message List {
+    Type type = 1;
+    uint32 type_variation_reference = 2;
+    Nullability nullability = 3;
+  }
 
-    message List {
-        Type type = 1;
-        Variation variation = 2;
-        Nullability nullability = 3;
-    }
-
-    message Map {
-        Type key = 1;
-        Type value = 2;
-        Variation variation = 3;
-        Nullability nullability = 4;
-    }
-
-    message Variation {
-        int32 organization = 1;
-        string name = 2;
-    }
-
+  message Map {
+    Type key = 1;
+    Type value = 2;
+    uint32 type_variation_reference = 3;
+    Nullability nullability = 4;
+  }
 }
 
+// A message for modeling name/type pairs.
+//
+// Useful for representing relation schemas.
+//
+// Notes:
+//
+// * The names field is in depth-first order.
+//
+// For example a schema such as:
+//
+// a: int64
+// b: struct<c: float32, d: string>
+//
+// would have a `names` field that looks like:
+//
+// ["a", "b", "c", "d"]
+//
+// * Only struct fields are contained in this field's elements,
+// * Map keys should be traversed first, then values when producing/consuming
+message NamedStruct {
+  // list of names in dfs order
+  repeated string names = 1;
+  Type.Struct struct = 2;
+}

@@ -1,116 +1,113 @@
 syntax = "proto3";
-package io.substrait;
+package substrait;
 
-import "type.proto";
-import "extensions.proto";
+import "substrait/type.proto";
 
 option java_multiple_files = true;
+option java_package = "io.substrait.proto";
+option csharp_namespace = "Substrait.Protobuf";
 
 message ParameterizedType {
 
-    oneof kind {
-        Type.Boolean bool = 1;
-        Type.I8 i8 = 2;
-        Type.I16 i16 = 3;
-        Type.I32 i32 = 5;
-        Type.I64 i64 = 7;
-        Type.FP32 fp32 = 10;
-        Type.FP64 fp64 = 11;
-        Type.String string = 12;
-        Type.Binary binary = 13;
-        Type.Timestamp timestamp = 14;
-        Type.Date date = 16;
-        Type.Time time = 17;
-        Type.IntervalYear interval_year = 19;
-        Type.IntervalDay interval_day = 20;
-        Type.TimestampTZ timestamp_tz = 29;
-        Type.UUID uuid = 32;
+  oneof kind {
+    Type.Boolean bool = 1;
+    Type.I8 i8 = 2;
+    Type.I16 i16 = 3;
+    Type.I32 i32 = 5;
+    Type.I64 i64 = 7;
+    Type.FP32 fp32 = 10;
+    Type.FP64 fp64 = 11;
+    Type.String string = 12;
+    Type.Binary binary = 13;
+    Type.Timestamp timestamp = 14;
+    Type.Date date = 16;
+    Type.Time time = 17;
+    Type.IntervalYear interval_year = 19;
+    Type.IntervalDay interval_day = 20;
+    Type.TimestampTZ timestamp_tz = 29;
+    Type.UUID uuid = 32;
 
-        ParameterizedFixedChar fixed_char = 21;
-        ParameterizedVarChar varchar = 22;
-        ParameterizedFixedBinary fixed_binary = 23;
-        ParameterizedDecimal decimal = 24;
+    ParameterizedFixedChar fixed_char = 21;
+    ParameterizedVarChar varchar = 22;
+    ParameterizedFixedBinary fixed_binary = 23;
+    ParameterizedDecimal decimal = 24;
 
-        ParameterizedStruct struct = 25;
-        ParameterizedList list = 27;
-        ParameterizedMap map = 28;
+    ParameterizedStruct struct = 25;
+    ParameterizedList list = 27;
+    ParameterizedMap map = 28;
 
-        Extensions.TypeId user_defined = 31;
+    uint32 user_defined_pointer = 31;
 
-        TypeParameter type_parameter = 33;
+    TypeParameter type_parameter = 33;
+  }
 
+  message TypeParameter {
+    string name = 1;
+    repeated ParameterizedType bounds = 2;
+  }
+
+  message IntegerParameter {
+    string name = 1;
+    NullableInteger range_start_inclusive = 2;
+    NullableInteger range_end_exclusive = 3;
+  }
+
+  message NullableInteger { int64 value = 1; }
+
+  message ParameterizedFixedChar {
+    IntegerOption length = 1;
+    uint32 variation_pointer = 2;
+    Type.Nullability nullability = 3;
+  }
+
+  message ParameterizedVarChar {
+    IntegerOption length = 1;
+    uint32 variation_pointer = 2;
+    Type.Nullability nullability = 3;
+  }
+
+  message ParameterizedFixedBinary {
+    IntegerOption length = 1;
+    uint32 variation_pointer = 2;
+    Type.Nullability nullability = 3;
+  }
+
+  message ParameterizedDecimal {
+    IntegerOption scale = 1;
+    IntegerOption precision = 2;
+    uint32 variation_pointer = 3;
+    Type.Nullability nullability = 4;
+  }
+
+  message ParameterizedStruct {
+    repeated ParameterizedType types = 1;
+    uint32 variation_pointer = 2;
+    Type.Nullability nullability = 3;
+  }
+
+  message ParameterizedNamedStruct {
+    // list of names in dfs order
+    repeated string names = 1;
+    ParameterizedStruct struct = 2;
+  }
+
+  message ParameterizedList {
+    ParameterizedType type = 1;
+    uint32 variation_pointer = 2;
+    Type.Nullability nullability = 3;
+  }
+
+  message ParameterizedMap {
+    ParameterizedType key = 1;
+    ParameterizedType value = 2;
+    uint32 variation_pointer = 3;
+    Type.Nullability nullability = 4;
+  }
+
+  message IntegerOption {
+    oneof integer_type {
+      int32 literal = 1;
+      IntegerParameter parameter = 2;
     }
-
-    message TypeParameter {
-        string name = 1;
-        repeated ParameterizedType bounds = 2;
-    }
-
-    message IntegerParameter {
-        string name = 1;
-        NullableInteger range_start_inclusive = 2;
-        NullableInteger range_end_exclusive = 3;
-    }
-    
-    message NullableInteger {
-        int64 value = 1;
-    }
-    
-    message ParameterizedFixedChar {
-        IntegerOption length = 1;
-        Type.Variation variation = 2;
-        Type.Nullability nullability = 3;
-    }
-
-    message ParameterizedVarChar {
-        IntegerOption length = 1;
-        Type.Variation variation = 2;
-        Type.Nullability nullability = 3;
-    }
-
-    message ParameterizedFixedBinary {
-        IntegerOption length = 1;
-        Type.Variation variation = 2;
-        Type.Nullability nullability = 3;
-    }
-
-    message ParameterizedDecimal {
-        IntegerOption scale = 1;
-        IntegerOption precision = 2;
-        Type.Variation variation = 3;
-        Type.Nullability nullability = 4;
-    }
-
-    message ParameterizedStruct {
-        repeated ParameterizedType types = 1;
-        Type.Variation variation = 2;
-        Type.Nullability nullability = 3;
-    }
-
-    message ParameterizedNamedStruct {
-        // list of names in dfs order
-        repeated string names = 1;
-        ParameterizedStruct struct = 2;
-    }
-
-    message ParameterizedList {
-        ParameterizedType type = 1;
-        Type.Variation variation = 2;
-        Type.Nullability nullability = 3;
-    }
-
-    message ParameterizedMap {
-        ParameterizedType key = 1;
-        ParameterizedType value = 2;
-        Type.Variation variation = 3;
-        Type.Nullability nullability = 4;
-    }
-
-    message IntegerOption {
-        oneof integer_type {
-            int32 literal = 1;
-            IntegerParameter parameter = 2;
-        }
-    }
+  }
 }
-

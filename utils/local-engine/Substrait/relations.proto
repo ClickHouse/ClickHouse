@@ -1,175 +1,238 @@
 syntax = "proto3";
 
-package io.substrait;
+package substrait;
 
-import "type.proto";
-import "expression.proto";
-import "selection.proto";
+import "substrait/type.proto";
+import "substrait/expression.proto";
+import "substrait/extensions/extensions.proto";
+import "google/protobuf/any.proto";
 
 option java_multiple_files = true;
+option java_package = "io.substrait.proto";
+option csharp_namespace = "Substrait.Protobuf";
 
 message RelCommon {
 
-    oneof kind {
-        Direct direct = 1;
-        Emit emit = 2;
-    }
+  oneof emit_kind {
+    Direct direct = 1;
+    Emit emit = 2;
+  }
 
-    Hint hint = 3;
-    RuntimeConstraint constraint = 4;
+  Hint hint = 3;
+  substrait.extensions.AdvancedExtension advanced_extension = 4;
 
-    message Direct {}
-    message Emit {
-        repeated int32 output_mapping = 1;
-    }
+  message Direct {}
+  message Emit { repeated int32 output_mapping = 1; }
 
-    message Hint {
-        repeated HintKeyValue hint_key_values = 1;
-        Stats stats = 2;
+  // Changes to the operation that can influence efficiency/performance but
+  // should not impact correctness.
+  message Hint {
+    Stats stats = 1;
+    RuntimeConstraint constraint = 2;
+    substrait.extensions.AdvancedExtension advanced_extension = 10;
 
-        message Stats {
-            double row_count = 1;
-            double record_size = 2;
-        }
-
-        message HintKeyValue {
-            string key = 1;
-            bytes value = 2;
-        }
-
+    message Stats {
+      double row_count = 1;
+      double record_size = 2;
+      substrait.extensions.AdvancedExtension advanced_extension = 10;
     }
 
     message RuntimeConstraint {
-        // TODO: nodes, cpu threads/%, memory, iops, etc.
-    }
+      // TODO: nodes, cpu threads/%, memory, iops, etc.
 
+      substrait.extensions.AdvancedExtension advanced_extension = 10;
+    }
+  }
 }
 
 message ReadRel {
-    RelCommon common = 1;
-    Type.NamedStruct base_schema = 2;
-    Expression filter = 3;
-    MaskExpression projection = 4;
+  RelCommon common = 1;
+  NamedStruct base_schema = 2;
+  Expression filter = 3;
+  Expression.MaskExpression projection = 4;
+  substrait.extensions.AdvancedExtension advanced_extension = 10;
 
-    oneof read_type {
-        VirtualTable virtual_table = 5;
-        LocalFiles local_files = 6;
-        NamedTable named_table = 7;
+  oneof read_type {
+    VirtualTable virtual_table = 5;
+    LocalFiles local_files = 6;
+    NamedTable named_table = 7;
+    ExtensionTable extension_table = 8;
+  }
+
+  message NamedTable {
+    repeated string names = 1;
+    substrait.extensions.AdvancedExtension advanced_extension = 10;
+  }
+
+  // a table composed of literals.
+  message VirtualTable { repeated Expression.Literal.Struct values = 1; }
+
+  // a stub type that can be used to extend/introduce new table types outside
+  // the specification.
+  message ExtensionTable { google.protobuf.Any detail = 1; }
+
+  message LocalFiles {
+
+    repeated FileOrFiles items = 1;
+    substrait.extensions.AdvancedExtension advanced_extension = 10;
+
+    message FileOrFiles {
+      oneof path_type {
+        string uri_path = 1;
+        string uri_path_glob = 2;
+        string uri_file = 3;
+        string uri_folder = 4;
+      }
+
+      FileFormat format = 5;
+
+      // the index of the partition this item belongs to
+      uint64 partition_index = 6;
+
+      // the start position in byte to read from this item
+      uint64 start = 7;
+
+      // the length in byte to read from this item
+      uint64 length = 8;
+
+      enum FileFormat {
+        FILE_FORMAT_UNSPECIFIED = 0;
+        FILE_FORMAT_PARQUET = 1;
+      }
     }
-
-    message NamedTable {
-        repeated string names = 1;
-    }
-
-
-    message VirtualTable {
-        repeated Expression.Literal.Struct values = 1;
-    }
-
-    message LocalFiles {
-
-        repeated FileOrFiles items = 1;
-
-        message FileOrFiles {
-            oneof path_type {
-                string uri_path = 1;
-                string uri_path_glob = 2;
-            }
-
-            Format format = 3;
-
-            enum Format {
-                UNKNOWN = 0;
-                PARQUET = 1;
-            }
-        }
-
-    }
-
+  }
 }
 
 message ProjectRel {
-    RelCommon common = 1;
-    Rel input = 2;
-    repeated Expression expressions = 3;
+  RelCommon common = 1;
+  Rel input = 2;
+  repeated Expression expressions = 3;
+  substrait.extensions.AdvancedExtension advanced_extension = 10;
 }
 
 message JoinRel {
-    RelCommon common = 1;
-    Rel left = 2;
-    Rel right = 3;
-    Expression expression = 4;
-    Expression post_join_filter = 5;
+  RelCommon common = 1;
+  Rel left = 2;
+  Rel right = 3;
+  Expression expression = 4;
+  Expression post_join_filter = 5;
 
-    enum JoinType {
-        UNKNOWN = 0;
-        INNER = 1;
-        OUTER = 2;
-        LEFT = 3;
-        RIGHT = 4;
-    }
+  JoinType type = 6;
+
+  enum JoinType {
+    JOIN_TYPE_UNSPECIFIED = 0;
+    JOIN_TYPE_INNER = 1;
+    JOIN_TYPE_OUTER = 2;
+    JOIN_TYPE_LEFT = 3;
+    JOIN_TYPE_RIGHT = 4;
+    JOIN_TYPE_SEMI = 5;
+    JOIN_TYPE_ANTI = 6;
+  }
+
+  substrait.extensions.AdvancedExtension advanced_extension = 10;
 }
 
 message FetchRel {
-    RelCommon common = 1;
-    Rel input = 2;
-    int64 offset = 3;
-    int64 count = 4;
+  RelCommon common = 1;
+  Rel input = 2;
+  int64 offset = 3;
+  int64 count = 4;
+  substrait.extensions.AdvancedExtension advanced_extension = 10;
 }
 
 message AggregateRel {
-    RelCommon common = 1;
-    Rel input = 2;
-    repeated Grouping groupings = 3;
-    repeated Measure measures = 4;
-    Expression.AggregationPhase phase = 5;
+  RelCommon common = 1;
+  Rel input = 2;
+  repeated Grouping groupings = 3;
+  repeated Measure measures = 4;
 
-    message Grouping {
-        repeated int32 input_fields = 1;
-    }
+  substrait.extensions.AdvancedExtension advanced_extension = 10;
 
-    message Measure {
-        Expression.AggregateFunction measure = 1;
-    }
+  message Grouping { repeated Expression grouping_expressions = 1; }
+
+  message Measure {
+    AggregateFunction measure = 1;
+
+    // An optional boolean expression that acts to filter which records are
+    // included in the measure. True means include this record for calculation
+    // within the measure.
+    Expression filter = 2;
+  }
 }
 
 message SortRel {
-    RelCommon common = 1;
-    Rel input = 2;
-    repeated Expression.SortField sorts = 3;
+  RelCommon common = 1;
+  Rel input = 2;
+  repeated SortField sorts = 3;
+  substrait.extensions.AdvancedExtension advanced_extension = 10;
 }
 
 message FilterRel {
-    RelCommon common = 1;
-    Rel input = 2;
-    Expression condition = 3;
+  RelCommon common = 1;
+  Rel input = 2;
+  Expression condition = 3;
+  substrait.extensions.AdvancedExtension advanced_extension = 10;
 }
 
 message SetRel {
-    RelCommon common = 1;
-    repeated Rel inputs = 2;
-    SetOp op = 3;
+  RelCommon common = 1;
+  repeated Rel inputs = 2;
+  SetOp op = 3;
+  substrait.extensions.AdvancedExtension advanced_extension = 10;
 
-    enum SetOp {
-        UNKNOWN = 0;
-        MINUS_PRIMARY = 1;
-        MINUS_MULTISET = 2;
-        INTERSECTION_PRIMARY = 3;
-        INTERSECTION_MULTISET = 4;
-        UNION_DISTINCT = 5;
-        UNION_ALL = 6;
-    }
+  enum SetOp {
+    SET_OP_UNSPECIFIED = 0;
+    SET_OP_MINUS_PRIMARY = 1;
+    SET_OP_MINUS_MULTISET = 2;
+    SET_OP_INTERSECTION_PRIMARY = 3;
+    SET_OP_INTERSECTION_MULTISET = 4;
+    SET_OP_UNION_DISTINCT = 5;
+    SET_OP_UNION_ALL = 6;
+  }
+}
+
+// Stub to support extension with a single input
+message ExtensionSingleRel {
+  RelCommon common = 1;
+  Rel input = 2;
+  google.protobuf.Any detail = 3;
+}
+
+// Stub to support extension with a zero inputs
+message ExtensionLeafRel {
+  RelCommon common = 1;
+  google.protobuf.Any detail = 2;
+}
+
+// Stub to support extension with multiple inputs
+message ExtensionMultiRel {
+  RelCommon common = 1;
+  repeated Rel inputs = 2;
+  google.protobuf.Any detail = 3;
+}
+
+// A relation with output field names.
+//
+// This is for use at the root of a `Rel` tree.
+message RelRoot {
+  // A relation
+  Rel input = 1;
+  // Field names in depth-first order
+  repeated string names = 2;
 }
 
 message Rel {
-  oneof RelType {
-      ReadRel read = 1;
-      FilterRel filter = 2;
-      FetchRel fetch = 3;
-      AggregateRel aggregate = 4;
-      SortRel sort = 5;
-      JoinRel join = 6;
-      ProjectRel project = 7;
-      SetRel set = 8;
+  oneof rel_type {
+    ReadRel read = 1;
+    FilterRel filter = 2;
+    FetchRel fetch = 3;
+    AggregateRel aggregate = 4;
+    SortRel sort = 5;
+    JoinRel join = 6;
+    ProjectRel project = 7;
+    SetRel set = 8;
+    ExtensionSingleRel extension_single = 9;
+    ExtensionMultiRel extension_multi = 10;
+    ExtensionLeafRel extension_leaf = 11;
   }
 }

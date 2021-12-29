@@ -1,138 +1,148 @@
 syntax = "proto3";
-package io.substrait;
+package substrait;
 
-import "type.proto";
-import "extensions.proto";
+import "substrait/type.proto";
 
 option java_multiple_files = true;
+option java_package = "io.substrait.proto";
+option csharp_namespace = "Substrait.Protobuf";
 
 message DerivationExpression {
 
-    oneof kind {
-        Type.Boolean bool = 1;
-        Type.I8 i8 = 2;
-        Type.I16 i16 = 3;
-        Type.I32 i32 = 5;
-        Type.I64 i64 = 7;
-        Type.FP32 fp32 = 10;
-        Type.FP64 fp64 = 11;
-        Type.String string = 12;
-        Type.Binary binary = 13;
-        Type.Timestamp timestamp = 14;
-        Type.Date date = 16;
-        Type.Time time = 17;
-        Type.IntervalYear interval_year = 19;
-        Type.IntervalDay interval_day = 20;
-        Type.TimestampTZ timestamp_tz = 29;
-        Type.UUID uuid = 32;
+  oneof kind {
+    Type.Boolean bool = 1;
+    Type.I8 i8 = 2;
+    Type.I16 i16 = 3;
+    Type.I32 i32 = 5;
+    Type.I64 i64 = 7;
+    Type.FP32 fp32 = 10;
+    Type.FP64 fp64 = 11;
+    Type.String string = 12;
+    Type.Binary binary = 13;
+    Type.Timestamp timestamp = 14;
+    Type.Date date = 16;
+    Type.Time time = 17;
+    Type.IntervalYear interval_year = 19;
+    Type.IntervalDay interval_day = 20;
+    Type.TimestampTZ timestamp_tz = 29;
+    Type.UUID uuid = 32;
 
-        ExpressionFixedChar fixed_char = 21;
-        ExpressionVarChar varchar = 22;
-        ExpressionFixedBinary fixed_binary = 23;
-        ExpressionDecimal decimal = 24;
+    ExpressionFixedChar fixed_char = 21;
+    ExpressionVarChar varchar = 22;
+    ExpressionFixedBinary fixed_binary = 23;
+    ExpressionDecimal decimal = 24;
 
-        ExpressionStruct struct = 25;
-        ExpressionList list = 27;
-        ExpressionMap map = 28;
+    ExpressionStruct struct = 25;
+    ExpressionList list = 27;
+    ExpressionMap map = 28;
 
-        Extensions.TypeId user_defined = 31;
+    uint32 user_defined_pointer = 31;
 
-        string type_parameter_name = 33;
-        string integer_parameter_name = 34;
+    string type_parameter_name = 33;
+    string integer_parameter_name = 34;
 
-        int32 integer_literal = 35;
-        UnaryOp unary_op = 36;
-        BinaryOp binary_op = 37;
-        IfElse if_else = 38;
+    int32 integer_literal = 35;
+    UnaryOp unary_op = 36;
+    BinaryOp binary_op = 37;
+    IfElse if_else = 38;
+    ReturnProgram return_program = 39;
+  }
+
+  message ExpressionFixedChar {
+    DerivationExpression length = 1;
+    uint32 variation_pointer = 2;
+    Type.Nullability nullability = 3;
+  }
+
+  message ExpressionVarChar {
+    DerivationExpression length = 1;
+    uint32 variation_pointer = 2;
+    Type.Nullability nullability = 3;
+  }
+
+  message ExpressionFixedBinary {
+    DerivationExpression length = 1;
+    uint32 variation_pointer = 2;
+    Type.Nullability nullability = 3;
+  }
+
+  message ExpressionDecimal {
+    DerivationExpression scale = 1;
+    DerivationExpression precision = 2;
+    uint32 variation_pointer = 3;
+    Type.Nullability nullability = 4;
+  }
+
+  message ExpressionStruct {
+    repeated DerivationExpression types = 1;
+    uint32 variation_pointer = 2;
+    Type.Nullability nullability = 3;
+  }
+
+  message ExpressionNamedStruct {
+    repeated string names = 1;
+    ExpressionStruct struct = 2;
+  }
+
+  message ExpressionList {
+    DerivationExpression type = 1;
+    uint32 variation_pointer = 2;
+    Type.Nullability nullability = 3;
+  }
+
+  message ExpressionMap {
+    DerivationExpression key = 1;
+    DerivationExpression value = 2;
+    uint32 variation_pointer = 3;
+    Type.Nullability nullability = 4;
+  }
+
+  message IfElse {
+    DerivationExpression if_condition = 1;
+    DerivationExpression if_return = 2;
+    DerivationExpression else_return = 3;
+  }
+
+  message UnaryOp {
+    UnaryOpType op_type = 1;
+    DerivationExpression arg = 2;
+
+    enum UnaryOpType {
+      UNARY_OP_TYPE_UNSPECIFIED = 0;
+      UNARY_OP_TYPE_BOOLEAN_NOT = 1;
+    }
+  }
+
+  message BinaryOp {
+
+    BinaryOpType op_type = 1;
+    DerivationExpression arg1 = 2;
+    DerivationExpression arg2 = 3;
+
+    enum BinaryOpType {
+      BINARY_OP_TYPE_UNSPECIFIED = 0;
+      BINARY_OP_TYPE_PLUS = 1;
+      BINARY_OP_TYPE_MINUS = 2;
+      BINARY_OP_TYPE_MULTIPLY = 3;
+      BINARY_OP_TYPE_DIVIDE = 4;
+      BINARY_OP_TYPE_MIN = 5;
+      BINARY_OP_TYPE_MAX = 6;
+      BINARY_OP_TYPE_GREATER_THAN = 7;
+      BINARY_OP_TYPE_LESS_THAN = 8;
+      BINARY_OP_TYPE_AND = 9;
+      BINARY_OP_TYPE_OR = 10;
+      BINARY_OP_TYPE_EQUALS = 11;
+      BINARY_OP_TYPE_COVERS = 12;
+    }
+  }
+
+  message ReturnProgram {
+    message Assignment {
+      string name = 1;
+      DerivationExpression expression = 2;
     }
 
-    message ExpressionFixedChar {
-        DerivationExpression length = 1;
-        Type.Variation variation = 2;
-        Type.Nullability nullability = 3;
-    }
-
-    message ExpressionVarChar {
-        DerivationExpression length = 1;
-        Type.Variation variation = 2;
-        Type.Nullability nullability = 3;
-    }
-
-    message ExpressionFixedBinary {
-        DerivationExpression length = 1;
-        Type.Variation variation = 2;
-        Type.Nullability nullability = 3;
-    }
-
-    message ExpressionDecimal {
-        DerivationExpression scale = 1;
-        DerivationExpression precision = 2;
-        Type.Variation variation = 3;
-        Type.Nullability nullability = 4;
-    }
-
-    message ExpressionStruct {
-        repeated DerivationExpression types = 1;
-        Type.Variation variation = 2;
-        Type.Nullability nullability = 3;
-    }
-
-    message ExpressionNamedStruct {
-        repeated string names = 1;
-        ExpressionStruct struct = 2;
-    }
-
-    message ExpressionList {
-        DerivationExpression type = 1;
-        Type.Variation variation = 2;
-        Type.Nullability nullability = 3;
-    }
-
-    message ExpressionMap {
-        DerivationExpression key = 1;
-        DerivationExpression value = 2;
-        Type.Variation variation = 3;
-        Type.Nullability nullability = 4;
-    }
-
-
-    message IfElse {
-        DerivationExpression if_condition = 1;
-        DerivationExpression if_return = 2;
-        DerivationExpression else_return = 3;
-    }
-
-    message UnaryOp {
-        OpType op_type = 1;
-        DerivationExpression arg = 2;
-
-        enum OpType {
-            UNKNOWN = 0;
-            BOOLEAN_NOT = 1;
-        }
-    }
-
-    message BinaryOp {
-
-        OpType op_type = 1;
-        DerivationExpression arg1 = 2;
-        DerivationExpression arg2 = 3;
-
-        enum OpType {
-            UNKNOWN = 0;
-            PLUS = 1;
-            MINUS = 2;
-            MULTIPLY = 3;
-            DIVIDE = 4;
-            MIN = 5;
-            MAX = 6;
-            GREATER_THAN = 7;
-            LESS_THAN = 8;
-            AND = 9;
-            OR = 10;
-            EQUALS = 11;
-            COVERS = 12;
-        }
-    }
-
+    repeated Assignment assignments = 1;
+    DerivationExpression final_expression = 2;
+  }
 }
