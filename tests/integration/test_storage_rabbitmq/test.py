@@ -35,6 +35,17 @@ def rabbitmq_check_result(result, check=False, ref_file='test_rabbitmq_json.refe
         else:
             return TSV(result) == TSV(reference)
 
+def wait_rabbitmq_to_start(rabbitmq_docker_id, timeout=180):
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            if instance.cluster.check_rabbitmq_is_available(rabbitmq_docker_id):
+                logging.debug("RabbitMQ is available")
+                return
+            time.sleep(0.5)
+        except Exception as ex:
+            logging.debug("Can't connect to RabbitMQ " + str(ex))
+            time.sleep(0.5)
 
 def kill_rabbitmq(rabbitmq_id):
     p = subprocess.Popen(('docker', 'stop', rabbitmq_id), stdout=subprocess.PIPE)
@@ -45,7 +56,7 @@ def kill_rabbitmq(rabbitmq_id):
 def revive_rabbitmq(rabbitmq_id):
     p = subprocess.Popen(('docker', 'start', rabbitmq_id), stdout=subprocess.PIPE)
     p.communicate()
-    return p.returncode == 0
+    wait_rabbitmq_to_start(rabbitmq_id)
 
 
 # Fixtures
