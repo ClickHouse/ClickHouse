@@ -250,3 +250,9 @@
 [submodule "contrib/azure"]
 	path = contrib/azure
 	url = https://github.com/ClickHouse-Extras/azure-sdk-for-cpp.git
+[submodule "contrib/stats"]
+	path = contrib/stats
+	url = https://github.com/kthohr/stats.git
+[submodule "contrib/gcem"]
+	path = contrib/gcem
+	url = https://github.com/kthohr/gcem.git
