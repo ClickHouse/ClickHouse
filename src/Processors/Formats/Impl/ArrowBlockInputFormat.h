@@ -27,6 +27,11 @@ public:
 private:
     Chunk generate() override;
 
+    void onCancel() override
+    {
+        is_stopped = 1;
+    }
+
     // Whether to use ArrowStream format
     bool stream;
     // This field is only used for ArrowStream format
@@ -42,6 +47,8 @@ private:
     const FormatSettings format_settings;
 
     void prepareReader();
+
+    std::atomic<int> is_stopped{0};
 };
 
 }

@@ -9,6 +9,7 @@
 #include <Common/assert_cast.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSparse.h>
 
 #include <iterator>
 
@@ -37,7 +38,7 @@ static ReturnType onError(const std::string & message [[maybe_unused]], int code
 
 template <typename ReturnType>
 static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, const ColumnWithTypeAndName & expected,
-    const std::string & context_description, bool allow_remove_constants, int code)
+    const std::string & context_description, bool allow_materialize, int code)
 {
     if (actual.name != expected.name)
         return onError<ReturnType>("Block structure mismatch in " + context_description + " stream: different names of columns:\n"
@@ -52,11 +53,16 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
 
     const IColumn * actual_column = actual.column.get();
 
-    /// If we allow to remove constants, and expected column is not const, then unwrap actual constant column.
-    if (allow_remove_constants && !isColumnConst(*expected.column))
+    /// If we allow to materialize, and expected column is not const or sparse, then unwrap actual column.
+    if (allow_materialize)
     {
-        if (const auto * column_const = typeid_cast<const ColumnConst *>(actual_column))
-            actual_column = &column_const->getDataColumn();
+        if (!isColumnConst(*expected.column))
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(actual_column))
+                actual_column = &column_const->getDataColumn();
+
+        if (!expected.column->isSparse())
+            if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(actual_column))
+                actual_column = &column_sparse->getValuesColumn();
     }
 
     if (actual_column->getName() != expected.column->getName())
@@ -79,7 +85,7 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
 
 
 template <typename ReturnType>
-static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, const std::string & context_description, bool allow_remove_constants)
+static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, const std::string & context_description, bool allow_materialize)
 {
     size_t columns = rhs.columns();
     if (lhs.columns() != columns)
@@ -93,11 +99,11 @@ static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, cons
 
         if constexpr (std::is_same_v<ReturnType, bool>)
         {
-            if (!checkColumnStructure<ReturnType>(actual, expected, context_description, allow_remove_constants, ErrorCodes::LOGICAL_ERROR))
+            if (!checkColumnStructure<ReturnType>(actual, expected, context_description, allow_materialize, ErrorCodes::LOGICAL_ERROR))
                 return false;
         }
         else
-            checkColumnStructure<ReturnType>(actual, expected, context_description, allow_remove_constants, ErrorCodes::LOGICAL_ERROR);
+            checkColumnStructure<ReturnType>(actual, expected, context_description, allow_materialize, ErrorCodes::LOGICAL_ERROR);
     }
 
     return ReturnType(true);
@@ -139,14 +145,16 @@ void Block::insert(size_t position, ColumnWithTypeAndName elem)
     if (elem.name.empty())
         throw Exception("Column name in Block cannot be empty", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
 
-    for (auto & name_pos : index_by_name)
-        if (name_pos.second >= position)
-            ++name_pos.second;
-
-    auto [it, inserted] = index_by_name.emplace(elem.name, position);
+    auto [new_it, inserted] = index_by_name.emplace(elem.name, position);
     if (!inserted)
-        checkColumnStructure<void>(data[it->second], elem,
+        checkColumnStructure<void>(data[new_it->second], elem,
             "(columns with identical name must have identical structure)", true, ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+
+    for (auto it = index_by_name.begin(); it != index_by_name.end(); ++it)
+    {
+        if (it->second >= position && (!inserted || it != new_it))
+            ++it->second;
+    }
 
     data.emplace(data.begin() + position, std::move(elem));
 }
@@ -203,7 +211,7 @@ void Block::eraseImpl(size_t position)
     for (auto it = index_by_name.begin(); it != index_by_name.end();)
     {
         if (it->second == position)
-            index_by_name.erase(it++);
+            it = index_by_name.erase(it);
         else
         {
             if (it->second > position)
@@ -706,6 +714,11 @@ void Block::updateHash(SipHash & hash) const
             col.column->updateHashWithValue(row_no, hash);
 }
 
+void convertToFullIfSparse(Block & block)
+{
+    for (auto & column : block)
+        column.column = recursiveRemoveSparse(column.column);
+}
 
 ColumnPtr getColumnFromBlock(const Block & block, const NameAndTypePair & column)
 {
@@ -729,7 +742,7 @@ Block materializeBlock(const Block & block)
     for (size_t i = 0; i < columns; ++i)
     {
         auto & element = res.getByPosition(i);
-        element.column = element.column->convertToFullColumnIfConst();
+        element.column = recursiveRemoveSparse(element.column->convertToFullColumnIfConst());
     }
 
     return res;
@@ -738,7 +751,7 @@ Block materializeBlock(const Block & block)
 void materializeBlockInplace(Block & block)
 {
     for (size_t i = 0; i < block.columns(); ++i)
-        block.getByPosition(i).column = block.getByPosition(i).column->convertToFullColumnIfConst();
+        block.getByPosition(i).column = recursiveRemoveSparse(block.getByPosition(i).column->convertToFullColumnIfConst());
 }
 
 }

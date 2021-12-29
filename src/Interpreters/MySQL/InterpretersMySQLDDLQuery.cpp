@@ -20,10 +20,12 @@
 #include <Parsers/MySQL/ASTDeclareIndex.h>
 #include <Common/quoteString.h>
 #include <Common/assert_cast.h>
+#include <Interpreters/getTableOverride.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/applyTableOverride.h>
 #include <Storages/IStorage.h>
 
 namespace DB
@@ -435,22 +437,6 @@ void InterpreterCreateImpl::validate(const InterpreterCreateImpl::TQuery & creat
     }
 }
 
-static ASTPtr tryGetTableOverride(const String & mapped_database, const String & table)
-{
-    if (auto database_ptr = DatabaseCatalog::instance().tryGetDatabase(mapped_database))
-    {
-        auto create_query = database_ptr->getCreateDatabaseQuery();
-        if (auto * create_database_query = create_query->as<ASTCreateQuery>())
-        {
-            if (create_database_query->table_overrides)
-            {
-                return create_database_query->table_overrides->tryGetTableOverride(table);
-            }
-        }
-    }
-    return nullptr;
-}
-
 ASTs InterpreterCreateImpl::getRewrittenQueries(
     const TQuery & create_query, ContextPtr context, const String & mapped_to_database, const String & mysql_database)
 {
@@ -535,10 +521,10 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
     rewritten_query->set(rewritten_query->storage, storage);
     rewritten_query->set(rewritten_query->columns_list, columns);
 
-    if (auto table_override = tryGetTableOverride(mapped_to_database, create_query.table))
+    if (auto override_ast = tryGetTableOverride(mapped_to_database, create_query.table))
     {
-        auto * override_ast = table_override->as<ASTTableOverride>();
-        override_ast->applyToCreateTableQuery(rewritten_query.get());
+        const auto & override = override_ast->as<const ASTTableOverride &>();
+        applyTableOverrideToCreateQuery(override, rewritten_query.get());
     }
 
     return ASTs{rewritten_query};
