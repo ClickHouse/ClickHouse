@@ -1,15 +1,13 @@
 #pragma once
 
+#include "config_core.h"
 
-#include <rocksdb/db.h>
-#include <rocksdb/table.h>
-
+#if USE_ROCKSDB
 #include <base/types.h>
 #include <Core/Types.h>
 #include <Poco/Logger.h>
-
-#include "config_core.h"
-#if USE_ROCKSDB
+#include <rocksdb/table.h>
+#include <rocksdb/db.h>
 
 namespace DB
 {

@@ -1,7 +1,6 @@
 #include "config_core.h"
 
 #if USE_ROCKSDB
-
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
