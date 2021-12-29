@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 
 #include <utility>
+#include "IO/WriteBufferFromFileDecorator.h"
 
 namespace DB
 {
@@ -9,12 +10,23 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void MergeTreeDataPartWriterOnDisk::Stream::finalize()
+void MergeTreeDataPartWriterOnDisk::Stream::preFinalize()
 {
     compressed.next();
     /// 'compressed_buf' doesn't call next() on underlying buffer ('plain_hashing'). We should do it manually.
     plain_hashing.next();
     marks.next();
+
+    plain_file->preFinalize();
+    marks_file->preFinalize();
+
+    is_prefinalized = true;
+}
+
+void MergeTreeDataPartWriterOnDisk::Stream::finalize()
+{
+    if (!is_prefinalized)
+        preFinalize();
 
     plain_file->finalize();
     marks_file->finalize();

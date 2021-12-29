@@ -71,6 +71,10 @@ public:
         std::unique_ptr<WriteBufferFromFileBase> marks_file;
         HashingWriteBuffer marks;
 
+        bool is_prefinalized = false;
+
+        void preFinalize();
+
         void finalize();
 
         void sync() const;

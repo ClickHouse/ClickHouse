@@ -136,6 +136,8 @@ public:
 
     static AsynchronousReaderPtr getThreadPoolReader();
 
+    static ThreadPool & getThreadPoolWriter();
+
 protected:
     Poco::Logger * log;
     const String name;

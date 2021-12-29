@@ -500,4 +500,13 @@ AsynchronousReaderPtr IDiskRemote::getThreadPoolReader()
     return reader;
 }
 
+
+ThreadPool & IDiskRemote::getThreadPoolWriter()
+{
+    constexpr size_t pool_size = 50;
+    constexpr size_t queue_size = 1000000;
+    static ThreadPool writer(pool_size, pool_size, queue_size);
+    return writer;
+}
+
 }

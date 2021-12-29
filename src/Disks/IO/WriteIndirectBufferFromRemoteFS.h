@@ -21,6 +21,8 @@ public:
 
     virtual ~WriteIndirectBufferFromRemoteFS() override;
 
+    void preFinalize() override { impl->preFinalize(); }
+
     void sync() override;
 
     String getFileName() const override { return metadata.metadata_file_path; }

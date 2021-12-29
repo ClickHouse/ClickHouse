@@ -14,9 +14,17 @@
 
 #    include <aws/core/utils/memory/stl/AWSStringStream.h>
 
+#    include <Common/ThreadPool.h>
+
 namespace Aws::S3
 {
 class S3Client;
+}
+
+namespace Aws::S3::Model
+{
+    class UploadPartRequest;
+    class PutObjectRequest;
 }
 
 namespace DB
@@ -39,11 +47,14 @@ public:
         size_t minimum_upload_part_size_,
         size_t max_single_part_upload_size_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
-        size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
+        size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
+        ThreadPool * thread_pool_ = nullptr);
 
     ~WriteBufferFromS3() override;
 
     void nextImpl() override;
+
+    void preFinalize() override;
 
 private:
     void allocateBuffer();
@@ -56,6 +67,16 @@ private:
 
     /// Receives response from the server after sending all data.
     void finalizeImpl() override;
+
+    struct UploadPartTask;
+    void fillUploadRequest(Aws::S3::Model::UploadPartRequest & req, int part_number);
+    void processUploadRequest(UploadPartTask & task);
+
+    struct PutObjectTask;
+    void fillPutRequest(Aws::S3::Model::PutObjectRequest & req);
+    void processPutRequest(PutObjectTask & task);
+
+    void waitForBackGroundTasks();
 
     String bucket;
     String key;
@@ -71,6 +92,17 @@ private:
     /// We initiate upload, then upload each part and get ETag as a response, and then finalizeImpl() upload with listing all our parts.
     String multipart_upload_id;
     std::vector<String> part_tags;
+
+    bool is_prefinalized = false;
+
+    ThreadPool * thread_pool;
+    std::list<UploadPartTask> background_tasks;
+    size_t num_added_bg_tasks = 0;
+    size_t num_finished_bg_tasks = 0;
+    std::mutex bg_tasks_mutex;
+    std::condition_variable bg_tasks_condvar;
+
+    std::unique_ptr<PutObjectTask> put_object_task;
 
     Poco::Logger * log = &Poco::Logger::get("WriteBufferFromS3");
 };
