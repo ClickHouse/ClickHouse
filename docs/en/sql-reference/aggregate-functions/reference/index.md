@@ -42,6 +42,7 @@ ClickHouse-specific aggregate functions:
 -   [groupBitmapAnd](../../../sql-reference/aggregate-functions/reference/groupbitmapand.md)
 -   [groupBitmapOr](../../../sql-reference/aggregate-functions/reference/groupbitmapor.md)
 -   [groupBitmapXor](../../../sql-reference/aggregate-functions/reference/groupbitmapxor.md)
+-   [groupSortedArray](../../../sql-reference/aggregate-functions/reference/groupsortedarray.md)
 -   [sumWithOverflow](../../../sql-reference/aggregate-functions/reference/sumwithoverflow.md)
 -   [sumMap](../../../sql-reference/aggregate-functions/reference/summap.md)
 -   [minMap](../../../sql-reference/aggregate-functions/reference/minmap.md)
