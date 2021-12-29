@@ -57,6 +57,14 @@ namespace ActionLocks
     extern const StorageActionBlockType PartsMove;
 }
 
+StorageInMemoryMetadata addIsDeletedColumn(const StorageInMemoryMetadata & metadata)
+{
+    StorageInMemoryMetadata result(metadata);
+    result.columns.add(ColumnDescription("_is_deleted", std::make_shared<DataTypeUInt8>()));
+
+    return result;
+}
+
 
 StorageMergeTree::StorageMergeTree(
     const StorageID & table_id_,
@@ -71,7 +79,7 @@ StorageMergeTree::StorageMergeTree(
     : MergeTreeData(
         table_id_,
         relative_data_path_,
-        metadata_,
+        addIsDeletedColumn(metadata_),
         context_,
         date_column_name,
         merging_params_,

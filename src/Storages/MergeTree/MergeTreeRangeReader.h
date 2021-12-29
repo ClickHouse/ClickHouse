@@ -190,6 +190,7 @@ public:
         size_t countBytesInResultFilter(const IColumn::Filter & filter);
 
         Columns columns;
+        ColumnUInt8::Ptr is_deleted;
         size_t num_rows = 0;
         bool need_filter = false;
 

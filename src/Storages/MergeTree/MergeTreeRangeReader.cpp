@@ -739,6 +739,39 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
     if (read_result.num_rows == 0)
         return read_result;
 
+    const auto & deleted_rows = merge_tree_reader->data_part->getDeletedMask().getDeletedRows();
+    DUMP("!!!!!!!!!!!!!!!!!!!!!!!!!1 Read piece of data from MT:\n", read_result.columns.size(), read_result.rowsPerGranule(), read_result.startedRanges(), deleted_rows.size());
+    {
+        // Slicing deleted rows mask accoring to the read range into is_deleted:
+        auto result_col = ColumnUInt8::create();
+        size_t range_index = 0;
+        for (const auto & range : read_result.startedRanges())
+        {
+            // invoking getRowsCountInRange with 0 causes a crash.
+            const auto begin_row = range.range.begin == 0 ? 0 : index_granularity->getRowsCountInRange(0, range.range.begin);
+            const auto end_row = range.range.end == 0 ? 0 : index_granularity->getRowsCountInRange(0, range.range.end);
+            DUMP("\t\t", range_index, begin_row, end_row);
+
+            result_col->insertRangeFrom(deleted_rows, begin_row, end_row);
+
+            ++range_index;
+        }
+
+        read_result.is_deleted = std::move(result_col);
+        DUMP("Created '_is_deleted' col: ", read_result.is_deleted);
+    }
+//    if (sample_block.findByName("_is_deleted"))
+//    {
+//        auto pos = sample_block.getPositionByName("_is_deleted");
+//        DUMP("!!!!\nReplacing existing '_is_deleted' column at pos ", pos, read_result.columns.size(), read_result.columns[pos], read_result.is_deleted);
+
+//        read_result.columns[pos] = read_result.is_deleted;
+//    }
+//    else
+//    {
+//        DUMP("!!!!\nthere is no _is_deleted column in read_result", read_result.numReadRows());
+//    }
+
     executePrewhereActionsAndFilterColumns(read_result);
 
     return read_result;
