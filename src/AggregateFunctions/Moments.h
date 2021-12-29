@@ -2,12 +2,7 @@
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <Common/config.h>
-
-#if !defined(ARCADIA_BUILD) && USE_STATS
-
-#define STATS_ENABLE_STDVEC_WRAPPERS
-#include <stats.hpp>
+#include <boost/math/distributions/students_t.hpp>
 
 
 namespace DB
@@ -394,7 +389,8 @@ struct TTestMoments
         Float64 mean_y = getMeanY();
         Float64 se = getStandardError();
 
-        Float64 t = stats::qt(1.0f - (1.0f - confidence_level) / 2.0f, degrees_of_freedom);
+        boost::math::students_t dist(degrees_of_freedom);
+        Float64 t = boost::math::quantile(boost::math::complement(dist, (1.0f - confidence_level) / 2.0f));
         Float64 mean_diff = mean_x - mean_y;
         Float64 ci_low = mean_diff - t * se;
         Float64 ci_high = mean_diff + t * se;
@@ -404,5 +400,3 @@ struct TTestMoments
 };
 
 }
-
-#endif

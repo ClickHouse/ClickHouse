@@ -83,7 +83,7 @@ private:
     bool need_ci = false;
     Float64 confidence_level;
 public:
-    AggregateFunctionTTest(const DataTypes & arguments, [[maybe_unused]] const Array & params)
+    AggregateFunctionTTest(const DataTypes & arguments, const Array & params)
         : IAggregateFunctionDataHelper<Data, AggregateFunctionTTest<Data>>({arguments}, params)
     {
         if (params.size() > 0)
