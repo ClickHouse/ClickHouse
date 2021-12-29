@@ -5,7 +5,6 @@
 #if USE_ROCKSDB
 #include <city.h>
 #include <Core/Types.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -13,8 +12,12 @@ namespace DB
 
 class SeekableReadBuffer;
 class IMergeTreeDataPart;
-class PartMetadataCache;
-using PartMetadataCachePtr = std::shared_ptr<PartMetadataCache>;
+
+class MergeTreeMetadataCache;
+using MergeTreeMetadataCachePtr = std::shared_ptr<MergeTreeMetadataCache>;
+
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
 
 class PartMetadataCache
 {
@@ -44,6 +47,8 @@ private:
     const String & relative_path; // relative path of part to table
     const IMergeTreeDataPart * parent_part;
 };
+
+using PartMetadataCachePtr = std::shared_ptr<PartMetadataCache>;
 
 }
 #endif

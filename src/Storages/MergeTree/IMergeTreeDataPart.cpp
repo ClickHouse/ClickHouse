@@ -820,8 +820,7 @@ void IMergeTreeDataPart::appendFilesofIndex(Strings & files) const
     if (!metadata_snapshot)
         return;
 
-    size_t key_size = metadata_snapshot->getPrimaryKeyColumns().size();
-    if (key_size)
+    if (metadata_snapshot->hasPrimaryKey())
         files.push_back("primary.idx");
 }
 

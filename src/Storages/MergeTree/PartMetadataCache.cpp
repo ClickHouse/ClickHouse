@@ -8,6 +8,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeMetadataCache.h>
 
 namespace ProfileEvents
 {

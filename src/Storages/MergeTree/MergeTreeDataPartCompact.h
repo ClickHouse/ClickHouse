@@ -74,8 +74,6 @@ private:
     void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
 
     void appendFilesOfIndexGranularity(Strings& files) const override;
-
-    Strings getIndexGranularityFiles() const override;
 };
 
 }

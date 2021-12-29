@@ -273,13 +273,4 @@ void MergeTreeDataPartWide::appendFilesOfIndexGranularity(Strings& /* files */) 
 {
 }
 
-Strings MergeTreeDataPartWide::getIndexGranularityFiles() const
-{
-    if (columns.empty())
-        return {};
-
-    auto marks_file = getFileNameForColumn(columns.front());
-    return {marks_file};
-}
-
 }

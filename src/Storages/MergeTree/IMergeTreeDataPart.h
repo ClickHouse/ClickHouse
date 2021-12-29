@@ -386,8 +386,6 @@ public:
     /// storage and pass it to this method.
     virtual bool hasColumnFiles(const NameAndTypePair & /* column */) const { return false; }
 
-    virtual Strings getIndexGranularityFiles() const = 0;
-
     /// Returns true if this part shall participate in merges according to
     /// settings of given storage policy.
     bool shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const;

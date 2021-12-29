@@ -16,12 +16,8 @@
 #include <base/types.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
-#include "config_core.h"
 
-#if USE_ROCKSDB
-#include <rocksdb/db.h>
-#include <rocksdb/table.h>
-#endif
+#include "config_core.h"
 
 #include <boost/container/flat_set.hpp>
 #include <functional>
@@ -155,6 +151,12 @@ using ReadTaskCallback = std::function<String()>;
 
 using MergeTreeReadTaskCallback = std::function<std::optional<PartitionReadResponse>(PartitionReadRequest)>;
 
+
+#if USE_ROCKSDB
+class MergeTreeMetadataCache;
+using MergeTreeMetadataCachePtr = std::shared_ptr<MergeTreeMetadataCache>;
+#endif
+
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -182,28 +184,6 @@ private:
     std::unique_ptr<ContextSharedPart> shared;
 };
 
-#if USE_ROCKSDB
-class MergeTreeMetadataCache
-{
-public:
-    using Status = rocksdb::Status;
-
-    explicit MergeTreeMetadataCache(rocksdb::DB * rocksdb_) : rocksdb{rocksdb_} { }
-    MergeTreeMetadataCache(const MergeTreeMetadataCache &) = delete;
-    MergeTreeMetadataCache & operator=(const MergeTreeMetadataCache &) = delete;
-
-    Status put(const String & key, const String & value);
-    Status del(const String & key);
-    Status get(const String & key, String & value);
-    void getByPrefix(const String & prefix, Strings & keys, Strings & values);
-
-    void shutdown();
-private:
-    std::unique_ptr<rocksdb::DB> rocksdb;
-    Poco::Logger * log = &Poco::Logger::get("MergeTreeMetadataCache");
-};
-using MergeTreeMetadataCachePtr = std::shared_ptr<MergeTreeMetadataCache>;
-#endif
 
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)

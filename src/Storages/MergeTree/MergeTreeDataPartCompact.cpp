@@ -197,10 +197,4 @@ void MergeTreeDataPartCompact::appendFilesOfIndexGranularity(Strings& /* files *
 {
 }
 
-Strings MergeTreeDataPartCompact::getIndexGranularityFiles() const
-{
-    auto marks_file = index_granularity_info.getMarksFilePath("data");
-    return {marks_file};
-}
-
 }

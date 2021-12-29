@@ -11,6 +11,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/MergeTreeMetadataCache.h>
 #include <Common/typeid_cast.h>
 
 namespace DB

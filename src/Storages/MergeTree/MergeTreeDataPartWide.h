@@ -68,8 +68,6 @@ private:
 
     void appendFilesOfIndexGranularity(Strings & files) const override;
 
-    Strings getIndexGranularityFiles() const override;
-
     ColumnSize getColumnSizeImpl(const NameAndTypePair & column, std::unordered_set<String> * processed_substreams) const;
 
     void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
