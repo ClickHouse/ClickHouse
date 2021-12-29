@@ -32,102 +32,59 @@ template <
 class LRUResourceCache
 {
 public:
-    LRUResourceCache(size_t max_weight_, size_t max_element_size_ = 0) : max_weight(max_weight_), max_element_size(max_element_size_) { }
-    ~LRUResourceCache() = default;
     using Key = TKey;
     using Mapped = TMapped;
     using MappedPtr = std::shared_ptr<Mapped>;
-
-    // - load_func : when key is not exists in cache, load_func is called to generate a new key
-    // - return: is null when there is no more space for the new value or the old value is in used.
-    template <typename LoadFunc>
-    MappedPtr acquire(const Key & key, LoadFunc && load_func)
+    class MappedHolder
     {
-        InsertToken * insert_token = nullptr;
+    public:
+        ~MappedHolder()
         {
-            std::lock_guard lock(mutex);
-            auto it = cells.find(key);
-            if (it != cells.end())
-            {
-                hits++;
-                it->second.reference_count += 1;
-                queue.splice(queue.end(), queue, it->second.queue_iterator);
-                return it->second.value;
-            }
-            misses++;
-            insert_token = acquireInsertToken(key);
+            cache->release(key);
+                
         }
-        Cell * cell_ptr = nullptr;
+        Mapped & value()
         {
-            std::lock_guard lock(insert_token->mutex);
-            if (!insert_token->value)
-            {
-                insert_token->value = load_func();
-                std::lock_guard cell_lock(mutex);
-                cell_ptr = insert_value(key, insert_token->value);
-                if (cell_ptr)
-                {
-                    cell_ptr->reference_count += 1;
-                }
-                else
-                {
-                    insert_token->value = nullptr;
-                }
-            }
+            return *(val.get());
+        }
+        static bool tryRemove(std::unique_ptr<MappedHolder> * holder_ptr)
+        {
+            auto & holder = *holder_ptr;
+            auto cache = holder->cache;
+            auto key = holder->key;
+            *holder_ptr = nullptr;
+            return cache->tryRemove(key);
         }
 
-        std::lock_guard lock(mutex);
-        releaseInsertToken(key);
-        if (cell_ptr)
+        MappedHolder(LRUResourceCache * cache_, const Key & key_, MappedPtr value_) : cache(cache_), key(key_), val(value_)
         {
-            return cell_ptr->value;
         }
-        return nullptr;
-    }
+    protected:
+        LRUResourceCache * cache;
+        Key key;
+        MappedPtr val;
+    };
+    using MappedHolderPtr = std::unique_ptr<MappedHolder>;
 
-    MappedPtr acquire(const Key & key)
+    // use get() or getOrSet() to access the elements
+    MappedHolderPtr get(const Key & key)
     {
-        std::lock_guard lock(mutex);
-        auto it = cells.find(key);
-        if (it == cells.end())
-        {
-            misses++;
+        auto mappedptr = getImpl(key);
+        if (!mappedptr)
             return nullptr;
-        }
-        hits++;
-        it->second.reference_count += 1;
-        queue.splice(queue.end(), queue, it->second.queue_iterator);
-        return it->second.value;
+        return std::make_unique<MappedHolder>(this, key, mappedptr);
+    }
+    template<typename LoadFunc>
+    MappedHolderPtr getOrSet(const Key & key, LoadFunc && load_func)
+    {
+        auto mappedptr = getImpl(key, load_func);
+        if (!mappedptr)
+            return nullptr;
+        return std::make_unique<MappedHolder>(this, key, mappedptr);
     }
 
-    // mark a reference is released
-    void release(const Key & key)
-    {
-        std::lock_guard lock(mutex);
-        auto it = cells.find(key);
-        if (it == cells.end() || it->second.reference_count == 0)
-        {
-            LOG_ERROR(&Poco::Logger::get("LRUResourceCache"), "try to release an invalid element");
-            abort();
-        }
-        it->second.reference_count -= 1;
-    }
-
-    // If you want to update a value, call tryRemove() at first and then call acquire() with load_func.
-    bool tryRemove(const Key & key)
-    {
-        std::lock_guard guard(mutex);
-        auto it = cells.find(key);
-        if (it == cells.end())
-            return true;
-        auto & cell = it->second;
-        if (cell.reference_count)
-            return false;
-        queue.erase(cell.queue_iterator);
-        current_weight -= cell.weight;
-        cells.erase(it);
-        return true;
-    }
+    LRUResourceCache(size_t max_weight_, size_t max_element_size_ = 0) : max_weight(max_weight_), max_element_size(max_element_size_) { }
+    ~LRUResourceCache() = default;
 
     size_t weight()
     {
@@ -181,6 +138,81 @@ private:
     std::atomic<size_t> hits{0};
     std::atomic<size_t> misses{0};
     std::atomic<size_t> evict_count{0};
+    
+    // - load_func : when key is not exists in cache, load_func is called to generate a new key
+    // - return: is null when there is no more space for the new value or the old value is in used.
+    template <typename LoadFunc>
+    MappedPtr getImpl(const Key & key, LoadFunc && load_func)
+    {
+        InsertToken * insert_token = nullptr;
+        {
+            std::lock_guard lock(mutex);
+            auto it = cells.find(key);
+            if (it != cells.end())
+            {
+                hits++;
+                it->second.reference_count += 1;
+                queue.splice(queue.end(), queue, it->second.queue_iterator);
+                return it->second.value;
+            }
+            misses++;
+            insert_token = acquireInsertToken(key);
+        }
+        Cell * cell_ptr = nullptr;
+        {
+            std::lock_guard lock(insert_token->mutex);
+            if (!insert_token->value)
+            {
+                insert_token->value = load_func();
+                std::lock_guard cell_lock(mutex);
+                cell_ptr = set(key, insert_token->value);
+                if (cell_ptr)
+                {
+                    cell_ptr->reference_count += 1;
+                }
+                else
+                {
+                    insert_token->value = nullptr;
+                }
+            }
+        }
+
+        std::lock_guard lock(mutex);
+        releaseInsertToken(key);
+        if (cell_ptr)
+        {
+            return cell_ptr->value;
+        }
+        return nullptr;
+    }
+
+    MappedPtr getImpl(const Key & key)
+    {
+        std::lock_guard lock(mutex);
+        auto it = cells.find(key);
+        if (it == cells.end())
+        {
+            misses++;
+            return nullptr;
+        }
+        hits++;
+        it->second.reference_count += 1;
+        queue.splice(queue.end(), queue, it->second.queue_iterator);
+        return it->second.value;
+    }
+
+    // mark a reference is released
+    void release(const Key & key)
+    {
+        std::lock_guard lock(mutex);
+        auto it = cells.find(key);
+        if (it == cells.end() || it->second.reference_count == 0)
+        {
+            LOG_ERROR(&Poco::Logger::get("LRUResourceCache"), "try to release an invalid element");
+            abort();
+        }
+        it->second.reference_count -= 1;
+    }
 
     InsertToken * acquireInsertToken(const Key & key)
     {
@@ -201,7 +233,7 @@ private:
     }
 
     // key mustn't be in the cache
-    Cell * insert_value(const Key & insert_key, MappedPtr value)
+    Cell * set(const Key & insert_key, MappedPtr value)
     {
         auto weight = value ? weight_function(*value) : 0;
         auto queue_size = cells.size() + 1;
@@ -250,6 +282,22 @@ private:
         new_cell.weight = weight;
         new_cell.queue_iterator = queue.insert(queue.end(), insert_key);
         return &new_cell;
+    }
+    
+    // If you want to update a value, call tryRemove() at first and then call acquire() with load_func.
+    bool tryRemove(const Key & key)
+    {
+        std::lock_guard guard(mutex);
+        auto it = cells.find(key);
+        if (it == cells.end())
+            return true;
+        auto & cell = it->second;
+        if (cell.reference_count)
+            return false;
+        queue.erase(cell.queue_iterator);
+        current_weight -= cell.weight;
+        cells.erase(it);
+        return true;
     }
 };
 }
