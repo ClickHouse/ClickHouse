@@ -2213,7 +2213,7 @@ private:
         ROBIN_HOOD_TRACE(this)
         auto const minElementsAllowed = (std::max)(c, mNumElements);
         auto newSize = InitialNumElements;
-        auto betm = timerh();
+        //auto betm = timerh();
         while (calcMaxNumElementsAllowed(newSize) < minElementsAllowed && newSize != 0) {
             newSize *= 2;
         }
@@ -2229,10 +2229,10 @@ private:
         if (forceRehash || newSize > mMask + 1) {
             rehashPowerOfTwo(newSize, false);
         }
-        auto rehashtm = timerh();
-        if (rehashtm - caltm > 10 || rehashtm - betm > 10) {
-            std::cout << "rehash took ms " << rehashtm - caltm << ", cal time ms " << caltm - betm << std::endl;
-        }
+        //auto rehashtm = timerh();
+        //if (rehashtm - caltm > 10 || rehashtm - betm > 10) {
+        //    std::cout << "rehash took ms " << rehashtm - caltm << ", cal time ms " << caltm - betm << std::endl;
+        //}
     }
 
     // reserves space for at least the specified number of elements.
@@ -2486,8 +2486,6 @@ private:
     }
 
     void destroy() {
-        std::cout << "destroy in robin hood, isflat&trival " << IsFlat && std::is_trivially_destructible<Node>::value;
-        std::cout << std::endl;
         if (0 == mMask) {
             // don't deallocate!
             return;
@@ -2502,7 +2500,6 @@ private:
         // [-Werror=free-nonheap-object]
         if (mKeyVals != reinterpret_cast_no_cast_align_warning<Node*>(&mMask)) {
             ROBIN_HOOD_LOG("std::free")
-            std::cout << "std::free" << std::endl;
             std::free(mKeyVals);
         }
     }

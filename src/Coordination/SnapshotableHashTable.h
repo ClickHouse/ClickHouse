@@ -14,6 +14,7 @@
 
 namespace DB
 {
+#pragma pack(push, 1)
 template<typename V>
 struct ListNode
 {
@@ -21,6 +22,7 @@ struct ListNode
     V value;
     bool active_in_map;
 };
+#pragma pack(pop)
 
 #include <Common/parallel_hashmap/phmap.h>
 template <class V>

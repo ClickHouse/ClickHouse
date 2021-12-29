@@ -31,9 +31,7 @@ public:
     IncrementalRehashTable()
     {
         store[0] = std::make_shared<US>();
-        //store[0]->reserve(1000000); // for big container, cost is memory
         store[1] = std::make_shared<US>();
-        //store[1]->reserve(2000000);
     }
     IncrementalRehashTable(const Self & rhs) {
         store[0] = rhs.store[0];
@@ -116,7 +114,6 @@ public:
     // only insert table 1 if rehashing
     std::pair<iterator,bool> insert(const value_type & t)
     {
-        //++count;
         if (rehashing) [[unlikely]]
         {
             auto res = store[1]->insert(t);

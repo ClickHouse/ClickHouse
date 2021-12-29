@@ -978,7 +978,7 @@ TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
     n1.data = "1234";
     Node n2;
     n2.data = "123456";
-    n2.children.insert("");
+    n2.addChild("");
 
     world.disableSnapshotMode();
     world.insert("world", n1);
@@ -1010,6 +1010,7 @@ void addNode(DB::KeeperStorage & storage, const std::string & path, const std::s
 {
     using Node = DB::KeeperStorage::Node;
     Node node{};
+    std::cout << "node size " << sizeof(Node) << std::endl;
     node.data = data;
     node.stat.ephemeralOwner = ephemeral_owner;
     storage.container.insertOrReplace(path, node);
@@ -1048,9 +1049,9 @@ TEST_P(CoordinationTest, TestStorageSnapshotSimple)
     auto [restored_storage, snapshot_meta, _] = manager.deserializeSnapshotFromBuffer(debuf);
 
     EXPECT_EQ(restored_storage->container.size(), 3);
-    EXPECT_EQ(restored_storage->container.getValue("/").children.size(), 1);
-    EXPECT_EQ(restored_storage->container.getValue("/hello").children.size(), 1);
-    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").children.size(), 0);
+    EXPECT_EQ(restored_storage->container.getValue("/").childSize(), 1);
+    EXPECT_EQ(restored_storage->container.getValue("/hello").childSize(), 1);
+    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").childSize(), 0);
 
     EXPECT_EQ(restored_storage->container.getValue("/").data, "");
     EXPECT_EQ(restored_storage->container.getValue("/hello").data, "world");
@@ -1585,9 +1586,9 @@ TEST_P(CoordinationTest, TestStorageSnapshotDifferentCompressions)
     auto [restored_storage, snapshot_meta, _] = new_manager.deserializeSnapshotFromBuffer(debuf);
 
     EXPECT_EQ(restored_storage->container.size(), 3);
-    EXPECT_EQ(restored_storage->container.getValue("/").children.size(), 1);
-    EXPECT_EQ(restored_storage->container.getValue("/hello").children.size(), 1);
-    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").children.size(), 0);
+    EXPECT_EQ(restored_storage->container.getValue("/").childSize(), 1);
+    EXPECT_EQ(restored_storage->container.getValue("/hello").childSize(), 1);
+    EXPECT_EQ(restored_storage->container.getValue("/hello/somepath").childSize(), 0);
 
     EXPECT_EQ(restored_storage->container.getValue("/").data, "");
     EXPECT_EQ(restored_storage->container.getValue("/hello").data, "world");

@@ -16,8 +16,15 @@ int64_t timeit()
 #include <list>
 int main()
 {
+    std::cout << sizeof(my_unordered_set<std::string>) << std::endl;
+    std::cout << sizeof(std::unordered_set<std::string>) << std::endl;
+    std::cout << sizeof(std::unique_ptr<my_unordered_set<std::string>>) << std::endl;
+    std::cout << sizeof(std::shared_ptr<my_unordered_set<std::string>>) << std::endl;
+    std::cout << sizeof(std::string) << std::endl;
+    return 0;
     my_unordered_set<std::string> t;
-    my_unordered_map<std::string, int> mp;
+    my_unordered_map<std::string, int> rmp;
+    robin_hood::unordered_map<std::string, int> mp;
     std::cout << "map is flat " << my_unordered_map<std::string, std::list<std::string>::iterator>::is_flat << std::endl;
     std::cout << "set  map is flat " << my_unordered_set<std::string>::is_flat << std::endl;
     #if 0
@@ -39,19 +46,26 @@ int main()
     }
     #endif
     {
-        int N = 500000;
+        int N = 10000000;
         auto btime = timeit();
         for (int i = 0; i < N; ++i)
             mp.insert(robin_hood::pair(std::make_pair(std::string("abcd" + std::to_string(i)), i)));
         auto etime = timeit();
-        std::cout << "mymap use time ms " << etime - btime << ", size" << mp.size() << ", ht size: " << mp.htsize()<< std::endl;
+        std::cout << "robin hood map use time ms " << etime - btime << ", size" << mp.size() << std::endl;
         for (int i = 0; i < N; ++i)
             assert(mp.contains(std::string("abcd") + std::to_string(i)));
+
         std::unordered_map<std::string, int> orimap;
         btime = timeit();
         for (int i = 0; i < N; ++i)
             orimap.insert(std::make_pair(std::string("bbbb" + std::to_string(i)), i));
         etime = timeit();
         std::cout << "std unorderedmap use time ms " << etime - btime << std::endl;
+
+        btime = timeit();
+        for (int i = 0; i < N; ++i)
+            rmp.insert(robin_hood::pair(std::make_pair(std::string("cccc" + std::to_string(i)), i)));
+        etime = timeit();
+        std::cout << "my unorderedmap use time ms " << etime - btime << std::endl;
     }
 }

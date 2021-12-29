@@ -340,7 +340,8 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
                                             parent_cversion, &prev_parent_cversion] (KeeperStorage::Node & parent)
         {
 
-            parent.children.insert(child_path);
+            //parent.children.insert(child_path);
+            parent.addChild(child_path);
             parent.size_bytes += child_path.size();
             prev_parent_cversion = parent.stat.cversion;
             prev_parent_zxid = parent.stat.pzxid;
@@ -378,7 +379,8 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
                 --undo_parent.seq_num;
                 undo_parent.stat.cversion = prev_parent_cversion;
                 undo_parent.stat.pzxid = prev_parent_zxid;
-                undo_parent.children.erase(child_path);
+                //undo_parent.children.erase(child_path);
+                undo_parent.removeChild(child_path);
                 undo_parent.size_bytes -= child_path.size();
             });
         };
@@ -512,7 +514,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
             {
                 --parent.stat.numChildren;
                 ++parent.stat.cversion;
-                parent.children.erase(child_basename);
+                parent.removeChild(child_basename);
                 parent.size_bytes -= child_basename.size();
             });
 
@@ -532,7 +534,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
                 {
                     ++parent.stat.numChildren;
                     --parent.stat.cversion;
-                    parent.children.insert(child_basename);
+                    parent.addChild(child_basename);
                     parent.size_bytes += child_basename.size();
                 });
             };
@@ -686,7 +688,8 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
             if (path_prefix.empty())
                 throw DB::Exception("Logical error: path cannot be empty", ErrorCodes::LOGICAL_ERROR);
 
-            response.names.insert(response.names.end(), it->value.children.begin(), it->value.children.end());
+            //response.names.insert(response.names.end(), it->value.children.begin(), it->value.children.end());
+            response.names.insert(response.names.end(), it->value.childrenBegin(), it->value.childrenEnd());
 
             response.stat = it->value.stat;
             response.error = Coordination::Error::ZOK;
@@ -1100,7 +1103,7 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
                 {
                     --parent.stat.numChildren;
                     ++parent.stat.cversion;
-                    parent.children.erase(getBaseName(ephemeral_path));
+                    parent.removeChild(getBaseName(ephemeral_path));
                     parent.size_bytes -= getBaseName(ephemeral_path).size();
                 });
 

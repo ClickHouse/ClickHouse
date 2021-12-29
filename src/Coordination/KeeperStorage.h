@@ -23,7 +23,7 @@ struct KeeperStorageRequestProcessor;
 using KeeperStorageRequestProcessorPtr = std::shared_ptr<KeeperStorageRequestProcessor>;
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
 //using ChildrenSet = std::unordered_set<std::string>;
-using ChildrenSet = my_unordered_set<std::string>;
+using ChildrenSet = std::shared_ptr<my_unordered_set<std::string>>;
 //using ChildrenSet = array_unordered_set<std::string>;
 //using ChildrenSet = std::set<std::string>;
 //using ChildrenSet = DoubleSet<std::string>;
@@ -37,6 +37,7 @@ struct KeeperStorageSnapshot;
 class KeeperStorage
 {
 public:
+    #pragma pack(push, 1)
     struct Node
     {
         String data;
@@ -44,8 +45,9 @@ public:
         bool is_sequental = false;
         Coordination::Stat stat{};
         int32_t seq_num = 0;
-        ChildrenSet children{};
-        uint64_t size_bytes; // save size to avoid calculate every time
+        ChildrenSet children{nullptr};
+        //uint64_t size_bytes; // save size to avoid calculate every time
+        uint32_t size_bytes; // save size to avoid calculate every time
 
         Node()
         {
@@ -55,14 +57,45 @@ public:
             size_bytes += sizeof(is_sequental);
             size_bytes += sizeof(stat);
             size_bytes += sizeof(seq_num);
-            //children.reserve(100000);    // reserve some space for children
         }
+        bool addChild(const std::string& child)
+        {
+            if (children == nullptr)
+                children = std::make_shared<my_unordered_set<std::string>>();
+            return children->insert(child).second;
+        }
+        bool removeChild(const std::string& child)
+        {
+            if (children)
+            {
+                return children->erase(child);
+            }
+            return false;
+        }
+        size_t childSize() const
+        {
+            return children ? children->size() : 0;
+        }
+        typename ChildrenSet::element_type::const_iterator childrenBegin() const
+        {
+            if (!children)
+                return ChildrenSet::element_type::const_iterator();
+            const auto & ce = *children;
+            return ce.begin();
+        }
+        typename ChildrenSet::element_type::const_iterator childrenEnd() const
+        {
+            return children ? children->end() : ChildrenSet::element_type::const_iterator();
+        }
+
         /// Object memory size
         uint64_t sizeInBytes() const
         {
             return size_bytes;
         }
     };
+    #pragma pack(pop)
+
 
     struct ResponseForSession
     {
