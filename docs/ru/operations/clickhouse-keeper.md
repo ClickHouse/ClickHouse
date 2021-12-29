@@ -116,7 +116,7 @@ ClickHouse Keeper также поддерживает 4-х буквенные к
 
 У 4-х буквенных команд есть параметр для настройки разрешенного списка `four_letter_word_white_list`, который имеет значение по умолчанию "conf,cons,crst,envi,ruok,srst,srvr,stat, wchc,wchs,dirs,mntr,isro".
 
-Вы можете отправлять команды в ClickHouse Keeper через telnet или nc через клиентский порт.
+Вы можете отправлять команды в ClickHouse Keeper через telnet или nc на порт для клиента.
 
 ```
 echo mntr | nc localhost 9181
