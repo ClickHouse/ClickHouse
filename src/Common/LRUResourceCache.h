@@ -38,15 +38,8 @@ public:
     class MappedHolder
     {
     public:
-        ~MappedHolder()
-        {
-            cache->release(key);
-                
-        }
-        Mapped & value()
-        {
-            return *(val.get());
-        }
+        ~MappedHolder() { cache->release(key); }
+        Mapped & value() { return *(val.get()); }
         static bool tryRemove(std::unique_ptr<MappedHolder> * holder_ptr)
         {
             auto & holder = *holder_ptr;
@@ -56,9 +49,8 @@ public:
             return cache->tryRemove(key);
         }
 
-        MappedHolder(LRUResourceCache * cache_, const Key & key_, MappedPtr value_) : cache(cache_), key(key_), val(value_)
-        {
-        }
+        MappedHolder(LRUResourceCache * cache_, const Key & key_, MappedPtr value_) : cache(cache_), key(key_), val(value_) { }
+
     protected:
         LRUResourceCache * cache;
         Key key;
@@ -74,7 +66,7 @@ public:
             return nullptr;
         return std::make_unique<MappedHolder>(this, key, mappedptr);
     }
-    template<typename LoadFunc>
+    template <typename LoadFunc>
     MappedHolderPtr getOrSet(const Key & key, LoadFunc && load_func)
     {
         auto mappedptr = getImpl(key, load_func);
@@ -138,7 +130,7 @@ private:
     std::atomic<size_t> hits{0};
     std::atomic<size_t> misses{0};
     std::atomic<size_t> evict_count{0};
-    
+
     // - load_func : when key is not exists in cache, load_func is called to generate a new key
     // - return: is null when there is no more space for the new value or the old value is in used.
     template <typename LoadFunc>
@@ -283,7 +275,7 @@ private:
         new_cell.queue_iterator = queue.insert(queue.end(), insert_key);
         return &new_cell;
     }
-    
+
     // If you want to update a value, call tryRemove() at first and then call acquire() with load_func.
     bool tryRemove(const Key & key)
     {
