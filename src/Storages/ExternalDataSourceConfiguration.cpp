@@ -16,6 +16,8 @@
 #include <Storages/Kafka/KafkaSettings.h>
 #endif
 
+#include <re2/re2.h>
+
 namespace DB
 {
 
@@ -166,22 +168,22 @@ std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const
 }
 
 static void validateConfigKeys(
-    const Poco::Util::AbstractConfiguration & dict_config, const String & config_prefix, const std::unordered_set<std::string_view> & allowed_keys)
+    const Poco::Util::AbstractConfiguration & dict_config, const String & config_prefix, HasConfigKeyFunc has_config_key_func)
 {
     Poco::Util::AbstractConfiguration::Keys config_keys;
     dict_config.keys(config_prefix, config_keys);
     for (const auto & config_key : config_keys)
     {
-        if (allowed_keys.contains(config_key) || config_key.starts_with("replica"))
-            continue;
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected key `{}` in dictionary source configuration", config_key);
+        if (!has_config_key_func(config_key))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected key `{}` in dictionary source configuration", config_key);
     }
 }
 
 std::optional<ExternalDataSourceConfiguration> getExternalDataSourceConfiguration(
-    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context)
+    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix,
+    ContextPtr context, HasConfigKeyFunc has_config_key)
 {
-    validateConfigKeys(dict_config, dict_config_prefix, dictionary_allowed_keys);
+    validateConfigKeys(dict_config, dict_config_prefix, has_config_key);
     ExternalDataSourceConfiguration configuration;
 
     auto collection_name = dict_config.getString(dict_config_prefix + ".name", "");
@@ -189,7 +191,7 @@ std::optional<ExternalDataSourceConfiguration> getExternalDataSourceConfiguratio
     {
         const auto & config = context->getConfigRef();
         const auto & collection_prefix = fmt::format("named_collections.{}", collection_name);
-        validateConfigKeys(dict_config, collection_prefix, dictionary_allowed_keys);
+        validateConfigKeys(dict_config, collection_prefix, has_config_key);
 
         if (!config.has(collection_prefix))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection_name);
@@ -215,12 +217,12 @@ std::optional<ExternalDataSourceConfiguration> getExternalDataSourceConfiguratio
 
 
 ExternalDataSourcesByPriority getExternalDataSourceConfigurationByPriority(
-    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context)
+    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context, HasConfigKeyFunc has_config_key)
 {
-    validateConfigKeys(dict_config, dict_config_prefix, dictionary_allowed_keys);
+    validateConfigKeys(dict_config, dict_config_prefix, has_config_key);
     ExternalDataSourceConfiguration common_configuration;
 
-    auto named_collection = getExternalDataSourceConfiguration(dict_config, dict_config_prefix, context);
+    auto named_collection = getExternalDataSourceConfiguration(dict_config, dict_config_prefix, context, has_config_key);
     if (named_collection)
     {
         common_configuration = *named_collection;
@@ -255,7 +257,7 @@ ExternalDataSourcesByPriority getExternalDataSourceConfigurationByPriority(
             {
                 ExternalDataSourceConfiguration replica_configuration(common_configuration);
                 String replica_name = dict_config_prefix + "." + config_key;
-                validateConfigKeys(dict_config, replica_name, {"host", "port", "user", "password", "priority"});
+                validateConfigKeys(dict_config, replica_name, has_config_key);
 
                 size_t priority = dict_config.getInt(replica_name + ".priority", 0);
                 replica_configuration.host = dict_config.getString(replica_name + ".host", common_configuration.host);
