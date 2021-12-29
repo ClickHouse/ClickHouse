@@ -151,8 +151,11 @@ namespace
                             std::size_t n = user_info.find(':');
                             if (n != std::string::npos)
                             {
+                                std::string urlEncodedPassword;
                                 credentials.setUsername(user_info.substr(0, n));
-                                credentials.setPassword(user_info.substr(n + 1));
+                                urlEncodedPassword = user_info.substr(n + 1);
+                                urlEncodedPassword = urlDecode(urlEncodedPassword);
+                                credentials.setPassword(urlEncodedPassword);
                             }
                         }
 
@@ -197,6 +200,31 @@ namespace
                 pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
                 reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
             };
+        }
+
+        // decode a url-encoded string
+        String urlDecode(String str){
+            String ret;
+            char ch;
+            int ii;
+            String::size_type len = str.length();
+            for (String::size_type i = 0; i < len; i++){
+                if (str[i] != '%')
+                {
+                    if(str[i] == '+')
+                        ret += ' ';
+                    else
+                        ret += str[i];
+                }
+                else
+                {
+                    sscanf(str.substr(i + 1, 2).c_str(), "%x", &ii);
+                    ch = static_cast<char>(ii);
+                    ret += ch;
+                    i = i + 2;
+                }
+            }
+            return ret;
         }
 
         String getName() const override
