@@ -22,10 +22,12 @@ public:
 
     /// The check is delayed to the read method. It checks the support of the tables used.
     bool supportsSampling() const override { return true; }
-    bool supportsPrewhere() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
+    bool supportsPrewhere() const override { return true; }
+
+    bool canMoveConditionsToPrewhere() const override;
 
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageMetadataPtr &, SelectQueryInfo &) const override;
@@ -74,6 +76,9 @@ private:
 
     template <typename F>
     StoragePtr getFirstTable(F && predicate) const;
+
+    template <typename F>
+    void forEachTable(F && func) const;
 
     DatabaseTablesIteratorPtr getDatabaseIterator(const String & database_name, ContextPtr context) const;
 
