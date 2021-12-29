@@ -33,7 +33,7 @@ class LRUResourceCache
 {
 public:
     LRUResourceCache(size_t max_weight_, size_t max_element_size_ = 0) : max_weight(max_weight_), max_element_size(max_element_size_) { }
-    virtual ~LRUResourceCache() { }
+    ~LRUResourceCache() = default;
     using Key = TKey;
     using Mapped = TMapped;
     using MappedPtr = std::shared_ptr<Mapped>;
