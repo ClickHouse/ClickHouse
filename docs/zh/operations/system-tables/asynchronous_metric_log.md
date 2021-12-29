@@ -1,18 +1,13 @@
----
-machine_translated: true
-machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
----
-
 ## system.asynchronous_metric_log {#system-tables-async-log}
 
-包含每分钟记录一次的 `system.asynchronous_metrics`历史值. 默认开启. 
+包含每分钟记录一次的 `system.asynchronous_metrics`历史值。默认开启。
 
 列：
--   `event_date` ([Date](../../sql-reference/data-types/date.md)) — 事件日期.
--   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — 事件时间.
--   `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — 事件时间(微秒).
--   `name` ([String](../../sql-reference/data-types/string.md)) — 指标名.
--   `value` ([Float64](../../sql-reference/data-types/float.md)) — 指标值.
+-   `event_date` ([Date](../../sql-reference/data-types/date.md)) — 事件日期。
+-   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — 事件时间。
+-   `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — 事件时间(微秒)。
+-   `name` ([String](../../sql-reference/data-types/string.md)) — 指标名。
+-   `value` ([Float64](../../sql-reference/data-types/float.md)) — 指标值。
 
 **示例**
 ``` sql
