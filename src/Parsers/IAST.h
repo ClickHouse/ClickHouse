@@ -248,7 +248,23 @@ public:
     // Return query_kind string representation of this AST query.
     virtual const char * getQueryKindString() const { return ""; }
 
-public:
+    enum QueryKind
+    {
+        None,
+        Alter,
+        Create,
+        Drop,
+        Grant,
+        Insert,
+        Rename,
+        Revoke,
+        SelectIntersectExcept,
+        Select,
+        System,
+    };
+    /// Return QueryKind of this AST query.
+    virtual QueryKind getQueryKind() const { return QueryKind::None; }
+
     /// For syntax highlighting.
     static const char * hilite_keyword;
     static const char * hilite_identifier;
