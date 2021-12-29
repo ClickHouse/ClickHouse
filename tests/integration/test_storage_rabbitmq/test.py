@@ -35,22 +35,11 @@ def rabbitmq_check_result(result, check=False, ref_file='test_rabbitmq_json.refe
         else:
             return TSV(result) == TSV(reference)
 
-def check_rabbitmq_is_available(rabbitmq_id):
-    p = subprocess.Popen(('docker',
-                        'exec',
-                        '-i',
-                        rabbitmq_id,
-                        'rabbitmqctl',
-                        'await_startup'),
-                        stdout=subprocess.PIPE)
-    p.communicate()
-    return p.returncode == 0
-
 def wait_rabbitmq_to_start(rabbitmq_docker_id, timeout=180):
     start = time.time()
     while time.time() - start < timeout:
         try:
-            if check_rabbitmq_is_available(rabbitmq_docker_id):
+            if instance.cluster.check_rabbitmq_is_available(rabbitmq_docker_id):
                 logging.debug("RabbitMQ is available")
                 return
             time.sleep(0.5)
