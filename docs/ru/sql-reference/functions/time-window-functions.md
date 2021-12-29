@@ -1,13 +1,13 @@
 ---
 toc_priority: 68
-toc_title: Window View
+toc_title: Time Window
 ---
 
-# Window View Functions {#window-view-functions}
+# Time Window Functions {#time-window-functions}
 
-Функции оконного представления возвращают включенный нижний и исключенный верхний пределы соответствующего окна. Ниже указаны функции, которые работают с оконным представлением:
+Функции окна времени возвращают включенный нижний и исключенный верхний пределы соответствующего окна. Ниже указаны функции, которые работают с оконным представлением:
 
-## tumble {#window-view-functions-tumble}
+## tumble {#time-window-functions-tumble}
 
 Переворачивающееся временное окно назначает записи неперекрывающимся непрерывным окнам с фиксированной продолжительностью (`interval`). 
 
@@ -42,7 +42,7 @@ SELECT tumble(now(), toIntervalDay('1'))
 └───────────────────────────────────────────────┘
 ```
 
-## hop {#window-view-functions-hop}
+## hop {#time-window-functions-hop}
 
 У прыгающего окна времени есть фиксированная продолжительность (`window_interval`) и прыгает на определенный прыжковый интервал (`hop_interval`). Если `hop_interval` меньше чем `window_interval`, прыгающие окна перекрывают друг друга. Таким образом, записи можно назначать множеству окон. 
 
@@ -79,7 +79,7 @@ SELECT hop(now(), INTERVAL '1' SECOND, INTERVAL '2' SECOND)
 └───────────────────────────────────────────────────────────┘
 ```
 
-## tumbleStart {#window-view-functions-tumblestart}
+## tumbleStart {#time-window-functions-tumblestart}
 
 Возвращает включенный нижний предел соответствующего переворачивающегося окна. 
 
@@ -87,7 +87,7 @@ SELECT hop(now(), INTERVAL '1' SECOND, INTERVAL '2' SECOND)
 tumbleStart(time_attr, interval [, timezone]);
 ```
 
-## tumbleEnd {#window-view-functions-tumbleend}
+## tumbleEnd {#time-window-functions-tumbleend}
 
 Возвращает исключенный верхний предел соответствующего переворачивающегося окна.
 
@@ -95,7 +95,7 @@ tumbleStart(time_attr, interval [, timezone]);
 tumbleEnd(time_attr, interval [, timezone]);
 ```
 
-## hopStart {#window-view-functions-hopstart}
+## hopStart {#time-window-functions-hopstart}
 
 Возвращает включенный нижний предел соответствующего прыгающего окна.
 
@@ -103,7 +103,7 @@ tumbleEnd(time_attr, interval [, timezone]);
 hopStart(time_attr, hop_interval, window_interval [, timezone]);
 ```
 
-## hopEnd {#window-view-functions-hopend}
+## hopEnd {#time-window-functions-hopend}
 
 Возвращает исключенный верхний предел соответствующего прыгающего окна.
 
