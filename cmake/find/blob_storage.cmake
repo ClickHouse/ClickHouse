@@ -1,13 +1,15 @@
 option (ENABLE_AZURE_BLOB_STORAGE "Enable Azure blob storage" ${ENABLE_LIBRARIES})
 
-option(USE_INTERNAL_AZURE_BLOB_STORAGE_LIBRARY
-    "Set to FALSE to use system Azure SDK instead of bundled (OFF currently not implemented)"
-    ON)
-
 if (ENABLE_AZURE_BLOB_STORAGE)
     set(USE_AZURE_BLOB_STORAGE 1)
     set(AZURE_BLOB_STORAGE_LIBRARY azure_sdk)
+else()
+    return()
 endif()
+
+option(USE_INTERNAL_AZURE_BLOB_STORAGE_LIBRARY
+    "Set to FALSE to use system Azure SDK instead of bundled (OFF currently not implemented)"
+    ON)
 
 if ((NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/azure/sdk"
         OR NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/azure/cmake-modules")
