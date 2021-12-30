@@ -246,7 +246,6 @@ public:
         return removeOnCluster<ASTAlterQuery>(clone(), new_database);
     }
 
-    const char * getQueryKindString() const override { return "Alter"; }
     virtual QueryKind getQueryKind() const override { return QueryKind::Alter; }
 
 protected:

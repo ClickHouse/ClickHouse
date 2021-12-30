@@ -135,7 +135,6 @@ public:
 
     void setFinal();
 
-    const char * getQueryKindString() const override { return "Select"; }
     virtual QueryKind getQueryKind() const override { return QueryKind::Select; }
 
 protected:
