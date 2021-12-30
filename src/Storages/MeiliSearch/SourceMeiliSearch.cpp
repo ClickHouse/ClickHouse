@@ -88,12 +88,6 @@ Chunk MeiliSearchSource::generate()
         ++cnt_match;
         for (const auto idx : collections::range(0, size)) {
             const auto & name = description.sample_block.getByPosition(idx).name;
-            // std::cout   << name 
-            //             << " " 
-            //             << description.sample_block.getByPosition(idx).type->getName() 
-            //             << " "
-            //             << kv_pair.toString()
-            //             << "\n";
             Field::Types::Which type_id = description.sample_block.getByPosition(idx).type->getDefault().getType();
             insertWithTypeId(columns[idx], kv_pair, name, type_id);
         }

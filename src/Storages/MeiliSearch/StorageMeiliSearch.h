@@ -32,6 +32,12 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
+    SinkToStoragePtr write(
+        const ASTPtr & query, 
+        const StorageMetadataPtr& metadata_snapshot, 
+        ContextPtr local_context) override;
+
+
 private:
 
     MeiliSearchConfiguration getConfiguration(ASTs engine_args);
