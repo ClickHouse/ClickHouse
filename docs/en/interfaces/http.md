@@ -186,10 +186,19 @@ $ echo "SELECT 1" | gzip -c | \
 ```
 
 ``` bash
-# Receiving compressed data from the server
+# Receiving compressed data archive from the server
 $ curl -vsS "http://localhost:8123/?enable_http_compression=1" \
     -H 'Accept-Encoding: gzip' --output result.gz -d 'SELECT number FROM system.numbers LIMIT 3'
 $ zcat result.gz
+0
+1
+2
+```
+
+```bash
+# Receiving compressed data from the server and using the gunzip to receive decompressed data
+$ curl -sS "http://localhost:8123/?enable_http_compression=1" \
+    -H 'Accept-Encoding: gzip' -d 'SELECT number FROM system.numbers LIMIT 3' | gunzip -
 0
 1
 2
