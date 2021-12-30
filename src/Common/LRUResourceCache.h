@@ -259,6 +259,7 @@ private:
 
         if (cell_ptr)
         {
+            queue.splice(queue.end(), queue, cell_ptr->queue_iterator);
             cell_ptr->reference_count++;
             return cell_ptr->value;
         }
