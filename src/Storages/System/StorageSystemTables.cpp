@@ -88,7 +88,7 @@ static ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, Contex
     return block.getByPosition(0).column;
 }
 
-static ColumnPtr getFilteredTables(const ASTPtr & query, ColumnPtr & filtered_databases_column, const Context & context)
+static ColumnPtr getFilteredTables(const ASTPtr & query, ColumnPtr & filtered_databases_column, ContextPtr context)
 {
     MutableColumnPtr column = ColumnString::create();
 
