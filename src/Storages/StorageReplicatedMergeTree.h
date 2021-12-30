@@ -280,6 +280,8 @@ public:
     // Return table id, common for different replicas
     String getTableSharedID() const;
 
+    static const String getDefaultZooKeeperName() { return default_zookeeper_name; }
+
 private:
     std::atomic_bool are_restoring_replica {false};
 
