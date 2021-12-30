@@ -449,18 +449,17 @@ void StorageBuffer::read(
 
 static void appendBlock(const Block & from, Block & to)
 {
+    size_t rows = from.rows();
+    size_t old_rows = to.rows();
+    size_t old_bytes = to.bytes();
+
     if (!to)
-        throw Exception("Cannot append to empty block", ErrorCodes::LOGICAL_ERROR);
+        to = from.cloneEmpty();
 
     assertBlocksHaveEqualStructure(from, to, "Buffer");
 
     from.checkNumberOfRows();
     to.checkNumberOfRows();
-
-    size_t rows = from.rows();
-
-    size_t old_rows = to.rows();
-    size_t old_bytes = to.bytes();
 
     MutableColumnPtr last_col;
     try
@@ -615,22 +614,14 @@ private:
         /// Sort the columns in the block. This is necessary to make it easier to concatenate the blocks later.
         Block sorted_block = block.sortColumns();
 
-        if (!buffer.data)
-        {
-            buffer.data = sorted_block.cloneEmpty();
-
-            storage.total_writes.rows += buffer.data.rows();
-            storage.total_writes.bytes += buffer.data.allocatedBytes();
-        }
-        else if (storage.checkThresholds(buffer, /* direct= */true, current_time, sorted_block.rows(), sorted_block.bytes()))
+        if (storage.checkThresholds(buffer, /* direct= */true, current_time, sorted_block.rows(), sorted_block.bytes()))
         {
             /** If, after inserting the buffer, the constraints are exceeded, then we will reset the buffer.
               * This also protects against unlimited consumption of RAM, since if it is impossible to write to the table,
               *  an exception will be thrown, and new data will not be added to the buffer.
               */
 
-            if (storage.flushBuffer(buffer, false /* check_thresholds */, true /* locked */))
-                buffer.data = sorted_block.cloneEmpty();
+            storage.flushBuffer(buffer, false /* check_thresholds */, true /* locked */);
         }
 
         if (!buffer.first_write_time)
