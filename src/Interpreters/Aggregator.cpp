@@ -258,14 +258,15 @@ Aggregator::Params::StatsCollectingParams::StatsCollectingParams(
 class Aggregator::StatisticsUpdater
 {
 public:
-    explicit StatisticsUpdater(const Params::StatsCollectingParams & params_) : params(params_), observed_size(0) { }
+    explicit StatisticsUpdater(Aggregator & aggregator_) : aggregator(aggregator_), observed_size(0) { }
 
     ~StatisticsUpdater()
     {
         try
         {
-            if (params.collect_hash_table_stats_during_aggregation)
-                getHashTablesStatistics().update(observed_size.load(), params);
+            const auto result = !aggregator.hasTemporaryFiles() ? observed_size.load() : aggregator.params.group_by_two_level_threshold;
+            if (aggregator.params.stats_collecting_params.collect_hash_table_stats_during_aggregation)
+                getHashTablesStatistics().update(result, aggregator.params.stats_collecting_params);
         }
         catch (...)
         {
@@ -276,7 +277,7 @@ public:
     void addToObservedHashTableSize(size_t size) { observed_size.fetch_add(size); }
 
 private:
-    Params::StatsCollectingParams params;
+    Aggregator & aggregator;
     std::atomic<size_t> observed_size;
 };
 
@@ -446,8 +447,7 @@ public:
 
 #endif
 
-Aggregator::Aggregator(const Params & params_)
-    : params(params_), stats_updater(std::make_unique<StatisticsUpdater>(params.stats_collecting_params))
+Aggregator::Aggregator(const Params & params_) : params(params_), stats_updater(std::make_unique<StatisticsUpdater>(*this))
 {
     /// Use query-level memory tracker
     if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())
@@ -1532,7 +1532,7 @@ void Aggregator::convertToBlockImpl(
         convertToBlockImplNotFinal(method, data, std::move(raw_key_columns), aggregate_columns);
     }
 
-    if (params.stats_collecting_params.collect_hash_table_stats_during_aggregation && final)
+    if (params.stats_collecting_params.collect_hash_table_stats_during_aggregation)
         stats_updater->addToObservedHashTableSize(data.size());
 
     /// In order to release memory early.
