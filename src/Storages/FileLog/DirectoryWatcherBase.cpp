@@ -6,7 +6,7 @@
 #include <filesystem>
 #include <unistd.h>
 #include <sys/inotify.h>
-#include <sys/poll.h>
+#include <poll.h>
 
 namespace DB
 {

@@ -32,7 +32,7 @@ Lz4InflatingReadBuffer::~Lz4InflatingReadBuffer()
 
 bool Lz4InflatingReadBuffer::nextImpl()
 {
-    if (eof)
+    if (eof_flag)
         return false;
 
     if (!in_available)
@@ -66,7 +66,7 @@ bool Lz4InflatingReadBuffer::nextImpl()
 
     if (in->eof())
     {
-        eof = true;
+        eof_flag = true;
         return !working_buffer.empty();
     }
 

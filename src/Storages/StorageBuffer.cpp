@@ -126,7 +126,13 @@ StorageBuffer::StorageBuffer(
     , bg_pool(getContext()->getBufferFlushSchedulePool())
 {
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
+    if (columns_.empty())
+    {
+        auto dest_table = DatabaseCatalog::instance().getTable(destination_id, context_);
+        storage_metadata.setColumns(dest_table->getInMemoryMetadataPtr()->getColumns());
+    }
+    else
+        storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
@@ -455,10 +461,8 @@ static void appendBlock(const Block & from, Block & to)
     size_t rows = from.rows();
     size_t bytes = from.bytes();
 
-    CurrentMetrics::add(CurrentMetrics::StorageBufferRows, rows);
-    CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, bytes);
-
     size_t old_rows = to.rows();
+    size_t old_bytes = to.bytes();
 
     MutableColumnPtr last_col;
     try
@@ -468,6 +472,8 @@ static void appendBlock(const Block & from, Block & to)
         if (to.rows() == 0)
         {
             to = from;
+            CurrentMetrics::add(CurrentMetrics::StorageBufferRows, rows);
+            CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, bytes);
         }
         else
         {
@@ -480,6 +486,8 @@ static void appendBlock(const Block & from, Block & to)
 
                 to.getByPosition(column_no).column = std::move(last_col);
             }
+            CurrentMetrics::add(CurrentMetrics::StorageBufferRows, rows);
+            CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, to.bytes() - old_bytes);
         }
     }
     catch (...)
@@ -1165,6 +1173,7 @@ void registerStorageBuffer(StorageFactory & factory)
     },
     {
         .supports_parallel_insert = true,
+        .supports_schema_inference = true,
     });
 }
 

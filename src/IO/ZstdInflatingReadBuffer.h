@@ -31,7 +31,7 @@ private:
     ZSTD_DCtx * dctx;
     ZSTD_inBuffer input;
     ZSTD_outBuffer output;
-    bool eof = false;
+    bool eof_flag = false;
 };
 
 }

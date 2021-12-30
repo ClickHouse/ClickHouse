@@ -1,20 +1,18 @@
 #include <Formats/FormatFactory.h>
 
 #include <algorithm>
-#include <Common/Exception.h>
-#include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Formats/FormatSettings.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
-#include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
-#include <Processors/Formats/Impl/ParallelParsingInputFormat.h>
 #include <Processors/Formats/Impl/ParallelFormattingOutputFormat.h>
+#include <Processors/Formats/Impl/ParallelParsingInputFormat.h>
+#include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Poco/URI.h>
-
-#include <IO/BufferWithOwnMemory.h>
-#include <IO/ReadHelpers.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -57,6 +55,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
     format_settings.csv.crlf_end_of_line = settings.output_format_csv_crlf_end_of_line;
     format_settings.csv.delimiter = settings.format_csv_delimiter;
+    format_settings.csv.tuple_delimiter = settings.format_csv_delimiter;
     format_settings.csv.empty_as_default = settings.input_format_csv_empty_as_default;
     format_settings.csv.input_format_enum_as_number = settings.input_format_csv_enum_as_number;
     format_settings.csv.null_representation = settings.format_csv_null_representation;
@@ -118,6 +117,8 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.defaults_for_omitted_fields = settings.input_format_defaults_for_omitted_fields;
     format_settings.capn_proto.enum_comparing_mode = settings.format_capn_proto_enum_comparising_mode;
     format_settings.seekable_read = settings.input_format_allow_seeks;
+    format_settings.msgpack.number_of_columns = settings.input_format_msgpack_number_of_columns;
+    format_settings.max_rows_to_read_for_schema_inference = settings.input_format_max_rows_to_read_for_schema_inference;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
@@ -199,7 +200,6 @@ InputFormatPtr FormatFactory::getInput(
     return format;
 }
 
-
 InputFormatPtr FormatFactory::getInputFormat(
     const String & name,
     ReadBuffer & buf,
@@ -234,6 +234,18 @@ InputFormatPtr FormatFactory::getInputFormat(
     return format;
 }
 
+static void addExistingProgressToOutputFormat(OutputFormatPtr format, ContextPtr context)
+{
+    auto * element_id = context->getProcessListElement();
+    if (element_id)
+    {
+        /// While preparing the query there might have been progress (for example in subscalar subqueries) so add it here
+        auto current_progress = element_id->getProgressIn();
+        Progress read_progress{current_progress.read_rows, current_progress.read_bytes, current_progress.total_rows_to_read};
+        format->onProgress(read_progress);
+    }
+}
+
 OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
     const String & name,
     WriteBuffer & buf,
@@ -262,7 +274,9 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
         if (context->hasQueryContext() && settings.log_queries)
             context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);
 
-        return std::make_shared<ParallelFormattingOutputFormat>(builder);
+        auto format = std::make_shared<ParallelFormattingOutputFormat>(builder);
+        addExistingProgressToOutputFormat(format, context);
+        return format;
     }
 
     return getOutputFormat(name, buf, sample, context, callback, _format_settings);
@@ -302,6 +316,8 @@ OutputFormatPtr FormatFactory::getOutputFormat(
     if (auto * mysql = typeid_cast<MySQLOutputFormat *>(format.get()))
         mysql->setContext(context);
 
+    addExistingProgressToOutputFormat(format, context);
+
     return format;
 }
 
@@ -324,6 +340,32 @@ String FormatFactory::getContentType(
     return format->getContentType();
 }
 
+SchemaReaderPtr FormatFactory::getSchemaReader(
+    const String & name,
+    ReadBuffer & buf,
+    ContextPtr context,
+    const std::optional<FormatSettings> & _format_settings) const
+{
+    const auto & schema_reader_creator = dict.at(name).schema_reader_creator;
+    if (!schema_reader_creator)
+        throw Exception("FormatFactory: Format " + name + " doesn't support schema inference.", ErrorCodes::LOGICAL_ERROR);
+
+    auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
+    return schema_reader_creator(buf, format_settings, context);
+}
+
+ExternalSchemaReaderPtr FormatFactory::getExternalSchemaReader(
+    const String & name,
+    ContextPtr context,
+    const std::optional<FormatSettings> & _format_settings) const
+{
+    const auto & external_schema_reader_creator = dict.at(name).external_schema_reader_creator;
+    if (!external_schema_reader_creator)
+        throw Exception("FormatFactory: Format " + name + " doesn't support schema inference.", ErrorCodes::LOGICAL_ERROR);
+
+    auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
+    return external_schema_reader_creator(format_settings);
+}
 
 void FormatFactory::registerInputFormat(const String & name, InputCreator input_creator)
 {
@@ -357,6 +399,21 @@ void FormatFactory::registerFileSegmentationEngine(const String & name, FileSegm
     target = std::move(file_segmentation_engine);
 }
 
+void FormatFactory::registerSchemaReader(const String & name, SchemaReaderCreator schema_reader_creator)
+{
+    auto & target = dict[name].schema_reader_creator;
+    if (target)
+        throw Exception("FormatFactory: Schema reader " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
+    target = std::move(schema_reader_creator);
+}
+
+void FormatFactory::registerExternalSchemaReader(const String & name, ExternalSchemaReaderCreator external_schema_reader_creator)
+{
+    auto & target = dict[name].external_schema_reader_creator;
+    if (target)
+        throw Exception("FormatFactory: Schema reader " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
+    target = std::move(external_schema_reader_creator);
+}
 
 void FormatFactory::markOutputFormatSupportsParallelFormatting(const String & name)
 {
@@ -392,6 +449,23 @@ bool FormatFactory::isOutputFormat(const String & name) const
 {
     auto it = dict.find(name);
     return it != dict.end() && it->second.output_creator;
+}
+
+bool FormatFactory::checkIfFormatHasSchemaReader(const String & name)
+{
+    const auto & target = getCreators(name);
+    return bool(target.schema_reader_creator);
+}
+
+bool FormatFactory::checkIfFormatHasExternalSchemaReader(const String & name)
+{
+    const auto & target = getCreators(name);
+    return bool(target.external_schema_reader_creator);
+}
+
+bool FormatFactory::checkIfFormatHasAnySchemaReader(const String & name)
+{
+    return checkIfFormatHasSchemaReader(name) || checkIfFormatHasExternalSchemaReader(name);
 }
 
 FormatFactory & FormatFactory::instance()

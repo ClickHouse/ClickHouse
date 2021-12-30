@@ -4,6 +4,7 @@
 #if USE_ARROW
 
 #include <Processors/Formats/IInputFormat.h>
+#include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
 
 namespace arrow { class RecordBatchReader; }
@@ -27,6 +28,11 @@ public:
 private:
     Chunk generate() override;
 
+    void onCancel() override
+    {
+        is_stopped = 1;
+    }
+
     // Whether to use ArrowStream format
     bool stream;
     // This field is only used for ArrowStream format
@@ -42,6 +48,20 @@ private:
     const FormatSettings format_settings;
 
     void prepareReader();
+
+    std::atomic<int> is_stopped{0};
+};
+
+class ArrowSchemaReader : public ISchemaReader
+{
+public:
+    ArrowSchemaReader(ReadBuffer & in_, bool stream_, const FormatSettings & format_settings_);
+
+    NamesAndTypesList readSchema() override;
+
+private:
+    bool stream;
+    const FormatSettings format_settings;
 };
 
 }

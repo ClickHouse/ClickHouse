@@ -114,7 +114,7 @@ $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="numbe
 
     Параметры в конфигурационных файлах переопределяют значения по умолчанию.
 
-### Параметры командной строки {#parametry-komandnoi-stroki}
+### Параметры командной строки {#command-line-options}
 
 -   `--host, -h` — имя сервера, по умолчанию — ‘localhost’. Вы можете использовать как имя, так и IPv4 или IPv6 адрес.
 -   `--port` — порт для подключения, по умолчанию — 9000. Обратите внимание: для HTTP-интерфейса и нативного интерфейса используются разные порты.
@@ -136,7 +136,7 @@ $ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="numbe
 
 Начиная с версии 20.5, в `clickhouse-client` есть автоматическая подсветка синтаксиса (включена всегда).
 
-### Конфигурационные файлы {#konfiguratsionnye-faily}
+### Конфигурационные файлы {#configuration_files}
 
 `clickhouse—client` использует первый существующий файл из:
 

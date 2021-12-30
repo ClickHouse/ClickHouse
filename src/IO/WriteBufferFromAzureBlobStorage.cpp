@@ -7,6 +7,7 @@
 #include <IO/WriteBufferFromAzureBlobStorage.h>
 #include <Disks/RemoteDisksCommon.h>
 #include <Common/getRandomASCIIString.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -28,6 +29,25 @@ WriteBufferFromAzureBlobStorage::~WriteBufferFromAzureBlobStorage()
     finalize();
 }
 
+void WriteBufferFromAzureBlobStorage::finalizeImpl()
+{
+    const size_t max_tries = 3;
+    for (size_t i = 0; i < max_tries; ++i)
+    {
+        try
+        {
+            next();
+            break;
+        }
+        catch (const Azure::Core::RequestFailedException & e)
+        {
+            if (i == max_tries - 1)
+                throw;
+            LOG_INFO(&Poco::Logger::get("WriteBufferFromAzureBlobStorage"),
+                     "Exception caught during finalizing azure storage write at attempt {}: {}", i + 1, e.Message);
+        }
+    }
+}
 
 void WriteBufferFromAzureBlobStorage::nextImpl()
 {
