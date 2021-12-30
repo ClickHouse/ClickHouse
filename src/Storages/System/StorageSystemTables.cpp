@@ -88,18 +88,18 @@ static ColumnPtr getFilteredDatabases(const SelectQueryInfo & query_info, Contex
     return block.getByPosition(0).column;
 }
 
-static ColumnPtr getFilteredTables(const ASTPtr & query, ColumnPtr & filtered_databases_column, ContextPtr context)
+static ColumnPtr getFilteredTables(const ASTPtr & query, const ColumnPtr & filtered_databases_column, ContextPtr context)
 {
     MutableColumnPtr column = ColumnString::create();
 
-    size_t database_idx = 0;
-    for (; database_idx < filtered_databases_column->size(); ++database_idx)
+    for (size_t database_idx = 0; database_idx < filtered_databases_column->size(); ++database_idx)
     {
-        auto database_name = filtered_databases_column->getDataAt(database_idx).toString();
-        DatabasePtr database = DatabaseCatalog::instance().getDatabase(database_name);
-        DatabaseTablesIteratorPtr table_it = database->getTablesIterator(context);
+        const auto & database_name = filtered_databases_column->getDataAt(database_idx).toString();
+        DatabasePtr database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+        if (!database)
+            continue;
 
-        for (; table_it->isValid(); table_it->next())
+        for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
             column->insert(table_it->name());
     }
 
