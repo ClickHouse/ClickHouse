@@ -33,7 +33,7 @@ private:
 
     std::unique_ptr<ReadBuffer> in;
     z_stream zstr;
-    bool eof;
+    bool eof_flag;
 };
 
 }
