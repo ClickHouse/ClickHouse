@@ -219,7 +219,7 @@ KeeperTCPHandler::KeeperTCPHandler(IServer & server_, const Poco::Net::StreamSoc
     , max_session_timeout(
           0,
           global_context->getConfigRef().getUInt(
-              "keeper_server.coordination_settings.max_session_timeout_ms", Coordination::DEFAULT_MAX_SESSION_TIMEOUT_MS) * 1000)
+              "keeper_server.coordination_settings.session_timeout_ms", Coordination::DEFAULT_MAX_SESSION_TIMEOUT_MS) * 1000)
     , poll_wrapper(std::make_unique<SocketInterruptablePollWrapper>(socket_))
     , responses(std::make_unique<ThreadSafeResponseQueue>(std::numeric_limits<size_t>::max()))
     , last_op(std::make_unique<LastOp>(EMPTY_LAST_OP))

@@ -285,8 +285,8 @@ def test_cmd_conf(started_cluster):
         assert result["log_storage_path"] == "/var/lib/clickhouse/coordination/log"
         assert result["snapshot_storage_path"] == "/var/lib/clickhouse/coordination/snapshots"
 
-        assert result["max_session_timeout_ms"] == "30000"
-        assert result["min_session_timeout_ms"] == "1000"
+        assert result["session_timeout_ms"] == "30000"
+        assert result["min_session_timeout_ms"] == "10000"
         assert result["operation_timeout_ms"] == "5000"
         assert result["dead_session_check_period_ms"] == "500"
         assert result["heart_beat_interval_ms"] == "500"
