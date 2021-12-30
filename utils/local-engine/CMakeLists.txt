@@ -48,7 +48,7 @@ else ()
 endif()
 
 set (CLICKHOUSE_SERVER_LINK
-        PRIVATE
+        PUBLIC
         #        dbms
         clickhouse_aggregate_functions
         clickhouse_common_io
@@ -105,6 +105,28 @@ set_property(TARGET ${LOCALENGINE_SHARED_LIB} PROPERTY POSITION_INDEPENDENT_CODE
 #add_executable(${LOCALENGINE_SHARED_LIB} ${JNI_NATIVE_SOURCES})
 add_dependencies(${LOCALENGINE_SHARED_LIB} local_engine_headers)
 target_link_libraries(${LOCALENGINE_SHARED_LIB} ${CLICKHOUSE_SERVER_LINK} )
+
+install(TARGETS ${LOCALENGINE_SHARED_LIB}
+        RUNTIME DESTINATION bin
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib
+        PUBLIC_HEADER DESTINATION include
+        )
+
+install(TARGETS ${LOCALENGINE_SHARED_LIB} RUNTIME_DEPENDENCY_SET myset)
+install(RUNTIME_DEPENDENCY_SET myset
+        DIRECTORIES lib
+        )
+
+set(CPACK_PACKAGE_VERSION 0.1.0)
+set(CPACK_GENERATOR "RPM")
+set(CPACK_PACKAGE_NAME "local_engine_jni")
+set(CPACK_PACKAGE_RELEASE 1)
+set(CPACK_PACKAGE_CONTACT "neng.liu@kyligence.io")
+set(CPACK_PACKAGE_VENDOR "Kyligence")
+set(CPACK_PACKAGING_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX})
+set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CPACK_PACKAGE_RELEASE}.${CMAKE_SYSTEM_PROCESSOR}")
+include(CPack)
 
 if (ENABLE_TESTS)
     add_subdirectory(tests)
