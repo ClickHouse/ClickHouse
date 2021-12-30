@@ -16,7 +16,7 @@
 #include <cstring>
 #include <unordered_map>
 #include <base/logger_useful.h>
-#include <base/getResource.h>
+#include <Common/getResource.h>
 
 namespace DB
 {
