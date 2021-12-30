@@ -100,6 +100,12 @@ remote_servers:
         host: localhost
         port: 9440
         secure: 1
+  test_shard_localhost_secure_empty_tag:
+    shard:
+      replica:
+        host: localhost
+        port: 9440
+        secure:
   test_unavailable_shard:
     shard:
       - replica:
