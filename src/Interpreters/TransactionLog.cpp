@@ -58,13 +58,7 @@ TransactionID TransactionLog::parseTID(const String & csn_node_content)
         return tid;
 
     ReadBufferFromString buf{csn_node_content};
-    assertChar('(', buf);
-    readText(tid.start_csn, buf);
-    assertString(", ", buf);
-    readText(tid.local_tid, buf);
-    assertString(", ", buf);
-    readText(tid.host_id, buf);
-    assertChar(')', buf);
+    tid = TransactionID::read(buf);
     assertEOF(buf);
     return tid;
 }
@@ -72,13 +66,7 @@ TransactionID TransactionLog::parseTID(const String & csn_node_content)
 String TransactionLog::writeTID(const TransactionID & tid)
 {
     WriteBufferFromOwnString buf;
-    writeChar('(', buf);
-    writeText(tid.start_csn, buf);
-    writeCString(", ", buf);
-    writeText(tid.local_tid, buf);
-    writeCString(", ", buf);
-    writeText(tid.host_id, buf);
-    writeChar(')', buf);
+    TransactionID::write(tid, buf);
     return buf.str();
 }
 

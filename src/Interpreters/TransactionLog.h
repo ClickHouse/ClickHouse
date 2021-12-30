@@ -22,6 +22,7 @@ public:
     ~TransactionLog();
 
     Snapshot getLatestSnapshot() const;
+    Snapshot getOldestSnapshot() const;
 
     /// Allocated TID, returns transaction object
     MergeTreeTransactionPtr beginTransaction();
@@ -35,7 +36,6 @@ public:
 
     MergeTreeTransactionPtr tryGetRunningTransaction(const TIDHash & tid);
 
-    Snapshot getOldestSnapshot() const;
 
 private:
     void loadLogFromZooKeeper();

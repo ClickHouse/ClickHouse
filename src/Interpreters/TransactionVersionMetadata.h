@@ -6,7 +6,7 @@ namespace DB
 
 struct VersionMetadata
 {
-    const TransactionID mintid = Tx::EmptyTID;
+    TransactionID mintid = Tx::EmptyTID;
     TransactionID maxtid = Tx::EmptyTID;
 
     std::atomic<TIDHash> maxtid_lock = 0;
@@ -30,6 +30,11 @@ struct VersionMetadata
     void setMinTID(const TransactionID & tid);
 
     bool canBeRemoved(Snapshot oldest_snapshot_version);
+
+    void write(WriteBuffer & buf) const;
+    void read(ReadBuffer & buf);
+
+    String toString(bool one_line = true) const;
 };
 
 DataTypePtr getTransactionIDDataType();

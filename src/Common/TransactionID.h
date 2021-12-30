@@ -25,6 +25,7 @@ namespace Tx
     const CSN MaxReservedCSN = 2;
 
     const LocalTID PrehistoricLocalTID = 1;
+    const LocalTID DummyLocalTID = 1;
     const LocalTID MaxReservedLocalTID = 16;
 }
 
@@ -57,12 +58,17 @@ struct TransactionID
         assert((local_tid == Tx::PrehistoricLocalTID) == (start_csn == Tx::PrehistoricCSN));
         return local_tid == Tx::PrehistoricLocalTID;
     }
+
+
+    static void write(const TransactionID & tid, WriteBuffer & buf);
+    static TransactionID read(ReadBuffer & buf);
 };
 
 namespace Tx
 {
     const TransactionID EmptyTID = {0, 0, UUIDHelpers::Nil};
     const TransactionID PrehistoricTID = {PrehistoricCSN, PrehistoricLocalTID, UUIDHelpers::Nil};
+    const TransactionID DummyTID = {PrehistoricCSN, DummyLocalTID, UUIDHelpers::Nil};
 
     /// So far, that changes will never become visible
     const CSN RolledBackCSN = std::numeric_limits<CSN>::max();

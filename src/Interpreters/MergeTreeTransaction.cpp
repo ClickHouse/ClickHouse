@@ -79,6 +79,7 @@ void MergeTreeTransaction::addNewPart(const StoragePtr & storage, const DataPart
 
     storages.insert(storage);
     creating_parts.push_back(new_part);
+    new_part->storeVersionMetadata();
 }
 
 void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataPartPtr & part_to_remove)
@@ -91,6 +92,7 @@ void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataP
 
     storages.insert(storage);
     removing_parts.push_back(part_to_remove);
+    part_to_remove->storeVersionMetadata();
 }
 
 void MergeTreeTransaction::addMutation(const StoragePtr & table, const String & mutation_id)
@@ -123,9 +125,16 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
     [[maybe_unused]] CSN prev_value = csn.exchange(assigned_csn);
     assert(prev_value == Tx::CommittingCSN);
     for (const auto & part : creating_parts)
+    {
         part->versions.mincsn.store(csn);
+        part->storeVersionMetadata();
+    }
+
     for (const auto & part : removing_parts)
+    {
         part->versions.maxcsn.store(csn);
+        part->storeVersionMetadata();
+    }
 }
 
 bool MergeTreeTransaction::rollback() noexcept

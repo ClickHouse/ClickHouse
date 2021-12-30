@@ -404,6 +404,8 @@ public:
     /// (number of rows, number of rows with default values, etc).
     static inline constexpr auto SERIALIZATION_FILE_NAME = "serialization.json";
 
+    static inline constexpr auto TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt";
+
     /// Checks that all TTLs (table min/max, column ttls, so on) for part
     /// calculated. Part without calculated TTL may exist if TTL was added after
     /// part creation (using alter query with materialize_ttl setting).
@@ -413,6 +415,8 @@ public:
     /// Required for distinguish different copies of the same part on S3
     String getUniqueId() const;
 
+    void storeVersionMetadata() const;
+    void loadVersionMetadata() const;
 protected:
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk

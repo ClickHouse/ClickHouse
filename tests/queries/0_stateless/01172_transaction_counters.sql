@@ -21,4 +21,15 @@ select 4, name, mincsn, maxtid, maxcsn from system.parts where database=currentD
 select 5, transactionID().3 == serverUUID();
 commit;
 
+detach table txn_counters;
+attach table txn_counters;
+
+begin transaction;
+insert into txn_counters(n) values (4);
+select 6, system.parts.name, txn_counters.mintid = system.parts.mintid from txn_counters join system.parts on txn_counters._part = system.parts.name where database=currentDatabase() and table='txn_counters' order by system.parts.name;
+select 7, name, maxtid, maxcsn from system.parts where database=currentDatabase() and table='txn_counters' order by system.parts.name;
+select 8, transactionID().3 == serverUUID();
+commit;
+
+
 drop table txn_counters;

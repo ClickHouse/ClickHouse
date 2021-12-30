@@ -3,6 +3,9 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Interpreters/TransactionLog.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
 
 //#include <base/logger_useful.h>
 
@@ -13,6 +16,7 @@ namespace ErrorCodes
 {
     extern const int SERIALIZATION_ERROR;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_PARSE_TEXT;
 }
 
 /// It can be used for introspection purposes only
@@ -233,6 +237,87 @@ bool VersionMetadata::canBeRemoved(Snapshot oldest_snapshot_version)
 
     return max <= oldest_snapshot_version;
 }
+
+void VersionMetadata::write(WriteBuffer & buf) const
+{
+    writeCString("version: 1", buf);
+    writeCString("\nmintid: ", buf);
+    TransactionID::write(mintid, buf);
+    if (CSN min = mincsn.load())
+    {
+        writeCString("\nmincsn: ", buf);
+        writeText(min, buf);
+    }
+
+    if (!maxtid.isEmpty())
+    {
+        writeCString("\nmaxtid: ", buf);
+        TransactionID::write(maxtid, buf);
+        if (CSN max = maxcsn.load())
+        {
+            writeCString("\nmaxcsn: ", buf);
+            writeText(max, buf);
+        }
+    }
+}
+
+void VersionMetadata::read(ReadBuffer & buf)
+{
+    assertString("version: 1", buf);
+    assertString("\nmintid: ", buf);
+    mintid = TransactionID::read(buf);
+    if (buf.eof())
+        return;
+
+    String name;
+    constexpr size_t size = 8;
+    name.resize(size);
+
+    assertChar('\n', buf);
+    buf.readStrict(name.data(), size);
+    if (name == "mincsn: ")
+    {
+        UInt64 min;
+        readText(min, buf);
+        mincsn = min;
+        if (buf.eof())
+            return;
+    }
+
+    assertChar('\n', buf);
+    buf.readStrict(name.data(), size);
+    if (name == "maxtid: ")
+    {
+        maxtid = TransactionID::read(buf);
+        maxtid_lock = maxtid.getHash();
+        if (buf.eof())
+            return;
+    }
+
+    assertChar('\n', buf);
+    buf.readStrict(name.data(), size);
+    if (name == "maxcsn: ")
+    {
+        if (maxtid.isEmpty())
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Found maxcsn in metadata file, but maxtid is {}", maxtid);
+        UInt64 max;
+        readText(max, buf);
+        maxcsn = max;
+    }
+
+    assertEOF(buf);
+}
+
+String VersionMetadata::toString(bool one_line) const
+{
+    WriteBufferFromOwnString buf;
+    write(buf);
+    String res = buf.str();
+    if (one_line)
+        std::replace(res.begin(), res.end(), '\n', ' ');
+    return res;
+}
+
 
 DataTypePtr getTransactionIDDataType()
 {

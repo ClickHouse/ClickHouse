@@ -1,6 +1,10 @@
+#include <Functions/FunctionConstantBase.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/TransactionLog.h>
 
 
 namespace DB
@@ -9,44 +13,40 @@ namespace DB
 namespace
 {
 
-class FunctionTransactionID : public IFunction
+class FunctionTransactionID : public FunctionConstantBase<FunctionTransactionID, Tuple, DataTypeNothing>
 {
 public:
     static constexpr auto name = "transactionID";
-
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionTransactionID>(context->getCurrentTransaction());
-    }
-
-    explicit FunctionTransactionID(MergeTreeTransactionPtr && txn_) : txn(txn_)
-    {
-    }
-
-    String getName() const override { return name; }
-
-    size_t getNumberOfArguments() const override { return 0; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
-    {
-        return getTransactionIDDataType();
-    }
-
-    bool isDeterministic() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
+    static Tuple getValue(const MergeTreeTransactionPtr & txn)
     {
         Tuple res;
         if (txn)
             res = {txn->tid.start_csn, txn->tid.local_tid, txn->tid.host_id};
         else
             res = {UInt64(0), UInt64(0), UUIDHelpers::Nil};
-        return result_type->createColumnConst(input_rows_count, res);
+        return res;
     }
 
-private:
-    MergeTreeTransactionPtr txn;
+    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override { return getTransactionIDDataType(); }
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTransactionID>(context); }
+    explicit FunctionTransactionID(ContextPtr context) : FunctionConstantBase(getValue(context->getCurrentTransaction()), context->isDistributed()) {}
+};
+
+class FunctionTransactionLatestSnapshot : public FunctionConstantBase<FunctionTransactionLatestSnapshot, UInt64, DataTypeUInt64>
+{
+public:
+    static constexpr auto name = "transactionLatestSnapshot";
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTransactionLatestSnapshot>(context); }
+    explicit FunctionTransactionLatestSnapshot(ContextPtr context) : FunctionConstantBase(TransactionLog::instance().getLatestSnapshot(), context->isDistributed()) {}
+};
+
+class FunctionTransactionOldestSnapshot : public FunctionConstantBase<FunctionTransactionOldestSnapshot, UInt64, DataTypeUInt64>
+{
+public:
+    static constexpr auto name = "transactionOldestSnapshot";
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTransactionOldestSnapshot>(context); }
+    explicit FunctionTransactionOldestSnapshot(ContextPtr context) : FunctionConstantBase(TransactionLog::instance().getOldestSnapshot(), context->isDistributed()) {}
 };
 
 }
@@ -54,6 +54,8 @@ private:
 void registerFunctionsTransactionCounters(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionTransactionID>();
+    factory.registerFunction<FunctionTransactionLatestSnapshot>();
+    factory.registerFunction<FunctionTransactionOldestSnapshot>();
 }
 
 }
