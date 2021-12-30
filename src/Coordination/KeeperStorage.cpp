@@ -11,6 +11,7 @@
 #include <Poco/Base64Encoder.h>
 #include <boost/algorithm/string.hpp>
 #include <Common/hex.h>
+#include <Coordination/pathUtils.h>
 
 namespace DB
 {
@@ -19,20 +20,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-}
-
-static String parentPath(const String & path)
-{
-    auto rslash_pos = path.rfind('/');
-    if (rslash_pos > 0)
-        return path.substr(0, rslash_pos);
-    return "/";
-}
-
-static std::string getBaseName(const String & path)
-{
-    size_t basename_start = path.rfind('/');
-    return std::string{&path[basename_start + 1], path.length() - basename_start - 1};
 }
 
 static String base64Encode(const String & decoded)
@@ -1095,8 +1082,9 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
                 {
                     --parent.stat.numChildren;
                     ++parent.stat.cversion;
-                    parent.children.erase(getBaseName(ephemeral_path));
-                    parent.size_bytes -= getBaseName(ephemeral_path).size();
+                    auto base_name = getBaseName(ephemeral_path);
+                    parent.children.erase(base_name);
+                    parent.size_bytes -= base_name.size();
                 });
 
                 auto responses = processWatchesImpl(ephemeral_path, watches, list_watches, Coordination::Event::DELETED);

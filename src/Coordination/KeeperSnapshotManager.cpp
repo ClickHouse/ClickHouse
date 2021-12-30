@@ -9,6 +9,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/copyData.h>
+#include <Coordination/pathUtils.h>
 #include <filesystem>
 #include <memory>
 
@@ -39,20 +40,6 @@ namespace
         if (compress_zstd)
             base += ".zstd";
         return base;
-    }
-
-    std::string getBaseName(const String & path)
-    {
-        size_t basename_start = path.rfind('/');
-        return std::string{&path[basename_start + 1], path.length() - basename_start - 1};
-    }
-
-    String parentPath(const String & path)
-    {
-        auto rslash_pos = path.rfind('/');
-        if (rslash_pos > 0)
-            return path.substr(0, rslash_pos);
-        return "/";
     }
 
     void writeNode(const KeeperStorage::Node & node, SnapshotVersion version, WriteBuffer & out)
@@ -292,7 +279,7 @@ void KeeperStorageSnapshot::deserialize(SnapshotDeserializationResult & deserial
         if (itr.key != "/")
         {
             auto parent_path = parentPath(itr.key);
-            storage.container.updateValue(parent_path, [&path = itr.key] (KeeperStorage::Node & value) { value.children.insert(getBaseName(path)); });
+            storage.container.updateValue(parent_path, [path = itr.key] (KeeperStorage::Node & value) { value.children.insert(getBaseName(path)); });
         }
     }
 
