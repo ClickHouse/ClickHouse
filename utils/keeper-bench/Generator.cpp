@@ -48,8 +48,59 @@ std::string generateRandomData(size_t size)
     return generateRandomString(size);
 }
 
+void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & path)
+{
+    namespace fs = std::filesystem;
+
+    auto promise = std::make_shared<std::promise<void>>();
+    auto future = promise->get_future();
+
+    Strings children;
+    auto list_callback = [promise, &children] (const ListResponse & response)
+    {
+        children = response.names;
+
+        promise->set_value();
+    };
+    zookeeper.list(path, list_callback, nullptr);
+    future.get();
+
+    while (!children.empty())
+    {
+        Coordination::Requests ops;
+        for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
+        {
+            removeRecursive(zookeeper, fs::path(path) / children.back());
+            ops.emplace_back(makeRemoveRequest(fs::path(path) / children.back(), -1));
+            children.pop_back();
+        }
+        auto multi_promise = std::make_shared<std::promise<void>>();
+        auto multi_future = multi_promise->get_future();
+
+        auto multi_callback = [multi_promise] (const MultiResponse &)
+        {
+            multi_promise->set_value();
+        };
+        zookeeper.multi(ops, multi_callback);
+        multi_future.get();
+    }
+    auto remove_promise = std::make_shared<std::promise<void>>();
+    auto remove_future = remove_promise->get_future();
+
+    auto remove_callback = [remove_promise] (const RemoveResponse &)
+    {
+        remove_promise->set_value();
+    };
+
+    zookeeper.remove(path, -1, remove_callback);
+    remove_future.get();
+}
+
+
 void CreateRequestGenerator::startup(Coordination::ZooKeeper & zookeeper)
 {
+    removeRecursive(zookeeper, path_prefix);
+
     auto promise = std::make_shared<std::promise<void>>();
     auto future = promise->get_future();
     auto create_callback = [promise] (const CreateResponse & response)
