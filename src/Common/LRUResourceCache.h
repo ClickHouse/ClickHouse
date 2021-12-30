@@ -141,7 +141,7 @@ private:
     std::atomic<size_t> misses{0};
     std::atomic<size_t> evict_count{0};
 
-    // - load_func : when key is not exists in cache, load_func is called to generate a new key
+    // - load_func : when key is not exists in cache, load_func is called to generate a new value
     // - return: is null when there is no more space for the new value or the old value is in used.
     template <typename LoadFunc>
     MappedPtr getImpl(const Key & key, LoadFunc && load_func)
