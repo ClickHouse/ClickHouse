@@ -172,7 +172,7 @@ public:
 
             for (size_t j = 0; j < 3; ++j)
             {
-                auto res_str = LanguageClassificationImpl<true>::codeISO(LanguageCode(result_lang_top3[j]));
+                auto res_str = LanguageClassificationImpl::codeISO(LanguageCode(result_lang_top3[j]));
                 int32_t res_int = static_cast<int>(pc[j]);
 
                 keys_data->insertData(res_str.data(), res_str.size());
