@@ -197,7 +197,7 @@ $ zcat result.gz
 
 ```bash
 # Receiving compressed data from the server and using the gunzip to receive decompressed data
-$ curl -sS "http://default:openstack@localhost:8123/?enable_http_compression=1" \
+$ curl -sS "http://localhost:8123/?enable_http_compression=1" \
     -H 'Accept-Encoding: gzip' -d 'SELECT number FROM system.numbers LIMIT 3' | gunzip -
 0
 1
