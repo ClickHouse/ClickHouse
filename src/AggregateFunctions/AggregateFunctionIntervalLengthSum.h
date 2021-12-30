@@ -7,6 +7,8 @@
 #include <Common/ArenaAllocator.h>
 #include <Common/assert_cast.h>
 
+#include <base/arithmeticOverflow.h>
+
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -14,6 +16,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <unordered_set>
+
 
 namespace DB
 {
@@ -25,7 +28,7 @@ namespace ErrorCodes
 
 /**
  * Calculate total length of intervals without intersections. Each interval is the pair of numbers [begin, end];
- * Return UInt64 for integral types (UInt/Int*, Date/DateTime) and return Float64 for Float*.
+ * Return Int64 for integral types (UInt/Int*, Date/DateTime) and return Float64 for Float*.
  *
  * Implementation simply stores intervals sorted by beginning and sums lengths at final.
  */
@@ -147,7 +150,17 @@ private:
             /// Check if current interval intersect with next one then add length, otherwise advance interval end
             if (cur_segment.second < data.segments[i].first)
             {
-                res += cur_segment.second - cur_segment.first;
+                if constexpr (std::is_floating_point_v<TResult>)
+                {
+                    res += cur_segment.second - cur_segment.first;
+                }
+                else
+                {
+                    TResult diff;
+                    if (!common::subOverflow(static_cast<TResult>(cur_segment.second), static_cast<TResult>(cur_segment.first), diff))
+                        res += diff;
+                }
+
                 cur_segment = data.segments[i];
             }
             else
@@ -171,7 +184,7 @@ public:
     {
         if constexpr (std::is_floating_point_v<T>)
             return std::make_shared<DataTypeFloat64>();
-        return std::make_shared<DataTypeUInt64>();
+        return std::make_shared<DataTypeInt64>();
     }
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -212,7 +225,7 @@ public:
         if constexpr (std::is_floating_point_v<T>)
             assert_cast<ColumnFloat64 &>(to).getData().push_back(getIntervalLengthSum<Float64>(this->data(place)));
         else
-            assert_cast<ColumnUInt64 &>(to).getData().push_back(getIntervalLengthSum<UInt64>(this->data(place)));
+            assert_cast<ColumnInt64 &>(to).getData().push_back(getIntervalLengthSum<Int64>(this->data(place)));
     }
 };
 
