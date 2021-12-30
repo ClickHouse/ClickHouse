@@ -129,11 +129,11 @@ struct TonalityClassificationImpl
             Float64 total_tonality = weight / count_words;
             buf = get_tonality(total_tonality);
 
-            const auto ans = buf.c_str();
+            const auto res = buf.c_str();
             size_t cur_offset = offsets[i];
-            size_t ans_size = strlen(ans);
+            size_t ans_size = strlen(res);
             res_data.resize(res_offset + ans_size + 1);
-            memcpy(&res_data[res_offset], ans, ans_size);
+            memcpy(&res_data[res_offset], res, ans_size);
             res_offset += ans_size;
 
             res_data[res_offset] = 0;

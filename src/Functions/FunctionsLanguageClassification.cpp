@@ -26,6 +26,12 @@ namespace DB
  * Uses the cld2 library https://github.com/CLD2Owners/cld2
  */
 
+namespace ErrorCodes
+{
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int ILLEGAL_COLUMN;
+}
+
 struct LanguageClassificationImpl
 {
     using ResultType = String;
@@ -82,17 +88,17 @@ struct LanguageClassificationImpl
         for (size_t i = 0; i < offsets.size(); ++i)
         {
             const char * str = reinterpret_cast<const char *>(&data[prev_offset]);
-            String ans;
+            String res;
             bool is_reliable = true;
 
             auto lang = CLD2::DetectLanguage(str, strlen(str), true, &is_reliable);
-            ans = codeISO(LanguageCode(lang));
+            res = codeISO(LanguageCode(lang));
 
             size_t cur_offset = offsets[i];
 
-            res_data.resize(res_offset + ans.size() + 1);
-            memcpy(&res_data[res_offset], ans.data(), ans.size());
-            res_offset += ans.size();
+            res_data.resize(res_offset + res.size() + 1);
+            memcpy(&res_data[res_offset], res.data(), res.size());
+            res_offset += res.size();
 
             res_data[res_offset] = 0;
             ++res_offset;

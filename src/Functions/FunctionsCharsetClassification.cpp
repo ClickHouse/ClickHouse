@@ -141,7 +141,7 @@ struct CharsetClassificationImpl
         /* In our dictionary we have lines with form: <Language>_<Charset>
          * If we need to find language of data, we return <Language>
          * If we need to find charset of data, we return <Charset>.
-         */ 
+         */
 
         size_t sep = poss_ans.find('_');
         if (detect_language)
@@ -204,12 +204,12 @@ struct CharsetClassificationImpl
 
             ans_str = poss_ans;
 
-            const auto ans = ans_str.c_str();
+            const auto res = ans_str.c_str();
             size_t cur_offset = offsets[i];
 
-            size_t ans_size = strlen(ans);
+            size_t ans_size = strlen(res);
             res_data.resize(res_offset + ans_size + 1);
-            memcpy(&res_data[res_offset], ans, ans_size);
+            memcpy(&res_data[res_offset], res, ans_size);
             res_offset += ans_size;
 
             res_data[res_offset] = 0;
