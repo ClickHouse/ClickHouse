@@ -73,23 +73,7 @@ void replaceJoinedTable(const ASTSelectQuery & select_query)
         // FIXME: long table names include database name, which we can't save within alias.
         if (table_id.alias.empty() && table_id.isShort())
         {
-            /// Build query of form '(SELECT * FROM table_name) AS table_short_name'
-            table_expr = ASTTableExpression();
-
-            auto subquery = addASTChildrenTo<ASTSubquery>(table_expr, table_expr.subquery);
-            subquery->setAlias(table_short_name);
-
-            auto sub_select_with_union = addASTChildren<ASTSelectWithUnionQuery>(*subquery);
-            auto list_of_selects = addASTChildrenTo<ASTExpressionList>(*sub_select_with_union, sub_select_with_union->list_of_selects);
-
-            auto new_select = addASTChildren<ASTSelectQuery>(*list_of_selects);
-            new_select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
-            addASTChildren<ASTAsterisk>(*new_select->select());
-            new_select->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
-
-            auto tables_elem = addASTChildren<ASTTablesInSelectQueryElement>(*new_select->tables());
-            auto sub_table_expr = addASTChildrenTo<ASTTableExpression>(*tables_elem, tables_elem->table_expression);
-            addASTChildrenTo<ASTTableIdentifier>(*sub_table_expr, sub_table_expr->database_and_table_name, table_name);
+            table_expr = rewriteJoinRightTableSelectSubquery(table_name, table_short_name);
         }
     }
 }
@@ -321,6 +305,29 @@ void JoinedTables::reset(const ASTSelectQuery & select_query)
     table_expressions = getTableExpressions(select_query);
     left_table_expression = extractTableExpression(select_query, 0);
     left_db_and_table = getDatabaseAndTable(select_query, 0);
+}
+
+/// Build query of form '(SELECT * FROM table_name) AS table_short_name'
+ASTTableExpression rewriteJoinRightTableSelectSubquery(const String & table_name, const std::optional<String> & table_short_name)
+{
+    ASTTableExpression table_expr;
+
+    auto subquery = addASTChildrenTo<ASTSubquery>(table_expr, table_expr.subquery);
+    if (table_short_name.has_value())
+        subquery->setAlias(*table_short_name);
+
+    auto sub_select_with_union = addASTChildren<ASTSelectWithUnionQuery>(*subquery);
+    auto list_of_selects = addASTChildrenTo<ASTExpressionList>(*sub_select_with_union, sub_select_with_union->list_of_selects);
+
+    auto new_select = addASTChildren<ASTSelectQuery>(*list_of_selects);
+    new_select->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
+    addASTChildren<ASTAsterisk>(*new_select->select());
+    new_select->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
+
+    auto tables_elem = addASTChildren<ASTTablesInSelectQueryElement>(*new_select->tables());
+    auto sub_table_expr = addASTChildrenTo<ASTTableExpression>(*tables_elem, tables_elem->table_expression);
+    addASTChildrenTo<ASTTableIdentifier>(*sub_table_expr, sub_table_expr->database_and_table_name, table_name);
+    return table_expr;
 }
 
 }

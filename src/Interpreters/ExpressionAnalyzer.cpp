@@ -57,6 +57,8 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/formatAST.h>
 
+#include <Interpreters/JoinedTables.h>
+
 namespace DB
 {
 
@@ -943,8 +945,16 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
         * - this function shows the expression JOIN _data1.
         * - JOIN tables will need aliases to correctly resolve USING clause.
         */
+
+    ASTPtr table_expression = join_element.table_expression;
+    if (const auto & table_expr = table_expression->as<const ASTTableExpression &>(); table_expr.database_and_table_name)
+    {
+        const auto & table_id = table_expr.database_and_table_name->as<const ASTTableIdentifier &>();
+        table_expression = std::make_shared<ASTTableExpression>(rewriteJoinRightTableSelectSubquery(table_id.name()));
+    }
+
     auto interpreter = interpretSubquery(
-        join_element.table_expression, context, original_right_columns, query_options.copy().setWithAllColumns().ignoreAlias(false));
+        table_expression, context, original_right_columns, query_options.copy().setWithAllColumns().ignoreAlias(false));
     auto joined_plan = std::make_unique<QueryPlan>();
     interpreter->buildQueryPlan(*joined_plan);
     {

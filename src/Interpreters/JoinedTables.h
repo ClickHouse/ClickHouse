@@ -54,4 +54,6 @@ private:
     std::optional<DatabaseAndTableWithAlias> left_db_and_table;
 };
 
+ASTTableExpression rewriteJoinRightTableSelectSubquery(const String & table_name, const std::optional<String> & table_short_name = {});
+
 }
