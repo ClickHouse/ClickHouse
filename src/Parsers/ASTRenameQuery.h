@@ -65,7 +65,6 @@ public:
         return query_ptr;
     }
 
-    const char * getQueryKindString() const override { return "Rename"; }
     virtual QueryKind getQueryKind() const override { return QueryKind::Rename; }
 
 protected:

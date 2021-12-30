@@ -113,7 +113,6 @@ public:
 
     bool isView() const { return is_ordinary_view || is_materialized_view || is_live_view || is_window_view; }
 
-    const char * getQueryKindString() const override { return "Create"; }
     virtual QueryKind getQueryKind() const override { return QueryKind::Create; }
 
 protected:
