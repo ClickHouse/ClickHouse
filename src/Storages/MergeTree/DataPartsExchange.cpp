@@ -361,10 +361,10 @@ void Service::sendPartFromDiskRemoteMeta(const MergeTreeData::DataPartPtr & part
 
 MergeTreeData::DataPartPtr Service::findPart(const String & name)
 {
-    /// It is important to include PreCommitted and Outdated parts here because remote replicas cannot reliably
+    /// It is important to include PreActive and Outdated parts here because remote replicas cannot reliably
     /// determine the local state of the part, so queries for the parts in these states are completely normal.
     auto part = data.getPartIfExists(
-        name, {MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
+        name, {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
     if (part)
         return part;
 
