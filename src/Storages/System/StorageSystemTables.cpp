@@ -138,12 +138,12 @@ public:
         , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases(std::move(databases_))
-        , context(Context::createCopy(context_)) 
+        , context(Context::createCopy(context_))
     {
         size_t size = tables_->size();
         tables.reserve(size);
         for (size_t idx = 0; idx < size; ++idx)
-            tables.insert(tables_->getDataAt(idx).toString());    
+            tables.insert(tables_->getDataAt(idx).toString());
     }
 
     String getName() const override { return "Tables"; }
@@ -586,7 +586,7 @@ Pipe StorageSystemTables::read(
     ColumnPtr filtered_tables_column = getFilteredTables(query_info.query, filtered_databases_column, context);
 
     return Pipe(std::make_shared<TablesBlockSource>(
-        std::move(columns_mask), std::move(res_block), max_block_size, std::move(filtered_databases_column), context));
+        std::move(columns_mask), std::move(res_block), max_block_size, std::move(filtered_databases_column), std::move(filtered_tables_column), context));
 }
 
 }
