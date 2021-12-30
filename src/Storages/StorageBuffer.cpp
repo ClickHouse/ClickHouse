@@ -815,16 +815,13 @@ bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     Block block_to_write;
     time_t current_time = time(nullptr);
 
-    size_t rows = 0;
-    size_t bytes = 0;
-    time_t time_passed = 0;
-
     std::optional<std::unique_lock<std::mutex>> lock;
     if (!locked)
         lock.emplace(buffer.lockForReading());
 
-    rows = buffer.data.rows();
-    bytes = buffer.data.bytes();
+    time_t time_passed = 0;
+    size_t rows = buffer.data.rows();
+    size_t bytes = buffer.data.bytes();
     if (buffer.first_write_time)
         time_passed = current_time - buffer.first_write_time;
 
