@@ -140,16 +140,15 @@ class PRInfo:
         if not self.diff_url:
             raise Exception("Diff URL cannot be find for event")
 
+        response = requests.get(self.diff_url)
+        response.raise_for_status()
         if 'commits' in self.event and self.number == 0:
-            response = requests.get(self.diff_url)
-            response.raise_for_status()
             diff = response.json()
 
             if 'files' in diff:
                 self.changed_files = [f['filename'] for f in diff['files']]
         else:
-            diff = urllib.request.urlopen(self.diff_url)
-            diff_object = PatchSet(diff, diff.headers.get_charsets()[0])
+            diff_object = PatchSet(response.text)
             self.changed_files = {f.path for f in diff_object}
 
     def get_dict(self):
