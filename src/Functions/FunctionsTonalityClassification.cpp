@@ -30,7 +30,7 @@ struct TonalityClassificationImpl
 
     static void constant(String data, String & res)
     {
-        static std::unordered_map<String, Float64> emotional_dict = FrequencyHolder::getInstance().getEmotionalDict();
+        const auto & emotional_dict = FrequencyHolder::getInstance().getEmotionalDict();
 
         Float64 weight = 0;
         Float64 count_words = 0;
@@ -52,11 +52,11 @@ struct TonalityClassificationImpl
                     ++i;
                 }
                 /// Try to find a russian word in the tonality dictionary
-                if (emotional_dict.find(word) != emotional_dict.cend())
+                auto it = emotional_dict.find(word);
+                if (it != emotional_dict.end())
                 {
                     count_words += 1;
-                    Float64 cur_weight = emotional_dict[word];
-                    weight += cur_weight;
+                    weight += it->getMapped();
                 }
                 word = "";
             }
@@ -77,7 +77,7 @@ struct TonalityClassificationImpl
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets)
     {
-        static std::unordered_map<String, Float64> emotional_dict = FrequencyHolder::getInstance().getEmotionalDict();
+        const auto & emotional_dict = FrequencyHolder::getInstance().getEmotionalDict();
 
         res_data.reserve(1024);
         res_offsets.resize(offsets.size());
@@ -112,11 +112,11 @@ struct TonalityClassificationImpl
                         ++ind;
                     }
                     /// Try to find a russian word in the tonality dictionary
-                    if (emotional_dict.find(word) != emotional_dict.cend())
+                    auto it = emotional_dict.find(word);
+                    if (it != emotional_dict.end())
                     {
                         count_words += 1;
-                        Float64 cur_weight = emotional_dict[word];
-                        weight += cur_weight;
+                        weight += it->getMapped();
                     }
                     word = "";
                 }

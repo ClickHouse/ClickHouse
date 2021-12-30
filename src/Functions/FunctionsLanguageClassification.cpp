@@ -7,6 +7,17 @@
 #include <Functions/FunctionsTextClassification.h>
 #include <Functions/FunctionFactory.h>
 
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionHelpers.h>
+
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+
 #include "compact_lang_det.h"
 
 namespace DB
@@ -14,35 +25,45 @@ namespace DB
 /* Determine language of Unicode UTF-8 text.
  * Uses the cld2 library https://github.com/CLD2Owners/cld2
  */
-template <bool mixed>
+
 struct LanguageClassificationImpl
 {
-
     using ResultType = String;
 
-
-    static void constant(String data, String & res)
+    static String codeISO(std::string_view code_string)
     {
-        bool is_UTF8 = true;
+        if (code_string.ends_with("-Latn"))
+            code_string.remove_suffix(code_string.size() - 5);
+
+        if (code_string.ends_with("-Hant"))
+            code_string.remove_suffix(code_string.size() - 5);
+
+        // Old deprecated codes
+        if (code_string == "iw")
+            return "he";
+
+        if (code_string == "jw")
+            return "jv";
+
+        if (code_string == "in")
+            return "id";
+
+        if (code_string == "mo")
+            return "ro";
+
+        // Some languages do not have 2 letter codes, for example code for Cebuano is ceb
+        if (code_string.size() != 2)
+            return "other";
+
+        return String(code_string);
+    }
+
+    static void constant(const String & data, String & res)
+    {
+        bool is_reliable = true;
         const char * str = data.c_str();
-        if (!mixed)
-        {
-            String ans(LanguageName(CLD2::DetectLanguage(str, strlen(str), true, &is_UTF8)));
-            res = ans;
-        }
-        else
-        {
-            CLD2::Language result_lang_top3[3];
-            int pc[3];
-            int bytes[3];
-            CLD2::DetectLanguageSummary(str, strlen(str), true, result_lang_top3, pc, bytes, &is_UTF8);
-            String lang1(LanguageName(result_lang_top3[0]));
-            String lang2(LanguageName(result_lang_top3[1]));
-            String lang3(LanguageName(result_lang_top3[2]));
-            res = lang1 + " " + std::to_string(pc[0]) + "% | ";
-            res += lang2 + " " + std::to_string(pc[1]) + "% | ";
-            res += lang3 + " " + std::to_string(pc[2]) + "%";
-        }
+        auto lang = CLD2::DetectLanguage(str, strlen(str), true, &is_reliable);
+        res = codeISO(LanguageCode(lang));
     }
 
 
@@ -61,34 +82,17 @@ struct LanguageClassificationImpl
         for (size_t i = 0; i < offsets.size(); ++i)
         {
             const char * str = reinterpret_cast<const char *>(&data[prev_offset]);
-            const char * ans;
-            bool is_UTF8 = true;
-            if (!mixed)
-            {
-                ans = LanguageName(CLD2::DetectLanguage(str, strlen(str), true, &is_UTF8));
-            }
-            else
-            {
-                String top3;
-                CLD2::Language result_lang_top3[3];
-                int pc[3];
-                int bytes[3];
-                CLD2::DetectLanguageSummary(str, strlen(str), true, result_lang_top3, pc, bytes, &is_UTF8);
+            String ans;
+            bool is_reliable = true;
 
-                String lang1(LanguageName(result_lang_top3[0]));
-                String lang2(LanguageName(result_lang_top3[1]));
-                String lang3(LanguageName(result_lang_top3[2]));
-                top3 = lang1 + " " + std::to_string(pc[0]) + "% | ";
-                top3 += lang2 + " " + std::to_string(pc[1]) + "% | ";
-                top3 += lang3 + " " + std::to_string(pc[2]) + "%";
-                ans = top3.c_str();
-            }
+            auto lang = CLD2::DetectLanguage(str, strlen(str), true, &is_reliable);
+            ans = codeISO(LanguageCode(lang));
+
             size_t cur_offset = offsets[i];
 
-            size_t ans_size = strlen(ans);
-            res_data.resize(res_offset + ans_size + 1);
-            memcpy(&res_data[res_offset], ans, ans_size);
-            res_offset += ans_size;
+            res_data.resize(res_offset + ans.size() + 1);
+            memcpy(&res_data[res_offset], ans.data(), ans.size());
+            res_offset += ans.size();
 
             res_data[res_offset] = 0;
             ++res_offset;
@@ -101,25 +105,104 @@ struct LanguageClassificationImpl
 
 };
 
+class LanguageClassificationMixedDetect : public IFunction
+{
+public:
+    static constexpr auto name = "detectLanguageMixed";
+
+    static FunctionPtr create(ContextPtr) { return std::make_shared<LanguageClassificationMixedDetect>(); }
+
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!isString(arguments[0]))
+            throw Exception(
+                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeInt32>());
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        const auto & column = arguments[0].column;
+        const ColumnString * col = checkAndGetColumn<ColumnString>(column.get());
+
+        if (!col)
+            throw Exception(
+                "Illegal columns " + arguments[0].column->getName() + " of arguments of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
+
+        auto & input_data = col->getChars();
+        auto & input_offsets = col->getOffsets();
+
+        /// Create and fill the result map.
+
+        const auto & result_type_map = static_cast<const DataTypeMap &>(*result_type);
+        const DataTypePtr & key_type = result_type_map.getKeyType();
+        const DataTypePtr & value_type = result_type_map.getValueType();
+
+        MutableColumnPtr keys_data = key_type->createColumn();
+        MutableColumnPtr values_data = value_type->createColumn();
+        MutableColumnPtr offsets = DataTypeNumber<IColumn::Offset>().createColumn();
+
+        size_t total_elements = input_rows_count * 3;
+        keys_data->reserve(total_elements);
+        values_data->reserve(total_elements);
+        offsets->reserve(input_rows_count);
+
+        bool is_reliable = true;
+        CLD2::Language result_lang_top3[3];
+        int32_t pc[3];
+        int bytes[3];
+
+        IColumn::Offset current_offset = 0;
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            const char * str = reinterpret_cast<const char *>(input_data.data() + input_offsets[i - 1]);
+            const size_t str_len = input_offsets[i] - input_offsets[i - 1] - 1;
+
+            CLD2::DetectLanguageSummary(str, str_len, true, result_lang_top3, pc, bytes, &is_reliable);
+
+            for (size_t j = 0; j < 3; ++j)
+            {
+                auto res_str = LanguageClassificationImpl<true>::codeISO(LanguageCode(result_lang_top3[j]));
+                int32_t res_int = static_cast<int>(pc[j]);
+
+                keys_data->insertData(res_str.data(), res_str.size());
+                values_data->insertData(reinterpret_cast<const char *>(&res_int), sizeof(res_int));
+            }
+
+            current_offset += 3;
+            offsets->insert(current_offset);
+        }
+
+        auto nested_column = ColumnArray::create(
+            ColumnTuple::create(Columns{std::move(keys_data), std::move(values_data)}),
+            std::move(offsets));
+
+        return ColumnMap::create(nested_column);
+    }
+};
 
 struct NameLanguageUTF8Detect
 {
     static constexpr auto name = "detectLanguage";
 };
 
-struct NameLanguageMixedUTF8Detect
-{
-    static constexpr auto name = "detectLanguageMixed";
-};
 
-
-using FunctionLanguageUTF8Detect = FunctionsTextClassification<LanguageClassificationImpl<false>, NameLanguageUTF8Detect>;
-using FunctionLanguageMixedUTF8Detect = FunctionsTextClassification<LanguageClassificationImpl<true>, NameLanguageMixedUTF8Detect>;
+using FunctionLanguageUTF8Detect = FunctionsTextClassification<LanguageClassificationImpl, NameLanguageUTF8Detect>;
 
 void registerFunctionLanguageDetectUTF8(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionLanguageUTF8Detect>();
-    factory.registerFunction<FunctionLanguageMixedUTF8Detect>();
+    factory.registerFunction<LanguageClassificationMixedDetect>();
 }
 
 }

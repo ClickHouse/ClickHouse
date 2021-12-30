@@ -41,17 +41,18 @@ struct CharsetClassificationImpl
     static constexpr size_t simultaneously_codepoints_num = default_padding + N - 1;
 
 
-    static ALWAYS_INLINE inline Float64 Naive_bayes(std::unordered_map<UInt16, Float64>& standard,
-        std::unordered_map<UInt16, Float64>& model,
+    static ALWAYS_INLINE inline Float64 naiveBayes(const FrequencyHolder::EncodingMap & standard,
+        std::unordered_map<UInt16, Float64> & model,
         Float64 max_result)
     {
         Float64 res = 0;
         for (auto & el : model)
         {
             /// Try to find bigram in the dictionary.
-            if (standard.find(el.first) != standard.end())
+            auto it = standard.find(el.first);
+            if (it != standard.end())
             {
-                res += el.second * log(standard[el.first]);
+                res += el.second * log(it->getMapped());
             } else
             {
                 res += el.second * log(zero_frequency);
@@ -119,8 +120,7 @@ struct CharsetClassificationImpl
 
     static void constant(String data, String & res)
     {
-        static std::unordered_map<String, Float64> emotional_dict = FrequencyHolder::getInstance().getEmotionalDict();
-        static std::unordered_map<String, std::unordered_map<UInt16, Float64>> encodings_freq = FrequencyHolder::getInstance().getEncodingsFrequency();
+        const auto & encodings_freq = FrequencyHolder::getInstance().getEncodingsFrequency();
 
         std::unordered_map<UInt16, Float64> model;
         calculateStats(data.data(), data.size(), readCodePoints, model);
@@ -130,10 +130,10 @@ struct CharsetClassificationImpl
         /// Go through the dictionary and find the charset with the highest weight
         for (auto& item : encodings_freq)
         {
-            Float64 score = Naive_bayes(item.second, model, max_result);
+            Float64 score = naiveBayes(item.map, model, max_result);
             if (max_result < score)
             {
-                poss_ans = item.first;
+                poss_ans = item.name;
                 max_result = score;
             }
         }
@@ -161,8 +161,7 @@ struct CharsetClassificationImpl
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets)
     {
-        static std::unordered_map<String, std::unordered_map<UInt16, Float64>> encodings_freq = FrequencyHolder::getInstance().getEncodingsFrequency();
-        static std::unordered_map<String, Float64> emotional_dict = FrequencyHolder::getInstance().getEmotionalDict();
+        const auto & encodings_freq = FrequencyHolder::getInstance().getEncodingsFrequency();
 
         res_data.reserve(1024);
         res_offsets.resize(offsets.size());
@@ -183,11 +182,11 @@ struct CharsetClassificationImpl
            Float64 max_result = log(zero_frequency) * (max_string_size);
            for (auto& item : encodings_freq)
             {
-                Float64 score = Naive_bayes(item.second, model, max_result);
+                Float64 score = naiveBayes(item.map, model, max_result);
                 if (max_result < score)
                 {
                     max_result = score;
-                    poss_ans = item.first;
+                    poss_ans = item.name;
                 }
             }
 

@@ -18,15 +18,16 @@ struct ProgrammingClassificationImpl
 
     using ResultType = String;
     /// Calculate total weight
-    static ALWAYS_INLINE inline Float64 state_machine(std::unordered_map<String, Float64>& standard, std::unordered_map<String, Float64>& model)
+    static ALWAYS_INLINE inline Float64 stateMachine(const FrequencyHolder::Map & standard, std::unordered_map<String, Float64> & model)
     {
         Float64 res = 0;
         for (auto & el : model)
         {
             /// Try to find each n-gram in dictionary
-            if (standard.find(el.first) != standard.end())
+            auto it = standard.find(el.first);
+            if (it != standard.end())
             {
-                res += el.second * standard[el.first];
+                res += el.second * it->getMapped();
             }
         }
         return res;
@@ -36,7 +37,7 @@ struct ProgrammingClassificationImpl
 
     static void constant(String data, String & res)
     {
-        static std::unordered_map<String, std::unordered_map<String, Float64>> programming_freq = FrequencyHolder::getInstance().getProgrammingFrequency();
+        auto & programming_freq = FrequencyHolder::getInstance().getProgrammingFrequency();
         std::unordered_map<String, Float64> data_freq;
 
         String prev_command;
@@ -78,11 +79,11 @@ struct ProgrammingClassificationImpl
         /// Iterate over all programming languages ​​and find the language with the highest weight
         for (auto& item : programming_freq)
         {
-            Float64 result = state_machine(item.second, data_freq);
+            Float64 result = stateMachine(item.map, data_freq);
             if (result > max_result)
             {
                 max_result = result;
-                most_liked = item.first;
+                most_liked = item.name;
             }
         }
         /// If all weights are zero, then we assume that the language is undefined
@@ -100,7 +101,7 @@ struct ProgrammingClassificationImpl
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets)
     {
-        static std::unordered_map<String, std::unordered_map<String, Float64>> programming_freq = FrequencyHolder::getInstance().getProgrammingFrequency();
+        auto & programming_freq = FrequencyHolder::getInstance().getProgrammingFrequency();
 
         res_data.reserve(1024);
         res_offsets.resize(offsets.size());
@@ -153,11 +154,11 @@ struct ProgrammingClassificationImpl
             /// Iterate over all programming languages ​​and find the language with the highest weight
             for (auto& item : programming_freq)
             {
-                Float64 result = state_machine(item.second, data_freq);
+                Float64 result = stateMachine(item.map, data_freq);
                 if (result > max_result)
                 {
                     max_result = result;
-                    most_liked = item.first;
+                    most_liked = item.name;
                 }
             }
             /// If all weights are zero, then we assume that the language is undefined
