@@ -1092,6 +1092,84 @@ void IMergeTreeDataPart::loadColumns(bool require)
     setColumns(loaded_columns, infos);
 }
 
+
+void IMergeTreeDataPart::storeVersionMetadata() const
+{
+    assert(!versions.mintid.isEmpty());
+    if (versions.mintid.isPrehistoric() && (versions.maxtid.isEmpty() || versions.maxtid.isPrehistoric()))
+        return;
+
+    String version_file_name = fs::path(getFullRelativePath()) / TXN_VERSION_METADATA_FILE_NAME;
+    String tmp_version_file_name = version_file_name + ".tmp";
+    DiskPtr disk = volume->getDisk();
+    {
+        auto out = volume->getDisk()->writeFile(tmp_version_file_name, 4096, WriteMode::Rewrite);
+        versions.write(*out);
+        out->finalize();
+        out->sync();
+    }
+
+    SyncGuardPtr sync_guard;
+    if (storage.getSettings()->fsync_part_directory)
+        sync_guard = volume->getDisk()->getDirectorySyncGuard(getFullRelativePath());
+    disk->moveFile(tmp_version_file_name, version_file_name);
+}
+
+void IMergeTreeDataPart::loadVersionMetadata() const
+{
+    String version_file_name = fs::path(getFullRelativePath()) / TXN_VERSION_METADATA_FILE_NAME;
+    String tmp_version_file_name = version_file_name + ".tmp";
+    DiskPtr disk = volume->getDisk();
+
+    auto remove_tmp_file = [&]()
+    {
+        auto last_modified = disk->getLastModified(tmp_version_file_name);
+        auto buf = openForReading(disk, tmp_version_file_name);
+        String content;
+        readStringUntilEOF(content, *buf);
+        LOG_WARNING(storage.log, "Found file {} that was last modified on {}, has size {} and the following content: {}",
+                    tmp_version_file_name, last_modified.epochTime(), content.size(), content);
+        disk->removeFile(tmp_version_file_name);
+    };
+
+    if (disk->exists(version_file_name))
+    {
+        auto buf = openForReading(disk, version_file_name);
+        versions.read(*buf);
+        if (disk->exists(tmp_version_file_name))
+            remove_tmp_file();
+        return;
+    }
+
+    /// Four (?) cases are possible:
+    /// 1. Part was created without transactions.
+    /// 2. Version metadata file was not renamed from *.tmp on part creation.
+    /// 3. Version metadata were written to *.tmp file, but hard restart happened before fsync
+    ///    We must remove part in this case, but we cannot distinguish it from the first case.
+    ///    TODO Write something to some checksummed file if part was created with transaction,
+    ///         so part will be ether broken or known to be created by transaction.
+    /// 4. Fsyncs in storeVersionMetadata() work incorrectly.
+
+    if (!disk->exists(tmp_version_file_name))
+    {
+        /// Case 1 (or 3).
+        /// We do not have version metadata and transactions history for old parts,
+        /// so let's consider that such parts were created by some ancient transaction
+        /// and were committed with some prehistoric CSN.
+        versions.setMinTID(Tx::PrehistoricTID);
+        versions.mincsn = Tx::PrehistoricCSN;
+        return;
+    }
+
+    /// Case 2.
+    /// Content of *.tmp file may be broken, just use fake TID.
+    /// Transaction was not committed if *.tmp file was not renamed, so we should complete rollback by removing part.
+    versions.setMinTID(Tx::DummyTID);
+    versions.mincsn = Tx::RolledBackCSN;
+    remove_tmp_file();
+}
+
+
 bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const
 {
     /// `IMergeTreeDataPart::volume` describes space where current part belongs, and holds
@@ -1276,6 +1354,7 @@ void IMergeTreeDataPart::remove() const
 
             disk->removeSharedFileIfExists(fs::path(to) / DEFAULT_COMPRESSION_CODEC_FILE_NAME, *keep_shared_data);
             disk->removeSharedFileIfExists(fs::path(to) / DELETE_ON_DESTROY_MARKER_FILE_NAME, *keep_shared_data);
+            disk->removeSharedFileIfExists(fs::path(to) / TXN_VERSION_METADATA_FILE_NAME, *keep_shared_data);
 
             disk->removeDirectory(to);
         }

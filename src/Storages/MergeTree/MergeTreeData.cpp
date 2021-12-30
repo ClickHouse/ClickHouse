@@ -1277,14 +1277,83 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     for (auto & part : duplicate_parts_to_remove)
         part->remove();
 
-    for (const auto & part : data_parts_by_state_and_info)
+    auto deactivate_part = [&] (DataPartIteratorByStateAndInfo it)
     {
-        /// We do not have version metadata and transactions history for old parts,
-        /// so let's consider that such parts were created by some ancient transaction
-        /// and were committed with some prehistoric CSN.
-        /// TODO Transactions: distinguish "prehistoric" parts from uncommitted parts in case of hard restart
-        part->versions.setMinTID(Tx::PrehistoricTID);
-        part->versions.mincsn.store(Tx::PrehistoricCSN, std::memory_order_relaxed);
+        (*it)->remove_time.store((*it)->modification_time, std::memory_order_relaxed);
+        modifyPartState(it, DataPartState::Outdated);
+        removePartContributionToDataVolume(*it);
+    };
+
+    /// All parts are in "Committed" state after loading
+    assert(std::find_if(data_parts_by_state_and_info.begin(), data_parts_by_state_and_info.end(),
+    [](const auto & part)
+    {
+        return part->getState() != DataPartState::Committed;
+    }) == data_parts_by_state_and_info.end());
+
+    auto iter = data_parts_by_state_and_info.begin();
+    while (iter != data_parts_by_state_and_info.end() && (*iter)->getState() == DataPartState::Committed)
+    {
+        const DataPartPtr & part = *iter;
+        part->loadVersionMetadata();
+        VersionMetadata & versions = part->versions;
+
+        /// Check if CSNs were witten after committing transaction, update and write if needed.
+        bool versions_updated = false;
+        if (!versions.mintid.isEmpty() && !part->versions.mincsn)
+        {
+            auto min = TransactionLog::instance().getCSN(versions.mintid);
+            if (!min)
+            {
+                /// Transaction that created this part was not committed. Remove part.
+                min = Tx::RolledBackCSN;
+            }
+            LOG_TRACE(log, "Will fix version metadata of {} after unclean restart: part has mintid={}, setting mincsn={}",
+                      part->name, versions.mintid, min);
+            versions.mincsn = min;
+            versions_updated = true;
+        }
+        if (!versions.maxtid.isEmpty() && !part->versions.maxcsn)
+        {
+            auto max = TransactionLog::instance().getCSN(versions.maxtid);
+            if (max)
+            {
+                LOG_TRACE(log, "Will fix version metadata of {} after unclean restart: part has maxtid={}, setting maxcsn={}",
+                          part->name, versions.maxtid, max);
+                versions.maxcsn = max;
+            }
+            else
+            {
+                /// Transaction that tried to remove this part was not committed. Clear maxtid.
+                LOG_TRACE(log, "Will fix version metadata of {} after unclean restart: clearing maxtid={}",
+                          part->name, versions.maxtid);
+                versions.unlockMaxTID(versions.maxtid);
+            }
+            versions_updated = true;
+        }
+
+        /// Sanity checks
+        bool csn_order = !versions.maxcsn || versions.mincsn <= versions.maxcsn;
+        bool min_start_csn_order = versions.mintid.start_csn <= versions.mincsn;
+        bool max_start_csn_order = versions.maxtid.start_csn <= versions.maxcsn;
+        bool mincsn_known = versions.mincsn;
+        if (!csn_order || !min_start_csn_order || !max_start_csn_order || !mincsn_known)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} has invalid versions metadata: {}", part->name, versions.toString());
+
+        if (versions_updated)
+            part->storeVersionMetadata();
+
+        /// Deactivate part if creation was not committed or if removal was.
+        if (versions.mincsn == Tx::RolledBackCSN || versions.maxcsn)
+        {
+            auto next_it = std::next(iter);
+            deactivate_part(iter);
+            iter = next_it;
+        }
+        else
+        {
+            ++iter;
+        }
     }
 
     /// Delete from the set of current parts those parts that are covered by another part (those parts that
@@ -1296,15 +1365,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         /// Now all parts are committed, so data_parts_by_state_and_info == committed_parts_range
         auto prev_jt = data_parts_by_state_and_info.begin();
         auto curr_jt = std::next(prev_jt);
-
-        auto deactivate_part = [&] (DataPartIteratorByStateAndInfo it)
-        {
-            (*it)->remove_time.store((*it)->modification_time, std::memory_order_relaxed);
-            modifyPartState(it, DataPartState::Outdated);
-            (*it)->versions.lockMaxTID(Tx::PrehistoricTID);
-            (*it)->versions.maxcsn.store(Tx::PrehistoricCSN, std::memory_order_relaxed);
-            removePartContributionToDataVolume(*it);
-        };
 
         (*prev_jt)->assertState({DataPartState::Committed});
 
@@ -3245,6 +3305,8 @@ static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part)
 
     part->loadColumnsChecksumsIndexes(false, true);
     part->modification_time = disk->getLastModified(full_part_path).epochTime();
+    disk->removeFileIfExists(fs::path(full_part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
+    disk->removeFileIfExists(fs::path(full_part_path) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
 }
 
 void MergeTreeData::calculateColumnAndSecondaryIndexSizesImpl()
@@ -5228,6 +5290,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     LOG_DEBUG(log, "Cloning part {} to {}", fullPath(disk, src_part_path), fullPath(disk, dst_part_path));
     localBackup(disk, src_part_path, dst_part_path);
     disk->removeFileIfExists(fs::path(dst_part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
+    disk->removeFileIfExists(fs::path(dst_part_path) / IMergeTreeDataPart::TXN_VERSION_METADATA_FILE_NAME);
 
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
     auto dst_data_part = createPart(dst_part_name, dst_part_info, single_disk_volume, tmp_dst_part_name);

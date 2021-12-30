@@ -138,6 +138,12 @@ void assertEOF(ReadBuffer & buf)
         throwAtAssertionFailed("eof", buf);
 }
 
+void assertNotEOF(ReadBuffer & buf)
+{
+    if (buf.eof())
+        throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+}
+
 
 void assertStringCaseInsensitive(const char * s, ReadBuffer & buf)
 {
