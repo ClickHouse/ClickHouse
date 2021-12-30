@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- Tag no-fasttest: depends on cld2 and nlp_data
+
 SELECT detectLanguage('Они сошлись. Волна и камень, Стихи и проза, лед и пламень, Не столь различны меж собой.');
 SELECT detectLanguage('Sweet are the uses of adversity which, like the toad, ugly and venomous, wears yet a precious jewel in his head.');
 SELECT detectLanguage('A vaincre sans peril, on triomphe sans gloire.');

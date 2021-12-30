@@ -519,6 +519,7 @@ if (USE_NLP)
     dbms_target_link_libraries (PUBLIC stemmer)
     dbms_target_link_libraries (PUBLIC wnb)
     dbms_target_link_libraries (PUBLIC lemmagen)
+    dbms_target_link_libraries (PUBLIC nlp_data)
 endif()
 
 if (USE_BZIP2)
