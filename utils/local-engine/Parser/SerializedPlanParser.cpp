@@ -21,12 +21,10 @@
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <DataTypes/DataTypeDate.h>
 #include <sys/stat.h>
 
-namespace substrait = io::substrait;
 
-DB::BatchParquetFileSourcePtr dbms::SerializedPlanParser::parseReadRealWithLocalFile(const io::substrait::ReadRel & rel)
+DB::BatchParquetFileSourcePtr dbms::SerializedPlanParser::parseReadRealWithLocalFile(const substrait::ReadRel & rel)
 {
     assert(rel.has_local_files());
     assert(rel.has_base_schema());
@@ -38,7 +36,7 @@ DB::BatchParquetFileSourcePtr dbms::SerializedPlanParser::parseReadRealWithLocal
     return std::make_shared<BatchParquetFileSource>(files_info, parseNameStruct(rel.base_schema()));
 }
 
-DB::Block dbms::SerializedPlanParser::parseNameStruct(const io::substrait::Type_NamedStruct & struct_)
+DB::Block dbms::SerializedPlanParser::parseNameStruct(const substrait::NamedStruct & struct_)
 {
     auto internal_cols = std::make_unique<std::vector<DB::ColumnWithTypeAndName>>();
     internal_cols->reserve(struct_.names_size());
@@ -51,7 +49,7 @@ DB::Block dbms::SerializedPlanParser::parseNameStruct(const io::substrait::Type_
     }
     return DB::Block(*std::move(internal_cols));
 }
-DB::DataTypePtr dbms::SerializedPlanParser::parseType(const io::substrait::Type & type)
+DB::DataTypePtr dbms::SerializedPlanParser::parseType(const substrait::Type & type)
 {
     auto & factory = DB::DataTypeFactory::instance();
     if (type.has_bool_() || type.has_i8())
@@ -91,23 +89,24 @@ DB::DataTypePtr dbms::SerializedPlanParser::parseType(const io::substrait::Type 
         throw std::runtime_error("doesn't support type " + type.DebugString());
     }
 }
-DB::QueryPlanPtr dbms::SerializedPlanParser::parse(std::unique_ptr<io::substrait::Plan> plan)
+DB::QueryPlanPtr dbms::SerializedPlanParser::parse(std::unique_ptr<substrait::Plan> plan)
 {
-    if (plan->mappings_size() > 0)
+    if (plan->extensions_size() > 0)
     {
-        for (const auto& mapping : plan->mappings())
+        for (const auto& extension : plan->extensions())
         {
-            if (mapping.has_function_mapping())
+            if (extension.has_extension_function())
             {
-                this->function_mapping.emplace(std::to_string(mapping.function_mapping().function_id().id()), mapping.function_mapping().name());
+                this->function_mapping.emplace(std::to_string(extension.extension_function().function_anchor()), extension.extension_function().name());
             }
         }
     }
-
     if (plan->relations_size() == 1)
     {
-        auto rel = plan->relations().at(0);
-        return parseOp(rel);
+
+        auto root_rel = plan->relations().at(0);
+        assert(root_rel.has_root() && "must have root rel!");
+        return parseOp(root_rel.root().input());
     }
     else
     {
@@ -115,9 +114,9 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parse(std::unique_ptr<io::substrait
     }
 }
 
-DB::QueryPlanPtr dbms::SerializedPlanParser::parseOp(const io::substrait::Rel & rel)
+DB::QueryPlanPtr dbms::SerializedPlanParser::parseOp(const substrait::Rel & rel)
 {
-    switch (rel.RelType_case())
+    switch (rel.rel_type_case())
     {
         case substrait::Rel::RelTypeCase::kFetch: {
             const auto & limit = rel.fetch();
@@ -182,7 +181,7 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parseOp(const io::substrait::Rel & 
             return query_plan;
         }
         default:
-            throw std::runtime_error("doesn't support relation type " + std::to_string(rel.RelType_case()));
+            throw std::runtime_error("doesn't support relation type " + std::to_string(rel.rel_type_case()));
     }
 }
 
@@ -193,7 +192,7 @@ DB::AggregateFunctionPtr getAggregateFunction(const std::string & name, DB::Data
     return factory.get(name, arg_types, DB::Array{}, properties);
 }
 
-DB::QueryPlanStepPtr dbms::SerializedPlanParser::parseAggregate(DB::QueryPlan & plan, const io::substrait::AggregateRel & rel)
+DB::QueryPlanStepPtr dbms::SerializedPlanParser::parseAggregate(DB::QueryPlan & plan, const substrait::AggregateRel & rel)
 {
     auto input = plan.getCurrentDataStream();
     DB::ActionsDAGPtr expression = std::make_shared<ActionsDAG>(blockToNameAndTypeList(input.header));
@@ -226,7 +225,7 @@ DB::QueryPlanStepPtr dbms::SerializedPlanParser::parseAggregate(DB::QueryPlan & 
     {
         const auto& measure = rel.measures(i);
         DB::AggregateDescription agg;
-        auto function_name = this->function_mapping.at(std::to_string(measure.measure().id().id()));
+        auto function_name = this->function_mapping.at(std::to_string(measure.measure().function_reference()));
         agg.column_name = function_name +"(" + measure_names.at(i) + ")";
         agg.arguments = DB::ColumnNumbers{plan.getCurrentDataStream().header.getPositionByName(measure_names.at(i))};
         agg.argument_names = DB::Names{measure_names.at(i)};
@@ -271,7 +270,7 @@ void join(DB::ActionsDAG::NodeRawConstPtrs v, char c, std::string & s)
 
 
 DB::ActionsDAGPtr dbms::SerializedPlanParser::parseFunction(
-    const DataStream & input, const io::substrait::Expression & rel, std::string & result_name, DB::ActionsDAGPtr actions_dag, bool keep_result)
+    const DataStream & input, const substrait::Expression & rel, std::string & result_name, DB::ActionsDAGPtr actions_dag, bool keep_result)
 {
     assert(rel.has_scalar_function() && "the root of expression should be a scalar function");
     const auto & scalar_function = rel.scalar_function();
@@ -293,7 +292,7 @@ DB::ActionsDAGPtr dbms::SerializedPlanParser::parseFunction(
             args.emplace_back(parseArgument(actions_dag, arg));
         }
     }
-    auto function_name = this->function_mapping.at(std::to_string(rel.scalar_function().id().id()));
+    auto function_name = this->function_mapping.at(std::to_string(rel.scalar_function().function_reference()));
     assert(SCALAR_FUNCTIONS.contains(function_name) && ("doesn't support function " + function_name).c_str());
     auto function_builder = DB::FunctionFactory::instance().get(SCALAR_FUNCTIONS.at(function_name), this->context);
     std::string args_name;
@@ -305,34 +304,34 @@ DB::ActionsDAGPtr dbms::SerializedPlanParser::parseFunction(
     return actions_dag;
 }
 
-const DB::ActionsDAG::Node * dbms::SerializedPlanParser::parseArgument(DB::ActionsDAGPtr action_dag, const io::substrait::Expression & rel)
+const DB::ActionsDAG::Node * dbms::SerializedPlanParser::parseArgument(DB::ActionsDAGPtr action_dag, const substrait::Expression & rel)
 {
     switch (rel.rex_type_case())
     {
-        case io::substrait::Expression::RexTypeCase::kLiteral:
+        case substrait::Expression::RexTypeCase::kLiteral:
         {
             const auto & literal = rel.literal();
             switch (literal.literal_type_case())
             {
-                case io::substrait::Expression_Literal::kFp64:
+                case substrait::Expression_Literal::kFp64:
                 {
                     auto type = std::make_shared<DB::DataTypeFloat64>();
                     return &action_dag->addColumn(ColumnWithTypeAndName(
                         type->createColumnConst(1, literal.fp64()), type, getUniqueName(std::to_string(literal.fp64()))));
                 }
-                case io::substrait::Expression_Literal::kString:
+                case substrait::Expression_Literal::kString:
                 {
                     auto type = std::make_shared<DB::DataTypeString>();
                     return &action_dag->addColumn(
                         ColumnWithTypeAndName(type->createColumnConst(1, literal.string()), type, getUniqueName(literal.string())));
                 }
-                case io::substrait::Expression_Literal::kI32:
+                case substrait::Expression_Literal::kI32:
                 {
                     auto type = std::make_shared<DB::DataTypeInt32>();
                     return &action_dag->addColumn(ColumnWithTypeAndName(
                         type->createColumnConst(1, literal.i32()), type, getUniqueName(std::to_string(literal.i32()))));
                 }
-                case io::substrait::Expression_Literal::kDate:
+                case substrait::Expression_Literal::kDate:
                 {
 
                     auto type = std::make_shared<DB::DataTypeDate>();
@@ -343,7 +342,7 @@ const DB::ActionsDAG::Node * dbms::SerializedPlanParser::parseArgument(DB::Actio
                     throw std::runtime_error("unsupported constant type " + std::to_string(literal.literal_type_case()));
             }
         }
-        case io::substrait::Expression::RexTypeCase::kSelection:
+        case substrait::Expression::RexTypeCase::kSelection:
         {
             if (!rel.selection().has_direct_reference() || !rel.selection().direct_reference().has_struct_field())
             {
@@ -360,7 +359,7 @@ const DB::ActionsDAG::Node * dbms::SerializedPlanParser::parseArgument(DB::Actio
 
 DB::QueryPlanPtr dbms::SerializedPlanParser::parse(std::string & plan)
 {
-    auto plan_ptr = std::make_unique<io::substrait::Plan>();
+    auto plan_ptr = std::make_unique<substrait::Plan>();
     plan_ptr->ParseFromString(plan);
     return parse(std::move(plan_ptr));
 }

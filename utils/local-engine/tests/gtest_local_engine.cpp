@@ -31,7 +31,7 @@ TEST(TestSelect, ReadRel)
     output.flush();
     output.close();
 
-    ASSERT_TRUE(plan->relations(0).has_read());
+    ASSERT_TRUE(plan->relations(0).root().input().has_read());
     ASSERT_EQ(plan->relations_size(), 1);
     std::cout << "start execute" <<std::endl;
     dbms::LocalExecutor local_executor;

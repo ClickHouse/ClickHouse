@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Substrait/plan.pb.h>
+#include <substrait/plan.pb.h>
 
 
 namespace dbms
@@ -19,7 +19,7 @@ enum Function
     TO_DATE
 };
 
-using SchemaPtr = io::substrait::Type_NamedStruct *;
+using SchemaPtr = substrait::NamedStruct *;
 
 class SerializedPlanBuilder
 {
@@ -37,20 +37,20 @@ public:
         return *this;
     }
     SerializedPlanBuilder& registerFunction(int id, std::string name);
-    SerializedPlanBuilder& filter(io::substrait::Expression* condition);
-    SerializedPlanBuilder& project(std::vector<io::substrait::Expression*> projections);
-    SerializedPlanBuilder& aggregate(std::vector<int32_t> keys, std::vector<io::substrait::AggregateRel_Measure *> aggregates);
+    SerializedPlanBuilder& filter(substrait::Expression* condition);
+    SerializedPlanBuilder& project(std::vector<substrait::Expression*> projections);
+    SerializedPlanBuilder& aggregate(std::vector<int32_t> keys, std::vector<substrait::AggregateRel_Measure *> aggregates);
     SerializedPlanBuilder& read(std::string path, SchemaPtr schema);
-    std::unique_ptr<io::substrait::Plan> build();
+    std::unique_ptr<substrait::Plan> build();
 
 private:
-    void setInputToPrev(io::substrait::Rel * input);
-    io::substrait::Rel * prev_rel = nullptr;
-    std::unique_ptr<io::substrait::Plan> plan;
+    void setInputToPrev(substrait::Rel * input);
+    substrait::Rel * prev_rel = nullptr;
+    std::unique_ptr<substrait::Plan> plan;
 };
 
 
-using Type = io::substrait::Type;
+using Type = substrait::Type;
 /**
  * build a schema, need define column name and column.
  * 1. column name
@@ -68,18 +68,18 @@ private:
     SchemaPtr schema;
 };
 
-using ExpressionList = std::vector<io::substrait::Expression *>;
-using MeasureList = std::vector<io::substrait::AggregateRel_Measure *>;
+using ExpressionList = std::vector<substrait::Expression *>;
+using MeasureList = std::vector<substrait::AggregateRel_Measure *>;
 
 
-io::substrait::Expression * scalarFunction(int32_t id, ExpressionList args);
-io::substrait::AggregateRel_Measure * measureFunction(int32_t id, ExpressionList args);
+substrait::Expression * scalarFunction(int32_t id, ExpressionList args);
+substrait::AggregateRel_Measure * measureFunction(int32_t id, ExpressionList args);
 
-io::substrait::Expression* literal(double_t value);
-io::substrait::Expression* literal(int32_t value);
-io::substrait::Expression* literal(std::string value);
-io::substrait::Expression* literalDate(int32_t value);
+substrait::Expression* literal(double_t value);
+substrait::Expression* literal(int32_t value);
+substrait::Expression* literal(std::string value);
+substrait::Expression* literalDate(int32_t value);
 
-io::substrait::Expression * selection(int32_t field_id);
+substrait::Expression * selection(int32_t field_id);
 
 }

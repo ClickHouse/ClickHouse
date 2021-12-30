@@ -62,12 +62,12 @@ function(add_cxx_compile_options option)
     add_compile_options("$<$<STREQUAL:$<TARGET_PROPERTY:LINKER_LANGUAGE>,CXX>:${option}>")
 endfunction()
 add_cxx_compile_options(-Wzero-as-null-pointer-constant)
-add_subdirectory(Substrait)
+add_subdirectory(proto)
 add_subdirectory(Builder)
 add_headers_and_sources(builder Builder)
 add_headers_and_sources(parser Parser)
 #include (../../cmake/find/parquet.cmake)
-include_directories(${CMAKE_CURRENT_BINARY_DIR})
+include_directories(${CMAKE_CURRENT_BINARY_DIR}/proto)
 include_directories(${ClickHouse_SOURCE_DIR}/utils/local-engine)
 #add_executable (local_engine
 #        local_engine.cpp
@@ -84,7 +84,6 @@ include_directories(${ClickHouse_SOURCE_DIR}/utils/local-engine)
 
 include_directories(
         ${RAPIDJSON_INCLUDE_DIR}
-        ${SUBSTRAIT_HEADERS}
         ${ARROW_INCLUDE_DIR}
         )
 

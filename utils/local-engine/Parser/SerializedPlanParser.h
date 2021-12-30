@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Substrait/plan.pb.h>
+#include <substrait/plan.pb.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -75,19 +75,19 @@ public:
     SerializedPlanParser(const ContextPtr & context);
     static void initFunctionEnv();
     DB::QueryPlanPtr parse(std::string& plan);
-    DB::QueryPlanPtr parse(std::unique_ptr<io::substrait::Plan> plan);
+    DB::QueryPlanPtr parse(std::unique_ptr<substrait::Plan> plan);
 
-    DB::BatchParquetFileSourcePtr parseReadRealWithLocalFile(const io::substrait::ReadRel& rel);
-    DB::Block parseNameStruct(const io::substrait::Type_NamedStruct& struct_);
-    DB::DataTypePtr parseType(const io::substrait::Type& type);
+    DB::BatchParquetFileSourcePtr parseReadRealWithLocalFile(const substrait::ReadRel& rel);
+    DB::Block parseNameStruct(const substrait::NamedStruct& struct_);
+    DB::DataTypePtr parseType(const substrait::Type& type);
 
     static ContextPtr global_context;
 private:
     static DB::NamesAndTypesList blockToNameAndTypeList(const DB::Block & header);
-    DB::QueryPlanPtr parseOp(const io::substrait::Rel &rel);
-    DB::ActionsDAGPtr parseFunction(const DataStream & input, const io::substrait::Expression &rel, std::string & result_name, DB::ActionsDAGPtr actions_dag = nullptr, bool keep_result = false);
-    DB::QueryPlanStepPtr parseAggregate(DB::QueryPlan & plan, const io::substrait::AggregateRel &rel);
-    const DB::ActionsDAG::Node * parseArgument(DB::ActionsDAGPtr action_dag, const io::substrait::Expression &rel);
+    DB::QueryPlanPtr parseOp(const substrait::Rel &rel);
+    DB::ActionsDAGPtr parseFunction(const DataStream & input, const substrait::Expression &rel, std::string & result_name, DB::ActionsDAGPtr actions_dag = nullptr, bool keep_result = false);
+    DB::QueryPlanStepPtr parseAggregate(DB::QueryPlan & plan, const substrait::AggregateRel &rel);
+    const DB::ActionsDAG::Node * parseArgument(DB::ActionsDAGPtr action_dag, const substrait::Expression &rel);
     std::string getUniqueName(std::string name)
     {
         return name + "_" + std::to_string(name_no++);
