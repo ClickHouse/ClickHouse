@@ -83,7 +83,6 @@ namespace
 
             dst_data[row] = res;
         }
-
         return dst;
     }
 };
