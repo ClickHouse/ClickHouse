@@ -35,8 +35,8 @@ TEST(LRUResourceCache, remove)
     auto n = mcache.size();
     ASSERT_TRUE(n == 1);
 
-    holder0 = nullptr;
-    holder1 = nullptr;
+    holder0.reset();
+    holder1.reset();
     n = mcache.size();
     ASSERT_TRUE(n == 0);
 }
@@ -53,10 +53,10 @@ TEST(LRUResourceCache, evictOnWweight)
     int x = 2;
     auto load_int = [&] { return std::make_shared<int>(x); };
     auto holder1 = mcache.getOrSet(1, load_int);
-    holder1 = nullptr;
+    holder1.reset();
 
     auto holder2 = mcache.getOrSet(2, load_int);
-    holder2 = nullptr;
+    holder2.reset();
 
     x = 3;
     auto holder3 = mcache.getOrSet(3, load_int);
@@ -82,13 +82,13 @@ TEST(LRUResourceCache, evictOnWeightV2)
     int x = 2;
     auto load_int = [&] { return std::make_shared<int>(x); };
     auto holder1 = mcache.getOrSet(1, load_int);
-    holder1 = nullptr;
+    holder1.reset();
 
     auto holder2 = mcache.getOrSet(2, load_int);
-    holder2 = nullptr;
+    holder2.reset();
 
     holder1 = mcache.get(1);
-    holder1 = nullptr;
+    holder1.reset();
 
     x = 3;
     auto holder3 = mcache.getOrSet(3, load_int);
@@ -114,13 +114,13 @@ TEST(LRUResourceCache, evictOnWeightV3)
     int x = 2;
     auto load_int = [&] { return std::make_shared<int>(x); };
     auto holder1 = mcache.getOrSet(1, load_int);
-    holder1 = nullptr;
+    holder1.reset();
 
     auto holder2 = mcache.getOrSet(2, load_int);
-    holder2 = nullptr;
+    holder2.reset();
 
     holder1 = mcache.getOrSet(1, load_int);
-    holder1 = nullptr;
+    holder1.reset();
 
     x = 3;
     auto holder3 = mcache.getOrSet(3, load_int);
@@ -146,10 +146,10 @@ TEST(LRUResourceCache, evictOnSize)
     int x = 2;
     auto load_int = [&] { return std::make_shared<int>(x); };
     auto holder1 = mcache.getOrSet(1, load_int);
-    holder1 = nullptr;
+    holder1.reset();
 
     auto holder2 = mcache.getOrSet(2, load_int);
-    holder2 = nullptr;
+    holder2.reset();
 
     x = 3;
     auto holder3 = mcache.getOrSet(3, load_int);
@@ -177,10 +177,10 @@ TEST(LRUResourceCache, notEvictUsedElement)
     auto holder1 = mcache.getOrSet(1, load_int);
 
     auto holder2 = mcache.getOrSet(2, load_int);
-    holder2 = nullptr;
+    holder2.reset();
 
     auto holder3 = mcache.getOrSet(3, load_int);
-    holder3 = nullptr;
+    holder3.reset();
 
     x = 3;
     auto holder4 = mcache.getOrSet(4, load_int);
@@ -231,7 +231,7 @@ TEST(LRUResourceCache, dupGet)
     int x = 2;
     auto load_int = [&] { return std::make_shared<int>(x); };
     auto holder1 = mcache.getOrSet(1, load_int);
-    holder1 = nullptr;
+    holder1.reset();
     x = 11;
     holder1 = mcache.getOrSet(1, load_int);
     ASSERT_TRUE(holder1 != nullptr);
@@ -255,7 +255,7 @@ TEST(LRUResourceCache, reGet)
     mcache.tryRemove(1);
 
     x = 11;
-    holder1 = nullptr;
+    holder1.reset();
     holder1 = mcache.getOrSet(1, load_int);
     ASSERT_TRUE(holder1 != nullptr);
 
