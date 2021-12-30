@@ -14,7 +14,6 @@
 
 namespace DB
 {
-#pragma pack(push, 1)
 template<typename V>
 struct ListNode
 {
@@ -22,9 +21,7 @@ struct ListNode
     V value;
     bool active_in_map;
 };
-#pragma pack(pop)
 
-#include <Common/parallel_hashmap/phmap.h>
 template <class V>
 class SnapshotableHashTable
 {
@@ -146,14 +143,8 @@ public:
         return false;
     }
 
-    uint64_t timeit()
-    {
-        return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-    }
-
     void insertOrReplace(const std::string & key, const V & value)
     {
-        auto be_time = timeit();
         auto it = map.find(key);
         uint64_t old_value_size = it == map.end() ? 0 : it->second->value.sizeInBytes();
 
@@ -180,11 +171,6 @@ public:
             }
         }
         updateDataSize(INSERT_OR_REPLACE, key.size(), value.sizeInBytes(), old_value_size);
-        auto end_time = timeit();
-        if (end_time - be_time > 10)
-        {
-            std::cout << "insertOrReplace time: " << end_time - be_time << std::endl;
-        }
     }
 
     bool erase(const std::string & key)
@@ -225,7 +211,6 @@ public:
 
         const_iterator ret;
 
-        auto be_time = timeit();
         if (snapshot_mode)
         {
             auto elem_copy = *(list_itr);
@@ -233,7 +218,6 @@ public:
             map.erase(it);
             updater(elem_copy.value);
             auto itr = list.insert(list.end(), elem_copy);
-            be_time = timeit();
             map.emplace(itr->key, itr);
             ret = itr;
         }
@@ -243,11 +227,6 @@ public:
             ret = list_itr;
         }
         updateDataSize(UPDATE_VALUE, key.size(), ret->value.sizeInBytes(), old_value_size);
-        auto end_time = timeit();
-        if (end_time - be_time > 10)
-        {
-            std::cout << "updateValue time: " << end_time - be_time << std::endl;
-        }
         return ret;
     }
 

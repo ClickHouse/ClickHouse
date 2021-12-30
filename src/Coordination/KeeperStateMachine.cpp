@@ -3,6 +3,7 @@
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
+#include "base/logger_useful.h"
 #include <Coordination/KeeperSnapshotManager.h>
 #include <future>
 
@@ -73,8 +74,9 @@ void KeeperStateMachine::init()
 
         try
         {
-            latest_snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(latest_log_index);
-            auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_buf);
+            //latest_snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(latest_log_index);
+            //auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_buf);
+            auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_manager.deserializeSnapshotBufferFromDisk(latest_log_index));
             storage = std::move(snapshot_deserialization_result.storage);
             latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
             cluster_config = snapshot_deserialization_result.cluster_config;
@@ -155,7 +157,8 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
 
     { /// deserialize and apply snapshot to storage
         std::lock_guard lock(storage_and_responses_lock);
-        auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_buf);
+        //auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_buf);
+        auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_manager.deserializeSnapshotBufferFromDisk(s.get_last_log_idx()));
         storage = std::move(snapshot_deserialization_result.storage);
         latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
         cluster_config = snapshot_deserialization_result.cluster_config;
@@ -203,12 +206,18 @@ void KeeperStateMachine::create_snapshot(
         {
             {   /// Read storage data without locks and create snapshot
                 std::lock_guard lock(snapshots_lock);
-                auto snapshot_buf = snapshot_manager.serializeSnapshotToBuffer(*snapshot);
-                auto result_path = snapshot_manager.serializeSnapshotBufferToDisk(*snapshot_buf, snapshot->snapshot_meta->get_last_log_idx());
-                latest_snapshot_buf = snapshot_buf;
+                //auto snapshot_buf = snapshot_manager.serializeSnapshotToBuffer(*snapshot);
+                //auto result_path = snapshot_manager.serializeSnapshotBufferToDisk(*snapshot_buf, snapshot->snapshot_meta->get_last_log_idx());
+                auto result = snapshot_manager.serializeSnapshotToDisk(*snapshot);
+                if (result.second)
+                {
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Snapshot {} was created failed, error: {}",
+                            snapshot->snapshot_meta->get_last_log_idx(), result.second.message());
+                }
+                //latest_snapshot_buf = snapshot_buf;
                 latest_snapshot_meta = snapshot->snapshot_meta;
 
-                LOG_DEBUG(log, "Created persistent snapshot {} with path {}", latest_snapshot_meta->get_last_log_idx(), result_path);
+                LOG_DEBUG(log, "Created persistent snapshot {} with path {}", latest_snapshot_meta->get_last_log_idx(), result.first);
             }
 
             {
@@ -259,7 +268,8 @@ void KeeperStateMachine::save_logical_snp_obj(
     else
     {
         /// copy snapshot into memory
-        cloned_buffer = nuraft::buffer::clone(data);
+        //cloned_buffer = nuraft::buffer::clone(data);
+        //cloned_buffer = data;
     }
 
     /// copy snapshot meta into memory
@@ -270,9 +280,11 @@ void KeeperStateMachine::save_logical_snp_obj(
     {
         std::lock_guard lock(snapshots_lock);
         /// Serialize snapshot to disk and switch in memory pointers.
-        auto result_path = snapshot_manager.serializeSnapshotBufferToDisk(*cloned_buffer, s.get_last_log_idx());
-        latest_snapshot_buf = cloned_buffer;
+        //auto result_path = snapshot_manager.serializeSnapshotBufferToDisk(*cloned_buffer, s.get_last_log_idx());
+        auto result_path = snapshot_manager.serializeSnapshotBufferToDisk(data, s.get_last_log_idx());
+        //latest_snapshot_buf = cloned_buffer;
         latest_snapshot_meta = cloned_meta;
+        latest_snapshot_path = result_path;
         LOG_DEBUG(log, "Saved snapshot {} to path {}", s.get_last_log_idx(), result_path);
         obj_id++;
     }
@@ -281,7 +293,7 @@ void KeeperStateMachine::save_logical_snp_obj(
         tryLogCurrentException(log);
     }
 }
-
+#include <sys/mman.h>
 int KeeperStateMachine::read_logical_snp_obj(
     nuraft::snapshot & s,
     void* & /*user_snp_ctx*/,
@@ -309,7 +321,22 @@ int KeeperStateMachine::read_logical_snp_obj(
                             s.get_last_log_idx(), latest_snapshot_meta->get_last_log_idx());
             return -1;
         }
-        data_out = nuraft::buffer::clone(*latest_snapshot_buf);
+        int fd = ::open(latest_snapshot_path.c_str(), O_RDONLY);
+        if (fd < 0) {
+            LOG_WARNING(log, "Error opeing {}.", latest_snapshot_path);
+            return -1;
+        }
+        auto file_size = ::lseek(fd, 0, SEEK_END);
+        lseek(fd, 0, SEEK_SET);
+        auto* chunk = reinterpret_cast<nuraft::byte*>(::mmap(nullptr, file_size, PROT_READ, MAP_FILE | MAP_SHARED, fd, 0));
+        if (chunk == MAP_FAILED) {
+            LOG_WARNING(log, "Error mmapping {}.", latest_snapshot_path);
+            return -1;
+        }
+        data_out = nuraft::buffer::alloc(file_size);
+        data_out->put_raw(chunk, file_size);
+        munmap(chunk, file_size);
+        //data_out = nuraft::buffer::clone(*latest_snapshot_buf);
         is_last_obj = true;
     }
 

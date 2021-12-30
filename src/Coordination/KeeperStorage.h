@@ -22,11 +22,7 @@ namespace DB
 struct KeeperStorageRequestProcessor;
 using KeeperStorageRequestProcessorPtr = std::shared_ptr<KeeperStorageRequestProcessor>;
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
-//using ChildrenSet = std::unordered_set<std::string>;
 using ChildrenSet = std::shared_ptr<my_unordered_set<std::string>>;
-//using ChildrenSet = array_unordered_set<std::string>;
-//using ChildrenSet = std::set<std::string>;
-//using ChildrenSet = DoubleSet<std::string>;
 using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
 
 struct KeeperStorageSnapshot;
@@ -46,7 +42,6 @@ public:
         Coordination::Stat stat{};
         int32_t seq_num = 0;
         ChildrenSet children{nullptr};
-        //uint64_t size_bytes; // save size to avoid calculate every time
         uint32_t size_bytes; // save size to avoid calculate every time
 
         Node()

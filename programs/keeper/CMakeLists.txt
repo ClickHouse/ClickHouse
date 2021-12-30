@@ -1,5 +1,6 @@
 include(${ClickHouse_SOURCE_DIR}/cmake/embed_binary.cmake)
 
+#link_directories("/usr/local/lib") # profiling
 set(CLICKHOUSE_KEEPER_SOURCES
     Keeper.cpp
 )
@@ -20,6 +21,7 @@ set (CLICKHOUSE_KEEPER_LINK
 )
 
 clickhouse_program_add(keeper)
+#target_link_libraries(clickhouse-keeper-lib PUBLIC "-ltcmalloc_and_profiler") # profiling
 
 install (FILES keeper_config.xml DESTINATION "${CLICKHOUSE_ETC_DIR}/clickhouse-keeper" COMPONENT clickhouse-keeper)
 

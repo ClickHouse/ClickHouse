@@ -323,10 +323,10 @@ void Changelog::cleanThread()
         if (del_log_q.pop(path))
         {
             std::filesystem::remove(path);
-            std::cout << "remove " << path << " because of compaction." << std::endl;
+            LOG_INFO(log, "Removed changelog {} because of compaction.", path);
         }
         else
-            usleep(100);
+            std::this_thread::sleep_for(std::chrono::microseconds(200));
     }
 }
 

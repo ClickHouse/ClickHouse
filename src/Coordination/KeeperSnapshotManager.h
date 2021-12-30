@@ -1,4 +1,5 @@
 #pragma once
+#include <system_error>
 #include <libnuraft/nuraft.hxx>
 #include <Coordination/KeeperStorage.h>
 #include <IO/WriteBuffer.h>
@@ -100,6 +101,9 @@ public:
 
     /// Serialize already compressed snapshot to disk (return path)
     std::string serializeSnapshotBufferToDisk(nuraft::buffer & buffer, uint64_t up_to_log_idx);
+
+    /// Serialize compress snapshot to disk
+    std::pair<std::string, std::error_code> serializeSnapshotToDisk(const KeeperStorageSnapshot & snapshot);
 
     SnapshotDeserializationResult deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const;
 

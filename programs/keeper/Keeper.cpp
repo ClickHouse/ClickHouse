@@ -269,8 +269,10 @@ void Keeper::defineOptions(Poco::Util::OptionSet & options)
     BaseDaemon::defineOptions(options);
 }
 
+//#include </usr/local/include/gperftools/profiler.h>
 int Keeper::main(const std::vector<std::string> & /*args*/)
 {
+    //ProfilerStart("/tmp/ckcp.prof");
     Poco::Logger * log = &logger();
 
     UseSSL use_ssl;
@@ -482,7 +484,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     LOG_INFO(log, "Ready for connections.");
 
     waitForTerminationRequest();
-
+    //ProfilerStop();
     return Application::EXIT_OK;
 }
 

@@ -104,6 +104,7 @@ private:
     /// in memory in compressed (serialized) format.
     SnapshotMetadataPtr latest_snapshot_meta = nullptr;
     nuraft::ptr<nuraft::buffer> latest_snapshot_buf = nullptr;
+    std::string latest_snapshot_path;
 
     CoordinationSettingsPtr coordination_settings;
 

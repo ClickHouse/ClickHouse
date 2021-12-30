@@ -170,8 +170,8 @@ private:
     uint64_t min_log_id = 0;
     uint64_t max_log_id = 0;
 
-    // for compaction, queue of del not used logs
-    boost::lockfree::spsc_queue<std::string> del_log_q{128};
+    // for compaction, queue of delete not used logs
+    boost::lockfree::spsc_queue<std::string> del_log_q{128}; /// 128 is enough for now
     size_t cur_del_idx; 
     ThreadFromGlobalPool clean_log_thread;
     std::atomic_bool shutdown_clean_thread{false};
