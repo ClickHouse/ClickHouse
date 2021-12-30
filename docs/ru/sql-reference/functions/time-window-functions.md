@@ -16,9 +16,10 @@ tumble(time_attr, interval [, timezone])
 ```
 
 **Аргументы**
-- `time_attr` - Дата и время. Тип данных [DateTime](../ru/sql-reference/data-types/datetime.md).
-- `interval` - Интервал окна в типе данных [Interval](../ru/sql-reference/data-types/special-data-types/interval.md).
-- `timezone` — [Timezone name](../ru/operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (необязательно). 
+
+-  `time_attr` — дата и время. Тип данных [DateTime](../ru/sql-reference/data-types/datetime.md).
+-  `interval` — интервал окна в типе данных [Interval](../ru/sql-reference/data-types/special-data-types/interval.md).
+-  `timezone` — [имя временной зоны](../ru/operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (необязательно). 
 
 **Возвращаемые значения**
 
@@ -31,7 +32,7 @@ Type: `Tuple(DateTime, DateTime)`
 Запрос:
 
 ``` sql
-SELECT tumble(now(), toIntervalDay('1'))
+SELECT tumble(now(), toIntervalDay('1'));
 ```
 
 Результат:
@@ -44,7 +45,7 @@ SELECT tumble(now(), toIntervalDay('1'))
 
 ## hop {#time-window-functions-hop}
 
-У прыгающего окна времени есть фиксированная продолжительность (`window_interval`) и прыгает на определенный прыжковый интервал (`hop_interval`). Если `hop_interval` меньше чем `window_interval`, прыгающие окна перекрывают друг друга. Таким образом, записи можно назначать множеству окон. 
+У прыгающего окна времени есть фиксированная продолжительность (`window_interval`), и оно прыгает на определенный прыжковый интервал (`hop_interval`). Если `hop_interval` меньше чем `window_interval`, прыгающие окна перекрывают друг друга. Таким образом, записи можно назначать множеству окон. 
 
 ``` sql
 hop(time_attr, hop_interval, window_interval [, timezone])
@@ -52,10 +53,10 @@ hop(time_attr, hop_interval, window_interval [, timezone])
 
 **Аргументы**
 
-- `time_attr` - Дата и время. Тип данных [DateTime](../../sql-reference/data-types/datetime.md).
-- `hop_interval` - Интервал прыжка в типе данных [Interval](../../sql-reference/data-types/special-data-types/interval.md). Лучше взять положительное число.
-- `window_interval` - Интервал окна в типе данных [Interval](../../sql-reference/data-types/special-data-types/interval.md). Лучше взять положительное число.
-- `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (необязательно). 
+- `time_attr` — дата и время. Тип данных [DateTime](../../sql-reference/data-types/datetime.md).
+- `hop_interval` — интервал прыжка в типе данных [Interval](../../sql-reference/data-types/special-data-types/interval.md). Лучше взять положительное число.
+- `window_interval` — интервал окна в типе данных [Interval](../../sql-reference/data-types/special-data-types/interval.md). Лучше взять положительное число.
+- `timezone` — [имя временной зоны](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) (необязательно). 
 
 **Возвращаемые значения**
 
@@ -68,7 +69,7 @@ hop(time_attr, hop_interval, window_interval [, timezone])
 Запрос:
 
 ``` sql
-SELECT hop(now(), INTERVAL '1' SECOND, INTERVAL '2' SECOND)
+SELECT hop(now(), INTERVAL '1' SECOND, INTERVAL '2' SECOND);
 ```
 
 Результат:

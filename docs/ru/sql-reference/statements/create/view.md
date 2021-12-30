@@ -324,7 +324,7 @@ WATCH wv
 INSERT INTO data VALUES(1,now())
 ```
 
-запрос `WATCH` должен отразить следующие результаты:
+Запрос `WATCH` должен отразить следующие результаты:
 
 ``` text
 ┌─count(id)─┬────────window_start─┐
