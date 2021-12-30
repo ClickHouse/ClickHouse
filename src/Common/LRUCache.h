@@ -72,6 +72,7 @@ public:
             return;
         auto & cell = it->second;
         current_size -= cell.size;
+        queue.erase(cell.queue_iterator);
         cells.erase(it);
     }
 
