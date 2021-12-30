@@ -327,7 +327,7 @@ void KeeperTCPHandler::runImpl()
         if (client_timeout == 0)
             client_timeout = Coordination::DEFAULT_SESSION_TIMEOUT_MS;
         session_timeout = std::max(client_timeout, min_session_timeout);
-        session_timeout = std::min(client_timeout, max_session_timeout);
+        session_timeout = std::min(session_timeout, max_session_timeout);
     }
     catch (const Exception & e) /// Typical for an incorrect username, password, or address.
     {

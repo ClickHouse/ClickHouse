@@ -39,7 +39,7 @@
             <coordination_settings>
                 <operation_timeout_ms>10000</operation_timeout_ms>
                 <min_session_timeout_ms>10000</min_session_timeout_ms>
-                <max_session_timeout_ms>30000</max_session_timeout_ms>
+                <max_session_timeout_ms>100000</max_session_timeout_ms>
                 <raft_logs_level>information</raft_logs_level>
                 <!-- All settings listed in https://github.com/ClickHouse/ClickHouse/blob/master/src/Coordination/CoordinationSettings.h -->
             </coordination_settings>
