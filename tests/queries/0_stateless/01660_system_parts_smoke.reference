@@ -1,13 +1,13 @@
 # two parts
-Committed
-Committed
-all_1_1_0	Committed
-all_2_2_0	Committed
+Active
+Active
+all_1_1_0	Active
+all_2_2_0	Active
 all_1_1_0	1
 all_2_2_0	1
 # optimize
+1	Active
 2	Outdated
-1	Committed
 # truncate
 Outdated
 Outdated

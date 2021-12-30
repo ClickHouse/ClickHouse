@@ -370,7 +370,7 @@ void ReplicatedMergeTreeSink::commitPart(
                 block_id, existing_part_name);
 
             /// If it does not exist, we will write a new part with existing name.
-            /// Note that it may also appear on filesystem right now in PreCommitted state due to concurrent inserts of the same data.
+            /// Note that it may also appear on filesystem right now in PreActive state due to concurrent inserts of the same data.
             /// It will be checked when we will try to rename directory.
 
             part->name = existing_part_name;

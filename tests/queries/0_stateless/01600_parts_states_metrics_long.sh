@@ -7,7 +7,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # NOTE: database = $CLICKHOUSE_DATABASE is unwanted
 verify_sql="SELECT
-    (SELECT sumIf(value, metric = 'PartsCommitted'), sumIf(value, metric = 'PartsOutdated') FROM system.metrics)
+    (SELECT sumIf(value, metric = 'PartsActive'), sumIf(value, metric = 'PartsOutdated') FROM system.metrics)
     = (SELECT sum(active), sum(NOT active) FROM system.parts)"
 
 # The query is not atomic - it can compare states between system.parts and system.metrics from different points in time.

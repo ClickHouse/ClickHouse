@@ -272,10 +272,10 @@ std::pair<bool, MergeTreeDataPartPtr> ReplicatedMergeTreePartCheckThread::findLo
     /// but checker thread will remove part from zookeeper and queue fetch.
     bool exists_in_zookeeper = zookeeper->exists(part_path);
 
-    /// If the part is still in the PreCommitted -> Committed transition, it is not lost
+    /// If the part is still in the PreActive -> Active transition, it is not lost
     /// and there is no need to go searching for it on other replicas. To definitely find the needed part
-    /// if it exists (or a part containing it) we first search among the PreCommitted parts.
-    auto part = storage.getPartIfExists(part_name, {MergeTreeDataPartState::PreCommitted});
+    /// if it exists (or a part containing it) we first search among the PreActive parts.
+    auto part = storage.getPartIfExists(part_name, {MergeTreeDataPartState::PreActive});
     if (!part)
         part = storage.getActiveContainingPart(part_name);
 
