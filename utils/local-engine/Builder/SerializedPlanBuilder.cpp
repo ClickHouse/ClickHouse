@@ -126,7 +126,7 @@ SerializedPlanBuilder & SerializedPlanBuilder::read(std::string path, SchemaPtr 
 {
     substrait::Rel * rel = new substrait::Rel();
     auto * read = rel->mutable_read();
-    read->mutable_local_files()->add_items()->set_uri_path(path);
+    read->mutable_local_files()->add_items()->set_uri_file(path);
     read->set_allocated_base_schema(schema);
     setInputToPrev(rel);
     this->prev_rel = rel;

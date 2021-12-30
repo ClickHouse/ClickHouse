@@ -31,7 +31,7 @@ DB::BatchParquetFileSourcePtr dbms::SerializedPlanParser::parseReadRealWithLocal
     auto files_info = std::make_shared<FilesInfo>();
     for (const auto & item : rel.local_files().items())
     {
-        files_info->files.push_back(item.uri_path());
+        files_info->files.push_back(item.uri_file());
     }
     return std::make_shared<BatchParquetFileSource>(files_info, parseNameStruct(rel.base_schema()));
 }
