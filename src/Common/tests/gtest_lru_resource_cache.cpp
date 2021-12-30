@@ -46,7 +46,7 @@ struct MyWeight
     size_t operator()(const int & x) const { return static_cast<size_t>(x); }
 };
 
-TEST(LRUResourceCache, evict_on_weight)
+TEST(LRUResourceCache, evictOnWweight)
 {
     using MyCache = DB::LRUResourceCache<int, int, MyWeight>;
     auto mcache = MyCache(5, 10);
@@ -75,7 +75,7 @@ TEST(LRUResourceCache, evict_on_weight)
     ASSERT_TRUE(holder3 != nullptr);
 }
 
-TEST(LRUResourceCache, evict_on_weight_v2)
+TEST(LRUResourceCache, evictOnWeightV2)
 {
     using MyCache = DB::LRUResourceCache<int, int, MyWeight>;
     auto mcache = MyCache(5, 10);
@@ -107,7 +107,7 @@ TEST(LRUResourceCache, evict_on_weight_v2)
     ASSERT_TRUE(holder3 != nullptr);
 }
 
-TEST(LRUResourceCache, evict_on_weight_v3)
+TEST(LRUResourceCache, evictOnWeightV3)
 {
     using MyCache = DB::LRUResourceCache<int, int, MyWeight>;
     auto mcache = MyCache(5, 10);
@@ -139,7 +139,7 @@ TEST(LRUResourceCache, evict_on_weight_v3)
     ASSERT_TRUE(holder3 != nullptr);
 }
 
-TEST(LRUResourceCache, evict_on_size)
+TEST(LRUResourceCache, evictOnSize)
 {
     using MyCache = DB::LRUResourceCache<int, int>;
     auto mcache = MyCache(5, 2);
@@ -168,7 +168,7 @@ TEST(LRUResourceCache, evict_on_size)
     ASSERT_TRUE(holder3 != nullptr);
 }
 
-TEST(LRUResourceCache, not_evict_used_element)
+TEST(LRUResourceCache, notEvictUsedElement)
 {
     using MyCache = DB::LRUResourceCache<int, int, MyWeight>;
     auto mcache = MyCache(7, 10);
@@ -201,7 +201,7 @@ TEST(LRUResourceCache, not_evict_used_element)
     ASSERT_TRUE(holder4 != nullptr);
 }
 
-TEST(LRUResourceCache, get_fail)
+TEST(LRUResourceCache, getFail)
 {
     using MyCache = DB::LRUResourceCache<int, int, MyWeight>;
     auto mcache = MyCache(5, 10);
@@ -224,7 +224,7 @@ TEST(LRUResourceCache, get_fail)
     ASSERT_TRUE(holder3 == nullptr);
 }
 
-TEST(LRUResourceCache, dup_get)
+TEST(LRUResourceCache, dupGet)
 {
     using MyCache = DB::LRUResourceCache<int, int, MyWeight>;
     auto mcache = MyCache(20, 10);
@@ -245,7 +245,7 @@ TEST(LRUResourceCache, dup_get)
     ASSERT_TRUE(holder1->value() == 2);
 }
 
-TEST(LRUResourceCache, re_get)
+TEST(LRUResourceCache, reGet)
 {
     using MyCache = DB::LRUResourceCache<int, int, MyWeight>;
     auto mcache = MyCache(20, 10);
