@@ -73,16 +73,19 @@ User defined function configurations are searched relative to the path specified
 A function configuration contains the following settings:
 
 -   `name` - a function name.
--   `command` - a command or a script to execute.
+-   `command` - script name to execute or command if `execute_direct` is false.
 -   `argument` - argument description with the `type` of an argument. Each argument is described in a separate setting.
 -   `format` - a [format](../../interfaces/formats.md) in which arguments are passed to the command.
 -   `return_type` - the type of a returned value.
 -   `type` - an executable type. If `type` is set to `executable` then single command is started. If it is set to `executable_pool` then a pool of commands is created.
 -   `max_command_execution_time` - maximum execution time in seconds for processing block of data. This setting is valid for `executable_pool` commands only. Optional. Default value is `10`.
--   `command_termination_timeout` - time in seconds during which a command should finish after its pipe is closed. After that time `SIGTERM` is sent to the process executing the command. This setting is valid for `executable_pool` commands only. Optional. Default value is `10`.
+-   `command_termination_timeout` - time in seconds during which a command should finish after its pipe is closed. After that time `SIGTERM` is sent to the process executing the command. Optional. Default value is `10`.
+-   `command_read_timeout` - timeout for reading data from command stdout in milliseconds. Default value 10000. Optional parameter.
+-   `command_read_timeout` - timeout for writing data to command stdin in milliseconds. Default value 10000. Optional parameter.
 -   `pool_size` - the size of a command pool. Optional. Default value is `16`.
--   `lifetime` - the reload interval of a function in seconds. If it is set to `0` then the function is not reloaded.
 -   `send_chunk_header` - controls whether to send row count before sending a chunk of data to process. Optional. Default value is `false`.
+-   `execute_direct` - Executable source file will be searched inside `user_scripts` folder and executed directly. Additional arguments can be specified. Example: `test_script arg_1 arg_2`. Default value is true. Optional parameter.
+-   `lifetime` - the reload interval of a function in seconds. If it is set to `0` then the function is not reloaded. Default value is `0`. Optional parameter.
 
 The command must read arguments from `STDIN` and must output the result to `STDOUT`. The command must process arguments iteratively. That is after processing a chunk of arguments it must wait for the next chunk.
 
@@ -102,7 +105,6 @@ Creating `test_function` using XML configuration:
         </argument>
         <format>TabSeparated</format>
         <command>cd /; clickhouse-local --input-format TabSeparated --output-format TabSeparated --structure 'x UInt64, y UInt64' --query "SELECT x + y FROM table"</command>
-        <lifetime>0</lifetime>
     </function>
 </functions>
 ```

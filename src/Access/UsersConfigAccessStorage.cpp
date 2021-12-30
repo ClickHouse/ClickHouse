@@ -610,41 +610,21 @@ std::vector<UUID> UsersConfigAccessStorage::findAllImpl(AccessEntityType type) c
 }
 
 
-bool UsersConfigAccessStorage::existsImpl(const UUID & id) const
+bool UsersConfigAccessStorage::exists(const UUID & id) const
 {
     return memory_storage.exists(id);
 }
 
 
-AccessEntityPtr UsersConfigAccessStorage::readImpl(const UUID & id) const
+AccessEntityPtr UsersConfigAccessStorage::readImpl(const UUID & id, bool throw_if_not_exists) const
 {
-    return memory_storage.read(id);
+    return memory_storage.read(id, throw_if_not_exists);
 }
 
 
-String UsersConfigAccessStorage::readNameImpl(const UUID & id) const
+std::optional<String> UsersConfigAccessStorage::readNameImpl(const UUID & id, bool throw_if_not_exists) const
 {
-    return memory_storage.readName(id);
-}
-
-
-UUID UsersConfigAccessStorage::insertImpl(const AccessEntityPtr & entity, bool)
-{
-    throwReadonlyCannotInsert(entity->getType(), entity->getName());
-}
-
-
-void UsersConfigAccessStorage::removeImpl(const UUID & id)
-{
-    auto entity = read(id);
-    throwReadonlyCannotRemove(entity->getType(), entity->getName());
-}
-
-
-void UsersConfigAccessStorage::updateImpl(const UUID & id, const UpdateFunc &)
-{
-    auto entity = read(id);
-    throwReadonlyCannotUpdate(entity->getType(), entity->getName());
+    return memory_storage.readName(id, throw_if_not_exists);
 }
 
 
@@ -660,13 +640,13 @@ scope_guard UsersConfigAccessStorage::subscribeForChangesImpl(AccessEntityType t
 }
 
 
-bool UsersConfigAccessStorage::hasSubscriptionImpl(const UUID & id) const
+bool UsersConfigAccessStorage::hasSubscription(const UUID & id) const
 {
     return memory_storage.hasSubscription(id);
 }
 
 
-bool UsersConfigAccessStorage::hasSubscriptionImpl(AccessEntityType type) const
+bool UsersConfigAccessStorage::hasSubscription(AccessEntityType type) const
 {
     return memory_storage.hasSubscription(type);
 }

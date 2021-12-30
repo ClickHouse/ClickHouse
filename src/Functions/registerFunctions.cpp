@@ -61,7 +61,7 @@ void registerFunctionValidateNestedArraySizes(FunctionFactory & factory);
 void registerFunctionsSnowflake(FunctionFactory & factory);
 void registerFunctionTid(FunctionFactory & factory);
 void registerFunctionLogTrace(FunctionFactory & factory);
-void registerFunctionsWindow(FunctionFactory &);
+void registerFunctionsTimeWindow(FunctionFactory &);
 
 #if USE_NLP
 void registerFunctionLanguageDetectUTF8(FunctionFactory &);
@@ -129,7 +129,7 @@ void registerFunctions()
     registerFunctionsStringHash(factory);
     registerFunctionValidateNestedArraySizes(factory);
     registerFunctionsSnowflake(factory);
-    registerFunctionsWindow(factory);
+    registerFunctionsTimeWindow(factory);
 
 #if USE_NLP
     registerFunctionLanguageDetectUTF8(factory);

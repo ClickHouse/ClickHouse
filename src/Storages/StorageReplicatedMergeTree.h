@@ -263,6 +263,8 @@ public:
 
     bool createEmptyPartInsteadOfLost(zkutil::ZooKeeperPtr zookeeper, const String & lost_part_name);
 
+    static const String getDefaultZooKeeperName() { return default_zookeeper_name; }
+
 private:
     std::atomic_bool are_restoring_replica {false};
 
@@ -717,7 +719,6 @@ private:
 
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 
-    std::set<String> getPartitionIdsAffectedByCommands(const MutationCommands & commands, ContextPtr query_context) const;
     PartitionBlockNumbersHolder allocateBlockNumbersInAffectedPartitions(
         const MutationCommands & commands, ContextPtr query_context, const zkutil::ZooKeeperPtr & zookeeper) const;
 

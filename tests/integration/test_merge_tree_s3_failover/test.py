@@ -37,7 +37,6 @@ def fail_request(cluster, request):
                                          ["curl", "-s", "http://resolver:8080/fail_request/{}".format(request)])
     assert response == 'OK', 'Expected "OK", but got "{}"'.format(response)
 
-
 def throttle_request(cluster, request):
     response = cluster.exec_in_container(cluster.get_container_id('resolver'),
                                          ["curl", "-s", "http://resolver:8080/throttle_request/{}".format(request)])

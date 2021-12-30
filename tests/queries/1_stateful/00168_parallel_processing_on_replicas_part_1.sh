@@ -72,7 +72,7 @@ do
 
     if [[ "$expected" != "$actual" ]]; then
         FAILED+=("$TESTNAME")
-        echo "Failed! ❌ "
+        echo "Failed! ❌"
         echo "Plain:"
         cat $TESTNAME_RESULT
         echo "Distributed:"

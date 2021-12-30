@@ -38,6 +38,7 @@ capnp::DynamicValue::Reader getReaderByColumnName(const capnp::DynamicStruct::Re
 
 void checkCapnProtoSchemaStructure(const capnp::StructSchema & schema, const Block & header, FormatSettings::EnumComparingMode mode);
 
+NamesAndTypesList capnProtoSchemaToCHSchema(const capnp::StructSchema & schema);
 }
 
 #endif

@@ -1,0 +1,435 @@
+Arrow
+int8	Int8					
+uint8	UInt8					
+int16	Int16					
+uint16	UInt16					
+int32	Int32					
+uint32	UInt32					
+int64	Int64					
+uint64	UInt64					
+0	0	0	0	0	0	0	0
+-1	1	-1	1	-1	1	-1	1
+float32	Float32					
+float64	Float64					
+decimal32	Decimal(9, 5)					
+decimal64	Decimal(18, 5)					
+0	0	0	0
+1.2	0.7692307692307692	3.33333	333.33333
+date	UInt16					
+date32	Date32					
+0	1970-01-01
+1	1970-01-02
+str	String					
+fixed_string	String					
+Str: 0	100
+Str: 1	200
+array	Array(UInt64)					
+tuple	Tuple(`tuple.0` UInt64, `tuple.1` String)					
+map	Map(String, UInt64)					
+[0,1]	(0,'0')	{'0':0}
+[1,2]	(1,'1')	{'1':1}
+nested1	Array(Tuple(`nested1.0` Array(UInt64), `nested1.1` Map(String, UInt64)))					
+nested2	Tuple(`nested2.0` Tuple(`nested2.0.0` Array(Array(UInt64)), `nested2.0.1` Map(UInt64, Array(Tuple(`nested2.0.1.0` UInt64, `nested2.0.1.1` String)))), `nested2.1` UInt8)					
+[([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
+[([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
+ArrowStream
+int8	Int8					
+uint8	UInt8					
+int16	Int16					
+uint16	UInt16					
+int32	Int32					
+uint32	UInt32					
+int64	Int64					
+uint64	UInt64					
+0	0	0	0	0	0	0	0
+-1	1	-1	1	-1	1	-1	1
+float32	Float32					
+float64	Float64					
+decimal32	Decimal(9, 5)					
+decimal64	Decimal(18, 5)					
+0	0	0	0
+1.2	0.7692307692307692	3.33333	333.33333
+date	UInt16					
+date32	Date32					
+0	1970-01-01
+1	1970-01-02
+str	String					
+fixed_string	String					
+Str: 0	100
+Str: 1	200
+array	Array(UInt64)					
+tuple	Tuple(`tuple.0` UInt64, `tuple.1` String)					
+map	Map(String, UInt64)					
+[0,1]	(0,'0')	{'0':0}
+[1,2]	(1,'1')	{'1':1}
+nested1	Array(Tuple(`nested1.0` Array(UInt64), `nested1.1` Map(String, UInt64)))					
+nested2	Tuple(`nested2.0` Tuple(`nested2.0.0` Array(Array(UInt64)), `nested2.0.1` Map(UInt64, Array(Tuple(`nested2.0.1.0` UInt64, `nested2.0.1.1` String)))), `nested2.1` UInt8)					
+[([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
+[([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
+Parquet
+int8	Int8					
+uint8	UInt8					
+int16	Int16					
+uint16	UInt16					
+int32	Int32					
+uint32	Int64					
+int64	Int64					
+uint64	UInt64					
+0	0	0	0	0	0	0	0
+-1	1	-1	1	-1	1	-1	1
+float32	Float32					
+float64	Float64					
+decimal32	Decimal(9, 5)					
+decimal64	Decimal(18, 5)					
+0	0	0	0
+1.2	0.7692307692307692	3.33333	333.33333
+date	UInt16					
+date32	Date32					
+0	1970-01-01
+1	1970-01-02
+str	String					
+fixed_string	String					
+Str: 0	100
+Str: 1	200
+array	Array(UInt64)					
+tuple	Tuple(`tuple.0` UInt64, `tuple.1` String)					
+map	Map(String, UInt64)					
+[0,1]	(0,'0')	{'0':0}
+[1,2]	(1,'1')	{'1':1}
+nested1	Array(Tuple(`nested1.0` Array(UInt64), `nested1.1` Map(String, UInt64)))					
+nested2	Tuple(`nested2.0` Tuple(`nested2.0.0` Array(Array(UInt64)), `nested2.0.1` Map(UInt64, Array(Tuple(`nested2.0.1.0` UInt64, `nested2.0.1.1` String)))), `nested2.1` UInt8)					
+[([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
+[([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
+ORC
+int8	Int8					
+uint8	Int8					
+int16	Int16					
+uint16	Int16					
+int32	Int32					
+uint32	Int32					
+int64	Int64					
+uint64	Int64					
+0	0	0	0	0	0	0	0
+-1	1	-1	1	-1	1	-1	1
+float32	Float32					
+float64	Float64					
+decimal32	Decimal(9, 5)					
+decimal64	Decimal(18, 5)					
+0	0	0	0
+1.2	0.7692307692307692	3.33333	333.33333
+date	Date32					
+date32	Date32					
+1970-01-01	1970-01-01
+1970-01-02	1970-01-02
+str	String					
+fixed_string	String					
+Str: 0	100
+Str: 1	200
+array	Array(Int64)					
+tuple	Tuple(`tuple.0` Int64, `tuple.1` String)					
+map	Map(String, Int64)					
+[0,1]	(0,'0')	{'0':0}
+[1,2]	(1,'1')	{'1':1}
+nested1	Array(Tuple(`nested1.0` Array(Int64), `nested1.1` Map(String, Int64)))					
+nested2	Tuple(`nested2.0` Tuple(`nested2.0.0` Array(Array(Int64)), `nested2.0.1` Map(Int64, Array(Tuple(`nested2.0.1.0` Int64, `nested2.0.1.1` String)))), `nested2.1` Int8)					
+[([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
+[([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
+Native
+int8	Int8					
+uint8	UInt8					
+int16	Int16					
+uint16	UInt16					
+int32	Int32					
+uint32	UInt32					
+int64	Int64					
+uint64	UInt64					
+0	0	0	0	0	0	0	0
+-1	1	-1	1	-1	1	-1	1
+float32	Float32					
+float64	Float64					
+decimal32	Decimal(9, 5)					
+decimal64	Decimal(18, 5)					
+0	0	0	0
+1.2	0.7692307692307692	3.33333	333.33333
+date	Date					
+date32	Date32					
+1970-01-01	1970-01-01
+1970-01-02	1970-01-02
+str	String					
+fixed_string	FixedString(3)					
+Str: 0	100
+Str: 1	200
+array	Array(UInt64)					
+tuple	Tuple(UInt64, String)					
+map	Map(String, UInt64)					
+[0,1]	(0,'0')	{'0':0}
+[1,2]	(1,'1')	{'1':1}
+nested1	Array(Tuple(Array(UInt64), Map(String, UInt64)))					
+nested2	Tuple(Tuple(Array(Array(UInt64)), Map(UInt64, Array(Tuple(UInt64, String)))), UInt8)					
+[([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
+[([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
+TSVWithNamesAndTypes
+int8	Int8					
+uint8	UInt8					
+int16	Int16					
+uint16	UInt16					
+int32	Int32					
+uint32	UInt32					
+int64	Int64					
+uint64	UInt64					
+0	0	0	0	0	0	0	0
+-1	1	-1	1	-1	1	-1	1
+float32	Float32					
+float64	Float64					
+decimal32	Decimal(9, 5)					
+decimal64	Decimal(18, 5)					
+0	0	0	0
+1.2	0.7692307692307692	3.33333	333.33333
+date	Date					
+date32	Date32					
+1970-01-01	1970-01-01
+1970-01-02	1970-01-02
+str	String					
+fixed_string	FixedString(3)					
+Str: 0	100
+Str: 1	200
+array	Array(UInt64)					
+tuple	Tuple(UInt64, String)					
+map	Map(String, UInt64)					
+[0,1]	(0,'0')	{'0':0}
+[1,2]	(1,'1')	{'1':1}
+nested1	Array(Tuple(Array(UInt64), Map(String, UInt64)))					
+nested2	Tuple(Tuple(Array(Array(UInt64)), Map(UInt64, Array(Tuple(UInt64, String)))), UInt8)					
+[([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
+[([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
+TSVRawWithNamesAndTypes
+int8	Int8					
+uint8	UInt8					
+int16	Int16					
+uint16	UInt16					
+int32	Int32					
+uint32	UInt32					
+int64	Int64					
+uint64	UInt64					
+0	0	0	0	0	0	0	0
+-1	1	-1	1	-1	1	-1	1
+float32	Float32					
+float64	Float64					
+decimal32	Decimal(9, 5)					
+decimal64	Decimal(18, 5)					
+0	0	0	0
+1.2	0.7692307692307692	3.33333	333.33333
+date	Date					
+date32	Date32					
+1970-01-01	1970-01-01
+1970-01-02	1970-01-02
+str	String					
+fixed_string	FixedString(3)					
+Str: 0	100
+Str: 1	200
+array	Array(UInt64)					
+tuple	Tuple(UInt64, String)					
+map	Map(String, UInt64)					
+[0,1]	(0,'0')	{'0':0}
+[1,2]	(1,'1')	{'1':1}
+nested1	Array(Tuple(Array(UInt64), Map(String, UInt64)))					
+nested2	Tuple(Tuple(Array(Array(UInt64)), Map(UInt64, Array(Tuple(UInt64, String)))), UInt8)					
+[([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
+[([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
+CSVWithNamesAndTypes
+int8	Int8					
+uint8	UInt8					
+int16	Int16					
+uint16	UInt16					
+int32	Int32					
+uint32	UInt32					
+int64	Int64					
+uint64	UInt64					
+0	0	0	0	0	0	0	0
+-1	1	-1	1	-1	1	-1	1
+float32	Float32					
+float64	Float64					
+decimal32	Decimal(9, 5)					
+decimal64	Decimal(18, 5)					
+0	0	0	0
+1.2	0.7692307692307692	3.33333	333.33333
+date	Date					
+date32	Date32					
+1970-01-01	1970-01-01
+1970-01-02	1970-01-02
+str	String					
+fixed_string	FixedString(3)					
+Str: 0	100
+Str: 1	200
+array	Array(UInt64)					
+tuple	Tuple(UInt64, String)					
+map	Map(String, UInt64)					
+[0,1]	(0,'0')	{'0':0}
+[1,2]	(1,'1')	{'1':1}
+nested1	Array(Tuple(Array(UInt64), Map(String, UInt64)))					
+nested2	Tuple(Tuple(Array(Array(UInt64)), Map(UInt64, Array(Tuple(UInt64, String)))), UInt8)					
+[([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
+[([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
+JSONCompactEachRowWithNamesAndTypes
+int8	Int8					
+uint8	UInt8					
+int16	Int16					
+uint16	UInt16					
+int32	Int32					
+uint32	UInt32					
+int64	Int64					
+uint64	UInt64					
+0	0	0	0	0	0	0	0
+-1	1	-1	1	-1	1	-1	1
+float32	Float32					
+float64	Float64					
+decimal32	Decimal(9, 5)					
+decimal64	Decimal(18, 5)					
+0	0	0	0
+1.2	0.7692307692307692	3.33333	333.33333
+date	Date					
+date32	Date32					
+1970-01-01	1970-01-01
+1970-01-02	1970-01-02
+str	String					
+fixed_string	FixedString(3)					
+Str: 0	100
+Str: 1	200
+array	Array(UInt64)					
+tuple	Tuple(UInt64, String)					
+map	Map(String, UInt64)					
+[0,1]	(0,'0')	{'0':0}
+[1,2]	(1,'1')	{'1':1}
+nested1	Array(Tuple(Array(UInt64), Map(String, UInt64)))					
+nested2	Tuple(Tuple(Array(Array(UInt64)), Map(UInt64, Array(Tuple(UInt64, String)))), UInt8)					
+[([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
+[([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
+JSONCompactStringsEachRowWithNamesAndTypes
+int8	Int8					
+uint8	UInt8					
+int16	Int16					
+uint16	UInt16					
+int32	Int32					
+uint32	UInt32					
+int64	Int64					
+uint64	UInt64					
+0	0	0	0	0	0	0	0
+-1	1	-1	1	-1	1	-1	1
+float32	Float32					
+float64	Float64					
+decimal32	Decimal(9, 5)					
+decimal64	Decimal(18, 5)					
+0	0	0	0
+1.2	0.7692307692307692	3.33333	333.33333
+date	Date					
+date32	Date32					
+1970-01-01	1970-01-01
+1970-01-02	1970-01-02
+str	String					
+fixed_string	FixedString(3)					
+Str: 0	100
+Str: 1	200
+array	Array(UInt64)					
+tuple	Tuple(UInt64, String)					
+map	Map(String, UInt64)					
+[0,1]	(0,'0')	{'0':0}
+[1,2]	(1,'1')	{'1':1}
+nested1	Array(Tuple(Array(UInt64), Map(String, UInt64)))					
+nested2	Tuple(Tuple(Array(Array(UInt64)), Map(UInt64, Array(Tuple(UInt64, String)))), UInt8)					
+[([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
+[([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
+RowBinaryWithNamesAndTypes
+int8	Int8					
+uint8	UInt8					
+int16	Int16					
+uint16	UInt16					
+int32	Int32					
+uint32	UInt32					
+int64	Int64					
+uint64	UInt64					
+0	0	0	0	0	0	0	0
+-1	1	-1	1	-1	1	-1	1
+float32	Float32					
+float64	Float64					
+decimal32	Decimal(9, 5)					
+decimal64	Decimal(18, 5)					
+0	0	0	0
+1.2	0.7692307692307692	3.33333	333.33333
+date	Date					
+date32	Date32					
+1970-01-01	1970-01-01
+1970-01-02	1970-01-02
+str	String					
+fixed_string	FixedString(3)					
+Str: 0	100
+Str: 1	200
+array	Array(UInt64)					
+tuple	Tuple(UInt64, String)					
+map	Map(String, UInt64)					
+[0,1]	(0,'0')	{'0':0}
+[1,2]	(1,'1')	{'1':1}
+nested1	Array(Tuple(Array(UInt64), Map(String, UInt64)))					
+nested2	Tuple(Tuple(Array(Array(UInt64)), Map(UInt64, Array(Tuple(UInt64, String)))), UInt8)					
+[([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
+[([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
+CustomSeparatedWithNamesAndTypes
+int8	Int8					
+uint8	UInt8					
+int16	Int16					
+uint16	UInt16					
+int32	Int32					
+uint32	UInt32					
+int64	Int64					
+uint64	UInt64					
+0	0	0	0	0	0	0	0
+-1	1	-1	1	-1	1	-1	1
+float32	Float32					
+float64	Float64					
+decimal32	Decimal(9, 5)					
+decimal64	Decimal(18, 5)					
+0	0	0	0
+1.2	0.7692307692307692	3.33333	333.33333
+date	Date					
+date32	Date32					
+1970-01-01	1970-01-01
+1970-01-02	1970-01-02
+str	String					
+fixed_string	FixedString(3)					
+Str: 0	100
+Str: 1	200
+array	Array(UInt64)					
+tuple	Tuple(UInt64, String)					
+map	Map(String, UInt64)					
+[0,1]	(0,'0')	{'0':0}
+[1,2]	(1,'1')	{'1':1}
+nested1	Array(Tuple(Array(UInt64), Map(String, UInt64)))					
+nested2	Tuple(Tuple(Array(Array(UInt64)), Map(UInt64, Array(Tuple(UInt64, String)))), UInt8)					
+[([0,1],{'42':0}),([],{}),([42],{'42':42})]	(([[0],[1],[]],{0:[(0,'42'),(1,'42')]}),42)
+[([1,2],{'42':1}),([],{}),([42],{'42':42})]	(([[1],[2],[]],{1:[(1,'42'),(2,'42')]}),42)
+Avro
+CustomSeparatedWithNamesAndTypes
+int8	Int32					
+uint8	Int32					
+int16	Int32					
+uint16	Int32					
+int32	Int32					
+uint32	Int32					
+int64	Int64					
+uint64	Int64					
+0	0	0	0	0	0	0	0
+-1	1	-1	1	-1	1	-1	1
+float32	Float32					
+float64	Float64					
+0	0
+1.2	0.7692307692307692
+date	Int32					
+0
+1
+str	String					
+fixed_string	FixedString(3)					
+Str: 0	100
+Str: 1	200
+array	Array(Int64)					
+nested	Array(Array(Array(Int64)))					
+[0,1]	[[[0],[1]]]
+[1,2]	[[[1],[2]]]
