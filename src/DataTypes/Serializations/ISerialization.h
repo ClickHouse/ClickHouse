@@ -2,14 +2,24 @@
 
 #include <Common/COW.h>
 #include <Core/Types.h>
+#include <base/demangle.h>
+#include <Common/typeid_cast.h>
 #include <Columns/IColumn.h>
 
 #include <boost/noncopyable.hpp>
 #include <unordered_map>
 #include <memory>
+#include <variant>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+class IDataType;
 
 class ReadBuffer;
 class WriteBuffer;
@@ -22,18 +32,39 @@ using DataTypePtr = std::shared_ptr<const IDataType>;
 class ISerialization;
 using SerializationPtr = std::shared_ptr<const ISerialization>;
 
+class SerializationInfo;
+using SerializationInfoPtr = std::shared_ptr<const SerializationInfo>;
+
 class Field;
 
 struct FormatSettings;
 struct NameAndTypePair;
 
+/** Represents serialization of data type.
+ *  Has methods to serialize/deserialize column in binary and several text formats.
+ *  Every data type has default serialization, but can be serialized in different representations.
+ *  Default serialization can be wrapped to one of the special kind of serializations.
+ *  Currently there is only one special serialization: Sparse.
+ *  Each serialization has its own implementation of IColumn as its in-memory representation.
+ */
 class ISerialization : private boost::noncopyable, public std::enable_shared_from_this<ISerialization>
 {
 public:
     ISerialization() = default;
     virtual ~ISerialization() = default;
 
+    enum class Kind : UInt8
+    {
+        DEFAULT = 0,
+        SPARSE = 1,
+    };
+
+    virtual Kind getKind() const { return Kind::DEFAULT; }
     SerializationPtr getPtr() const { return shared_from_this(); }
+
+    static Kind getKind(const IColumn & column);
+    static String kindToString(Kind kind);
+    static Kind stringToKind(const String & str);
 
     /** Binary serialization for range of values in column - for writing to disk/network, etc.
       *
@@ -70,10 +101,10 @@ public:
 
     struct SubstreamData
     {
+        SerializationPtr serialization;
         DataTypePtr type;
         ColumnPtr column;
-        SerializationPtr serialization;
-        SubcolumnCreatorPtr creator;
+        SerializationInfoPtr serialization_info;
     };
 
     struct Substream
@@ -108,6 +139,9 @@ public:
         /// Data for current substream.
         SubstreamData data;
 
+        /// Creator of subcolumn for current substream.
+        SubcolumnCreatorPtr creator = nullptr;
+
         /// Flag, that may help to traverse substream paths.
         mutable bool visited = false;
 
@@ -130,12 +164,13 @@ public:
     virtual void enumerateStreams(
         SubstreamPath & path,
         const StreamCallback & callback,
-        DataTypePtr type,
-        ColumnPtr column) const;
+        const SubstreamData & data) const;
 
     void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const;
     void enumerateStreams(const StreamCallback & callback, SubstreamPath && path) const { enumerateStreams(callback, path); }
     void enumerateStreams(const StreamCallback & callback) const { enumerateStreams(callback, {}); }
+
+    void enumerateStreams(SubstreamPath & path, const StreamCallback & callback, const DataTypePtr & type) const;
 
     using OutputStreamGetter = std::function<WriteBuffer*(const SubstreamPath &)>;
     using InputStreamGetter = std::function<ReadBuffer*(const SubstreamPath &)>;
@@ -300,16 +335,41 @@ public:
     static ColumnPtr getFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
 
     static bool isSpecialCompressionAllowed(const SubstreamPath & path);
-    static size_t getArrayLevel(const SubstreamPath & path);
 
+    static size_t getArrayLevel(const SubstreamPath & path);
     static bool hasSubcolumnForPath(const SubstreamPath & path, size_t prefix_len);
     static SubstreamData createFromPath(const SubstreamPath & path, size_t prefix_len);
 
 protected:
+    template <typename State, typename StatePtr>
+    State * checkAndGetState(const StatePtr & state) const;
+
     [[noreturn]] void throwUnexpectedDataAfterParsedValue(IColumn & column, ReadBuffer & istr, const FormatSettings &, const String & type_name) const;
 };
 
 using SerializationPtr = std::shared_ptr<const ISerialization>;
 using Serializations = std::vector<SerializationPtr>;
+using SerializationByName = std::unordered_map<String, SerializationPtr>;
+
+template <typename State, typename StatePtr>
+State * ISerialization::checkAndGetState(const StatePtr & state) const
+{
+    if (!state)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Got empty state for {}", demangle(typeid(*this).name()));
+
+    auto * state_concrete = typeid_cast<State *>(state.get());
+    if (!state_concrete)
+    {
+        auto & state_ref = *state;
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Invalid State for {}. Expected: {}, got {}",
+                demangle(typeid(*this).name()),
+                demangle(typeid(State).name()),
+                demangle(typeid(state_ref).name()));
+    }
+
+    return state_concrete;
+}
 
 }

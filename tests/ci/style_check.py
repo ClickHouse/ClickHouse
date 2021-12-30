@@ -6,8 +6,10 @@ import csv
 import sys
 
 from github import Github
+
+from env_helper import RUNNER_TEMP, GITHUB_WORKSPACE
 from s3_helper import S3Helper
-from pr_info import PRInfo, get_event
+from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
@@ -28,10 +30,14 @@ def process_result(result_folder):
         test_files = [f for f in os.listdir(result_folder) if os.path.isfile(os.path.join(result_folder, f))]
         additional_files = [os.path.join(result_folder, f) for f in test_files]
 
+    status = []
     status_path = os.path.join(result_folder, "check_status.tsv")
-    logging.info("Found test_results.tsv")
-    status = list(csv.reader(open(status_path, 'r'), delimiter='\t'))
+    if os.path.exists(status_path):
+        logging.info("Found test_results.tsv")
+        with open(status_path, 'r', encoding='utf-8') as status_file:
+            status = list(csv.reader(status_file, delimiter='\t'))
     if len(status) != 1 or len(status[0]) != 2:
+        logging.info("Files in result folder %s", os.listdir(result_folder))
         return "error", "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
@@ -53,10 +59,10 @@ if __name__ == "__main__":
 
     stopwatch = Stopwatch()
 
-    repo_path = os.path.join(os.getenv("GITHUB_WORKSPACE", os.path.abspath("../../")))
-    temp_path = os.path.join(os.getenv("RUNNER_TEMP", os.path.abspath("./temp")), 'style_check')
+    repo_path = GITHUB_WORKSPACE
+    temp_path = os.path.join(RUNNER_TEMP, 'style_check')
 
-    pr_info = PRInfo(get_event())
+    pr_info = PRInfo()
 
     gh = Github(get_best_robot_token())
 

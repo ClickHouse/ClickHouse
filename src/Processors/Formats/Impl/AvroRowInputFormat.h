@@ -13,6 +13,7 @@
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Processors/Formats/IRowInputFormat.h>
+#include <Processors/Formats/ISchemaReader.h>
 
 #include <avro/DataFile.hh>
 #include <avro/Decoder.hh>
@@ -22,6 +23,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
 class AvroDeserializer
 {
 public:
@@ -81,7 +88,12 @@ private:
                         action.execute(columns, decoder, ext);
                     break;
                 case Union:
-                    actions[decoder.decodeUnionIndex()].execute(columns, decoder, ext);
+                    auto index = decoder.decodeUnionIndex();
+                    if (index >= actions.size())
+                    {
+                        throw Exception("Union index out of boundary", ErrorCodes::INCORRECT_DATA);
+                    }
+                    actions[index].execute(columns, decoder, ext);
                     break;
             }
         }
@@ -147,6 +159,20 @@ private:
     avro::InputStreamPtr input_stream;
     avro::DecoderPtr decoder;
     FormatSettings format_settings;
+};
+
+class AvroSchemaReader : public ISchemaReader
+{
+public:
+    AvroSchemaReader(ReadBuffer & in_, bool confluent_, const FormatSettings & format_settings_);
+
+    NamesAndTypesList readSchema() override;
+
+private:
+    DataTypePtr avroNodeToDataType(avro::NodePtr node);
+
+    bool confluent;
+    const FormatSettings format_settings;
 };
 
 }

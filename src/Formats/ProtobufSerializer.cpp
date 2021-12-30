@@ -24,10 +24,12 @@
 #   include <DataTypes/DataTypeMap.h>
 #   include <DataTypes/DataTypeNullable.h>
 #   include <DataTypes/DataTypeTuple.h>
+#   include <DataTypes/DataTypeString.h>
 #   include <DataTypes/Serializations/SerializationDecimal.h>
 #   include <DataTypes/Serializations/SerializationFixedString.h>
 #   include <Formats/ProtobufReader.h>
 #   include <Formats/ProtobufWriter.h>
+#   include <Formats/RowInputMissingColumnsFiller.h>
 #   include <IO/Operators.h>
 #   include <IO/ReadBufferFromString.h>
 #   include <IO/ReadHelpers.h>
@@ -55,6 +57,7 @@ namespace ErrorCodes
     extern const int PROTOBUF_FIELD_NOT_REPEATED;
     extern const int PROTOBUF_BAD_CAST;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -859,7 +862,7 @@ namespace
         template <typename NumberType>
         void toStringAppend(NumberType value, PaddedPODArray<UInt8> & str)
         {
-            WriteBufferFromVector buf{str, WriteBufferFromVector<PaddedPODArray<UInt8>>::AppendModeTag{}};
+            WriteBufferFromVector buf{str, AppendModeTag{}};
             writeText(value, buf);
         }
 
@@ -2147,9 +2150,11 @@ namespace
             std::vector<FieldDesc> && field_descs_,
             const FieldDescriptor * parent_field_descriptor_,
             bool with_length_delimiter_,
+            std::unique_ptr<RowInputMissingColumnsFiller> missing_columns_filler_,
             const ProtobufReaderOrWriter & reader_or_writer_)
             : parent_field_descriptor(parent_field_descriptor_)
             , with_length_delimiter(with_length_delimiter_)
+            , missing_columns_filler(std::move(missing_columns_filler_))
             , should_skip_if_empty(parent_field_descriptor ? shouldSkipZeroOrEmpty(*parent_field_descriptor) : false)
             , reader(reader_or_writer_.reader)
             , writer(reader_or_writer_.writer)
@@ -2170,8 +2175,6 @@ namespace
             if (!num_columns_)
                 wrongNumberOfColumns(num_columns_, ">0");
 
-            columns.assign(columns_, columns_ + num_columns_);
-
             std::vector<ColumnPtr> field_columns;
             for (const FieldInfo & info : field_infos)
             {
@@ -2188,13 +2191,17 @@ namespace
 
             if (reader)
             {
-                missing_column_indices.resize(num_columns_);
-                for (size_t column_index : collections::range(num_columns_))
-                    missing_column_indices[column_index] = column_index;
-                for (const auto & field_info : field_infos)
-                    for (size_t column_index : field_info.column_indices)
-                        missing_column_indices[column_index] = static_cast<size_t>(-1);
-                boost::range::remove_erase(missing_column_indices, static_cast<size_t>(-1));
+                mutable_columns.resize(num_columns_);
+                for (size_t i : collections::range(num_columns_))
+                    mutable_columns[i] = columns_[i]->assumeMutable();
+
+                std::vector<UInt8> column_is_missing;
+                column_is_missing.resize(num_columns_, true);
+                for (const FieldInfo & info : field_infos)
+                    for (size_t i : info.column_indices)
+                        column_is_missing[i] = false;
+
+                has_missing_columns = (std::find(column_is_missing.begin(), column_is_missing.end(), true) != column_is_missing.end());
             }
         }
 
@@ -2243,7 +2250,7 @@ namespace
             {
                 last_field_index = 0;
                 last_field_tag = field_infos[0].field_tag;
-                size_t old_size = columns.empty() ? 0 : columns[0]->size();
+                size_t old_size = mutable_columns.empty() ? 0 : mutable_columns[0]->size();
 
                 try
                 {
@@ -2268,10 +2275,10 @@ namespace
                 }
                 catch (...)
                 {
-                    for (auto & column : columns)
+                    for (auto & column : mutable_columns)
                     {
                         if (column->size() > old_size)
-                            column->assumeMutableRef().popBack(column->size() - old_size);
+                            column->popBack(column->size() - old_size);
                     }
                     throw;
                 }
@@ -2302,10 +2309,9 @@ namespace
             if (parent_field_descriptor)
                 out << " field " << quoteString(parent_field_descriptor->full_name()) << " (" << parent_field_descriptor->type_name() << ")";
 
-            for (size_t i = 0; i != field_infos.size(); ++i)
+            for (const auto & field_info : field_infos)
             {
                 out << "\n";
-                const auto & field_info = field_infos[i];
                 writeIndent(out, indent + 1) << "Columns #";
                 for (size_t j = 0; j != field_info.column_indices.size(); ++j)
                 {
@@ -2342,13 +2348,8 @@ namespace
 
         void addDefaultsToMissingColumns(size_t row_num)
         {
-            for (size_t column_index : missing_column_indices)
-            {
-                auto & column = columns[column_index];
-                size_t old_size = column->size();
-                if (row_num >= old_size)
-                    column->assumeMutableRef().insertDefault();
-            }
+            if (has_missing_columns)
+                missing_columns_filler->addDefaults(mutable_columns, row_num);
         }
 
         struct FieldInfo
@@ -2374,13 +2375,14 @@ namespace
 
         const FieldDescriptor * const parent_field_descriptor;
         const bool with_length_delimiter;
+        const std::unique_ptr<RowInputMissingColumnsFiller> missing_columns_filler;
         const bool should_skip_if_empty;
         ProtobufReader * const reader;
         ProtobufWriter * const writer;
         std::vector<FieldInfo> field_infos;
         std::unordered_map<int, size_t> field_index_by_field_tag;
-        Columns columns;
-        std::vector<size_t> missing_column_indices;
+        MutableColumns mutable_columns;
+        bool has_missing_columns = false;
         int last_field_tag = 0;
         size_t last_field_index = static_cast<size_t>(-1);
     };
@@ -2626,7 +2628,8 @@ namespace
                 with_length_delimiter,
                 /* parent_field_descriptor = */ nullptr,
                 used_column_indices,
-                /* columns_are_reordered_outside = */ false);
+                /* columns_are_reordered_outside = */ false,
+                /* check_nested_while_filling_missing_columns = */ true);
 
             if (!message_serializer)
             {
@@ -2813,7 +2816,8 @@ namespace
             bool with_length_delimiter,
             const FieldDescriptor * parent_field_descriptor,
             std::vector<size_t> & used_column_indices,
-            bool columns_are_reordered_outside)
+            bool columns_are_reordered_outside,
+            bool check_nested_while_filling_missing_columns)
         {
             std::vector<std::string_view> column_names_sv;
             column_names_sv.reserve(num_columns);
@@ -2828,7 +2832,8 @@ namespace
                 with_length_delimiter,
                 parent_field_descriptor,
                 used_column_indices,
-                columns_are_reordered_outside);
+                columns_are_reordered_outside,
+                check_nested_while_filling_missing_columns);
         }
 
         std::unique_ptr<ProtobufSerializerMessage> buildMessageSerializerImpl(
@@ -2839,7 +2844,8 @@ namespace
             bool with_length_delimiter,
             const FieldDescriptor * parent_field_descriptor,
             std::vector<size_t> & used_column_indices,
-            bool columns_are_reordered_outside)
+            bool columns_are_reordered_outside,
+            bool check_nested_while_filling_missing_columns)
         {
             std::vector<ProtobufSerializerMessage::FieldDesc> field_descs;
             boost::container::flat_map<const FieldDescriptor *, std::string_view> field_descriptors_in_use;
@@ -2962,7 +2968,8 @@ namespace
                                 /* with_length_delimiter = */ false,
                                 field_descriptor,
                                 used_column_indices_in_nested,
-                                /* columns_are_reordered_outside = */ true);
+                                /* columns_are_reordered_outside = */ true,
+                                /* check_nested_while_filling_missing_columns = */ false);
 
                             /// `columns_are_reordered_outside` is true because column indices are
                             /// going to be transformed and then written to the outer message,
@@ -3001,7 +3008,8 @@ namespace
                                 /* with_length_delimiter = */ false,
                                 field_descriptor,
                                 used_column_indices_in_nested,
-                                /* columns_are_reordered_outside = */ true);
+                                /* columns_are_reordered_outside = */ true,
+                                /* check_nested_while_filling_missing_columns = */ false);
 
                             /// `columns_are_reordered_outside` is true because column indices are
                             /// going to be transformed and then written to the outer message,
@@ -3010,6 +3018,7 @@ namespace
                             if (nested_message_serializer)
                             {
                                 std::vector<std::string_view> column_names_used;
+                                column_names_used.reserve(used_column_indices_in_nested.size());
                                 for (size_t i : used_column_indices_in_nested)
                                     column_names_used.emplace_back(nested_column_names[i]);
                                 auto field_serializer = std::make_unique<ProtobufSerializerFlattenedNestedAsArrayOfNestedMessages>(
@@ -3040,8 +3049,18 @@ namespace
             if (field_descs.empty())
                 return nullptr;
 
+            std::unique_ptr<RowInputMissingColumnsFiller> missing_columns_filler;
+            if (reader_or_writer.reader)
+            {
+                if (check_nested_while_filling_missing_columns)
+                    missing_columns_filler = std::make_unique<RowInputMissingColumnsFiller>(num_columns, column_names, data_types);
+                else
+                    missing_columns_filler = std::make_unique<RowInputMissingColumnsFiller>();
+            }
+
             return std::make_unique<ProtobufSerializerMessage>(
-                std::move(field_descs), parent_field_descriptor, with_length_delimiter, reader_or_writer);
+                std::move(field_descs), parent_field_descriptor, with_length_delimiter,
+                std::move(missing_columns_filler), reader_or_writer);
         }
 
         /// Builds a serializer for one-to-one match:
@@ -3147,7 +3166,8 @@ namespace
                             /* with_length_delimiter = */ false,
                             &field_descriptor,
                             used_column_indices,
-                            /* columns_are_reordered_outside = */ false);
+                            /* columns_are_reordered_outside = */ false,
+                            /* check_nested_while_filling_missing_columns = */ false);
 
                         if (!message_serializer)
                         {
@@ -3210,8 +3230,105 @@ namespace
         std::function<String(size_t)> get_root_desc_function;
         std::shared_ptr<ProtobufSerializer *> root_serializer_ptr;
     };
-}
 
+    template <typename Type>
+    DataTypePtr getEnumDataType(const google::protobuf::EnumDescriptor * enum_descriptor)
+    {
+        std::vector<std::pair<String, Type>> values;
+        for (int i = 0; i != enum_descriptor->value_count(); ++i)
+        {
+            const auto * enum_value_descriptor = enum_descriptor->value(i);
+            values.emplace_back(enum_value_descriptor->name(), enum_value_descriptor->number());
+        }
+        return std::make_shared<DataTypeEnum<Type>>(std::move(values));
+    }
+
+    NameAndTypePair getNameAndDataTypeFromField(const google::protobuf::FieldDescriptor * field_descriptor, bool allow_repeat = true)
+    {
+        if (allow_repeat && field_descriptor->is_map())
+        {
+            auto name_and_type = getNameAndDataTypeFromField(field_descriptor, false);
+            const auto * tuple_type = assert_cast<const DataTypeTuple *>(name_and_type.type.get());
+            return {name_and_type.name, std::make_shared<DataTypeMap>(tuple_type->getElements())};
+        }
+
+        if (allow_repeat && field_descriptor->is_repeated())
+        {
+            auto name_and_type = getNameAndDataTypeFromField(field_descriptor, false);
+            return {name_and_type.name, std::make_shared<DataTypeArray>(name_and_type.type)};
+        }
+
+        switch (field_descriptor->type())
+        {
+            case FieldTypeId::TYPE_SFIXED32: [[fallthrough]];
+            case FieldTypeId::TYPE_SINT32: [[fallthrough]];
+            case FieldTypeId::TYPE_INT32:
+                return {field_descriptor->name(), std::make_shared<DataTypeInt32>()};
+            case FieldTypeId::TYPE_SFIXED64: [[fallthrough]];
+            case FieldTypeId::TYPE_SINT64: [[fallthrough]];
+            case FieldTypeId::TYPE_INT64:
+                return {field_descriptor->name(), std::make_shared<DataTypeInt64>()};
+            case FieldTypeId::TYPE_BOOL:
+                return {field_descriptor->name(), std::make_shared<DataTypeUInt8>()};
+            case FieldTypeId::TYPE_FLOAT:
+                return {field_descriptor->name(), std::make_shared<DataTypeFloat32>()};
+            case FieldTypeId::TYPE_DOUBLE:
+                return {field_descriptor->name(), std::make_shared<DataTypeFloat64>()};
+            case FieldTypeId::TYPE_UINT32: [[fallthrough]];
+            case FieldTypeId::TYPE_FIXED32:
+                return {field_descriptor->name(), std::make_shared<DataTypeUInt32>()};
+            case FieldTypeId::TYPE_UINT64: [[fallthrough]];
+            case FieldTypeId::TYPE_FIXED64:
+                return {field_descriptor->name(), std::make_shared<DataTypeUInt64>()};
+            case FieldTypeId::TYPE_BYTES: [[fallthrough]];
+            case FieldTypeId::TYPE_STRING:
+                return {field_descriptor->name(), std::make_shared<DataTypeString>()};
+            case FieldTypeId::TYPE_ENUM:
+            {
+                const auto * enum_descriptor = field_descriptor->enum_type();
+                if (enum_descriptor->value_count() == 0)
+                    throw Exception("Empty enum field", ErrorCodes::BAD_ARGUMENTS);
+                int max_abs = std::abs(enum_descriptor->value(0)->number());
+                for (int i = 1; i != enum_descriptor->value_count(); ++i)
+                {
+                    if (std::abs(enum_descriptor->value(i)->number()) > max_abs)
+                        max_abs = std::abs(enum_descriptor->value(i)->number());
+                }
+                if (max_abs < 128)
+                    return {field_descriptor->name(), getEnumDataType<Int8>(enum_descriptor)};
+                else if (max_abs < 32768)
+                    return {field_descriptor->name(), getEnumDataType<Int16>(enum_descriptor)};
+                else
+                    throw Exception("ClickHouse supports only 8-bit and 16-bit enums", ErrorCodes::BAD_ARGUMENTS);
+            }
+            case FieldTypeId::TYPE_GROUP: [[fallthrough]];
+            case FieldTypeId::TYPE_MESSAGE:
+            {
+                const auto * message_descriptor = field_descriptor->message_type();
+                if (message_descriptor->field_count() == 1)
+                {
+                    const auto * nested_field_descriptor = message_descriptor->field(0);
+                    auto nested_name_and_type = getNameAndDataTypeFromField(nested_field_descriptor);
+                    return {field_descriptor->name() + "_" + nested_name_and_type.name, nested_name_and_type.type};
+                }
+                else
+                {
+                    DataTypes nested_types;
+                    Strings nested_names;
+                    for (int i = 0; i != message_descriptor->field_count(); ++i)
+                    {
+                        auto nested_name_and_type = getNameAndDataTypeFromField(message_descriptor->field(i));
+                        nested_types.push_back(nested_name_and_type.type);
+                        nested_names.push_back(nested_name_and_type.name);
+                    }
+                    return {field_descriptor->name(), std::make_shared<DataTypeTuple>(std::move(nested_types), std::move(nested_names))};
+                }
+            }
+        }
+
+        __builtin_unreachable();
+    }
+}
 
 std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     const Strings & column_names,
@@ -3234,5 +3351,14 @@ std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     std::vector<size_t> missing_column_indices;
     return ProtobufSerializerBuilder(writer).buildMessageSerializer(column_names, data_types, missing_column_indices, message_descriptor, with_length_delimiter);
 }
+
+NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor)
+{
+    NamesAndTypesList schema;
+    for (int i = 0; i != message_descriptor->field_count(); ++i)
+        schema.push_back(getNameAndDataTypeFromField(message_descriptor->field(i)));
+    return schema;
+}
+
 }
 #endif

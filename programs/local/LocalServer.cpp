@@ -313,11 +313,11 @@ void LocalServer::cleanup()
 
 std::string LocalServer::getInitialCreateTableQuery()
 {
-    if (!config().has("table-structure"))
+    if (!config().has("table-structure") && !config().has("table-file"))
         return {};
 
     auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
-    auto table_structure = config().getString("table-structure");
+    auto table_structure = config().getString("table-structure", "auto");
     auto data_format = backQuoteIfNeed(config().getString("table-data-format", "TSV"));
 
     String table_file;
@@ -332,7 +332,12 @@ std::string LocalServer::getInitialCreateTableQuery()
         table_file = quoteString(config().getString("table-file"));
     }
 
-    return fmt::format("CREATE TABLE {} ({}) ENGINE = File({}, {});",
+    if (table_structure == "auto")
+        table_structure = "";
+    else
+        table_structure = "(" + table_structure + ")";
+
+    return fmt::format("CREATE TABLE {} {} ENGINE = File({}, {});",
                        table_name, table_structure, data_format, table_file);
 }
 
@@ -388,12 +393,6 @@ void LocalServer::setupUsers()
 }
 
 
-String LocalServer::getQueryTextPrefix()
-{
-    return getInitialCreateTableQuery();
-}
-
-
 void LocalServer::connect()
 {
     connection_parameters = ConnectionParameters(config());
@@ -428,7 +427,7 @@ try
 #else
     is_interactive = stdin_is_a_tty
         && (config().hasOption("interactive")
-            || (!config().has("query") && !config().has("table-structure") && queries_files.empty()));
+            || (!config().has("query") && !config().has("table-structure") && queries_files.empty() && !config().has("table-file")));
 #endif
     if (!is_interactive)
     {
@@ -462,6 +461,10 @@ try
     first_time = false;
     }
 #endif
+
+    String initial_query = getInitialCreateTableQuery();
+    if (!initial_query.empty())
+        processQueryText(initial_query);
 
     if (is_interactive && !delayed_interactive)
     {
@@ -729,7 +732,6 @@ void LocalServer::printHelpMessage([[maybe_unused]] const OptionsDescription & o
 void LocalServer::addOptions(OptionsDescription & options_description)
 {
     options_description.main_description->add_options()
-        ("database,d", po::value<std::string>(), "database")
         ("table,N", po::value<std::string>(), "name of the initial table")
 
         /// If structure argument is omitted then initial query is not generated
@@ -795,9 +797,9 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
 
 int mainEntryClickHouseLocal(int argc, char ** argv)
 {
-    DB::LocalServer app;
     try
     {
+        DB::LocalServer app;
         app.init(argc, argv);
         return app.run();
     }

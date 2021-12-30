@@ -6,6 +6,7 @@
 #include <vector>
 #include <Core/Block.h>
 #include <Processors/Formats/IRowInputFormat.h>
+#include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/PeekableReadBuffer.h>
@@ -16,6 +17,29 @@ namespace DB
 
 class ReadBuffer;
 
+/// Class for extracting row fields from data by regexp.
+class RegexpFieldExtractor
+{
+public:
+    RegexpFieldExtractor(const FormatSettings & format_settings);
+
+    /// Return true if row was successfully parsed and row fields were extracted.
+    bool parseRow(PeekableReadBuffer & buf);
+
+    re2::StringPiece getField(size_t index) { return matched_fields[index]; }
+    size_t getMatchedFieldsSize() const { return matched_fields.size(); }
+    size_t getNumberOfGroups() const { return regexp.NumberOfCapturingGroups(); }
+
+private:
+    const RE2 regexp;
+    // The vector of fields extracted from line using regexp.
+    std::vector<re2::StringPiece> matched_fields;
+    // These two vectors are needed to use RE2::FullMatchN (function for extracting fields).
+    std::vector<RE2::Arg> re2_arguments;
+    std::vector<RE2::Arg *> re2_arguments_ptrs;
+    bool skip_unmatched;
+};
+
 /// Regexp input format.
 /// This format applies regular expression from format_regexp setting for every line of file
 /// (the lines must be separated by newline character ('\n') or DOS-style newline ("\r\n")).
@@ -25,29 +49,42 @@ class ReadBuffer;
 
 class RegexpRowInputFormat : public IRowInputFormat
 {
-    using EscapingRule = FormatSettings::EscapingRule;
 public:
     RegexpRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_);
 
     String getName() const override { return "RegexpRowInputFormat"; }
     void resetParser() override;
+    void setReadBuffer(ReadBuffer & in_) override;
 
 private:
+    RegexpRowInputFormat(std::unique_ptr<PeekableReadBuffer> buf_, const Block & header_, Params params_, const FormatSettings & format_settings_);
+
+    using EscapingRule = FormatSettings::EscapingRule;
+
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 
     bool readField(size_t index, MutableColumns & columns);
     void readFieldsFromMatch(MutableColumns & columns, RowReadExtension & ext);
 
-    PeekableReadBuffer buf;
+    std::unique_ptr<PeekableReadBuffer> buf;
     const FormatSettings format_settings;
     const EscapingRule escaping_rule;
+    RegexpFieldExtractor field_extractor;
+};
 
-    const RE2 regexp;
-    // The vector of fields extracted from line using regexp.
-    std::vector<re2::StringPiece> matched_fields;
-    // These two vectors are needed to use RE2::FullMatchN (function for extracting fields).
-    std::vector<RE2::Arg> re2_arguments;
-    std::vector<RE2::Arg *> re2_arguments_ptrs;
+class RegexpSchemaReader : public IRowSchemaReader
+{
+public:
+    RegexpSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings, ContextPtr context_);
+
+private:
+    DataTypes readRowAndGetDataTypes() override;
+
+    using EscapingRule = FormatSettings::EscapingRule;
+    const FormatSettings format_settings;
+    RegexpFieldExtractor field_extractor;
+    PeekableReadBuffer buf;
+    ContextPtr context;
 };
 
 }

@@ -87,7 +87,7 @@ public:
 
     double getLoadFactor() const override { return 1.0; }
 
-    const IDictionarySource * getSource() const override { return source_ptr.get(); }
+    DictionarySourcePtr getSource() const override { return source_ptr; }
 
     const DictionaryStructure & getStructure() const override { return dict_struct; }
 
