@@ -13,6 +13,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MeiliSearch/MeiliSearchConnection.h>
 #include <Storages/MeiliSearch/SourceMeiliSearch.h>
+#include <Storages/MeiliSearch/SinkMeiliSearch.h>
 #include <iostream>
 
 namespace DB 
@@ -46,7 +47,6 @@ void printAST(ASTPtr ptr) {
     settings.identifier_quoting_style = IdentifierQuotingStyle::BackticksMySQL;
     settings.always_quote_identifiers = IdentifierQuotingStyle::BackticksMySQL != IdentifierQuotingStyle::None;
     ptr->format(settings);
-    std::cout << out.str() << "\n";
 }
 
 std::string convertASTtoStr(ASTPtr ptr) {
@@ -125,6 +125,18 @@ Pipe StorageMeiliSearch::read(
     }
 
     return Pipe(std::make_shared<MeiliSearchSource>(config, sample_block, max_block_size, 0, kv_pairs_params));
+}
+
+SinkToStoragePtr StorageMeiliSearch::write(
+    const ASTPtr & /*query*/, 
+    const StorageMetadataPtr& metadata_snapshot, 
+    ContextPtr /*local_context*/)
+{
+    LOG_TRACE(log, "Trying update index: " + config.index);
+    return std::make_shared<SinkMeiliSearch>(
+        config,
+        metadata_snapshot->getSampleBlock(),
+        20000);
 }
 
 MeiliSearchConfiguration getConfiguration(ASTs engine_args) 

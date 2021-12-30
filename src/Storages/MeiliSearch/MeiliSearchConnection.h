@@ -51,6 +51,8 @@ public:
     explicit MeiliSearchConnection(MeiliConfig&& config);
 
     String searchQuery(const std::unordered_map<String, String>& query_params) const;
+    
+    String updateQuery(const String& data) const;
 
 private:
 
