@@ -34,7 +34,6 @@ struct ProgrammingClassificationImpl
     }
 
 
-
     static void constant(String data, String & res)
     {
         auto & programming_freq = FrequencyHolder::getInstance().getProgrammingFrequency();
@@ -45,7 +44,7 @@ struct ProgrammingClassificationImpl
         /// Select all commands from the string
         for (size_t i = 0; i < data.size();)
         {
-            /// Assume that all commands are splitted by spaces
+            /// Assume that all commands are split by spaces
             if (!isspace(data[i]))
             {
                 command.push_back(data[i]);
@@ -120,7 +119,7 @@ struct ProgrammingClassificationImpl
             /// Select all commands from the string
             for (size_t ind = 0; ind < str_data.size();)
             {
-                /// Assume that all commands are splitted by spaces
+                /// Assume that all commands are split by spaces
                 if (!isspace(str_data[ind]))
                 {
                     command.push_back(str_data[ind]);
@@ -167,11 +166,11 @@ struct ProgrammingClassificationImpl
                 most_liked = "Undefined";
             }
 
-            const auto ans = most_liked.c_str();
+            const auto res = most_liked.c_str();
             size_t cur_offset = offsets[i];
-            size_t ans_size = strlen(ans);
+            size_t ans_size = strlen(res);
             res_data.resize(res_offset + ans_size + 1);
-            memcpy(&res_data[res_offset], ans, ans_size);
+            memcpy(&res_data[res_offset], res, ans_size);
             res_offset += ans_size;
 
             res_data[res_offset] = 0;
@@ -181,7 +180,6 @@ struct ProgrammingClassificationImpl
             prev_offset = cur_offset;
         }
     }
-
 
 };
 
