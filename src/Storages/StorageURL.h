@@ -41,6 +41,14 @@ public:
 
     bool supportsPartitionBy() const override { return true; }
 
+    static ColumnsDescription getTableStructureFromData(
+        const String & format,
+        const String & uri,
+        const String & compression_method,
+        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr context);
+
 protected:
     IStorageURLBase(
         const String & uri_,

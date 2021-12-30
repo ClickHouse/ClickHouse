@@ -126,7 +126,7 @@ def run_query(instance, query, stdin=None, settings=None):
     pytest.param("'wrongid','wrongkey',", False, 'xz', id="xz"),
     pytest.param("'wrongid','wrongkey',", False, 'zstd', id="zstd")
 ])
-def test_put(started_cluster, maybe_auth, positive, compression):
+def _test_put(started_cluster, maybe_auth, positive, compression):
     # type: (ClickHouseCluster) -> None
 
     bucket = started_cluster.minio_bucket if not maybe_auth else started_cluster.minio_restricted_bucket
@@ -148,7 +148,7 @@ def test_put(started_cluster, maybe_auth, positive, compression):
         assert values_csv == get_s3_file_content(started_cluster, bucket, filename)
 
 
-def test_partition_by(started_cluster):
+def _test_partition_by(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
@@ -173,7 +173,7 @@ def test_partition_by(started_cluster):
     assert "78,43,45\n" == get_s3_file_content(started_cluster, bucket, "test2_45.csv")
 
 
-def test_partition_by_string_column(started_cluster):
+def _test_partition_by_string_column(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
     table_format = "col_num UInt32, col_str String"
@@ -191,7 +191,7 @@ def test_partition_by_string_column(started_cluster):
     assert '78,"你好"\n' == get_s3_file_content(started_cluster, bucket, "test_你好.csv")
 
 
-def test_partition_by_const_column(started_cluster):
+def _test_partition_by_const_column(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
@@ -212,7 +212,7 @@ def test_partition_by_const_column(started_cluster):
     "space",
     "plus"
 ])
-def test_get_file_with_special(started_cluster, special):
+def _test_get_file_with_special(started_cluster, special):
     symbol = {"space": " ", "plus": "+"}[special]
     urlsafe_symbol = {"space": "%20", "plus": "%2B"}[special]
     auth = "'minio','minio123',"
@@ -239,7 +239,7 @@ def test_get_file_with_special(started_cluster, special):
     "plus",
     "plus2"
 ])
-def test_get_path_with_special(started_cluster, special):
+def _test_get_path_with_special(started_cluster, special):
     symbol = {"space": "%20", "plus": "%2B", "plus2": "%2B"}[special]
     safe_symbol = {"space": "%20", "plus": "+", "plus2": "%2B"}[special]
     auth = "'minio','minio123',"
@@ -253,7 +253,7 @@ def test_get_path_with_special(started_cluster, special):
 @pytest.mark.parametrize("auth", [
     pytest.param("'minio','minio123',", id="minio")
 ])
-def test_empty_put(started_cluster, auth):
+def _test_empty_put(started_cluster, auth):
     # type: (ClickHouseCluster, str) -> None
 
     bucket = started_cluster.minio_bucket
@@ -291,7 +291,7 @@ def test_empty_put(started_cluster, auth):
     pytest.param("'minio','minio123',", True, id="auth_positive"),
     pytest.param("'wrongid','wrongkey',", False, id="negative"),
 ])
-def test_put_csv(started_cluster, maybe_auth, positive):
+def _test_put_csv(started_cluster, maybe_auth, positive):
     # type: (ClickHouseCluster, bool, str) -> None
 
     bucket = started_cluster.minio_bucket if not maybe_auth else started_cluster.minio_restricted_bucket
@@ -313,7 +313,7 @@ def test_put_csv(started_cluster, maybe_auth, positive):
 
 
 # Test put and get with S3 server redirect.
-def test_put_get_with_redirect(started_cluster):
+def _test_put_get_with_redirect(started_cluster):
     # type: (ClickHouseCluster) -> None
 
     bucket = started_cluster.minio_bucket
@@ -340,7 +340,7 @@ def test_put_get_with_redirect(started_cluster):
 
 
 # Test put with restricted S3 server redirect.
-def test_put_with_zero_redirect(started_cluster):
+def _test_put_with_zero_redirect(started_cluster):
     # type: (ClickHouseCluster) -> None
 
     bucket = started_cluster.minio_bucket
@@ -367,7 +367,7 @@ def test_put_with_zero_redirect(started_cluster):
         assert exception_raised
 
 
-def test_put_get_with_globs(started_cluster):
+def _test_put_get_with_globs(started_cluster):
     # type: (ClickHouseCluster) -> None
     unique_prefix = random.randint(1,10000)
     bucket = started_cluster.minio_bucket
@@ -399,7 +399,7 @@ def test_put_get_with_globs(started_cluster):
     pytest.param("'wrongid','wrongkey'", False, id="negative"),
     # ("'minio','minio123',",True), Redirect with credentials not working with nginx.
 ])
-def test_multipart_put(started_cluster, maybe_auth, positive):
+def _test_multipart_put(started_cluster, maybe_auth, positive):
     # type: (ClickHouseCluster) -> None
 
     bucket = started_cluster.minio_bucket if not maybe_auth else started_cluster.minio_restricted_bucket
@@ -439,7 +439,7 @@ def test_multipart_put(started_cluster, maybe_auth, positive):
         assert csv_data == get_s3_file_content(started_cluster, bucket, filename)
 
 
-def test_remote_host_filter(started_cluster):
+def _test_remote_host_filter(started_cluster):
     instance = started_cluster.instances["restricted_dummy"]
     format = "column1 UInt32, column2 UInt32, column3 UInt32"
 
@@ -457,7 +457,7 @@ def test_remote_host_filter(started_cluster):
     pytest.param("''", id="1_argument"),
     pytest.param("'','','','','',''", id="6_arguments"),
 ])
-def test_wrong_s3_syntax(started_cluster, s3_storage_args):
+def _test_wrong_s3_syntax(started_cluster, s3_storage_args):
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
     expected_err_msg = "Code: 42"  # NUMBER_OF_ARGUMENTS_DOESNT_MATCH
 
@@ -466,7 +466,7 @@ def test_wrong_s3_syntax(started_cluster, s3_storage_args):
 
 
 # https://en.wikipedia.org/wiki/One_Thousand_and_One_Nights
-def test_s3_glob_scheherazade(started_cluster):
+def _test_s3_glob_scheherazade(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
@@ -535,7 +535,7 @@ def replace_config(old, new):
     config.close()
 
 
-def test_custom_auth_headers(started_cluster):
+def _test_custom_auth_headers(started_cluster):
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     filename = "test.csv"
     get_query = "select * from s3('http://resolver:8080/{bucket}/{file}', 'CSV', '{table_format}')".format(
@@ -566,7 +566,7 @@ def test_custom_auth_headers(started_cluster):
     instance.query("DROP TABLE test")
 
 
-def test_custom_auth_headers_exclusion(started_cluster):
+def _test_custom_auth_headers_exclusion(started_cluster):
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     filename = "test.csv"
     get_query = f"SELECT * FROM s3('http://resolver:8080/{started_cluster.minio_restricted_bucket}/restricteddirectory/{filename}', 'CSV', '{table_format}')"
@@ -580,7 +580,7 @@ def test_custom_auth_headers_exclusion(started_cluster):
     assert 'Forbidden Error' in ei.value.stderr
 
 
-def test_infinite_redirect(started_cluster):
+def _test_infinite_redirect(started_cluster):
     bucket = "redirected"
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     filename = "test.csv"
@@ -598,7 +598,7 @@ def test_infinite_redirect(started_cluster):
     pytest.param("bin", "gzip", id="bin"),
     pytest.param("gz", "auto", id="gz"),
 ])
-def test_storage_s3_get_gzip(started_cluster, extension, method):
+def _test_storage_s3_get_gzip(started_cluster, extension, method):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
     filename = f"test_get_gzip.{extension}"
@@ -638,7 +638,7 @@ def test_storage_s3_get_gzip(started_cluster, extension, method):
     run_query(instance, f"DROP TABLE {name}")
 
 
-def test_storage_s3_get_unstable(started_cluster):
+def _test_storage_s3_get_unstable(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
     table_format = "column1 Int64, column2 Int64, column3 Int64, column4 Int64"
@@ -647,7 +647,7 @@ def test_storage_s3_get_unstable(started_cluster):
     assert result.splitlines() == ["500001,500000,0"]
 
 
-def test_storage_s3_put_uncompressed(started_cluster):
+def _test_storage_s3_put_uncompressed(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
     filename = "test_put_uncompressed.bin"
@@ -684,7 +684,7 @@ def test_storage_s3_put_uncompressed(started_cluster):
     pytest.param("bin", "gzip", id="bin"),
     pytest.param("gz", "auto", id="gz")
 ])
-def test_storage_s3_put_gzip(started_cluster, extension, method):
+def _test_storage_s3_put_gzip(started_cluster, extension, method):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
     filename = f"test_put_gzip.{extension}"
@@ -721,7 +721,7 @@ def test_storage_s3_put_gzip(started_cluster, extension, method):
     assert sum([ int(i.split(',')[1]) for i in uncompressed_content.splitlines() ]) == 708
 
 
-def test_truncate_table(started_cluster):
+def _test_truncate_table(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
     name = "truncate"
@@ -745,7 +745,7 @@ def test_truncate_table(started_cluster):
     assert instance.query("SELECT * FROM {}".format(name)) == ""
 
 
-def test_predefined_connection_configuration(started_cluster):
+def _test_predefined_connection_configuration(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
     name = "test_table"
@@ -762,7 +762,7 @@ def test_predefined_connection_configuration(started_cluster):
 
 
 result = ""
-def test_url_reconnect_in_the_middle(started_cluster):
+def _test_url_reconnect_in_the_middle(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
     table_format = "id String, data String"
@@ -783,7 +783,7 @@ def test_url_reconnect_in_the_middle(started_cluster):
                 f"""select sum(cityHash64(x)) from (select toUInt64(id) + sleep(0.1) as x from
                 url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{filename}', 'TSV', '{table_format}')
                 settings http_max_tries = 10, http_retry_max_backoff_ms=2000, http_send_timeout=1, http_receive_timeout=1)""")
-            assert(int(result), 3914219105369203805)
+            assert(int(result) == 3914219105369203805)
 
         thread = threading.Thread(target=select)
         thread.start()
@@ -796,10 +796,10 @@ def test_url_reconnect_in_the_middle(started_cluster):
 
         thread.join()
 
-        assert(int(result), 3914219105369203805)
+        assert(int(result) == 3914219105369203805)
 
 
-def test_seekable_formats(started_cluster):
+def _test_seekable_formats(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
 
@@ -821,7 +821,7 @@ def test_seekable_formats(started_cluster):
     assert(int(result[:3]) < 200)
 
 
-def test_seekable_formats_url(started_cluster):
+def _test_seekable_formats_url(started_cluster):
     bucket = started_cluster.minio_bucket
     instance = started_cluster.instances["dummy"]
 
@@ -865,3 +865,53 @@ def test_insert_with_path_with_globs(started_cluster):
 
     table_function_3 = f"s3('http://minio1:9001/root/test_parquet*', 'minio', 'minio123', 'Parquet', 'a Int32, b String')"
     instance.query_and_get_error(f"insert into table function {table_function_3} SELECT number, randomString(100) FROM numbers(500)")
+
+
+def test_s3_schema_inference(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+
+    instance.query(f"insert into table function s3(s3_native, structure='a Int32, b String', format='Native') select number, randomString(100) from numbers(5000000)")
+    result = instance.query(f"desc s3(s3_native, format='Native')")
+    assert result == "a\tInt32\t\t\t\t\t\nb\tString\t\t\t\t\t\n"
+
+    result = instance.query(f"select count(*) from s3(s3_native, format='Native')")
+    assert(int(result) == 5000000)
+
+    instance.query(f"create table schema_inference engine=S3(s3_native, format='Native')")
+    result = instance.query(f"desc schema_inference")
+    assert result == "a\tInt32\t\t\t\t\t\nb\tString\t\t\t\t\t\n"
+
+    result = instance.query(f"select count(*) from schema_inference")
+    assert(int(result) == 5000000)
+
+    
+    table_function = f"url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_native', 'Native')"
+    result = instance.query(f"desc {table_function}")
+    assert result == "a\tInt32\t\t\t\t\t\nb\tString\t\t\t\t\t\n"
+
+    result = instance.query(f"select count(*) from {table_function}")
+    assert(int(result) == 5000000)
+
+    instance.query(f"create table schema_inference_2 engine=URL('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_native', 'Native')")
+    result = instance.query(f"desc schema_inference_2")
+    assert result == "a\tInt32\t\t\t\t\t\nb\tString\t\t\t\t\t\n"
+
+    result = instance.query(f"select count(*) from schema_inference_2")
+    assert(int(result) == 5000000)
+
+
+def test_empty_file(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+
+    name = "empty"
+    url = f'http://{started_cluster.minio_ip}:{MINIO_INTERNAL_PORT}/{bucket}/{name}'
+
+    minio = started_cluster.minio_client
+    minio.put_object(bucket, name, io.BytesIO(b""), 0)
+
+    table_function = f"s3('{url}', 'CSV', 'id Int32')"
+    result = instance.query(f"SELECT count() FROM {table_function}")
+    assert(int(result) == 0)
+
