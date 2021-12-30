@@ -29,17 +29,16 @@ TEST(LRUResourceCache, remove)
     auto holder0 = mcache.getOrSet(1, load_int);
     auto holder1 = mcache.getOrSet(1, load_int);
 
-    auto succ = MyCache::MappedHolder::tryRemove(&holder0);
-    ASSERT_TRUE(!succ);
+    mcache.tryRemove(1);
     holder0 = mcache.get(1);
-    ASSERT_TRUE(holder0 != nullptr);
-    ASSERT_TRUE(holder0->value() == 10);
+    ASSERT_TRUE(holder0 == nullptr);
+    auto n = mcache.size();
+    ASSERT_TRUE(n == 1);
 
     holder0 = nullptr;
-    succ = MyCache::MappedHolder::tryRemove(&holder1);
-    ASSERT_TRUE(succ);
-    holder1 = mcache.get(1);
-    ASSERT_TRUE(holder1 == nullptr);
+    holder1 = nullptr;
+    n = mcache.size();
+    ASSERT_TRUE(n == 0);
 }
 
 struct MyWeight
@@ -253,9 +252,10 @@ TEST(LRUResourceCache, re_get)
     int x = 2;
     auto load_int = [&] { return std::make_shared<int>(x); };
     auto holder1 = mcache.getOrSet(1, load_int);
-    MyCache::MappedHolder::tryRemove(&holder1);
+    mcache.tryRemove(1);
 
     x = 11;
+    holder1 = nullptr;
     holder1 = mcache.getOrSet(1, load_int);
     ASSERT_TRUE(holder1 != nullptr);
 
@@ -267,3 +267,4 @@ TEST(LRUResourceCache, re_get)
     ASSERT_TRUE(holder1 != nullptr);
     ASSERT_TRUE(holder1->value() == 11);
 }
+

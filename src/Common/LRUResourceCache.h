@@ -39,16 +39,7 @@ public:
     {
     public:
         ~MappedHolder() { cache->release(key); }
-        Mapped & value() { return *(val.get()); }
-        static bool tryRemove(std::unique_ptr<MappedHolder> * holder_ptr)
-        {
-            auto & holder = *holder_ptr;
-            auto cache = holder->cache;
-            auto key = holder->key;
-            *holder_ptr = nullptr;
-            return cache->tryRemove(key);
-        }
-
+        Mapped & value() { return *val.get(); }
         MappedHolder(LRUResourceCache * cache_, const Key & key_, MappedPtr value_) : cache(cache_), key(key_), val(value_) { }
 
     protected:
@@ -61,10 +52,10 @@ public:
     // use get() or getOrSet() to access the elements
     MappedHolderPtr get(const Key & key)
     {
-        auto mappedptr = getImpl(key);
-        if (!mappedptr)
+        auto mapped_ptr = getImpl(key);
+        if (!mapped_ptr)
             return nullptr;
-        return std::make_unique<MappedHolder>(this, key, mappedptr);
+        return std::make_unique<MappedHolder>(this, key, mapped_ptr);
     }
     template <typename LoadFunc>
     MappedHolderPtr getOrSet(const Key & key, LoadFunc && load_func)
@@ -73,6 +64,24 @@ public:
         if (!mappedptr)
             return nullptr;
         return std::make_unique<MappedHolder>(this, key, mappedptr);
+    }
+
+    // If the key's reference_count = 0, delete it immediately. otherwise, mark it expired, and delete in release
+    void tryRemove(const Key & key)
+    {
+        std::lock_guard lock(mutex);
+        auto it = cells.find(key);
+        if (it == cells.end())
+            return;
+        auto & cell = it->second;
+        if (cell.reference_count == 0)
+        {
+            queue.erase(cell.queue_iterator);
+            current_weight -= cell.weight;
+            cells.erase(it);
+        }
+        else
+            cell.expired = true;
     }
 
     LRUResourceCache(size_t max_weight_, size_t max_element_size_ = 0) : max_weight(max_weight_), max_element_size(max_element_size_) { }
@@ -109,6 +118,7 @@ private:
         size_t weight = 0;
         LRUQueueIterator queue_iterator;
         size_t reference_count = 0;
+        bool expired = false;
     };
 
     using Cells = std::unordered_map<Key, Cell, HashFunction>;
@@ -140,12 +150,23 @@ private:
         {
             std::lock_guard lock(mutex);
             auto it = cells.find(key);
-            if (it != cells.end())
+            if (it != cells.end() && !it->second.expired)
             {
-                hits++;
-                it->second.reference_count += 1;
-                queue.splice(queue.end(), queue, it->second.queue_iterator);
-                return it->second.value;
+                if (!it->second.expired)
+                {
+                    hits++;
+                    it->second.reference_count += 1;
+                    queue.splice(queue.end(), queue, it->second.queue_iterator);
+                    return it->second.value;
+                }
+                else if (it->second.reference_count > 0)
+                    return nullptr;
+                else
+                {
+                    // should not reach here
+                    LOG_ERROR(&Poco::Logger::get("LRUResourceCache"), "element is in invalid status.");
+                    abort();
+                }
             }
             misses++;
             insert_token = acquireInsertToken(key);
@@ -182,7 +203,7 @@ private:
     {
         std::lock_guard lock(mutex);
         auto it = cells.find(key);
-        if (it == cells.end())
+        if (it == cells.end() || it->second.expired)
         {
             misses++;
             return nullptr;
@@ -203,7 +224,14 @@ private:
             LOG_ERROR(&Poco::Logger::get("LRUResourceCache"), "try to release an invalid element");
             abort();
         }
-        it->second.reference_count -= 1;
+        auto & cell = it->second;
+        cell.reference_count -= 1;
+        if (cell.expired && cell.reference_count == 0)
+        {
+            queue.erase(cell.queue_iterator);
+            current_weight -= cell.weight;
+            cells.erase(it);
+        }
     }
 
     InsertToken * acquireInsertToken(const Key & key)
@@ -274,22 +302,6 @@ private:
         new_cell.weight = weight;
         new_cell.queue_iterator = queue.insert(queue.end(), insert_key);
         return &new_cell;
-    }
-
-    // If you want to update a value, call tryRemove() at first and then call acquire() with load_func.
-    bool tryRemove(const Key & key)
-    {
-        std::lock_guard guard(mutex);
-        auto it = cells.find(key);
-        if (it == cells.end())
-            return true;
-        auto & cell = it->second;
-        if (cell.reference_count)
-            return false;
-        queue.erase(cell.queue_iterator);
-        current_weight -= cell.weight;
-        cells.erase(it);
-        return true;
     }
 };
 }
