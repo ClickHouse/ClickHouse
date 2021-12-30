@@ -250,6 +250,7 @@ BlockIO InterpreterSystemQuery::execute()
         }
         case Type::SUSPEND:
         {
+            getContext()->checkAccess(AccessType::SYSTEM_SHUTDOWN);
             auto command = fmt::format("kill -STOP {0} && sleep {1} && kill -CONT {0}", getpid(), query.seconds);
             LOG_DEBUG(log, "Will run {}", command);
             auto res = ShellCommand::execute(command);
@@ -453,9 +454,11 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::START_LISTEN_QUERIES:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not supported yet", query.type);
         case Type::STOP_THREAD_FUZZER:
+            getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::stop();
             break;
         case Type::START_THREAD_FUZZER:
+            getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::start();
             break;
         default:
