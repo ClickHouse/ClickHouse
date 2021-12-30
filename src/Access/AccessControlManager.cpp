@@ -63,7 +63,7 @@ public:
         if (x)
             return *x;
         auto res = std::shared_ptr<ContextAccess>(new ContextAccess(manager, params));
-	res->subscribeForChanges(res);
+	    res->subscribeForChanges(res);
         cache.add(params, res);
         return res;
     }
