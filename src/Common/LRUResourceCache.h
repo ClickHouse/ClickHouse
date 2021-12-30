@@ -60,10 +60,10 @@ public:
     template <typename LoadFunc>
     MappedHolderPtr getOrSet(const Key & key, LoadFunc && load_func)
     {
-        auto mappedptr = getImpl(key, load_func);
-        if (!mappedptr)
+        auto mapped_ptr = getImpl(key, load_func);
+        if (!mapped_ptr)
             return nullptr;
-        return std::make_unique<MappedHolder>(this, key, mappedptr);
+        return std::make_unique<MappedHolder>(this, key, mapped_ptr);
     }
 
     // If the key's reference_count = 0, delete it immediately. otherwise, mark it expired, and delete in release
@@ -128,14 +128,70 @@ private:
     size_t max_weight = 0;
     size_t max_element_size = 0;
 
+    /// Represents pending insertion attempt.
     struct InsertToken
     {
+        explicit InsertToken(LRUResourceCache & cache_) : cache(cache_) { }
+
         std::mutex mutex;
-        MappedPtr value;
-        size_t reference_count = 0;
+        bool cleaned_up = false; /// Protected by the token mutex
+        MappedPtr value; /// Protected by the token mutex
+
+        LRUResourceCache & cache;
+        size_t refcount = 0; /// Protected by the cache mutex
     };
-    using InsertTokens = std::unordered_map<Key, InsertToken, HashFunction>;
-    InsertTokens insert_tokens;
+
+    using InsertTokenById = std::unordered_map<Key, std::shared_ptr<InsertToken>, HashFunction>;
+
+    /// This class is responsible for removing used insert tokens from the insert_tokens map.
+    /// Among several concurrent threads the first successful one is responsible for removal. But if they all
+    /// fail, then the last one is responsible.
+    struct InsertTokenHolder
+    {
+        const Key * key = nullptr;
+        std::shared_ptr<InsertToken> token;
+        bool cleaned_up = false;
+
+        InsertTokenHolder() = default;
+
+        void
+        acquire(const Key * key_, const std::shared_ptr<InsertToken> & token_, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
+        {
+            key = key_;
+            token = token_;
+            ++token->refcount;
+        }
+
+        void cleanup([[maybe_unused]] std::lock_guard<std::mutex> & token_lock, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
+        {
+            token->cache.insert_tokens.erase(*key);
+            token->cleaned_up = true;
+            cleaned_up = true;
+        }
+
+        ~InsertTokenHolder()
+        {
+            if (!token)
+                return;
+
+            if (cleaned_up)
+                return;
+
+            std::lock_guard token_lock(token->mutex);
+
+            if (token->cleaned_up)
+                return;
+
+            std::lock_guard cache_lock(token->cache.mutex);
+
+            --token->refcount;
+            if (token->refcount == 0)
+                cleanup(token_lock, cache_lock);
+        }
+    };
+
+    friend struct InsertTokenHolder;
+    InsertTokenById insert_tokens;
     WeightFunction weight_function;
     std::atomic<size_t> hits{0};
     std::atomic<size_t> misses{0};
@@ -146,7 +202,7 @@ private:
     template <typename LoadFunc>
     MappedPtr getImpl(const Key & key, LoadFunc && load_func)
     {
-        InsertToken * insert_token = nullptr;
+        InsertTokenHolder token_holder;
         {
             std::lock_guard lock(mutex);
             auto it = cells.find(key);
@@ -169,31 +225,41 @@ private:
                 }
             }
             misses++;
-            insert_token = acquireInsertToken(key);
+            auto & token = insert_tokens[key];
+            if (!token)
+                token = std::make_shared<InsertToken>(*this);
+            token_holder.acquire(&key, token, lock);
         }
+
+        auto * token = token_holder.token.get();
+        std::lock_guard token_lock(token->mutex);
+        token_holder.cleaned_up = token->cleaned_up;
+
+        if (!token->value)
+            token->value = load_func();
+
+        std::lock_guard lock(mutex);
+        auto token_it = insert_tokens.find(key);
         Cell * cell_ptr = nullptr;
+        if (token_it != insert_tokens.end() && token_it->second.get() == token)
         {
-            std::lock_guard lock(insert_token->mutex);
-            if (!insert_token->value)
+            cell_ptr = set(key, token->value);
+        }
+        else
+        {
+            auto cell_it = cells.find(key);
+            if (cell_it != cells.end() && !cell_it->second.expired)
             {
-                insert_token->value = load_func();
-                std::lock_guard cell_lock(mutex);
-                cell_ptr = set(key, insert_token->value);
-                if (cell_ptr)
-                {
-                    cell_ptr->reference_count += 1;
-                }
-                else
-                {
-                    insert_token->value = nullptr;
-                }
+                cell_ptr = &cell_it->second;
             }
         }
 
-        std::lock_guard lock(mutex);
-        releaseInsertToken(key);
+        if (!token->cleaned_up)
+            token_holder.cleanup(token_lock, lock);
+
         if (cell_ptr)
         {
+            cell_ptr->reference_count++;
             return cell_ptr->value;
         }
         return nullptr;
