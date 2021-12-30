@@ -1498,6 +1498,13 @@ def test_kafka_flush_on_big_message(kafka_cluster):
 
 
 def test_kafka_virtual_columns(kafka_cluster):
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
+    topic_config = {
+        # default retention, since predefined timestamp_ms is used.
+        'retention.ms': '-1',
+    }
+    kafka_create_topic(admin_client, "virt1", config=topic_config)
+
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
             ENGINE = Kafka
@@ -1530,6 +1537,13 @@ def test_kafka_virtual_columns(kafka_cluster):
 
 
 def test_kafka_virtual_columns_with_materialized_view(kafka_cluster):
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
+    topic_config = {
+        # default retention, since predefined timestamp_ms is used.
+        'retention.ms': '-1',
+    }
+    kafka_create_topic(admin_client, "virt2", config=topic_config)
+
     instance.query('''
         DROP TABLE IF EXISTS test.view;
         DROP TABLE IF EXISTS test.consumer;
@@ -1738,8 +1752,12 @@ def test_kafka_commit_on_block_write(kafka_cluster):
 def test_kafka_virtual_columns2(kafka_cluster):
     admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
 
-    kafka_create_topic(admin_client, "virt2_0", num_partitions=2)
-    kafka_create_topic(admin_client, "virt2_1", num_partitions=2)
+    topic_config = {
+        # default retention, since predefined timestamp_ms is used.
+        'retention.ms': '-1',
+    }
+    kafka_create_topic(admin_client, "virt2_0", num_partitions=2, config=topic_config)
+    kafka_create_topic(admin_client, "virt2_1", num_partitions=2, config=topic_config)
 
     instance.query('''
         CREATE TABLE test.kafka (value UInt64)
@@ -1867,6 +1885,13 @@ def test_kafka_produce_key_timestamp(kafka_cluster):
 
 
 def test_kafka_insert_avro(kafka_cluster):
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
+    topic_config = {
+        # default retention, since predefined timestamp_ms is used.
+        'retention.ms': '-1',
+    }
+    kafka_create_topic(admin_client, "avro1", config=topic_config)
+
     instance.query('''
         DROP TABLE IF EXISTS test.kafka;
         CREATE TABLE test.kafka (key UInt64, value UInt64, _timestamp DateTime('UTC'))
