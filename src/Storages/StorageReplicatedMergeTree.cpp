@@ -7042,35 +7042,35 @@ String StorageReplicatedMergeTree::getTableSharedID() const
 
 void StorageReplicatedMergeTree::createTableSharedID()
 {
-    if (table_shared_id == UUIDHelpers::Nil)
+    if (table_shared_id != UUIDHelpers::Nil)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table shared id already initialized");
+
+    zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
+    String zookeeper_table_id_path = fs::path(zookeeper_path) / "table_shared_id";
+    String id;
+    if (!zookeeper->tryGet(zookeeper_table_id_path, id))
     {
-        zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
-        String zookeeper_table_id_path = fs::path(zookeeper_path) / "table_shared_id";
-        String id;
-        if (!zookeeper->tryGet(zookeeper_table_id_path, id))
-        {
-            UUID table_id_candidate;
-            auto storage_id = getStorageID();
-            if (storage_id.uuid != UUIDHelpers::Nil)
-                table_id_candidate = storage_id.uuid;
-            else
-                table_id_candidate = UUIDHelpers::generateV4();
+        UUID table_id_candidate;
+        auto storage_id = getStorageID();
+        if (storage_id.uuid != UUIDHelpers::Nil)
+            table_id_candidate = storage_id.uuid;
+        else
+            table_id_candidate = UUIDHelpers::generateV4();
 
-            id = toString(table_id_candidate);
+        id = toString(table_id_candidate);
 
-            auto code = zookeeper->tryCreate(zookeeper_table_id_path, id, zkutil::CreateMode::Persistent);
-            if (code == Coordination::Error::ZNODEEXISTS)
-            { /// Other replica create node early
-                id = zookeeper->get(zookeeper_table_id_path);
-            }
-            else if (code != Coordination::Error::ZOK)
-            {
-                throw zkutil::KeeperException(code, zookeeper_table_id_path);
-            }
+        auto code = zookeeper->tryCreate(zookeeper_table_id_path, id, zkutil::CreateMode::Persistent);
+        if (code == Coordination::Error::ZNODEEXISTS)
+        { /// Other replica create node early
+            id = zookeeper->get(zookeeper_table_id_path);
         }
-
-        table_shared_id = parseFromString<UUID>(id);
+        else if (code != Coordination::Error::ZOK)
+        {
+            throw zkutil::KeeperException(code, zookeeper_table_id_path);
+        }
     }
+
+    table_shared_id = parseFromString<UUID>(id);
 }
 
 
@@ -7123,12 +7123,12 @@ bool StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & par
     if (ref_count > 0) /// Keep part shard info for frozen backups
         return false;
 
-    return unlockSharedDataById(part.getUniqueId(), getTableSharedID(), name, replica_name, disk, zookeeper, *getSettings(), log,
+    return unlockSharedDataByID(part.getUniqueId(), getTableSharedID(), name, replica_name, disk, zookeeper, *getSettings(), log,
         zookeeper_path);
 }
 
 
-bool StorageReplicatedMergeTree::unlockSharedDataById(String id, const String & table_uuid, const String & part_name,
+bool StorageReplicatedMergeTree::unlockSharedDataByID(String id, const String & table_uuid, const String & part_name,
         const String & replica_name_, DiskPtr disk, zkutil::ZooKeeperPtr zookeeper_ptr, const MergeTreeSettings & settings,
         Poco::Logger * logger, const String & zookeeper_path_old)
 {
@@ -7552,6 +7552,8 @@ void StorageReplicatedMergeTree::createZeroCopyLockNode(const zkutil::ZooKeeperP
 namespace
 {
 
+/// Special metadata used during freeze table. Required for zero-copy
+/// replication.
 struct FreezeMetaData
 {
 public:
@@ -7673,7 +7675,7 @@ bool StorageReplicatedMergeTree::removeSharedDetachedPart(DiskPtr disk, const St
             if (ref_count == 0)
             {
                 String id = disk->getUniqueId(checksums);
-                keep_shared = !StorageReplicatedMergeTree::unlockSharedDataById(id, table_uuid, part_name,
+                keep_shared = !StorageReplicatedMergeTree::unlockSharedDataByID(id, table_uuid, part_name,
                     detached_replica_name, disk, zookeeper, getContext()->getReplicatedMergeTreeSettings(), log,
                     detached_zookeeper_path);
             }
