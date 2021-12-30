@@ -47,7 +47,7 @@ struct ValueWeight
     size_t operator()(const size_t & x) const { return x; }
 };
 
-TEST(LRUCache, evict_on_size)
+TEST(LRUCache, evictOnSize)
 {
     using SimpleLRUCache = DB::LRUCache<int, size_t>;
     auto lru_cache = SimpleLRUCache(20, 3);
@@ -63,7 +63,7 @@ TEST(LRUCache, evict_on_size)
     ASSERT_TRUE(value == nullptr);
 }
 
-TEST(LRUCache, evict_on_weight)
+TEST(LRUCache, evictOnWeight)
 {
     using SimpleLRUCache = DB::LRUCache<int, size_t, std::hash<int>, ValueWeight>;
     auto lru_cache = SimpleLRUCache(10, 10);
