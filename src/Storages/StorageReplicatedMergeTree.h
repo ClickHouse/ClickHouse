@@ -243,7 +243,7 @@ public:
     /// Unlock shared data part in zookeeper by part id
     /// Return true if data unlocked
     /// Return false if data is still used by another node
-    static bool unlockSharedDataById(String id, const String & table_uuid, const String & part_name, const String & replica_name_,
+    static bool unlockSharedDataByID(String id, const String & table_uuid, const String & part_name, const String & replica_name_,
         DiskPtr disk, zkutil::ZooKeeperPtr zookeeper_, const MergeTreeSettings & settings, Poco::Logger * logger,
         const String & zookeeper_path_old);
 
@@ -409,6 +409,9 @@ private:
     /// speed.
     ThrottlerPtr replicated_fetches_throttler;
     ThrottlerPtr replicated_sends_throttler;
+
+    /// Global ID, synced via ZooKeeper between replicas
+    UUID table_shared_id;
 
     template <class Func>
     void foreachCommittedParts(Func && func, bool select_sequential_consistency) const;
@@ -749,6 +752,7 @@ private:
     bool removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name, const String & table_uuid,
         const String & zookeeper_name, const String & replica_name, const String & zookeeper_path);
 
+    /// Create freeze metadata for table and save in zookeeper. Required only if zero-copy replication enabled.
     void createAndStoreFreezeMetadata(DiskPtr disk, DataPartPtr part, String backup_part_path) const override;
 
     // Create table id if needed
@@ -770,9 +774,6 @@ protected:
         std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag,
         bool allow_renaming_);
-
-    /// Global ID, synced via ZooKeeper between replicas
-    UUID table_shared_id;
 };
 
 String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info);
