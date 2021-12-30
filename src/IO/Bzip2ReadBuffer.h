@@ -26,7 +26,7 @@ private:
     class Bzip2StateWrapper;
     std::unique_ptr<Bzip2StateWrapper> bz;
 
-    bool eof;
+    bool eof_flag;
 };
 
 }
