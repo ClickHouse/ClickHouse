@@ -28,12 +28,7 @@ private:
 
     using ListElem = ListNode<V>;
     using List = std::list<ListElem>;
-    //using IndexMap = std::unordered_map<StringRef, typename List::iterator, StringRefHash>;
-    //using IndexMap = ArrayMap<StringRef, typename List::iterator, StringRefHash>;
     using IndexMap = my_unordered_map<StringRef, typename List::iterator, StringRefHash>;
-    //using IndexMap = robin_hood::unordered_map<StringRef, typename List::iterator, StringRefHash>;
-    //using IndexMap = phmap::flat_hash_map<std::string, typename List::iterator, StringRefHash>;
-    //using IndexMap = array_unordered_map<StringRef, typename List::iterator, StringRefHash>;
 
     List list;
     IndexMap map;
