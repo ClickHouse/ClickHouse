@@ -17,15 +17,14 @@ struct TrivailLRUResourceCacheWeightFunction
     size_t operator()(const T &) const { return 1; }
 };
 
-/*
- * A resource cache with key index. There is only one instance for every key which is not like the normal resource pool.
- * Resource cache has max weight capacity and keys size limitation. If the limitation is exceeded, keys would be evicted
- * by LRU policy.
+/**
+ * Similar to implementation in LRUCache.h, but with the difference that keys can
+ * only be evicted when they are releasable. Release state is controlled by this implementation.
+ * get() and getOrSet() methods return a Holder to actual value, which does release() in destructor.
  *
- * acquire and release must be used in pair.
+ * Warning (!): This implementation is in development, not to be used.
  */
-template <
-    typename TKey,
+template <typename TKey,
     typename TMapped,
     typename WeightFunction = TrivailLRUResourceCacheWeightFunction<TMapped>,
     typename HashFunction = std::hash<TKey>>
@@ -35,21 +34,28 @@ public:
     using Key = TKey;
     using Mapped = TMapped;
     using MappedPtr = std::shared_ptr<Mapped>;
+
     class MappedHolder
     {
     public:
+        MappedHolder(LRUResourceCache * cache_, const Key & key_, MappedPtr value_)
+            : cache(cache_), key(key_), val(value_) {}
+
         ~MappedHolder() { cache->release(key); }
-        Mapped & value() { return *val.get(); }
-        MappedHolder(LRUResourceCache * cache_, const Key & key_, MappedPtr value_) : cache(cache_), key(key_), val(value_) { }
+
+        Mapped & value() { return *val; }
 
     protected:
         LRUResourceCache * cache;
         Key key;
         MappedPtr val;
     };
+
     using MappedHolderPtr = std::unique_ptr<MappedHolder>;
 
-    // use get() or getOrSet() to access the elements
+    explicit LRUResourceCache(size_t max_weight_, size_t max_element_size_ = 0)
+        : max_weight(max_weight_), max_element_size(max_element_size_) {}
+
     MappedHolderPtr get(const Key & key)
     {
         auto mapped_ptr = getImpl(key);
@@ -57,6 +63,7 @@ public:
             return nullptr;
         return std::make_unique<MappedHolder>(this, key, mapped_ptr);
     }
+
     template <typename LoadFunc>
     MappedHolderPtr getOrSet(const Key & key, LoadFunc && load_func)
     {
@@ -66,7 +73,8 @@ public:
         return std::make_unique<MappedHolder>(this, key, mapped_ptr);
     }
 
-    // If the key's reference_count = 0, delete it immediately. otherwise, mark it expired, and delete in release
+    // If the key's reference_count = 0, delete it immediately.
+    // Otherwise, mark it expired (not visible to get()), and delete when refcount is 0.
     void tryRemove(const Key & key)
     {
         std::lock_guard lock(mutex);
@@ -83,9 +91,6 @@ public:
         else
             cell.expired = true;
     }
-
-    LRUResourceCache(size_t max_weight_, size_t max_element_size_ = 0) : max_weight(max_weight_), max_element_size(max_element_size_) { }
-    ~LRUResourceCache() = default;
 
     size_t weight()
     {
@@ -197,8 +202,7 @@ private:
     std::atomic<size_t> misses{0};
     std::atomic<size_t> evict_count{0};
 
-    // - load_func : when key is not exists in cache, load_func is called to generate a new value
-    // - return: is null when there is no more space for the new value or the old value is in used.
+    /// Returns nullptr when there is no more space for the new value or the old value is in used.
     template <typename LoadFunc>
     MappedPtr getImpl(const Key & key, LoadFunc && load_func)
     {
@@ -210,7 +214,7 @@ private:
             {
                 if (!it->second.expired)
                 {
-                    hits++;
+                    ++hits;
                     it->second.reference_count += 1;
                     queue.splice(queue.end(), queue, it->second.queue_iterator);
                     return it->second.value;
@@ -224,7 +228,7 @@ private:
                     abort();
                 }
             }
-            misses++;
+            ++misses;
             auto & token = insert_tokens[key];
             if (!token)
                 token = std::make_shared<InsertToken>(*this);
@@ -269,13 +273,15 @@ private:
     MappedPtr getImpl(const Key & key)
     {
         std::lock_guard lock(mutex);
+
         auto it = cells.find(key);
         if (it == cells.end() || it->second.expired)
         {
-            misses++;
+            ++misses;
             return nullptr;
         }
-        hits++;
+
+        ++hits;
         it->second.reference_count += 1;
         queue.splice(queue.end(), queue, it->second.queue_iterator);
         return it->second.value;
@@ -285,12 +291,14 @@ private:
     void release(const Key & key)
     {
         std::lock_guard lock(mutex);
+
         auto it = cells.find(key);
         if (it == cells.end() || it->second.reference_count == 0)
         {
             LOG_ERROR(&Poco::Logger::get("LRUResourceCache"), "try to release an invalid element");
             abort();
         }
+
         auto & cell = it->second;
         cell.reference_count -= 1;
         if (cell.expired && cell.reference_count == 0)
@@ -325,20 +333,25 @@ private:
         auto weight = value ? weight_function(*value) : 0;
         auto queue_size = cells.size() + 1;
         auto loss_weight = 0;
+
         auto is_overflow = [&] {
             return current_weight + weight - loss_weight > max_weight || (max_element_size != 0 && queue_size > max_element_size);
         };
+
         auto key_it = queue.begin();
         std::unordered_set<Key, HashFunction> to_release_keys;
+
         while (is_overflow() && queue_size > 1 && key_it != queue.end())
         {
             const Key & key = *key_it;
+
             auto cell_it = cells.find(key);
             if (cell_it == cells.end())
             {
                 LOG_ERROR(&Poco::Logger::get("LRUResourceCache"), "LRUResourceCache became inconsistent. There must be a bug in it.");
                 abort();
             }
+
             auto & cell = cell_it->second;
             if (cell.reference_count == 0)
             {
@@ -346,22 +359,27 @@ private:
                 queue_size -= 1;
                 to_release_keys.insert(key);
             }
-            key_it++;
+
+            ++key_it;
         }
+
         if (is_overflow())
             return nullptr;
+
         if (loss_weight > current_weight + weight)
         {
             LOG_ERROR(&Poco::Logger::get("LRUResourceCache"), "LRUResourceCache became inconsistent. There must be a bug in it.");
             abort();
         }
+
         for (auto & key : to_release_keys)
         {
             auto & cell = cells[key];
             queue.erase(cell.queue_iterator);
             cells.erase(key);
-            evict_count++;
+            ++evict_count;
         }
+
         current_weight = current_weight + weight - loss_weight;
 
         auto & new_cell = cells[insert_key];
