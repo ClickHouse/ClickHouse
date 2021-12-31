@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import json
 import os
-import urllib
 
 import requests
 from unidiff import PatchSet
