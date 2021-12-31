@@ -42,8 +42,9 @@ void KeeperDispatcher::requestThread()
     CPU_SET(cpuid, &cpuset);
     int rc = pthread_setaffinity_np(pthread_self(),
                                     sizeof(cpu_set_t), &cpuset);
-    if (rc != 0) {
-      std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n";
+    if (rc != 0)
+    {
+        LOG_WARNING(log, "Error calling pthread_setaffinity_np, return code {}.", rc);
     }
 #endif
 
@@ -166,8 +167,9 @@ void KeeperDispatcher::responseThread()
     CPU_SET(cpuid, &cpuset);
     int rc = pthread_setaffinity_np(pthread_self(),
                                     sizeof(cpu_set_t), &cpuset);
-    if (rc != 0) {
-      std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n";
+    if (rc != 0)
+    {
+        LOG_WARNING(log, "Error calling pthread_setaffinity_np, return code {}.", rc);
     }
 #endif
     while (!shutdown_called)

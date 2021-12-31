@@ -32,7 +32,8 @@ public:
         store[0] = std::make_shared<US>();
         store[1] = std::make_shared<US>();
     }
-    IncrementalRehashTable(const Self & rhs) {
+    IncrementalRehashTable(const Self & rhs)
+    {
         store[0] = rhs.store[0];
         store[1] = rhs.store[1];
         rehashing = rhs.rehashing;
@@ -219,7 +220,8 @@ public:
     }
     const_iterator end() const
     {
-        if (rehashing) {
+        if (rehashing)
+        {
             return const_iterator(this, store[1]->end(), 1); 
         }
         return const_iterator(this, store[0]->end(), 0); 

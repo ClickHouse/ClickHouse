@@ -228,12 +228,16 @@ public:
                 }
 
                 /// Check for duplicated changelog ids
-                if (logs.count(record.header.index) != 0) 
+                if (logs.count(record.header.index) != 0)
                 {
-                    for (auto i = logs.begin(), last = logs.end(); i != last; ) {
-                        if (i->first >= record.header.index) {
+                    for (auto i = logs.begin(), last = logs.end(); i != last;)
+                    {
+                        if (i->first >= record.header.index)
+                        {
                             i = logs.erase(i);
-                        } else {
+                        }
+                        else
+                        {
                             ++i;
                         }
                     }
@@ -441,10 +445,14 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
             existing_changelogs.erase(last_log_read_result->log_start_index);
             //std::erase_if(logs, [last_log_read_result] (const auto & item) { return item.first >= last_log_read_result->log_start_index; });
 
-            for (auto i = logs.begin(), last = logs.end(); i != last; ) {
-                if (i->first >= last_log_read_result->log_start_index) {
+            for (auto i = logs.begin(), last = logs.end(); i != last;)
+            {
+                if (i->first >= last_log_read_result->log_start_index)
+                {
                     i = logs.erase(i);
-                } else {
+                }
+                else
+                {
                     ++i;
                 }
             }
@@ -487,10 +495,14 @@ void Changelog::removeAllLogsAfter(uint64_t remove_after_log_start_index)
     }
 
 //    std::erase_if(logs, [start_to_remove_from_log_id] (const auto & item) { return item.first >= start_to_remove_from_log_id; });
-    for (auto i = logs.begin(), last = logs.end(); i != last; ) {
-        if (i->first >= start_to_remove_from_log_id) {
+    for (auto i = logs.begin(), last = logs.end(); i != last;)
+    {
+        if (i->first >= start_to_remove_from_log_id)
+        {
             i = logs.erase(i);
-        } else {
+        }
+        else
+        {
             ++i;
         }
     }
@@ -599,10 +611,14 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
     /// Remove redundant logs from memory
     /// Everything >= index must be removed
     //std::erase_if(logs, [index] (const auto & item) { return item.first >= index; });
-    for (auto i = logs.begin(), last = logs.end(); i != last; ) {
-        if (i->first >= index) {
+    for (auto i = logs.begin(), last = logs.end(); i != last;)
+    {
+        if (i->first >= index)
+        {
             i = logs.erase(i);
-        } else {
+        }
+        else
+        {
             ++i;
         }
     }
@@ -610,13 +626,9 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
     /// Now we can actually override entry at index
     appendEntry(index, log_entry);
 }
-uint64_t mytime()
-{
-    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-}
+
 void Changelog::compact(uint64_t up_to_log_index)
 {
-    auto be_time = mytime();
     LOG_INFO(log, "Compact logs up to log index {}, our max log id is {}", up_to_log_index, max_log_id);
 
     bool remove_all_logs = false;
@@ -656,8 +668,7 @@ void Changelog::compact(uint64_t up_to_log_index)
     if (need_rotate)
         rotate(up_to_log_index + 1);
 
-    auto end_time = mytime();
-    LOG_INFO(log, "Compaction up to {} finished new min index {}, new max index {}, actully del index {}, logsize {} time {} ms", up_to_log_index, min_log_id, max_log_id, cur_del_idx, logs.size(), end_time - be_time);
+    LOG_INFO(log, "Compaction up to {} finished new min index {}, new max index {}, actully del index {}, logsize {}.", up_to_log_index, min_log_id, max_log_id, cur_del_idx, logs.size());
 }
 
 void Changelog::delLogsEntry(size_t n)

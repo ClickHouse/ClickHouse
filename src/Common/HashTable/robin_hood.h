@@ -2202,22 +2202,14 @@ private:
         ROBIN_HOOD_TRACE(this)
         return find(e) != end();
     }
-    #include <chrono>
-    #include <iostream>
-    uint64_t timerh()
-    {
-        return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-    }
 
     void reserve(size_t c, bool forceRehash) {
         ROBIN_HOOD_TRACE(this)
         auto const minElementsAllowed = (std::max)(c, mNumElements);
         auto newSize = InitialNumElements;
-        //auto betm = timerh();
         while (calcMaxNumElementsAllowed(newSize) < minElementsAllowed && newSize != 0) {
             newSize *= 2;
         }
-        //auto caltm = timerh();
         if (ROBIN_HOOD_UNLIKELY(newSize == 0)) {
             throwOverflowError();
         }
@@ -2229,10 +2221,6 @@ private:
         if (forceRehash || newSize > mMask + 1) {
             rehashPowerOfTwo(newSize, false);
         }
-        //auto rehashtm = timerh();
-        //if (rehashtm - caltm > 10 || rehashtm - betm > 10) {
-        //    std::cout << "rehash took ms " << rehashtm - caltm << ", cal time ms " << caltm - betm << std::endl;
-        //}
     }
 
     // reserves space for at least the specified number of elements.
