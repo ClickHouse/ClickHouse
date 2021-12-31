@@ -324,7 +324,7 @@ int KeeperStateMachine::read_logical_snp_obj(
         int fd = ::open(latest_snapshot_path.c_str(), O_RDONLY);
         if (fd < 0)
         {
-            LOG_WARNING(log, "Error opeing {}.", latest_snapshot_path);
+            LOG_WARNING(log, "Error opening {}.", latest_snapshot_path);
             return -1;
         }
         auto file_size = ::lseek(fd, 0, SEEK_END);
