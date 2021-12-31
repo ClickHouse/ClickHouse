@@ -503,17 +503,17 @@ private:
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
 
-    void appendFilesOfUUID(Strings & files) const;
+    static void appendFilesOfUUID(Strings & files);
 
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require);
 
-    void appendFilesOfColumns(Strings & files) const;
+    static void appendFilesOfColumns(Strings & files);
 
     /// If checksums.txt exists, reads file's checksums (and sizes) from it
     void loadChecksums(bool require);
 
-    void appendFilesOfChecksums(Strings & files) const;
+    static void appendFilesOfChecksums(Strings & files);
 
     /// Loads marks index granularity into memory
     virtual void loadIndexGranularity();
@@ -529,12 +529,12 @@ private:
     /// For the older format version calculates rows count from the size of a column with a fixed size.
     void loadRowsCount();
 
-    void appendFilesOfRowsCount(Strings & files) const;
+    static void appendFilesOfRowsCount(Strings & files);
 
     /// Loads ttl infos in json format from file ttl.txt. If file doesn't exists assigns ttl infos with all zeros
     void loadTTLInfos();
 
-    void appendFilesOfTTLInfos(Strings & files) const;
+    static void appendFilesOfTTLInfos(Strings & files);
 
     void loadPartitionAndMinMaxIndex();
 
@@ -549,7 +549,7 @@ private:
     /// any specifial compression.
     void loadDefaultCompressionCodec();
 
-    void appendFilesOfDefaultCompressionCodec(Strings & files) const;
+    static void appendFilesOfDefaultCompressionCodec(Strings & files);
 
     /// Found column without specific compression and return codec
     /// for this column with default parameters.

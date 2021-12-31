@@ -4,8 +4,8 @@
 -- Create table under database with engine ordinary.
 set mutations_sync = 1;
 set replication_alter_partitions_sync = 2;
-DROP DATABASE IF EXISTS test_metadata_cache;
 DROP TABLE IF EXISTS test_metadata_cache.check_part_metadata_cache;
+DROP DATABASE IF EXISTS test_metadata_cache;
 CREATE DATABASE test_metadata_cache ENGINE = Ordinary;
 CREATE TABLE test_metadata_cache.check_part_metadata_cache  ( p Date, k UInt64, v1 UInt64, v2 Int64) ENGINE ReplicatedMergeTree('/clickhouse/tables/{database}/check_part_metadata_cache', '{replica}') PARTITION BY toYYYYMM(p) ORDER BY k settings use_metadata_cache = 1;
 with arrayJoin(checkPartMetadataCache('test_metadata_cache', 'check_part_metadata_cache')) as info select countIf(info.5 = 0);

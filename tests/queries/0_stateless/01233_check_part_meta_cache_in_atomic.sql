@@ -2,8 +2,8 @@
 
 -- Create table under database with engine atomic.
 set mutations_sync = 1;
-DROP DATABASE IF EXISTS test_metadata_cache;
 DROP TABLE IF EXISTS test_metadata_cache.check_part_metadata_cache SYNC;
+DROP DATABASE IF EXISTS test_metadata_cache;
 CREATE DATABASE test_metadata_cache ENGINE = Atomic;
 CREATE TABLE test_metadata_cache.check_part_metadata_cache( p Date, k UInt64, v1 UInt64, v2 Int64) ENGINE MergeTree() PARTITION BY toYYYYMM(p) ORDER BY k settings use_metadata_cache = 1;
 with arrayJoin(checkPartMetadataCache('test_metadata_cache', 'check_part_metadata_cache')) as info select countIf(info.5 = 0);
