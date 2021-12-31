@@ -54,7 +54,7 @@ public:
 
     void create(const StorageMetadataPtr & metadata_snapshot, Block block, size_t row, ContextPtr context);
 
-    void appendFiles(const MergeTreeData & storage, Strings & files) const;
+    static void appendFiles(const MergeTreeData & storage, Strings & files);
 
     /// Adjust partition key and execute its expression on block. Return sample block according to used expression.
     static NamesAndTypesList executePartitionByExpression(const StorageMetadataPtr & metadata_snapshot, Block & block, ContextPtr context);

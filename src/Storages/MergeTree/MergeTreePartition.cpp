@@ -465,7 +465,7 @@ KeyDescription MergeTreePartition::adjustPartitionKey(const StorageMetadataPtr &
 }
 
 
-void MergeTreePartition::appendFiles(const MergeTreeData & storage, Strings& files) const
+void MergeTreePartition::appendFiles(const MergeTreeData & storage, Strings& files)
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     if (!metadata_snapshot->hasPartitionKey())
