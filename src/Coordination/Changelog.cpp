@@ -5,7 +5,6 @@
 #include <IO/ZstdDeflatingAppendableWriteBuffer.h>
 #include <cstdint>
 #include <filesystem>
-#include <unistd.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/trim.hpp>
