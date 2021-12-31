@@ -236,7 +236,7 @@ InputFormatPtr FormatFactory::getInputFormat(
 
 static void addExistingProgressToOutputFormat(OutputFormatPtr format, ContextPtr context)
 {
-    auto element_id = context->getProcessListElement();
+    auto * element_id = context->getProcessListElement();
     if (element_id)
     {
         /// While preparing the query there might have been progress (for example in subscalar subqueries) so add it here

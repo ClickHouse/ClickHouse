@@ -60,13 +60,10 @@ public:
 
     void updateThreadEventData(HostToThreadTimesMap & new_thread_data, UInt64 elapsed_time);
 
-    bool print_hardware_utilization = false;
-
 private:
-
     size_t getUsedThreadsCount() const;
 
-    UInt64 getApproximateCoresNumber() const;
+    double getCPUUsage() const;
 
     struct MemoryUsage
     {
@@ -93,7 +90,7 @@ private:
 
     bool write_progress_on_update = false;
 
-    std::unordered_map<String, UInt64> host_active_cores;
+    std::unordered_map<String, double> host_cpu_usage;
     HostToThreadTimesMap thread_data;
 };
 
