@@ -1,31 +1,34 @@
 #include "MeiliSearchConnection.h"
+#include <iostream>
 #include <curl/curl.h>
 #include <Common/Exception.h>
-#include <iostream>
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int NETWORK_ERROR;
 }
 
-MeiliSearchConnection::MeiliSearchConnection(const MeiliConfig& conf) : config{conf} {}
-
-MeiliSearchConnection::MeiliSearchConnection(MeiliConfig&& conf) : config{std::move(conf)} {}
-
-static size_t writeCallback(void *contents, size_t size, size_t nmemb, void *userp)
+MeiliSearchConnection::MeiliSearchConnection(const MeiliConfig & conf) : config{conf}
 {
-    (static_cast<std::string*>(userp))->append(static_cast<char*>(contents), size * nmemb);
+}
+
+MeiliSearchConnection::MeiliSearchConnection(MeiliConfig && conf) : config{std::move(conf)}
+{
+}
+
+static size_t writeCallback(void * contents, size_t size, size_t nmemb, void * userp)
+{
+    (static_cast<std::string *>(userp))->append(static_cast<char *>(contents), size * nmemb);
     return size * nmemb;
 }
 
-String MeiliSearchConnection::searchQuery(const std::unordered_map<String, String>& query_params) const {
-
+String MeiliSearchConnection::searchQuery(const std::unordered_map<String, String> & query_params) const
+{
     CURLcode ret_code;
-    CURL *hnd;
-    struct curl_slist *slist1;
+    CURL * hnd;
+    struct curl_slist * slist1;
 
     slist1 = nullptr;
     slist1 = curl_slist_append(slist1, "Content-Type: application/json");
@@ -34,7 +37,8 @@ String MeiliSearchConnection::searchQuery(const std::unordered_map<String, Strin
 
     std::string post_fields = "{";
 
-    for (const auto& q_attr : query_params) {
+    for (const auto & q_attr : query_params)
+    {
         post_fields += q_attr.first + ":" + q_attr.second + ",";
     }
 
@@ -60,18 +64,19 @@ String MeiliSearchConnection::searchQuery(const std::unordered_map<String, Strin
     curl_easy_cleanup(hnd);
     curl_slist_free_all(slist1);
 
-    if (ret_code != 0) {
+    if (ret_code != 0)
+    {
         throw Exception(ErrorCodes::NETWORK_ERROR, curl_easy_strerror(ret_code));
     }
 
     return response_buffer;
 }
 
-String MeiliSearchConnection::updateQuery(const String& data) const {
-
+String MeiliSearchConnection::updateQuery(const String & data) const
+{
     CURLcode ret_code;
-    CURL *hnd;
-    struct curl_slist *slist1;
+    CURL * hnd;
+    struct curl_slist * slist1;
 
     slist1 = nullptr;
     slist1 = curl_slist_append(slist1, "Content-Type: application/json");
@@ -98,7 +103,8 @@ String MeiliSearchConnection::updateQuery(const String& data) const {
     curl_easy_cleanup(hnd);
     curl_slist_free_all(slist1);
 
-    if (ret_code != 0) {
+    if (ret_code != 0)
+    {
         throw Exception(ErrorCodes::NETWORK_ERROR, curl_easy_strerror(ret_code));
     }
 
