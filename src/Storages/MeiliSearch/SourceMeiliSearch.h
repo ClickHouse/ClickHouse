@@ -1,19 +1,18 @@
 #pragma once
 
 #include <unordered_map>
+#include <Core/ExternalResultDescription.h>
 #include <Processors/Chunk.h>
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Core/ExternalResultDescription.h>
 #include <Storages/MeiliSearch/MeiliSearchConnection.h>
 
 namespace DB
 {
-
 class MeiliSearchSource final : public SourceWithProgress
 {
 public:
     MeiliSearchSource(
-        const MeiliSearchConfiguration& config,
+        const MeiliSearchConfiguration & config,
         const Block & sample_block,
         UInt64 max_block_size_,
         UInt64 offset_,
