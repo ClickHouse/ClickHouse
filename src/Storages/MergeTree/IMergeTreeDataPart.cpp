@@ -907,7 +907,7 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
     }
 }
 
-void IMergeTreeDataPart::appendFilesOfDefaultCompressionCodec(Strings & files) const
+void IMergeTreeDataPart::appendFilesOfDefaultCompressionCodec(Strings & files)
 {
     files.push_back(DEFAULT_COMPRESSION_CODEC_FILE_NAME);
 }
@@ -1075,7 +1075,7 @@ void IMergeTreeDataPart::loadChecksums(bool require)
     }
 }
 
-void IMergeTreeDataPart::appendFilesOfChecksums(Strings & files) const
+void IMergeTreeDataPart::appendFilesOfChecksums(Strings & files)
 {
     files.push_back("checksums.txt");
 }
@@ -1215,7 +1215,7 @@ void IMergeTreeDataPart::loadRowsCount()
     }
 }
 
-void IMergeTreeDataPart::appendFilesOfRowsCount(Strings & files) const
+void IMergeTreeDataPart::appendFilesOfRowsCount(Strings & files)
 {
     files.push_back("count.txt");
 }
@@ -1269,7 +1269,7 @@ void IMergeTreeDataPart::loadTTLInfos()
 }
 
 
-void IMergeTreeDataPart::appendFilesOfTTLInfos(Strings & files) const
+void IMergeTreeDataPart::appendFilesOfTTLInfos(Strings & files)
 {
     files.push_back("ttl.txt");
 }
@@ -1307,7 +1307,7 @@ void IMergeTreeDataPart::loadUUID()
     }
 }
 
-void IMergeTreeDataPart::appendFilesOfUUID(Strings & files) const
+void IMergeTreeDataPart::appendFilesOfUUID(Strings & files)
 {
     files.push_back(UUID_FILE_NAME);
 }
@@ -1388,7 +1388,7 @@ void IMergeTreeDataPart::loadColumns(bool require)
     setColumns(loaded_columns, infos);
 }
 
-void IMergeTreeDataPart::appendFilesOfColumns(Strings & files) const
+void IMergeTreeDataPart::appendFilesOfColumns(Strings & files)
 {
     files.push_back("columns.txt");
 }
@@ -1475,7 +1475,6 @@ void IMergeTreeDataPart::modifyAllMetadataCaches(ModifyCacheType type, bool incl
     assert(use_metadata_cache);
 
     Strings files;
-    files.reserve(16);
     appendFilesOfColumnsChecksumsIndexes(files, include_projection);
     LOG_TRACE(
         storage.log,
