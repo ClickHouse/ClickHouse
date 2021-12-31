@@ -11,6 +11,7 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/QueryAliasesVisitor.h>
+#include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAsterisk.h>
@@ -91,10 +92,6 @@ namespace
                     data.is_hop = t->name == "hop";
                     auto temp_node = t->clone();
                     temp_node->setAlias("");
-                    if (startsWith(t->arguments->children[0]->getColumnName(), "toDateTime"))
-                        throw Exception(
-                            "The first argument of time window function should not be a constant value.",
-                            ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
                     if (!data.window_function)
                     {
                         data.serialized_window_function = serializeAST(*temp_node);
@@ -565,7 +562,13 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
     inner_create_query->setDatabase(database_name);
     inner_create_query->setTable(table_name);
 
-    auto inner_select_query = std::static_pointer_cast<ASTSelectQuery>(inner_query);
+    Aliases aliases;
+    QueryAliasesVisitor(aliases).visit(inner_query);
+    auto inner_query_normalized = inner_query->clone();
+    QueryNormalizer::Data normalizer_data(aliases, {}, false, getContext()->getSettingsRef(), false);
+    QueryNormalizer(normalizer_data).visit(inner_query_normalized);
+
+    auto inner_select_query = std::static_pointer_cast<ASTSelectQuery>(inner_query_normalized);
 
     auto t_sample_block
         = InterpreterSelectQuery(
@@ -582,6 +585,8 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
         columns_list->children.push_back(column_window);
     }
 
+    bool has_window_id = false;
+
     for (const auto & column : t_sample_block.getColumnsWithTypeAndName())
     {
         ParserIdentifierWithOptionalParameters parser;
@@ -591,7 +596,17 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
         column_dec->name = column.name;
         column_dec->type = ast;
         columns_list->children.push_back(column_dec);
+        if(!is_time_column_func_now && !has_window_id)
+        {
+            if (startsWith(column.name, "windowID"))
+                has_window_id = true;
+        }
     }
+
+    if (!is_time_column_func_now && !has_window_id)
+        throw Exception(
+            "The first argument of time window function should not be a constant value.",
+            ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
 
     ToIdentifierMatcher::Data query_data;
     query_data.window_id_name = window_id_name;
@@ -634,9 +649,14 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
                 /// tumble/hop -> windowID
                 func_window_visitor.visit(node);
                 to_identifier_visitor.visit(node);
+                QueryNormalizer(normalizer_data).visit(node);
+                node->setAlias("");
                 new_storage->set(field, node);
             }
         };
+
+        for (auto & [alias_name, ast] : aliases)
+            ast = std::make_shared<ASTIdentifier>(ast->getColumnName());
 
         visit(storage->partition_by, new_storage->partition_by);
         visit(storage->primary_key, new_storage->primary_key);
