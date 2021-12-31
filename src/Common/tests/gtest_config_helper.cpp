@@ -8,7 +8,7 @@
 
 using namespace DB;
 
-TEST(Common, ConfigHelper_getBool)
+TEST(Common, ConfigHelperGetBool)
 {
     std::string xml(R"CONFIG(<clickhouse>
     <zero_as_false>0</zero_as_false>
