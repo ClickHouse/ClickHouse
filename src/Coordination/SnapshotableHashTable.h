@@ -10,7 +10,6 @@
 #include <Common/HashTable/robin_hood.h>
 #include <Common/HashTable/IncrementalRehashTable.h>
 #include <Common/ArenaWithFreeLists.h>
-#include <Common/HashTable/ArrayHashTable.h>
 
 namespace DB
 {
