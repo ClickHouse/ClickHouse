@@ -1,5 +1,4 @@
 #include "robin_hood.h"
-#include <iostream>
 
 template <bool IsFlat, size_t MaxLoadFactor100, typename Key, typename T, typename Hash,
           typename KeyEqual>
@@ -42,10 +41,10 @@ public:
         count = rhs.count;
     }
     ~IncrementalRehashTable() = default;
+    bool isRehashing() const { return rehashing; }
     void reserve(size_t t)
     {
         store[0]->reserve(t);
-        //store[1]->reserve(t * 2);
     }
     template <bool IsConst>
     struct Iter
@@ -108,7 +107,6 @@ public:
             rehashing = false;
             store[0].swap(store[1]);
             store[1].reset(new US());
-            std::cout << "rehash end, size " << store[0]->size() << ", load " << store[0]->load_factor() << std::endl;
         }
     }
     // only insert table 1 if rehashing
@@ -124,7 +122,6 @@ public:
         }
         if (store[0]->load_factor() > max_load_factor && count > 1000000) [[unlikely]]
         {
-            std::cout << "rehash begin, size " << store[0]->size() << ", load " << store[0]->load_factor() << std::endl;
             rehashing = true;
             cur = store[0]->begin();
             store[1]->reserve(store[0]->size() * 2);
@@ -182,7 +179,6 @@ public:
     }
     std::size_t size() const
     {
-        //std::cout << "hash 0 " << store[0]->size() << ", hash 1 " << store[1]->size() << std::endl;
         return count;
     }
     bool empty() const { return count == 0; }

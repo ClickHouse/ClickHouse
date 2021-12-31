@@ -14,8 +14,6 @@
 #include <vector>
 #include <set>
 #include <Common/HashTable/robin_hood.h>
-#include <Common/HashTable/ArrayHashTable.h>
-#include <Common/parallel_hashmap/phmap.h>
 
 namespace DB
 {
