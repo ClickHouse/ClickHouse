@@ -3,6 +3,7 @@
 #if USE_ORC
 
 #include <Processors/Formats/IInputFormat.h>
+#include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
 
 #include <arrow/adapters/orc/adapter.h>
@@ -31,6 +32,11 @@ public:
 protected:
     Chunk generate() override;
 
+    void onCancel() override
+    {
+        is_stopped = 1;
+    }
+
 private:
 
     // TODO: check that this class implements every part of its parent
@@ -50,6 +56,19 @@ private:
     const FormatSettings format_settings;
 
     void prepareReader();
+
+    std::atomic<int> is_stopped{0};
+};
+
+class ORCSchemaReader : public ISchemaReader
+{
+public:
+    ORCSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
+
+    NamesAndTypesList readSchema() override;
+
+private:
+    const FormatSettings format_settings;
 };
 
 }

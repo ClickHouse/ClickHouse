@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/hasNullable.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -224,7 +225,6 @@ MergeTreeData::MergeTreeData(
     {
         try
         {
-
             checkPartitionKeyAndInitMinMax(metadata_.partition_key);
             setProperties(metadata_, metadata_, attach);
             if (minmax_idx_date_column_pos == -1)
@@ -358,10 +358,11 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
     {
         const ColumnPtr & column = element.column;
         if (column && (isColumnConst(*column) || column->isDummy()))
-            throw Exception{key_name + " key cannot contain constants", ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} key cannot contain constants", key_name);
 
-        if (!allow_nullable_key && element.type->isNullable())
-            throw Exception{key_name + " key cannot contain nullable columns", ErrorCodes::ILLEGAL_COLUMN};
+        if (!allow_nullable_key && hasNullable(element.type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN, "{} key contains nullable columns, but `setting allow_nullable_key` is disabled", key_name);
     }
 }
 

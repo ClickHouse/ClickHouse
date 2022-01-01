@@ -126,7 +126,13 @@ StorageBuffer::StorageBuffer(
     , bg_pool(getContext()->getBufferFlushSchedulePool())
 {
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
+    if (columns_.empty())
+    {
+        auto dest_table = DatabaseCatalog::instance().getTable(destination_id, context_);
+        storage_metadata.setColumns(dest_table->getInMemoryMetadataPtr()->getColumns());
+    }
+    else
+        storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
@@ -1167,6 +1173,7 @@ void registerStorageBuffer(StorageFactory & factory)
     },
     {
         .supports_parallel_insert = true,
+        .supports_schema_inference = true,
     });
 }
 

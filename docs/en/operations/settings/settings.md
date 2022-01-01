@@ -3154,6 +3154,12 @@ Possible values:
 
 Default value: `0`.
 
+!!! warning "Warning"
+    Nullable primary key usually indicates bad design. It is forbidden in almost all main stream DBMS. The feature is mainly for [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) and is not heavily tested. Use with care.
+
+!!! warning "Warning"
+    Do not enable this feature in version `<= 21.8`. It's not properly implemented and may lead to server crash.
+
 ## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
 
 Enables or disables rewriting all aggregate functions in a query, adding [-OrNull](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-ornull) suffix to them. Enable it for SQL standard compatibility.
