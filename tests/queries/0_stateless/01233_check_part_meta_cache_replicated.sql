@@ -1,4 +1,5 @@
 -- Tags: no-fasttest, no-parallel, zookeeper
+-- Tag no-parallel: static zk path
 
 -- Create table under database with engine ordinary.
 set mutations_sync = 1;
