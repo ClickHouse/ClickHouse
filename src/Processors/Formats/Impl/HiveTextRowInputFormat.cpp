@@ -26,7 +26,7 @@ HiveTextRowInputFormat::HiveTextRowInputFormat(
 HiveTextRowInputFormat::HiveTextRowInputFormat(
     const Block & header_, std::unique_ptr<PeekableReadBuffer> buf_, const Params & params_, const FormatSettings & format_settings_)
     : CSVRowInputFormat(
-        header_, *buf_, params_, true, false, format_settings_, std::make_unique<HiveTextFormatReader>(std::move(buf_), format_settings))
+        header_, *buf_, params_, true, false, format_settings_, std::make_unique<HiveTextFormatReader>(std::move(buf_), format_settings_))
 {
 }
 
