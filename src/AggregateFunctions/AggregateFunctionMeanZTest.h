@@ -18,6 +18,11 @@ struct Settings;
 class ReadBuffer;
 class WriteBuffer;
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 
 /// Returns tuple of (z-statistic, p-value, confidence-interval-low, confidence-interval-high)
 template <typename Data>
@@ -36,6 +41,21 @@ public:
         pop_var_x = params.at(0).safeGet<Float64>();
         pop_var_y = params.at(1).safeGet<Float64>();
         confidence_level = params.at(2).safeGet<Float64>();
+
+        if (!std::isfinite(pop_var_x) || !std::isfinite(pop_var_y) || !std::isfinite(confidence_level))
+        {
+            throw Exception("Aggregate function " + getName() + " requires finite parameter values.", ErrorCodes::BAD_ARGUMENTS);
+        }
+
+        if (pop_var_x < 0.0f || pop_var_y < 0.0f)
+        {
+            throw Exception("Population variance parameters must be larger than or equal to zero in aggregate function " + getName(), ErrorCodes::BAD_ARGUMENTS);
+        }
+
+        if (confidence_level <= 0.0f || confidence_level >= 1.0f)
+        {
+            throw Exception("Confidence level parameter must be between 0 and 1 in aggregate function " + getName(), ErrorCodes::BAD_ARGUMENTS);
+        }
     }
 
     String getName() const override

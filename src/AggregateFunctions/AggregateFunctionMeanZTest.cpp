@@ -28,6 +28,11 @@ struct MeanZTestData : public ZTestMoments<Float64>
         Float64 mean_y = getMeanY();
 
         Float64 zstat = (mean_x - mean_y) / getStandardError(pop_var_x, pop_var_y);
+        if (!std::isfinite(zstat))
+        {
+            return {std::numeric_limits<Float64>::quiet_NaN(), std::numeric_limits<Float64>::quiet_NaN()};
+        }
+
         Float64 pvalue = 2.0f * boost::math::cdf(boost::math::normal(0.0f, 1.0f), -1.0f * std::abs(zstat));
 
         return {zstat, pvalue};
