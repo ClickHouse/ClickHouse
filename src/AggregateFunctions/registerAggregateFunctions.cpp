@@ -48,6 +48,7 @@ void registerAggregateFunctionRankCorrelation(AggregateFunctionFactory &);
 void registerAggregateFunctionMannWhitney(AggregateFunctionFactory &);
 void registerAggregateFunctionWelchTTest(AggregateFunctionFactory &);
 void registerAggregateFunctionStudentTTest(AggregateFunctionFactory &);
+void registerAggregateFunctionMeanZTest(AggregateFunctionFactory &);
 void registerAggregateFunctionSingleValueOrNull(AggregateFunctionFactory &);
 void registerAggregateFunctionSequenceNextNode(AggregateFunctionFactory &);
 void registerAggregateFunctionExponentialMovingAverage(AggregateFunctionFactory &);
@@ -114,6 +115,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionSequenceNextNode(factory);
         registerAggregateFunctionWelchTTest(factory);
         registerAggregateFunctionStudentTTest(factory);
+        registerAggregateFunctionMeanZTest(factory);
         registerAggregateFunctionSingleValueOrNull(factory);
         registerAggregateFunctionIntervalLengthSum(factory);
         registerAggregateFunctionExponentialMovingAverage(factory);
