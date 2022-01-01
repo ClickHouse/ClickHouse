@@ -28,6 +28,11 @@ struct Settings;
 class ReadBuffer;
 class WriteBuffer;
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 /**
  * If you have a cumulative distribution function F, then calculating the p-value for given statistic T is simply 1−F(T)
  * In our case p-value is two-sided, so we multiply it by 2.
@@ -90,6 +95,17 @@ public:
         {
             need_ci = true;
             confidence_level = params.at(0).safeGet<Float64>();
+
+            if (!std::isfinite(confidence_level))
+            {
+                throw Exception("Aggregate function " + getName() + " requires finite parameter values.", ErrorCodes::BAD_ARGUMENTS);
+            }
+
+            if (confidence_level <= 0.0f || confidence_level >= 1.0f)
+            {
+                throw Exception("Confidence level parameter must be between 0 and 1 in aggregate function " + getName(), ErrorCodes::BAD_ARGUMENTS);
+            }
+
         }
     }
 
