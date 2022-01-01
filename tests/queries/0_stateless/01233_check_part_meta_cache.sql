@@ -1,4 +1,4 @@
---Tags: no-fasttest
+-- Tags: no-parallel, no-fasttest
 
 -- Create table under database with engine ordinary.
 set mutations_sync = 1;

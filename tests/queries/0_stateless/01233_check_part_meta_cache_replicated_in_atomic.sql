@@ -1,5 +1,4 @@
--- Tags: no-fasttest
--- Tags: zookeeper
+-- Tags: no-fasttest, zookeeper, no-parallel
 
 -- Create table under database with engine ordinary.
 set mutations_sync = 1;
@@ -7,7 +6,7 @@ set replication_alter_partitions_sync = 2;
 DROP TABLE IF EXISTS test_metadata_cache.check_part_metadata_cache SYNC;
 DROP DATABASE IF EXISTS test_metadata_cache;
 CREATE DATABASE test_metadata_cache  ENGINE = Atomic;
-CREATE TABLE test_metadata_cache.check_part_metadata_cache  ( p Date, k UInt64, v1 UInt64, v2 Int64) ENGINE ReplicatedMergeTree('/clickhouse/tables/{database}/check_part_metadata_cache', '{replica}') PARTITION BY toYYYYMM(p) ORDER BY k settings use_metadata_cache = 1;
+CREATE TABLE test_metadata_cache.check_part_metadata_cache  ( p Date, k UInt64, v1 UInt64, v2 Int64) ENGINE ReplicatedMergeTree('/clickhouse/tables/test_metadata_cache/check_part_metadata_cache', '{replica}') PARTITION BY toYYYYMM(p) ORDER BY k settings use_metadata_cache = 1;
 with arrayJoin(checkPartMetadataCache('test_metadata_cache', 'check_part_metadata_cache')) as info select countIf(info.5 = 0);
 
 -- Insert first batch of data.
@@ -70,7 +69,7 @@ with arrayJoin(checkPartMetadataCache('test_metadata_cache', 'check_part_metadat
 
 -- Recreate table with projection.
 drop table if exists test_metadata_cache.check_part_metadata_cache SYNC;
-CREATE TABLE test_metadata_cache.check_part_metadata_cache  ( p Date, k UInt64, v1 UInt64, v2 Int64, projection p1 (select p, sum(k), sum(v1), sum(v2) group by p)) ENGINE ReplicatedMergeTree('/clickhouse/tables/{database}/check_part_metadata_cache', '{replica}') PARTITION BY toYYYYMM(p) ORDER BY k TTL p + INTERVAL 15 YEAR settings use_metadata_cache = 1;
+CREATE TABLE test_metadata_cache.check_part_metadata_cache  ( p Date, k UInt64, v1 UInt64, v2 Int64, projection p1 (select p, sum(k), sum(v1), sum(v2) group by p)) ENGINE ReplicatedMergeTree('/clickhouse/tables/test_metadata_cache/check_part_metadata_cache', '{replica}') PARTITION BY toYYYYMM(p) ORDER BY k TTL p + INTERVAL 15 YEAR settings use_metadata_cache = 1;
 
 -- Insert first batch of data.
 INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
