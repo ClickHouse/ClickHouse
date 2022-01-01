@@ -26,6 +26,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Native.h>
 #include <DataTypes/NumberTraits.h>
+#include <Interpreters/castColumn.h>
 #include <base/TypeList.h>
 #include <base/map.h>
 #include <Common/Arena.h>
@@ -144,7 +145,7 @@ public:
         /// e.g Decimal - Float64 = Float64
         Case<IsOperation<Operation>::minus && IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>,
             DataTypeFloat64>,
-        Case<IsOperation<Operation>::multiply && IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>,
+        Case<IsOperation<Operation>::minus && IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>,
             DataTypeFloat64>,
 
         /// e.g Decimal * Float64 = Float64
@@ -154,9 +155,21 @@ public:
             DataTypeFloat64>,
 
         /// e.g Decimal / Float64 = Float64
-        Case<IsOperation<Operation>::multiply && IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>,
+        Case<IsOperation<Operation>::division && IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>,
             DataTypeFloat64>,
-        Case<IsOperation<Operation>::multiply && IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>,
+        Case<IsOperation<Operation>::division && IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>,
+            DataTypeFloat64>,
+
+        /// e.g least(Decimal, Float64) = Float64
+        Case<IsOperation<Operation>::least && IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>,
+            DataTypeFloat64>,
+        Case<IsOperation<Operation>::least && IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>,
+            DataTypeFloat64>,
+
+        /// e.g greatest(Decimal, Float64) = Float64
+        Case<IsOperation<Operation>::greatest && IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>,
+            DataTypeFloat64>,
+        Case<IsOperation<Operation>::greatest && IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>,
             DataTypeFloat64>,
 
         /// Decimal <op> Real is not supported (traditional DBs convert Decimal <op> Real to Real)
@@ -1471,15 +1484,31 @@ public:
         else // we can't avoid the else because otherwise the compiler may assume the ResultDataType may be Invalid
              // and that would produce the compile error.
         {
-            using T0 = typename LeftDataType::FieldType;
-            using T1 = typename RightDataType::FieldType;
+            using T0 = std::conditional_t<IsFloatingPoint<ResultDataType>, Float64, typename LeftDataType::FieldType>;
+            using T1 = std::conditional_t<IsFloatingPoint<ResultDataType>, Float64, typename RightDataType::FieldType>;
             using ResultType = typename ResultDataType::FieldType;
             using ColVecT0 = ColumnVectorOrDecimal<T0>;
             using ColVecT1 = ColumnVectorOrDecimal<T1>;
             using ColVecResult = ColumnVectorOrDecimal<ResultType>;
 
-            const auto * const col_left_raw = arguments[0].column.get();
-            const auto * const col_right_raw = arguments[1].column.get();
+
+            const IColumn * col_left_raw;
+            const IColumn * col_right_raw;
+
+            /// When Decimal op Float32/64, convert both of them into Float64
+            if constexpr ((IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>)&&IsFloatingPoint<ResultDataType>)
+            {
+                const auto converted_type = std::make_shared<DataTypeFloat64>();
+                auto c0_converted = castColumn(arguments[0], converted_type);
+                auto c1_converted = castColumn(arguments[1], converted_type);
+                col_left_raw = c0_converted.get();
+                col_right_raw = c1_converted.get();
+            }
+            else
+            {
+                col_left_raw = arguments[0].column.get();
+                col_right_raw = arguments[1].column.get();
+            }
 
             const size_t col_left_size = col_left_raw->size();
 
@@ -1489,7 +1518,7 @@ public:
             const ColVecT0 * const col_left = checkAndGetColumn<ColVecT0>(col_left_raw);
             const ColVecT1 * const col_right = checkAndGetColumn<ColVecT1>(col_right_raw);
 
-            if constexpr (IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>)
+            if constexpr ((IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>)&&!IsFloatingPoint<ResultDataType>)
             {
                 return executeNumericWithDecimal<LeftDataType, RightDataType, ResultDataType>(
                     left, right,
