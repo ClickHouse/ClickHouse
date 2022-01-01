@@ -263,6 +263,8 @@ public:
 
     bool createEmptyPartInsteadOfLost(zkutil::ZooKeeperPtr zookeeper, const String & lost_part_name);
 
+    static const String getDefaultZooKeeperName() { return default_zookeeper_name; }
+
 private:
     std::atomic_bool are_restoring_replica {false};
 

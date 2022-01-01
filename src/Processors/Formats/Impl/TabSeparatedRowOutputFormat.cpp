@@ -22,7 +22,10 @@ void TabSeparatedRowOutputFormat::writeLine(const std::vector<String> & values)
 {
     for (size_t i = 0; i < values.size(); ++i)
     {
-        writeEscapedString(values[i], out);
+        if (is_raw)
+            writeString(values[i], out);
+        else
+            writeEscapedString(values[i], out);
         if (i + 1 == values.size())
             writeRowEndDelimiter();
         else

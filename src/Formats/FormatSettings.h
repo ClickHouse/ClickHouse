@@ -34,6 +34,7 @@ struct FormatSettings
     bool defaults_for_omitted_fields = true;
 
     bool seekable_read = true;
+    UInt64 max_rows_to_read_for_schema_inference = 100;
 
     enum class DateTimeInputFormat
     {
@@ -229,6 +230,11 @@ struct FormatSettings
     {
         EnumComparingMode enum_comparing_mode = EnumComparingMode::BY_VALUES;
     } capn_proto;
+
+    struct
+    {
+        UInt64 number_of_columns = 0;
+    } msgpack;
 };
 
 }
