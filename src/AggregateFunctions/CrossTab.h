@@ -54,7 +54,7 @@ struct CrossTabData
             count_ab[key] += value;
     }
 
-    void serialize(WriteBuffer &buf) const
+    void serialize(WriteBuffer & buf) const
     {
         writeBinary(count, buf);
         count_a.write(buf);
@@ -62,7 +62,7 @@ struct CrossTabData
         count_ab.write(buf);
     }
 
-    void deserialize(ReadBuffer &buf)
+    void deserialize(ReadBuffer & buf)
     {
         readBinary(count, buf);
         count_a.read(buf);

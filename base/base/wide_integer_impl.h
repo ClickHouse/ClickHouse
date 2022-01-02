@@ -1020,8 +1020,13 @@ constexpr integer<Bits, Signed>::integer(std::initializer_list<T> il) noexcept
     {
         auto it = il.begin();
         for (size_t i = 0; i < _impl::item_count; ++i)
+        {
             if (it < il.end())
+            {
                 items[i] = *it;
+                ++it;
+            }
+        }
     }
 }
 
