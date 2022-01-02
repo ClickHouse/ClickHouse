@@ -10,6 +10,13 @@
   * Also, key in hash table must be of type, that zero bytes is compared equals to zero key.
   */
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+}
 
 struct NoInitTag
 {

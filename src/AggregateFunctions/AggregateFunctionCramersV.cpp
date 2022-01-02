@@ -45,7 +45,7 @@ struct CramersVData : CrossTabData
 void registerAggregateFunctionCramersV(AggregateFunctionFactory & factory)
 {
     factory.registerFunction(CramersVData::getName(),
- [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             assertNoParameters(name, parameters);
             return std::make_shared<AggregateFunctionCrossTab<CramersVData>>(argument_types);
