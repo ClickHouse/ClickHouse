@@ -109,7 +109,7 @@
         "dependent": []
     },
     "docker/test/integration/dotnet_client": {
-        "name": "clickhouse/clickhouse-dotnet-client",
+        "name": "clickhouse/dotnet-client",
         "dependent": []
     },
     "docker/test/integration/mysql_java_client": {
