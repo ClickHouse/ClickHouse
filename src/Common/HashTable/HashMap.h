@@ -263,7 +263,7 @@ public:
         return it->getMapped();
     }
 
-    typename Cell::Mapped & ALWAYS_INLINE at(const Key & x) const
+    const typename Cell::Mapped & ALWAYS_INLINE at(const Key & x) const
     {
         if (auto it = this->find(x); it != this->end())
             return it->getMapped();
