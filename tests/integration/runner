@@ -226,7 +226,7 @@ if __name__ == "__main__":
             [image, tag] = img_tag.split(":")
             if image == "clickhouse/mysql-golang-client":
                 env_tags += "-e {}={} ".format("DOCKER_MYSQL_GOLANG_CLIENT_TAG", tag)
-            elif image == "clickhouse/clickhouse-dotnet-client":
+            elif image == "clickhouse/dotnet-client":
                 env_tags += "-e {}={} ".format("DOCKER_DOTNET_CLIENT_TAG", tag)
             elif image == "clickhouse/mysql-java-client":
                 env_tags += "-e {}={} ".format("DOCKER_MYSQL_JAVA_CLIENT_TAG", tag)
