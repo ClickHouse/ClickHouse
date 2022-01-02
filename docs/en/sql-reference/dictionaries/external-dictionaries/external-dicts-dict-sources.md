@@ -126,7 +126,7 @@ Setting fields:
 -   `command_read_timeout` - timeout for reading data from command stdout in milliseconds. Default value 10000. Optional parameter.
 -   `command_read_timeout` - timeout for writing data to command stdin in milliseconds. Default value 10000. Optional parameter.
 -   `implicit_key` — The executable source file can return only values, and the correspondence to the requested keys is determined implicitly — by the order of rows in the result. Default value is false.
--   `execute_direct` - Executable source file will be searched inside `user_scripts` folder and executed directly. Arguments are passed using spaces. Example: `test_script arg_1 arg_2`. Default value is false. Optional parameter.
+-   `execute_direct` - If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder. Additional script arguments can be specified using whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `0`. Optional parameter.
 -   `send_chunk_header` - controls whether to send row count before sending a chunk of data to process. Optional. Default value is `false`.
 
 That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled, otherwise, the DB user would be able to execute arbitrary binary on ClickHouse node.
@@ -161,7 +161,7 @@ Setting fields:
 -   `command_read_timeout` - timeout for reading data from command stdout in milliseconds. Default value 10000. Optional parameter.
 -   `command_read_timeout` - timeout for writing data to command stdin in milliseconds. Default value 10000. Optional parameter.
 -   `implicit_key` — The executable source file can return only values, and the correspondence to the requested keys is determined implicitly — by the order of rows in the result. Default value is false. Optional parameter.
--   `execute_direct` - Executable source file will be searched inside `user_scripts` folder and executed directly. Additional arguments can be specified. Example: `test_script arg_1 arg_2`. Default value is false. Optional parameter.
+-   `execute_direct` - If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder. Additional script arguments can be specified using whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `1`. Optional parameter.
 -   `send_chunk_header` - controls whether to send row count before sending a chunk of data to process. Optional. Default value is `false`.
 
 That dictionary source can be configured only via XML configuration. Creating dictionaries with executable source via DDL is disabled, otherwise, the DB user would be able to execute arbitrary binary on ClickHouse node.
