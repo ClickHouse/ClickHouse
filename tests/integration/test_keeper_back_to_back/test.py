@@ -8,7 +8,7 @@ from multiprocessing.dummy import Pool
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance('node', main_configs=['configs/enable_keeper.xml'], with_zookeeper=True, use_keeper=False)
-from kazoo.client import KazooClient, KazooState, KeeperState
+from kazoo.client import KazooClient, KazooState
 
 def get_genuine_zk():
     print("Zoo1", cluster.get_instance_ip("zoo1"))

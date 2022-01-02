@@ -9,7 +9,6 @@ from helpers.test_tools import TSV
 
 import kazoo
 import pytest
-import docker
 
 
 CURRENT_TEST_DIR = os.path.dirname(os.path.abspath(__file__))

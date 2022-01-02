@@ -1,10 +1,7 @@
 import time
 import pytz
 import decimal
-import itertools
-import numpy as np
 from dateutil.tz import tzlocal
-import dateutil.relativedelta as rd
 from testflows.core import *
 
 from datetime64_extended_range.requirements.requirements import *

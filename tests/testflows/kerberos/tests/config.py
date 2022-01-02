@@ -2,7 +2,6 @@ from testflows.core import *
 from kerberos.tests.common import *
 from kerberos.requirements.requirements import *
 
-import itertools
 
 
 @TestScenario

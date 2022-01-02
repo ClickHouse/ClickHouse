@@ -7,7 +7,7 @@ import sys
 CURDIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, os.path.join(CURDIR, 'helpers'))
 
-from client import client, prompt, end_of_block
+from client import client, prompt
 from httpclient import client as http_client
 
 log = None

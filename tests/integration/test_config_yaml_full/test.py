@@ -1,6 +1,4 @@
 
-import helpers
-import pytest
 from helpers.cluster import ClickHouseCluster
 
 def test_yaml_full_conf():

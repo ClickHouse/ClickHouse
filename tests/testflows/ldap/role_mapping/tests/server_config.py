@@ -1,5 +1,4 @@
 from testflows.core import *
-from testflows.asserts import error
 
 from ldap.role_mapping.requirements import *
 

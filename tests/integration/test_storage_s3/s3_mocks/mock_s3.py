@@ -1,6 +1,6 @@
 import sys
 
-from bottle import abort, route, run, request, response
+from bottle import request, response, route, run
 
 
 @route('/redirected/<_path:path>')

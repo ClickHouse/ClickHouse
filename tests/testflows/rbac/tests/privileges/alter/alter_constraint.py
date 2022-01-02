@@ -1,7 +1,6 @@
 import json
 
 from testflows.core import *
-from testflows.core import threading
 from testflows.asserts import error
 
 from rbac.requirements import *

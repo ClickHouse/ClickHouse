@@ -3,7 +3,7 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
 from multiprocessing.dummy import Pool
-from kazoo.client import KazooClient, KazooState
+from kazoo.client import KazooClient
 import random
 import os
 

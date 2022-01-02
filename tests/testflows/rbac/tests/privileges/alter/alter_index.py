@@ -1,7 +1,6 @@
 import json
 import random
 
-from testflows._core.cli.arg.parser import parser
 from testflows.core import *
 from testflows.asserts import error
 

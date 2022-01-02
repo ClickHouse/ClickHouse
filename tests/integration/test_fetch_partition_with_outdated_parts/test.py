@@ -1,7 +1,5 @@
 from __future__ import print_function
 from helpers.cluster import ClickHouseCluster
-from helpers.client import QueryRuntimeException
-import helpers
 import pytest
 
 

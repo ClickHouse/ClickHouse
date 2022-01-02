@@ -3,7 +3,7 @@ import pytest
 import time
 import logging
 
-from helpers.cluster import ClickHouseCluster, run_and_check
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 

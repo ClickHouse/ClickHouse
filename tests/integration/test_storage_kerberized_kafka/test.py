@@ -4,14 +4,8 @@ import logging
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
-from helpers.client import QueryRuntimeException
-from helpers.network import PartitionManager
 
-import kafka.errors
-from kafka import KafkaAdminClient, KafkaProducer, KafkaConsumer, BrokerConnection
-from kafka.admin import NewTopic
-from kafka.protocol.admin import DescribeGroupsResponse_v1, DescribeGroupsRequest_v1
-from kafka.protocol.group import MemberAssignment
+from kafka import KafkaProducer
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',

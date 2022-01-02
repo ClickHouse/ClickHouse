@@ -5,7 +5,6 @@ import pytest
 import time
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
-from helpers.test_tools import assert_eq_with_retry
 import random
 import string
 import json

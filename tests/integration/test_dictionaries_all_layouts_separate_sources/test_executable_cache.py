@@ -4,7 +4,6 @@ import pytest
 from .common import *
 
 from helpers.cluster import ClickHouseCluster
-from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
 from helpers.external_sources import SourceExecutableCache
 
 SOURCE = SourceExecutableCache("ExecutableCache", "localhost", "9000", "cache_node", "9000", "", "")

@@ -8,7 +8,7 @@ node1 = cluster.add_instance('node1', main_configs=['configs/enable_secure_keepe
 node2 = cluster.add_instance('node2', main_configs=['configs/enable_secure_keeper2.xml', 'configs/ssl_conf.xml', 'configs/server.crt', 'configs/server.key', 'configs/rootCA.pem'])
 node3 = cluster.add_instance('node3', main_configs=['configs/enable_secure_keeper3.xml', 'configs/ssl_conf.xml', 'configs/server.crt', 'configs/server.key', 'configs/rootCA.pem'])
 
-from kazoo.client import KazooClient, KazooState
+from kazoo.client import KazooClient
 
 @pytest.fixture(scope="module")
 def started_cluster():

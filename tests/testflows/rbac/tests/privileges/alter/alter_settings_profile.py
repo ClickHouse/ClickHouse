@@ -1,7 +1,6 @@
 from contextlib import contextmanager
 
 from testflows.core import *
-from testflows.asserts import error
 
 from rbac.requirements import *
 from rbac.helper.common import *

@@ -1,6 +1,6 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry, TSV
+from helpers.test_tools import TSV
 import os
 
 

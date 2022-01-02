@@ -4,7 +4,6 @@ import psycopg2
 import os.path as p
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_eq_with_retry
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 from helpers.test_tools import TSV
 

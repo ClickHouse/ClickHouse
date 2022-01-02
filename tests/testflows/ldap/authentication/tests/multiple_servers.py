@@ -1,5 +1,4 @@
 from testflows.core import *
-from testflows.asserts import error
 
 from ldap.authentication.tests.common import login
 from ldap.authentication.requirements import RQ_SRS_007_LDAP_Authentication_MultipleServers

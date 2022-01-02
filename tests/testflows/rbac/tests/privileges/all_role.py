@@ -3,7 +3,6 @@ from testflows.asserts import error
 
 from rbac.requirements import *
 from rbac.helper.common import *
-import rbac.helper.errors as errors
 
 @TestScenario
 def privilege_check(self, node=None):

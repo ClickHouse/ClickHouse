@@ -1,8 +1,7 @@
 import time
 import pymysql.cursors
 import pytest
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance, get_docker_compose_path, run_and_check
-import docker
+from helpers.cluster import ClickHouseCluster, ClickHouseInstance, get_docker_compose_path
 import logging
 
 from . import materialize_with_ddl

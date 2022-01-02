@@ -10,7 +10,6 @@ from testflows.core import *
 from testflows.asserts import error
 from testflows.connect import Shell as ShellBase
 from testflows.uexpect import ExpectTimeoutError
-from testflows._core.testtype import TestSubType
 
 class Shell(ShellBase):
     def __exit__(self, type, value, traceback):

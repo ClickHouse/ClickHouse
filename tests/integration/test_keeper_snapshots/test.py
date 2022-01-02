@@ -6,7 +6,7 @@ from helpers.cluster import ClickHouseCluster
 import random
 import string
 import os
-from kazoo.client import KazooClient, KazooState
+from kazoo.client import KazooClient
 
 
 cluster = ClickHouseCluster(__file__)

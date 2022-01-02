@@ -3,7 +3,6 @@ import time
 
 import pytest
 from helpers.cluster import ClickHouseCluster
-from helpers.cluster import ClickHouseKiller
 
 cluster = ClickHouseCluster(__file__)
 

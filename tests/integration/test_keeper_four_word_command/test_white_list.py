@@ -8,7 +8,7 @@ node1 = cluster.add_instance('node1', main_configs=['configs/keeper_config_with_
 node2 = cluster.add_instance('node2', main_configs=['configs/keeper_config_without_white_list.xml'], stay_alive=True)
 node3 = cluster.add_instance('node3', main_configs=['configs/keeper_config_with_white_list_all.xml'], stay_alive=True)
 
-from kazoo.client import KazooClient, KazooState
+from kazoo.client import KazooClient
 
 
 @pytest.fixture(scope="module")

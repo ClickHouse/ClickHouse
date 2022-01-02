@@ -9,7 +9,7 @@ node1 = cluster.add_instance('node1', main_configs=['configs/enable_keeper1.xml'
 node2 = cluster.add_instance('node2', main_configs=['configs/enable_keeper2.xml', 'configs/use_keeper.xml'], stay_alive=True)
 node3 = cluster.add_instance('node3', main_configs=['configs/enable_keeper3.xml', 'configs/use_keeper.xml'], stay_alive=True)
 
-from kazoo.client import KazooClient, KazooState
+from kazoo.client import KazooClient
 
 """
 In this test, we blockade RAFT leader and check that the whole system is

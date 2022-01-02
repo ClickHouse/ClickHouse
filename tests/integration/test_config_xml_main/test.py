@@ -1,8 +1,6 @@
 
 
 
-import helpers
-import pytest
 from helpers.cluster import ClickHouseCluster
 
 

@@ -1,7 +1,5 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
-from helpers.client import QueryRuntimeException
-from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 

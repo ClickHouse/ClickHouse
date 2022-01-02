@@ -2,7 +2,6 @@ import pytest
 import time
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
-from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], with_zookeeper=True)

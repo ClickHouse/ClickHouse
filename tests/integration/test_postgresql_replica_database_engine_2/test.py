@@ -6,7 +6,6 @@ import random
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
-from helpers.test_tools import TSV
 
 
 cluster = ClickHouseCluster(__file__)

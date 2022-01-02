@@ -1,6 +1,5 @@
 import time
 
-import helpers.client as client
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.client import QueryRuntimeException

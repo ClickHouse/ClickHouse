@@ -4,7 +4,6 @@ import pytest
 from .common import *
 
 from helpers.cluster import ClickHouseCluster
-from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
 from helpers.external_sources import SourceHTTP
 
 SOURCE = SourceHTTP("SourceHTTP", "localhost", "9000", "clickhouse_h", "9000", "", "")
