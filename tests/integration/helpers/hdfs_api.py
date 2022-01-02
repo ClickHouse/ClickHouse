@@ -6,7 +6,6 @@ import time
 from tempfile import NamedTemporaryFile
 import requests
 import requests_kerberos as reqkerb
-import socket
 import tempfile
 import logging
 import os

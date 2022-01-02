@@ -1,4 +1,3 @@
-import os
 import textwrap
 
 from extended_precision_data_types.requirements import *

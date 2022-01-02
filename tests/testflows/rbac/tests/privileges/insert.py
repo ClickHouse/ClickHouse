@@ -1,4 +1,3 @@
-from contextlib import contextmanager
 import json
 
 from testflows.core import *

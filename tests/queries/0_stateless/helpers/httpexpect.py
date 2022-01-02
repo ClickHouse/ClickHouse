@@ -21,7 +21,7 @@ sys.path.insert(0, CURDIR)
 import uexpect
 
 from threading import Thread, Event
-from queue import Queue, Empty
+from queue import Queue
 
 class IO(uexpect.IO):
     def __init__(self, connection, response, queue, reader):

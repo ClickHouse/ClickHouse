@@ -33,7 +33,6 @@ class Shell(ShellBase):
 class QueryRuntimeException(Exception):
     """Exception during query execution on the server.
     """
-    pass
 
 class Node(object):
     """Generic cluster node.

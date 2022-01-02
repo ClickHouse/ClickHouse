@@ -1,5 +1,3 @@
-from contextlib import contextmanager
-import json
 
 from testflows.core import *
 from testflows.asserts import error

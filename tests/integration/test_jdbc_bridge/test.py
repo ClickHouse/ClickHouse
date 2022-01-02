@@ -1,11 +1,9 @@
 import logging
-import os.path as p
 import pytest
 import uuid
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
-from string import Template
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance("instance", main_configs=["configs/jdbc_bridge.xml"], with_jdbc_bridge=True)

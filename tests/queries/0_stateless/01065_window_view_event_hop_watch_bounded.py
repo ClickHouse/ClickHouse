@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import os
 import sys
-import signal
 
 CURDIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, os.path.join(CURDIR, 'helpers'))

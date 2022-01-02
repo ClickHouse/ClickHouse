@@ -4,7 +4,6 @@ import decimal
 import itertools
 import numpy as np
 from dateutil.tz import tzlocal
-from datetime import datetime, timedelta
 import dateutil.relativedelta as rd
 from testflows.core import *
 

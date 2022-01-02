@@ -22,7 +22,6 @@ except:
 import argparse
 from enum import Enum
 import logging
-import os
 import subprocess
 import sys
 

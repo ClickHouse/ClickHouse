@@ -1,5 +1,4 @@
 import time
-from multiprocessing.dummy import Pool
 
 import pytest
 from helpers.cluster import ClickHouseCluster

@@ -1,9 +1,5 @@
 
 
-import time
-import threading
-from os import path as p, unlink
-from tempfile import NamedTemporaryFile
 
 import helpers
 import pytest

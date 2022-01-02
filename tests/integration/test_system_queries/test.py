@@ -29,7 +29,6 @@ def started_cluster():
         yield cluster
 
     finally:
-        pass
         cluster.shutdown()
 
 

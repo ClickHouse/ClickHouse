@@ -39,7 +39,6 @@ def cluster_without_dns_cache_update():
 
     finally:
         cluster.shutdown()
-        pass
 
 
 # node1 is a source, node2 downloads data
@@ -94,7 +93,6 @@ def cluster_with_dns_cache_update():
 
     finally:
         cluster.shutdown()
-        pass
 
 
 # node3 is a source, node4 downloads data

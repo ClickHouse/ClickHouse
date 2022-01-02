@@ -8,7 +8,6 @@ from helpers.test_tools import assert_eq_with_retry
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 from helpers.test_tools import TSV
 
-import threading
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance', main_configs=['configs/log_conf.xml'], with_postgres=True, stay_alive=True)

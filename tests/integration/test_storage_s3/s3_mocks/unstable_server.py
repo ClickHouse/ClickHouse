@@ -1,8 +1,6 @@
 import http.server
 import random
 import re
-import socket
-import struct
 import sys
 
 

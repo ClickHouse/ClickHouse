@@ -1,7 +1,6 @@
 import pytest
 import time
 import psycopg2
-from multiprocessing.dummy import Pool
 
 from helpers.cluster import ClickHouseCluster
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT

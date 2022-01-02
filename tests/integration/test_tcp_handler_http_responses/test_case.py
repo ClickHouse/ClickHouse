@@ -1,5 +1,4 @@
 """Test HTTP responses given by the TCP Handler."""
-from pathlib import Path
 import pytest
 from helpers.cluster import ClickHouseCluster
 import requests

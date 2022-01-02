@@ -5,8 +5,6 @@
 
 import pytest
 from helpers.cluster import ClickHouseCluster
-import random
-import string
 import os
 import time
 from multiprocessing.dummy import Pool

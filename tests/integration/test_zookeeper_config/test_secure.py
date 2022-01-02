@@ -1,6 +1,5 @@
 import threading
 import os 
-from tempfile import NamedTemporaryFile
 
 import pytest
 from helpers.cluster import ClickHouseCluster

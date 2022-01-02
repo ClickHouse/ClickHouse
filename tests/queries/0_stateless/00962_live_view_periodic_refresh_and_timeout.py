@@ -4,7 +4,6 @@
 import os
 import sys
 import time
-import signal
 
 CURDIR = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, os.path.join(CURDIR, 'helpers'))

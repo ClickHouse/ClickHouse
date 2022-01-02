@@ -27,7 +27,6 @@ def cleanup_environment():
             logging.debug(f"No running containers")
     except Exception as e:
         logging.exception(f"cleanup_environment:{str(e)}")
-        pass
 
     yield
 

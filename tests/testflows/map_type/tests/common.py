@@ -1,5 +1,4 @@
 import uuid
-from collections import namedtuple
 
 from testflows.core import *
 from testflows.core.name import basename, parentname

@@ -2,10 +2,6 @@
 
 import pytest
 from helpers.cluster import ClickHouseCluster
-import random
-import string
-import os
-import time
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', main_configs=['configs/enable_secure_keeper1.xml', 'configs/ssl_conf.xml', 'configs/server.crt', 'configs/server.key', 'configs/rootCA.pem'])

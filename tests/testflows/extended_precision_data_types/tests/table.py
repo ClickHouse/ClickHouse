@@ -1,6 +1,5 @@
 from testflows.core import *
 from testflows.asserts import error
-from contextlib import contextmanager
 
 from extended_precision_data_types.requirements import *
 from extended_precision_data_types.common import *

@@ -3,7 +3,6 @@ import uuid
 import time
 import string
 import random
-import textwrap
 import xml.etree.ElementTree as xmltree
 
 from collections import namedtuple

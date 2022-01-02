@@ -6,7 +6,6 @@ import threading
 import logging
 import time
 from random import randrange
-import math
 
 import pika
 import pytest

@@ -1,14 +1,9 @@
 import socket
 import pytest
 from helpers.cluster import ClickHouseCluster
-import random
-import string
-import os
 import time
-from multiprocessing.dummy import Pool
 from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
-from io import StringIO
 import csv
 import re
 

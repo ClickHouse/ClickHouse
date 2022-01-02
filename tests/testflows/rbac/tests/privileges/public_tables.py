@@ -1,4 +1,3 @@
-from contextlib import contextmanager
 
 from testflows.core import *
 from testflows.asserts import error

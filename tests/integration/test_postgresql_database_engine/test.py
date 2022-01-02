@@ -1,5 +1,4 @@
 import pytest
-import time
 import psycopg2
 
 from helpers.cluster import ClickHouseCluster

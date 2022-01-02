@@ -1,8 +1,4 @@
-import os
-import os.path as p
 import time
-import pwd
-import re
 import pymysql.cursors
 import pytest
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance, get_docker_compose_path, run_and_check

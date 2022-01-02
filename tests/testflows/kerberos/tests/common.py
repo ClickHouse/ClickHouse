@@ -1,6 +1,5 @@
 from testflows.core import *
 from testflows.asserts import error
-from contextlib import contextmanager
 import xml.etree.ElementTree as xmltree
 
 import time
