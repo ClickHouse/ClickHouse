@@ -262,6 +262,13 @@ public:
 
         return it->getMapped();
     }
+
+    typename Cell::Mapped & ALWAYS_INLINE at(const Key & x) const
+    {
+        if (auto it = this->find(x); it != this->end())
+            return it->getMapped();
+        throw DB::Exception("Cannot find element in HashMap::at method", DB::ErrorCodes::LOGICAL_ERROR);
+    }
 };
 
 namespace std
