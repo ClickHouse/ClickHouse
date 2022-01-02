@@ -7,8 +7,6 @@
 #include <Common/ArenaAllocator.h>
 #include <Common/assert_cast.h>
 
-#include <base/arithmeticOverflow.h>
-
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -136,6 +134,11 @@ template <typename T, typename Data>
 class AggregateFunctionIntervalLengthSum final : public IAggregateFunctionDataHelper<Data, AggregateFunctionIntervalLengthSum<T, Data>>
 {
 private:
+    static auto length(typename Data::Segment segment)
+    {
+        return segment.second - segment.first;
+    }
+
     template <typename TResult>
     TResult getIntervalLengthSum(Data & data) const
     {
@@ -146,31 +149,24 @@ private:
 
         TResult res = 0;
 
-        typename Data::Segment cur_segment = data.segments[0];
+        typename Data::Segment curr_segment = data.segments[0];
 
-        for (size_t i = 1, sz = data.segments.size(); i < sz; ++i)
+        for (size_t i = 1, size = data.segments.size(); i < size; ++i)
         {
+            const typename Data::Segment & next_segment = data.segments[i];
+
             /// Check if current interval intersects with next one then add length, otherwise advance interval end.
-            if (cur_segment.second < data.segments[i].first)
+            if (curr_segment.second < next_segment.first)
             {
-                if constexpr (std::is_floating_point_v<TResult>)
-                {
-                    res += cur_segment.second - cur_segment.first;
-                }
-                else
-                {
-                    TResult diff;
-                    if (!common::subOverflow(static_cast<TResult>(cur_segment.second), static_cast<TResult>(cur_segment.first), diff))
-                        res += diff;
-                }
-
-                cur_segment = data.segments[i];
+                res += length(curr_segment);
+                curr_segment = next_segment;
             }
-            else
-                cur_segment.second = std::max(cur_segment.second, data.segments[i].second);
+            else if (next_segment.second > curr_segment.second)
+            {
+                curr_segment.second = next_segment.second;
+            }
         }
-
-        res += cur_segment.second - cur_segment.first;
+        res += length(curr_segment);
 
         return res;
     }
