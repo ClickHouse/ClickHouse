@@ -1,7 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/CrossTab.h>
 #include <AggregateFunctions/FactoryHelpers.h>
-#include <AggregateFunctions/Helpers.h>
 #include <memory>
 #include <cmath>
 
@@ -40,11 +39,13 @@ struct TheilsUData : CrossTabData
             dep += (value_ab / count) * log(value_ab / value_b);
         }
 
-        dep -= h_x;
-        dep /= h_x;
+        dep -= h_a;
+        dep /= h_a;
         return dep;
     }
 };
+
+}
 
 void registerAggregateFunctionTheilsU(AggregateFunctionFactory & factory)
 {
@@ -54,8 +55,6 @@ void registerAggregateFunctionTheilsU(AggregateFunctionFactory & factory)
             assertNoParameters(name, parameters);
             return std::make_shared<AggregateFunctionCrossTab<TheilsUData>>(argument_types);
         });
-}
-
 }
 
 }

@@ -1,7 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/CrossTab.h>
 #include <AggregateFunctions/FactoryHelpers.h>
-#include <AggregateFunctions/Helpers.h>
 #include <memory>
 #include <cmath>
 
