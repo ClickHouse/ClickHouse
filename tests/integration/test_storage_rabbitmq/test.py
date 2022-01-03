@@ -586,7 +586,6 @@ def test_rabbitmq_sharding_between_queues_publish(rabbitmq_cluster):
 
 def test_rabbitmq_mv_combo(rabbitmq_cluster):
     NUM_MV = 5
-    NUM_CONSUMERS = 4
 
     instance.query('''
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
@@ -2023,7 +2022,6 @@ def test_rabbitmq_queue_consume(rabbitmq_cluster):
     def produce():
         connection = pika.BlockingConnection(parameters)
         channel = connection.channel()
-        messages = []
         for _ in range(messages_num):
             message = json.dumps({'key': i[0], 'value': i[0]})
             channel.basic_publish(exchange='', routing_key='rabbit_queue', body=message)
@@ -2170,7 +2168,6 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
-    messages = []
     for i in range(20):
         channel.basic_publish(exchange='mv', routing_key='', body=json.dumps({'key': i, 'value': i}))
 
@@ -2207,8 +2204,6 @@ def test_rabbitmq_drop_mv(rabbitmq_cluster):
 
 
 def test_rabbitmq_random_detach(rabbitmq_cluster):
-    NUM_CONSUMERS = 2
-    NUM_QUEUES = 2
     instance.query('''
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
