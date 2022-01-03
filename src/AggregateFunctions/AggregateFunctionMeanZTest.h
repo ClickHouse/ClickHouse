@@ -44,17 +44,17 @@ public:
 
         if (!std::isfinite(pop_var_x) || !std::isfinite(pop_var_y) || !std::isfinite(confidence_level))
         {
-            throw Exception("Aggregate function " + getName() + " requires finite parameter values.", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} requires finite parameter values.", Data::name);
         }
 
         if (pop_var_x < 0.0f || pop_var_y < 0.0f)
         {
-            throw Exception("Population variance parameters must be larger than or equal to zero in aggregate function " + getName(), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Population variance parameters must be larger than or equal to zero in aggregate function {}.", Data::name);
         }
 
         if (confidence_level <= 0.0f || confidence_level >= 1.0f)
         {
-            throw Exception("Confidence level parameter must be between 0 and 1 in aggregate function " + getName(), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Confidence level parameter must be between 0 and 1 in aggregate function {}.", Data::name);
         }
     }
 
