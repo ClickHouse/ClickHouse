@@ -1026,6 +1026,8 @@ constexpr integer<Bits, Signed>::integer(std::initializer_list<T> il) noexcept
                 items[i] = *it;
                 ++it;
             }
+            else
+                items[i] = 0;
         }
     }
 }
