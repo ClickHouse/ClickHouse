@@ -129,7 +129,7 @@ def insert(node, table_name, chunk=1000, col_names=None, iterations=1, ignore_ex
             node.query(";\n".join(query))
         except QueryRuntimeException as ex:
             if not ignore_exception:
-                raise
+                raise ex
 
 
 def select(node, table_name, col_name="num", expected_result=None, iterations=1, ignore_exception=False, slow=False,
@@ -150,7 +150,7 @@ def select(node, table_name, col_name="num", expected_result=None, iterations=1,
                     assert r == expected_result
             except QueryRuntimeException as ex:
                 if not ignore_exception:
-                    raise
+                    raise ex
             break
 
 
@@ -162,7 +162,7 @@ def rename_column(node, table_name, name, new_name, iterations=1, ignore_excepti
             ))
         except QueryRuntimeException as ex:
             if not ignore_exception:
-                raise
+                raise ex
 
 
 def rename_column_on_cluster(node, table_name, name, new_name, iterations=1, ignore_exception=False):
@@ -173,7 +173,7 @@ def rename_column_on_cluster(node, table_name, name, new_name, iterations=1, ign
             ))
         except QueryRuntimeException as ex:
             if not ignore_exception:
-                raise
+                raise ex
 
 
 def alter_move(node, table_name, iterations=1, ignore_exception=False):
@@ -185,7 +185,7 @@ def alter_move(node, table_name, iterations=1, ignore_exception=False):
                        .format(table_name=table_name, move_part=move_part, move_volume=move_volume))
         except QueryRuntimeException as ex:
             if not ignore_exception:
-                raise
+                raise ex
 
 
 def test_rename_parallel_same_node(started_cluster):
