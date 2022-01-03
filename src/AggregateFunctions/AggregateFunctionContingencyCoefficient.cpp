@@ -39,7 +39,7 @@ struct ContingencyData : CrossTabData
 void registerAggregateFunctionContingency(AggregateFunctionFactory & factory)
 {
     factory.registerFunction(ContingencyData::getName(),
-    [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             assertNoParameters(name, parameters);
             return std::make_shared<AggregateFunctionCrossTab<ContingencyData>>(argument_types);
