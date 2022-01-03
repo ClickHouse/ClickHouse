@@ -150,7 +150,6 @@ def kafka_produce_protobuf_messages(kafka_cluster, topic, start_index, num_messa
     logging.debug(("Produced {} messages for topic {}".format(num_messages, topic)))
 
 def kafka_produce_protobuf_messages_no_delimeters(kafka_cluster, topic, start_index, num_messages):
-    data = ''
     producer = KafkaProducer(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
     for i in range(start_index, start_index + num_messages):
         msg = kafka_pb2.KeyValuePair()
@@ -1796,7 +1795,7 @@ def test_kafka_virtual_columns2(kafka_cluster):
 
     instance.wait_for_log_line('kafka.*Committed offset 2.*virt2_[01]', repetitions=4, look_behind_lines=6000)
 
-    members = describe_consumer_group(kafka_cluster, 'virt2')
+    # members = describe_consumer_group(kafka_cluster, 'virt2')
     # pprint.pprint(members)
     # members[0]['client_id'] = 'ClickHouse-instance-test-kafka-0'
     # members[1]['client_id'] = 'ClickHouse-instance-test-kafka-1'
