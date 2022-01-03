@@ -371,7 +371,6 @@ def user_with_privilege_on_cluster(self, table_type, node=None):
     privilege granted on a cluster.
     """
     user_name = f"user_{getuid()}"
-    role_name = f"role_{getuid()}"
     table_name = f"table_{getuid()}"
 
     if node is None:

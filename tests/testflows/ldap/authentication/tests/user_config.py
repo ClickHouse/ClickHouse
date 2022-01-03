@@ -117,7 +117,6 @@ def ldap_and_password(self):
     is specified for the same user. We expect an error message to be present in the log
     and login attempt to fail.
     """
-    node = self.context.node
     servers = {
         "openldap1": {
             "host": "openldap1", "port": "389", "enable_tls": "no",

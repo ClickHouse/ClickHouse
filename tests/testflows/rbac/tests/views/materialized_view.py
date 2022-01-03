@@ -631,7 +631,6 @@ def create_with_populate(self, user_name, grant_target_name, node=None):
     """Check that user is only able to create the view after INSERT privilege is granted.
     """
     view_name = f"view_{getuid()}"
-    table_name = f"table_{getuid()}"
     exitcode, message = errors.not_enough_privileges(name=f"{user_name}")
 
     if node is None:
