@@ -72,7 +72,7 @@ public:
     void rewind();
 
 private:
-    std::future<IAsynchronousReader::Result> readInto(char * data, size_t file_size_);
+    std::future<IAsynchronousReader::Result> readInto(char * data, size_t size);
 };
 
 }
