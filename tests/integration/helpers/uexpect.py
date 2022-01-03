@@ -177,9 +177,9 @@ class IO(object):
                 return data
             if raise_exception:
                 raise TimeoutError(timeout)
+            pass
         if not data and raise_exception:
             raise TimeoutError(timeout)
-        pass
 
         return data
 

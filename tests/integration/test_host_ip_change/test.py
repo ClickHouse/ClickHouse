@@ -93,7 +93,6 @@ def cluster_with_dns_cache_update():
 
     finally:
         cluster.shutdown()
-        pass
 
 
 # node3 is a source, node4 downloads data
