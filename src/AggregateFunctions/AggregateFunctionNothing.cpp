@@ -1,7 +1,6 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionNothing.h>
-#include <AggregateFunctions/Helpers.h>
-#include <Functions/FunctionHelpers.h>
+#include <AggregateFunctions/FactoryHelpers.h>
 
 
 namespace DB
