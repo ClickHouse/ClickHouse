@@ -28,6 +28,8 @@ namespace CurrentMetrics
     extern const Metric PartsTemporary;
     extern const Metric PartsPreCommitted;
     extern const Metric PartsCommitted;
+    extern const Metric PartsPreActive;
+    extern const Metric PartsActive;
     extern const Metric PartsOutdated;
     extern const Metric PartsDeleting;
     extern const Metric PartsDeleteOnDestroy;
@@ -189,10 +191,12 @@ static void incrementStateMetric(IMergeTreeDataPart::State state)
         case IMergeTreeDataPart::State::Temporary:
             CurrentMetrics::add(CurrentMetrics::PartsTemporary);
             return;
-        case IMergeTreeDataPart::State::PreCommitted:
+        case IMergeTreeDataPart::State::PreActive:
+            CurrentMetrics::add(CurrentMetrics::PartsPreActive);
             CurrentMetrics::add(CurrentMetrics::PartsPreCommitted);
             return;
-        case IMergeTreeDataPart::State::Committed:
+        case IMergeTreeDataPart::State::Active:
+            CurrentMetrics::add(CurrentMetrics::PartsActive);
             CurrentMetrics::add(CurrentMetrics::PartsCommitted);
             return;
         case IMergeTreeDataPart::State::Outdated:
@@ -214,10 +218,12 @@ static void decrementStateMetric(IMergeTreeDataPart::State state)
         case IMergeTreeDataPart::State::Temporary:
             CurrentMetrics::sub(CurrentMetrics::PartsTemporary);
             return;
-        case IMergeTreeDataPart::State::PreCommitted:
+        case IMergeTreeDataPart::State::PreActive:
+            CurrentMetrics::sub(CurrentMetrics::PartsPreActive);
             CurrentMetrics::sub(CurrentMetrics::PartsPreCommitted);
             return;
-        case IMergeTreeDataPart::State::Committed:
+        case IMergeTreeDataPart::State::Active:
+            CurrentMetrics::sub(CurrentMetrics::PartsActive);
             CurrentMetrics::sub(CurrentMetrics::PartsCommitted);
             return;
         case IMergeTreeDataPart::State::Outdated:
@@ -286,7 +292,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , parent_part(parent_part_)
 {
     if (parent_part)
-        state = State::Committed;
+        state = State::Active;
     incrementStateMetric(state);
     incrementTypeMetric(part_type);
 
@@ -311,7 +317,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , parent_part(parent_part_)
 {
     if (parent_part)
-        state = State::Committed;
+        state = State::Active;
     incrementStateMetric(state);
     incrementTypeMetric(part_type);
 

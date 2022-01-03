@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/hasNullable.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -224,7 +225,6 @@ MergeTreeData::MergeTreeData(
     {
         try
         {
-
             checkPartitionKeyAndInitMinMax(metadata_.partition_key);
             setProperties(metadata_, metadata_, attach);
             if (minmax_idx_date_column_pos == -1)
@@ -358,10 +358,11 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
     {
         const ColumnPtr & column = element.column;
         if (column && (isColumnConst(*column) || column->isDummy()))
-            throw Exception{key_name + " key cannot contain constants", ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} key cannot contain constants", key_name);
 
-        if (!allow_nullable_key && element.type->isNullable())
-            throw Exception{key_name + " key cannot contain nullable columns", ErrorCodes::ILLEGAL_COLUMN};
+        if (!allow_nullable_key && hasNullable(element.type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN, "{} key contains nullable columns, but `setting allow_nullable_key` is disabled", key_name);
     }
 }
 
@@ -1038,8 +1039,8 @@ void MergeTreeData::loadDataPartsFromDisk(
             has_adaptive_parts.store(true, std::memory_order_relaxed);
 
         part->modification_time = part_disk_ptr->getLastModified(fs::path(relative_data_path) / part_name).epochTime();
-        /// Assume that all parts are Committed, covered parts will be detected and marked as Outdated later
-        part->setState(DataPartState::Committed);
+        /// Assume that all parts are Active, covered parts will be detected and marked as Outdated later
+        part->setState(DataPartState::Active);
 
         std::lock_guard loading_lock(mutex);
         auto [it, inserted] = data_parts_indexes.insert(part);
@@ -1131,12 +1132,12 @@ void MergeTreeData::loadDataPartsFromWAL(
 {
     for (auto & part : parts_from_wal)
     {
-        if (getActiveContainingPart(part->info, DataPartState::Committed, part_lock))
+        if (getActiveContainingPart(part->info, DataPartState::Active, part_lock))
             continue;
 
         part->modification_time = time(nullptr);
-        /// Assume that all parts are Committed, covered parts will be detected and marked as Outdated later
-        part->setState(DataPartState::Committed);
+        /// Assume that all parts are Active, covered parts will be detected and marked as Outdated later
+        part->setState(DataPartState::Active);
 
         auto [it, inserted] = data_parts_indexes.insert(part);
         if (!inserted)
@@ -1292,9 +1293,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
             removePartContributionToDataVolume(*it);
         };
 
-        (*prev_jt)->assertState({DataPartState::Committed});
+        (*prev_jt)->assertState({DataPartState::Active});
 
-        while (curr_jt != data_parts_by_state_and_info.end() && (*curr_jt)->getState() == DataPartState::Committed)
+        while (curr_jt != data_parts_by_state_and_info.end() && (*curr_jt)->getState() == DataPartState::Active)
         {
             /// Don't consider data parts belonging to different partitions.
             if ((*curr_jt)->info.partition_id != (*prev_jt)->info.partition_id)
@@ -2368,8 +2369,8 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
     DataPartsLock & /* data_parts_lock */) const
 {
     /// Parts contained in the part are consecutive in data_parts, intersecting the insertion place for the part itself.
-    auto it_middle = data_parts_by_state_and_info.lower_bound(DataPartStateAndInfo{DataPartState::Committed, new_part_info});
-    auto committed_parts_range = getDataPartsStateRange(DataPartState::Committed);
+    auto it_middle = data_parts_by_state_and_info.lower_bound(DataPartStateAndInfo{DataPartState::Active, new_part_info});
+    auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
 
     /// Go to the left.
     DataPartIteratorByStateAndInfo begin = it_middle;
@@ -2523,7 +2524,7 @@ bool MergeTreeData::renameTempPartAndReplace(
     part->name = part_name;
     part->info = part_info;
     part->is_temp = false;
-    part->setState(DataPartState::PreCommitted);
+    part->setState(DataPartState::PreActive);
     part->renameTo(part_name, true);
 
     auto part_it = data_parts_indexes.insert(part).first;
@@ -2550,7 +2551,7 @@ bool MergeTreeData::renameTempPartAndReplace(
 
         decreaseDataVolume(reduce_bytes, reduce_rows, reduce_parts);
 
-        modifyPartState(part_it, DataPartState::Committed);
+        modifyPartState(part_it, DataPartState::Active);
         addPartContributionToColumnAndSecondaryIndexSizes(part);
         addPartContributionToDataVolume(part);
     }
@@ -2592,13 +2593,13 @@ void MergeTreeData::removePartsFromWorkingSet(const MergeTreeData::DataPartsVect
 
     for (const DataPartPtr & part : remove)
     {
-        if (part->getState() == IMergeTreeDataPart::State::Committed)
+        if (part->getState() == IMergeTreeDataPart::State::Active)
         {
             removePartContributionToColumnAndSecondaryIndexSizes(part);
             removePartContributionToDataVolume(part);
         }
 
-        if (part->getState() == IMergeTreeDataPart::State::Committed || clear_without_timeout)
+        if (part->getState() == IMergeTreeDataPart::State::Active || clear_without_timeout)
             part->remove_time.store(remove_time, std::memory_order_relaxed);
 
         if (part->getState() != IMergeTreeDataPart::State::Outdated)
@@ -2634,7 +2635,7 @@ void MergeTreeData::removePartsFromWorkingSet(const DataPartsVector & remove, bo
         if (!data_parts_by_info.count(part->info))
             throw Exception("Part " + part->getNameWithState() + " not found in data_parts", ErrorCodes::LOGICAL_ERROR);
 
-        part->assertState({DataPartState::PreCommitted, DataPartState::Committed, DataPartState::Outdated});
+        part->assertState({DataPartState::PreActive, DataPartState::Active, DataPartState::Outdated});
     }
 
     removePartsFromWorkingSet(remove, clear_without_timeout, lock);
@@ -2732,7 +2733,7 @@ restore_covered)
     /// What if part_to_detach is a reference to *it_part? Make a new owner just in case.
     DataPartPtr part = *it_part;
 
-    if (part->getState() == DataPartState::Committed)
+    if (part->getState() == DataPartState::Active)
     {
         removePartContributionToDataVolume(part);
         removePartContributionToColumnAndSecondaryIndexSizes(part);
@@ -2759,7 +2760,7 @@ restore_covered)
 
         auto is_appropriate_state = [] (DataPartState state)
         {
-            return state == DataPartState::Committed || state == DataPartState::Outdated;
+            return state == DataPartState::Active || state == DataPartState::Outdated;
         };
 
         auto update_error = [&] (DataPartIteratorByInfo it)
@@ -2781,11 +2782,11 @@ restore_covered)
                 if ((*it)->info.min_block != part->info.min_block)
                     update_error(it);
 
-                if ((*it)->getState() != DataPartState::Committed)
+                if ((*it)->getState() != DataPartState::Active)
                 {
                     addPartContributionToColumnAndSecondaryIndexSizes(*it);
                     addPartContributionToDataVolume(*it);
-                    modifyPartState(it, DataPartState::Committed); // iterator is not invalidated here
+                    modifyPartState(it, DataPartState::Active); // iterator is not invalidated here
                 }
 
                 pos = (*it)->info.max_block + 1;
@@ -2812,11 +2813,11 @@ restore_covered)
             if ((*it)->info.min_block > pos)
                 update_error(it);
 
-            if ((*it)->getState() != DataPartState::Committed)
+            if ((*it)->getState() != DataPartState::Active)
             {
                 addPartContributionToColumnAndSecondaryIndexSizes(*it);
                 addPartContributionToDataVolume(*it);
-                modifyPartState(it, DataPartState::Committed);
+                modifyPartState(it, DataPartState::Active);
             }
 
             pos = (*it)->info.max_block + 1;
@@ -2930,7 +2931,7 @@ size_t MergeTreeData::getMaxPartsCountForPartitionWithState(DataPartState state)
 
 size_t MergeTreeData::getMaxPartsCountForPartition() const
 {
-    return getMaxPartsCountForPartitionWithState(DataPartState::Committed);
+    return getMaxPartsCountForPartitionWithState(DataPartState::Active);
 }
 
 
@@ -2945,7 +2946,7 @@ std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
     auto lock = lockParts();
 
     std::optional<Int64> result;
-    for (const auto & part : getDataPartsStateRange(DataPartState::Committed))
+    for (const auto & part : getDataPartsStateRange(DataPartState::Active))
     {
         if (!result || *result > part->info.getDataVersion())
             result = part->info.getDataVersion();
@@ -3051,7 +3052,7 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
 void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
 {
     auto lock = lockParts();
-    for (auto original_active_part : getDataPartsStateRange(DataPartState::Committed)) // NOLINT (copy is intended)
+    for (auto original_active_part : getDataPartsStateRange(DataPartState::Active)) // NOLINT (copy is intended)
     {
         if (part_copy->name == original_active_part->name)
         {
@@ -3076,7 +3077,7 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             data_parts_indexes.erase(active_part_it);
 
             auto part_it = data_parts_indexes.insert(part_copy).first;
-            modifyPartState(part_it, DataPartState::Committed);
+            modifyPartState(part_it, DataPartState::Active);
 
             removePartContributionToDataVolume(original_active_part);
             addPartContributionToDataVolume(part_copy);
@@ -3101,7 +3102,7 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const MergeTreePartInfo & part_info) const
 {
     auto lock = lockParts();
-    return getActiveContainingPart(part_info, DataPartState::Committed, lock);
+    return getActiveContainingPart(part_info, DataPartState::Active, lock);
 }
 
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String & part_name) const
@@ -3171,7 +3172,7 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesImpl()
     column_sizes.clear();
 
     /// Take into account only committed parts
-    auto committed_parts_range = getDataPartsStateRange(DataPartState::Committed);
+    auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
     for (const auto & part : committed_parts_range)
         addPartContributionToColumnAndSecondaryIndexSizes(part);
 }
@@ -3266,7 +3267,7 @@ void MergeTreeData::checkAlterPartitionIsPossible(
 void MergeTreeData::checkPartitionCanBeDropped(const ASTPtr & partition)
 {
     const String partition_id = getPartitionIDFromQuery(partition, getContext());
-    auto parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+    auto parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Active, partition_id);
 
     UInt64 partition_size = 0;
 
@@ -3279,7 +3280,7 @@ void MergeTreeData::checkPartitionCanBeDropped(const ASTPtr & partition)
 
 void MergeTreeData::checkPartCanBeDropped(const String & part_name)
 {
-    auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Committed});
+    auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active});
     if (!part)
         throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "No part {} in committed state", part_name);
 
@@ -3305,7 +3306,7 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
             throw Exception("Part " + partition_id + " is not exists or not active", ErrorCodes::NO_SUCH_DATA_PART);
     }
     else
-        parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+        parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Active, partition_id);
 
     auto disk = getStoragePolicy()->getDiskByName(name);
     if (!disk)
@@ -3350,7 +3351,7 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
             throw Exception("Part " + partition_id + " is not exists or not active", ErrorCodes::NO_SUCH_DATA_PART);
     }
     else
-        parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+        parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Active, partition_id);
 
     auto volume = getStoragePolicy()->getVolumeByName(name);
     if (!volume)
@@ -3532,7 +3533,7 @@ BackupEntries MergeTreeData::backup(const ASTs & partitions, ContextPtr local_co
     if (partitions.empty())
         data_parts = getDataPartsVector();
     else
-        data_parts = getDataPartsVectorInPartitions(MergeTreeDataPartState::Committed, getPartitionIDsFromQuery(partitions, local_context));
+        data_parts = getDataPartsVectorInPartitions(MergeTreeDataPartState::Active, getPartitionIDsFromQuery(partitions, local_context));
     return backupDataParts(data_parts);
 }
 
@@ -4170,20 +4171,20 @@ MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affo
 
 MergeTreeData::DataParts MergeTreeData::getDataParts() const
 {
-    return getDataParts({DataPartState::Committed});
+    return getDataParts({DataPartState::Active});
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector() const
 {
-    return getDataPartsVector({DataPartState::Committed});
+    return getDataPartsVector({DataPartState::Active});
 }
 
 MergeTreeData::DataPartPtr MergeTreeData::getAnyPartInPartition(
     const String & partition_id, DataPartsLock & /*data_parts_lock*/) const
 {
-    auto it = data_parts_by_state_and_info.lower_bound(DataPartStateAndPartitionID{DataPartState::Committed, partition_id});
+    auto it = data_parts_by_state_and_info.lower_bound(DataPartStateAndPartitionID{DataPartState::Active, partition_id});
 
-    if (it != data_parts_by_state_and_info.end() && (*it)->getState() == DataPartState::Committed && (*it)->info.partition_id == partition_id)
+    if (it != data_parts_by_state_and_info.end() && (*it)->getState() == DataPartState::Active && (*it)->info.partition_id == partition_id)
         return *it;
 
     return nullptr;
@@ -4276,7 +4277,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
                 add_rows += part->rows_count;
                 ++add_parts;
 
-                data.modifyPartState(part, DataPartState::Committed);
+                data.modifyPartState(part, DataPartState::Active);
                 data.addPartContributionToColumnAndSecondaryIndexSizes(part);
             }
         }
@@ -5723,7 +5724,7 @@ ReservationPtr MergeTreeData::balancedReservation(
             for (const auto & part : covered_parts)
                 submerging_big_parts_from_partition.insert(part->name);
 
-            for (const auto & part : getDataPartsStateRange(MergeTreeData::DataPartState::Committed))
+            for (const auto & part : getDataPartsStateRange(MergeTreeData::DataPartState::Active))
             {
                 if (part->isStoredOnDisk() && part->getBytesOnDisk() >= min_bytes_to_rebalance_partition_over_jbod
                     && part_info.partition_id == part->info.partition_id)

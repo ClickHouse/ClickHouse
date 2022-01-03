@@ -800,7 +800,7 @@ void ClientBase::onProfileEvents(Block & block)
     if (rows == 0)
         return;
 
-    if (progress_indication.print_hardware_utilization)
+    if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
     {
         const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
         const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
@@ -834,25 +834,25 @@ void ClientBase::onProfileEvents(Block & block)
         }
         auto elapsed_time = profile_events.watch.elapsedMicroseconds();
         progress_indication.updateThreadEventData(thread_times, elapsed_time);
-    }
 
-    if (profile_events.print)
-    {
-        if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms)
+        if (profile_events.print)
         {
-            initLogsOutputStream();
-            progress_indication.clearProgressOutput();
-            logs_out_stream->writeProfileEvents(block);
-            logs_out_stream->flush();
+            if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms)
+            {
+                initLogsOutputStream();
+                progress_indication.clearProgressOutput();
+                logs_out_stream->writeProfileEvents(block);
+                logs_out_stream->flush();
 
-            profile_events.last_block = {};
+                profile_events.last_block = {};
+            }
+            else
+            {
+                incrementProfileEventsBlock(profile_events.last_block, block);
+            }
         }
-        else
-        {
-            incrementProfileEventsBlock(profile_events.last_block, block);
-        }
+        profile_events.watch.restart();
     }
-    profile_events.watch.restart();
 }
 
 
@@ -1909,8 +1909,6 @@ void ClientBase::init(int argc, char ** argv)
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
     if (options.count("server_logs_file"))
         server_logs_file = options["server_logs_file"].as<std::string>();
-    if (options.count("hardware-utilization"))
-        progress_indication.print_hardware_utilization = true;
 
     query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
     profile_events.print = options.count("print-profile-events");

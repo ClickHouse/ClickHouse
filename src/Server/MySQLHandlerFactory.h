@@ -1,9 +1,9 @@
 #pragma once
 
-#include <Poco/Net/TCPServerConnectionFactory.h>
 #include <atomic>
 #include <memory>
 #include <Server/IServer.h>
+#include <Server/TCPServerConnectionFactory.h>
 
 #include <Common/config.h>
 
@@ -13,8 +13,9 @@
 
 namespace DB
 {
+class TCPServer;
 
-class MySQLHandlerFactory : public Poco::Net::TCPServerConnectionFactory
+class MySQLHandlerFactory : public TCPServerConnectionFactory
 {
 private:
     IServer & server;
@@ -43,7 +44,7 @@ public:
 
     void generateRSAKeys();
 
-    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket) override;
+    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer & tcp_server) override;
 };
 
 }
