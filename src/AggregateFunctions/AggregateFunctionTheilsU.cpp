@@ -50,8 +50,9 @@ struct TheilsUData : CrossTabData
 void registerAggregateFunctionTheilsU(AggregateFunctionFactory & factory)
 {
     factory.registerFunction(TheilsUData::getName(),
-    [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
+            assertBinary(name, argument_types);
             assertNoParameters(name, parameters);
             return std::make_shared<AggregateFunctionCrossTab<TheilsUData>>(argument_types);
         });

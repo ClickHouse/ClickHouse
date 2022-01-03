@@ -50,6 +50,7 @@ void registerAggregateFunctionCramersVBiasCorrected(AggregateFunctionFactory & f
     factory.registerFunction(CramersVBiasCorrectedData::getName(),
         [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
+            assertBinary(name, argument_types);
             assertNoParameters(name, parameters);
             return std::make_shared<AggregateFunctionCrossTab<CramersVBiasCorrectedData>>(argument_types);
         });
