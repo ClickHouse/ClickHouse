@@ -57,7 +57,6 @@ def to_date_part(self, py_func, ch_func):
                             with By(f"localizing {dt} using {tz1} timezone"):
                                 time_tz1 = pytz.timezone(tz1).localize(dt)
                             with And(f"converting {tz1} local datetime {dt} to {tz2} timezone"):
-                                time_tz2 = time_tz1.astimezone(pytz.timezone(tz2))
                             with And(f"calling the '{py_func}' method of the datetime object to get expected result"):
                                 result = eval(f"(time_tz2.{py_func}")
                             expected = f"{result}"
@@ -120,8 +119,6 @@ def to_day_of(self, py_func, ch_func):
                 for tz1, tz2 in itertools.product(timezones, timezones):
                     with When(f"{dt} {tz1} -> {tz2}"):
                         with By("Computing expected result using pytz"):
-                            time_tz1 = pytz.timezone(tz1).localize(dt)
-                            time_tz2 = time_tz1.astimezone(pytz.timezone(tz2))
                             result = eval(f"time_tz2.timetuple().{py_func}")
                             if py_func == "tm_wday":
                                 result += 1
@@ -179,8 +176,6 @@ def to_time_part(self, py_func, ch_func):
                 for tz1, tz2 in itertools.product(timezones, timezones):
                     with Step(f"{dt} {tz1} -> {tz2}"):
                         with By("computing expected result using pytz"):
-                            time_tz1 = pytz.timezone(tz1).localize(dt)
-                            time_tz2 = time_tz1.astimezone(pytz.timezone(tz2))
                             result = eval(f"time_tz2.{py_func}")
                             expected = f"{result}"
                         with And("forming a ClickHouse query"):

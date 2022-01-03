@@ -66,7 +66,6 @@ def test_usage(cluster, node_name):
 
 
 def test_incorrect_usage(cluster):
-    node1 = cluster.instances["node1"]
     node2 = cluster.instances["node3"]
     global uuids
     node2.query("""

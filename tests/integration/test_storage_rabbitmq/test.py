@@ -752,7 +752,6 @@ def test_rabbitmq_insert_headers_exchange(rabbitmq_cluster):
     insert_messages = []
 
     def onReceived(channel, method, properties, body):
-        i = 0
         insert_messages.append(body.decode())
         if (len(insert_messages) == 50):
             channel.stop_consuming()
