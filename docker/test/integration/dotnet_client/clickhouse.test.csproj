@@ -6,7 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="clickhouse.client" Version="3.1.0.379" />
+    <PackageReference Include="clickhouse.client" Version="4.1.0" />
     <PackageReference Include="dapper" Version="2.0.30" />
   </ItemGroup>
 
