@@ -23,11 +23,28 @@ namespace clickhouse.test
                 command.CommandText = "INSERT INTO test.dotnet_test VALUES({age:Int32}, {name:String})";
                 await command.ExecuteNonQueryAsync();
 
-                using var result = await connection.ExecuteReaderAsync("SELECT * FROM test.dotnet_test");
-                while (result.Read())
+                using var result1 = await connection.ExecuteReaderAsync("SELECT * FROM test.dotnet_test");
+                while (result1.Read())
                 {
-                    var values = new object[result.FieldCount];
-                    result.GetValues(values);
+                    var values = new object[result1.FieldCount];
+                    result1.GetValues(values);
+
+                    foreach (var row in values)
+                    {
+                        Console.WriteLine(row);
+                    }
+                }
+
+                using var result2 = await connection.ExecuteReaderAsync(selectSql);
+                while (result2.Read())
+                {
+                    var values = new object[result2.FieldCount];
+                    result2.GetValues(values);
+
+                    foreach (var row in values)
+                    {
+                        Console.WriteLine(row);
+                    }
                 }
             }
             catch (Exception e)

@@ -409,6 +409,9 @@ def test_golang_client(started_cluster, golang_container):
 
 
 def test_dotnet_client(started_cluster, dotnet_container):
+    with open(os.path.join(SCRIPT_DIR, 'dotnet.reference'), 'rb') as fp:
+        reference = fp.read()
+
     code, (stdout, stderr) = dotnet_container.exec_run(
         'dotnet run --host {host} --port {port} --user default --password 123 --database default'
         .format(host=started_cluster.get_instance_ip('node'), port=server_port), demux=True)
