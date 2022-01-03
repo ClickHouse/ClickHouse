@@ -6,6 +6,7 @@
 
 #include <Common/ArenaAllocator.h>
 #include <Common/assert_cast.h>
+#include <base/arithmeticOverflow.h>
 
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -134,7 +135,7 @@ template <typename T, typename Data>
 class AggregateFunctionIntervalLengthSum final : public IAggregateFunctionDataHelper<Data, AggregateFunctionIntervalLengthSum<T, Data>>
 {
 private:
-    static auto length(typename Data::Segment segment)
+    static NO_SANITIZE_UNDEFINED auto length(typename Data::Segment segment)
     {
         return segment.second - segment.first;
     }
