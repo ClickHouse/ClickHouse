@@ -69,7 +69,7 @@ class HDFSApi(object):
 
             os.environ["KRB5_CONFIG"] = instantiated_krb_conf
 
-            cmd = "(kinit -R -t {keytab} -k {principal} || (sleep 5 && kinit -R -t {keytab} -k {principal})) ; klist".format(instantiated_krb_conf=instantiated_krb_conf, keytab=self.keytab, principal=self.principal)
+            cmd = "(kinit -R -t {keytab} -k {principal} || (sleep 5 && kinit -R -t {keytab} -k {principal})) ; klist".format(keytab=self.keytab, principal=self.principal)
 
             start = time.time()
 
@@ -137,7 +137,7 @@ class HDFSApi(object):
         response = self.req_wrapper(requests.put, 307,
             url="{protocol}://{ip}:{port}/webhdfs/v1{path}?op=CREATE".format(protocol=self.protocol, ip=self.hdfs_ip,
                                                                             port=self.proxy_port,
-                                                                            path=path, user=self.user),
+                                                                            path=path),
             allow_redirects=False,
             headers={'host': str(self.hdfs_ip)},
             params={'overwrite' : 'true'},
