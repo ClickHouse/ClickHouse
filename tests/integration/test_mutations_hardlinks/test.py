@@ -123,6 +123,7 @@ def test_delete_and_drop_mutation(started_cluster):
                 break
         except:
             print("Result", result)
+            pass
 
         time.sleep(0.5)
 
