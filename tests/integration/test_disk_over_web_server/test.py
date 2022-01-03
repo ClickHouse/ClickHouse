@@ -48,9 +48,9 @@ def test_usage(cluster, node_name):
             ATTACH TABLE test{} UUID '{}'
             (id Int32) ENGINE = MergeTree() ORDER BY id
             SETTINGS storage_policy = 'web';
-        """.format(i, uuids[i], i, i))
+        """.format(i, uuids[i]))
 
-        result = node2.query("SELECT * FROM test{} settings max_threads=20".format(i))
+        node2.query("SELECT * FROM test{} settings max_threads=20".format(i))
 
         result = node2.query("SELECT count() FROM test{}".format(i))
         assert(int(result) == 500000 * (i+1))

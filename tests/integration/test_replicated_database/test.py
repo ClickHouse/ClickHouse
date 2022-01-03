@@ -377,8 +377,8 @@ def test_recover_staled_replica(started_cluster):
 
         inner_table = ".inner_id." + dummy_node.query_with_retry("SELECT uuid FROM system.tables WHERE database='recover' AND name='mv1'").strip()
         main_node.query_with_retry("ALTER TABLE recover.`{}` MODIFY COLUMN n int DEFAULT 42".format(inner_table), settings=settings)
-        main_node.query_with_retry("ALTER TABLE recover.mv1 MODIFY QUERY SELECT m FROM recover.rmt1".format(inner_table), settings=settings)
-        main_node.query_with_retry("RENAME TABLE recover.mv2 TO recover.mv3".format(inner_table), settings=settings)
+        main_node.query_with_retry("ALTER TABLE recover.mv1 MODIFY QUERY SELECT m FROM recover.rmt1", settings=settings)
+        main_node.query_with_retry("RENAME TABLE recover.mv2 TO recover.mv3", settings=settings)
 
         main_node.query_with_retry("CREATE TABLE recover.tmp AS recover.m1", settings=settings)
         main_node.query_with_retry("DROP TABLE recover.tmp", settings=settings)
