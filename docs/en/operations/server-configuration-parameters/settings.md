@@ -693,7 +693,7 @@ Default value: `100`.
 
 ## max_concurrent_insert_queries {#max-concurrent-insert-queries}
 
-The maximum number of simultaneously processed insert queries.
+The maximum number of simultaneously processed `INSERT` queries.
 
 !!! info "Note"
     These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
@@ -713,7 +713,7 @@ Default value: `0`.
 
 ## max_concurrent_select_queries {#max-concurrent-select-queries}
 
-The maximum number of simultaneously processed select queries.
+The maximum number of simultaneously processed `SELECT` queries.
 
 !!! info "Note"
     These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
