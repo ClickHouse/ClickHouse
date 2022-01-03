@@ -1,6 +1,7 @@
 #include "IMergeTreeDataPart.h"
 
 #include <optional>
+#include <string_view>
 #include <Core/Defines.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
@@ -1615,7 +1616,7 @@ String IMergeTreeDataPart::getUniqueId() const
 }
 
 
-String IMergeTreeDataPart::getZeroLevelPartBlockID(const String& token) const
+String IMergeTreeDataPart::getZeroLevelPartBlockID(std::string_view token) const
 {
     if (info.level != 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get block id for non zero level part {}", name);
@@ -1627,7 +1628,7 @@ String IMergeTreeDataPart::getZeroLevelPartBlockID(const String& token) const
     }
     else
     {
-        hash.update(token);
+        hash.update(token.data(), token.size());
     }
 
     union
