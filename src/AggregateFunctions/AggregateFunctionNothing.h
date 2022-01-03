@@ -64,12 +64,10 @@ public:
     {
     }
 
-
     void serialize(ConstAggregateDataPtr __restrict, WriteBuffer & buf, std::optional<size_t>) const override
     {
         writeChar('\0', buf);
     }
-
 
     void deserialize(AggregateDataPtr, ReadBuffer & buf, std::optional<size_t>, Arena *) const override
     {
