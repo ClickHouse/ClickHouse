@@ -200,7 +200,6 @@ def test_moves_work_after_storage_policy_change(started_cluster, name, engine):
             """ALTER TABLE {name} MODIFY TTL now()-3600 TO DISK 'jbod1', d1 TO DISK 'external'""".format(name=name))
 
         wait_expire_1 = 12
-        wait_expire_2 = 4
         time_1 = time.time() + wait_expire_1
 
         data = []  # 10MB in total

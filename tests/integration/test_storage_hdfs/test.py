@@ -268,8 +268,6 @@ def test_truncate_table(started_cluster):
 
 
 def test_partition_by(started_cluster):
-    hdfs_api = started_cluster.hdfs_api
-
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     file_name = "test_{_partition_id}"
     partition_by = "column3"
@@ -296,8 +294,6 @@ def test_partition_by(started_cluster):
 
 
 def test_seekable_formats(started_cluster):
-    hdfs_api = started_cluster.hdfs_api
-
     table_function = f"hdfs('hdfs://hdfs1:9000/parquet', 'Parquet', 'a Int32, b String')"
     node1.query(f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(5000000)")
 

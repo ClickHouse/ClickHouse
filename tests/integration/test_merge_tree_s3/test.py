@@ -188,7 +188,6 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical, node_name):
 def test_alter_table_columns(cluster, node_name):
     node = cluster.instances[node_name]
     create_table(node, "s3_test")
-    minio = cluster.minio_client
 
     node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-03', 4096)))
     node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-03', 4096, -1)))
