@@ -135,7 +135,7 @@ template <typename T, typename Data>
 class AggregateFunctionIntervalLengthSum final : public IAggregateFunctionDataHelper<Data, AggregateFunctionIntervalLengthSum<T, Data>>
 {
 private:
-    static NO_SANITIZE_UNDEFINED auto length(typename Data::Segment segment)
+    static auto NO_SANITIZE_UNDEFINED length(typename Data::Segment segment)
     {
         return segment.second - segment.first;
     }
