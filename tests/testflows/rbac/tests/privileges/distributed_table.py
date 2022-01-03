@@ -216,7 +216,7 @@ def create_with_privilege(self, user_name, grant_target_name, node=None):
     table0_name = f"table0_{getuid()}"
     table1_name = f"table1_{getuid()}"
 
-    exitcode, message = errors.not_enough_privileges(name=f"{user_name}")
+    errors.not_enough_privileges(name=f"{user_name}")
     cluster = self.context.cluster_name
 
     if node is None:
@@ -402,7 +402,7 @@ def select_with_privilege(self, user_name, grant_target_name, node=None):
     table0_name = f"table0_{getuid()}"
     table1_name = f"table1_{getuid()}"
 
-    exitcode, message = errors.not_enough_privileges(name=f"{user_name}")
+    errors.not_enough_privileges(name=f"{user_name}")
     cluster = self.context.cluster_name
 
     if node is None:
