@@ -253,7 +253,7 @@ class ClickhouseIntegrationTestsRunner:
                         logging.info("Executing installation cmd %s", cmd)
                         retcode = subprocess.Popen(cmd, shell=True, stderr=log, stdout=log).wait()
                         if retcode == 0:
-                            logging.info("Instsallation of %s successfull", full_path)
+                            logging.info("Installation of %s successfull", full_path)
                         else:
                             raise Exception("Installation of %s failed", full_path)
                     break
