@@ -112,8 +112,6 @@ def decrypt_unique(self):
     """
     node = self.context.node
     key = f"{'1' * 64}"
-    iv = f"{'2' * 64}"
-    aad = "some random aad"
 
     with table("user_table", """
             CREATE TABLE {name}

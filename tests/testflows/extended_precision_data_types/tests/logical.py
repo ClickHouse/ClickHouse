@@ -16,8 +16,6 @@ Examples_list_dec =  [tuple(list(func)+[Name(f'{func[0]} - Decimal256')]) for fu
 def log_int_inline(self, func, int_type, min, max, node=None):
     """Check logical functions with Int128, Int256, and UInt256 using inline tests.
     """
-    table_name = f'table_{getuid()}'
-
     if node is None:
         node = self.context.node
 
