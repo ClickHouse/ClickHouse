@@ -38,12 +38,6 @@ def golang_container():
         ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
     yield docker.DockerClient(base_url='unix:///var/run/docker.sock', version=cluster.docker_api_version, timeout=600).containers.get(cluster.project_name + '_golang1_1')
 
-@pytest.fixture(scope='module')
-def dotnet_container():
-    docker_compose = os.path.join(DOCKER_COMPOSE_PATH, 'docker_compose_dotnet_client.yml')
-    run_and_check(
-        ['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--no-build'])
-    yield docker.from_env().containers.get(cluster.project_name + '_dotnet1_1')
 
 @pytest.fixture(scope='module')
 def php_container():
@@ -404,18 +398,6 @@ def test_golang_client(started_cluster, golang_container):
     code, (stdout, stderr) = golang_container.exec_run(
         './main --host {host} --port {port} --user user_with_double_sha1 --password abacaba --database '
         'default'.format(host=started_cluster.get_instance_ip('node'), port=server_port), demux=True)
-    assert code == 0
-    assert stdout == reference
-
-
-def test_dotnet_client(started_cluster, dotnet_container):
-    with open(os.path.join(SCRIPT_DIR, 'dotnet.reference'), 'rb') as fp:
-        reference = fp.read()
-
-    code, (stdout, stderr) = dotnet_container.exec_run(
-        'dotnet run --host {host} --port {port} --user default --password 123 --database default'
-        .format(host=started_cluster.get_instance_ip('node'), port=server_port), demux=True)
-
     assert code == 0
     assert stdout == reference
 
