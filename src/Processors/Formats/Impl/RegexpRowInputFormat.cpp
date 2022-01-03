@@ -14,13 +14,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-RegexpRowInputFormat::RegexpRowInputFormat(
-        ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
-        : IRowInputFormat(header_, buf, std::move(params_))
-        , buf(in_)
-        , format_settings(format_settings_)
-        , escaping_rule(format_settings_.regexp.escaping_rule)
-        , regexp(format_settings_.regexp.regexp)
+RegexpFieldExtractor::RegexpFieldExtractor(const FormatSettings & format_settings) : regexp(format_settings.regexp.regexp), skip_unmatched(format_settings.regexp.skip_unmatched)
 {
     size_t fields_count = regexp.NumberOfCapturingGroups();
     matched_fields.resize(fields_count);
@@ -35,45 +29,8 @@ RegexpRowInputFormat::RegexpRowInputFormat(
     }
 }
 
-
-void RegexpRowInputFormat::resetParser()
+bool RegexpFieldExtractor::parseRow(PeekableReadBuffer & buf)
 {
-    IRowInputFormat::resetParser();
-    buf.reset();
-}
-
-bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
-{
-    const auto & type = getPort().getHeader().getByPosition(index).type;
-    ReadBuffer field_buf(const_cast<char *>(matched_fields[index].data()), matched_fields[index].size(), 0);
-    try
-    {
-        return deserializeFieldByEscapingRule(type, serializations[index], *columns[index], field_buf, escaping_rule, format_settings);
-    }
-    catch (Exception & e)
-    {
-        e.addMessage("(while reading the value of column " +  getPort().getHeader().getByPosition(index).name + ")");
-        throw;
-    }
-}
-
-void RegexpRowInputFormat::readFieldsFromMatch(MutableColumns & columns, RowReadExtension & ext)
-{
-    if (matched_fields.size() != columns.size())
-        throw Exception("The number of matched fields in line doesn't match the number of columns.", ErrorCodes::INCORRECT_DATA);
-
-    ext.read_columns.assign(columns.size(), false);
-    for (size_t columns_index = 0; columns_index < columns.size(); ++columns_index)
-    {
-        ext.read_columns[columns_index] = readField(columns_index, columns);
-    }
-}
-
-bool RegexpRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
-{
-    if (buf.eof())
-        return false;
-
     PeekableReadBufferCheckpoint checkpoint{buf};
 
     size_t line_size = 0;
@@ -89,25 +46,112 @@ bool RegexpRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & 
     buf.rollbackToCheckpoint();
 
     bool match = RE2::FullMatchN(re2::StringPiece(buf.position(), line_size), regexp, re2_arguments_ptrs.data(), re2_arguments_ptrs.size());
-    bool read_line = true;
 
-    if (!match)
-    {
-        if (!format_settings.regexp.skip_unmatched)
-            throw Exception("Line \"" + std::string(buf.position(), line_size) + "\" doesn't match the regexp.", ErrorCodes::INCORRECT_DATA);
-        read_line = false;
-    }
-
-    if (read_line)
-        readFieldsFromMatch(columns, ext);
+    if (!match && !skip_unmatched)
+        throw Exception("Line \"" + std::string(buf.position(), line_size) + "\" doesn't match the regexp.", ErrorCodes::INCORRECT_DATA);
 
     buf.position() += line_size;
-
     checkChar('\r', buf);
     if (!buf.eof() && !checkChar('\n', buf))
         throw Exception("No \\n after \\r at the end of line.", ErrorCodes::INCORRECT_DATA);
 
+    return match;
+}
+
+RegexpRowInputFormat::RegexpRowInputFormat(
+    ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
+    : RegexpRowInputFormat(std::make_unique<PeekableReadBuffer>(in_), header_, params_, format_settings_)
+{
+}
+
+RegexpRowInputFormat::RegexpRowInputFormat(
+        std::unique_ptr<PeekableReadBuffer> buf_, const Block & header_, Params params_, const FormatSettings & format_settings_)
+        : IRowInputFormat(header_, *buf_, std::move(params_))
+        , buf(std::move(buf_))
+        , format_settings(format_settings_)
+        , escaping_rule(format_settings_.regexp.escaping_rule)
+        , field_extractor(RegexpFieldExtractor(format_settings_))
+{
+}
+
+void RegexpRowInputFormat::resetParser()
+{
+    IRowInputFormat::resetParser();
+    buf->reset();
+}
+
+bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
+{
+    const auto & type = getPort().getHeader().getByPosition(index).type;
+    auto matched_field = field_extractor.getField(index);
+    ReadBuffer field_buf(const_cast<char *>(matched_field.data()), matched_field.size(), 0);
+    try
+    {
+        return deserializeFieldByEscapingRule(type, serializations[index], *columns[index], field_buf, escaping_rule, format_settings);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("(while reading the value of column " +  getPort().getHeader().getByPosition(index).name + ")");
+        throw;
+    }
+}
+
+void RegexpRowInputFormat::readFieldsFromMatch(MutableColumns & columns, RowReadExtension & ext)
+{
+    if (field_extractor.getMatchedFieldsSize() != columns.size())
+        throw Exception("The number of matched fields in line doesn't match the number of columns.", ErrorCodes::INCORRECT_DATA);
+
+    ext.read_columns.assign(columns.size(), false);
+    for (size_t columns_index = 0; columns_index < columns.size(); ++columns_index)
+    {
+        ext.read_columns[columns_index] = readField(columns_index, columns);
+    }
+}
+
+bool RegexpRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
+{
+    if (buf->eof())
+        return false;
+
+    if (field_extractor.parseRow(*buf))
+        readFieldsFromMatch(columns, ext);
     return true;
+}
+
+void RegexpRowInputFormat::setReadBuffer(ReadBuffer & in_)
+{
+    buf = std::make_unique<PeekableReadBuffer>(in_);
+    IInputFormat::setReadBuffer(*buf);
+}
+
+RegexpSchemaReader::RegexpSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, ContextPtr context_)
+    : IRowSchemaReader(
+        buf,
+        format_settings_.max_rows_to_read_for_schema_inference,
+        getDefaultDataTypeForEscapingRule(format_settings_.regexp.escaping_rule))
+    , format_settings(format_settings_)
+    , field_extractor(format_settings)
+    , buf(in_)
+    , context(context_)
+{
+}
+
+DataTypes RegexpSchemaReader::readRowAndGetDataTypes()
+{
+    if (buf.eof())
+        return {};
+
+    field_extractor.parseRow(buf);
+
+    DataTypes data_types;
+    data_types.reserve(field_extractor.getMatchedFieldsSize());
+    for (size_t i = 0; i != field_extractor.getMatchedFieldsSize(); ++i)
+    {
+        String field(field_extractor.getField(i));
+        data_types.push_back(determineDataTypeByEscapingRule(field, format_settings, format_settings.regexp.escaping_rule, context));
+    }
+
+    return data_types;
 }
 
 void registerInputFormatRegexp(FormatFactory & factory)
@@ -159,6 +203,14 @@ static std::pair<bool, size_t> fileSegmentationEngineRegexpImpl(ReadBuffer & in,
 void registerFileSegmentationEngineRegexp(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngine("Regexp", &fileSegmentationEngineRegexpImpl);
+}
+
+void registerRegexpSchemaReader(FormatFactory & factory)
+{
+    factory.registerSchemaReader("Regexp", [](ReadBuffer & buf, const FormatSettings & settings, ContextPtr context)
+    {
+        return std::make_shared<RegexpSchemaReader>(buf, settings, context);
+    });
 }
 
 }

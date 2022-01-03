@@ -19,7 +19,6 @@
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 #include <Storages/MergeTree/DataPartsExchange.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
-#include <Storages/MergeTree/LeaderElection.h>
 #include <Storages/MergeTree/PartMovesBetweenShardsOrchestrator.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/MergeFromLogEntryTask.h>
@@ -246,7 +245,7 @@ public:
     inline String getReplicaName() const { return replica_name; }
 
     /// Restores table metadata if ZooKeeper lost it.
-    /// Used only on restarted readonly replicas (not checked). All active (Committed) parts are moved to detached/
+    /// Used only on restarted readonly replicas (not checked). All active (Active) parts are moved to detached/
     /// folder and attached. Parts in all other states are just moved to detached/ folder.
     void restoreMetadataInZooKeeper();
 
@@ -263,6 +262,8 @@ public:
     }
 
     bool createEmptyPartInsteadOfLost(zkutil::ZooKeeperPtr zookeeper, const String & lost_part_name);
+
+    static const String getDefaultZooKeeperName() { return default_zookeeper_name; }
 
 private:
     std::atomic_bool are_restoring_replica {false};
@@ -320,7 +321,6 @@ private:
       * It can be false only when old ClickHouse versions are working on the same cluster, because now we allow multiple leaders.
       */
     std::atomic<bool> is_leader {false};
-    zkutil::LeaderElectionPtr leader_election;
 
     InterserverIOEndpointPtr data_parts_exchange_endpoint;
 
@@ -394,7 +394,7 @@ private:
     ThrottlerPtr replicated_sends_throttler;
 
     template <class Func>
-    void foreachCommittedParts(Func && func, bool select_sequential_consistency) const;
+    void foreachActiveParts(Func && func, bool select_sequential_consistency) const;
 
     /** Creates the minimum set of nodes in ZooKeeper and create first replica.
       * Returns true if was created, false if exists.
@@ -438,7 +438,7 @@ private:
 
     String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
 
-    /// Accepts a PreCommitted part, atomically checks its checksums with ones on other replicas and commit the part
+    /// Accepts a PreActive part, atomically checks its checksums with ones on other replicas and commit the part
     DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const DataPartPtr & part);
 
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;
@@ -514,15 +514,10 @@ private:
 
     bool processQueueEntry(ReplicatedMergeTreeQueue::SelectedEntryPtr entry);
 
-    /// Postcondition:
-    /// either leader_election is fully initialized (node in ZK is created and the watching thread is launched)
-    /// or an exception is thrown and leader_election is destroyed.
-    void enterLeaderElection();
-
-    /// Postcondition:
-    /// is_leader is false, merge_selecting_thread is stopped, leader_election is nullptr.
-    /// leader_election node in ZK is either deleted, or the session is marked expired.
-    void exitLeaderElection();
+    /// Start being leader (if not disabled by setting).
+    /// Since multi-leaders are allowed, it just sets is_leader flag.
+    void startBeingLeader();
+    void stopBeingLeader();
 
     /** Selects the parts to merge and writes to the log.
       */
@@ -724,7 +719,6 @@ private:
 
     std::unique_ptr<MergeTreeSettings> getDefaultSettings() const override;
 
-    std::set<String> getPartitionIdsAffectedByCommands(const MutationCommands & commands, ContextPtr query_context) const;
     PartitionBlockNumbersHolder allocateBlockNumbersInAffectedPartitions(
         const MutationCommands & commands, ContextPtr query_context, const zkutil::ZooKeeperPtr & zookeeper) const;
 

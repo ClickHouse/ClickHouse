@@ -161,7 +161,7 @@ bool PostgreSQLDictionarySource::supportsSelectiveLoad() const
 
 DictionarySourcePtr PostgreSQLDictionarySource::clone() const
 {
-    return std::make_unique<PostgreSQLDictionarySource>(*this);
+    return std::make_shared<PostgreSQLDictionarySource>(*this);
 }
 
 

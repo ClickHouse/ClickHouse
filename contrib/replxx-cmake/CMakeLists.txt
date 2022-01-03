@@ -8,7 +8,7 @@ if (NOT ENABLE_REPLXX)
     add_library(replxx INTERFACE)
     target_compile_definitions(replxx INTERFACE USE_REPLXX=0)
 
-    message (STATUS "Not using replxx (Beware! Runtime fallback to readline is possible!)")
+    message (STATUS "Not using replxx")
     return()
 endif()
 

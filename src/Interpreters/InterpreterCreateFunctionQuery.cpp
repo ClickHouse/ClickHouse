@@ -57,9 +57,14 @@ BlockIO InterpreterCreateFunctionQuery::execute()
 
 void InterpreterCreateFunctionQuery::validateFunction(ASTPtr function, const String & name)
 {
-    const auto * args_tuple = function->as<ASTFunction>()->arguments->children.at(0)->as<ASTFunction>();
+    auto & lambda_function = function->as<ASTFunction &>();
+    auto & lambda_function_expression_list = lambda_function.arguments->children;
+
+    const auto & tuple_function_arguments = lambda_function_expression_list.at(0)->as<ASTFunction &>();
+
     std::unordered_set<String> arguments;
-    for (const auto & argument : args_tuple->arguments->children)
+
+    for (const auto & argument : tuple_function_arguments.arguments->children)
     {
         const auto & argument_name = argument->as<ASTIdentifier>()->name();
         auto [_, inserted] = arguments.insert(argument_name);
@@ -67,7 +72,7 @@ void InterpreterCreateFunctionQuery::validateFunction(ASTPtr function, const Str
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Identifier {} already used as function parameter", argument_name);
     }
 
-    ASTPtr function_body = function->as<ASTFunction>()->children.at(0)->children.at(1);
+    ASTPtr function_body = lambda_function_expression_list.at(1);
     validateFunctionRecursiveness(function_body, name);
 }
 
@@ -82,5 +87,4 @@ void InterpreterCreateFunctionQuery::validateFunctionRecursiveness(ASTPtr node, 
         validateFunctionRecursiveness(child, function_to_create);
     }
 }
-
 }

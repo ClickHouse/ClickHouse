@@ -1,20 +1,30 @@
 #include "ExternalQueryBuilder.h"
+
+#include <boost/range/join.hpp>
+
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <boost/range/join.hpp>
-#include "DictionaryStructure.h"
-#include "writeParenthesisedString.h"
+#include <Dictionaries/DictionaryStructure.h>
 
 
 namespace DB
 {
+
+static inline void writeParenthesisedString(const String & s, WriteBuffer & buf)
+{
+    writeChar('(', buf);
+    writeString(s, buf);
+    writeChar(')', buf);
+}
+
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
 }
 
+static constexpr std::string_view CONDITION_PLACEHOLDER_TO_REPLACE_VALUE = "{condition}";
 
 ExternalQueryBuilder::ExternalQueryBuilder(
     const DictionaryStructure & dict_struct_,
@@ -215,7 +225,7 @@ std::string ExternalQueryBuilder::composeUpdateQuery(const std::string & update_
     {
         writeString(query, out);
 
-        auto condition_position = query.find("{condition}");
+        auto condition_position = query.find(CONDITION_PLACEHOLDER_TO_REPLACE_VALUE);
         if (condition_position == std::string::npos)
         {
             writeString(" WHERE ", out);
@@ -230,7 +240,7 @@ std::string ExternalQueryBuilder::composeUpdateQuery(const std::string & update_
         const auto & condition_value = condition_value_buffer.str();
 
         auto query_copy = query;
-        query_copy.replace(condition_position, condition_value.size(), condition_value);
+        query_copy.replace(condition_position, CONDITION_PLACEHOLDER_TO_REPLACE_VALUE.size(), condition_value);
 
         return query_copy;
     }
@@ -300,7 +310,7 @@ std::string ExternalQueryBuilder::composeLoadIdsQuery(const std::vector<UInt64> 
     {
         writeString(query, out);
 
-        auto condition_position = query.find("{condition}");
+        auto condition_position = query.find(CONDITION_PLACEHOLDER_TO_REPLACE_VALUE);
         if (condition_position == std::string::npos)
         {
             writeString(" WHERE ", out);
@@ -315,7 +325,7 @@ std::string ExternalQueryBuilder::composeLoadIdsQuery(const std::vector<UInt64> 
         const auto & condition_value = condition_value_buffer.str();
 
         auto query_copy = query;
-        query_copy.replace(condition_position, condition_value.size(), condition_value);
+        query_copy.replace(condition_position, CONDITION_PLACEHOLDER_TO_REPLACE_VALUE.size(), condition_value);
 
         return query_copy;
     }
@@ -391,7 +401,7 @@ std::string ExternalQueryBuilder::composeLoadKeysQuery(
     {
         writeString(query, out);
 
-        auto condition_position = query.find("{condition}");
+        auto condition_position = query.find(CONDITION_PLACEHOLDER_TO_REPLACE_VALUE);
         if (condition_position == std::string::npos)
         {
             writeString(" WHERE ", out);
@@ -406,7 +416,7 @@ std::string ExternalQueryBuilder::composeLoadKeysQuery(
         const auto & condition_value = condition_value_buffer.str();
 
         auto query_copy = query;
-        query_copy.replace(condition_position, condition_value.size(), condition_value);
+        query_copy.replace(condition_position, CONDITION_PLACEHOLDER_TO_REPLACE_VALUE.size(), condition_value);
 
         return query_copy;
     }

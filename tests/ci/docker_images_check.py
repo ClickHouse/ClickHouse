@@ -6,6 +6,8 @@ import os
 import time
 import shutil
 from github import Github
+
+from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP
 from s3_helper import S3Helper
 from pr_info import PRInfo
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
@@ -157,8 +159,8 @@ if __name__ == "__main__":
 
     stopwatch = Stopwatch()
 
-    repo_path = os.getenv("GITHUB_WORKSPACE", os.path.abspath("../../"))
-    temp_path = os.path.join(os.getenv("RUNNER_TEMP", os.path.abspath("./temp")), 'docker_images_check')
+    repo_path = GITHUB_WORKSPACE
+    temp_path = os.path.join(RUNNER_TEMP, 'docker_images_check')
     dockerhub_password = get_parameter_from_ssm('dockerhub_robot_password')
 
     if os.path.exists(temp_path):
@@ -167,10 +169,7 @@ if __name__ == "__main__":
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
-        event = json.load(event_file)
-
-    pr_info = PRInfo(event, False, True)
+    pr_info = PRInfo(need_changed_files=True)
     changed_images, dockerhub_repo_name = get_changed_docker_images(pr_info, repo_path, "docker/images.json")
     logging.info("Has changed images %s", ', '.join([str(image[0]) for image in changed_images]))
     pr_commit_version = str(pr_info.number) + '-' + pr_info.sha

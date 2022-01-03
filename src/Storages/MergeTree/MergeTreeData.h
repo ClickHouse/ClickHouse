@@ -233,7 +233,7 @@ public:
         const VolumePtr & volume, const String & relative_path, const IMergeTreeDataPart * parent_part = nullptr) const;
 
     /// Auxiliary object to add a set of parts into the working set in two steps:
-    /// * First, as PreCommitted parts (the parts are ready, but not yet in the active set).
+    /// * First, as PreActive parts (the parts are ready, but not yet in the active set).
     /// * Next, if commit() is called, the parts are added to the active set and the parts that are
     ///   covered by them are marked Outdated.
     /// If neither commit() nor rollback() was called, the destructor rollbacks the operation.
@@ -288,7 +288,8 @@ public:
         {
         }
 
-        void addPart(const String & old_name, const String & new_name);
+        /// Adds part to rename. Both names are relative to relative_data_path.
+        void addPart(const String & old_name, const String & new_name, const DiskPtr & disk);
 
         /// Renames part from old_name to new_name
         void tryRenameAll();
@@ -296,10 +297,17 @@ public:
         /// Renames all added parts from new_name to old_name if old name is not empty
         ~PartsTemporaryRename();
 
+        struct RenameInfo
+        {
+            String old_name;
+            String new_name;
+            /// Disk cannot be changed
+            DiskPtr disk;
+        };
+
         const MergeTreeData & storage;
         const String source_dir;
-        std::vector<std::pair<String, String>> old_and_new_names;
-        std::unordered_map<String, PathWithDisk> old_part_name_to_path_and_disk;
+        std::vector<RenameInfo> old_and_new_names;
         bool renamed = false;
     };
 
@@ -437,14 +445,14 @@ public:
     /// Returns all detached parts
     DetachedPartsInfo getDetachedParts() const;
 
-    void validateDetachedPartName(const String & name) const;
+    static void validateDetachedPartName(const String & name);
 
     void dropDetached(const ASTPtr & partition, bool part, ContextPtr context);
 
     MutableDataPartsVector tryLoadPartsToAttach(const ASTPtr & partition, bool attach_part,
             ContextPtr context, PartsTemporaryRename & renamed_parts);
 
-    /// Returns Committed parts
+    /// Returns Active parts
     DataParts getDataParts() const;
     DataPartsVector getDataPartsVector() const;
 
@@ -486,7 +494,7 @@ public:
     /// Renames temporary part to a permanent part and adds it to the parts set.
     /// It is assumed that the part does not intersect with existing parts.
     /// If increment != nullptr, part index is determining using increment. Otherwise part index remains unchanged.
-    /// If out_transaction != nullptr, adds the part in the PreCommitted state (the part will be added to the
+    /// If out_transaction != nullptr, adds the part in the PreActive state (the part will be added to the
     /// active set later with out_transaction->commit()).
     /// Else, commits the part immediately.
     /// Returns true if part was added. Returns false if part is covered by bigger part.
@@ -510,7 +518,7 @@ public:
     void removePartsFromWorkingSetImmediatelyAndSetTemporaryState(const DataPartsVector & remove);
 
     /// Removes parts from the working set parts.
-    /// Parts in add must already be in data_parts with PreCommitted, Committed, or Outdated states.
+    /// Parts in add must already be in data_parts with PreActive, Active, or Outdated states.
     /// If clear_without_timeout is true, the parts will be deleted at once, or during the next call to
     /// clearOldParts (ignoring old_parts_lifetime).
     void removePartsFromWorkingSet(const DataPartsVector & remove, bool clear_without_timeout, DataPartsLock * acquired_lock = nullptr);
@@ -539,6 +547,9 @@ public:
 
     /// Removes parts from data_parts, they should be in Deleting state
     void removePartsFinally(const DataPartsVector & parts);
+
+    /// When WAL is not enabled, the InMemoryParts need to be persistent.
+    void flushAllInMemoryPartsIfNeeded();
 
     /// Delete irrelevant parts from memory and disk.
     /// If 'force' - don't wait for old_parts_lifetime.
@@ -677,6 +688,7 @@ public:
     /// For ATTACH/DETACH/DROP PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr context) const;
     std::unordered_set<String> getPartitionIDsFromQuery(const ASTs & asts, ContextPtr context) const;
+    std::set<String> getPartitionIdsAffectedByCommands(const MutationCommands & commands, ContextPtr query_context) const;
 
     /// Extracts MergeTreeData of other *MergeTree* storage
     ///  and checks that their structure suitable for ALTER TABLE ATTACH PARTITION FROM
@@ -711,19 +723,13 @@ public:
     /// Get table path on disk
     String getFullPathOnDisk(const DiskPtr & disk) const;
 
-    /// Get disk where part is located.
-    /// `additional_path` can be set if part is not located directly in table data path (e.g. 'detached/')
-    DiskPtr getDiskForPart(const String & part_name, const String & additional_path = "") const;
-
-    /// Get full path for part. Uses getDiskForPart and returns the full relative path.
-    /// `additional_path` can be set if part is not located directly in table data path (e.g. 'detached/')
-    std::optional<String> getFullRelativePathForPart(const String & part_name, const String & additional_path = "") const;
+    /// Looks for detached part on all disks,
+    /// returns pointer to the disk where part is found or nullptr (the second function throws an exception)
+    DiskPtr tryGetDiskForDetachedPart(const String & part_name) const;
+    DiskPtr getDiskForDetachedPart(const String & part_name) const;
 
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override;
-
-    using PathsWithDisks = std::vector<PathWithDisk>;
-    PathsWithDisks getRelativeDataPathsWithDisks() const;
 
     /// Reserves space at least 1MB.
     ReservationPtr reserveSpace(UInt64 expected_size) const;
@@ -1043,7 +1049,7 @@ protected:
     /// If there is no part in the partition with ID `partition_id`, returns empty ptr. Should be called under the lock.
     DataPartPtr getAnyPartInPartition(const String & partition_id, DataPartsLock & data_parts_lock) const;
 
-    /// Return parts in the Committed set that are covered by the new_part_info or the part that covers it.
+    /// Return parts in the Active set that are covered by the new_part_info or the part that covers it.
     /// Will check that the new part doesn't already exist and that it doesn't intersect existing part.
     DataPartsVector getActivePartsToReplace(
         const MergeTreePartInfo & new_part_info,

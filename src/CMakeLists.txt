@@ -106,6 +106,10 @@ if (USE_AWS_S3)
     add_headers_and_sources(dbms Disks/S3)
 endif()
 
+if (USE_AZURE_BLOB_STORAGE)
+    add_headers_and_sources(dbms Disks/AzureBlobStorage)
+endif()
+
 if (USE_HDFS)
     add_headers_and_sources(dbms Storages/HDFS)
     add_headers_and_sources(dbms Disks/HDFS)
@@ -209,6 +213,7 @@ add_object_library(clickhouse_storages_mysql Storages/MySQL)
 add_object_library(clickhouse_storages_distributed Storages/Distributed)
 add_object_library(clickhouse_storages_mergetree Storages/MergeTree)
 add_object_library(clickhouse_storages_liveview Storages/LiveView)
+add_object_library(clickhouse_storages_windowview Storages/WindowView)
 add_object_library(clickhouse_client Client)
 add_object_library(clickhouse_bridge Bridge)
 add_object_library(clickhouse_server Server)
@@ -449,6 +454,11 @@ if (USE_AWS_S3)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${AWS_S3_INCLUDE_DIR})
 endif()
 
+if (USE_AZURE_BLOB_STORAGE)
+    target_link_libraries (clickhouse_common_io PUBLIC ${AZURE_BLOB_STORAGE_LIBRARY})
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${AZURE_SDK_INCLUDES})
+endif()
+
 if (USE_S2_GEOMETRY)
     dbms_target_link_libraries (PUBLIC ${S2_GEOMETRY_LIBRARY})
     dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${S2_GEOMETRY_INCLUDE_DIR})
@@ -516,6 +526,16 @@ if (USE_BZIP2)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${BZIP2_INCLUDE_DIR})
 endif()
 
+if(USE_SIMDJSON)
+    dbms_target_link_libraries(PRIVATE simdjson)
+endif()
+
+if(USE_RAPIDJSON)
+    dbms_target_include_directories(SYSTEM PRIVATE ${RAPIDJSON_INCLUDE_DIR})
+endif()
+
+dbms_target_link_libraries(PUBLIC consistent-hashing)
+
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
 
 if (ENABLE_TESTS AND USE_GTEST)
@@ -547,6 +567,7 @@ if (ENABLE_TESTS AND USE_GTEST)
         clickhouse_storages_system
         dbms
         clickhouse_common_zookeeper
+        clickhouse_common_config
         string_utils)
 
     add_check(unit_tests_dbms)

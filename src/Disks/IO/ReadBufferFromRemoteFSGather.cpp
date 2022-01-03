@@ -8,6 +8,10 @@
 #include <IO/ReadBufferFromS3.h>
 #endif
 
+#if USE_AZURE_BLOB_STORAGE
+#include <IO/ReadBufferFromAzureBlobStorage.h>
+#endif
+
 #if USE_HDFS
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #endif
@@ -26,6 +30,15 @@ SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const S
 {
     return std::make_unique<ReadBufferFromS3>(client_ptr, bucket,
         fs::path(metadata.remote_fs_root_path) / path, max_single_read_retries, settings, threadpool_read, read_until_position_);
+}
+#endif
+
+
+#if USE_AZURE_BLOB_STORAGE
+SeekableReadBufferPtr ReadBufferFromAzureBlobStorageGather::createImplementationBuffer(const String & path, size_t read_until_position_) const
+{
+    return std::make_unique<ReadBufferFromAzureBlobStorage>(blob_container_client, path, max_single_read_retries,
+        max_single_download_retries, settings.remote_fs_buffer_size, threadpool_read, read_until_position_);
 }
 #endif
 
@@ -52,7 +65,7 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(const RemoteMetadata 
 }
 
 
-size_t ReadBufferFromRemoteFSGather::readInto(char * data, size_t size, size_t offset, size_t ignore)
+ReadBufferFromRemoteFSGather::ReadResult ReadBufferFromRemoteFSGather::readInto(char * data, size_t size, size_t offset, size_t ignore)
 {
     /**
      * Set `data` to current working and internal buffers.
@@ -60,23 +73,24 @@ size_t ReadBufferFromRemoteFSGather::readInto(char * data, size_t size, size_t o
      */
     set(data, size);
 
-    absolute_position = offset;
+    file_offset_of_buffer_end = offset;
     bytes_to_ignore = ignore;
+    if (bytes_to_ignore)
+        assert(initialized());
 
     auto result = nextImpl();
-    bytes_to_ignore = 0;
 
     if (result)
-        return working_buffer.size();
+        return {working_buffer.size(), BufferBase::offset()};
 
-    return 0;
+    return {0, 0};
 }
 
 
 void ReadBufferFromRemoteFSGather::initialize()
 {
     /// One clickhouse file can be split into multiple files in remote fs.
-    auto current_buf_offset = absolute_position;
+    auto current_buf_offset = file_offset_of_buffer_end;
     for (size_t i = 0; i < metadata.remote_fs_objects.size(); ++i)
     {
         const auto & [file_path, size] = metadata.remote_fs_objects[i];
@@ -131,7 +145,6 @@ bool ReadBufferFromRemoteFSGather::nextImpl()
     return readImpl();
 }
 
-
 bool ReadBufferFromRemoteFSGather::readImpl()
 {
     swap(*current_buf);
@@ -142,14 +155,25 @@ bool ReadBufferFromRemoteFSGather::readImpl()
      * we save how many bytes need to be ignored (new_offset - position() bytes).
      */
     if (bytes_to_ignore)
+    {
         current_buf->ignore(bytes_to_ignore);
+        bytes_to_ignore = 0;
+    }
 
-    auto result = current_buf->next();
+    bool result = current_buf->hasPendingData();
+    if (result)
+    {
+        /// bytes_to_ignore already added.
+        file_offset_of_buffer_end += current_buf->available();
+    }
+    else
+    {
+        result = current_buf->next();
+        if (result)
+            file_offset_of_buffer_end += current_buf->buffer().size();
+    }
 
     swap(*current_buf);
-
-    if (result)
-        absolute_position += working_buffer.size();
 
     return result;
 }
@@ -166,7 +190,6 @@ void ReadBufferFromRemoteFSGather::reset()
 {
     current_buf.reset();
 }
-
 
 String ReadBufferFromRemoteFSGather::getFileName() const
 {

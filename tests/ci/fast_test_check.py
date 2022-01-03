@@ -3,11 +3,12 @@
 import logging
 import subprocess
 import os
-import json
 import csv
 import sys
 
 from github import Github
+
+from env_helper import CACHES_PATH, TEMP_PATH
 from pr_info import PRInfo
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
@@ -16,6 +17,9 @@ from docker_pull_helper import get_image_with_version
 from commit_status_helper import post_commit_status
 from clickhouse_helper import ClickHouseHelper, mark_flaky_tests, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
+from rerun_helper import RerunHelper
+from tee_popen import TeePopen
+from ccache_utils import get_ccache_if_not_exists, upload_ccache
 
 NAME = 'Fast test (actions)'
 
@@ -37,17 +41,23 @@ def process_results(result_folder):
         test_files = [f for f in os.listdir(result_folder) if os.path.isfile(os.path.join(result_folder, f))]
         additional_files = [os.path.join(result_folder, f) for f in test_files]
 
+    status = []
     status_path = os.path.join(result_folder, "check_status.tsv")
-    logging.info("Found test_results.tsv")
-    status = list(csv.reader(open(status_path, 'r'), delimiter='\t'))
+    if os.path.exists(status_path):
+        logging.info("Found test_results.tsv")
+        with open(status_path, 'r', encoding='utf-8') as status_file:
+            status = list(csv.reader(status_file, delimiter='\t'))
     if len(status) != 1 or len(status[0]) != 2:
+        logging.info("Files in result folder %s", os.listdir(result_folder))
         return "error", "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
     results_path = os.path.join(result_folder, "test_results.tsv")
-    test_results = list(csv.reader(open(results_path, 'r'), delimiter='\t'))
+    if os.path.exists(results_path):
+        with open(results_path, 'r', encoding='utf-8') as results_file:
+            test_results = list(csv.reader(results_file, delimiter='\t'))
     if len(test_results) == 0:
-        raise Exception("Empty results")
+        return "error", "Empty test_results.tsv", test_results, additional_files
 
     return state, description, test_results, additional_files
 
@@ -58,18 +68,20 @@ if __name__ == "__main__":
 
     stopwatch = Stopwatch()
 
-    temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
-    caches_path = os.getenv("CACHES_PATH", temp_path)
+    temp_path = TEMP_PATH
+    caches_path = CACHES_PATH
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
-        event = json.load(event_file)
-
-    pr_info = PRInfo(event)
+    pr_info = PRInfo()
 
     gh = Github(get_best_robot_token())
+
+    rerun_helper = RerunHelper(gh, pr_info, NAME)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
 
     docker_image = get_image_with_version(temp_path, 'clickhouse/fasttest')
 
@@ -84,7 +96,12 @@ if __name__ == "__main__":
         os.makedirs(output_path)
 
     cache_path = os.path.join(caches_path, "fasttest")
+
+    logging.info("Will try to fetch cache for our build")
+    get_ccache_if_not_exists(cache_path, s3_helper, pr_info.number, temp_path)
+
     if not os.path.exists(cache_path):
+        logging.info("cache was not fetched, will create empty dir")
         os.makedirs(cache_path)
 
     repo_path = os.path.join(temp_path, "fasttest-repo")
@@ -99,8 +116,8 @@ if __name__ == "__main__":
         os.makedirs(logs_path)
 
     run_log_path = os.path.join(logs_path, 'runlog.log')
-    with open(run_log_path, 'w') as log:
-        retcode = subprocess.Popen(run_cmd, shell=True, stderr=log, stdout=log).wait()
+    with TeePopen(run_cmd, run_log_path) as process:
+        retcode = process.wait()
         if retcode == 0:
             logging.info("Run successfully")
         else:
@@ -135,6 +152,9 @@ if __name__ == "__main__":
     else:
         state, description, test_results, additional_logs = process_results(output_path)
 
+    logging.info("Will upload cache")
+    upload_ccache(cache_path, s3_helper, pr_info.number, temp_path)
+
     ch_helper = ClickHouseHelper()
     mark_flaky_tests(ch_helper, NAME, test_results)
 
@@ -147,4 +167,7 @@ if __name__ == "__main__":
 
     # Refuse other checks to run if fast test failed
     if state != 'success':
-        sys.exit(1)
+        if 'force-tests' in pr_info.labels:
+            print("'force-tests' enabled, will report success")
+        else:
+            sys.exit(1)

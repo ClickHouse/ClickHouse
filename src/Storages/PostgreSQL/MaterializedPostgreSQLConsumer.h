@@ -26,6 +26,7 @@ public:
             const String & publication_name_,
             const String & start_lsn,
             const size_t max_block_size_,
+            bool schema_as_a_part_of_table_name_,
             bool allow_automatic_update_,
             Storages storages_,
             const String & name_for_logger);
@@ -113,6 +114,9 @@ private:
     UInt64 lsn_value;
 
     size_t max_block_size;
+
+    bool schema_as_a_part_of_table_name;
+
     bool allow_automatic_update;
 
     String table_to_insert;

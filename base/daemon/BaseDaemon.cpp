@@ -104,7 +104,7 @@ static void writeSignalIDtoSignalPipe(int sig)
     errno = saved_errno;
 }
 
-/** Signal handler for HUP / USR1 */
+/** Signal handler for HUP */
 static void closeLogsSignalHandler(int sig, siginfo_t *, void *)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
@@ -161,7 +161,7 @@ __attribute__((__weak__)) void collectCrashLog(
 
 
 /** The thread that read info about signal or std::terminate from pipe.
-  * On HUP / USR1, close log files (for new files to be opened later).
+  * On HUP, close log files (for new files to be opened later).
   * On information about std::terminate, write it to log.
   * On other signals, write info to log.
   */
@@ -201,7 +201,7 @@ public:
                 LOG_INFO(log, "Stop SignalListener thread");
                 break;
             }
-            else if (sig == SIGHUP || sig == SIGUSR1)
+            else if (sig == SIGHUP)
             {
                 LOG_DEBUG(log, "Received signal to close logs.");
                 BaseDaemon::instance().closeLogs(BaseDaemon::instance().logger());
@@ -832,7 +832,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     /// SIGTSTP is added for debugging purposes. To output a stack trace of any running thread at anytime.
 
     addSignalHandler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP, SIGTRAP}, signalHandler, &handled_signals);
-    addSignalHandler({SIGHUP, SIGUSR1}, closeLogsSignalHandler, &handled_signals);
+    addSignalHandler({SIGHUP}, closeLogsSignalHandler, &handled_signals);
     addSignalHandler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler, &handled_signals);
 
 #if defined(SANITIZER)
@@ -1006,7 +1006,7 @@ void BaseDaemon::setupWatchdog()
 
         /// Forward signals to the child process.
         addSignalHandler(
-            {SIGHUP, SIGUSR1, SIGINT, SIGQUIT, SIGTERM},
+            {SIGHUP, SIGINT, SIGQUIT, SIGTERM},
             [](int sig, siginfo_t *, void *)
             {
                 /// Forward all signals except INT as it can be send by terminal to the process group when user press Ctrl+C,

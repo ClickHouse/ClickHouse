@@ -1189,7 +1189,7 @@ void DDLWorker::runMainThread()
         }
         catch (...)
         {
-            tryLogCurrentException(log, "Unexpected error, will try to restart main thread:");
+            tryLogCurrentException(log, "Unexpected error, will try to restart main thread");
             reset_state();
             sleepForSeconds(5);
         }

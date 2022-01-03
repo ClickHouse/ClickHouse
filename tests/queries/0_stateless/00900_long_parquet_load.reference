@@ -89,7 +89,7 @@ idx10	['This','is','a','test']
 23
 24
 === Try load data from datapage_v2.snappy.parquet
-Code: 33. DB::ParsingEx---tion: Error while reading Parquet data: IOError: Not yet implemented: Unsupported encoding.: While executing ParquetBlockInputFormat: data for INSERT was parsed from stdin: (in query: INSERT INTO parquet_load FORMAT Parquet). (CANNOT_READ_ALL_DATA)
+Code: 33. DB::ParsingEx---tion: Error while reading Parquet data: IOError: Unknown encoding type.: While executing ParquetBlockInputFormat: data for INSERT was parsed from stdin: (in query: INSERT INTO parquet_load FORMAT Parquet). (CANNOT_READ_ALL_DATA)
 
 === Try load data from datatype-date32.parquet
 1925-01-01

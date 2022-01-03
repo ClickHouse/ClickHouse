@@ -78,7 +78,7 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
     }
 
     if (tables_to_replicate.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty list of tables to replicate");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Got empty list of tables to replicate");
 
     for (const auto & table_name : tables_to_replicate)
     {

@@ -91,8 +91,7 @@ static bool checkACL(int32_t permission, const Coordination::ACLs & node_acls, c
 static bool fixupACL(
     const std::vector<Coordination::ACL> & request_acls,
     const std::vector<KeeperStorage::AuthID> & current_ids,
-    std::vector<Coordination::ACL> & result_acls,
-    bool hash_acls)
+    std::vector<Coordination::ACL> & result_acls)
 {
     if (request_acls.empty())
         return true;
@@ -125,27 +124,10 @@ static bool fixupACL(
                 return false;
 
             valid_found = true;
-            if (hash_acls)
-                new_acl.id = generateDigest(new_acl.id);
             result_acls.push_back(new_acl);
         }
     }
     return valid_found;
-}
-
-uint64_t KeeperStorage::Node::sizeInBytes() const
-{
-    uint64_t total_size{0};
-    for (const auto & child : children)
-        total_size += child.size();
-
-    total_size += data.size();
-
-    total_size += sizeof(acl_id);
-    total_size += sizeof(is_sequental);
-    total_size += sizeof(stat);
-    total_size += sizeof(seq_num);
-    return total_size;
 }
 
 static KeeperStorage::ResponsesForSessions processWatchesImpl(const String & path, KeeperStorage::Watches & watches, KeeperStorage::Watches & list_watches, Coordination::Event event_type)
@@ -325,7 +307,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         KeeperStorage::Node created_node;
 
         Coordination::ACLs node_acls;
-        if (!fixupACL(request.acls, session_auth_ids, node_acls, !request.restored_from_zookeeper_log))
+        if (!fixupACL(request.acls, session_auth_ids, node_acls))
         {
             response.error = Coordination::Error::ZINVALIDACL;
             return {response_ptr, {}};
@@ -354,6 +336,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         {
 
             parent.children.insert(child_path);
+            parent.size_bytes += child_path.size();
             prev_parent_cversion = parent.stat.cversion;
             prev_parent_zxid = parent.stat.pzxid;
 
@@ -391,6 +374,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
                 undo_parent.stat.cversion = prev_parent_cversion;
                 undo_parent.stat.pzxid = prev_parent_zxid;
                 undo_parent.children.erase(child_path);
+                undo_parent.size_bytes -= child_path.size();
             });
         };
 
@@ -524,6 +508,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
                 --parent.stat.numChildren;
                 ++parent.stat.cversion;
                 parent.children.erase(child_basename);
+                parent.size_bytes -= child_basename.size();
             });
 
             response.error = Coordination::Error::ZOK;
@@ -543,6 +528,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
                     ++parent.stat.numChildren;
                     --parent.stat.cversion;
                     parent.children.insert(child_basename);
+                    parent.size_bytes += child_basename.size();
                 });
             };
         }
@@ -621,11 +607,11 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
 
             auto itr = container.updateValue(request.path, [zxid, request] (KeeperStorage::Node & value)
             {
-                value.data = request.data;
                 value.stat.version++;
                 value.stat.mzxid = zxid;
                 value.stat.mtime = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
                 value.stat.dataLength = request.data.length();
+                value.size_bytes = value.size_bytes + request.data.size() - value.data.size();
                 value.data = request.data;
             });
 
@@ -789,7 +775,7 @@ struct KeeperStorageSetACLRequestProcessor final : public KeeperStorageRequestPr
             auto & session_auth_ids = storage.session_and_auth[session_id];
             Coordination::ACLs node_acls;
 
-            if (!fixupACL(request.acls, session_auth_ids, node_acls, !request.restored_from_zookeeper_log))
+            if (!fixupACL(request.acls, session_auth_ids, node_acls))
             {
                 response.error = Coordination::Error::ZINVALIDACL;
                 return {response_ptr, {}};
@@ -1110,6 +1096,7 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
                     --parent.stat.numChildren;
                     ++parent.stat.cversion;
                     parent.children.erase(getBaseName(ephemeral_path));
+                    parent.size_bytes -= getBaseName(ephemeral_path).size();
                 });
 
                 auto responses = processWatchesImpl(ephemeral_path, watches, list_watches, Coordination::Event::DELETED);

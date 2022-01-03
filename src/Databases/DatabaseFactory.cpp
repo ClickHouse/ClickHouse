@@ -23,6 +23,8 @@
 #    include <Databases/MySQL/ConnectionMySQLSettings.h>
 #    include <Databases/MySQL/DatabaseMySQL.h>
 #    include <Databases/MySQL/MaterializedMySQLSettings.h>
+#    include <Storages/MySQL/MySQLHelpers.h>
+#    include <Storages/MySQL/MySQLSettings.h>
 #    include <Databases/MySQL/DatabaseMaterializedMySQL.h>
 #    include <mysqlxx/Pool.h>
 #endif
@@ -117,6 +119,7 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     static const std::unordered_set<std::string_view> engines_with_arguments{"MySQL", "MaterializeMySQL", "MaterializedMySQL",
         "Lazy", "Replicated", "PostgreSQL", "MaterializedPostgreSQL", "SQLite"};
 
+    static const std::unordered_set<std::string_view> engines_with_table_overrides{"MaterializeMySQL", "MaterializedMySQL", "MaterializedPostgreSQL"};
     bool engine_may_have_arguments = engines_with_arguments.contains(engine_name);
 
     if (engine_define->engine->arguments && !engine_may_have_arguments)
@@ -130,6 +133,9 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
     if (has_unexpected_element || (!may_have_settings && engine_define->settings))
         throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_AST,
                         "Database engine `{}` cannot have parameters, primary_key, order_by, sample_by, settings", engine_name);
+
+    if (create.table_overrides && !engines_with_table_overrides.contains(engine_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine `{}` cannot have table overrides", engine_name);
 
     if (engine_name == "Ordinary")
         return std::make_shared<DatabaseOrdinary>(database_name, metadata_path, context);
@@ -194,13 +200,15 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             if (engine_name == "MySQL")
             {
                 auto mysql_database_settings = std::make_unique<ConnectionMySQLSettings>();
-                auto mysql_pool = mysqlxx::PoolWithFailover(configuration.database, configuration.addresses, configuration.username, configuration.password);
+                MySQLSettings mysql_settings;
+                auto mysql_pool = createMySQLPoolWithFailover(configuration, mysql_settings);
 
                 mysql_database_settings->loadFromQueryContext(context);
                 mysql_database_settings->loadFromQuery(*engine_define); /// higher priority
 
                 return std::make_shared<DatabaseMySQL>(
-                    context, database_name, metadata_path, engine_define, configuration.database, std::move(mysql_database_settings), std::move(mysql_pool));
+                    context, database_name, metadata_path, engine_define, configuration.database,
+                    std::move(mysql_database_settings), std::move(mysql_pool), create.attach);
             }
 
             MySQLClient client(configuration.host, configuration.port, configuration.username, configuration.password);

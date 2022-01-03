@@ -149,6 +149,10 @@ if (ENABLE_FUZZING)
     set (ENABLE_JEMALLOC 0)
     set (ENABLE_CHECK_HEAVY_BUILDS 1)
     set (GLIBC_COMPATIBILITY OFF)
+
+    # For codegen_select_fuzzer
+    set (ENABLE_PROTOBUF 1)
+    set (USE_INTERNAL_PROTOBUF_LIBRARY 1)
 endif()
 
 # Global libraries
@@ -420,6 +424,11 @@ if (OS_LINUX AND NOT SANITIZE)
     set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
 endif ()
 
+# Increase stack size on Musl. We need big stack for our recursive-descend parser.
+if (USE_MUSL)
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,stack-size=2097152")
+endif ()
+
 include(cmake/dbms_glob_sources.cmake)
 
 if (OS_LINUX OR OS_ANDROID)
@@ -443,10 +452,15 @@ if (MAKE_STATIC_LIBRARIES)
         # It's disabled for ARM because otherwise ClickHouse cannot run on Android.
         set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-pie")
         set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -fno-pie")
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-no-pie")
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -no-pie -Wl,-no-pie")
     endif ()
 else ()
     set (CMAKE_POSITION_INDEPENDENT_CODE ON)
+    # This is required for clang on Arch linux, that uses PIE by default.
+    # See enable-SSP-and-PIE-by-default.patch [1].
+    #
+    #   [1]: https://github.com/archlinux/svntogit-packages/blob/6e681aa860e65ad46a1387081482eb875c2200f2/trunk/enable-SSP-and-PIE-by-default.patch
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -no-pie")
 endif ()
 
 if (ENABLE_TESTS)
@@ -504,6 +518,7 @@ include (cmake/find/hdfs3.cmake) # uses protobuf
 include (cmake/find/poco.cmake)
 include (cmake/find/curl.cmake)
 include (cmake/find/s3.cmake)
+include (cmake/find/blob_storage.cmake)
 include (cmake/find/base64.cmake)
 include (cmake/find/parquet.cmake)
 include (cmake/find/simdjson.cmake)
