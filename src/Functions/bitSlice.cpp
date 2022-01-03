@@ -200,7 +200,7 @@ public:
         if (!size)
             return;
         bool abandon_last_byte = abandon_last_bit + shift_bit >= word_size;
-        if (abandon_last_byte)
+        if (abandon_last_byte) // shift may eliminate last byte
             size--;
         sink.elements.resize(sink.current_offset + size);
         UInt8 * out = &sink.elements[sink.current_offset];
@@ -245,7 +245,7 @@ public:
     void bitSliceFromRightConstantOffsetUnbounded(Source && src, StringSink && sink, size_t offset) const
     {
         size_t offset_byte = offset / word_size;
-        size_t offset_bit = (word_size - (offset % word_size)) % word_size;
+        size_t offset_bit = (word_size - (offset % word_size)) % word_size; // offset_bit always represent left offset bit
         if (offset_bit)
             offset_byte++;
         while (!src.isEnd())
@@ -292,7 +292,7 @@ public:
                 {
                     UInt64 offset = -static_cast<UInt64>(start);
                     size_t offset_byte = offset / word_size;
-                    size_t offset_bit = (word_size - (offset % word_size)) % word_size;
+                    size_t offset_bit = (word_size - (offset % word_size)) % word_size; // offset_bit always represent left offset bit
                     if (offset_bit)
                         offset_byte++;
                     size_t size = src.getElementSize();
@@ -321,7 +321,7 @@ public:
         {
             length_byte = (length + offset_bit) / word_size;
             over_bit = (length + offset_bit) % word_size;
-            if (over_bit && (length_byte || over_bit > offset_bit))
+            if (over_bit && (length_byte || over_bit > offset_bit)) // begin and end are not in same byte OR there are gaps
                 length_byte++;
         }
 
@@ -332,9 +332,8 @@ public:
             {
                 length_byte = std::max(remain_byte + (length / word_size), static_cast<ssize_t>(0));
                 over_bit = word_size + (length % word_size);
-                if (length_byte == 1 && over_bit <= offset_bit) {
+                if (length_byte == 1 && over_bit <= offset_bit) // begin and end are in same byte AND there are no gaps
                     length_byte = 0;
-                }
             }
             bool right_truncate = static_cast<ssize_t>(length_byte) > remain_byte;
             size_t abandon_last_bit = (over_bit && !right_truncate) ? word_size - over_bit : 0;
@@ -352,7 +351,7 @@ public:
     void bitSliceFromRightConstantOffsetBounded(Source && src, StringSink && sink, size_t offset, ssize_t length) const
     {
         size_t offset_byte = offset / word_size;
-        size_t offset_bit = (word_size - (offset % word_size)) % word_size;
+        size_t offset_bit = (word_size - (offset % word_size)) % word_size; // offset_bit always represent left offset bit
         if (offset_bit)
             offset_byte++;
         size_t length_byte = 0;
@@ -361,7 +360,7 @@ public:
         {
             length_byte = (length + offset_bit) / word_size;
             over_bit = (length + offset_bit) % word_size;
-            if (over_bit && (length_byte || over_bit > offset_bit))
+            if (over_bit && (length_byte || over_bit > offset_bit)) // begin and end are not in same byte OR there are gaps
                 length_byte++;
         }
 
@@ -372,9 +371,8 @@ public:
             {
                 length_byte = std::max(static_cast<ssize_t>(offset_byte) + (length / word_size), static_cast<ssize_t>(0));
                 over_bit = word_size + (length % word_size);
-                if (length_byte == 1 && over_bit <= offset_bit) {
+                if (length_byte == 1 && over_bit <= offset_bit) // begin and end are in same byte AND there are no gaps
                     length_byte = 0;
-                }
             }
             bool left_truncate = offset_byte > size;
             bool right_truncate = length_byte > offset_byte;
@@ -431,7 +429,7 @@ public:
                 else
                 {
                     offset_byte = offset / word_size;
-                    offset_bit = (word_size - (offset % word_size)) % word_size;
+                    offset_bit = (word_size - (offset % word_size)) % word_size; // offset_bit always represent left offset bit
                     if (offset_bit)
                         offset_byte++;
                     bool left_truncate = offset_byte > size;
@@ -443,16 +441,15 @@ public:
                 {
                     length_byte = (length + offset_bit) / word_size;
                     over_bit = (length + offset_bit) % word_size;
-                    if (over_bit && (length_byte || (over_bit > offset_bit)))
+                    if (over_bit && (length_byte || (over_bit > offset_bit))) // begin and end are not in same byte OR there are gaps
                         length_byte++;
                 }
                 else
                 {
                     length_byte = std::max(remain_byte + (static_cast<ssize_t>(length) / word_size), static_cast<ssize_t>(0));
                     over_bit = word_size + (length % word_size);
-                    if (length_byte == 1 && over_bit <= offset_bit) {
+                    if (length_byte == 1 && over_bit <= offset_bit) // begin and end are in same byte AND there are no gaps
                         length_byte = 0;
-                    }
                 }
 
                 bool right_truncate = static_cast<ssize_t>(length_byte) > remain_byte;
@@ -467,7 +464,6 @@ public:
             src.next();
         }
     }
-
 };
 
 
