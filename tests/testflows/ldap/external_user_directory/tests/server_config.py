@@ -45,7 +45,6 @@ def empty_host(self, tail=30, timeout=300):
     """Check that server returns an error when LDAP server
     host value is empty.
     """
-    node = current().context.node
     message = "DB::Exception: Empty 'host' entry"
 
     servers = {"foo": {"host": "", "port": "389", "enable_tls": "no"}}
