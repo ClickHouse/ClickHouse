@@ -99,8 +99,6 @@ def comparison_check(self):
         for tz1, tz2 in itertools.product(timezones, timezones):
             dt1_str = dt_1.strftime("%Y-%m-%d %H:%M:%S")
             dt2_str = dt_2.strftime("%Y-%m-%d %H:%M:%S")
-            dt1 = pytz.timezone(tz1).localize(dt_1)
-            dt2 = pytz.timezone(tz2).localize(dt_2)
 
             with When(f"{dt1_str} {tz1}, {dt2_str} {tz2}"):
                 for c in comparators:

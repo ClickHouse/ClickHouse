@@ -875,7 +875,6 @@ def dist_table(self, node=None):
 
     if node is None:
         node = self.context.node
-        node2 = self.context.node2
 
     try:
         with Given("I have a table on a cluster"):
