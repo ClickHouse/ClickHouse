@@ -69,6 +69,47 @@ struct CrossTabData
         count_b.read(buf);
         count_ab.read(buf);
     }
+
+    /** See https://en.wikipedia.org/wiki/Cram%C3%A9r%27s_V
+      *
+      * φ² is χ² divided by the sample size (count).
+      * χ² is the sum of squares of the normalized differences between the "expected" and "observed" statistics.
+      * ("Expected" in the case when one of the hypotheses is true).
+      * Something resembling the L2 distance.
+      *
+      * Note: statisticians use the name χ² for every statistic that has χ² distribution in many various contexts.
+      *
+      * Let's suppose that there is no association between the values a and b.
+      * Then the frequency (e.g. probability) of (a, b) pair is equal to the multiplied frequencies of a and b:
+      * count_ab / count = (count_a / count) * (count_b / count)
+      * count_ab = count_a * count_b / count
+      *
+      * Let's calculate the difference between the values that are supposed to be equal if there is no association between a and b:
+      * count_ab - count_a * count_b / count
+      *
+      * Let's sum the squares of the differences across all (a, b) pairs.
+      * Then divide by the second term for normalization: (count_a * count_b / count)
+      *
+      * This will be the χ² statistics.
+      * This statistics is used as a base for many other statistics.
+      */
+    Float64 getPhiSquared() const
+    {
+        Float64 chi_squared = 0;
+        for (const auto & [key, value_ab] : count_ab)
+        {
+            Float64 value_a = count_a.at(key.items[0]);
+            Float64 value_b = count_b.at(key.items[1]);
+
+            Float64 expected_value_ab = (value_a * value_b) / count;
+
+            Float64 chi_squared_elem = value_ab - expected_value_ab;
+            chi_squared_elem = chi_squared_elem * chi_squared_elem / expected_value_ab;
+
+            chi_squared += chi_squared_elem;
+        }
+        return chi_squared / count;
+    }
 };
 
 

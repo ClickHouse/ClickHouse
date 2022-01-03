@@ -23,22 +23,17 @@ struct CramersVBiasCorrectedData : CrossTabData
         if (count < 2)
             return std::numeric_limits<Float64>::quiet_NaN();
 
-        Float64 phi = 0.0;
-        for (const auto & [key, value_ab] : count_ab)
-        {
-            Float64 value_a = count_a.at(key.items[0]);
-            Float64 value_b = count_b.at(key.items[1]);
+        Float64 phi = getPhiSquared();
 
-            phi += value_ab * value_ab / (value_a * value_b) * count - 2 * value_ab + (value_a * value_b) / count;
-        }
+        Float64 a_size_adjusted = count_a.size() - 1;
+        Float64 b_size_adjusted = count_b.size() - 1;
+        Float64 count_adjusted = count - 1;
 
-        phi /= count;
+        Float64 res = std::max(0.0, phi - a_size_adjusted * b_size_adjusted / count_adjusted);
+        Float64 correction_a = count_a.size() - a_size_adjusted * a_size_adjusted / count_adjusted;
+        Float64 correction_b = count_b.size() - b_size_adjusted * b_size_adjusted / count_adjusted;
 
-        Float64 res = std::max(0.0, phi - (static_cast<Float64>(count_a.size()) - 1) * (static_cast<Float64>(count_b.size()) - 1) / (count - 1));
-        Float64 correction_a = count_a.size() - (static_cast<Float64>(count_a.size()) - 1) * (static_cast<Float64>(count_a.size()) - 1) / (count - 1);
-        Float64 correction_b = count_b.size() - (static_cast<Float64>(count_b.size()) - 1) * (static_cast<Float64>(count_b.size()) - 1) / (count - 1);
         res /= std::min(correction_a, correction_b) - 1;
-
         return sqrt(res);
     }
 };
