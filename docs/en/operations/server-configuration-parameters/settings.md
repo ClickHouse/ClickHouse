@@ -681,7 +681,9 @@ Queries may be limited by other settings: [max_concurrent_insert_queries](#max-c
 Possible values:
 
 -   Positive integer.
--   0 — Disabled.
+-   0 — No limit.
+
+Default value: `100`.
 
 **Example**
 
@@ -699,7 +701,9 @@ The maximum number of simultaneously processed insert queries.
 Possible values:
 
 -   Positive integer.
--   0 — Disabled.
+-   0 — No limit.
+
+Default value: `0`.
 
 **Example**
 
@@ -717,7 +721,9 @@ The maximum number of simultaneously processed select queries.
 Possible values:
 
 -   Positive integer.
--   0 — Disabled.
+-   0 — No limit.
+
+Default value: `0`.
 
 **Example**
 
@@ -732,7 +738,9 @@ The maximum number of simultaneously processed queries related to MergeTree tabl
 Possible values:
 
 -   Positive integer.
--   0 — Disabled.
+-   0 — No limit.
+
+Default value: `0`.
 
 **Example**
 
@@ -748,7 +756,12 @@ Example: `max_concurrent_queries_for_all_users` can be set to 99 for all users a
 
 Modifying the setting for one query or user does not affect other queries.
 
-Default value: `0` that means no limit.
+Possible values:
+
+-   Positive integer.
+-   0 — No limit.
+
+Default value: `0`.
 
 **Example**
 
