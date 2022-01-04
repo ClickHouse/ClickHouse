@@ -11,7 +11,7 @@ void registerStorageHiveMetadata(RemoteFileMetadataFactory & factory);
 
 void registerRemoteFileMetadatas()
 {
-    auto & factory = RemoteFileMetadataFactory::instance();
+    [[maybe_unused]] auto & factory = RemoteFileMetadataFactory::instance();
 
 #if USE_HIVE
     registerStorageHiveMetadata(factory);
