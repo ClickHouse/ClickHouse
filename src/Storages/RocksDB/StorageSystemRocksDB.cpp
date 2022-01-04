@@ -63,6 +63,9 @@ void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr con
         }
     }
 
+    if (tables.empty())
+        return;
+
     MutableColumnPtr col_database_mut = ColumnString::create();
     MutableColumnPtr col_table_mut = ColumnString::create();
 

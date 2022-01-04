@@ -66,6 +66,9 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
         }
     }
 
+    if (merge_tree_tables.empty())
+        return;
+
     MutableColumnPtr col_database_mut = ColumnString::create();
     MutableColumnPtr col_table_mut = ColumnString::create();
 

@@ -69,6 +69,8 @@ void StorageSystemPartMovesBetweenShards::fillData(MutableColumns & res_columns,
         }
     }
 
+    if (replicated_tables.empty())
+        return;
 
     MutableColumnPtr col_database_mut = ColumnString::create();
     MutableColumnPtr col_table_mut = ColumnString::create();
