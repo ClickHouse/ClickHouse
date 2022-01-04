@@ -14,14 +14,14 @@ namespace ErrorCodes
     extern const int INVALID_TEMPLATE_FORMAT;
 }
 
-ParsedTemplateFormatString::ParsedTemplateFormatString(const FormatSchemaInfo & schema, const ColumnIdxGetter & idx_by_name)
+ParsedTemplateFormatString::ParsedTemplateFormatString(const FormatSchemaInfo & schema, const ColumnIdxGetter & idx_by_name, bool allow_indexes)
 {
     ReadBufferFromFile schema_file(schema.absoluteSchemaPath(), 4096);
     String format_string;
     readStringUntilEOF(format_string, schema_file);
     try
     {
-        parse(format_string, idx_by_name);
+        parse(format_string, idx_by_name, allow_indexes);
     }
     catch (DB::Exception & e)
     {
@@ -33,7 +33,7 @@ ParsedTemplateFormatString::ParsedTemplateFormatString(const FormatSchemaInfo & 
 }
 
 
-void ParsedTemplateFormatString::parse(const String & format_string, const ColumnIdxGetter & idx_by_name)
+void ParsedTemplateFormatString::parse(const String & format_string, const ColumnIdxGetter & idx_by_name, bool allow_indexes)
 {
     enum ParserState
     {
@@ -100,6 +100,8 @@ void ParsedTemplateFormatString::parse(const String & format_string, const Colum
                     column_idx = strtoull(column_names.back().c_str(), &col_idx_end, 10);
                     if (col_idx_end != column_names.back().c_str() + column_names.back().size() || errno)
                         column_idx = idx_by_name(column_names.back());
+                    else if (!allow_indexes)
+                        throw Exception(ErrorCodes::INVALID_TEMPLATE_FORMAT, "Indexes instead of names are not allowed");
                 }
                 format_idx_to_column_idx.emplace_back(column_idx);
                 break;
