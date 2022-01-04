@@ -33,6 +33,7 @@ IMAGES = [
     "clickhouse/integration-test",
     "clickhouse/kerberos-kdc",
     "clickhouse/integration-helper",
+    "clickhouse/dotnet-client",
 ]
 
 def get_json_params_dict(check_name, pr_info, docker_images, run_by_hash_total, run_by_hash_num):
