@@ -1,4 +1,7 @@
 #include <Storages/Hive/StorageHiveMetadata.h>
+
+#if USE_HIVE
+
 #include <Storages/Cache/RemoteFileMetadataFactory.h>
 #include <Common/Exception.h>
 #include <Poco/JSON/JSON.h>
@@ -6,7 +9,6 @@
 
 namespace DB
 {
-StorageHiveMetadata::~StorageHiveMetadata() = default;
 
 String StorageHiveMetadata::toString() const
 {
@@ -41,12 +43,12 @@ String StorageHiveMetadata::getVersion() const
     return std::to_string(last_modification_timestamp);
 }
 
-void registerStorageHiveMetadataCreator()
+void registerStorageHiveMetadata(RemoteFileMetadataFactory & factory)
 {
-    auto & factory = RemoteFileMetadataFactory::instance();
     auto creator = []() -> IRemoteFileMetadataPtr { return std::make_shared<StorageHiveMetadata>(); };
-    factory.registerRemoteFileMatadataCreator("StorageHiveMetadata", creator);
+    factory.registerRemoteFileMatadata("StorageHiveMetadata", creator);
 }
 
-
 }
+#endif
+
