@@ -321,11 +321,7 @@ MergeTreeData::MergeTreeData(
 #if !USE_ROCKSDB
     if (use_metadata_cache)
     {
-        LOG_WARNING(
-            log,
-            "Can't use merge tree metadata cache if clickhouse was compiled without rocksdb."
-            "set use_metadata_cache to false forcely");
-        use_metadata_cache = false;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't use merge tree metadata cache if clickhouse was compiled without rocksdb." "set use_metadata_cache to false forcely");
     }
 #endif
 
