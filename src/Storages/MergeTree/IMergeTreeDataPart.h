@@ -518,7 +518,7 @@ private:
     /// Loads index file.
     void loadIndex();
 
-    void appendFilesofIndex(Strings & files) const;
+    void appendFilesOfIndex(Strings & files) const;
 
     /// Load rows count for this part from disk (for the newer storage format version).
     /// For the older format version calculates rows count from the size of a column with a fixed size.

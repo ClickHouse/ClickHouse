@@ -17,6 +17,8 @@ namespace DB
 MergeTreeMetadataCache::Status MergeTreeMetadataCache::put(const String & key, const String & value)
 {
     auto options = rocksdb::WriteOptions();
+    options.sync = true;
+    options.disableWAL = false;
     auto status = rocksdb->Put(options, key, value);
     ProfileEvents::increment(ProfileEvents::MergeTreeMetadataCachePut);
     return status;
@@ -25,6 +27,8 @@ MergeTreeMetadataCache::Status MergeTreeMetadataCache::put(const String & key, c
 MergeTreeMetadataCache::Status MergeTreeMetadataCache::del(const String & key)
 {
     auto options = rocksdb::WriteOptions();
+    options.sync = true;
+    options.disableWAL = false;
     auto status = rocksdb->Delete(options, key);
     ProfileEvents::increment(ProfileEvents::MergeTreeMetadataCacheDelete);
     LOG_TRACE(log, "Delete key:{} from MergeTreeMetadataCache status:{}", key, status.ToString());
