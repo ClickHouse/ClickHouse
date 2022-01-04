@@ -250,3 +250,6 @@
 [submodule "contrib/azure"]
 	path = contrib/azure
 	url = https://github.com/ClickHouse-Extras/azure-sdk-for-cpp.git
+[submodule "contrib/BLAKE3"]
+	path = contrib/BLAKE3
+	url = https://github.com/BoloniniD/BLAKE3.git
