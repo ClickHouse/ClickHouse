@@ -700,7 +700,7 @@ void IMergeTreeDataPart::appendFilesOfColumnsChecksumsIndexes(Strings & files, b
         appendFilesOfColumns(files);
         appendFilesOfChecksums(files);
         appendFilesOfIndexGranularity(files);
-        appendFilesofIndex(files);
+        appendFilesOfIndex(files);
         appendFilesOfRowsCount(files);
         appendFilesOfPartitionAndMinMaxIndex(files);
         appendFilesOfTTLInfos(files);
@@ -817,7 +817,7 @@ void IMergeTreeDataPart::loadIndex()
     }
 }
 
-void IMergeTreeDataPart::appendFilesofIndex(Strings & files) const
+void IMergeTreeDataPart::appendFilesOfIndex(Strings & files) const
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
     if (parent_part)

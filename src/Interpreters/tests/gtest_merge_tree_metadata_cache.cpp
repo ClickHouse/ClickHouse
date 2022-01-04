@@ -13,7 +13,7 @@ class MergeTreeMetadataCacheTest : public ::testing::Test
 public:
     void SetUp() override
     {
-        auto shared_context = Context::createShared();
+        shared_context = Context::createShared();
         global_context = Context::createGlobal(shared_context.get());
         global_context->makeGlobalContext();
         global_context->initializeMergeTreeMetadataCache("./db/", 256 << 20);
@@ -25,6 +25,7 @@ public:
         global_context->shutdown();
     }
 
+    SharedContextHolder shared_context;
     ContextMutablePtr global_context;
     MergeTreeMetadataCachePtr cache;
 };
