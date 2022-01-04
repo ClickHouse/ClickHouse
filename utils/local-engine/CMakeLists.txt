@@ -110,12 +110,10 @@ install(TARGETS ${LOCALENGINE_SHARED_LIB}
         LIBRARY DESTINATION lib
         )
 
-#install(TARGETS ${LOCALENGINE_SHARED_LIB} RUNTIME_DEPENDENCY_SET myset)
+#install(TARGETS ${LOCALENGINE_SHARED_LIB} RUNTIME_DEPENDENCY_SET myset
+#        LIBRARY DESTINATION lib)
 #install(RUNTIME_DEPENDENCY_SET myset
-#        DIRECTORIES lib
-#        POST_INCLUDE_REGEXES ".*"
-#        POST_INCLUDE_FILES ".*"
-#        POST_EXCLUDE_FILES_STRICT "nononono"
+#        LIBRARY DESTINATION lib
 #        )
 install(TARGETS ${LOCALENGINE_SHARED_LIB} RUNTIME_DEPENDENCIES
         DIRECTORIES lib
@@ -175,7 +173,9 @@ install( FILES
         ${CMAKE_CURRENT_BINARY_DIR}/../../base/mysqlxx/libmysqlxx.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../src/Server/grpc_protos/libclickhouse_grpc_protos.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/grpc/libgrpc++.so.1
+        ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/grpc/libgrpc++.so.1.33.2
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/grpc/libgrpc.so.13
+        ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/grpc/libgrpc.so.13.0.0
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/abseil-cpp/absl/hash/libabsl_hash.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/abseil-cpp/absl/types/libabsl_bad_variant_access.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/abseil-cpp/absl/hash/libabsl_city.so
@@ -183,12 +183,16 @@ install( FILES
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/abseil-cpp/absl/container/libabsl_hashtablez_sampler.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/abseil-cpp/absl/base/libabsl_exponential_biased.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/grpc/third_party/cares/cares/lib/libcares.so.2
+        ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/grpc/third_party/cares/cares/lib/libcares.so.2.3.0
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/abseil-cpp/absl/status/libabsl_status.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/abseil-cpp/absl/types/libabsl_bad_optional_access.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/abseil-cpp/absl/strings/libabsl_cord.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/grpc/libaddress_sorting.so.13
+        ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/grpc/libaddress_sorting.so.13.0.0
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/grpc/libupb.so.13
+        ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/grpc/libupb.so.13.0.0
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/grpc/libgpr.so.13
+        ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/grpc/libgpr.so.13.0.0
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/abseil-cpp/absl/synchronization/libabsl_synchronization.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/abseil-cpp/absl/debugging/libabsl_stacktrace.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/abseil-cpp/absl/debugging/libabsl_symbolize.so
@@ -213,21 +217,26 @@ install( FILES
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/amqpcpp-cmake/libamqp-cpp.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/sqlite-cmake/libsqlite.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../libcassandra.so.2
+        ${CMAKE_CURRENT_BINARY_DIR}/../../libcassandra.so.2.15.3
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/libuv/libuv.so.1
+        ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/libuv/libuv.so.1.0.0
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/libpqxx-cmake/liblibpqxx.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/libpq-cmake/liblibpq.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/arrow-cmake/libarrow_shared.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/lz4-cmake/liblz4.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/snappy/libsnappy.so.1
+        ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/snappy/libsnappy.so.1.1.7
         ${CMAKE_CURRENT_BINARY_DIR}/../../src/libclickhouse_common_io.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/double-conversion-cmake/libdouble-conversion.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/dragonbox-cmake/libdragonbox_to_chars.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/re2/libre2.so.9
+        ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/re2/libre2.so.9.0.0
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/re2_st/libre2_st.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/boost-cmake/lib_boost_program_options.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/croaring-cmake/libroaring.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/zstd-cmake/libzstd.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/xz/liblzma.so.5
+        ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/xz/liblzma.so.5.3.1
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/aws-s3-cmake/libaws_s3.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../base/common/libcommon.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/cityhash102/libcityhash.so
@@ -243,6 +252,7 @@ install( FILES
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/poco-cmake/XML/lib_poco_xml.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/poco-cmake/Foundation/lib_poco_foundation.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/zlib-ng/libz.so.1
+        ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/zlib-ng/libz.so.1.2.11.zlib-ng
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/poco-cmake/XML/lib_poco_xml_expat.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/replxx-cmake/libreplxx.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/cctz-cmake/libcctz.so
@@ -286,6 +296,7 @@ install( FILES
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/boost-cmake/lib_boost_context.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/boost-cmake/lib_boost_coroutine.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/flatbuffers/libflatbuffers.so.2
+        ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/flatbuffers/libflatbuffers.so.2.0.0
         ${CMAKE_CURRENT_BINARY_DIR}/../../base/widechar_width/libwidechar_width.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/libcpuid-cmake/libcpuid.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../contrib/brotli-cmake/libbrotli.so
@@ -309,6 +320,7 @@ set(CPACK_CMAKE_GENERATOR Ninja)
 set(CPACK_PACKAGE_CONTACT "neng.liu@kyligence.io")
 set(CPACK_PACKAGE_VENDOR "Kyligence")
 set(CPACK_PACKAGING_INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX})
+set(CPACK_RPM_PACKAGE_AUTOREQPROV "no")
 set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CPACK_PACKAGE_RELEASE}.${CMAKE_SYSTEM_PROCESSOR}")
 include(CPack)
 

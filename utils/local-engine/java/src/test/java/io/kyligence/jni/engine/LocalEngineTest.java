@@ -18,7 +18,8 @@ public class LocalEngineTest {
     @Before
     public void setup() {
         System.out.println("start load");
-        System.load("/home/kyligence/Documents/code/ClickHouse/cmake-build-release/utils/local-engine/liblocal_engine_jni.so");
+//        System.setProperty("LD_LIBRARY_PATH" , "/usr/local/lib/");
+        System.load("/usr/local/lib/liblocal_engine_jni.so");
         System.out.println("load success");
     }
 
