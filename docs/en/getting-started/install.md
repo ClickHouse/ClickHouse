@@ -92,7 +92,30 @@ tar -xzvf clickhouse-client-$LATEST_VERSION.tgz
 sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
 ```
 
-For production environments, it’s recommended to use the latest `stable`-version. You can find its number on GitHub page https://github.com/ClickHouse/ClickHouse/tags with postfix `-stable`.
+For production environments, it’s recommended to use the latest `stable`-version. You can find its number on GitHub page https://github.com/ClickHouse/ClickHouse/tags with postfix `-stable`. Example for the stable version:
+
+```bash
+export STABLE_VERSION=`curl https://api.github.com/repos/ClickHouse/ClickHouse/tags 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+-stable' | head -n 1`
+export STABLE_VERSION=$(echo $STABLE_VERSION | sed -e "s/-stable//g")
+
+curl -O https://repo.clickhouse.com/tgz/stable/clickhouse-common-static-$STABLE_VERSION.tgz
+curl -O https://repo.clickhouse.com/tgz/stable/clickhouse-common-static-dbg-$STABLE_VERSION.tgz
+curl -O https://repo.clickhouse.com/tgz/stable/clickhouse-server-$STABLE_VERSION.tgz
+curl -O https://repo.clickhouse.com/tgz/stable/clickhouse-client-$STABLE_VERSION.tgz
+
+tar -xzvf clickhouse-common-static-$STABLE_VERSION.tgz
+sudo clickhouse-common-static-$STABLE_VERSION/install/doinst.sh
+
+tar -xzvf clickhouse-common-static-dbg-$STABLE_VERSION.tgz
+sudo clickhouse-common-static-dbg-$STABLE_VERSION/install/doinst.sh
+
+tar -xzvf clickhouse-server-$STABLE_VERSION.tgz
+sudo clickhouse-server-$STABLE_VERSION/install/doinst.sh
+sudo /etc/init.d/clickhouse-server start
+
+tar -xzvf clickhouse-client-$STABLE_VERSION.tgz
+sudo clickhouse-client-$STABLE_VERSION/install/doinst.sh
+```
 
 ### From Docker Image {#from-docker-image}
 
