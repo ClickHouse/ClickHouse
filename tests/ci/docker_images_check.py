@@ -1,29 +1,32 @@
 #!/usr/bin/env python3
-import subprocess
-import logging
+import argparse
 import json
+import logging
 import os
-import time
 import shutil
+import subprocess
+import time
 from typing import List, Tuple
 
-from github import Github  # type: ignore
+from github import Github
 
 from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP
 from s3_helper import S3Helper
 from pr_info import PRInfo
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from upload_result_helper import upload_results
-from commit_status_helper import get_commit
+from commit_status_helper import post_commit_status
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
 
 NAME = "Push to Dockerhub (actions)"
 
+TEMP_PATH = os.path.join(RUNNER_TEMP, "docker_images_check")
+
 
 def get_changed_docker_images(
     pr_info: PRInfo, repo_path: str, image_file_path: str
-) -> Tuple[List[Tuple[str, str]], str]:
+) -> List[Tuple[str, str]]:
     images_dict = {}
     path_to_images_file = os.path.join(repo_path, image_file_path)
     if os.path.exists(path_to_images_file):
@@ -34,9 +37,8 @@ def get_changed_docker_images(
             "Image file %s doesnt exists in repo %s", image_file_path, repo_path
         )
 
-    dockerhub_repo_name = "yandex"
     if not images_dict:
-        return [], dockerhub_repo_name
+        return []
 
     files_changed = pr_info.changed_files
 
@@ -50,9 +52,6 @@ def get_changed_docker_images(
     changed_images = []
 
     for dockerfile_dir, image_description in images_dict.items():
-        if image_description["name"].startswith("clickhouse/"):
-            dockerhub_repo_name = "clickhouse"
-
         for f in files_changed:
             if f.startswith(dockerfile_dir):
                 logging.info(
@@ -79,7 +78,7 @@ def get_changed_docker_images(
             )
             changed_images.append(dependent)
         index += 1
-        if index > 100:
+        if index > 5 * len(images_dict):
             # Sanity check to prevent infinite loop.
             raise RuntimeError(
                 f"Too many changed docker images, this is a bug. {changed_images}"
@@ -104,11 +103,11 @@ def get_changed_docker_images(
         pr_info.sha,
         result,
     )
-    return result, dockerhub_repo_name
+    return result
 
 
 def build_and_push_one_image(
-    path_to_dockerfile_folder: str, image_name: str, version_string: str
+    path_to_dockerfile_folder: str, image_name: str, version_string: str, push: bool
 ) -> Tuple[bool, str]:
     path = path_to_dockerfile_folder
     logging.info(
@@ -117,24 +116,28 @@ def build_and_push_one_image(
         version_string,
         path,
     )
-    build_log = None
-    with open(
+    build_log = os.path.join(
+        TEMP_PATH,
         "build_and_push_log_{}_{}".format(
             str(image_name).replace("/", "_"), version_string
         ),
-        "w",
-    ) as pl:
+    )
+    push_arg = ""
+    if push:
+        push_arg = "--push "
+
+    with open(build_log, "w") as bl:
         cmd = (
             "docker buildx build --builder default "
             f"--build-arg FROM_TAG={version_string} "
             f"--build-arg BUILDKIT_INLINE_CACHE=1 "
             f"--tag {image_name}:{version_string} "
             f"--cache-from type=registry,ref={image_name}:{version_string} "
-            f"--progress plain --push {path}"
+            f"{push_arg}"
+            f"--progress plain {path}"
         )
         logging.info("Docker command to run: %s", cmd)
-        retcode = subprocess.Popen(cmd, shell=True, stderr=pl, stdout=pl).wait()
-        build_log = str(pl.name)
+        retcode = subprocess.Popen(cmd, shell=True, stderr=bl, stdout=bl).wait()
         if retcode != 0:
             return False, build_log
 
@@ -143,14 +146,14 @@ def build_and_push_one_image(
 
 
 def process_single_image(
-    versions: List[str], path_to_dockerfile_folder: str, image_name: str
+    versions: List[str], path_to_dockerfile_folder: str, image_name: str, push: bool
 ) -> List[Tuple[str, str, str]]:
     logging.info("Image will be pushed with versions %s", ", ".join(versions))
     result = []
     for ver in versions:
         for i in range(5):
             success, build_log = build_and_push_one_image(
-                path_to_dockerfile_folder, image_name, ver
+                path_to_dockerfile_folder, image_name, ver, push
             )
             if success:
                 result.append((image_name + ":" + ver, build_log, "OK"))
@@ -188,48 +191,109 @@ def process_test_results(
     return overall_status, processed_test_results
 
 
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        description="Program to build changed or given docker images with all "
+        "dependant images. Example for local running: "
+        "python docker_images_check.py --no-push-images --no-reports "
+        "--image-path docker/packager/binary",
+    )
 
+    parser.add_argument(
+        "--suffix",
+        type=str,
+        help="suffix for all built images tags and resulting json file; the parameter "
+        "significantly changes the script behavior, e.g. changed_images.json is called "
+        "changed_images_{suffix}.json and contains list of all tags",
+    )
+    parser.add_argument(
+        "--repo",
+        type=str,
+        default="clickhouse",
+        help="docker hub repository prefix",
+    )
+    parser.add_argument(
+        "--image-path",
+        type=str,
+        action="append",
+        help="list of image paths to build instead of using pr_info + diff URL, "
+        "e.g. 'docker/packager/binary'",
+    )
+    parser.add_argument(
+        "--no-reports",
+        action="store_true",
+        help="don't push reports to S3 and github",
+    )
+    parser.add_argument(
+        "--no-push-images",
+        action="store_true",
+        help="don't push images to docker hub",
+    )
+
+    return parser.parse_args()
+
+
+def main():
+    logging.basicConfig(level=logging.INFO)
     stopwatch = Stopwatch()
 
+    args = parse_args()
+    if args.suffix:
+        global NAME
+        NAME += f" {args.suffix}"
+        changed_json = os.path.join(TEMP_PATH, f"changed_images_{args.suffix}.json")
+    else:
+        changed_json = os.path.join(TEMP_PATH, "changed_images.json")
+
+    push = not args.no_push_images
+    if push:
+        subprocess.check_output(
+            "docker login --username 'robotclickhouse' --password '{}'".format(
+                get_parameter_from_ssm("dockerhub_robot_password")
+            ),
+            shell=True,
+        )
+
     repo_path = GITHUB_WORKSPACE
-    temp_path = os.path.join(RUNNER_TEMP, "docker_images_check")
-    dockerhub_password = get_parameter_from_ssm("dockerhub_robot_password")
 
-    if os.path.exists(temp_path):
-        shutil.rmtree(temp_path)
+    if os.path.exists(TEMP_PATH):
+        shutil.rmtree(TEMP_PATH)
+    os.makedirs(TEMP_PATH)
 
-    if not os.path.exists(temp_path):
-        os.makedirs(temp_path)
+    if args.image_path:
+        pr_info = PRInfo()
+        pr_info.changed_files = set(i for i in args.image_path)
+    else:
+        pr_info = PRInfo(need_changed_files=True)
 
-    pr_info = PRInfo(need_changed_files=True)
-    changed_images, dockerhub_repo_name = get_changed_docker_images(
-        pr_info, repo_path, "docker/images.json"
-    )
+    changed_images = get_changed_docker_images(pr_info, repo_path, "docker/images.json")
     logging.info(
         "Has changed images %s", ", ".join([str(image[0]) for image in changed_images])
     )
     pr_commit_version = str(pr_info.number) + "-" + pr_info.sha
+    # The order is important, PR number is used as cache during the build
     versions = [str(pr_info.number), pr_commit_version]
+    result_version = pr_commit_version
     if pr_info.number == 0:
-        versions.append("latest")
+        # First get the latest for cache
+        versions.insert(0, "latest")
 
-    subprocess.check_output(
-        "docker login --username 'robotclickhouse' --password '{}'".format(
-            dockerhub_password
-        ),
-        shell=True,
-    )
+    if args.suffix:
+        # We should build architecture specific images separately and merge a
+        # manifest lately in a different script
+        versions = [f"{v}-{args.suffix}" for v in versions]
+        # changed_images_{suffix}.json should contain all changed images
+        result_version = versions
 
     result_images = {}
     images_processing_result = []
     for rel_path, image_name in changed_images:
         full_path = os.path.join(repo_path, rel_path)
         images_processing_result += process_single_image(
-            versions, full_path, image_name
+            versions, full_path, image_name, push
         )
-        result_images[image_name] = pr_commit_version
+        result_images[image_name] = result_version
 
     if changed_images:
         description = "Updated " + ",".join([im[1] for im in changed_images])
@@ -238,6 +302,9 @@ if __name__ == "__main__":
 
     if len(description) >= 140:
         description = description[:136] + "..."
+
+    with open(changed_json, "w") as images_file:
+        json.dump(result_images, images_file)
 
     s3_helper = S3Helper("https://s3.amazonaws.com")
 
@@ -248,19 +315,16 @@ if __name__ == "__main__":
         s3_helper, images_processing_result, s3_path_prefix
     )
 
-    ch_helper = ClickHouseHelper()
     url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [], NAME)
-
-    with open(os.path.join(temp_path, "changed_images.json"), "w") as images_file:
-        json.dump(result_images, images_file)
 
     print("::notice ::Report url: {}".format(url))
     print('::set-output name=url_output::"{}"'.format(url))
+
+    if args.no_reports:
+        return
+
     gh = Github(get_best_robot_token())
-    commit = get_commit(gh, pr_info.sha)
-    commit.create_status(
-        context=NAME, description=description, state=status, target_url=url
-    )
+    post_commit_status(gh, pr_info.sha, NAME, description, status, url)
 
     prepared_events = prepare_tests_results_for_clickhouse(
         pr_info,
@@ -271,4 +335,9 @@ if __name__ == "__main__":
         url,
         NAME,
     )
+    ch_helper = ClickHouseHelper()
     ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
+
+
+if __name__ == "__main__":
+    main()
