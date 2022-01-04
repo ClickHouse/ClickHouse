@@ -59,10 +59,7 @@ void MergeTreeMetadataCache::getByPrefix(const String & prefix, Strings & keys, 
 
 void MergeTreeMetadataCache::shutdown()
 {
-    if (rocksdb)
-    {
-        rocksdb->Close();
-    }
+    rocksdb->Close();
 }
 
 }
