@@ -827,7 +827,7 @@ public:
 
             CompilerUInt128 a = (CompilerUInt128(numerator.items[1]) << 64) + numerator.items[0];
             CompilerUInt128 b = (CompilerUInt128(denominator.items[1]) << 64) + denominator.items[0];
-            CompilerUInt128 c = a / b;
+            CompilerUInt128 c = a / b; // NOLINT
 
             integer<Bits, Signed> res;
             res.items[0] = c;
