@@ -28,7 +28,8 @@ std::unique_ptr<SeekableReadBuffer>
 PartMetadataCache::readOrSet(const DiskPtr & disk, const String & file_name, String & value)
 {
     String file_path = fs::path(getFullRelativePath()) / file_name;
-    auto status = cache->get(file_path, value);
+    String key = getKey(file_path);
+    auto status = cache->get(key, value);
     if (!status.ok())
     {
         ProfileEvents::increment(ProfileEvents::MergeTreeMetadataCacheMiss);
@@ -41,7 +42,7 @@ PartMetadataCache::readOrSet(const DiskPtr & disk, const String & file_name, Str
         if (in)
         {
             readStringUntilEOF(value, *in);
-            cache->put(file_path, value);
+            cache->put(key, value);
         }
     }
     else
@@ -57,7 +58,8 @@ void PartMetadataCache::batchSet(const DiskPtr & disk, const Strings & file_name
     String read_value;
     for (const auto & file_name : file_names)
     {
-        const String file_path = fs::path(getFullRelativePath()) / file_name;
+        String file_path = fs::path(getFullRelativePath()) / file_name;
+        String key = getKey(file_path);
         if (!disk->exists(file_path))
             continue;
 
@@ -66,10 +68,10 @@ void PartMetadataCache::batchSet(const DiskPtr & disk, const Strings & file_name
             continue;
 
         readStringUntilEOF(text, *in);
-        auto status = cache->put(file_path, text);
+        auto status = cache->put(key, text);
         if (!status.ok())
         {
-            status = cache->get(file_path, read_value);
+            status = cache->get(key, read_value);
             if (status.IsNotFound() || read_value == text)
                 continue;
             throw Exception(ErrorCodes::LOGICAL_ERROR, "set meta failed status:{}, file_path:{}", status.ToString(), file_path);
@@ -82,11 +84,12 @@ void PartMetadataCache::batchDelete(const Strings & file_names)
     for (const auto & file_name : file_names)
     {
         String file_path = fs::path(getFullRelativePath()) / file_name;
-        auto status = cache->del(file_path);
+        String key = getKey(file_path);
+        auto status = cache->del(key);
         if (!status.ok())
         {
             String read_value;
-            status = cache->get(file_path, read_value);
+            status = cache->get(key, read_value);
             if (status.IsNotFound())
                 continue;
             throw Exception(ErrorCodes::LOGICAL_ERROR, "drop meta failed status:{}, file_path:{}", status.ToString(), file_path);
@@ -97,15 +100,16 @@ void PartMetadataCache::batchDelete(const Strings & file_names)
 void PartMetadataCache::set(const String & file_name, const String & value)
 {
     String file_path = fs::path(getFullRelativePath()) / file_name;
+    String key = getKey(file_path);
     String read_value;
-    auto status = cache->get(file_path, read_value);
+    auto status = cache->get(key, read_value);
     if (status == rocksdb::Status::OK() && value == read_value)
         return;
 
-    status = cache->put(file_path, value);
+    status = cache->put(key, value);
     if (!status.ok())
     {
-        status = cache->get(file_path, read_value);
+        status = cache->get(key, read_value);
         if (status.IsNotFound() || read_value == value)
             return;
 
@@ -115,7 +119,7 @@ void PartMetadataCache::set(const String & file_name, const String & value)
 
 void PartMetadataCache::getFilesAndCheckSums(Strings & files, std::vector<uint128> & checksums) const
 {
-    String prefix = fs::path(getFullRelativePath()) / "";
+    String prefix = getKey(fs::path(getFullRelativePath()) / "");
     Strings values;
     cache->getByPrefix(prefix, files, values);
     size_t size = files.size();
@@ -130,6 +134,11 @@ void PartMetadataCache::getFilesAndCheckSums(Strings & files, std::vector<uint12
 String PartMetadataCache::getFullRelativePath() const
 {
     return fs::path(relative_data_path) / (parent_part ? parent_part->relative_path : "") / relative_path / "";
+}
+
+String PartMetadataCache::getKey(const String & file_path) const
+{
+    return disk_name + ":" + file_path;
 }
 
 }
