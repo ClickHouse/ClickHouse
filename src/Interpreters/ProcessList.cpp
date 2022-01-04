@@ -86,6 +86,20 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
                 throw Exception("Too many simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
         }
 
+        String query_kind{ast->getQueryKindString()};
+        if (!is_unlimited_query)
+        {
+            auto amount = getQueryKindAmount(query_kind);
+            if (max_insert_queries_amount && query_kind == "Insert" && amount >= max_insert_queries_amount)
+                throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                                "Too many simultaneous insert queries. Maximum: {}, current: {}",
+                                max_insert_queries_amount, amount);
+            if (max_select_queries_amount && query_kind == "Select" && amount >= max_select_queries_amount)
+                throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                                "Too many simultaneous select queries. Maximum: {}, current: {}",
+                                max_select_queries_amount, amount);
+        }
+
         {
             /**
              * `max_size` check above is controlled by `max_concurrent_queries` server setting and is a "hard" limit for how many
@@ -176,7 +190,9 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
         }
 
         auto process_it = processes.emplace(processes.end(),
-            query_context, query_, client_info, priorities.insert(settings.priority));
+            query_context, query_, client_info, priorities.insert(settings.priority), query_kind);
+
+        increaseQueryKindAmount(query_kind);
 
         res = std::make_shared<Entry>(*this, process_it);
 
@@ -242,6 +258,7 @@ ProcessListEntry::~ProcessListEntry()
 
     String user = it->getClientInfo().current_user;
     String query_id = it->getClientInfo().current_query_id;
+    String query_kind = it->query_kind;
 
     const QueryStatus * process_list_element_ptr = &*it;
 
@@ -273,6 +290,9 @@ ProcessListEntry::~ProcessListEntry()
         LOG_ERROR(&Poco::Logger::get("ProcessList"), "Logical error: cannot find query by query_id and pointer to ProcessListElement in ProcessListForUser");
         std::terminate();
     }
+
+    parent.decreaseQueryKindAmount(query_kind);
+
     parent.have_space.notify_all();
 
     /// If there are no more queries for the user, then we will reset memory tracker and network throttler.
@@ -286,11 +306,12 @@ ProcessListEntry::~ProcessListEntry()
 
 
 QueryStatus::QueryStatus(
-    ContextPtr context_, const String & query_, const ClientInfo & client_info_, QueryPriorities::Handle && priority_handle_)
+    ContextPtr context_, const String & query_, const ClientInfo & client_info_, QueryPriorities::Handle && priority_handle_, const String & query_kind_)
     : WithContext(context_)
     , query(query_)
     , client_info(client_info_)
     , priority_handle(std::move(priority_handle_))
+    , query_kind(query_kind_)
 {
     auto settings = getContext()->getSettings();
     limits.max_execution_time = settings.max_execution_time;
@@ -482,6 +503,35 @@ ProcessList::UserInfo ProcessList::getUserInfo(bool get_profile_events) const
         per_user_infos.emplace(user, user_queries.getInfo(get_profile_events));
 
     return per_user_infos;
+}
+
+void ProcessList::increaseQueryKindAmount(const String & query_kind)
+{
+    auto found = query_kind_amounts.find(query_kind);
+    if (found == query_kind_amounts.end())
+        query_kind_amounts[query_kind] = 1;
+    else
+        found->second += 1;
+}
+
+void ProcessList::decreaseQueryKindAmount(const String & query_kind)
+{
+    auto found = query_kind_amounts.find(query_kind);
+    /// TODO: we could just rebuild the map, as we have saved all query_kind.
+    if (found == query_kind_amounts.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong query kind amount: decrease before increase on '{}'", query_kind);
+    else if (found->second == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong query kind amount: decrease to negative on '{}'", query_kind, found->second);
+    else
+        found->second -= 1;
+
+}
+ProcessList::QueryAmount ProcessList::getQueryKindAmount(const String & query_kind)
+{
+    auto found = query_kind_amounts.find(query_kind);
+    if (found == query_kind_amounts.end())
+        return 0;
+    return found->second;
 }
 
 }
