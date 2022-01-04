@@ -133,6 +133,8 @@ void StorageSystemDistributionQueue::fillData(MutableColumns & res_columns, Cont
         }
     }
 
+    if (tables.empty())
+        return;
 
     MutableColumnPtr col_database_mut = ColumnString::create();
     MutableColumnPtr col_table_mut = ColumnString::create();

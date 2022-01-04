@@ -74,6 +74,8 @@ void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, Conte
         }
     }
 
+    if (replicated_tables.empty())
+        return;
 
     MutableColumnPtr col_database_mut = ColumnString::create();
     MutableColumnPtr col_table_mut = ColumnString::create();

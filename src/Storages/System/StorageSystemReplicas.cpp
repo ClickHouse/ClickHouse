@@ -95,6 +95,8 @@ Pipe StorageSystemReplicas::read(
         }
     }
 
+    if (replicated_tables.empty())
+        return {};
 
     /// Do you need columns that require a ZooKeeper request to compute.
     bool with_zk_fields = false;
