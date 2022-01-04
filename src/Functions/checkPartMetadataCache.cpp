@@ -39,9 +39,9 @@ public:
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionCheckPartMetadataCache>(context_); }
 
     static constexpr DataPartStates part_states
-        = {DataPartState::Committed,
+        = {DataPartState::Active,
            DataPartState::Temporary,
-           DataPartState::PreCommitted,
+           DataPartState::PreActive,
            DataPartState::Outdated,
            DataPartState::Deleting,
            DataPartState::DeleteOnDestroy};
