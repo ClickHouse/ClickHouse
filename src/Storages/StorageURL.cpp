@@ -148,14 +148,12 @@ namespace
                         std::string user_info = request_uri.getUserInfo();
                         if (!user_info.empty())
                         {
-                            std::size_t n = user_info.find(':');
+                            std::string url_decoded_user_info = urlDecode(user_info);
+                            std::size_t n = url_decoded_user_info.find(':');
                             if (n != std::string::npos)
                             {
-                                std::string urlEncodedPassword;
-                                credentials.setUsername(user_info.substr(0, n));
-                                urlEncodedPassword = user_info.substr(n + 1);
-                                urlEncodedPassword = urlDecode(urlEncodedPassword);
-                                credentials.setPassword(urlEncodedPassword);
+                                credentials.setUsername(url_decoded_user_info.substr(0, n));
+                                credentials.setPassword(url_decoded_user_info.substr(n + 1));
                             }
                         }
 
