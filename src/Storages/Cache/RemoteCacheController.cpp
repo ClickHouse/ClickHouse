@@ -1,13 +1,13 @@
-#include <Storages/Cache/RemoteCacheController.h>
-#include <Storages/Cache/ExternalDataSourceCache.h>
-#include <Storages/Cache/RemoteFileMetadataFactory.h>
+#include <fstream>
+#include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadBuffer.h>
 #include <IO/ReadSettings.h>
+#include <Storages/Cache/ExternalDataSourceCache.h>
+#include <Storages/Cache/RemoteCacheController.h>
+#include <Storages/Cache/RemoteFileMetadataFactory.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Parser.h>
-#include <fstream>
 
 namespace DB
 {
@@ -55,7 +55,11 @@ std::shared_ptr<RemoteCacheController> RemoteCacheController::recover(const std:
     readStringUntilEOF(metadata_content, file_readbuffer);
     if (!cache_controller->file_metadata_ptr->fromString(metadata_content))
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid metadata file({}) for meta class {}", local_path_.string(), cache_controller->metadata_class);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Invalid metadata file({}) for meta class {}",
+            local_path_.string(),
+            cache_controller->metadata_class);
     }
 
     cache_controller->current_offset = fs::file_size(local_path_ / "data.bin");
@@ -65,9 +69,7 @@ std::shared_ptr<RemoteCacheController> RemoteCacheController::recover(const std:
 }
 
 RemoteCacheController::RemoteCacheController(
-    IRemoteFileMetadataPtr file_metadata_,
-    const std::filesystem::path & local_path_,
-    size_t cache_bytes_before_flush_)
+    IRemoteFileMetadataPtr file_metadata_, const std::filesystem::path & local_path_, size_t cache_bytes_before_flush_)
     : file_metadata_ptr(file_metadata_)
     , local_path(local_path_)
     , valid(true)
@@ -134,8 +136,7 @@ void RemoteCacheController::startBackgroundDownload(std::unique_ptr<ReadBuffer> 
     data_file_writer = std::make_unique<WriteBufferFromFile>((fs::path(local_path) / "data.bin").string());
     flush(true);
     ReadBufferPtr in_readbuffer(in_readbuffer_.release());
-    download_task_holder = thread_pool.createTask("download remote file",
-            [this, in_readbuffer]{ backgroundDownload(in_readbuffer); });
+    download_task_holder = thread_pool.createTask("download remote file", [this, in_readbuffer] { backgroundDownload(in_readbuffer); });
     download_task_holder->activateAndSchedule();
 }
 
@@ -197,6 +198,7 @@ RemoteCacheController::~RemoteCacheController()
 {
     if (download_task_holder)
         download_task_holder->deactivate();
+    close();
 }
 
 void RemoteCacheController::close()
@@ -213,32 +215,7 @@ std::unique_ptr<ReadBufferFromFileBase> RemoteCacheController::allocFile()
     //settings.local_fs_method = LocalFSReadMethod::read;
     auto file_buffer = createReadBufferFromFileBase((local_path / "data.bin").string(), settings);
 
-    if (file_buffer)
-    {
-        std::lock_guard lock{mutex};
-        opened_file_buffer_refs.insert(reinterpret_cast<uintptr_t>(file_buffer.get()));
-    }
     return file_buffer;
-}
-
-void RemoteCacheController::deallocFile(std::unique_ptr<ReadBufferFromFileBase> file_buffer)
-{
-    if (!file_buffer)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Try to release a null file buffer for {}", local_path.string());
-    }
-    auto buffer_ref = reinterpret_cast<uintptr_t>(file_buffer.get());
-    std::lock_guard lock{mutex};
-    auto it = opened_file_buffer_refs.find(buffer_ref);
-    if (it == opened_file_buffer_refs.end())
-    {
-        throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Try to deallocate file with invalid handler remote path: {}, local path: {}",
-                file_metadata_ptr->remote_path,
-                local_path.string());
-    }
-    opened_file_buffer_refs.erase(it);
 }
 
 }
