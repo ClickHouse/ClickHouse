@@ -204,9 +204,11 @@ public:
     /// Which property user want to remove
     String remove_property;
 
-    String getID(char delim) const override { return "AlterCommand" + (delim + std::to_string(static_cast<int>(type))); }
+    String getID(char delim) const override;
 
     ASTPtr clone() const override;
+
+    static const char * typeToString(Type type);
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
