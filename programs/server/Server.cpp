@@ -812,17 +812,16 @@ if (ThreadFuzzer::instance().isEffective())
 
         /// Directory with metadata of tables, which was marked as dropped by Atomic database
         fs::create_directories(path / "metadata_dropped/");
-
-#if USE_ROCKSDB
-        fs::create_directories(path / "rocksdb/");
-#endif
     }
 
 
 #if USE_ROCKSDB
     /// Initialize merge tree metadata cache
+    if (config().has("merge_tree_metadata_cache"))
     {
-        size_t size = config().getUInt64("meta_file_cache_size", 256 << 20);
+        fs::create_directories(path / "rocksdb/");
+        size_t size = config().getUInt64("merge_tree_metadata_cache.lru_cache_size", 256 << 20);
+        bool continue_if_corrupted = config().getBool("merge_tree_metadata_cache.continue_if_corrupted", false);
 
         try
         {
@@ -830,9 +829,17 @@ if (ThreadFuzzer::instance().isEffective())
         }
         catch (...)
         {
-            /// Rename rocksdb directory and reinitialize merge tree metadata cache
-            fs::rename(path / "rocksdb", path / "rocksdb.old");
-            global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
+            if (continue_if_corrupted)
+            {
+                /// Rename rocksdb directory and reinitialize merge tree metadata cache
+                time_t now = time(nullptr);
+                fs::rename(path / "rocksdb", path / ("rocksdb.old." + std::to_string(now)));
+                global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
+            }
+            else
+            {
+                throw;
+            }
         }
     }
 #endif
