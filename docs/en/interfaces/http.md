@@ -410,9 +410,9 @@ As you can see from the example if `http_handlers` is configured in the config.x
 Now `rule` can configure `method`, `headers`, `url`, `handler`:
 - `method` is responsible for matching the method part of the HTTP request. `method` fully conforms to the definition of [method](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods) in the HTTP protocol. It is an optional configuration. If it is not defined in the configuration file, it does not match the method portion of the HTTP request.
 
--   `url` is responsible for matching the URL part of the HTTP request. It is compatible with [RE2](https://github.com/google/re2)’s regular expressions. It is an optional configuration. If it is not defined in the configuration file, it does not match the URL portion of the HTTP request.
+-   `url` is responsible for matching the URL part of the HTTP request. Values prefixed with `regex:` are interpreted as [RE2](https://github.com/google/re2)’s regular expressions. It is an optional configuration. If it is not defined in the configuration file, it does not match the URL portion of the HTTP request.
 
--   `headers` are responsible for matching the header part of the HTTP request. It is compatible with RE2’s regular expressions. It is an optional configuration. If it is not defined in the configuration file, it does not match the header portion of the HTTP request.
+-   `headers` are responsible for matching the header part of the HTTP request. Values prefixed with `regex:` are interpreted as RE2’s regular expressions. It is an optional configuration. If it is not defined in the configuration file, it does not match the header portion of the HTTP request.
 
 -   `handler` contains the main processing part. Now `handler` can configure `type`, `status`, `content_type`, `response_content`, `query`, `query_param_name`.
     `type` currently supports three types: [predefined_query_handler](#predefined_query_handler), [dynamic_query_handler](#dynamic_query_handler), [static](#static).
@@ -445,11 +445,11 @@ Example:
 ``` xml
 <http_handlers>
     <rule>
-        <url><![CDATA[/query_param_with_url/\w+/(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></url>
+        <url><![CDATA[regex:/query_param_with_url/\w+/(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></url>
         <methods>GET</methods>
         <headers>
             <XXX>TEST_HEADER_VALUE</XXX>
-            <PARAMS_XXX><![CDATA[(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></PARAMS_XXX>
+            <PARAMS_XXX><![CDATA[regex:(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></PARAMS_XXX>
         </headers>
         <handler>
             <type>predefined_query_handler</type>
