@@ -16,7 +16,11 @@ class MergeTreeMetadataCache
 public:
     using Status = rocksdb::Status;
 
-    explicit MergeTreeMetadataCache(rocksdb::DB * rocksdb_) : rocksdb{rocksdb_} { }
+    explicit MergeTreeMetadataCache(rocksdb::DB * rocksdb_) : rocksdb{rocksdb_}
+    {
+        assert(rocksdb);
+    }
+
     MergeTreeMetadataCache(const MergeTreeMetadataCache &) = delete;
     MergeTreeMetadataCache & operator=(const MergeTreeMetadataCache &) = delete;
 
