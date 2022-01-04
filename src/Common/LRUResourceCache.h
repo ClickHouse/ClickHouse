@@ -330,11 +330,12 @@ private:
     // key mustn't be in the cache
     Cell * set(const Key & insert_key, MappedPtr value)
     {
-        auto weight = value ? weight_function(*value) : 0;
-        auto queue_size = cells.size() + 1;
-        auto loss_weight = 0;
-        auto is_overflow = [&] {
-            return current_weight + weight - loss_weight > max_weight || (max_element_size != 0 && queue_size > max_element_size);
+        size_t weight = value ? weight_function(*value) : 0;
+        size_t queue_size = cells.size() + 1;
+        size_t loss_weight = 0;
+        auto is_overflow = [&]
+        {
+            return current_weight + weight > max_weight + loss_weight || (max_element_size != 0 && queue_size > max_element_size);
         };
 
         auto key_it = queue.begin();
@@ -355,7 +356,7 @@ private:
             if (cell.reference_count == 0)
             {
                 loss_weight += cell.weight;
-                queue_size -= 1;
+                queue_size--;
                 to_release_keys.insert(key);
             }
 
