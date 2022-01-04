@@ -245,7 +245,7 @@ public:
     inline String getReplicaName() const { return replica_name; }
 
     /// Restores table metadata if ZooKeeper lost it.
-    /// Used only on restarted readonly replicas (not checked). All active (Committed) parts are moved to detached/
+    /// Used only on restarted readonly replicas (not checked). All active (Active) parts are moved to detached/
     /// folder and attached. Parts in all other states are just moved to detached/ folder.
     void restoreMetadataInZooKeeper();
 
@@ -262,6 +262,8 @@ public:
     }
 
     bool createEmptyPartInsteadOfLost(zkutil::ZooKeeperPtr zookeeper, const String & lost_part_name);
+
+    static const String getDefaultZooKeeperName() { return default_zookeeper_name; }
 
 private:
     std::atomic_bool are_restoring_replica {false};
@@ -392,7 +394,7 @@ private:
     ThrottlerPtr replicated_sends_throttler;
 
     template <class Func>
-    void foreachCommittedParts(Func && func, bool select_sequential_consistency) const;
+    void foreachActiveParts(Func && func, bool select_sequential_consistency) const;
 
     /** Creates the minimum set of nodes in ZooKeeper and create first replica.
       * Returns true if was created, false if exists.
@@ -436,7 +438,7 @@ private:
 
     String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
 
-    /// Accepts a PreCommitted part, atomically checks its checksums with ones on other replicas and commit the part
+    /// Accepts a PreActive part, atomically checks its checksums with ones on other replicas and commit the part
     DataPartsVector checkPartChecksumsAndCommit(Transaction & transaction, const DataPartPtr & part);
 
     bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const override;

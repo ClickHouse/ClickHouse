@@ -466,7 +466,7 @@ StorageID InterpreterInsertQuery::getDatabaseTable() const
 }
 
 
-void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr context_) const
+void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, ContextPtr context_)
 {
     elem.query_kind = "Insert";
     const auto & insert_table = context_->getInsertionTable();
@@ -475,6 +475,11 @@ void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
         elem.query_databases.insert(insert_table.getDatabaseName());
         elem.query_tables.insert(insert_table.getFullNameNotQuoted());
     }
+}
+
+void InterpreterInsertQuery::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr context_) const
+{
+    extendQueryLogElemImpl(elem, context_);
 }
 
 }

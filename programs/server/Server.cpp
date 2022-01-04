@@ -937,6 +937,12 @@ if (ThreadFuzzer::instance().isEffective())
             if (config->has("max_concurrent_queries"))
                 global_context->getProcessList().setMaxSize(config->getInt("max_concurrent_queries", 0));
 
+            if (config->has("max_concurrent_insert_queries"))
+                global_context->getProcessList().setMaxInsertQueriesAmount(config->getInt("max_concurrent_insert_queries", 0));
+
+            if (config->has("max_concurrent_select_queries"))
+                global_context->getProcessList().setMaxSelectQueriesAmount(config->getInt("max_concurrent_select_queries", 0));
+
             if (config->has("keeper_server"))
                 global_context->updateKeeperConfiguration(*config);
 
