@@ -81,7 +81,7 @@ off_t RemoteReadBuffer::seek(off_t offset, int whence)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot call seek() in this buffer. It's a bug!");
     /*
      * Need to wait here. For example, the current file has been download at position X, but here we try to seek to
-     * postition Y (Y > X), it would fail.
+     * position Y (Y > X), it would fail.
      */
     auto & file_buffer = local_file_holder->file_buffer;
     local_file_holder->file_cache_controller->waitMoreData(offset, offset + file_buffer->internalBuffer().size());
