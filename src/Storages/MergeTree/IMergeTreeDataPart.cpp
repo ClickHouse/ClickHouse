@@ -343,7 +343,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
 #if USE_ROCKSDB
     if (use_metadata_cache)
         metadata_cache = std::make_shared<PartMetadataCache>(
-            storage.getContext()->getMergeTreeMetadataCache(), storage.relative_data_path, relative_path, parent_part);
+            storage.getContext()->getMergeTreeMetadataCache(), volume->getDisk()->getPath(), storage.relative_data_path, relative_path, parent_part);
 #endif
 }
 
@@ -375,7 +375,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
 #if USE_ROCKSDB
     if (use_metadata_cache)
         metadata_cache = std::make_shared<PartMetadataCache>(
-            storage.getContext()->getMergeTreeMetadataCache(), storage.relative_data_path, relative_path, parent_part);
+            storage.getContext()->getMergeTreeMetadataCache(), volume->getDisk()->getName(), storage.relative_data_path, relative_path, parent_part);
 #endif
 }
 

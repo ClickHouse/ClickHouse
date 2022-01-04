@@ -24,8 +24,14 @@ class PartMetadataCache
 public:
     using uint128 = CityHash_v1_0_2::uint128;
 
-    PartMetadataCache(const MergeTreeMetadataCachePtr & cache_, const String & relative_data_path_, const String & relative_path_, const IMergeTreeDataPart * parent_part_)
+    PartMetadataCache(
+        const MergeTreeMetadataCachePtr & cache_,
+        const String & disk_name_,
+        const String & relative_data_path_,
+        const String & relative_path_,
+        const IMergeTreeDataPart * parent_part_)
         : cache(cache_)
+        , disk_name(disk_name_)
         , relative_data_path(relative_data_path_)
         , relative_path(relative_path_)
         , parent_part(parent_part_)
@@ -40,11 +46,13 @@ public:
     void getFilesAndCheckSums(Strings & files, std::vector<uint128> & checksums) const;
 
 private:
-    std::string getFullRelativePath() const;
+    String getFullRelativePath() const;
+    String getKey(const String & file_path) const;
 
     MergeTreeMetadataCachePtr cache;
-    const String & relative_data_path; // relative path of table to disk
-    const String & relative_path; // relative path of part to table
+    const String & disk_name;
+    const String & relative_data_path; /// Relative path of table to disk
+    const String & relative_path; /// Relative path of part to table
     const IMergeTreeDataPart * parent_part;
 };
 

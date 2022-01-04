@@ -20,10 +20,7 @@ public:
         cache = global_context->getMergeTreeMetadataCache();
     }
 
-    void TearDown() override
-    {
-        global_context->shutdown();
-    }
+    void TearDown() override { global_context->shutdown(); }
 
     SharedContextHolder shared_context;
     ContextMutablePtr global_context;
@@ -50,14 +47,16 @@ TEST_F(MergeTreeMetadataCacheTest, testCommon)
         ASSERT_EQ(value, prefix + file);
     }
 
-    Strings keys;
-    Strings values;
-    cache->getByPrefix(prefix, keys, values);
-    ASSERT_EQ(keys.size(), files.size());
-    ASSERT_EQ(values.size(), files.size());
-    for (size_t i=0; i < files.size(); ++i)
     {
-        ASSERT_EQ(values[i], prefix + keys[i]);
+        Strings keys;
+        Strings values;
+        cache->getByPrefix(prefix, keys, values);
+        ASSERT_EQ(keys.size(), files.size());
+        ASSERT_EQ(values.size(), files.size());
+        for (size_t i = 0; i < files.size(); ++i)
+        {
+            ASSERT_EQ(values[i], keys[i]);
+        }
     }
 
     for (const auto & file : files)
@@ -73,9 +72,13 @@ TEST_F(MergeTreeMetadataCacheTest, testCommon)
         ASSERT_EQ(status.code(), rocksdb::Status::Code::kNotFound);
     }
 
-    cache->getByPrefix(prefix, keys, values);
-    ASSERT_EQ(keys.size(), 0);
-    ASSERT_EQ(values.size(), 0);
+    {
+        Strings keys;
+        Strings values;
+        cache->getByPrefix(prefix, keys, values);
+        ASSERT_EQ(keys.size(), 0);
+        ASSERT_EQ(values.size(), 0);
+    }
 }
 
 #endif
