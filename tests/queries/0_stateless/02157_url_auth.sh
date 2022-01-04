@@ -44,5 +44,4 @@ docker run --rm -d --name ${DOCKER_NAME} -p 33339:33339 go/webserver:1 >/dev/nul
 clickhouse-client --query "select * from url('http://admin1:password@127.0.0.1:33339/example', 'RawBLOB', 'a String')" 2>&1 | grep Exception
 clickhouse-client --query "select * from url('http://admin2:password%2F@127.0.0.1:33339/example', 'RawBLOB', 'a String')" 2>&1 | grep Exception
 docker stop ${DOCKER_NAME}
-cd ..
 rm -rf ${GO_BUILD}
