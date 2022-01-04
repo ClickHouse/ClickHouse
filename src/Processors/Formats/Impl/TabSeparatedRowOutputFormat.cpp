@@ -98,6 +98,8 @@ void registerOutputFormatTabSeparated(FormatFactory & factory)
 
         registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);
         registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
+        if (is_raw)
+            registerWithNamesAndTypes("LineAsString", register_func);
     }
 }
 
