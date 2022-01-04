@@ -823,7 +823,17 @@ if (ThreadFuzzer::instance().isEffective())
     /// Initialize merge tree metadata cache
     {
         size_t size = config().getUInt64("meta_file_cache_size", 256 << 20);
-        global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
+
+        try
+        {
+            global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
+        }
+        catch (...)
+        {
+            /// Rename rocksdb directory and reinitialize merge tree metadata cache
+            fs::rename(path / "rocksdb", path / "rocksdb.old");
+            global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
+        }
     }
 #endif
 

@@ -2289,11 +2289,10 @@ void Context::initializeMergeTreeMetadataCache(const String & dir, size_t size)
     table_options.block_cache = cache;
     options.table_factory.reset(rocksdb::NewBlockBasedTableFactory(table_options));
     rocksdb::Status status = rocksdb::DB::Open(options, dir, &db);
+
     if (status != rocksdb::Status::OK())
-    {
-        String message = "Fail to open rocksdb path at: " + dir + " status:" + status.ToString();
-        throw Exception(message, ErrorCodes::SYSTEM_ERROR);
-    }
+        throw Exception(ErrorCodes::SYSTEM_ERROR, "Fail to open rocksdb path at: {} status:{}", dir, status.ToString());
+
     shared->merge_tree_metadata_cache = std::make_shared<MergeTreeMetadataCache>(db);
 }
 #endif

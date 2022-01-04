@@ -1,5 +1,6 @@
 #pragma once
 
+#include <magic_enum.hpp>
 #include <Core/Block.h>
 #include <base/types.h>
 #include <Core/NamesAndTypes.h>
@@ -47,21 +48,15 @@ class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPar
 public:
 
 #if USE_ROCKSDB
-    enum ModifyCacheType
+    enum ModifyCacheType : uint8_t
     {
-        PUT, // override set
-        DROP, // remove keys
+        PUT = 1, /// Override set
+        DROP = 2, /// Remove keys
     };
 
-    static String modifyCacheTypeToString(ModifyCacheType type)
+    static constexpr std::string_view modifyCacheTypeToString(ModifyCacheType type)
     {
-        switch (type)
-        {
-            case PUT:
-                return "PUT";
-            case DROP:
-                return "DROP";
-        }
+        return magic_enum::enum_name(type);
     }
 
     using uint128 = PartMetadataCache::uint128;
