@@ -111,12 +111,7 @@ void HiveMetastoreClient::clearTableMetadata(const String & db_name, const Strin
     std::lock_guard lock{mutex};
     HiveTableMetadataPtr metadata = table_metadata_cache.get(cache_key);
     if (metadata)
-    {
-        if (!table_metadata_cache.tryRemove(cache_key))
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Try to clear table metadata failed.");
-        }
-    }
+        table_metadata_cache.remove(cache_key);
 }
 
 void HiveMetastoreClient::setClient(std::shared_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> client_)

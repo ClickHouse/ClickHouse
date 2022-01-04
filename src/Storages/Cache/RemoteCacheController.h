@@ -1,17 +1,17 @@
 #pragma once
-#include <mutex>
-#include <set>
+#include <filesystem>
 #include <map>
 #include <memory>
-#include <filesystem>
+#include <mutex>
+#include <set>
 #include <Core/BackgroundSchedulePool.h>
-#include <Common/ErrorCodes.h>
-#include <Storages/Cache/IRemoteFileMetadata.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileBase.h>
-#include <Poco/Logger.h>
+#include <Storages/Cache/IRemoteFileMetadata.h>
 #include <base/logger_useful.h>
+#include <Poco/Logger.h>
+#include <Common/ErrorCodes.h>
 
 namespace DB
 {
@@ -22,35 +22,21 @@ public:
     {
         TO_DOWNLOAD = 0,
         DOWNLOADING = 1,
-        DOWNLOADED  = 2,
+        DOWNLOADED = 2,
     };
 
     RemoteCacheController(
-        IRemoteFileMetadataPtr file_metadata_,
-        const std::filesystem::path & local_path_,
-        size_t cache_bytes_before_flush_);
+        IRemoteFileMetadataPtr file_metadata_, const std::filesystem::path & local_path_, size_t cache_bytes_before_flush_);
     ~RemoteCacheController();
 
     // recover from local disk
-    static std::shared_ptr<RemoteCacheController>
-    recover(const std::filesystem::path & local_path);
+    static std::shared_ptr<RemoteCacheController> recover(const std::filesystem::path & local_path);
 
     /**
      * Called by LocalCachedFileReader, must be used in pair
      * The second value of the return tuple is the local_path to store file.
      */
     std::unique_ptr<ReadBufferFromFileBase> allocFile();
-    void deallocFile(std::unique_ptr<ReadBufferFromFileBase> buffer);
-
-    /**
-     * when allocFile be called, count++. deallocFile be called, count--.
-     * the local file could be deleted only count==0
-     */
-    inline bool closable()
-    {
-        std::lock_guard lock{mutex};
-        return opened_file_buffer_refs.empty();
-    }
     void close();
 
     /**
@@ -91,8 +77,6 @@ private:
 
     std::mutex mutex;
     std::condition_variable more_data_signal;
-
-    std::set<uintptr_t> opened_file_buffer_refs; // refer to a buffer address
 
     String metadata_class;
     LocalFileStatus file_status = TO_DOWNLOAD; // for tracking download process

@@ -1,40 +1,42 @@
 #pragma once
-#include <mutex>
+#include <condition_variable>
+#include <filesystem>
 #include <list>
-#include <set>
 #include <map>
 #include <memory>
-#include <filesystem>
+#include <mutex>
+#include <set>
 #include <Core/BackgroundSchedulePool.h>
-#include <Poco/Logger.h>
-#include <Common/LRUCache.h>
-#include <Common/ErrorCodes.h>
-#include <Common/ThreadPool.h>
-#include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
-#include <IO/createReadBufferFromFileBase.h>
-#include <IO/WriteBufferFromFile.h>
-#include <IO/WriteBufferFromFileBase.h>
+#include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadSettings.h>
 #include <IO/SeekableReadBuffer.h>
-#include <Storages/Cache/IRemoteFileMetadata.h>
-#include <condition_variable>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromFileBase.h>
+#include <IO/createReadBufferFromFileBase.h>
 #include <Interpreters/Context.h>
-#include <boost/core/noncopyable.hpp>
+#include <Storages/Cache/IRemoteFileMetadata.h>
 #include <Storages/Cache/RemoteCacheController.h>
 #include <Storages/Cache/RemoteFileCachePolicy.h>
+#include <boost/core/noncopyable.hpp>
+#include <Poco/Logger.h>
+#include <Common/ErrorCodes.h>
+#include <Common/LRUResourceCache.h>
+#include <Common/ThreadPool.h>
 
 
 namespace DB
 {
+using RemoteFileCacheType = LRUResourceCache<String, RemoteCacheController, RemoteFileCacheWeightFunction>;
+
 class LocalFileHolder
 {
 public:
-    explicit LocalFileHolder(std::shared_ptr<RemoteCacheController> cache_controller);
-    ~LocalFileHolder();
+    explicit LocalFileHolder(RemoteFileCacheType::MappedHolderPtr cache_controller);
+    ~LocalFileHolder() = default;
 
-    std::shared_ptr<RemoteCacheController> file_cache_controller;
+    RemoteFileCacheType::MappedHolderPtr file_cache_controller;
     std::unique_ptr<ReadBufferFromFileBase> file_buffer;
 };
 
@@ -55,11 +57,10 @@ private:
     size_t remote_file_size = 0;
 };
 
+
 class ExternalDataSourceCache : private boost::noncopyable
 {
 public:
-    using CacheType = LRUCache<String, RemoteCacheController, std::hash<String>,
-          RemoteFileCacheWeightFunction, RemoteFileCacheEvictPolicy>;
     ~ExternalDataSourceCache();
     // global instance
     static ExternalDataSourceCache & instance();
@@ -84,7 +85,7 @@ private:
     std::atomic<bool> initialized = false;
     std::atomic<size_t> total_size;
     std::mutex mutex;
-    std::unique_ptr<CacheType> lru_caches;
+    std::unique_ptr<RemoteFileCacheType> lru_caches;
 
     Poco::Logger * log = &Poco::Logger::get("ExternalDataSourceCache");
 
