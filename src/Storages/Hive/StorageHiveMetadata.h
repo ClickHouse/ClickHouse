@@ -1,7 +1,13 @@
 #pragma once
+
+#include <Common/config.h>
+
+#if USE_HIVE
+
 #include <Storages/Cache/IRemoteFileMetadata.h>
 namespace DB
 {
+
 class StorageHiveMetadata : public IRemoteFileMetadata
 {
 public:
@@ -20,7 +26,7 @@ public:
         last_modification_timestamp = last_modification_timestamp_;
     }
 
-    ~StorageHiveMetadata() override;
+    ~StorageHiveMetadata() override = default;
 
     String getName() const override { return "StorageHiveMetadata"; }
     String getSchema() const { return schema; }
@@ -33,4 +39,6 @@ private:
     String schema;
     String cluster;
 };
+
 }
+#endif

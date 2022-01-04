@@ -3,7 +3,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -18,26 +17,19 @@ RemoteFileMetadataFactory & RemoteFileMetadataFactory::instance()
 
 IRemoteFileMetadataPtr RemoteFileMetadataFactory::get(const String & name)
 {
-    auto it = class_creators.find(name);
-    if (it == class_creators.end())
+    auto it = remote_file_metadatas.find(name);
+    if (it == remote_file_metadatas.end())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found metadata class:{}", name);
     return (it->second)();
 }
 
-void RemoteFileMetadataFactory::registerRemoteFileMatadataCreator(const String & name, MetadataCreator creator)
+void RemoteFileMetadataFactory::registerRemoteFileMatadata(const String & name, MetadataCreator creator)
 {
-    auto it = class_creators.find(name);
-    if (it != class_creators.end())
+    auto it = remote_file_metadatas.find(name);
+    if (it != remote_file_metadatas.end())
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Metadata class ({}) has already been registered.", name);
     }
-    class_creators[name] = creator;
-}
-
-extern void registerStorageHiveMetadataCreator();
-
-void registerRemoteFileMatadataCreators()
-{
-    registerStorageHiveMetadataCreator();
+    remote_file_metadatas[name] = creator;
 }
 }
