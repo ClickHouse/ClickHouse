@@ -16,7 +16,7 @@ ZlibInflatingReadBuffer::ZlibInflatingReadBuffer(
         size_t alignment)
     : BufferWithOwnMemory<ReadBuffer>(buf_size, existing_memory, alignment)
     , in(std::move(in_))
-    , eof(false)
+    , eof_flag(false)
 {
     zstr.zalloc = nullptr;
     zstr.zfree = nullptr;
@@ -54,7 +54,7 @@ bool ZlibInflatingReadBuffer::nextImpl()
     do
     {
         /// if we already found eof, we shouldn't do anything
-        if (eof)
+        if (eof_flag)
             return false;
 
         /// if there is no available bytes in zstr, move ptr to next available data
@@ -83,7 +83,7 @@ bool ZlibInflatingReadBuffer::nextImpl()
             /// * false if there is no data in working buffer
             if (in->eof())
             {
-                eof = true;
+                eof_flag = true;
                 return !working_buffer.empty();
             }
             /// If it is not end of file, we need to reset zstr and return true, because we still have some data to read

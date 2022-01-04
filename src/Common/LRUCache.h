@@ -64,6 +64,18 @@ public:
         setImpl(key, mapped, lock);
     }
 
+    void remove(const Key & key)
+    {
+        std::lock_guard lock(mutex);
+        auto it = cells.find(key);
+        if (it == cells.end())
+            return;
+        auto & cell = it->second;
+        current_size -= cell.size;
+        queue.erase(cell.queue_iterator);
+        cells.erase(it);
+    }
+
     /// If the value for the key is in the cache, returns it. If it is not, calls load_func() to
     /// produce it, saves the result in the cache and returns it.
     /// Only one of several concurrent threads calling getOrSet() will call load_func(),

@@ -4,6 +4,7 @@ set (SRCS
     configReadClient.cpp
     ConfigReloader.cpp
     YAMLParser.cpp
+    ConfigHelper.cpp
 )
 
 add_library(clickhouse_common_config ${SRCS})
