@@ -198,7 +198,6 @@ RemoteCacheController::~RemoteCacheController()
 {
     if (download_task_holder)
         download_task_holder->deactivate();
-    close();
 }
 
 void RemoteCacheController::close()
