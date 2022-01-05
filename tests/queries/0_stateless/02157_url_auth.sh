@@ -10,7 +10,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DOCKER_NAME="url_basic_auth_go_webserver"
 DOCKER_IMAGE="go/webserver:0105"
-cp 02157_url_basic_auth.go app.go
 cat <<EOF >> Dockerfile
 FROM golang:alpine as builder
 
@@ -18,7 +17,7 @@ RUN apk --no-cache add git
 
 WORKDIR /go/src/webserver
 
-COPY app.go .
+COPY 02157_url_basic_auth.go .
 
 RUN go mod init
 
@@ -45,4 +44,4 @@ clickhouse-client --query "select * from url('http://admin3%3F%2F%3APassWord%5E%
 clickhouse-client --query "select * from url('http://admin4*%25%3Aok@127.0.0.1:33339/example', 'RawBLOB', 'a String')" 2>&1 | grep Exception
 docker stop ${DOCKER_NAME}
 docker rmi ${DOCKER_IMAGE} >/dev/null
-rm -f app.go Dockerfile
+rm -f Dockerfile
