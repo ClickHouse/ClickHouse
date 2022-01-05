@@ -8,12 +8,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # We should have correct env vars from shell_config.sh to run this test
 
-GO_BUILD="${CURDIR}/go_build"
 DOCKER_NAME="url_basic_auth_go_webserver"
 DOCKER_IMAGE="go/webserver:0105"
-mkdir -p ${GO_BUILD}
-cd ${GO_BUILD}
-cp ../02157_url_basic_auth.go app.go
+cp 02157_url_basic_auth.go app.go
 cat <<EOF >> Dockerfile
 FROM golang:alpine as builder
 
@@ -48,4 +45,3 @@ clickhouse-client --query "select * from url('http://admin3%3F%2F%3APassWord%5E%
 clickhouse-client --query "select * from url('http://admin4*%25%3Aok@127.0.0.1:33339/example', 'RawBLOB', 'a String')" 2>&1 | grep Exception
 docker stop ${DOCKER_NAME}
 docker rmi ${DOCKER_IMAGE} >/dev/null
-rm -rf ${GO_BUILD}
