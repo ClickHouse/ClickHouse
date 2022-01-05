@@ -235,7 +235,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         fs::path binary_self_path(path);
 #elif defined(OS_FREEBSD)
         /// https://stackoverflow.com/questions/1023306/finding-current-executables-path-without-proc-self-exe
-        fs::path binary_self_path = "/proc/curproc/file";
+        fs::path binary_self_path = argc >= 1 ? argv[0] : "/proc/curproc/file";
 #else
         fs::path binary_self_path = "/proc/self/exe";
 #endif
