@@ -9,6 +9,8 @@ func main() {
 	accounts := gin.Accounts{
 		"admin1": "password",
 		"admin2": "password/",
+		"admin3?/":"PassWord^#?/",
+		"admin4*%":"ok",
 		}
 	router := gin.New()
 	router.Use(gin.BasicAuth(accounts))

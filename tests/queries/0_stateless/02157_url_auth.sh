@@ -43,5 +43,7 @@ docker build -t go/webserver:1 . >/dev/null
 docker run --rm -d --name ${DOCKER_NAME} -p 33339:33339 go/webserver:1 >/dev/null
 clickhouse-client --query "select * from url('http://admin1:password@127.0.0.1:33339/example', 'RawBLOB', 'a String')" 2>&1 | grep Exception
 clickhouse-client --query "select * from url('http://admin2:password%2F@127.0.0.1:33339/example', 'RawBLOB', 'a String')" 2>&1 | grep Exception
+clickhouse-client --query "select * from url('http://admin3%3F%2F%3APassWord%5E%23%3F%2F@127.0.0.1:33339/example', 'RawBLOB', 'a String')" 2>&1 | grep Exception
+clickhouse-client --query "select * from url('http://admin4*%25%3Aok@127.0.0.1:33339/example', 'RawBLOB', 'a String')" 2>&1 | grep Exception
 docker stop ${DOCKER_NAME}
 rm -rf ${GO_BUILD}
