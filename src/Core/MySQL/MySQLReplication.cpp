@@ -204,6 +204,7 @@ namespace MySQLReplication
                 case MYSQL_TYPE_DATE:
                 case MYSQL_TYPE_DATETIME:
                 case MYSQL_TYPE_NEWDATE:
+                case MYSQL_TYPE_YEAR:
                 {
                     /// No data here.
                     column_meta.emplace_back(0);
@@ -214,7 +215,10 @@ namespace MySQLReplication
                 case MYSQL_TYPE_DOUBLE:
                 case MYSQL_TYPE_TIMESTAMP2:
                 case MYSQL_TYPE_DATETIME2:
+                case MYSQL_TYPE_TIME2:
                 case MYSQL_TYPE_BLOB:
+                case MYSQL_TYPE_JSON:
+                case MYSQL_TYPE_GEOMETRY:
                 {
                     column_meta.emplace_back(UInt16(meta[pos]));
                     pos += 1;
@@ -432,6 +436,124 @@ namespace MySQLReplication
                         row.push_back(Field(date_day_number.toUnderType()));
                         break;
                     }
+                    case MYSQL_TYPE_YEAR: {
+                        Int32 val = 0;
+                        payload.readStrict(reinterpret_cast<char *>(&val), 1);
+
+                        String time_str;
+                        time_str.resize(4);
+                        sprintf(time_str.data(), "%04d", (val + 1900));
+                        row.push_back(Field{String{time_str}});
+                        break;
+                    }
+                    case MYSQL_TYPE_TIME2:
+                    {
+                        UInt64 uintpart = 0UL;
+                        UInt32 frac = 0U;
+                        Int64 ltime;
+                        Int64 intpart;
+                        switch (meta)
+                        {
+                            case 0:
+                            {
+                                readBigEndianStrict(payload, reinterpret_cast<char *>(&uintpart), 3);
+                                intpart = uintpart - 0x800000L;
+                                ltime = intpart << 24;
+                                break;
+                            }
+                            case 1:
+                            case 2:
+                            {
+                                readBigEndianStrict(payload, reinterpret_cast<char *>(&uintpart), 3);
+                                intpart = uintpart - 0x800000L;
+                                readBigEndianStrict(payload, reinterpret_cast<char *>(&frac), 1);
+                                if (intpart < 0 && frac > 0)
+                                {
+                                    intpart ++;
+                                    frac -= 0x100;
+                                }
+                                frac = frac * 10000;
+                                ltime = intpart << 24;
+                                break;
+                            }
+                            case 3:
+                            case 4:
+                            {
+                                readBigEndianStrict(payload, reinterpret_cast<char *>(&uintpart), 3);
+                                intpart = uintpart - 0x800000L;
+                                readBigEndianStrict(payload, reinterpret_cast<char *>(&frac), 2);
+                                if (intpart < 0 && frac > 0)
+                                {
+                                    intpart ++;
+                                    frac -= 0x10000;
+                                }
+                                frac = frac * 100;
+                                ltime = intpart << 24;
+                                break;
+                            }
+                            case 5:
+                            case 6:
+                            {
+                                readBigEndianStrict(payload, reinterpret_cast<char *>(&uintpart), 6);
+                                intpart = uintpart - 0x800000000000L;
+                                ltime = intpart;
+                                frac = std::abs(intpart % (1L << 24));
+                                break;
+                            }
+                            default:
+                            {
+                                readBigEndianStrict(payload, reinterpret_cast<char *>(&uintpart), 3);
+                                intpart = uintpart - 0x800000L;
+                                ltime = intpart << 24;
+                                break;
+                            }
+                        }
+                        String hh, mm, ss, ff;
+                        bool negative = false;
+                        if (intpart == 0)
+                        {
+                            hh = "00";
+                            mm = "00";
+                            ss = "00";
+                        }
+                        else
+                        {
+                            if (ltime < 0) negative= true;
+                            UInt64 ultime = std::abs(ltime);
+                            intpart = ultime >> 24;
+                            UInt32 d = (intpart >> 12) % (1 << 10);
+                            if (d >= 100)
+                            {
+                                hh.resize(3);
+                                sprintf(hh.data(), "%3d", d);
+                            }
+                            else
+                            {
+                                hh.resize(2);
+                                sprintf(hh.data(), "%02d", d);
+                            }
+                            mm.resize(2);
+                            ss.resize(2);
+                            sprintf(mm.data(), "%02d", static_cast<int> (intpart >> 6) % (1 << 6));
+                            sprintf(ss.data(), "%02d", static_cast<int> (intpart % (1 << 6)));
+                        }
+                        if (meta > 1)
+                        {
+                            ff.resize(6);
+                            sprintf(ff.data(), "%06d", frac);
+                        }
+                        String time_buff;
+                        if (negative) time_buff += '-';
+                        time_buff.append(hh).append(":");
+                        time_buff.append(mm).append(":");
+                        time_buff.append(ss);
+                        if (meta > 1)
+                        {
+                            time_buff.append(".").append(ff);
+                        }
+                        row.push_back(Field{String{time_buff}});
+                        break;
+                    }
                     case MYSQL_TYPE_DATETIME2:
                     {
                         Int64 val = 0;
@@ -585,6 +707,18 @@ namespace MySQLReplication
                         }
                         break;
                     }
+                    case MYSQL_TYPE_SET:
+                    {
+                        UInt32 size = (meta & 0xff);
+                        Bitmap bitmap1;
+                        readBitmap(payload, bitmap1, size);
+                        row.push_back(Field{UInt64{bitmap1.to_ulong()}});
+                        break;
+                    }
+                    //todo parse binlog from json type is is a little complex, Unless we find a library that we can use it to parse here.
+//                    case MYSQL_TYPE_JSON:
+//                    {
+//                    }
                     case MYSQL_TYPE_BIT:
                     {
                         UInt32 bits = ((meta >> 8) * 8) + (meta & 0xff);
@@ -631,6 +765,7 @@ namespace MySQLReplication
                         row.push_back(Field{String{val}});
                         break;
                     }
+                    case MYSQL_TYPE_GEOMETRY:
                     case MYSQL_TYPE_BLOB:
                     {
                         UInt32 size = 0;
