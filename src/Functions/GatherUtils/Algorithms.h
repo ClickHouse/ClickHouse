@@ -348,7 +348,7 @@ void NO_INLINE sliceDynamicOffsetUnbounded(Source && src, Sink && sink, const IC
 }
 
 
-template <bool inverse_offset, typename Source, typename Sink>
+template <bool inverse, typename Source, typename Sink>
 static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const IColumn * offset_column, const IColumn * length_column)
 {
     const bool is_offset_null = !offset_column || offset_column->onlyNull();
@@ -390,14 +390,14 @@ static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const ICo
 
             if (offset > 0)
             {
-                if constexpr (inverse_offset)
-                    slice = src.getSliceFromRight(offset - 1, size);
+                if constexpr (inverse)
+                    slice = src.getSliceFromRight(size + offset - 1, size);
                 else
                     slice = src.getSliceFromLeft(offset - 1, size);
             }
             else
             {
-                if constexpr (inverse_offset)
+                if constexpr (inverse)
                     slice = src.getSliceFromLeft(-UInt64(offset), size);
                 else
                     slice = src.getSliceFromRight(-UInt64(offset), size);

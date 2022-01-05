@@ -85,7 +85,7 @@ public:
         else
         {
             if (column_length_const)
-                sliceFromRightConstantOffsetBounded(source, StringSink(*col_res, input_rows_count), 0, length_value);
+                sliceFromRightConstantOffsetUnbounded(source, StringSink(*col_res, input_rows_count), length_value);
             else
                 sliceFromRightDynamicLength(source, StringSink(*col_res, input_rows_count), *column_length);
         }
