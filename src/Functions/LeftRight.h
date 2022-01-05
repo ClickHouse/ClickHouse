@@ -1,3 +1,5 @@
+#pragma once
+
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>

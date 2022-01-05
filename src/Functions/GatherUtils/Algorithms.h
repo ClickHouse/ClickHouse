@@ -636,6 +636,7 @@ bool insliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
     else
         return accurate::equalsOp(first.data[first_ind], first.data[second_ind]);
 }
+
 inline ALWAYS_INLINE bool insliceEqualElements(const GenericArraySlice & first, size_t first_ind, size_t second_ind)
 {
     return first.elements->compareAt(first_ind + first.begin, second_ind + first.begin, *first.elements, -1) == 0;
