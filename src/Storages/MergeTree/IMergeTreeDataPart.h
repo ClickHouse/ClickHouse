@@ -15,7 +15,7 @@
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
-#include <Storages/MergeTree/PartMetadataCache.h>
+#include <Storages/MergeTree/IPartMetadataManager.h>
 
 #include <shared_mutex>
 
@@ -46,22 +46,6 @@ class UncompressedCache;
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>
 {
 public:
-
-#if USE_ROCKSDB
-    enum ModifyCacheType : uint8_t
-    {
-        PUT = 1, /// Override set
-        DROP = 2, /// Remove keys
-    };
-
-    static constexpr std::string_view modifyCacheTypeToString(ModifyCacheType type)
-    {
-        return magic_enum::enum_name(type);
-    }
-
-    using uint128 = PartMetadataCache::uint128;
-#endif
-
     static constexpr auto DATA_FILE_EXTENSION = ".bin";
 
     using Checksums = MergeTreeDataPartChecksums;
@@ -77,6 +61,8 @@ public:
     using IndexSizeByName = std::unordered_map<std::string, ColumnSize>;
 
     using Type = MergeTreeDataPartType;
+
+    using uint128 = IPartMetadataManager::uint128;
 
 
     IMergeTreeDataPart(
@@ -155,10 +141,6 @@ public:
 
     /// Throws an exception if part is not stored in on-disk format.
     void assertOnDisk() const;
-
-#if USE_ROCKSDB
-    void assertMetadataCacheDropped(bool include_projection = false) const;
-#endif
 
     void remove() const;
 
@@ -320,11 +302,7 @@ public:
         {
         }
 
-#if USE_ROCKSDB
-        void load(const MergeTreeData & data, const PartMetadataCachePtr & metadata_cache, const DiskPtr & disk, const String & part_path);
-#else
-        void load(const MergeTreeData & data, const DiskPtr & disk, const String & part_path);
-#endif
+        void load(const MergeTreeData & data, const PartMetadataManagerPtr & manager);
 
         void store(const MergeTreeData & data, const DiskPtr & disk, const String & part_path, Checksums & checksums) const;
         void store(const Names & column_names, const DataTypes & data_types, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
@@ -393,9 +371,7 @@ public:
 
     String getRelativePathForPrefix(const String & prefix, bool detached = false) const;
 
-#if USE_ROCKSDB
-    virtual void checkMetadataCache(Strings & files, std::vector<uint128> & cache_checksums, std::vector<uint128> & disk_checksums) const;
-#endif
+    // virtual void checkMetadataCache(Strings & files, std::vector<uint128> & cache_checksums, std::vector<uint128> & disk_checksums) const;
 
     bool isProjectionPart() const { return parent_part != nullptr; }
 
@@ -471,9 +447,7 @@ protected:
     /// Disabled when USE_ROCKSDB is OFF, or use_metadata_cache is set true in merge tree settings
     bool use_metadata_cache = false;
 
-#if USE_ROCKSDB
-    mutable PartMetadataCachePtr metadata_cache;
-#endif
+    mutable PartMetadataManagerPtr metadata_manager;
 
     void removeIfNeeded();
 
@@ -487,6 +461,8 @@ protected:
     String getRelativePathForDetachedPart(const String & prefix) const;
 
     std::optional<bool> keepSharedDataInDecoupledStorage() const;
+
+    void initializePartMetadataManager();
 
 private:
     /// In compact parts order of columns is necessary
@@ -550,10 +526,8 @@ private:
     /// for this column with default parameters.
     CompressionCodecPtr detectDefaultCompressionCodec() const;
 
-#if USE_ROCKSDB
-    void modifyAllMetadataCaches(ModifyCacheType type, bool include_projection = false) const;
-    IMergeTreeDataPart::uint128 getActualChecksumByFile(const String & file_path) const;
-#endif
+    // void modifyAllMetadataCaches(ModifyCacheType type, bool include_projection = false) const;
+    // IMergeTreeDataPart::uint128 getActualChecksumByFile(const String & file_path) const;
 
     mutable State state{State::Temporary};
 };

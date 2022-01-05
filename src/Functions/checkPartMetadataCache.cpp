@@ -134,7 +134,7 @@ public:
         cache_checksums.reserve(file_number);
         disk_checksums.reserve(file_number);
 
-        part->checkMetadataCache(keys, cache_checksums, disk_checksums);
+        // part->checkMetadataCache(keys, cache_checksums, disk_checksums);
         for (size_t i = 0; i < keys.size(); ++i)
         {
             col_key.insert(keys[i]);
