@@ -20,7 +20,7 @@ struct TrivialLRUResourceCacheWeightFunction
 template <typename T>
 struct TrivialLRUResourceCacheReleaseFunction
 {
-    void operator()(std::shared_ptr<T>) {}    
+    void operator()(std::shared_ptr<T>) { }
 };
 
 /**
@@ -30,7 +30,8 @@ struct TrivialLRUResourceCacheReleaseFunction
  *
  * Warning (!): This implementation is in development, not to be used.
  */
-template <typename TKey,
+template <
+    typename TKey,
     typename TMapped,
     typename WeightFunction = TrivialLRUResourceCacheWeightFunction<TMapped>,
     typename ReleaseFunction = TrivialLRUResourceCacheReleaseFunction<TMapped>,
@@ -45,8 +46,7 @@ public:
     class MappedHolder
     {
     public:
-        MappedHolder(LRUResourceCache * cache_, const Key & key_, MappedPtr value_)
-            : cache(cache_), key(key_), val(value_) {}
+        MappedHolder(LRUResourceCache * cache_, const Key & key_, MappedPtr value_) : cache(cache_), key(key_), val(value_) { }
 
         ~MappedHolder() { cache->release(key); }
 
@@ -61,7 +61,9 @@ public:
     using MappedHolderPtr = std::unique_ptr<MappedHolder>;
 
     explicit LRUResourceCache(size_t max_weight_, size_t max_element_size_ = 0)
-        : max_weight(max_weight_), max_element_size(max_element_size_) {}
+        : max_weight(max_weight_), max_element_size(max_element_size_)
+    {
+    }
 
     MappedHolderPtr get(const Key & key)
     {
@@ -343,8 +345,7 @@ private:
         size_t weight = value ? weight_function(*value) : 0;
         size_t queue_size = cells.size() + 1;
         size_t loss_weight = 0;
-        auto is_overflow = [&]
-        {
+        auto is_overflow = [&] {
             return current_weight + weight > max_weight + loss_weight || (max_element_size != 0 && queue_size > max_element_size);
         };
 

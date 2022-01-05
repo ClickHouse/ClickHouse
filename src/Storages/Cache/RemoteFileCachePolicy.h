@@ -8,7 +8,7 @@ struct RemoteFileCacheWeightFunction
 
 struct RemoteFileCacheReleaseFunction
 {
-    void operator() (std::shared_ptr<RemoteCacheController> controller)
+    void operator()(std::shared_ptr<RemoteCacheController> controller)
     {
         if (controller)
             controller->close();
