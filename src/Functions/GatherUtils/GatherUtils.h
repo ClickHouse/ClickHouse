@@ -52,6 +52,9 @@ ColumnArray::MutablePtr sliceFromRightConstantOffsetBounded(IArraySource & src, 
 ColumnArray::MutablePtr sliceDynamicOffsetUnbounded(IArraySource & src, const IColumn & offset_column);
 ColumnArray::MutablePtr sliceDynamicOffsetBounded(IArraySource & src, const IColumn & offset_column, const IColumn & length_column);
 
+ColumnArray::MutablePtr sliceFromLeftDynamicLength(IArraySource & src, const IColumn & length_column);
+ColumnArray::MutablePtr sliceFromRightDynamicLength(IArraySource & src, const IColumn & length_column);
+
 void sliceHasAny(IArraySource & first, IArraySource & second, ColumnUInt8 & result);
 void sliceHasAll(IArraySource & first, IArraySource & second, ColumnUInt8 & result);
 void sliceHasSubstr(IArraySource & first, IArraySource & second, ColumnUInt8 & result);
