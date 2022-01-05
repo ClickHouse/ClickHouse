@@ -115,9 +115,9 @@ install(TARGETS ${LOCALENGINE_SHARED_LIB}
 #install(RUNTIME_DEPENDENCY_SET myset
 #        LIBRARY DESTINATION lib
 #        )
-install(TARGETS ${LOCALENGINE_SHARED_LIB} RUNTIME_DEPENDENCIES
-        DIRECTORIES lib
-        )
+#install(TARGETS ${LOCALENGINE_SHARED_LIB} RUNTIME_DEPENDENCIES
+#        DIRECTORIES lib
+#        )
 install( FILES
         ${CMAKE_CURRENT_BINARY_DIR}/../../src/AggregateFunctions/libclickhouse_aggregate_functions.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../src/Functions/libclickhouse_functions.so
