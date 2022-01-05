@@ -715,7 +715,7 @@ namespace MySQLReplication
                         row.push_back(Field{UInt64{bitmap1.to_ulong()}});
                         break;
                     }
-                    //todo parse binlog from json type is is quite complex,Unless we find a library that we can use it to parse here.
+                    //todo parse binlog from json type is is a little complex, Unless we find a library that we can use it to parse here.
 //                    case MYSQL_TYPE_JSON:
 //                    {
 //                    }
