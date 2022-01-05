@@ -153,10 +153,12 @@ static void createGroup(const String & group_name)
     if (!group_name.empty())
     {
 #if defined(OS_DARWIN)
-
         // TODO: implement.
-
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unable to create a group in macOS");
+#elif defined(OS_FREEBSD)
+        std::string command = fmt::format("pw groupadd {}", group_name);
+        fmt::print(" {}\n", command);
+        executeScript(command);
 #else
         std::string command = fmt::format("groupadd -r {}", group_name);
         fmt::print(" {}\n", command);
@@ -170,10 +172,14 @@ static void createUser(const String & user_name, [[maybe_unused]] const String &
     if (!user_name.empty())
     {
 #if defined(OS_DARWIN)
-
         // TODO: implement.
-
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unable to create a user in macOS");
+#elif defined(OS_FREEBSD)
+        std::string command = group_name.empty()
+            ? fmt::format("pw useradd -s /bin/false -d /nonexistent -n {}", user_name)
+            : fmt::format("pw useradd -s /bin/false -d /nonexistent -g {} -n {}", group_name, user_name);
+        fmt::print(" {}\n", command);
+        executeScript(command);
 #else
         std::string command = group_name.empty()
             ? fmt::format("useradd -r --shell /bin/false --home-dir /nonexistent --user-group {}", user_name)
