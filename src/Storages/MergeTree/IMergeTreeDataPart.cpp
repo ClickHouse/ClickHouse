@@ -338,7 +338,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     incrementTypeMetric(part_type);
 
     minmax_idx = std::make_shared<MinMaxIndex>();
-    
+
     initializePartMetadataManager();
 }
 
