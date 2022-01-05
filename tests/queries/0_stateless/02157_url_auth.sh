@@ -45,3 +45,4 @@ clickhouse-client --query "select * from url('http://admin3%3F%2F%3APassWord%5E%
 clickhouse-client --query "select * from url('http://admin4*%25%3Aok@127.0.0.1:33339/example', 'RawBLOB', 'a String')" 2>&1 | grep Exception
 docker stop ${DOCKER_NAME}
 docker rmi ${DOCKER_IMAGE} >/dev/null
+rm -f app.go Dockerfile
