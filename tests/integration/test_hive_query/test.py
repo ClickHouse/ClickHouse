@@ -106,7 +106,7 @@ def test_parquet_groupby_with_cache(started_cluster):
     assert result == expected_result
 def test_cache_read_bytes(started_cluster):
     node = started_cluster.instances['h0_0_0']
-    time.sleep(3)
+    time.sleep(10)
     result = node.query("select sum(ProfileEvent_ExternalDataSourceLocalCacheReadBytes)  from system.metric_log where ProfileEvent_ExternalDataSourceLocalCacheReadBytes > 0")
     logging.info("Read bytes from cache:{}".format(result))
     assert result.strip() != '0'
