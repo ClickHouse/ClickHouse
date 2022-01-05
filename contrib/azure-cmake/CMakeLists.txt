@@ -46,14 +46,17 @@ include("${AZURE_DIR}/cmake-modules/AzureTransportAdapters.cmake")
 add_library(azure_sdk ${AZURE_SDK_UNIFIED_SRC})
 
 if (COMPILER_CLANG)
-    target_compile_options(azure_sdk PUBLIC
+    target_compile_options(azure_sdk PRIVATE
         -Wno-deprecated-copy-dtor
         -Wno-extra-semi
         -Wno-suggest-destructor-override
         -Wno-inconsistent-missing-destructor-override
         -Wno-error=unknown-warning-option
-        -Wno-reserved-identifier
     )
+
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 13)
+        target_compile_options(azure_sdk PRIVATE -Wno-reserved-identifier)
+    endif()
 endif()
 
 # Originally, on Windows azure-core is built with bcrypt and crypt32 by default
@@ -68,4 +71,4 @@ endif()
 
 target_link_libraries(azure_sdk PRIVATE ${LIBXML2_LIBRARIES})
 
-target_include_directories(azure_sdk PUBLIC ${AZURE_SDK_INCLUDES})
+target_include_directories(azure_sdk SYSTEM PUBLIC ${AZURE_SDK_INCLUDES})

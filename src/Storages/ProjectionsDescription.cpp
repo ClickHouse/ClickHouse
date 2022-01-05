@@ -201,7 +201,7 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     select_expression_list->children.push_back(makeASTFunction("count"));
     select_query->setExpression(ASTProjectionSelectQuery::Expression::SELECT, std::move(select_expression_list));
 
-    if (partition_columns)
+    if (partition_columns && !partition_columns->children.empty())
         select_query->setExpression(ASTProjectionSelectQuery::Expression::GROUP_BY, partition_columns->clone());
 
     result.definition_ast = select_query;
@@ -211,7 +211,9 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     auto external_storage_holder = std::make_shared<TemporaryTableHolder>(query_context, columns, ConstraintsDescription{});
     StoragePtr storage = external_storage_holder->getTable();
     InterpreterSelectQuery select(
-        result.query_ast, query_context, storage, {}, SelectQueryOptions{QueryProcessingStage::WithMergeableState}.modify().ignoreAlias());
+        result.query_ast, query_context, storage, {},
+        /// Here we ignore ast optimizations because otherwise aggregation keys may be removed from result header as constants.
+        SelectQueryOptions{QueryProcessingStage::WithMergeableState}.modify().ignoreAlias().ignoreASTOptimizationsAlias());
     result.required_columns = select.getRequiredColumns();
     result.sample_block = select.getSampleBlock();
 

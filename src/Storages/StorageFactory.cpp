@@ -156,9 +156,6 @@ StoragePtr StorageFactory::get(
                     throw Exception("Unknown table engine " + name, ErrorCodes::UNKNOWN_STORAGE);
             }
 
-            if (query.comment)
-                comment = query.comment->as<ASTLiteral &>().value.get<String>();
-
             auto check_feature = [&](String feature_description, FeatureMatcherFn feature_matcher_fn)
             {
                 if (!feature_matcher_fn(it->second.features))
@@ -203,6 +200,9 @@ StoragePtr StorageFactory::get(
                     [](StorageFeatures features) { return features.supports_projections; });
         }
     }
+
+    if (query.comment)
+        comment = query.comment->as<ASTLiteral &>().value.get<String>();
 
     ASTs empty_engine_args;
     Arguments arguments{

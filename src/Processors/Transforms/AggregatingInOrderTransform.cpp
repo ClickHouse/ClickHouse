@@ -231,8 +231,10 @@ IProcessor::Status AggregatingInOrderTransform::prepare()
         input.setNeeded();
         return Status::NeedData;
     }
+
     assert(!is_consume_finished);
     current_chunk = input.pull(true /* set_not_needed */);
+    convertToFullIfSparse(current_chunk);
     return Status::Ready;
 }
 

@@ -1,0 +1,129 @@
+<html id="html" style="color: white; background: black;">
+<head>
+    <meta charset="UTF-8">
+</head>
+<body style="font-family: sans-serif">
+<h1 id="loading" style="position: absolute; margin-left: 1em;">Loading (10 seconds, 20 MB)...</h1>
+<div id="info" style="position: sticky; top: 1rem; z-index: 1; margin: 1rem; float: right; font-size: 16pt; padding: 0.5rem; border: 1px solid #111; display: none;"></div>
+<canvas style="position: absolute" id="canvas"></canvas>
+<script type="text/javascript">
+
+let start_date = '2020-06-13';
+
+let query = `
+    WITH '${start_date}'::Date AS start_date
+    SELECT groupArray([d, n, fail]) FROM
+    (
+        SELECT n, check_start_time::Date - start_date AS d, max(test_status LIKE 'F%' OR test_status LIKE 'E%') AS fail
+        FROM "gh-data".checks
+
+        INNER JOIN
+        (
+            SELECT test_name, toUInt16(rowNumberInAllBlocks()) AS n FROM
+            (
+                SELECT DISTINCT test_name
+                FROM "gh-data".checks
+                WHERE match(test_name, '^\\d+_') AND check_name ILIKE '%stateless%' AND check_start_time > now() - INTERVAL 1 DAY
+                ORDER BY test_name
+            )
+        ) AS nums
+
+        USING (test_name)
+
+        WHERE
+            check_name ILIKE '%stateless%'
+            AND pull_request_number = 0
+            AND check_start_time >= start_date
+        GROUP BY d, n
+        ORDER BY d, n
+    )
+    FORMAT TSV`;
+
+function load(query, callback) {
+    const xhr = new XMLHttpRequest;
+    xhr.open('POST', "https://play-ci.clickhouse.com/?user=play&add_http_cors_header=1", true);
+
+    xhr.onreadystatechange = function()
+    {
+        if (this.readyState === XMLHttpRequest.DONE && this.status == 200) {
+            callback(this.response);
+        }
+    }
+
+    xhr.send(query);
+}
+
+load(query, renderResponse);
+
+let data;
+let canvas = document.getElementById('canvas');
+
+function renderResponse(response) {
+    data = JSON.parse(response);
+
+    const last_pixel = data[data.length - 1];
+    canvas.width = last_pixel[0] + 1;
+    canvas.height = last_pixel[1] + 1;
+
+    document.getElementById('html').style.height = canvas.height + 10 + 'px';
+    document.body.style.height = canvas.height + 10 + 'px';
+
+    let ctx = canvas.getContext('2d');
+    let image = ctx.createImageData(canvas.width, canvas.height);
+    let pixels = image.data;
+
+    data.map(elem => {
+
+        let x = elem[0];
+        let y = canvas.height - elem[1];
+
+        pixels[(x + y * canvas.width) * 4 + 0] = elem[2] ? 255 : 0; // r
+        pixels[(x + y * canvas.width) * 4 + 1] = elem[2] ? 0 : 100; // g
+        pixels[(x + y * canvas.width) * 4 + 2] = 0; // b
+        pixels[(x + y * canvas.width) * 4 + 3] = 255; // a
+    });
+
+    document.getElementById('loading').style.display = 'none';
+    ctx.putImageData(image, 0, 0);
+}
+
+let test_names_query = `
+    SELECT test_name, toUInt16(rowNumberInAllBlocks()) AS n FROM
+    (
+        SELECT DISTINCT test_name
+        FROM "gh-data".checks
+        WHERE match(test_name, '^\\d+_') AND check_name ILIKE '%stateless%' AND check_start_time > now() - INTERVAL 1 DAY
+        ORDER BY test_name
+    ) FORMAT JSONCompact`
+
+let test_names;
+
+load(test_names_query, saveTestNames);
+
+function saveTestNames(response)
+{
+    test_names = JSON.parse(response).data;
+}
+
+canvas.addEventListener('mousemove', event => {
+    const x = event.layerX;
+    const y = event.layerY;
+
+    let date = new Date(start_date);
+    date.setDate(date.getDate() + x);
+    date = date.toISOString().split('T')[0];
+
+    let test = test_names[canvas.height - y][0];
+
+    let pixel = canvas.getContext('2d').getImageData(x, y, 1, 1).data;
+
+    let info = document.getElementById('info');
+
+    info.innerText = `${date}, ${test}`;
+    info.style.background = pixel[0] > 0 ? '#F00' : (pixel[3] > 0 ? '#006400' : '#000');
+    info.style.display = 'block';
+})
+
+</script>
+</body>
+</html>

@@ -68,11 +68,12 @@ public:
 
     std::shared_ptr<const IDictionary> getDictionary(const String & dictionary_name)
     {
-        auto dict = getContext()->getExternalDictionariesLoader().getDictionary(dictionary_name, getContext());
+        auto current_context = getContext();
+        auto dict = current_context->getExternalDictionariesLoader().getDictionary(dictionary_name, current_context);
 
         if (!access_checked)
         {
-            getContext()->checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
+            current_context->checkAccess(AccessType::dictGet, dict->getDatabaseOrNoDatabaseTag(), dict->getDictionaryID().getTableName());
             access_checked = true;
         }
 
@@ -106,8 +107,9 @@ public:
         if (!attr_name_col)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument of function dictGet must be a constant string");
 
-        const auto dictionary_name = dict_name_col->getValue<String>();
-        const auto attribute_name = attr_name_col->getValue<String>();
+        const auto & dictionary_name = dict_name_col->getValue<String>();
+        const auto & attribute_name = attr_name_col->getValue<String>();
+
         return getDictionary(dictionary_name)->isInjective(attribute_name);
     }
 

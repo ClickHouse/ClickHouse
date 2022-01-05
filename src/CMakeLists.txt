@@ -107,7 +107,7 @@ if (USE_AWS_S3)
 endif()
 
 if (USE_AZURE_BLOB_STORAGE)
-    add_headers_and_sources(dbms Disks/BlobStorage)
+    add_headers_and_sources(dbms Disks/AzureBlobStorage)
 endif()
 
 if (USE_HDFS)
@@ -526,6 +526,14 @@ if (USE_BZIP2)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${BZIP2_INCLUDE_DIR})
 endif()
 
+if(USE_SIMDJSON)
+    dbms_target_link_libraries(PRIVATE simdjson)
+endif()
+
+if(USE_RAPIDJSON)
+    dbms_target_include_directories(SYSTEM PRIVATE ${RAPIDJSON_INCLUDE_DIR})
+endif()
+
 dbms_target_link_libraries(PUBLIC consistent-hashing)
 
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
@@ -559,6 +567,7 @@ if (ENABLE_TESTS AND USE_GTEST)
         clickhouse_storages_system
         dbms
         clickhouse_common_zookeeper
+        clickhouse_common_config
         string_utils)
 
     add_check(unit_tests_dbms)

@@ -1,4 +1,9 @@
 name: BackportPR
+
+env:
+  # Force the stdout and stderr streams to be unbuffered
+  PYTHONUNBUFFERED: 1
+
 on: # yamllint disable-line rule:truthy
   push:
     branches:
@@ -7,6 +12,9 @@ jobs:
   DockerHubPush:
     runs-on: [self-hosted, style-checker]
     steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Images check
@@ -29,6 +37,9 @@ jobs:
           REPO_COPY=${{runner.temp}}/compatibility_check/ClickHouse
           REPORTS_PATH=${{runner.temp}}/reports_dir
           EOF
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Download json reports
@@ -69,10 +80,13 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
@@ -81,6 +95,7 @@ jobs:
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
       - name: Upload build URLs to artifacts
+        if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
@@ -110,10 +125,13 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
@@ -122,6 +140,7 @@ jobs:
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
       - name: Upload build URLs to artifacts
+        if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
@@ -151,10 +170,13 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
@@ -163,6 +185,7 @@ jobs:
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
       - name: Upload build URLs to artifacts
+        if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
@@ -192,10 +215,13 @@ jobs:
         with:
           name: changed_images
           path: ${{ env.IMAGES_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
-          submodules: 'recursive'
+          submodules: 'true'
           fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         run: |
@@ -204,6 +230,7 @@ jobs:
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
       - name: Upload build URLs to artifacts
+        if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
@@ -236,6 +263,9 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Report Builder
@@ -270,6 +300,9 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -305,6 +338,9 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Functional test
@@ -343,6 +379,9 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Stress test
@@ -377,6 +416,9 @@ jobs:
         uses: actions/download-artifact@v2
         with:
           path: ${{ env.REPORTS_PATH }}
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Integration test
@@ -403,6 +445,9 @@ jobs:
       - CompatibilityCheck
     runs-on: [self-hosted, style-checker]
     steps:
+      - name: Clear repository
+        run: |
+          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Finish label

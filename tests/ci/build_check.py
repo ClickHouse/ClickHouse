@@ -7,8 +7,10 @@ import os
 import sys
 import time
 from github import Github
+
+from env_helper import REPO_COPY, TEMP_PATH, CACHES_PATH, IMAGES_PATH
 from s3_helper import S3Helper
-from pr_info import PRInfo, get_event
+from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 from version_helper import get_version_from_repo, update_version_local
 from ccache_utils import get_ccache_if_not_exists, upload_ccache
@@ -114,15 +116,19 @@ def create_json_artifact(temp_path, build_name, log_url, build_urls, build_confi
         "status": success,
     }
 
-    with open(os.path.join(temp_path, "build_urls_" + build_name + '.json'), 'w') as build_links:
+    json_name = "build_urls_" + build_name + '.json'
+
+    print ("Dump json report", result, "to", json_name, "with env", "build_urls_{build_name}")
+
+    with open(os.path.join(temp_path, json_name), 'w') as build_links:
         json.dump(result, build_links)
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
-    temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
-    caches_path = os.getenv("CACHES_PATH", temp_path)
+    repo_path = REPO_COPY
+    temp_path = TEMP_PATH
+    caches_path = CACHES_PATH
 
     build_check_name = sys.argv[1]
     build_name = sys.argv[2]
@@ -132,7 +138,7 @@ if __name__ == "__main__":
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    pr_info = PRInfo(get_event())
+    pr_info = PRInfo()
 
     logging.info("Repo copy path %s", repo_path)
 
@@ -171,7 +177,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     image_name = get_image_name(build_config)
-    docker_image = get_image_with_version(os.getenv("IMAGES_PATH"), image_name)
+    docker_image = get_image_with_version(IMAGES_PATH, image_name)
     image_version = docker_image.version
 
     logging.info("Got version from repo %s", version.get_version_string())

@@ -495,14 +495,26 @@ void RemoteQueryExecutor::finish(std::unique_ptr<ReadContext> * read_context)
 
     /// Send the request to abort the execution of the request, if not already sent.
     tryCancel("Cancelling query because enough data has been read", read_context);
-    /// Try to drain connections asynchronously.
-    if (auto conn = ConnectionCollector::enqueueConnectionCleanup(pool, connections))
+
+    if (context->getSettingsRef().drain_timeout != Poco::Timespan(-1000000))
     {
-        /// Drain connections synchronously.
+        auto connections_left = ConnectionCollector::enqueueConnectionCleanup(pool, connections);
+        if (connections_left)
+        {
+            /// Drain connections synchronously and suppress errors.
+            CurrentMetrics::Increment metric_increment(CurrentMetrics::ActiveSyncDrainedConnections);
+            ConnectionCollector::drainConnections(*connections_left, /* throw_error= */ false);
+            CurrentMetrics::add(CurrentMetrics::SyncDrainedConnections, 1);
+        }
+    }
+    else
+    {
+        /// Drain connections synchronously w/o suppressing errors.
         CurrentMetrics::Increment metric_increment(CurrentMetrics::ActiveSyncDrainedConnections);
-        ConnectionCollector::drainConnections(*conn);
+        ConnectionCollector::drainConnections(*connections, /* throw_error= */ true);
         CurrentMetrics::add(CurrentMetrics::SyncDrainedConnections, 1);
     }
+
     finished = true;
 }
 

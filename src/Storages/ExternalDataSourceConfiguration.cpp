@@ -54,6 +54,7 @@ void ExternalDataSourceConfiguration::set(const ExternalDataSourceConfiguration 
     database = conf.database;
     table = conf.table;
     schema = conf.schema;
+    addresses = conf.addresses;
     addresses_expr = conf.addresses_expr;
 }
 

@@ -395,17 +395,17 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
                 read_list.push_back(*connection->socket);
         }
 
+        auto timeout = is_draining ? drain_timeout : receive_timeout;
         int n = Poco::Net::Socket::select(
             read_list,
             write_list,
             except_list,
-            is_draining ? drain_timeout : receive_timeout);
+            timeout);
 
         /// We treat any error as timeout for simplicity.
         /// And we also check if read_list is still empty just in case.
         if (n <= 0 || read_list.empty())
         {
-            auto err_msg = fmt::format("Timeout exceeded while reading from {}", dumpAddressesUnlocked());
             for (ReplicaState & state : replica_states)
             {
                 Connection * connection = state.connection;
@@ -415,7 +415,10 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
                     invalidateReplica(state);
                 }
             }
-            throw Exception(err_msg, ErrorCodes::TIMEOUT_EXCEEDED);
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                "Timeout ({} ms) exceeded while reading from {}",
+                timeout.totalMilliseconds(),
+                dumpAddressesUnlocked());
         }
     }
 

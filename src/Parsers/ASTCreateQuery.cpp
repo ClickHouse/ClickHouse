@@ -359,7 +359,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     if (as_table_function)
     {
-        if (columns_list)
+        if (columns_list && !columns_list->empty())
         {
             frame.expression_list_always_start_on_new_line = true;
             settings.ostr << (settings.one_line ? " (" : "\n(");
@@ -375,7 +375,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     frame.expression_list_always_start_on_new_line = true;
 
-    if (columns_list && !as_table_function)
+    if (columns_list && !columns_list->empty() && !as_table_function)
     {
         settings.ostr << (settings.one_line ? " (" : "\n(");
         FormatStateStacked frame_nested = frame;
@@ -427,8 +427,11 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     if (select)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS" << settings.nl_or_ws << (settings.hilite ? hilite_none : "");
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS"
+                      << (comment ? "(" : "")
+                      << settings.nl_or_ws << (settings.hilite ? hilite_none : "");
         select->formatImpl(settings, state, frame);
+        settings.ostr << (comment ? ")" : "");
     }
 
     if (tables)

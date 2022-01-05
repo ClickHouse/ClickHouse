@@ -43,12 +43,11 @@ def test_digest_auth_basic(started_cluster, get_zk):
 
     auth_connection.create("/test_no_acl", b"")
     auth_connection.create("/test_all_acl", b"data", acl=[make_acl("auth", "", all=True)])
-    # for some reason original zookeeper accepts this ACL, but doesn't allow to do anything with this node
-    # even with correct credentials.
-    auth_connection.create("/test_all_digest_acl", b"dataX", acl=[make_acl("digest", "user1:password1", all=True)])
+    # Consistent with zookeeper, accept generated digest
+    auth_connection.create("/test_all_digest_acl", b"dataX", acl=[make_acl("digest", "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI=", all=True)])
 
     assert auth_connection.get("/test_all_acl")[0] == b"data"
-    #assert auth_connection.get("/test_all_digest_acl")[0] == b"dataX"
+    assert auth_connection.get("/test_all_digest_acl")[0] == b"dataX"
 
     no_auth_connection = get_zk()
     no_auth_connection.set("/test_no_acl", b"hello")

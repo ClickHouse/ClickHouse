@@ -71,7 +71,7 @@ public:
         return std::make_shared<HashedArrayDictionary<dictionary_key_type>>(getDictionaryID(), dict_struct, source_ptr->clone(), configuration, update_field_loaded_block);
     }
 
-    const IDictionarySource * getSource() const override { return source_ptr.get(); }
+    DictionarySourcePtr getSource() const override { return source_ptr; }
 
     const DictionaryLifetime & getLifetime() const override { return configuration.lifetime; }
 

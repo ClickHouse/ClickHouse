@@ -29,7 +29,13 @@ def pull_image(image_name):
         return False
 
 def build_image(image_name, filepath):
-    subprocess.check_call("docker build --network=host -t {} -f {} .".format(image_name, filepath), shell=True)
+    context = os.path.dirname(filepath)
+    subprocess.check_call(
+        "docker build --network=host -t {} -f {} {}".format(
+            image_name, filepath, context
+        ),
+        shell=True,
+    )
 
 def run_docker_image_with_env(image_name, output, env_variables, ch_root, ccache_dir, docker_image_version):
     env_part = " -e ".join(env_variables)
@@ -90,6 +96,7 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
     elif is_cross_arm:
         cc = compiler[:-len(ARM_SUFFIX)]
         cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-aarch64.cmake")
+        result.append("DEB_ARCH_FLAG=-aarm64")
     elif is_cross_freebsd:
         cc = compiler[:-len(FREEBSD_SUFFIX)]
         cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/freebsd/toolchain-x86_64.cmake")
@@ -98,6 +105,7 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
         cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-ppc64le.cmake")
     else:
         cc = compiler
+        result.append("DEB_ARCH_FLAG=-aamd64")
 
     cxx = cc.replace('gcc', 'g++').replace('clang', 'clang++')
 

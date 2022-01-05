@@ -15,7 +15,7 @@ void registerDiskS3(DiskFactory & factory);
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
-void registerDiskBlobStorage(DiskFactory & factory);
+void registerDiskAzureBlobStorage(DiskFactory & factory);
 #endif
 
 #if USE_SSL
@@ -41,7 +41,7 @@ void registerDisks()
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
-    registerDiskBlobStorage(factory);
+    registerDiskAzureBlobStorage(factory);
 #endif
 
 #if USE_SSL

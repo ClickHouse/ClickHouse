@@ -39,10 +39,10 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2
 
 -   `policy_name` - (optionally) policy name, it will be used to store temporary files for async send
 
-See also:
+**See Also**
 
-    -   [insert_distributed_sync](../../../operations/settings/settings.md#insert_distributed_sync) setting
-    -   [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
+ - [insert_distributed_sync](../../../operations/settings/settings.md#insert_distributed_sync) setting
+ - [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
 
 **Distributed Settings**
 
