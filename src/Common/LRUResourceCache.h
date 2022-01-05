@@ -12,9 +12,15 @@
 namespace DB
 {
 template <typename T>
-struct TrivailLRUResourceCacheWeightFunction
+struct TrivialLRUResourceCacheWeightFunction
 {
     size_t operator()(const T &) const { return 1; }
+};
+
+template <typename T>
+struct TrivialLRUResourceCacheReleaseFunction
+{
+    void operator()(std::shared_ptr<T>) {}    
 };
 
 /**
@@ -26,7 +32,8 @@ struct TrivailLRUResourceCacheWeightFunction
  */
 template <typename TKey,
     typename TMapped,
-    typename WeightFunction = TrivailLRUResourceCacheWeightFunction<TMapped>,
+    typename WeightFunction = TrivialLRUResourceCacheWeightFunction<TMapped>,
+    typename ReleaseFunction = TrivialLRUResourceCacheReleaseFunction<TMapped>,
     typename HashFunction = std::hash<TKey>>
 class LRUResourceCache
 {
@@ -86,6 +93,7 @@ public:
         {
             queue.erase(cell.queue_iterator);
             current_weight -= cell.weight;
+            release_function(cell.value);
             cells.erase(it);
         }
         else
@@ -198,6 +206,7 @@ private:
     friend struct InsertTokenHolder;
     InsertTokenById insert_tokens;
     WeightFunction weight_function;
+    ReleaseFunction release_function;
     std::atomic<size_t> hits{0};
     std::atomic<size_t> misses{0};
     std::atomic<size_t> evict_count{0};
@@ -305,6 +314,7 @@ private:
         {
             queue.erase(cell.queue_iterator);
             current_weight -= cell.weight;
+            release_function(cell.value);
             cells.erase(it);
         }
     }
@@ -376,6 +386,7 @@ private:
         {
             auto & cell = cells[key];
             queue.erase(cell.queue_iterator);
+            release_function(cell.value);
             cells.erase(key);
             ++evict_count;
         }

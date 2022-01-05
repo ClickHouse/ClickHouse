@@ -28,7 +28,7 @@
 
 namespace DB
 {
-using RemoteFileCacheType = LRUResourceCache<String, RemoteCacheController, RemoteFileCacheWeightFunction>;
+using RemoteFileCacheType = LRUResourceCache<String, RemoteCacheController, RemoteFileCacheWeightFunction, RemoteFileCacheReleaseFunction>;
 
 class LocalFileHolder
 {
