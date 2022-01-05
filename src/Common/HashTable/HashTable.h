@@ -237,12 +237,14 @@ struct HashTableGrower
 
     /// If collision resolution chains are contiguous, we can implement erase operation by moving the elements.
     static constexpr auto performs_linear_probing_with_single_step = true;
+    size_t mask_value = calculateMask();
 
     /// The size of the hash table in the cells.
     size_t bufSize() const               { return 1ULL << size_degree; }
 
     size_t maxFill() const               { return 1ULL << (size_degree - 1); }
-    size_t mask() const                  { return bufSize() - 1; }
+    size_t mask() const                  { return mask_value; }
+    size_t calculateMask() const         { return bufSize() - 1; }
 
     /// From the hash value, get the cell number in the hash table.
     size_t place(size_t x) const         { return x & mask(); }
@@ -257,6 +259,7 @@ struct HashTableGrower
     void increaseSize()
     {
         size_degree += size_degree >= 23 ? 1 : 2;
+        mask_value = calculateMask();
     }
 
     /// Set the buffer size by the number of elements in the hash table. Used when deserializing a hash table.
@@ -267,11 +270,13 @@ struct HashTableGrower
              : ((initial_size_degree > static_cast<size_t>(log2(num_elems - 1)) + 2)
                  ? initial_size_degree
                  : (static_cast<size_t>(log2(num_elems - 1)) + 2));
+        mask_value = calculateMask();
     }
 
     void setBufSize(size_t buf_size_)
     {
         size_degree = static_cast<size_t>(log2(buf_size_ - 1) + 1);
+        mask_value = calculateMask();
     }
 };
 
