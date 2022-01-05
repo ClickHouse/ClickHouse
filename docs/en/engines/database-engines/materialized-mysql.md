@@ -78,12 +78,15 @@ When working with the `MaterializedMySQL` database engine, [ReplacingMergeTree](
 | DATE, NEWDATE           | [Date](../../sql-reference/data-types/date.md)               |
 | DATETIME, TIMESTAMP     | [DateTime](../../sql-reference/data-types/datetime.md)       |
 | DATETIME2, TIMESTAMP2   | [DateTime64](../../sql-reference/data-types/datetime64.md)   |
+| YEAR                    | [String](../../sql-reference/data-types/string.md)           |
+| TIME                    | [String](../../sql-reference/data-types/string.md)           |
 | ENUM                    | [Enum](../../sql-reference/data-types/enum.md)               |
 | STRING                  | [String](../../sql-reference/data-types/string.md)           |
 | VARCHAR, VAR_STRING     | [String](../../sql-reference/data-types/string.md)           |
 | BLOB                    | [String](../../sql-reference/data-types/string.md)           |
 | BINARY                  | [FixedString](../../sql-reference/data-types/fixedstring.md) |
 | BIT                     | [UInt64](../../sql-reference/data-types/int-uint.md)         |
+| SET                     | [UInt64](../../sql-reference/data-types/int-uint.md)         |
 
 [Nullable](../../sql-reference/data-types/nullable.md) is supported.
 

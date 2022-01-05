@@ -315,6 +315,48 @@ getTableOutput(const String & database_name, const String & table_name, ContextM
     return std::move(res.pipeline);
 }
 
+static inline String reWriteMysqlQueryColumn(mysqlxx::Pool::Entry & connection, const String & database_name, const String & table_name, const Settings & global_settings)
+{
+    Block tables_columns_sample_block
+            {
+                    { std::make_shared<DataTypeString>(),   "column_name" },
+                    { std::make_shared<DataTypeString>(),   "column_type" }
+            };
+
+    const String & query =  "SELECT COLUMN_NAME AS column_name, COLUMN_TYPE AS column_type FROM INFORMATION_SCHEMA.COLUMNS"
+                            " WHERE TABLE_SCHEMA = '"  + backQuoteIfNeed(database_name) +
+                            "' AND TABLE_NAME = '" + backQuoteIfNeed(table_name) +  "' ORDER BY ORDINAL_POSITION";
+
+    StreamSettings mysql_input_stream_settings(global_settings, false, true);
+    auto mysql_source = std::make_unique<MySQLSource>(connection, query, tables_columns_sample_block, mysql_input_stream_settings);
+
+    Block block;
+    std::stringstream query_columns_str;
+    QueryPipeline pipeline(std::move(mysql_source));
+    PullingPipelineExecutor executor(pipeline);
+    while (executor.pull(block))
+    {
+        const auto & column_name_col = *block.getByPosition(0).column;
+        const auto & column_type_col = *block.getByPosition(1).column;
+        size_t rows = block.rows();
+        for (size_t i = 0; i < rows; ++i)
+        {
+            String column_name = column_name_col[i].safeGet<String>();
+            String column_type = column_type_col[i].safeGet<String>();
+            //we can do something special conversion to guarantee full select results is the same as the binlog parse results
+            if (column_type.starts_with("set"))
+            {
+                query_columns_str << (backQuoteIfNeed(column_name) + " + 0");
+            } else
+                query_columns_str << backQuoteIfNeed(column_name);
+            if (i != rows - 1)
+                query_columns_str << ",";
+        }
+    }
+
+    return query_columns_str.str();
+}
+
 static inline void dumpDataForTables(
     mysqlxx::Pool::Entry & connection, const std::unordered_map<String, String> & need_dumping_tables,
     const String & query_prefix, const String & database_name, const String & mysql_database_name,
@@ -334,9 +376,9 @@ static inline void dumpDataForTables(
 
             auto pipeline = getTableOutput(database_name, table_name, query_context);
             StreamSettings mysql_input_stream_settings(context->getSettingsRef());
-            auto input = std::make_unique<MySQLSource>(
-                connection, "SELECT * FROM " + backQuoteIfNeed(mysql_database_name) + "." + backQuoteIfNeed(table_name),
-                pipeline.getHeader(), mysql_input_stream_settings);
+            String mysql_select_all_query = "SELECT " + reWriteMysqlQueryColumn(connection, mysql_database_name, table_name, context->getSettings()) + " FROM "
+                    + backQuoteIfNeed(mysql_database_name) + "." + backQuoteIfNeed(table_name);
+            auto input = std::make_unique<MySQLSource>(connection, mysql_select_all_query, pipeline.getHeader(), mysql_input_stream_settings);
             auto counting = std::make_shared<CountingTransform>(pipeline.getHeader());
             Pipe pipe(std::move(input));
             pipe.addTransform(counting);
