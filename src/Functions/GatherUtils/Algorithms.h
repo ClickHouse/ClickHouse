@@ -391,9 +391,9 @@ static void sliceDynamicOffsetBoundedImpl(Source && src, Sink && sink, const ICo
             if (offset > 0)
             {
                 if constexpr (inverse)
-                    slice = src.getSliceFromRight(size + offset - 1, size);
+                    slice = src.getSliceFromRight(UInt64(size) + UInt64(offset) - 1, size);
                 else
-                    slice = src.getSliceFromLeft(offset - 1, size);
+                    slice = src.getSliceFromLeft(UInt64(offset) - 1, size);
             }
             else
             {
