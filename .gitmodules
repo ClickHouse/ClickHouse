@@ -253,3 +253,4 @@
 [submodule "contrib/BLAKE3"]
 	path = contrib/BLAKE3
 	url = https://github.com/BoloniniD/BLAKE3.git
+	branch = RustFFI-compat
