@@ -390,7 +390,7 @@ struct TTestMoments
         Float64 se = getStandardError();
 
         boost::math::students_t dist(degrees_of_freedom);
-        Float64 t = boost::math::quantile(boost::math::complement(dist, (1.0f - confidence_level) / 2.0f));
+        Float64 t = boost::math::quantile(boost::math::complement(dist, (1.0 - confidence_level) / 2.0));
         Float64 mean_diff = mean_x - mean_y;
         Float64 ci_low = mean_diff - t * se;
         Float64 ci_high = mean_diff + t * se;
