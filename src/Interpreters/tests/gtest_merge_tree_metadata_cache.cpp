@@ -1,9 +1,11 @@
-#include <Interpreters/Context.h>
+#include "config_core.h"
 
 #if USE_ROCKSDB
 #include <gtest/gtest.h>
 #include <rocksdb/table.h>
 #include <rocksdb/db.h>
+#include <Interpreters/Context.h>
+#include <Common/tests/gtest_global_context.h>
 #include <Storages/MergeTree/MergeTreeMetadataCache.h>
 
 using namespace DB;
@@ -13,17 +15,11 @@ class MergeTreeMetadataCacheTest : public ::testing::Test
 public:
     void SetUp() override
     {
-        shared_context = Context::createShared();
-        global_context = Context::createGlobal(shared_context.get());
-        global_context->makeGlobalContext();
-        global_context->initializeMergeTreeMetadataCache("./db/", 256 << 20);
-        cache = global_context->getMergeTreeMetadataCache();
+        const auto & context_holder = getContext();
+        context_holder.context->initializeMergeTreeMetadataCache("./db/", 256 << 20);
+        cache = context_holder.context->getMergeTreeMetadataCache();
     }
 
-    void TearDown() override { global_context->shutdown(); }
-
-    SharedContextHolder shared_context;
-    ContextMutablePtr global_context;
     MergeTreeMetadataCachePtr cache;
 };
 
