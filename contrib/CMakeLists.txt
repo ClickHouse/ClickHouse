@@ -21,6 +21,8 @@ endif()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
 
+add_subdirectory (BLAKE3)
+
 add_subdirectory (abseil-cpp-cmake)
 add_subdirectory (magic-enum-cmake)
 add_subdirectory (boost-cmake)

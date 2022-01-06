@@ -46,6 +46,7 @@ include (cmake/target.cmake)
 include (cmake/tools.cmake)
 include (cmake/analysis.cmake)
 include (cmake/git_status.cmake)
+include (cmake/build_rust_lib.cmake)
 
 # Ignore export() since we don't use it,
 # but it gets broken with a global targets via link_libraries()
@@ -93,6 +94,14 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
     endif()
 
     set (CMAKE_CXX_COMPILER_LAUNCHER prlimit --as=${RLIMIT_AS} --data=${RLIMIT_DATA} --cpu=${RLIMIT_CPU} ${CMAKE_CXX_COMPILER_LAUNCHER})
+endif ()
+
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(CARGO_RELEASE_FLAG "" CACHE INTERNAL "")
+    set(TARGET_DIR "debug" CACHE INTERNAL "")
+else ()
+    set(CARGO_RELEASE_FLAG "--release" CACHE INTERNAL "")
+    set(TARGET_DIR "release" CACHE INTERNAL "")
 endif ()
 
 if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")
