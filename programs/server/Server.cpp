@@ -814,7 +814,6 @@ if (ThreadFuzzer::instance().isEffective())
         fs::create_directories(path / "metadata_dropped/");
     }
 
-
 #if USE_ROCKSDB
     /// Initialize merge tree metadata cache
     if (config().has("merge_tree_metadata_cache"))
@@ -822,9 +821,10 @@ if (ThreadFuzzer::instance().isEffective())
         fs::create_directories(path / "rocksdb/");
         size_t size = config().getUInt64("merge_tree_metadata_cache.lru_cache_size", 256 << 20);
         bool continue_if_corrupted = config().getBool("merge_tree_metadata_cache.continue_if_corrupted", false);
-
         try
         {
+            LOG_DEBUG(
+                log, "Initiailizing merge tree metadata cache lru_cache_size:{} continue_if_corrupted:{}", size, continue_if_corrupted);
             global_context->initializeMergeTreeMetadataCache(path_str + "/" + "rocksdb", size);
         }
         catch (...)
