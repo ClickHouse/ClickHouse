@@ -47,7 +47,7 @@ namespace DB
         bool useDefaultImplementationForConstants() const override { return true; }
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-        DataTypePtr getReturnType() const
+        static DataTypePtr getReturnType()
         {
             DataTypes types
             {
@@ -99,11 +99,11 @@ namespace DB
             MutableColumnPtr to{getReturnType()->createColumn()};
             to->reserve(input_rows_count);
 
-            auto * col_alternative = getColumnString(arguments[5]);
+            const auto * col_alternative = getColumnString(arguments[5]);
             const ColumnString::Chars & alternative_chars = col_alternative->getChars();
             const ColumnString::Offsets & alternative_offsets = col_alternative->getOffsets();
 
-            auto * col_usevar = getColumnString(arguments[6]);
+            const auto * col_usevar = getColumnString(arguments[6]);
             const ColumnString::Chars & usevar_chars = col_usevar->getChars();
             const ColumnString::Offsets & usevar_offsets = col_usevar->getOffsets();
 
