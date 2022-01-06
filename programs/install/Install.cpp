@@ -191,6 +191,20 @@ static void createUser(const String & user_name, [[maybe_unused]] const String &
 }
 
 
+static std::string formatWithSudo(std::string command, bool needed = true)
+{
+    if (!needed)
+        return command;
+
+#if defined(OS_FREEBSD)
+    /// FreeBSD does not have 'sudo' installed.
+    return fmt::format("su -m root -c '{}'", command);
+#else
+    return fmt::format("sudo {}", command);
+#endif
+}
+
+
 int mainEntryClickHouseInstall(int argc, char ** argv)
 {
     try
@@ -213,10 +227,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         if (options.count("help"))
         {
-            std::cout << "Usage: "
-                << (getuid() == 0 ? "" : "sudo ")
-                << argv[0]
-                << " install [options]\n";
+            std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " install [options]", getuid() != 0) << '\n';
             std::cout << desc << '\n';
             return 1;
         }
@@ -323,7 +334,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             catch (const Exception & e)
             {
                 if (e.code() == ErrorCodes::CANNOT_OPEN_FILE && geteuid() != 0)
-                    std::cerr << "Install must be run as root: sudo ./clickhouse install\n";
+                    std::cerr << "Install must be run as root: " << formatWithSudo("./clickhouse install") << '\n';
                 throw;
             }
 
@@ -833,9 +844,10 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             fmt::print(
                 "\nClickHouse has been successfully installed.\n"
                 "\nRestart clickhouse-server with:\n"
-                " sudo clickhouse restart\n"
+                " {}\n"
                 "\nStart clickhouse-client with:\n"
                 " clickhouse-client{}\n\n",
+                formatWithSudo("clickhouse restart"),
                 maybe_password);
         }
         else
@@ -843,9 +855,10 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             fmt::print(
                 "\nClickHouse has been successfully installed.\n"
                 "\nStart clickhouse-server with:\n"
-                " sudo clickhouse start\n"
+                " {}\n"
                 "\nStart clickhouse-client with:\n"
                 " clickhouse-client{}\n\n",
+                formatWithSudo("clickhouse start"),
                 maybe_password);
         }
     }
@@ -854,7 +867,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         std::cerr << getCurrentExceptionMessage(false) << '\n';
 
         if (getuid() != 0)
-            std::cerr << "\nRun with sudo.\n";
+            std::cerr << "\nRun with " << formatWithSudo("...") << "\n";
 
         return getCurrentExceptionCode();
     }
@@ -910,6 +923,9 @@ namespace
 
         if (!user.empty())
         {
+#if defined(OS_FREEBSD)
+            command = fmt::format("su -m '{}' -c '{}', user, command);
+#else
             bool may_need_sudo = geteuid() != 0;
             if (may_need_sudo)
             {
@@ -920,12 +936,9 @@ namespace
             }
             else
             {
-#if defined(OS_FREEBSD)
-                command = fmt::format("su -m '{}' -c '{}', user, command);
-#else
                 command = fmt::format("su -s /bin/sh '{}' -c '{}'", user, command);
-#endif
             }
+#endif
         }
 
         fmt::print("Will run {}\n", command);
@@ -1129,10 +1142,7 @@ int mainEntryClickHouseStart(int argc, char ** argv)
 
         if (options.count("help"))
         {
-            std::cout << "Usage: "
-                << (getuid() == 0 ? "" : "sudo ")
-                << argv[0]
-                << " start\n";
+            std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " start", getuid() != 0) << '\n';
             return 1;
         }
 
@@ -1170,10 +1180,7 @@ int mainEntryClickHouseStop(int argc, char ** argv)
 
         if (options.count("help"))
         {
-            std::cout << "Usage: "
-                << (getuid() == 0 ? "" : "sudo ")
-                << argv[0]
-                << " stop\n";
+            std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " stop", getuid() != 0) << '\n';
             return 1;
         }
 
@@ -1206,10 +1213,7 @@ int mainEntryClickHouseStatus(int argc, char ** argv)
 
         if (options.count("help"))
         {
-            std::cout << "Usage: "
-                << (getuid() == 0 ? "" : "sudo ")
-                << argv[0]
-                << " status\n";
+            std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " status", getuid() != 0) << '\n';
             return 1;
         }
 
@@ -1248,10 +1252,7 @@ int mainEntryClickHouseRestart(int argc, char ** argv)
 
         if (options.count("help"))
         {
-            std::cout << "Usage: "
-                << (getuid() == 0 ? "" : "sudo ")
-                << argv[0]
-                << " restart\n";
+            std::cout << "Usage: " << formatWithSudo(std::string(argv[0]) + " restart", getuid() != 0) << '\n';
             return 1;
         }
 
