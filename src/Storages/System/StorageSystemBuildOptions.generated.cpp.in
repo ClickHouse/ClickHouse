@@ -51,9 +51,9 @@ const char * auto_config_build[]
     "USE_FILELOG", "@USE_FILELOG@",
     "USE_BZIP2", "@USE_BZIP2@",
     "GIT_HASH", "@GIT_HASH@",
-    "GIT_BRANCH", "@GIT_BRANCH@",
+    "GIT_BRANCH", R"IRjaNsZIL9Yh7FQ4(@GIT_BRANCH@)IRjaNsZIL9Yh7FQ4",
     "GIT_DATE", "@GIT_DATE@",
-    "GIT_COMMIT_SUBJECT", "@GIT_COMMIT_SUBJECT@",
+    "GIT_COMMIT_SUBJECT", R"Gi17KJMlbGCjErEN(@GIT_COMMIT_SUBJECT@)Gi17KJMlbGCjErEN",
 
     nullptr, nullptr
 };
