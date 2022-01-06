@@ -47,10 +47,13 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 ENV NUM_TRIES=1
 ENV MAX_RUN_TIME=0
 
+ARG TARGETARCH
+
 # Download Minio-related binaries
-RUN wget 'https://dl.min.io/server/minio/release/linux-amd64/minio' \
+RUN arch=${TARGETARCH:-amd64} \
+    && wget "https://dl.min.io/server/minio/release/linux-${arch}/minio" \
     && chmod +x ./minio \
-    && wget 'https://dl.min.io/client/mc/release/linux-amd64/mc' \
+    && wget "https://dl.min.io/client/mc/release/linux-${arch}/mc" \
     && chmod +x ./mc
 
 ENV MINIO_ROOT_USER="clickhouse"
