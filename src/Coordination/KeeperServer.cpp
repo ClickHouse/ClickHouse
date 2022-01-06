@@ -263,6 +263,9 @@ nuraft::ptr<nuraft::buffer> getZooKeeperLogEntry(int64_t session_id, const Coord
 {
     DB::WriteBufferFromNuraftBuffer buf;
     DB::writeIntBinary(session_id, buf);
+    using namespace std::chrono;
+    int64_t time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+    DB::writeIntBinary(time, buf);
     request->write(buf);
     return buf.getBuffer();
 }

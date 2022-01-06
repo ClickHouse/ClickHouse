@@ -22,6 +22,7 @@ namespace
         ReadBufferFromNuraftBuffer buffer(data);
         KeeperStorage::RequestForSession request_for_session;
         readIntBinary(request_for_session.session_id, buffer);
+        readIntBinary(request_for_session.time, buffer);
 
         int32_t length;
         Coordination::read(length, buffer);
@@ -131,7 +132,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
     else
     {
         std::lock_guard lock(storage_and_responses_lock);
-        KeeperStorage::ResponsesForSessions responses_for_sessions = storage->processRequest(request_for_session.request, request_for_session.session_id, log_idx);
+        KeeperStorage::ResponsesForSessions responses_for_sessions = storage->processRequest(request_for_session.request, request_for_session.session_id, request_for_session.time, log_idx);
         for (auto & response_for_session : responses_for_sessions)
             if (!responses_queue.push(response_for_session))
                 throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", response_for_session.session_id);
