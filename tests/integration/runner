@@ -239,7 +239,7 @@ if __name__ == "__main__":
             elif image == "clickhouse/integration-test":
                 env_tags += "-e {}={} ".format("DOCKER_BASE_TAG", tag)
             elif image == "clickhouse/kerberos-kdc":
-                env_tags += "-e {}={}".format("DOCKER_KERBEROS_KDC_TAG", tag)
+                env_tags += "-e {}={} ".format("DOCKER_KERBEROS_KDC_TAG", tag)
             else:
                 logging.info("Unknown image %s" % (image))
 
