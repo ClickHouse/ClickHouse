@@ -62,7 +62,7 @@ public:
             auto res = degsToRads(degrees);
             dst_data[row] = res;
         }
-        return dst_data;
+        return dst;
     }
 };
 
