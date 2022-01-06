@@ -40,17 +40,16 @@ let query = `
     FORMAT TSV`;
 
 function load(query, callback) {
-    const xhr = new XMLHttpRequest;
-    xhr.open('POST', "https://play-ci.clickhouse.com/?user=play&add_http_cors_header=1", true);
-
-    xhr.onreadystatechange = function()
-    {
-        if (this.readyState === XMLHttpRequest.DONE && this.status == 200) {
-            callback(this.response);
-        }
-    }
-
-    xhr.send(query);
+    fetch(
+        "https://play-ci.clickhouse.com?user=play&add_http_cors_header=1",
+        { method: "POST", body: query }
+    )
+    .then((response) => {
+        if (!response.ok) throw new Error(`Data download failed\nHTTP status ${response.status}`);
+        return response.json();
+    })
+    .then((json) => callback(json))
+    .catch(alert);
 }
 
 load(query, renderResponse);
@@ -58,8 +57,8 @@ load(query, renderResponse);
 let data;
 let canvas = document.getElementById('canvas');
 
-function renderResponse(response) {
-    data = JSON.parse(response);
+function renderResponse(response_json) {
+    data = response_json;
 
     const last_pixel = data[data.length - 1];
     canvas.width = last_pixel[0] + 1;
@@ -100,9 +99,9 @@ let test_names;
 
 load(test_names_query, saveTestNames);
 
-function saveTestNames(response)
+function saveTestNames(response_json)
 {
-    test_names = JSON.parse(response).data;
+    test_names = response_json.data;
 }
 
 canvas.addEventListener('mousemove', event => {
