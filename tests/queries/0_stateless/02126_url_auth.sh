@@ -8,4 +8,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # We should have correct env vars from shell_config.sh to run this test
 
-python3 "$CURDIR"/02126_url_auth.python
+#url auth test moved to 02157_url_auth.sh
+#python3 "$CURDIR"/02126_url_auth.python
+
