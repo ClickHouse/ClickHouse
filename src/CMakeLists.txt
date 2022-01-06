@@ -533,7 +533,7 @@ include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
 if (ENABLE_TESTS AND USE_GTEST)
     macro (grep_gtest_sources BASE_DIR DST_VAR)
         # Cold match files that are not in tests/ directories
-        file(GLOB_RECURSE "${DST_VAR}" RELATIVE "${BASE_DIR}" "gtest*.cpp")
+        file(GLOB_RECURSE "${DST_VAR}" RELATIVE "${BASE_DIR}" "gtest_co*.cpp")
     endmacro()
 
     # attach all dbms gtest sources

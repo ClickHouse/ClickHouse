@@ -33,8 +33,8 @@ private:
 
     /// Size depends on coordination settings
     std::unique_ptr<RequestsQueue> requests_queue;
-    ResponsesQueue responses_queue;
-    SnapshotsQueue snapshots_queue{1};
+    ResponsesQueue responses_queue{128};
+    SnapshotsQueue snapshots_queue{128};
 
     /// More than 1k updates is definitely misconfiguration.
     UpdateConfigurationQueue update_configuration_queue{1000};

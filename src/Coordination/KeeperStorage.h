@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstddef>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>

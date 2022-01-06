@@ -1677,29 +1677,7 @@ public:
         using std::swap;
         swap(o, *this);
     }
-    /*
-    void zero(char *buf, size_t size)
-    {
-        size_t my_start, my_size;
 
-        if (omp_in_parallel())
-        {
-            int id = omp_get_thread_num();
-            int num = omp_get_num_threads();
-            //printf("thread %d\n", num);
-
-            my_start = (id*size)/num;
-            my_size = ((id+1)*size)/num - my_start;
-        }
-        else
-        {
-            my_start = 0;
-            my_size = size;
-        }
-
-        memset(buf + my_start, 0, my_size);
-    }
-    */
     // Clears all data, without resizing.
     void clear() {
         ROBIN_HOOD_TRACE(this)
@@ -1713,13 +1691,8 @@ public:
 
         auto const numElementsWithBuffer = calcNumElementsWithBuffer(mMask + 1);
         // clear everything, then set the sentinel again
-        //uint8_t const z = 0;
-        //std::fill(mInfo, mInfo + calcNumBytesInfo(numElementsWithBuffer), z);
-        // #pragma omp parallel
-        //{
-        //    zero(buf, size);
-        //}
-        ::memset(mInfo, 0, calcNumBytesInfo(numElementsWithBuffer));
+        uint8_t const z = 0;
+        std::fill(mInfo, mInfo + calcNumBytesInfo(numElementsWithBuffer), z);
         mInfo[numElementsWithBuffer] = 1;
 
         mInfoInc = InitialInfoInc;
@@ -2328,6 +2301,11 @@ private:
                               InsertionState::key_found != idxAndState.second);
     }
 
+    uint64_t timeme()
+    {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+    }
+
     void initData(size_t max_elements) {
         mNumElements = 0;
         mMask = max_elements - 1;
@@ -2339,9 +2317,13 @@ private:
         auto const numBytesTotal = calcNumBytesTotal(numElementsWithBuffer);
         ROBIN_HOOD_LOG("std::calloc " << numBytesTotal << " = calcNumBytesTotal("
                                       << numElementsWithBuffer << ")")
+        auto be_tm = timeme();
         mKeyVals = reinterpret_cast<Node*>(
-            detail::assertNotNull<std::bad_alloc>(std::calloc(1, numBytesTotal)));
+            detail::assertNotNull<std::bad_alloc>(std::malloc(numBytesTotal)));
         mInfo = reinterpret_cast<uint8_t*>(mKeyVals + numElementsWithBuffer);
+        ::memset(mInfo, 0, numBytesTotal - numElementsWithBuffer * sizeof(Node));
+        auto end_tm = timeme();
+        std::cout << "initdata use time: " << end_tm - be_tm << ", size " << numBytesTotal - numElementsWithBuffer*sizeof(Node)<< std::endl;
 
         // set sentinel
         mInfo[numElementsWithBuffer] = 1;
@@ -2550,6 +2532,36 @@ using unordered_set = detail::Table<sizeof(Key) <= sizeof(size_t) * 6 &&
                                         std::is_nothrow_move_constructible<Key>::value &&
                                         std::is_nothrow_move_assignable<Key>::value,
                                     MaxLoadFactor100, Key, void, Hash, KeyEqual>;
+
+template< class Key, class T, class Hash, class KeyEqual, class Pred >
+typename unordered_map<Key,T,Hash,KeyEqual>::size_type
+    erase_if(unordered_map<Key,T,Hash,KeyEqual> & c, Pred pred)
+{
+    auto old_size = c.size();
+    for (auto i = c.begin(), last = c.end(); i != last;)
+    {
+        if (pred(*i))
+            i = c.erase(i);
+        else
+            ++i;
+    }
+    return old_size - c.size();
+}
+
+template< class Key, class Hash, class KeyEqual, class Pred >
+typename unordered_set<Key,Hash,KeyEqual>::size_type
+    erase_if(unordered_map<Key,Hash,KeyEqual> & c, Pred pred)
+{
+    auto old_size = c.size();
+    for (auto i = c.begin(), last = c.end(); i != last;)
+    {
+        if (pred(*i))
+            i = c.erase(i);
+        else
+            ++i;
+    }
+    return old_size - c.size();
+}
 
 } // namespace robin_hood
 

@@ -21,10 +21,8 @@ using LogEntries = std::vector<LogEntryPtr>;
 using LogEntriesPtr = nuraft::ptr<LogEntries>;
 using BufferPtr = nuraft::ptr<nuraft::buffer>;
 
-//using IndexToOffset = std::unordered_map<uint64_t, off_t>;
-using IndexToLogEntry = std::unordered_map<uint64_t, LogEntryPtr>;
 using IndexToOffset = robin_hood::unordered_map<uint64_t, off_t>;
-//using IndexToLogEntry = robin_hood::unordered_map<uint64_t, LogEntryPtr>;
+using IndexToLogEntry = robin_hood::unordered_map<uint64_t, LogEntryPtr>;
 
 enum class ChangelogVersion : uint8_t
 {
@@ -173,7 +171,6 @@ private:
     // for compaction, queue of delete not used logs
     /// 128 is enough, even log not removed not a problem
     boost::lockfree::spsc_queue<std::string> del_log_q{128};
-    size_t cur_del_idx{0};
     ThreadFromGlobalPool clean_log_thread;
     std::atomic_bool shutdown_clean_thread{false};
 };

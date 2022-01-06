@@ -61,7 +61,6 @@ void KeeperDispatcher::requestThread()
         auto coordination_settings = configuration_and_settings->coordination_settings;
         uint64_t max_wait = coordination_settings->operation_timeout_ms.totalMilliseconds();
         uint64_t max_batch_size = coordination_settings->max_requests_batch_size;
-
         /// The code below do a very simple thing: batch all write (quorum) requests into vector until
         /// previous write batch is not finished or max_batch size achieved. The main complexity goes from
         /// the ability to process read requests without quorum (from local state). So when we are collecting
@@ -292,7 +291,7 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     LOG_DEBUG(log, "Initializing storage dispatcher");
 
     configuration_and_settings = KeeperConfigurationAndSettings::loadFromConfig(config, standalone_keeper);
-    requests_queue = std::make_unique<RequestsQueue>(configuration_and_settings->coordination_settings->max_requests_batch_size);
+    requests_queue = std::make_unique<RequestsQueue>(configuration_and_settings->coordination_settings->max_requests_batch_size * 2);
 
     request_thread = ThreadFromGlobalPool([this] { requestThread(); });
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });

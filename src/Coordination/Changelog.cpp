@@ -3,7 +3,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ZstdDeflatingAppendableWriteBuffer.h>
-#include <cstdint>
 #include <filesystem>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/join.hpp>
@@ -55,10 +54,10 @@ ChangelogFileDescription getChangelogFileDescription(const std::string & path_st
     return result;
 }
 
-LogEntryPtr makeClone(const LogEntryPtr & entry)
-{
-    return cs_new<nuraft::log_entry>(entry->get_term(), nuraft::buffer::clone(entry->get_buf()), entry->get_val_type());
-}
+//LogEntryPtr makeClone(const LogEntryPtr & entry)
+//{
+//    return cs_new<nuraft::log_entry>(entry->get_term(), nuraft::buffer::clone(entry->get_buf()), entry->get_val_type());
+//}
 
 Checksum computeRecordChecksum(const ChangelogRecord & record)
 {
@@ -230,18 +229,7 @@ public:
                 /// Check for duplicated changelog ids
                 if (logs.count(record.header.index) != 0)
                 {
-                    for (auto i = logs.begin(), last = logs.end(); i != last;)
-                    {
-                        if (i->first >= record.header.index)
-                        {
-                            i = logs.erase(i);
-                        }
-                        else
-                        {
-                            ++i;
-                        }
-                    }
-                    //std::erase_if(logs, [record] (const auto & item) { return item.first >= record.header.index; });
+                    robin_hood::erase_if(logs, [record] (const auto & item) { return item.first >= record.header.index; });
                 }
 
                 result.total_entries_read_from_log += 1;
@@ -298,7 +286,6 @@ Changelog::Changelog(
     , force_sync(force_sync_)
     , log(log_)
     , compress_logs(compress_logs_)
-    , cur_del_idx(0)
 {
     /// Load all files in changelog directory
     namespace fs = std::filesystem;
@@ -443,19 +430,7 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
             LOG_INFO(log, "Removing log {} because it's empty or read finished with error", description.path);
             std::filesystem::remove(description.path);
             existing_changelogs.erase(last_log_read_result->log_start_index);
-            //std::erase_if(logs, [last_log_read_result] (const auto & item) { return item.first >= last_log_read_result->log_start_index; });
-
-            for (auto i = logs.begin(), last = logs.end(); i != last;)
-            {
-                if (i->first >= last_log_read_result->log_start_index)
-                {
-                    i = logs.erase(i);
-                }
-                else
-                {
-                    ++i;
-                }
-            }
+            robin_hood::erase_if(logs, [last_log_read_result] (const auto & item) { return item.first >= last_log_read_result->log_start_index; });
         }
         else
         {
@@ -494,18 +469,7 @@ void Changelog::removeAllLogsAfter(uint64_t remove_after_log_start_index)
         itr = existing_changelogs.erase(itr);
     }
 
-//    std::erase_if(logs, [start_to_remove_from_log_id] (const auto & item) { return item.first >= start_to_remove_from_log_id; });
-    for (auto i = logs.begin(), last = logs.end(); i != last;)
-    {
-        if (i->first >= start_to_remove_from_log_id)
-        {
-            i = logs.erase(i);
-        }
-        else
-        {
-            ++i;
-        }
-    }
+    robin_hood::erase_if(logs, [start_to_remove_from_log_id] (const auto & item) { return item.first >= start_to_remove_from_log_id; });
 }
 
 void Changelog::removeAllLogs()
@@ -575,9 +539,9 @@ void Changelog::appendEntry(uint64_t index, const LogEntryPtr & log_entry)
         rotate(index);
 
     current_writer->appendRecord(buildRecord(index, log_entry));
-    logs[index] = makeClone(log_entry);
+    //logs[index] = makeClone(log_entry);
+    logs[index] = log_entry;
     max_log_id = index;
-    delLogsEntry(100);
 }
 
 void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
@@ -611,17 +575,7 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
     /// Remove redundant logs from memory
     /// Everything >= index must be removed
     //std::erase_if(logs, [index] (const auto & item) { return item.first >= index; });
-    for (auto i = logs.begin(), last = logs.end(); i != last;)
-    {
-        if (i->first >= index)
-        {
-            i = logs.erase(i);
-        }
-        else
-        {
-            ++i;
-        }
-    }
+    robin_hood::erase_if(logs, [index] (const auto & item) { return item.first >= index; });
     
     /// Now we can actually override entry at index
     appendEntry(index, log_entry);
@@ -654,7 +608,6 @@ void Changelog::compact(uint64_t up_to_log_index)
             }
 
             LOG_INFO(log, "Removing changelog {} because of compaction", itr->second.path);
-            //std::filesystem::remove(itr->second.path);
             del_log_q.push(itr->second.path);
             itr = existing_changelogs.erase(itr);
         }
@@ -663,24 +616,11 @@ void Changelog::compact(uint64_t up_to_log_index)
     }
     /// Compaction from the past is possible, so don't make our min_log_id smaller.
     min_log_id = std::max(min_log_id, up_to_log_index + 1);
-    //std::erase_if(logs, [up_to_log_index] (const auto & item) { return item.first <= up_to_log_index; });
-    delLogsEntry(100);
+    robin_hood::erase_if(logs, [up_to_log_index] (const auto & item) { return item.first <= up_to_log_index; });
     if (need_rotate)
         rotate(up_to_log_index + 1);
 
-    LOG_INFO(log, "Compaction up to {} finished new min index {}, new max index {}, actully del index {}, logsize {}.", up_to_log_index, min_log_id, max_log_id, cur_del_idx, logs.size());
-}
-
-void Changelog::delLogsEntry(size_t n)
-{
-    while (n && cur_del_idx < min_log_id)
-    {
-        if (logs.empty())
-            return;
-        logs.erase(cur_del_idx);
-        --n;
-        ++cur_del_idx;
-    }
+    LOG_INFO(log, "Compaction up to {} finished new min index {}, new max index {}, logsize {}.", up_to_log_index, min_log_id, max_log_id, logs.size());
 }
 
 LogEntryPtr Changelog::getLastEntry() const
@@ -709,7 +649,6 @@ LogEntriesPtr Changelog::getLogEntriesBetween(uint64_t start, uint64_t end)
         result_pos++;
     }
 
-    delLogsEntry(100);
     return ret;
 }
 
