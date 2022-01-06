@@ -101,7 +101,7 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} requires finite parameter values.", Data::name);
             }
 
-            if (confidence_level <= 0.0f || confidence_level >= 1.0f)
+            if (confidence_level <= 0.0 || confidence_level >= 1.0)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Confidence level parameter must be between 0 and 1 in aggregate function {}.", Data::name);
             }
