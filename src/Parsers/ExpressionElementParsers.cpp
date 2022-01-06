@@ -1261,92 +1261,6 @@ bool ParserTrimExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     return true;
 }
 
-bool ParserLeftExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    /// Rewrites left(expr, length) to SUBSTRING(expr, 1, length)
-
-    ASTPtr expr_node;
-    ASTPtr start_node;
-    ASTPtr length_node;
-
-    if (!ParserKeyword("LEFT").ignore(pos, expected))
-        return false;
-
-    if (pos->type != TokenType::OpeningRoundBracket)
-        return false;
-    ++pos;
-
-    if (!ParserExpression().parse(pos, expr_node, expected))
-        return false;
-
-    ParserToken(TokenType::Comma).ignore(pos, expected);
-
-    if (!ParserExpression().parse(pos, length_node, expected))
-        return false;
-
-    if (pos->type != TokenType::ClosingRoundBracket)
-        return false;
-    ++pos;
-
-    auto expr_list_args = std::make_shared<ASTExpressionList>();
-    start_node = std::make_shared<ASTLiteral>(1);
-    expr_list_args->children = {expr_node, start_node, length_node};
-
-    auto func_node = std::make_shared<ASTFunction>();
-    func_node->name = "substring";
-    func_node->arguments = std::move(expr_list_args);
-    func_node->children.push_back(func_node->arguments);
-
-    node = std::move(func_node);
-    return true;
-}
-
-bool ParserRightExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    /// Rewrites RIGHT(expr, length) to substring(expr, -length)
-
-    ASTPtr expr_node;
-    ASTPtr length_node;
-
-    if (!ParserKeyword("RIGHT").ignore(pos, expected))
-        return false;
-
-    if (pos->type != TokenType::OpeningRoundBracket)
-        return false;
-    ++pos;
-
-    if (!ParserExpression().parse(pos, expr_node, expected))
-        return false;
-
-    ParserToken(TokenType::Comma).ignore(pos, expected);
-
-    if (!ParserExpression().parse(pos, length_node, expected))
-        return false;
-
-    if (pos->type != TokenType::ClosingRoundBracket)
-        return false;
-    ++pos;
-
-    auto start_expr_list_args = std::make_shared<ASTExpressionList>();
-    start_expr_list_args->children = {length_node};
-
-    auto start_node = std::make_shared<ASTFunction>();
-    start_node->name = "negate";
-    start_node->arguments = std::move(start_expr_list_args);
-    start_node->children.push_back(start_node->arguments);
-
-    auto expr_list_args = std::make_shared<ASTExpressionList>();
-    expr_list_args->children = {expr_node, start_node};
-
-    auto func_node = std::make_shared<ASTFunction>();
-    func_node->name = "substring";
-    func_node->arguments = std::move(expr_list_args);
-    func_node->children.push_back(func_node->arguments);
-
-    node = std::move(func_node);
-    return true;
-}
-
 bool ParserExtractExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     if (!ParserKeyword("EXTRACT").ignore(pos, expected))
@@ -2272,8 +2186,6 @@ bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         || ParserDateDiffExpression().parse(pos, node, expected)
         || ParserSubstringExpression().parse(pos, node, expected)
         || ParserTrimExpression().parse(pos, node, expected)
-        || ParserLeftExpression().parse(pos, node, expected)
-        || ParserRightExpression().parse(pos, node, expected)
         || ParserCase().parse(pos, node, expected)
         || ParserColumnsMatcher().parse(pos, node, expected) /// before ParserFunction because it can be also parsed as a function.
         || ParserFunction().parse(pos, node, expected)
