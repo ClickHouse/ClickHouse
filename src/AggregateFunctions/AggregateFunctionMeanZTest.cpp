@@ -33,7 +33,7 @@ struct MeanZTestData : public ZTestMoments<Float64>
             return {std::numeric_limits<Float64>::quiet_NaN(), std::numeric_limits<Float64>::quiet_NaN()};
         }
 
-        Float64 pvalue = 2.0f * boost::math::cdf(boost::math::normal(0.0f, 1.0f), -1.0f * std::abs(zstat));
+        Float64 pvalue = 2.0 * boost::math::cdf(boost::math::normal(0.0, 1.0), -1.0 * std::abs(zstat));
 
         return {zstat, pvalue};
     }
