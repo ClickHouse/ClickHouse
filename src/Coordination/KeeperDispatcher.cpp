@@ -240,6 +240,8 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
 
     KeeperStorage::RequestForSession request_info;
     request_info.request = request;
+    using namespace std::chrono;
+    request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     request_info.session_id = session_id;
 
     std::lock_guard lock(push_request_mutex);
@@ -433,7 +435,7 @@ void KeeperDispatcher::finishSession(int64_t session_id)
 
 void KeeperDispatcher::addErrorResponses(const KeeperStorage::RequestsForSessions & requests_for_sessions, Coordination::Error error)
 {
-    for (const auto & [session_id, request] : requests_for_sessions)
+    for (const auto & [session_id, time, request] : requests_for_sessions)
     {
         KeeperStorage::ResponsesForSessions responses;
         auto response = request->makeResponse();

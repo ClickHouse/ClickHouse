@@ -321,7 +321,7 @@ void KeeperStateMachine::processReadRequest(const KeeperStorage::RequestForSessi
 {
     /// Pure local request, just process it with storage
     std::lock_guard lock(storage_and_responses_lock);
-    auto responses = storage->processRequest(request_for_session.request, request_for_session.session_id, std::nullopt);
+    auto responses = storage->processRequest(request_for_session.request, request_for_session.session_id, request_for_session.time, std::nullopt);
     for (const auto & response : responses)
         if (!responses_queue.push(response))
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", response.session_id);
