@@ -919,7 +919,13 @@ namespace
                     command = fmt::format("sudo -u '{}' {}", user, command);
             }
             else
+            {
+#if defined(OS_FREEBSD)
+                command = fmt::format("su -m '{}' -c '{}', user, command);
+#else
                 command = fmt::format("su -s /bin/sh '{}' -c '{}'", user, command);
+#endif
+            }
         }
 
         fmt::print("Will run {}\n", command);
