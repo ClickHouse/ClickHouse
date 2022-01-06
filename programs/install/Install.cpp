@@ -924,7 +924,7 @@ namespace
         if (!user.empty())
         {
 #if defined(OS_FREEBSD)
-            command = fmt::format("su -m '{}' -c '{}', user, command);
+            command = fmt::format("su -m '{}' -c '{}'", user, command);
 #else
             bool may_need_sudo = geteuid() != 0;
             if (may_need_sudo)
