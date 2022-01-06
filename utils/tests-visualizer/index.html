@@ -1,16 +1,82 @@
-<html id="html" style="color: white; background: black;">
+<html id="html">
 <head>
     <meta charset="UTF-8">
+    <style>
+        body {
+            color: white;
+            background: black;
+            font-family: sans-serif;
+        }
+
+        #loading {
+            margin-top: 1em;
+        }
+
+        #loading img {
+            width: 130px;
+            display: block;
+            margin: 30px auto;
+            -webkit-animation: spin 2s ease-in-out infinite;
+            -moz-animation: spin 2s ease-in-out infinite;
+            animation: spin 2s ease-in-out infinite;
+        }
+
+        #loading h1 {
+            text-align: center;
+        }
+
+        #info {
+            position: sticky;
+            top: 1rem;
+            z-index: 1;
+            margin: 1rem;
+            float: right;
+            font-size: 16pt;
+            padding: 0.5rem;
+            border: 1px solid #111;
+            border-radius: 10px;
+            box-shadow: white 5px 5px 28px -10px;
+            display: none;
+        }
+
+        canvas {
+            position: absolute;
+            cursor: pointer;
+        }
+
+        @-moz-keyframes spin {
+            100% { -moz-transform: rotate(360deg); }
+        }
+
+        @-webkit-keyframes spin {
+            100% { -webkit-transform: rotate(360deg); }
+        }
+
+        @keyframes spin {
+            100% { transform:rotate(360deg); }
+        }
+    </style>
 </head>
-<body style="font-family: sans-serif">
-<h1 id="loading" style="position: absolute; margin-left: 1em;">Loading (10 seconds, 20 MB)...</h1>
-<div id="info" style="position: sticky; top: 1rem; z-index: 1; margin: 1rem; float: right; font-size: 16pt; padding: 0.5rem; border: 1px solid #111; display: none;"></div>
-<canvas style="position: absolute" id="canvas"></canvas>
+<body>
+<div id="loading">
+    <img src="https://clickhouse.com/images/logo.svg">
+    <h1>Loading (~10 seconds, try load ~20 MB)</h1>
+</div>
+<pre id="info"></pre>
+<canvas id="canvas"></canvas>
 <script type="text/javascript">
-
+///////////////////////
+//  GLOBAL VARIABLES
+///////////////////////
 let start_date = '2020-06-13';
+const canvasNode = document.getElementById('canvas');
+const infoNode = document.getElementById('info');
+const loadingNode = document.getElementById('loading');
 
-let query = `
+///////////////////////
+//      QUERIES
+///////////////////////
+let render_data_query = `
     WITH '${start_date}'::Date AS start_date
     SELECT groupArray([d, n, fail]) FROM
     (
@@ -39,53 +105,6 @@ let query = `
     )
     FORMAT TSV`;
 
-function load(query, callback) {
-    fetch(
-        "https://play-ci.clickhouse.com?user=play&add_http_cors_header=1",
-        { method: "POST", body: query }
-    )
-    .then((response) => {
-        if (!response.ok) throw new Error(`Data download failed\nHTTP status ${response.status}`);
-        return response.json();
-    })
-    .then((json) => callback(json))
-    .catch(alert);
-}
-
-load(query, renderResponse);
-
-let data;
-let canvas = document.getElementById('canvas');
-
-function renderResponse(response_json) {
-    data = response_json;
-
-    const last_pixel = data[data.length - 1];
-    canvas.width = last_pixel[0] + 1;
-    canvas.height = last_pixel[1] + 1;
-
-    document.getElementById('html').style.height = canvas.height + 10 + 'px';
-    document.body.style.height = canvas.height + 10 + 'px';
-
-    let ctx = canvas.getContext('2d');
-    let image = ctx.createImageData(canvas.width, canvas.height);
-    let pixels = image.data;
-
-    data.map(elem => {
-
-        let x = elem[0];
-        let y = canvas.height - elem[1];
-
-        pixels[(x + y * canvas.width) * 4 + 0] = elem[2] ? 255 : 0; // r
-        pixels[(x + y * canvas.width) * 4 + 1] = elem[2] ? 0 : 100; // g
-        pixels[(x + y * canvas.width) * 4 + 2] = 0; // b
-        pixels[(x + y * canvas.width) * 4 + 3] = 255; // a
-    });
-
-    document.getElementById('loading').style.display = 'none';
-    ctx.putImageData(image, 0, 0);
-}
-
 let test_names_query = `
     SELECT test_name, toUInt16(rowNumberInAllBlocks()) AS n FROM
     (
@@ -95,33 +114,86 @@ let test_names_query = `
         ORDER BY test_name
     ) FORMAT JSONCompact`
 
-let test_names;
+///////////////////////
+//       MAIN
+///////////////////////
 
-load(test_names_query, saveTestNames);
+Promise.all([
+    invokeCbWithDataByQuery(render_data_query, renderResponse),
+    invokeCbWithDataByQuery(test_names_query, saveTestNames),
+])
+.then(hideLoader)
+.catch(alert);
 
-function saveTestNames(response_json)
-{
-    test_names = response_json.data;
+///////////////////////
+//  SPECIAL FUNCTIONS
+///////////////////////
+
+async function invokeCbWithDataByQuery(query, callback) {
+    data = await loadDataByQuery(query);
+    callback(data);
 }
 
-canvas.addEventListener('mousemove', event => {
-    const x = event.layerX;
-    const y = event.layerY;
+async function loadDataByQuery(query) {
+    const response = await fetch(
+        "https://play-ci.clickhouse.com?user=play&add_http_cors_header=1",
+        { method: "POST", body: query }
+    )
+    if (!response.ok) throw new Error(`Data download failed\nHTTP status ${response.status}`);
+    const json = await response.json();
+    return json;
+}
 
-    let date = new Date(start_date);
-    date.setDate(date.getDate() + x);
-    date = date.toISOString().split('T')[0];
+function renderResponse(data) {
+    const last_pixel = data[data.length - 1];
+    canvasNode.width = last_pixel[0] + 1;
+    canvasNode.height = last_pixel[1] + 1;
 
-    let test = test_names[canvas.height - y][0];
+    document.getElementById('html').style.height = canvasNode.height + 10 + 'px';
+    document.body.style.height = canvasNode.height + 10 + 'px';
 
-    let pixel = canvas.getContext('2d').getImageData(x, y, 1, 1).data;
+    let ctx = canvasNode.getContext('2d');
+    let image = ctx.createImageData(canvasNode.width, canvasNode.height);
+    let {data: pixels} = image;
 
-    let info = document.getElementById('info');
+    data.map(elem => {
+        let x = elem[0];
+        let y = canvasNode.height - elem[1];
 
-    info.innerText = `${date}, ${test}`;
-    info.style.background = pixel[0] > 0 ? '#F00' : (pixel[3] > 0 ? '#006400' : '#000');
-    info.style.display = 'block';
-})
+        pixels[(x + y * canvasNode.width) * 4 + 0] = elem[2] ? 255 : 0; // r
+        pixels[(x + y * canvasNode.width) * 4 + 1] = elem[2] ? 0 : 100; // g
+        pixels[(x + y * canvasNode.width) * 4 + 2] = 0; // b
+        pixels[(x + y * canvasNode.width) * 4 + 3] = 255; // a
+    });
+
+    ctx.putImageData(image, 0, 0);
+}
+
+function saveTestNames(data) {
+    let {data: test_names} = data;
+    infoNode.style.display = 'block';
+
+    canvasNode.addEventListener('mousemove', (event) => {
+        const x = event.layerX;
+        const y = event.layerY;
+
+        let date = new Date(start_date);
+        date.setDate(date.getDate() + x);
+        [date] = date.toISOString().split('T');
+        let [test] = test_names[canvasNode.height - y];
+        let {data: pixel} = canvasNode.getContext('2d').getImageData(x, y, 1, 1);
+        updateInfo(date, test, pixel);
+    })
+}
+
+function updateInfo(date, test, pixel) {
+    infoNode.innerText = `${date}, ${test}`;
+    infoNode.style.background = pixel[0] > 0 ? '#F00' : (pixel[3] > 0 ? '#006400' : '#000');
+}
+
+function hideLoader() {
+    loadingNode.style.display = 'none';
+}
 
 </script>
 </body>
