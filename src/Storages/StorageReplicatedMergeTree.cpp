@@ -1122,8 +1122,8 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     /// Parts in ZK.
     NameSet expected_parts(expected_parts_vec.begin(), expected_parts_vec.end());
 
-    /// There are no PreCommitted parts at startup.
-    auto parts = getDataParts({MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
+    /// There are no PreActive parts at startup.
+    auto parts = getDataParts({MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
 
     /** Local parts that are not in ZK.
       * In very rare cases they may cover missing parts
@@ -1462,9 +1462,9 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
     if (is_get_or_attach || entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::MUTATE_PART)
     {
         /// If we already have this part or a part covering it, we do not need to do anything.
-        /// The part may be still in the PreCommitted -> Committed transition so we first search
-        /// among PreCommitted parts to definitely find the desired part if it exists.
-        DataPartPtr existing_part = getPartIfExists(entry.new_part_name, {MergeTreeDataPartState::PreCommitted});
+        /// The part may be still in the PreActive -> Active transition so we first search
+        /// among PreActive parts to definitely find the desired part if it exists.
+        DataPartPtr existing_part = getPartIfExists(entry.new_part_name, {MergeTreeDataPartState::PreActive});
 
         if (!existing_part)
             existing_part = getActiveContainingPart(entry.new_part_name);
@@ -1905,7 +1905,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
         for (const PartDescriptionPtr & part_desc : all_parts)
         {
-            if (!getActiveContainingPart(part_desc->new_part_info, MergeTreeDataPartState::Committed, data_parts_lock))
+            if (!getActiveContainingPart(part_desc->new_part_info, MergeTreeDataPartState::Active, data_parts_lock))
                 parts_to_add.emplace_back(part_desc);
         }
 
@@ -1963,7 +1963,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
                 RWLockImpl::NO_QUERY, getSettings()->lock_acquire_timeout_for_background_operations);
 
         DataPartStates valid_states{
-            MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated};
+            MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated};
 
         size_t num_clonable_parts = 0;
         for (PartDescriptionPtr & part_desc : parts_to_add)
@@ -3289,7 +3289,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
     /// It's quite dangerous, so clone covered parts to detached.
     auto broken_part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
 
-    auto partition_range = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, broken_part_info.partition_id);
+    auto partition_range = getDataPartsVectorInPartition(MergeTreeDataPartState::Active, broken_part_info.partition_id);
     for (const auto & part : partition_range)
     {
         if (!broken_part_info.contains(part->info))
@@ -4221,7 +4221,7 @@ Pipe StorageReplicatedMergeTree::read(
 
 
 template <class Func>
-void StorageReplicatedMergeTree::foreachCommittedParts(Func && func, bool select_sequential_consistency) const
+void StorageReplicatedMergeTree::foreachActiveParts(Func && func, bool select_sequential_consistency) const
 {
     std::optional<ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock> max_added_blocks = {};
 
@@ -4232,7 +4232,7 @@ void StorageReplicatedMergeTree::foreachCommittedParts(Func && func, bool select
         max_added_blocks = getMaxAddedBlocks();
 
     auto lock = lockParts();
-    for (const auto & part : getDataPartsStateRange(DataPartState::Committed))
+    for (const auto & part : getDataPartsStateRange(DataPartState::Active))
     {
         if (part->isEmpty())
             continue;
@@ -4251,21 +4251,21 @@ void StorageReplicatedMergeTree::foreachCommittedParts(Func && func, bool select
 std::optional<UInt64> StorageReplicatedMergeTree::totalRows(const Settings & settings) const
 {
     UInt64 res = 0;
-    foreachCommittedParts([&res](auto & part) { res += part->rows_count; }, settings.select_sequential_consistency);
+    foreachActiveParts([&res](auto & part) { res += part->rows_count; }, settings.select_sequential_consistency);
     return res;
 }
 
 std::optional<UInt64> StorageReplicatedMergeTree::totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr local_context) const
 {
     DataPartsVector parts;
-    foreachCommittedParts([&](auto & part) { parts.push_back(part); }, local_context->getSettingsRef().select_sequential_consistency);
+    foreachActiveParts([&](auto & part) { parts.push_back(part); }, local_context->getSettingsRef().select_sequential_consistency);
     return totalRowsByPartitionPredicateImpl(query_info, local_context, parts);
 }
 
 std::optional<UInt64> StorageReplicatedMergeTree::totalBytes(const Settings & settings) const
 {
     UInt64 res = 0;
-    foreachCommittedParts([&res](auto & part) { res += part->getBytesOnDisk(); }, settings.select_sequential_consistency);
+    foreachActiveParts([&res](auto & part) { res += part->getBytesOnDisk(); }, settings.select_sequential_consistency);
     return res;
 }
 
@@ -4810,12 +4810,12 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper()
     const DataPartsVector all_parts = getAllDataPartsVector();
     Strings active_parts_names;
 
-    /// Why all parts (not only Committed) are moved to detached/:
+    /// Why all parts (not only Active) are moved to detached/:
     /// After ZK metadata restoration ZK resets sequential counters (including block number counters), so one may
     /// potentially encounter a situation that a part we want to attach already exists.
     for (const auto & part : all_parts)
     {
-        if (part->getState() == DataPartState::Committed)
+        if (part->getState() == DataPartState::Active)
             active_parts_names.push_back(part->name);
 
         forgetPartAndMoveToDetached(part);
@@ -6163,7 +6163,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     String partition_id = getPartitionIDFromQuery(partition, query_context);
 
     /// NOTE: Some covered parts may be missing in src_all_parts if corresponding log entries are not executed yet.
-    DataPartsVector src_all_parts = src_data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+    DataPartsVector src_all_parts = src_data.getDataPartsVectorInPartition(MergeTreeDataPartState::Active, partition_id);
 
     LOG_DEBUG(log, "Cloning {} parts", src_all_parts.size());
 
@@ -6593,7 +6593,7 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     String part_name = partition->as<ASTLiteral &>().value.safeGet<String>();
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
 
-    auto part = getPartIfExists(part_info, {MergeTreeDataPartState::Committed});
+    auto part = getPartIfExists(part_info, {MergeTreeDataPartState::Active});
     if (!part)
         throw Exception(ErrorCodes::NO_SUCH_DATA_PART, "Part {} not found locally", part_name);
 
@@ -6811,7 +6811,7 @@ bool StorageReplicatedMergeTree::dropPartImpl(
     {
         ReplicatedMergeTreeMergePredicate merge_pred = queue.getMergePredicate(zookeeper);
 
-        auto part = getPartIfExists(part_info, {MergeTreeDataPartState::Committed});
+        auto part = getPartIfExists(part_info, {MergeTreeDataPartState::Active});
 
         if (!part)
         {
@@ -6986,7 +6986,7 @@ CheckResults StorageReplicatedMergeTree::checkData(const ASTPtr & query, Context
     if (const auto & check_query = query->as<ASTCheckQuery &>(); check_query.partition)
     {
         String partition_id = getPartitionIDFromQuery(check_query.partition, local_context);
-        data_parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+        data_parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Active, partition_id);
     }
     else
         data_parts = getDataPartsVector();

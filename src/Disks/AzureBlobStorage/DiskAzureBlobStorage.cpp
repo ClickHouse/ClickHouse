@@ -62,7 +62,8 @@ DiskAzureBlobStorage::DiskAzureBlobStorage(
 std::unique_ptr<ReadBufferFromFileBase> DiskAzureBlobStorage::readFile(
     const String & path,
     const ReadSettings & read_settings,
-    std::optional<size_t> /*estimated_size*/) const
+    std::optional<size_t>,
+    std::optional<size_t>) const
 {
     auto settings = current_settings.get();
     auto metadata = readMeta(path);

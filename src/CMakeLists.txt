@@ -567,6 +567,7 @@ if (ENABLE_TESTS AND USE_GTEST)
         clickhouse_storages_system
         dbms
         clickhouse_common_zookeeper
+        clickhouse_common_config
         string_utils)
 
     add_check(unit_tests_dbms)

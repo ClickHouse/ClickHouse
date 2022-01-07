@@ -233,7 +233,7 @@ public:
         const VolumePtr & volume, const String & relative_path, const IMergeTreeDataPart * parent_part = nullptr) const;
 
     /// Auxiliary object to add a set of parts into the working set in two steps:
-    /// * First, as PreCommitted parts (the parts are ready, but not yet in the active set).
+    /// * First, as PreActive parts (the parts are ready, but not yet in the active set).
     /// * Next, if commit() is called, the parts are added to the active set and the parts that are
     ///   covered by them are marked Outdated.
     /// If neither commit() nor rollback() was called, the destructor rollbacks the operation.
@@ -452,7 +452,7 @@ public:
     MutableDataPartsVector tryLoadPartsToAttach(const ASTPtr & partition, bool attach_part,
             ContextPtr context, PartsTemporaryRename & renamed_parts);
 
-    /// Returns Committed parts
+    /// Returns Active parts
     DataParts getDataParts() const;
     DataPartsVector getDataPartsVector() const;
 
@@ -494,7 +494,7 @@ public:
     /// Renames temporary part to a permanent part and adds it to the parts set.
     /// It is assumed that the part does not intersect with existing parts.
     /// If increment != nullptr, part index is determining using increment. Otherwise part index remains unchanged.
-    /// If out_transaction != nullptr, adds the part in the PreCommitted state (the part will be added to the
+    /// If out_transaction != nullptr, adds the part in the PreActive state (the part will be added to the
     /// active set later with out_transaction->commit()).
     /// Else, commits the part immediately.
     /// Returns true if part was added. Returns false if part is covered by bigger part.
@@ -518,7 +518,7 @@ public:
     void removePartsFromWorkingSetImmediatelyAndSetTemporaryState(const DataPartsVector & remove);
 
     /// Removes parts from the working set parts.
-    /// Parts in add must already be in data_parts with PreCommitted, Committed, or Outdated states.
+    /// Parts in add must already be in data_parts with PreActive, Active, or Outdated states.
     /// If clear_without_timeout is true, the parts will be deleted at once, or during the next call to
     /// clearOldParts (ignoring old_parts_lifetime).
     void removePartsFromWorkingSet(const DataPartsVector & remove, bool clear_without_timeout, DataPartsLock * acquired_lock = nullptr);
@@ -1060,7 +1060,7 @@ protected:
     /// If there is no part in the partition with ID `partition_id`, returns empty ptr. Should be called under the lock.
     DataPartPtr getAnyPartInPartition(const String & partition_id, DataPartsLock & data_parts_lock) const;
 
-    /// Return parts in the Committed set that are covered by the new_part_info or the part that covers it.
+    /// Return parts in the Active set that are covered by the new_part_info or the part that covers it.
     /// Will check that the new part doesn't already exist and that it doesn't intersect existing part.
     DataPartsVector getActivePartsToReplace(
         const MergeTreePartInfo & new_part_info,
