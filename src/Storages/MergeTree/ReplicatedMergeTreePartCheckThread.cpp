@@ -399,6 +399,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
         LOG_WARNING(log, "We have part {} covering part {}", part->name, part_name);
     }
 
+    part->checkMetadata();
     return {part_name, true, ""};
 }
 

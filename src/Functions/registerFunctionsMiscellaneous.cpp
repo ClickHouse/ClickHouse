@@ -81,10 +81,6 @@ void registerFunctionServerUUID(FunctionFactory &);
 void registerFunctionZooKeeperSessionUptime(FunctionFactory &);
 void registerFunctionGetOSKernelVersion(FunctionFactory &);
 
-#if USE_ROCKSDB
-void registerFunctionCheckPartMetadataCache(FunctionFactory &);
-#endif
-
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
 #endif
@@ -170,10 +166,6 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionServerUUID(factory);
     registerFunctionZooKeeperSessionUptime(factory);
     registerFunctionGetOSKernelVersion(factory);
-
-#if USE_ROCKSDB
-    registerFunctionCheckPartMetadataCache(factory);
-#endif
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);

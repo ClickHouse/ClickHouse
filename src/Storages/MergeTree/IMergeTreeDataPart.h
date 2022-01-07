@@ -371,8 +371,6 @@ public:
 
     String getRelativePathForPrefix(const String & prefix, bool detached = false) const;
 
-    // virtual void checkMetadataCache(Strings & files, std::vector<uint128> & cache_checksums, std::vector<uint128> & disk_checksums) const;
-
     bool isProjectionPart() const { return parent_part != nullptr; }
 
     const IMergeTreeDataPart * getParentPart() const { return parent_part; }
@@ -417,6 +415,12 @@ public:
     /// Return some uniq string for file
     /// Required for distinguish different copies of the same part on S3
     String getUniqueId() const;
+
+    /// Get checksums of metadata file in part directory
+    IMergeTreeDataPart::uint128 getActualChecksumByFile(const String & file_path) const;
+
+    /// Check metadata in cache is consistent with actual metadata on disk(if use_metadata_cache is true)
+    std::unordered_map<String, uint128> checkMetadata() const;
 
 protected:
 
@@ -463,6 +467,7 @@ protected:
     std::optional<bool> keepSharedDataInDecoupledStorage() const;
 
     void initializePartMetadataManager();
+
 
 private:
     /// In compact parts order of columns is necessary
@@ -525,9 +530,6 @@ private:
     /// Found column without specific compression and return codec
     /// for this column with default parameters.
     CompressionCodecPtr detectDefaultCompressionCodec() const;
-
-    // void modifyAllMetadataCaches(ModifyCacheType type, bool include_projection = false) const;
-    // IMergeTreeDataPart::uint128 getActualChecksumByFile(const String & file_path) const;
 
     mutable State state{State::Temporary};
 };
