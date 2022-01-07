@@ -826,5 +826,91 @@ void resizeConstantSize(ArraySource && array_source, ValueSource && value_source
     }
 }
 
+
+template <typename SliceA, typename SliceB>
+bool slicesEqual(SliceA && a, SliceB && b)
+{
+    if (a.size != b.size)
+        return false;
+
+    for (size_t i = 0; i < a.size; ++i)
+        if (!sliceEqualElements(a, b, i, i))
+            return false;
+
+    return true;
 }
 
+template <typename SliceA, typename SliceB>
+bool startsWith(SliceA && a, SliceB && b)
+{
+    if (a.size < b.size)
+        return false;
+
+    for (size_t i = 0; i < b.size; ++i)
+        if (!sliceEqualElements(a, b, i, i))
+            return false;
+
+    return true;
+}
+
+template <typename SliceA, typename SliceB>
+bool endsWith(SliceA && a, SliceB && b)
+{
+    if (a.size < b.size)
+        return false;
+
+    size_t i = a.size - b.size;
+    size_t j = 0;
+    while (i < a.size)
+    {
+        if (!sliceEqualElements(a, b, i, j))
+            return false;
+        ++i;
+        ++j;
+    }
+
+    return true;
+}
+
+
+enum class TrimMode
+{
+    Left,
+    Right,
+    Both
+};
+
+template <TrimMode mode, typename Slice, typename Needle>
+void trimSlice(Slice && src, Needle && needle)
+{
+    if ((mode == TrimMode::Left || mode == TrimMode::Both)
+        && startsWith(src, needle))
+    {
+        src.data += needle.size;
+        src.size -= needle.size;
+    }
+
+    if ((mode == TrimMode::Right || mode == TrimMode::Both)
+        && endsWith(src, needle))
+    {
+        src.size -= needle.size;
+    }
+}
+
+template <TrimMode mode, typename Source, typename Needle, typename Sink>
+void NO_INLINE trim(Source && src, Needle && needle, Sink && sink)
+{
+    sink.reserve(src.getSizeForReserve());
+
+    while (!src.isEnd())
+    {
+        auto slice = src.getWhile();
+        trimSlice<mode>(slice, needle);
+        writeSlice(slice, sink);
+
+        sink.next();
+        src.next();
+    }
+}
+
+}
