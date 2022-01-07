@@ -60,6 +60,14 @@ def test_remove_acl(started_cluster, get_zk):
         assert acl.perms == 31
 
 
+@pytest.mark.parametrize(
+    ('get_zk'),
+    [
+        get_genuine_zk,
+        get_fake_zk
+    ]
+)
+
 def test_digest_auth_basic(started_cluster, get_zk):
     auth_connection = get_zk()
 
