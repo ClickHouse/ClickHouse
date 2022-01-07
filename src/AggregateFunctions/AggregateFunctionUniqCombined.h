@@ -72,7 +72,10 @@ namespace detail
 // Unlike HashTableGrower always grows to power of 2.
 struct UniqCombinedHashTableGrower : public HashTableGrower<>
 {
-    void increaseSize() { ++size_degree; }
+    void increaseSize()
+    {
+        increaseSizeDegree(1);
+    }
 };
 
 template <typename Key, UInt8 K>
