@@ -130,11 +130,12 @@ def group_runners_by_tag(listed_runners):
     result = {}
 
     RUNNER_TYPE_LABELS = [
-        "style-checker",
         "builder",
         "func-tester",
-        "stress-tester",
+        "func-tester-aarch64",
         "fuzzer-unit-tester",
+        "stress-tester",
+        "style-checker",
     ]
     for runner in listed_runners:
         for tag in runner.tags:
