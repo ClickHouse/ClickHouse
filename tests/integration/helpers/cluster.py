@@ -1476,6 +1476,18 @@ class ClickHouseCluster:
 
             common_opts = ['--verbose', 'up', '-d']
 
+            images_pull_cmd = self.base_cmd + ['pull']
+            # sometimes dockerhub/proxy can be flaky
+            for i in range(5):
+                try:
+                    run_and_check(images_pull_cmd)
+                    break
+                except Exception as ex:
+                    if i == 4:
+                        raise ex
+                    logging.info("Got exception pulling images: %s", ex)
+                    time.sleep(i * 3)
+
             if self.with_zookeeper_secure and self.base_zookeeper_cmd:
                 logging.debug('Setup ZooKeeper Secure')
                 logging.debug(f'Creating internal ZooKeeper dirs: {self.zookeeper_dirs_to_create}')
