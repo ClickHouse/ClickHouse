@@ -4,7 +4,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-table_engines="ReplicatedMergeTree"
+table_engines="MergeTree ReplicatedMergeTree"
 database_engines="Ordinary Atomic"
 use_metadata_caches="false true"
 use_projections="false true"
