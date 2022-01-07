@@ -391,6 +391,29 @@ void FormatFactory::registerOutputFormat(const String & name, OutputCreator outp
     target = std::move(output_creator);
 }
 
+void FormatFactory::registerFileExtension(const String & extension, const String & format_name)
+{
+    file_extension_formats[extension] = format_name;
+}
+
+String FormatFactory::getFormatFromFileName(String file_name)
+{
+    CompressionMethod compression_method = chooseCompressionMethod(file_name, "");
+    if (CompressionMethod::None != compression_method)
+    {
+        auto pos = file_name.find_last_of('.');
+        if (pos != String::npos)
+            file_name = file_name.substr(0, pos);
+    }
+
+    auto pos = file_name.find_last_of('.');
+    if (pos == String::npos)
+        return "";
+
+    String file_extension = file_name.substr(pos + 1, String::npos);
+    return file_extension_formats[file_extension];
+}
+
 void FormatFactory::registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine)
 {
     auto & target = dict[name].file_segmentation_engine;
