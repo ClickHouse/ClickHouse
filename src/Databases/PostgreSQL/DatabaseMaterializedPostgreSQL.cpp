@@ -50,13 +50,17 @@ DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
     , remote_database_name(postgres_database_name)
     , connection_info(connection_info_)
     , settings(std::move(settings_))
+    , startup_task(getContext()->getSchedulePool().createTask("MaterializedPostgreSQLDatabaseStartup", [this]{ startSynchronization(); }))
 {
-    startup_task = getContext()->getSchedulePool().createTask("MaterializedPostgreSQLDatabaseStartup", [this]{ startSynchronization(); });
 }
 
 
 void DatabaseMaterializedPostgreSQL::startSynchronization()
 {
+    std::lock_guard lock(handler_mutex);
+    if (shutdown_called)
+        return;
+
     replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
             /* replication_identifier */database_name,
             remote_database_name,
@@ -379,6 +383,7 @@ void DatabaseMaterializedPostgreSQL::stopReplication()
     if (replication_handler)
         replication_handler->shutdown();
 
+    shutdown_called = true;
     /// Clear wrappers over nested, all access is not done to nested tables directly.
     materialized_tables.clear();
 }
