@@ -1,4 +1,3 @@
-#pragma once
 #include <Common/DateLUTImpl.h>
 
 #include <Core/DecimalFunctions.h>
@@ -66,7 +65,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 2 && arguments.size() != 3)
             throw Exception(
@@ -101,7 +100,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    virtual ColumnPtr executeImpl(
+    ColumnPtr executeImpl(
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
         [[maybe_unused]] size_t input_rows_count) const override
@@ -113,7 +112,7 @@ public:
             || (res = executeType<DataTypeDateTime64>(arguments, result_type))))
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal column {} of function {}, must be Date or DateTime.",
+                "Illegal column {} of function {], must be Date or DateTime.",
                 arguments[1].column->getName(),
                 getName());
 
@@ -339,6 +338,7 @@ private:
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid date part {} for function {}", date_part, getName());
     }
+
 };
 
 }
