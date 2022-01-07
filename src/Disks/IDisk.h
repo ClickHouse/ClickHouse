@@ -161,7 +161,8 @@ public:
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings = ReadSettings{},
-        std::optional<size_t> size = {}) const = 0;
+        std::optional<size_t> read_hint = {},
+        std::optional<size_t> file_size = {}) const = 0;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(
