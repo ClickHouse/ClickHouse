@@ -707,6 +707,9 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     ++pos;
 
+    /// Avoid excessive backtracking.
+    pos.putBarrier();
+
     /// Special cases for expressions that look like functions but contain some syntax sugar:
     /// CAST, EXTRACT, POSITION, EXISTS
     /// DATE_ADD, DATEADD, TIMESTAMPADD, DATE_SUB, DATESUB, TIMESTAMPSUB,
