@@ -9,6 +9,8 @@
 #include "config_functions.h"
 #include "config_core.h"
 
+#include <blake3.h>
+
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/HashTable/Hash.h>
@@ -593,6 +595,21 @@ struct ImplXxHash64
 };
 
 #endif
+
+
+struct ImplBLAKE3
+{
+    static constexpr auto name = "BLAKE3";
+    enum { length = SHA256_DIGEST_LENGTH };
+
+    static uint8_t* apply(const char * begin)
+    {
+        Hasher_shim hasher = new_hasher();
+        update_shim(&hasher, begin);
+        Hash res = finalize_shim(&hasher);
+        return as_bytes_shim(&res);
+    }
+};
 
 
 template <typename Impl>
