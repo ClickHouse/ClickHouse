@@ -23,6 +23,7 @@ target_link_libraries(clickhouse_functions
         dbms
         metrohash
         murmurhash
+        blake3
 
     PRIVATE
         ${ZLIB_LIBRARIES}
