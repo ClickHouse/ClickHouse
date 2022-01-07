@@ -1,6 +1,8 @@
 #include "PartMetadataManagerWithCache.h"
 
 #if USE_ROCKSDB
+#include <Common/hex.h>
+#include <Common/ErrorCodes.h>
 #include <IO/HashingReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -11,13 +13,16 @@ namespace ProfileEvents
     extern const Event MergeTreeMetadataCacheMiss;
 }
 
+namespace DB
+{
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int CORRUPTED_DATA;
+    extern const int NO_SUCH_PROJECTION_IN_TABLE;
 }
 
-namespace DB
-{
 PartMetadataManagerWithCache::PartMetadataManagerWithCache(const IMergeTreeDataPart * part_, const MergeTreeMetadataCachePtr & cache_)
     : IPartMetadataManager(part_), cache(cache_)
 {
@@ -188,6 +193,80 @@ void PartMetadataManagerWithCache::getKeysAndCheckSums(Strings & keys, std::vect
         HashingReadBuffer hbuf(rbuf);
         checksums.push_back(hbuf.getHash());
     }
+}
+
+std::unordered_map<String, IPartMetadataManager::uint128> PartMetadataManagerWithCache::check() const
+{
+    /// Only applies for normal part stored on disk
+    if (part->isProjectionPart() || !part->isStoredOnDisk())
+        return {};
+
+    /// the directory of projection part is under the directory of its parent part
+    const auto filenames_without_checksums = part->getFileNamesWithoutChecksums();
+
+    std::unordered_map<String, uint128> results;
+    Strings keys;
+    std::vector<uint128> cache_checksums;
+    std::vector<uint128> disk_checksums;
+    getKeysAndCheckSums(keys, cache_checksums);
+    for (size_t i = 0; i < keys.size(); ++i)
+    {
+        const auto & key = keys[i];
+        String file_path = getFilePathFromKey(key);
+        String file_name = fs::path(file_path).filename();
+        results.emplace(file_name, cache_checksums[i]);
+
+        /// File belongs to normal part
+        if (fs::path(part->getFullRelativePath()) / file_name == file_path)
+        {
+            auto disk_checksum = part->getActualChecksumByFile(file_path);
+            if (disk_checksum != cache_checksums[i])
+                throw Exception(
+                    ErrorCodes::CORRUPTED_DATA,
+                    "Checksums doesn't match in part {}. Expected: {}. Found {}.",
+                    part->name,
+                    getHexUIntUppercase(disk_checksum.first) + getHexUIntUppercase(disk_checksum.second),
+                    getHexUIntUppercase(cache_checksums[i].first) + getHexUIntUppercase(cache_checksums[i].second));
+
+            disk_checksums.push_back(disk_checksum);
+            continue;
+        }
+
+        /// File belongs to projection part
+        String proj_dir_name = fs::path(file_path).parent_path().filename();
+        auto pos = proj_dir_name.find_last_of('.');
+        if (pos == String::npos)
+        {
+            throw Exception(
+                ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE,
+                "There is no projection in part: {} contains file: {} with directory name: {}",
+                part->name,
+                file_path,
+                proj_dir_name);
+        }
+
+        String proj_name = proj_dir_name.substr(0, pos);
+        const auto & projection_parts = part->getProjectionParts();
+        auto it = projection_parts.find(proj_name);
+        if (it == projection_parts.end())
+        {
+            throw Exception(
+                ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE,
+                "There is no projection {} in part: {} contains file: {}",
+                proj_name, part->name, file_path);
+        }
+
+        auto disk_checksum = it->second->getActualChecksumByFile(file_path);
+        if (disk_checksum != cache_checksums[i])
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Checksums doesn't match in projection part {} {}. Expected: {}. Found {}.",
+                part->name, proj_name,
+                getHexUIntUppercase(disk_checksum.first) + getHexUIntUppercase(disk_checksum.second),
+                getHexUIntUppercase(cache_checksums[i].first) + getHexUIntUppercase(cache_checksums[i].second));
+        disk_checksums.push_back(disk_checksum);
+    }
+    return results;
 }
 
 }

@@ -61,8 +61,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-void IMergeTreeDataPart::MinMaxIndex::load(
-    const MergeTreeData & data, const PartMetadataManagerPtr & manager)
+void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const PartMetadataManagerPtr & manager)
 {
     auto metadata_snapshot = data.getInMemoryMetadataPtr();
     const auto & partition_key = metadata_snapshot->getPartitionKey();
@@ -1782,8 +1781,6 @@ String IMergeTreeDataPart::getZeroLevelPartBlockID() const
     return info.partition_id + "_" + toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
 }
 
-/*
-#if USE_ROCKSDB
 IMergeTreeDataPart::uint128 IMergeTreeDataPart::getActualChecksumByFile(const String & file_path) const
 {
     assert(use_metadata_cache);
@@ -1808,52 +1805,10 @@ IMergeTreeDataPart::uint128 IMergeTreeDataPart::getActualChecksumByFile(const St
     return in_hash.getHash();
 }
 
-void IMergeTreeDataPart::checkMetadataCache(Strings & files, std::vector<uint128> & cache_checksums, std::vector<uint128> & disk_checksums) const
+std::unordered_map<String, IMergeTreeDataPart::uint128> IMergeTreeDataPart::checkMetadata() const
 {
-    assert(use_metadata_cache);
-
-    /// Only applies for normal part
-    if (isProjectionPart())
-        return;
-
-    /// the directory of projection part is under the directory of its parent part
-    const auto filenames_without_checksums = getFileNamesWithoutChecksums();
-    metadata_cache->getFilesAndCheckSums(files, cache_checksums);
-    for (const auto & file : files)
-    {
-        // std::cout << "check key:" << file << std::endl;
-        String file_name = fs::path(file).filename();
-
-        /// file belongs to normal part
-        if (fs::path(getFullRelativePath()) / file_name == file)
-        {
-            auto disk_checksum = getActualChecksumByFile(file);
-            disk_checksums.push_back(disk_checksum);
-            continue;
-        }
-
-        /// file belongs to projection part
-        String proj_dir_name = fs::path(file).parent_path().filename();
-        auto pos = proj_dir_name.find_last_of('.');
-        if (pos == String::npos)
-        {
-            disk_checksums.push_back({});
-            continue;
-        }
-        String proj_name = proj_dir_name.substr(0, pos);
-        auto it = projection_parts.find(proj_name);
-        if (it == projection_parts.end())
-        {
-            disk_checksums.push_back({});
-            continue;
-        }
-
-        auto disk_checksum = it->second->getActualChecksumByFile(file);
-        disk_checksums.push_back(disk_checksum);
-    }
+    return metadata_manager->check();
 }
-#endif
-*/
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)
 {

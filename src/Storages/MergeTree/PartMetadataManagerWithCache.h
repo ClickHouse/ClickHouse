@@ -26,6 +26,8 @@ public:
 
     void updateAll(bool include_projection) override;
 
+    std::unordered_map<String, uint128> check() const override;
+
 private:
     String getKeyFromFilePath(const String & file_path) const;
     String getFilePathFromKey(const String & key) const;
