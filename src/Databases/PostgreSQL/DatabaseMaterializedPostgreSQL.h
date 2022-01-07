@@ -88,6 +88,7 @@ private:
     mutable std::mutex handler_mutex;
 
     BackgroundSchedulePool::TaskHolder startup_task;
+    bool shutdown_called = false;
 };
 
 }
