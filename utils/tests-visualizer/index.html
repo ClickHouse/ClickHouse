@@ -65,7 +65,7 @@
 <h1 id="fail-message" class="hide">Data not load</h1>
 <div id="loading">
     <img src="https://clickhouse.com/images/logo.svg">
-    <h1>Loading (~10 seconds, try load ~20 MB)</h1>
+    <h1>Loading (~10 seconds, ~20 MB)</h1>
 </div>
 <canvas id="canvas"></canvas>
 <script type="text/javascript">
@@ -132,7 +132,6 @@ let test_names_query = `
         // we good
         renderResponse(render_data);
         saveTestNames(test_names_data);
-        infoNode.style.display = 'block';
     } catch (e) {
         alert(e);
         showFailMessage();
@@ -184,6 +183,8 @@ function saveTestNames(data) {
     let {data: test_names} = data;
 
     canvasNode.addEventListener('mousemove', (event) => {
+        infoNode.style.display = 'block';
+
         const x = event.layerX;
         const y = event.layerY;
 
@@ -192,6 +193,7 @@ function saveTestNames(data) {
         [date] = date.toISOString().split('T');
         let [test] = test_names[canvasNode.height - y];
         let {data: pixel} = canvasNode.getContext('2d').getImageData(x, y, 1, 1);
+
         updateInfo(date, test, pixel);
     })
 }
