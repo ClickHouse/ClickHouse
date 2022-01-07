@@ -8,6 +8,10 @@
             font-family: sans-serif;
         }
 
+        .hide {
+            display: none;
+        }
+
         #loading {
             margin-top: 1em;
         }
@@ -21,7 +25,7 @@
             animation: spin 2s ease-in-out infinite;
         }
 
-        #loading h1 {
+        h1 {
             text-align: center;
         }
 
@@ -33,10 +37,9 @@
             float: right;
             font-size: 16pt;
             padding: 0.5rem;
-            border: 1px solid #111;
+            border: 1px solid white;
             border-radius: 10px;
             box-shadow: white 5px 5px 28px -10px;
-            display: none;
         }
 
         canvas {
@@ -58,11 +61,12 @@
     </style>
 </head>
 <body>
+<pre id="info" class="hide"></pre>
+<h1 id="fail-message" class="hide">Data not load</h1>
 <div id="loading">
     <img src="https://clickhouse.com/images/logo.svg">
     <h1>Loading (~10 seconds, try load ~20 MB)</h1>
 </div>
-<pre id="info"></pre>
 <canvas id="canvas"></canvas>
 <script type="text/javascript">
 ///////////////////////
@@ -72,6 +76,7 @@ let start_date = '2020-06-13';
 const canvasNode = document.getElementById('canvas');
 const infoNode = document.getElementById('info');
 const loadingNode = document.getElementById('loading');
+const failMessageNode = document.getElementById('fail-message');
 
 ///////////////////////
 //      QUERIES
@@ -112,27 +117,33 @@ let test_names_query = `
         FROM "gh-data".checks
         WHERE match(test_name, '^\\d+_') AND check_name ILIKE '%stateless%' AND check_start_time > now() - INTERVAL 1 DAY
         ORDER BY test_name
-    ) FORMAT JSONCompact`
+    ) FORMAT JSONCompact`;
 
 ///////////////////////
 //       MAIN
 ///////////////////////
 
-Promise.all([
-    invokeCbWithDataByQuery(render_data_query, renderResponse),
-    invokeCbWithDataByQuery(test_names_query, saveTestNames),
-])
-.then(hideLoader)
-.catch(alert);
+(async () => {
+    try {
+        const [render_data, test_names_data]  = await Promise.all([
+            loadDataByQuery(render_data_query),
+            loadDataByQuery(test_names_query),
+        ]);
+        // we good
+        renderResponse(render_data);
+        saveTestNames(test_names_data);
+        infoNode.style.display = 'block';
+    } catch (e) {
+        alert(e);
+        showFailMessage();
+    } finally {
+        hideLoader();
+    }
+})()
 
 ///////////////////////
 //  SPECIAL FUNCTIONS
 ///////////////////////
-
-async function invokeCbWithDataByQuery(query, callback) {
-    data = await loadDataByQuery(query);
-    callback(data);
-}
 
 async function loadDataByQuery(query) {
     const response = await fetch(
@@ -171,7 +182,6 @@ function renderResponse(data) {
 
 function saveTestNames(data) {
     let {data: test_names} = data;
-    infoNode.style.display = 'block';
 
     canvasNode.addEventListener('mousemove', (event) => {
         const x = event.layerX;
@@ -193,6 +203,10 @@ function updateInfo(date, test, pixel) {
 
 function hideLoader() {
     loadingNode.style.display = 'none';
+}
+
+function showFailMessage() {
+    failMessageNode.style.display = 'block';
 }
 
 </script>
