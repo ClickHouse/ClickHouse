@@ -41,6 +41,7 @@ TRUSTED_ORG_IDS = {
 
 NEED_RERUN_WORKFLOWS = {
     13241696, # PR
+    14738810, # DocsRelease
     15834118, # Docs
     15522500, # MasterCI
     15516108, # ReleaseCI
