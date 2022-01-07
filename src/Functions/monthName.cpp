@@ -61,8 +61,8 @@ public:
             arguments[0]
         };
 
-        auto dateName = FunctionFactory::instance().get("dateName", context)->build(temporary_columns);
-        return dateName->execute(temporary_columns, result_type, input_rows_count);
+        auto date_name_func = FunctionFactory::instance().get("dateName", context)->build(temporary_columns);
+        return date_name_func->execute(temporary_columns, result_type, input_rows_count);
     }
 
 private:
