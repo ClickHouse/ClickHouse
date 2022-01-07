@@ -673,7 +673,7 @@ ClickHouse поддерживает динамическое изменение 
 
 ## max_concurrent_queries {#max-concurrent-queries}
 
-Определяет максимальное количество одновременно обрабатываемых запросов, связанных с таблицей семейства `MergeTree`. Запросы также могут быть ограничены настройками: [max_concurrent_queries_for_user](#max-concurrent-queries-for-user), [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
+Определяет максимальное количество одновременно обрабатываемых запросов, связанных с таблицей семейства `MergeTree`. Запросы также могут быть ограничены настройками: [max_concurrent_insert_queries](#max-concurrent-insert-queries), [max_concurrent_select_queries](#max-concurrent-select-queries), [max_concurrent_queries_for_user](#max-concurrent-queries-for-user), [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
 
 !!! info "Примечание"
 	Параметры этих настроек могут быть изменены во время выполнения запросов и вступят в силу немедленно. Запросы, которые уже запущены, выполнятся без изменений.
@@ -681,12 +681,54 @@ ClickHouse поддерживает динамическое изменение 
 Возможные значения:
 
 -   Положительное целое число.
--   0 — выключена.
+-   0 — нет лимита.
+
+Значение по умолчанию: `100`.
 
 **Пример**
 
 ``` xml
 <max_concurrent_queries>100</max_concurrent_queries>
+```
+
+## max_concurrent_insert_queries {#max-concurrent-insert-queries}
+
+Определяет максимальное количество одновременных `INSERT` запросов.
+
+!!! info "Примечание"
+	Параметры этих настроек могут быть изменены во время выполнения запросов и вступят в силу немедленно. Запросы, которые уже запущены, выполнятся без изменений.
+	
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — нет лимита.
+
+Значение по умолчанию: `0`.
+
+**Example**
+
+``` xml
+<max_concurrent_insert_queries>100</max_concurrent_insert_queries>
+```
+
+## max_concurrent_select_queries {#max-concurrent-select-queries}
+
+Определяет максимальное количество одновременных `SELECT` запросов.
+
+!!! info "Примечание"
+	Параметры этих настроек могут быть изменены во время выполнения запросов и вступят в силу немедленно. Запросы, которые уже запущены, выполнятся без изменений.
+	
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — нет лимита.
+
+Значение по умолчанию: `0`.
+
+**Example**
+
+``` xml
+<max_concurrent_select_queries>100</max_concurrent_select_queries>
 ```
 
 ## max_concurrent_queries_for_user {#max-concurrent-queries-for-user}
@@ -696,7 +738,9 @@ ClickHouse поддерживает динамическое изменение 
 Возможные значения:
 
 -   Положительное целое число.
--   0 — выключена.
+-   0 — нет лимита.
+
+Значение по умолчанию: `0`.
 
 **Пример**
 
@@ -712,7 +756,12 @@ ClickHouse поддерживает динамическое изменение 
 
 Изменение настройки для одного запроса или пользователя не влияет на другие запросы.
 
-Значение по умолчанию: `0` — отсутствие ограничений.
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — нет лимита.
+
+Значение по умолчанию: `0`.
 
 **Пример**
 
