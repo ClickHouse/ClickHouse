@@ -52,7 +52,7 @@ public:
     ColumnPtr executeImpl(
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
-        [[maybe_unused]] size_t input_rows_count) const override
+        size_t input_rows_count) const override
     {
         auto month_column = DataTypeString().createColumnConst(arguments[0].column->size(), month_str);
         ColumnsWithTypeAndName temporary_columns
