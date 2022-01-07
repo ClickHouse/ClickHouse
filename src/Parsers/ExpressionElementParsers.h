@@ -276,17 +276,6 @@ protected:
 };
 
 
-/**
-  * Parse query with EXISTS expression.
-  */
-class ParserExistsExpression : public IParserBase
-{
-protected:
-    const char * getName() const override { return "exists expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-
 /** An array or tuple of literals.
   * Arrays can also be parsed as an application of [] operator and tuples as an application of 'tuple' function.
   * But parsing the whole array/tuple as a whole constant seriously speeds up the analysis of expressions in the case of very large collection.

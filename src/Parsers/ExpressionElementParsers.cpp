@@ -367,19 +367,11 @@ protected:
         }
 
         /// Convert to canonical representation in functional form: SUBSTRING(expr, start, length)
-
-        auto expr_list_args = std::make_shared<ASTExpressionList>();
-        expr_list_args->children = {expr_node, start_node};
-
         if (length_node)
-            expr_list_args->children.push_back(length_node);
+            node = makeASTFunction("substring", expr_node, start_node, length_node);
+        else
+            node = makeASTFunction("substring", expr_node, start_node);
 
-        auto func_node = std::make_shared<ASTFunction>();
-        func_node->name = "substring";
-        func_node->arguments = std::move(expr_list_args);
-        func_node->children.push_back(func_node->arguments);
-
-        node = std::move(func_node);
         return true;
     }
 };
@@ -518,18 +510,10 @@ private:
             }
         }
 
-        auto expr_list_args = std::make_shared<ASTExpressionList>();
         if (char_override)
-            expr_list_args->children = {expr_node, pattern_node, std::make_shared<ASTLiteral>("")};
+            node = makeASTFunction(func_name, expr_node, pattern_node, std::make_shared<ASTLiteral>(""));
         else
-            expr_list_args->children = {expr_node};
-
-        auto func_node = std::make_shared<ASTFunction>();
-        func_node->name = func_name;
-        func_node->arguments = std::move(expr_list_args);
-        func_node->children.push_back(func_node->arguments);
-
-        node = std::move(func_node);
+            node = makeASTFunction(func_name, expr_node);
         return true;
     }
 };
@@ -554,14 +538,7 @@ protected:
         if (!elem_parser.parse(pos, expr, expected))
             return false;
 
-        auto function = std::make_shared<ASTFunction>();
-        auto exp_list = std::make_shared<ASTExpressionList>();
-        function->name = interval_kind.toNameOfFunctionExtractTimePart();
-        function->arguments = exp_list;
-        function->children.push_back(exp_list);
-        exp_list->children.push_back(expr);
-        node = function;
-
+        node = makeASTFunction(interval_kind.toNameOfFunctionExtractTimePart(), expr);
         return true;
     }
 };
@@ -586,15 +563,7 @@ protected:
         if (arg_list.children.size() != 2)
             return false;
 
-        arg_list.children = {arg_list.children[1], arg_list.children[0]};
-
-        auto function = std::make_shared<ASTFunction>();
-        auto exp_list = std::make_shared<ASTExpressionList>();
-        function->name = "position";
-        function->arguments = in_func->arguments;
-        function->children.push_back(function->arguments);
-        node = function;
-
+        node = makeASTFunction("position", arg_list.children[1], arg_list.children[0]);
         return true;
     }
 };
@@ -656,16 +625,7 @@ private:
                 return false;
         }
 
-        auto expr_list_args = std::make_shared<ASTExpressionList>();
-        expr_list_args->children = {timestamp_node, interval_func_node};
-
-        auto func_node = std::make_shared<ASTFunction>();
-        func_node->name = function_name;
-        func_node->arguments = std::move(expr_list_args);
-        func_node->children.push_back(func_node->arguments);
-
-        node = std::move(func_node);
-
+        node = makeASTFunction(function_name, timestamp_node, interval_func_node);
         return true;
     }
 };
@@ -698,16 +658,23 @@ protected:
         if (!ParserExpression().parse(pos, right_node, expected))
             return false;
 
-        auto expr_list_args = std::make_shared<ASTExpressionList>();
-        expr_list_args->children = {std::make_shared<ASTLiteral>(interval_kind.toDateDiffUnit()), left_node, right_node};
+        node = makeASTFunction("dateDiff", std::make_shared<ASTLiteral>(interval_kind.toDateDiffUnit()), left_node, right_node);
+        return true;
+    }
+};
 
-        auto func_node = std::make_shared<ASTFunction>();
-        func_node->name = "dateDiff";
-        func_node->arguments = std::move(expr_list_args);
-        func_node->children.push_back(func_node->arguments);
+class ParserExistsExpression : public IParserBase
+{
+protected:
+    const char * getName() const override { return "EXISTS subquery"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    {
+        if (!ParserSelectWithUnionQuery().parse(pos, node, expected))
+            return false;
 
-        node = std::move(func_node);
-
+        auto subquery = std::make_shared<ASTSubquery>();
+        subquery->children.push_back(node);
+        node = makeASTFunction("exists", subquery);
         return true;
     }
 };
@@ -718,12 +685,6 @@ protected:
 bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserIdentifier id_parser;
-    ParserKeyword distinct("DISTINCT");
-    ParserKeyword all("ALL");
-    ParserExpressionList contents(false, is_table_function);
-    ParserSelectWithUnionQuery select;
-    ParserKeyword filter("FILTER");
-    ParserKeyword over("OVER");
 
     bool has_all = false;
     bool has_distinct = false;
@@ -747,7 +708,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ++pos;
 
     /// Special cases for expressions that look like functions but contain some syntax sugar:
-    /// CAST, EXTRACT,
+    /// CAST, EXTRACT, POSITION, EXISTS
     /// DATE_ADD, DATEADD, TIMESTAMPADD, DATE_SUB, DATESUB, TIMESTAMPSUB,
     /// DATE_DIFF, DATEDIFF, TIMESTAMPDIFF, TIMESTAMP_DIFF,
     /// SUBSTRING, TRIM, LEFT, RIGHT, POSITION
@@ -759,6 +720,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || (function_name_lowercase == "extract" && ParserExtractExpression().parse(pos, node, expected))
         || (function_name_lowercase == "substring" && ParserSubstringExpression().parse(pos, node, expected))
         || (function_name_lowercase == "position" && ParserPositionExpression().parse(pos, node, expected))
+        || (function_name_lowercase == "exists" && ParserExistsExpression().parse(pos, node, expected))
         || (function_name_lowercase == "trim" && ParserTrimExpression(false, false).parse(pos, node, expected))
         || (function_name_lowercase == "ltrim" && ParserTrimExpression(true, false).parse(pos, node, expected))
         || (function_name_lowercase == "rtrim" && ParserTrimExpression(false, true).parse(pos, node, expected))
@@ -778,6 +740,9 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     auto pos_after_bracket = pos;
     auto old_expected = expected;
+
+    ParserKeyword all("ALL");
+    ParserKeyword distinct("DISTINCT");
 
     if (all.ignore(pos, expected))
         has_all = true;
@@ -802,6 +767,8 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             has_distinct = false;
         }
     }
+
+    ParserExpressionList contents(false, is_table_function);
 
     const char * contents_begin = pos->begin;
     if (!contents.parse(pos, expr_list_args, expected))
@@ -896,6 +863,9 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         function_node->parameters = expr_list_params;
         function_node->children.push_back(function_node->parameters);
     }
+
+    ParserKeyword filter("FILTER");
+    ParserKeyword over("OVER");
 
     if (filter.ignore(pos, expected))
     {
@@ -2179,16 +2149,6 @@ bool ParserMySQLGlobalVariable::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     return true;
 }
 
-bool ParserExistsExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    if (ParserKeyword("EXISTS").ignore(pos, expected) && ParserSubquery().parse(pos, node, expected))
-    {
-        node = makeASTFunction("exists", node);
-        return true;
-    }
-    return false;
-}
-
 
 bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -2204,7 +2164,6 @@ bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         || ParserFunction().parse(pos, node, expected)
         || ParserQualifiedAsterisk().parse(pos, node, expected)
         || ParserAsterisk().parse(pos, node, expected)
-        || ParserExistsExpression().parse(pos, node, expected)
         || ParserCompoundIdentifier(false, true).parse(pos, node, expected)
         || ParserSubstitution().parse(pos, node, expected)
         || ParserMySQLGlobalVariable().parse(pos, node, expected);
