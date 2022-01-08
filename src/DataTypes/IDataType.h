@@ -377,6 +377,8 @@ struct WhichDataType
     constexpr bool isNullable() const { return idx == TypeIndex::Nullable; }
     constexpr bool isFunction() const { return idx == TypeIndex::Function; }
     constexpr bool isAggregateFunction() const { return idx == TypeIndex::AggregateFunction; }
+
+    constexpr bool isLowCarnality() const { return idx == TypeIndex::LowCardinality; }
 };
 
 /// IDataType helpers (alternative for IDataType virtual methods with single point of truth)
