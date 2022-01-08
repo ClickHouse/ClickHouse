@@ -91,6 +91,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
     switch (res->type)
     {
         case Type::RELOAD_DICTIONARY:
+        case Type::UPDATE_DICTIONARY:
         {
             if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ true, /* allow_string_literal = */ true))
                 return false;

@@ -196,6 +196,28 @@ public:
     template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
     ReturnType reloadAllTriedToLoad() const;
 
+    /// Loads or update a specified object.
+    /// The function update the object if it's already loaded.
+    /// The function throws an exception if it's failed to load or update.
+    template <typename ReturnType = LoadablePtr, typename = std::enable_if_t<is_scalar_load_result_type<ReturnType>, void>>
+    ReturnType loadOrUpdate(const String & name) const;
+
+    /// Loads or update objects by filter.
+    /// The function update the objects which are already loaded.
+    /// The function throws an exception if it's failed to load or update something.
+    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
+    ReturnType loadOrUpdate(const FilterByNameFunction & filter) const;
+
+    /// Load or update all objects. Not recommended to use.
+    /// The function throws an exception if it's failed to load or update something.
+    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
+    ReturnType loadOrUpdateAll() const { return loadOrUpdate<ReturnType>(FilterByNameFunction{}); }
+
+    /// Update objects by filter which were tried to load before (successfully or not).
+    /// The function throws an exception if it's failed to load or update something.
+    template <typename ReturnType = Loadables, typename = std::enable_if_t<is_vector_load_result_type<ReturnType>, void>>
+    ReturnType updateAllTriedToLoad() const;
+
     /// Check if object with name exists in configuration
     bool has(const String & name) const;
 

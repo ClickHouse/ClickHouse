@@ -609,7 +609,7 @@ public:
     ReturnType tryLoad(const String & name, Duration timeout)
     {
         std::unique_lock lock{mutex};
-        Info * info = loadImpl(name, timeout, false, lock);
+        Info * info = loadImpl(name, timeout, false, false, lock);
         if (!info)
             return notExists<ReturnType>(name);
         return info->getLoadResult<ReturnType>();
@@ -619,7 +619,7 @@ public:
     ReturnType tryLoad(const FilterByNameFunction & filter, Duration timeout)
     {
         std::unique_lock lock{mutex};
-        loadImpl(filter, timeout, false, lock);
+        loadImpl(filter, timeout, false, false, lock);
         return collectLoadResults<ReturnType>(filter);
     }
 
@@ -628,7 +628,7 @@ public:
     ReturnType tryLoadOrReload(const String & name, Duration timeout)
     {
         std::unique_lock lock{mutex};
-        Info * info = loadImpl(name, timeout, true, lock);
+        Info * info = loadImpl(name, timeout, true, false, lock);
         if (!info)
             return notExists<ReturnType>(name);
         return info->getLoadResult<ReturnType>();
@@ -638,7 +638,25 @@ public:
     ReturnType tryLoadOrReload(const FilterByNameFunction & filter, Duration timeout)
     {
         std::unique_lock lock{mutex};
-        loadImpl(filter, timeout, true, lock);
+        loadImpl(filter, timeout, true, false, lock);
+        return collectLoadResults<ReturnType>(filter);
+    }
+
+    template <typename ReturnType>
+    ReturnType tryLoadOrUpdate(const String & name, Duration timeout)
+    {
+        std::unique_lock lock{mutex};
+        Info * info = loadImpl(name, timeout, false, true, lock);
+        if (!info)
+            return notExists<ReturnType>(name);
+        return info->getLoadResult<ReturnType>();
+    }
+
+    template <typename ReturnType>
+    ReturnType tryLoadOrUpdate(const FilterByNameFunction & filter, Duration timeout)
+    {
+        std::unique_lock lock{mutex};
+        loadImpl(filter, timeout, false, true, lock);
         return collectLoadResults<ReturnType>(filter);
     }
 
@@ -822,7 +840,7 @@ private:
         return results;
     }
 
-    Info * loadImpl(const String & name, Duration timeout, bool forced_to_reload, std::unique_lock<std::mutex> & lock)
+    Info * loadImpl(const String & name, Duration timeout, bool forced_to_reload, bool force_to_update, std::unique_lock<std::mutex> & lock)
     {
         std::optional<size_t> min_id;
         Info * info = nullptr;
@@ -833,7 +851,7 @@ private:
                 return true; /// stop
 
             if (!min_id)
-                min_id = getMinIDToFinishLoading(forced_to_reload);
+                min_id = getMinIDToFinishLoading(forced_to_reload || force_to_update);
 
             if (info->loading_id < min_id)
                 startLoading(*info, forced_to_reload, *min_id);
@@ -850,13 +868,13 @@ private:
         return info;
     }
 
-    void loadImpl(const FilterByNameFunction & filter, Duration timeout, bool forced_to_reload, std::unique_lock<std::mutex> & lock)
+    void loadImpl(const FilterByNameFunction & filter, Duration timeout, bool forced_to_reload, bool forced_to_update, std::unique_lock<std::mutex> & lock)
     {
         std::optional<size_t> min_id;
         auto pred = [&]
         {
             if (!min_id)
-                min_id = getMinIDToFinishLoading(forced_to_reload);
+                min_id = getMinIDToFinishLoading(forced_to_reload || forced_to_update);
 
             bool all_ready = true;
             for (auto & [name, info] : infos)
@@ -1419,6 +1437,32 @@ ReturnType ExternalLoader::reloadAllTriedToLoad() const
     return loadOrReload<ReturnType>([&names](const String & name) { return names.count(name); });
 }
 
+template <typename ReturnType, typename>
+ReturnType ExternalLoader::loadOrUpdate(const String & name) const
+{
+    loading_dispatcher->setConfiguration(config_files_reader->read());
+    auto result = loading_dispatcher->tryLoadOrUpdate<LoadResult>(name, WAIT);
+    checkLoaded(result, true);
+    return convertTo<ReturnType>(result);
+}
+
+template <typename ReturnType, typename>
+ReturnType ExternalLoader::loadOrUpdate(const FilterByNameFunction & filter) const
+{
+    loading_dispatcher->setConfiguration(config_files_reader->read());
+    auto results = loading_dispatcher->tryLoadOrUpdate<LoadResults>(filter, WAIT);
+    checkLoaded(results, true);
+    return convertTo<ReturnType>(results);
+}
+
+template <typename ReturnType, typename>
+ReturnType ExternalLoader::updateAllTriedToLoad() const
+{
+    std::unordered_set<String> names;
+    boost::range::copy(getAllTriedToLoadNames(), std::inserter(names, names.end()));
+    return loadOrUpdate<ReturnType>([&names](const String & name) { return names.count(name); });
+}
+
 bool ExternalLoader::has(const String & name) const
 {
     return loading_dispatcher->has(name);
@@ -1535,6 +1579,15 @@ template ExternalLoader::LoadResult ExternalLoader::loadOrReload<ExternalLoader:
 template ExternalLoader::Loadables ExternalLoader::loadOrReload<ExternalLoader::Loadables>(const FilterByNameFunction &) const;
 template ExternalLoader::LoadResults ExternalLoader::loadOrReload<ExternalLoader::LoadResults>(const FilterByNameFunction &) const;
 
+template ExternalLoader::LoadablePtr ExternalLoader::loadOrUpdate<ExternalLoader::LoadablePtr>(const String &) const;
+template ExternalLoader::LoadResult ExternalLoader::loadOrUpdate<ExternalLoader::LoadResult>(const String &) const;
+template ExternalLoader::Loadables ExternalLoader::loadOrUpdate<ExternalLoader::Loadables>(const FilterByNameFunction &) const;
+template ExternalLoader::LoadResults ExternalLoader::loadOrUpdate<ExternalLoader::LoadResults>(const FilterByNameFunction &) const;
+
 template ExternalLoader::Loadables ExternalLoader::reloadAllTriedToLoad<ExternalLoader::Loadables>() const;
 template ExternalLoader::LoadResults ExternalLoader::reloadAllTriedToLoad<ExternalLoader::LoadResults>() const;
+
+template ExternalLoader::Loadables ExternalLoader::updateAllTriedToLoad<ExternalLoader::Loadables>() const;
+template ExternalLoader::LoadResults ExternalLoader::updateAllTriedToLoad<ExternalLoader::LoadResults>() const;
+
 }

@@ -215,7 +215,7 @@ BlockIO InterpreterSystemQuery::execute()
     system_context->setSetting("profile", getContext()->getSystemProfileName());
 
     /// Make canonical query for simpler processing
-    if (query.type == Type::RELOAD_DICTIONARY)
+    if (query.type == Type::RELOAD_DICTIONARY || query.type == Type::UPDATE_DICTIONARY)
     {
         if (query.database)
             query.setTable(query.getDatabase() + "." + query.getTable());
@@ -314,6 +314,25 @@ BlockIO InterpreterSystemQuery::execute()
             executeCommandsAndThrowIfError(
                 [&] { system_context->getExternalDictionariesLoader().reloadAllTriedToLoad(); },
                 [&] { system_context->getEmbeddedDictionaries().reload(); }
+            );
+            ExternalDictionariesLoader::resetAll();
+            break;
+        }
+        case Type::UPDATE_DICTIONARY:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_UPDATE_DICTIONARY);
+
+            auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
+            external_dictionaries_loader.updateDictionary(query.getTable(), getContext());
+
+            ExternalDictionariesLoader::resetAll();
+            break;
+        }
+        case Type::UPDATE_DICTIONARIES:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_UPDATE_DICTIONARY);
+            executeCommandsAndThrowIfError(
+                [&] { system_context->getExternalDictionariesLoader().updateAllTriedToLoad(); }
             );
             ExternalDictionariesLoader::resetAll();
             break;
@@ -766,6 +785,12 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_DICTIONARY);
+            break;
+        }
+        case Type::UPDATE_DICTIONARY: [[fallthrough]];
+        case Type::UPDATE_DICTIONARIES:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_UPDATE_DICTIONARY);
             break;
         }
         case Type::RELOAD_MODEL: [[fallthrough]];

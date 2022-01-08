@@ -161,7 +161,8 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
             || type == Type::RESTORE_REPLICA
             || type == Type::SYNC_REPLICA
             || type == Type::FLUSH_DISTRIBUTED
-            || type == Type::RELOAD_DICTIONARY)
+            || type == Type::RELOAD_DICTIONARY
+            || type == Type::UPDATE_DICTIONARY)
     {
         print_database_table();
     }
