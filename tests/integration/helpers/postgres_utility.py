@@ -18,6 +18,10 @@ postgres_table_template_4 = """
     CREATE TABLE IF NOT EXISTS "{}"."{}" (
     key Integer NOT NULL, value Integer, PRIMARY KEY(key))
     """
+postgres_table_template_5 = """
+    CREATE TABLE IF NOT EXISTS "{}" (
+    key Integer NOT NULL, value UUID, PRIMARY KEY(key))
+    """
 
 def get_postgres_conn(ip, port, database=False, auto_commit=True, database_name='postgres_database', replication=False):
     if database == True:
@@ -84,6 +88,7 @@ class PostgresManager:
         self.instance = instance
         self.ip = ip
         self.port = port
+        self.conn = get_postgres_conn(ip=self.ip, port=self.port)
         self.prepare()
 
     def restart(self):
@@ -101,6 +106,8 @@ class PostgresManager:
         self.create_clickhouse_postgres_db(ip=self.ip, port=self.port)
 
     def clear(self):
+        if self.conn.closed == 0:
+            self.conn.close()
         for db in self.created_materialized_postgres_db_list.copy():
             self.drop_materialized_db(db);
         for db in self.created_ch_postgres_db_list.copy():
@@ -110,6 +117,10 @@ class PostgresManager:
             cursor = conn.cursor()
             for db in self.created_postgres_db_list.copy():
                 self.drop_postgres_db(cursor, db)
+
+    def get_db_cursor(self):
+        self.conn = get_postgres_conn(ip=self.ip, port=self.port, database=True)
+        return self.conn.cursor()
 
     def create_postgres_db(self, cursor, name='postgres_database'):
         self.drop_postgres_db(cursor, name)
@@ -141,7 +152,8 @@ class PostgresManager:
 
 
     def create_materialized_db(self, ip, port,
-                               materialized_database='test_database', postgres_database='postgres_database', settings=[]):
+                               materialized_database='test_database', postgres_database='postgres_database',
+                               settings=[], table_overrides=''):
         self.created_materialized_postgres_db_list.add(materialized_database)
         self.instance.query(f"DROP DATABASE IF EXISTS {materialized_database}")
 
@@ -152,6 +164,7 @@ class PostgresManager:
                 if i != 0:
                     create_query += ', '
                 create_query += settings[i]
+        create_query += table_overrides
         self.instance.query(create_query)
         assert materialized_database in self.instance.query('SHOW DATABASES')
 
@@ -164,6 +177,9 @@ class PostgresManager:
     def create_and_fill_postgres_table(self, table_name):
         conn = get_postgres_conn(ip=self.ip, port=self.port, database=True)
         cursor = conn.cursor()
+        self.create_and_fill_postgres_table_from_cursor(cursor, table_name)
+
+    def create_and_fill_postgres_table_from_cursor(self, cursor, table_name):
         create_postgres_table(cursor, table_name);
         self.instance.query(f"INSERT INTO postgres_database.{table_name} SELECT number, number from numbers(50)")
 
@@ -242,7 +258,7 @@ def check_tables_are_synchronized(instance, table_name, order_by='key', postgres
     expected = instance.query(f'select * from {postgres_database}.{table_name} order by {order_by};')
     result = instance.query(result_query)
 
-    for _ in range(120):
+    for _ in range(30):
         if result == expected:
             break
         else:
