@@ -44,6 +44,7 @@ void registerFunctionH3IsResClassIII(FunctionFactory &);
 void registerFunctionH3IsPentagon(FunctionFactory &);
 void registerFunctionH3GetFaces(FunctionFactory &);
 void registerFunctionH3DegsToRads(FunctionFactory &);
+void registerFunctionH3RadsToDegs(FunctionFactory &);
 #endif
 
 #if USE_S2_GEOMETRY
@@ -101,6 +102,7 @@ void registerFunctionsGeo(FunctionFactory & factory)
     registerFunctionH3IsPentagon(factory);
     registerFunctionH3GetFaces(factory);
     registerFunctionH3DegsToRads(factory);
+    registerFunctionH3RadsToDegs(factory);
 #endif
 
 #if USE_S2_GEOMETRY
