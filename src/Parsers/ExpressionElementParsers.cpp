@@ -571,7 +571,7 @@ protected:
 class ParserDateAddExpression : public IParserBase
 {
 public:
-    ParserDateAddExpression(const char * function_name_)
+    explicit ParserDateAddExpression(const char * function_name_)
         : function_name(function_name_)
     {
     }
