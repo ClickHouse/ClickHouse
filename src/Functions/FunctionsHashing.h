@@ -600,7 +600,7 @@ struct ImplXxHash64
 struct ImplBLAKE3
 {
     static constexpr auto name = "BLAKE3";
-    enum { length = SHA256_DIGEST_LENGTH };
+    enum { length = OUT_LEN };
 
     static uint8_t* apply(const char * begin)
     {
