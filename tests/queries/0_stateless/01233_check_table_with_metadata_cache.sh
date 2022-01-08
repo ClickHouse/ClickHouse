@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# Tag no-fasttest: setting use_metadata_cache=true is not supported in fasttest, because clickhouse binary in fasttest is build without RocksDB.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -21,7 +23,7 @@ for table_engine in $table_engines; do
 
                 table_engine_clause=""
                 if [[ "$table_engine" == "ReplicatedMergeTree" ]]; then
-                    table_engine_clause="ENGINE ReplicatedMergeTree('/clickhouse/tables/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/test_metadata_cache/check_part_metadata_cache', 'r1')"
+                    table_engine_clause="ENGINE ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/test_metadata_cache/check_part_metadata_cache', 'r1')"
                 elif [[ "$table_engine" == "MergeTree" ]]; then
                     table_engine_clause="ENGINE MergeTree()"
                 fi
