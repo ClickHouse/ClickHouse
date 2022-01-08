@@ -13,7 +13,7 @@ if [ -n "${PID}" ]; then
     kill -9 "$PID"
 fi
 
-python3 "$CURDIR"/02157_url_auth.python $PORT &
+python3 "$CURDIR/02157_url_auth.python" $PORT &
 
 sleep 1
 
