@@ -232,17 +232,17 @@ struct HashTableGrower
 {
     /// The state of this structure is enough to get the buffer size of the hash table.
 
+    UInt8 size_degree = initial_size_degree;
     static constexpr auto initial_count = 1ULL << initial_size_degree;
 
     /// If collision resolution chains are contiguous, we can implement erase operation by moving the elements.
     static constexpr auto performs_linear_probing_with_single_step = true;
 
     /// The size of the hash table in the cells.
-    size_t bufSize() const               { return 1ULL << size_degree_value; }
+    size_t bufSize() const               { return 1ULL << size_degree; }
 
-    size_t maxFill() const               { return 1ULL << (size_degree_value - 1); }
-    size_t mask() const                  { return mask_value; }
-    size_t calculateMask() const         { return bufSize() - 1; }
+    size_t maxFill() const               { return 1ULL << (size_degree - 1); }
+    size_t mask() const                  { return bufSize() - 1; }
 
     /// From the hash value, get the cell number in the hash table.
     size_t place(size_t x) const         { return x & mask(); }
@@ -256,43 +256,23 @@ struct HashTableGrower
     /// Increase the size of the hash table.
     void increaseSize()
     {
-        size_degree_value += size_degree_value >= 23 ? 1 : 2;
-        mask_value = calculateMask();
+        size_degree += size_degree >= 23 ? 1 : 2;
     }
 
     /// Set the buffer size by the number of elements in the hash table. Used when deserializing a hash table.
     void set(size_t num_elems)
     {
-        size_degree_value = num_elems <= 1
+        size_degree = num_elems <= 1
              ? initial_size_degree
              : ((initial_size_degree > static_cast<size_t>(log2(num_elems - 1)) + 2)
                  ? initial_size_degree
                  : (static_cast<size_t>(log2(num_elems - 1)) + 2));
-        mask_value = calculateMask();
     }
 
     void setBufSize(size_t buf_size_)
     {
-        size_degree_value = static_cast<size_t>(log2(buf_size_ - 1) + 1);
-        mask_value = calculateMask();
+        size_degree = static_cast<size_t>(log2(buf_size_ - 1) + 1);
     }
-
-    void increaseSizeDegree(UInt8 value)
-    {
-        size_degree_value += value;
-        mask_value = calculateMask();
-    }
-
-    inline UInt8 getSizeDegree() const
-    {
-        return size_degree_value;
-    }
-
-private:
-
-    UInt8 size_degree_value = initial_size_degree;
-
-    size_t mask_value = calculateMask();
 };
 
 
@@ -440,12 +420,25 @@ protected:
     /// Find a cell with the same key or an empty cell, starting from the specified position and further along the collision resolution chain.
     size_t ALWAYS_INLINE findCell(const Key & x, size_t hash_value, size_t place_value) const
     {
-        while (!buf[place_value].isZero(*this) && !buf[place_value].keyEquals(x, hash_value, *this))
+        size_t buf_size = grower.bufSize();
+        for (; place_value < buf_size; ++place_value)
         {
-            place_value = grower.next(place_value);
-#ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
-            ++collisions;
-#endif
+            if (buf[place_value].isZero(*this) || buf[place_value].keyEquals(x, hash_value, *this))
+                return place_value;
+
+          #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
+                ++collisions;
+            #endif
+        }
+
+        for (place_value = 0; place_value < buf_size; ++place_value)
+        {
+            if (buf[place_value].isZero(*this) || buf[place_value].keyEquals(x, hash_value, *this))
+                return place_value;
+
+          #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
+                ++collisions;
+            #endif
         }
 
         return place_value;

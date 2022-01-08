@@ -20,9 +20,7 @@ struct TwoLevelHashTableGrower : public HashTableGrower<initial_size_degree>
     /// Increase the size of the hash table.
     void increaseSize()
     {
-        UInt8 current_size_degree = this->getSizeDegree();
-        UInt8 add_size = current_size_degree >= 15 ? 1 : 2;
-        this->increaseSizeDegree(add_size);
+        this->size_degree += this->size_degree >= 15 ? 1 : 2;
     }
 };
 
