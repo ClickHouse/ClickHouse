@@ -41,5 +41,7 @@ void registerFunctionsHashing(FunctionFactory & factory)
     factory.registerFunction<FunctionXxHash32>();
     factory.registerFunction<FunctionXxHash64>();
 #endif
+
+    factory.registerFunction<FunctionBLAKE3>();
 }
 }
