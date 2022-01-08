@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+ <yandex>
+    <profiles>
+        <default>
+        </default>
+    </profiles>
+
+     <users>
+         <postgresql>
+             <password>123</password>
+         </postgresql>
+     </users>
+ </yandex>

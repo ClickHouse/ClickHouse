@@ -54,6 +54,10 @@ bool ReadBufferFromFileDescriptor::nextImpl()
     /// If internal_buffer size is empty, then read() cannot be distinguished from EOF
     assert(!internal_buffer.empty());
 
+    /// This is a workaround of a read pass EOF bug in linux kernel with pread()
+    if (file_size.has_value() && file_offset_of_buffer_end >= *file_size)
+        return false;
+
     size_t bytes_read = 0;
     while (!bytes_read)
     {
