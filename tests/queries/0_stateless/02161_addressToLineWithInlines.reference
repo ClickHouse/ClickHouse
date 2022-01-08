@@ -1,0 +1,4 @@
+CHECK: privilege
+Code: 446.
+CHECK: basic call
+Success
