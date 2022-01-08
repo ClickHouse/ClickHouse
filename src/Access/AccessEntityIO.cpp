@@ -7,6 +7,7 @@
 #include <Access/SettingsProfile.h>
 #include <Access/User.h>
 #include <Core/Defines.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Access/InterpreterCreateQuotaQuery.h>
 #include <Interpreters/Access/InterpreterCreateRoleQuery.h>
 #include <Interpreters/Access/InterpreterCreateRowPolicyQuery.h>
@@ -38,9 +39,6 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_ACCESS_ENTITY_DEFINITION;
 }
-
-using EntityType = IAccessStorage::EntityType;
-using EntityTypeInfo = IAccessStorage::EntityTypeInfo;
 
 namespace
 {
@@ -80,7 +78,7 @@ String serializeAccessEntity(const IAccessEntity & entity)
     /// Build list of ATTACH queries.
     ASTs queries;
     queries.push_back(InterpreterShowCreateAccessEntityQuery::getAttachQuery(entity));
-    if ((entity.getType() == EntityType::USER) || (entity.getType() == EntityType::ROLE))
+    if ((entity.getType() == AccessEntityType::USER) || (entity.getType() == AccessEntityType::ROLE))
         boost::range::push_back(queries, InterpreterShowGrantsQuery::getAttachGrantQueries(entity));
 
     /// Serialize the list of ATTACH queries to a string.

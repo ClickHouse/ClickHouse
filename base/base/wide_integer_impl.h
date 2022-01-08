@@ -827,7 +827,7 @@ public:
 
             CompilerUInt128 a = (CompilerUInt128(numerator.items[1]) << 64) + numerator.items[0];
             CompilerUInt128 b = (CompilerUInt128(denominator.items[1]) << 64) + denominator.items[0];
-            CompilerUInt128 c = a / b;
+            CompilerUInt128 c = a / b; // NOLINT
 
             integer<Bits, Signed> res;
             res.items[0] = c;
@@ -1020,8 +1020,15 @@ constexpr integer<Bits, Signed>::integer(std::initializer_list<T> il) noexcept
     {
         auto it = il.begin();
         for (size_t i = 0; i < _impl::item_count; ++i)
+        {
             if (it < il.end())
+            {
                 items[i] = *it;
+                ++it;
+            }
+            else
+                items[i] = 0;
+        }
     }
 }
 

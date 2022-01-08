@@ -1,9 +1,11 @@
 #  docker build -t clickhouse/fasttest .
 FROM clickhouse/test-util
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=13
+# ARG for quick switch to a given ubuntu mirror
+ARG apt_archive="http://archive.ubuntu.com"
+RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
-RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=13
 
 RUN apt-get update \
     && apt-get install ca-certificates lsb-release wget gnupg apt-transport-https \

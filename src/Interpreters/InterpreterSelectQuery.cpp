@@ -113,8 +113,10 @@ String InterpreterSelectQuery::generateFilterActions(ActionsDAGPtr & actions, co
     select_ast->setExpression(ASTSelectQuery::Expression::SELECT, std::make_shared<ASTExpressionList>());
     auto expr_list = select_ast->select();
 
-    // The first column is our filter expression.
-    expr_list->children.push_back(row_policy_filter);
+    /// The first column is our filter expression.
+    /// the row_policy_filter should be cloned, because it may be changed by TreeRewriter.
+    /// which make it possible an invalid expression, although it may be valid in whole select.
+    expr_list->children.push_back(row_policy_filter->clone());
 
     /// Keep columns that are required after the filter actions.
     for (const auto & column_str : prerequisite_columns)
@@ -358,7 +360,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     std::shared_ptr<TableJoin> table_join = joined_tables.makeTableJoin(query);
 
     if (storage)
-        row_policy_filter = context->getRowPolicyCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER);
+        row_policy_filter = context->getRowPolicyFilter(table_id.getDatabaseName(), table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
 
     StorageView * view = nullptr;
     if (storage)
@@ -386,7 +388,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             query.setFinal();
 
         /// Save scalar sub queries's results in the query context
-        if (!options.only_analyze && context->hasQueryContext())
+        /// But discard them if the Storage has been modified
+        /// In an ideal situation we would only discard the scalars affected by the storage change
+        if (!options.only_analyze && context->hasQueryContext() && !context->getViewSource())
             for (const auto & it : syntax_analyzer_result->getScalars())
                 context->getQueryContext()->addScalar(it.first, it.second);
 

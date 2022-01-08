@@ -10,7 +10,6 @@
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/SubqueryForSet.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>

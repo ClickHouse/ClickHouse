@@ -1033,7 +1033,7 @@ void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
                 min_unprocessed_insert_time_changed, max_processed_insert_time_changed, lock);
 
             (*it)->removed_by_other_entry = true;
-            queue.erase(it++);
+            it = queue.erase(it);
             ++removed_entries;
         }
         else
@@ -1177,7 +1177,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                 return false;
             }
 
-            auto part = data.getPartIfExists(name, {MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
+            auto part = data.getPartIfExists(name, {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
             if (part)
             {
                 if (auto part_in_memory = asInMemoryPart(part))

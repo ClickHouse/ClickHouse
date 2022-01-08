@@ -6,10 +6,15 @@ import os
 import time
 import shutil
 from github import Github
-from report import create_test_html_report
+
+from env_helper import GITHUB_WORKSPACE, RUNNER_TEMP
 from s3_helper import S3Helper
 from pr_info import PRInfo
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
+from upload_result_helper import upload_results
+from commit_status_helper import get_commit
+from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
+from stopwatch import Stopwatch
 
 NAME = "Push to Dockerhub (actions)"
 
@@ -149,35 +154,13 @@ def process_test_results(s3_client, test_results, s3_path_prefix):
         processed_test_results.append((test_name, status))
     return overall_status, processed_test_results
 
-def upload_results(s3_client, pr_number, commit_sha, test_results):
-    s3_path_prefix = f"{pr_number}/{commit_sha}/" + NAME.lower().replace(' ', '_')
-
-    branch_url = "https://github.com/ClickHouse/ClickHouse/commits/master"
-    branch_name = "master"
-    if pr_number != 0:
-        branch_name = "PR #{}".format(pr_number)
-        branch_url = "https://github.com/ClickHouse/ClickHouse/pull/" + str(pr_number)
-    commit_url = f"https://github.com/ClickHouse/ClickHouse/commit/{commit_sha}"
-
-    task_url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
-
-    html_report = create_test_html_report(NAME, test_results, "https://hub.docker.com/u/clickhouse", task_url, branch_url, branch_name, commit_url)
-    with open('report.html', 'w') as f:
-        f.write(html_report)
-
-    url = s3_client.upload_test_report_to_s3('report.html', s3_path_prefix + ".html")
-    logging.info("Search result in url %s", url)
-    return url
-
-def get_commit(gh, commit_sha):
-    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
-    commit = repo.get_commit(commit_sha)
-    return commit
-
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    repo_path = os.getenv("GITHUB_WORKSPACE", os.path.abspath("../../"))
-    temp_path = os.path.join(os.getenv("RUNNER_TEMP", os.path.abspath("./temp")), 'docker_images_check')
+
+    stopwatch = Stopwatch()
+
+    repo_path = GITHUB_WORKSPACE
+    temp_path = os.path.join(RUNNER_TEMP, 'docker_images_check')
     dockerhub_password = get_parameter_from_ssm('dockerhub_robot_password')
 
     if os.path.exists(temp_path):
@@ -186,10 +169,7 @@ if __name__ == "__main__":
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
-        event = json.load(event_file)
-
-    pr_info = PRInfo(event, False, True)
+    pr_info = PRInfo(need_changed_files=True)
     changed_images, dockerhub_repo_name = get_changed_docker_images(pr_info, repo_path, "docker/images.json")
     logging.info("Has changed images %s", ', '.join([str(image[0]) for image in changed_images]))
     pr_commit_version = str(pr_info.number) + '-' + pr_info.sha
@@ -211,7 +191,6 @@ if __name__ == "__main__":
     else:
         description = "Nothing to update"
 
-
     if len(description) >= 140:
         description = description[:136] + "..."
 
@@ -220,14 +199,17 @@ if __name__ == "__main__":
     s3_path_prefix = str(pr_info.number) + "/" + pr_info.sha + "/" + NAME.lower().replace(' ', '_')
     status, test_results = process_test_results(s3_helper, images_processing_result, s3_path_prefix)
 
-    url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results)
-
-    gh = Github(get_best_robot_token())
-    commit = get_commit(gh, pr_info.sha)
-    commit.create_status(context=NAME, description=description, state=status, target_url=url)
+    ch_helper = ClickHouseHelper()
+    url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [], NAME)
 
     with open(os.path.join(temp_path, 'changed_images.json'), 'w') as images_file:
         json.dump(result_images, images_file)
 
     print("::notice ::Report url: {}".format(url))
     print("::set-output name=url_output::\"{}\"".format(url))
+    gh = Github(get_best_robot_token())
+    commit = get_commit(gh, pr_info.sha)
+    commit.create_status(context=NAME, description=description, state=status, target_url=url)
+
+    prepared_events = prepare_tests_results_for_clickhouse(pr_info, test_results, status, stopwatch.duration_seconds, stopwatch.start_time_str, url, NAME)
+    ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)

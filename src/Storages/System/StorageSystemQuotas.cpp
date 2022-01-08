@@ -19,16 +19,13 @@ namespace DB
 {
 namespace
 {
-    using KeyType = Quota::KeyType;
-    using KeyTypeInfo = Quota::KeyTypeInfo;
-
     DataTypeEnum8::Values getKeyTypeEnumValues()
     {
         DataTypeEnum8::Values enum_values;
-        for (auto key_type : collections::range(KeyType::MAX))
+        for (auto key_type : collections::range(QuotaKeyType::MAX))
         {
-            const auto & type_info = KeyTypeInfo::get(key_type);
-            if ((key_type != KeyType::NONE) && type_info.base_types.empty())
+            const auto & type_info = QuotaKeyTypeInfo::get(key_type);
+            if ((key_type != QuotaKeyType::NONE) && type_info.base_types.empty())
                 enum_values.push_back({type_info.name, static_cast<Int8>(key_type)});
         }
         return enum_values;
@@ -76,16 +73,16 @@ void StorageSystemQuotas::fillData(MutableColumns & res_columns, ContextPtr cont
                        const UUID & id,
                        const String & storage_name,
                        const std::vector<Quota::Limits> & all_limits,
-                       KeyType key_type,
+                       QuotaKeyType key_type,
                        const RolesOrUsersSet & apply_to)
     {
         column_name.insertData(name.data(), name.length());
         column_id.push_back(id.toUnderType());
         column_storage.insertData(storage_name.data(), storage_name.length());
 
-        if (key_type != KeyType::NONE)
+        if (key_type != QuotaKeyType::NONE)
         {
-            const auto & type_info = KeyTypeInfo::get(key_type);
+            const auto & type_info = QuotaKeyTypeInfo::get(key_type);
             for (auto base_type : type_info.base_types)
                 column_key_types.push_back(static_cast<Int8>(base_type));
             if (type_info.base_types.empty())

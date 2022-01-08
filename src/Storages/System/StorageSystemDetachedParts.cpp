@@ -54,7 +54,7 @@ Pipe StorageSystemDetachedParts::read(
             new_columns[i++]->insert(info.table);
             new_columns[i++]->insert(p.valid_name ? p.partition_id : Field());
             new_columns[i++]->insert(p.dir_name);
-            new_columns[i++]->insert(p.disk);
+            new_columns[i++]->insert(p.disk->getName());
             new_columns[i++]->insert(p.valid_name ? p.prefix : Field());
             new_columns[i++]->insert(p.valid_name ? p.min_block : Field());
             new_columns[i++]->insert(p.valid_name ? p.max_block : Field());

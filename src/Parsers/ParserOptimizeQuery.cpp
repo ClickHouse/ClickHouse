@@ -3,7 +3,6 @@
 #include <Parsers/CommonParsers.h>
 
 #include <Parsers/ASTOptimizeQuery.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionListParsers.h>
 
 
@@ -31,7 +30,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     ParserKeyword s_deduplicate("DEDUPLICATE");
     ParserKeyword s_by("BY");
     ParserToken s_dot(TokenType::Dot);
-    ParserIdentifier name_p;
+    ParserIdentifier name_p(true);
     ParserPartition partition_p;
 
     ASTPtr database;
@@ -80,15 +79,20 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     auto query = std::make_shared<ASTOptimizeQuery>();
     node = query;
 
-    tryGetIdentifierNameInto(database, query->database);
-    tryGetIdentifierNameInto(table, query->table);
-
     query->cluster = cluster_str;
     if ((query->partition = partition))
         query->children.push_back(partition);
     query->final = final;
     query->deduplicate = deduplicate;
     query->deduplicate_by_columns = deduplicate_by_columns;
+    query->database = database;
+    query->table = table;
+
+    if (database)
+        query->children.push_back(database);
+
+    if (table)
+        query->children.push_back(table);
 
     return true;
 }

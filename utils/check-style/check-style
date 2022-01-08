@@ -75,6 +75,7 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::TypeEnum
     ProfileEvents::dumpToMapColumn
     ProfileEvents::LOCAL_NAME
+    ProfileEvents::CountersIncrement
 
     CurrentMetrics::add
     CurrentMetrics::sub
@@ -183,7 +184,6 @@ tables_with_database_column=(
 tests_with_database_column=( $(
     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
         grep -vP $EXCLUDE_DIRS |
-        grep -v -x -e $ROOT_PATH/tests/queries/query_test.py |
         xargs grep --with-filename $(printf -- "-e %s " "${tables_with_database_column[@]}") | cut -d: -f1 | sort -u
 ) )
 for test_case in "${tests_with_database_column[@]}"; do
@@ -298,6 +298,20 @@ for src in "${sources_with_std_cerr_cout[@]}"; do
     fi
 done
 
+# Queries with event_date should have yesterday() not today()
+#
+# NOTE: it is not that accuate, but at least something.
+tests_with_event_time_date=( $(
+    find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
+        grep -vP $EXCLUDE_DIRS |
+        xargs grep --with-filename -e event_time -e event_date | cut -d: -f1 | sort -u
+) )
+for test_case in "${tests_with_event_time_date[@]}"; do
+    cat "$test_case" | tr '\n' ' ' | grep -q -i -e 'WHERE.*event_date[ ]*=[ ]*today()' -e 'WHERE.*event_date[ ]*=[ ]*today()' && {
+        echo "event_time/event_date should be filtered using >=yesterday() in $test_case (to avoid flakiness)"
+    }
+done
+
 # Conflict markers
 find $ROOT_PATH/{src,base,programs,utils,tests,docs,website,cmake} -name '*.md' -or -name '*.cpp' -or -name '*.h' |
     xargs grep -P '^(<<<<<<<|=======|>>>>>>>)$' | grep -P '.' && echo "Conflict markers are found in files"
@@ -312,3 +326,5 @@ then
     echo "ErrorCodes.cpp contains non-unique error codes"
 fi
 
+# Forbid files that differ only by character case
+find $ROOT_PATH | sort -f | uniq -i -c | awk '{ if ($1 > 1) print }'

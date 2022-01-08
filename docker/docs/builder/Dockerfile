@@ -1,9 +1,11 @@
 # docker build -t clickhouse/docs-build .
 FROM ubuntu:20.04
 
-ENV LANG=C.UTF-8
+# ARG for quick switch to a given ubuntu mirror
+ARG apt_archive="http://archive.ubuntu.com"
+RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
-RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
+ENV LANG=C.UTF-8
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \

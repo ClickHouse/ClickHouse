@@ -1,11 +1,12 @@
 #pragma once
 
 #include <Core/Defines.h>
-#include <QueryPipeline/BlockIO.h>
 #include <IO/Progress.h>
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/QueryPriorities.h>
+#include <QueryPipeline/BlockIO.h>
+#include <QueryPipeline/ExecutionSpeedLimits.h>
 #include <Storages/IStorage_fwd.h>
 #include <Poco/Condition.h>
 #include <Common/CurrentMetrics.h>
@@ -24,11 +25,6 @@
 #include <unordered_map>
 #include <vector>
 
-
-namespace CurrentMetrics
-{
-    extern const Metric Query;
-}
 
 namespace DB
 {
@@ -93,9 +89,12 @@ protected:
     /// Progress of output stream
     Progress progress_out;
 
-    QueryPriorities::Handle priority_handle;
+    /// Used to externally check for the query time limits
+    /// They are saved in the constructor to limit the overhead of each call to checkTimeLimit()
+    ExecutionSpeedLimits limits;
+    OverflowMode overflow_mode;
 
-    CurrentMetrics::Increment num_queries_increment{CurrentMetrics::Query};
+    QueryPriorities::Handle priority_handle = nullptr;
 
     std::atomic<bool> is_killed { false };
 
@@ -119,13 +118,17 @@ protected:
 
     ProcessListForUser * user_process_list = nullptr;
 
+    String query_kind;
+
 public:
 
     QueryStatus(
         ContextPtr context_,
         const String & query_,
         const ClientInfo & client_info_,
-        QueryPriorities::Handle && priority_handle_);
+        QueryPriorities::Handle && priority_handle_,
+        const String & query_kind_
+        );
 
     ~QueryStatus();
 
@@ -176,6 +179,11 @@ public:
 
     /// Removes a pipeline to the QueryStatus
     void removePipelineExecutor(PipelineExecutor * e);
+
+    /// Checks the query time limits (cancelled or timeout)
+    bool checkTimeLimit();
+    /// Same as checkTimeLimit but it never throws
+    [[nodiscard]] bool checkTimeLimitSoft();
 };
 
 
@@ -252,6 +260,7 @@ class ProcessList
 public:
     using Element = QueryStatus;
     using Entry = ProcessListEntry;
+    using QueryAmount = UInt64;
 
     /// list, for iterators not to invalidate. NOTE: could replace with cyclic buffer, but not worth.
     using Container = std::list<Element>;
@@ -260,6 +269,8 @@ public:
 
     /// User -> queries
     using UserToQueries = std::unordered_map<String, ProcessListForUser>;
+
+    using QueryKindToAmount = std::unordered_map<String, QueryAmount>;
 
 protected:
     friend class ProcessListEntry;
@@ -282,6 +293,19 @@ protected:
 
     /// Call under lock. Finds process with specified current_user and current_query_id.
     QueryStatus * tryGetProcessListElement(const String & current_query_id, const String & current_user);
+
+    /// limit for insert. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
+    size_t max_insert_queries_amount = 0;
+
+    /// limit for select. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
+    size_t max_select_queries_amount = 0;
+
+    /// amount of queries by query kind.
+    QueryKindToAmount query_kind_amounts;
+
+    void increaseQueryKindAmount(const String & query_kind);
+    void decreaseQueryKindAmount(const String & query_kind);
+    QueryAmount getQueryKindAmount(const String & query_kind);
 
 public:
     using EntryPtr = std::shared_ptr<ProcessListEntry>;
@@ -306,6 +330,18 @@ public:
     {
         std::lock_guard lock(mutex);
         max_size = max_size_;
+    }
+
+    void setMaxInsertQueriesAmount(size_t max_insert_queries_amount_)
+    {
+        std::lock_guard lock(mutex);
+        max_insert_queries_amount = max_insert_queries_amount_;
+    }
+
+    void setMaxSelectQueriesAmount(size_t max_select_queries_amount_)
+    {
+        std::lock_guard lock(mutex);
+        max_select_queries_amount = max_select_queries_amount_;
     }
 
     /// Try call cancel() for input and output streams of query with specified id and user

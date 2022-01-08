@@ -39,7 +39,7 @@ static void executeCreateQuery(
         parser, query.data(), query.data() + query.size(), "in file " + file_name, 0, context->getSettingsRef().max_parser_depth);
 
     auto & ast_create_query = ast->as<ASTCreateQuery &>();
-    ast_create_query.database = database;
+    ast_create_query.setDatabase(database);
 
     InterpreterCreateQuery interpreter(ast, context);
     interpreter.setInternal(true);

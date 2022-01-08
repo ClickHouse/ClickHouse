@@ -3,26 +3,27 @@
 #if USE_MYSQL
 
 #include <Databases/MySQL/MaterializedMySQLSyncThread.h>
-#    include <cstdlib>
-#    include <random>
-#    include <Columns/ColumnTuple.h>
-#    include <Columns/ColumnDecimal.h>
-#    include <QueryPipeline/QueryPipelineBuilder.h>
-#    include <Processors/Executors/PullingPipelineExecutor.h>
-#    include <Processors/Executors/CompletedPipelineExecutor.h>
-#    include <Processors/Sources/SourceFromSingleChunk.h>
-#    include <Processors/Transforms/CountingTransform.h>
-#    include <Databases/MySQL/DatabaseMaterializedMySQL.h>
-#    include <Databases/MySQL/MaterializeMetadata.h>
-#    include <Processors/Sources/MySQLSource.h>
-#    include <IO/ReadBufferFromString.h>
-#    include <Interpreters/Context.h>
-#    include <Interpreters/executeQuery.h>
-#    include <Storages/StorageMergeTree.h>
-#    include <Common/quoteString.h>
-#    include <Common/setThreadName.h>
-#    include <base/sleep.h>
-#    include <base/bit_cast.h>
+#include <cstdlib>
+#include <random>
+#include <string_view>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnDecimal.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Transforms/CountingTransform.h>
+#include <Databases/MySQL/DatabaseMaterializedMySQL.h>
+#include <Databases/MySQL/MaterializeMetadata.h>
+#include <Processors/Sources/MySQLSource.h>
+#include <IO/ReadBufferFromString.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/executeQuery.h>
+#include <Storages/StorageMergeTree.h>
+#include <Common/quoteString.h>
+#include <Common/setThreadName.h>
+#include <base/sleep.h>
+#include <base/bit_cast.h>
 
 namespace DB
 {
@@ -52,6 +53,8 @@ static ContextMutablePtr createQueryContext(ContextPtr context)
 
     auto query_context = Context::createCopy(context);
     query_context->setSettings(new_query_settings);
+    query_context->setInternalQuery(true);
+
     query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
     query_context->setCurrentQueryId(""); // generate random query_id
     return query_context;
@@ -306,7 +309,7 @@ getTableOutput(const String & database_name, const String & table_name, ContextM
 
 
     String comment = "Materialize MySQL step 1: execute dump data";
-    BlockIO res = tryToExecuteQuery("INSERT INTO " + backQuoteIfNeed(table_name) + "(" + insert_columns_str.str() + ")" + " VALUES",
+    BlockIO res = tryToExecuteQuery("INSERT INTO " + backQuote(table_name) + " (" + insert_columns_str.str() + ")" + " VALUES",
         query_context, database_name, comment);
 
     return std::move(res.pipeline);
@@ -763,15 +766,9 @@ void MaterializedMySQLSyncThread::executeDDLAtomic(const QueryEvent & query_even
     }
 }
 
-bool MaterializedMySQLSyncThread::isMySQLSyncThread()
-{
-    return getThreadName() == MYSQL_BACKGROUND_THREAD_NAME;
-}
-
 void MaterializedMySQLSyncThread::setSynchronizationThreadException(const std::exception_ptr & exception)
 {
-    auto db = DatabaseCatalog::instance().getDatabase(database_name);
-    DB::setSynchronizationThreadException(db, exception);
+    assert_cast<DatabaseMaterializedMySQL *>(DatabaseCatalog::instance().getDatabase(database_name).get())->setException(exception);
 }
 
 void MaterializedMySQLSyncThread::Buffers::add(size_t block_rows, size_t block_bytes, size_t written_rows, size_t written_bytes)

@@ -5,6 +5,8 @@ import time
 import grpc
 from helpers.cluster import ClickHouseCluster, run_and_check
 from threading import Thread
+import gzip
+import lz4.frame
 
 GRPC_PORT = 9100
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -213,6 +215,7 @@ def test_errors_handling():
 def test_authentication():
     query("CREATE USER OR REPLACE john IDENTIFIED BY 'qwe123'")
     assert query("SELECT currentUser()", user_name="john", password="qwe123") == "john\n"
+    query("DROP USER john")
 
 def test_logs():
     logs = query_and_get_logs("SELECT 1", settings={'send_logs_level':'debug'})
@@ -364,3 +367,67 @@ def test_result_compression():
     stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
     result = stub.ExecuteQuery(query_info)
     assert result.output == (b'0\n')*1000000
+
+def test_compressed_output():
+    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT 0 FROM numbers(1000)", compression_type="lz4")
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    result = stub.ExecuteQuery(query_info)
+    assert lz4.frame.decompress(result.output) == (b'0\n')*1000
+
+def test_compressed_output_streaming():
+    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT 0 FROM numbers(100000)", compression_type="lz4")
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    d_context = lz4.frame.create_decompression_context()
+    data = b''
+    for result in stub.ExecuteQueryWithStreamOutput(query_info):
+        d1, _, _ = lz4.frame.decompress_chunk(d_context, result.output)
+        data += d1
+    assert data == (b'0\n')*100000
+
+def test_compressed_output_gzip():
+    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT 0 FROM numbers(1000)", compression_type="gzip", compression_level=6)
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    result = stub.ExecuteQuery(query_info)
+    assert gzip.decompress(result.output) == (b'0\n')*1000
+
+def test_compressed_totals_and_extremes():
+    query("CREATE TABLE t (x UInt8, y UInt8) ENGINE = Memory")
+    query("INSERT INTO t VALUES (1, 2), (2, 4), (3, 2), (3, 3), (3, 4)")
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT sum(x), y FROM t GROUP BY y WITH TOTALS", compression_type="lz4")
+    result = stub.ExecuteQuery(query_info)
+    assert lz4.frame.decompress(result.totals) == b'12\t0\n'
+    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT x, y FROM t", settings={"extremes": "1"}, compression_type="lz4")
+    result = stub.ExecuteQuery(query_info)
+    assert lz4.frame.decompress(result.extremes) == b'1\t2\n3\t4\n'
+
+def test_compressed_insert_query_streaming():
+    query("CREATE TABLE t (a UInt8) ENGINE = Memory")
+    data = lz4.frame.compress(b'(1),(2),(3),(5),(4),(6),(7),(8),(9)')
+    sz1 = len(data) // 3
+    sz2 = len(data) // 3
+    d1 = data[:sz1]
+    d2 = data[sz1:sz1+sz2]
+    d3 = data[sz1+sz2:]
+    def send_query_info():
+        yield clickhouse_grpc_pb2.QueryInfo(query="INSERT INTO t VALUES", input_data=d1, compression_type="lz4", next_query_info=True)
+        yield clickhouse_grpc_pb2.QueryInfo(input_data=d2, next_query_info=True)
+        yield clickhouse_grpc_pb2.QueryInfo(input_data=d3)
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    stub.ExecuteQueryWithStreamInput(send_query_info())
+    assert query("SELECT a FROM t ORDER BY a") == "1\n2\n3\n4\n5\n6\n7\n8\n9\n"
+
+def test_compressed_external_table():
+    columns = [clickhouse_grpc_pb2.NameAndType(name='UserID', type='UInt64'), clickhouse_grpc_pb2.NameAndType(name='UserName', type='String')]
+    d1 = lz4.frame.compress(b'1\tAlex\n2\tBen\n3\tCarl\n')
+    d2 = gzip.compress(b'4,Daniel\n5,Ethan\n')
+    ext1 = clickhouse_grpc_pb2.ExternalTable(name='ext1', columns=columns, data=d1, format='TabSeparated', compression_type="lz4")
+    ext2 = clickhouse_grpc_pb2.ExternalTable(name='ext2', columns=columns, data=d2, format='CSV', compression_type="gzip")
+    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
+    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT * FROM (SELECT * FROM ext1 UNION ALL SELECT * FROM ext2) ORDER BY UserID", external_tables=[ext1, ext2])
+    result = stub.ExecuteQuery(query_info)
+    assert result.output == b"1\tAlex\n"\
+                            b"2\tBen\n"\
+                            b"3\tCarl\n"\
+                            b"4\tDaniel\n"\
+                            b"5\tEthan\n"

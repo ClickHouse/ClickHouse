@@ -43,10 +43,17 @@ public:
     String getName() const override { return "ConvertingTransform"; }
 
 protected:
-    void transform(Chunk & chunk) override;
+    void onConsume(Chunk chunk) override;
+    GenerateResult onGenerate() override
+    {
+        GenerateResult res;
+        res.chunk = std::move(cur_chunk);
+        return res;
+    }
 
 private:
     ExpressionActionsPtr expression;
+    Chunk cur_chunk;
 };
 
 }

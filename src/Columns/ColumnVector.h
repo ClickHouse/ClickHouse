@@ -328,10 +328,24 @@ public:
         return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
     }
 
+    bool isDefaultAt(size_t n) const override { return data[n] == T{}; }
+
     bool structureEquals(const IColumn & rhs) const override
     {
         return typeid(rhs) == typeid(ColumnVector<T>);
     }
+
+    double getRatioOfDefaultRows(double sample_ratio) const override
+    {
+        return this->template getRatioOfDefaultRowsImpl<Self>(sample_ratio);
+    }
+
+    void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override
+    {
+        return this->template getIndicesOfNonDefaultRowsImpl<Self>(indices, from, limit);
+    }
+
+    ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const override;
 
     ColumnPtr compress() const override;
 

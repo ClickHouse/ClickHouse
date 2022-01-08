@@ -51,6 +51,12 @@ MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
     return new_col_holder;
 }
 
+bool ColumnFixedString::isDefaultAt(size_t index) const
+{
+    assert(index < size());
+    return memoryIsZero(chars.data() + index * n, n);
+}
+
 void ColumnFixedString::insert(const Field & x)
 {
     const String & s = DB::get<const String &>(x);
@@ -242,7 +248,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
 
     while (filt_pos < filt_end_aligned)
     {
-        uint64_t mask = Bytes64MaskToBits64Mask(filt_pos);
+        uint64_t mask = bytes64MaskToBits64Mask(filt_pos);
 
         if (0xffffffffffffffff == mask)
         {
@@ -409,9 +415,9 @@ ColumnPtr ColumnFixedString::compress() const
     if (!compressed)
         return ColumnCompressed::wrap(this->getPtr());
 
-    size_t column_size = size();
-
-    return ColumnCompressed::create(column_size, compressed->size(),
+    const size_t column_size = size();
+    const size_t compressed_size = compressed->size();
+    return ColumnCompressed::create(column_size, compressed_size,
         [compressed = std::move(compressed), column_size, n = n]
         {
             size_t chars_size = n * column_size;

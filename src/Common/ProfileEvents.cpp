@@ -259,7 +259,11 @@
     M(RemoteFSUnusedPrefetches, "Number of prefetches pending at buffer destruction") \
     M(RemoteFSPrefetchedReads, "Number of reads from prefecthed buffer") \
     M(RemoteFSUnprefetchedReads, "Number of reads from unprefetched buffer") \
+    M(RemoteFSLazySeeks, "Number of lazy seeks") \
+    M(RemoteFSSeeksWithReset, "Number of seeks which lead to a new connection") \
     M(RemoteFSBuffers, "Number of buffers created for asynchronous reading from remote filesystem") \
+    \
+    M(ReadBufferSeekCancelConnection, "Number of seeks which lead to new connection (s3, http)") \
     \
     M(SleepFunctionCalls, "Number of times a sleep function (sleep, sleepEachRow) has been called.") \
     M(SleepFunctionMicroseconds, "Time spent sleeping due to a sleep function call.") \
@@ -272,7 +276,8 @@
     M(ThreadPoolReaderPageCacheMissElapsedMicroseconds, "Time spent reading data inside the asynchronous job in ThreadPoolReader - when read was not done from page cache.") \
     \
     M(AsynchronousReadWaitMicroseconds, "Time spent in waiting for asynchronous reads.") \
-
+    \
+    M(MainConfigLoads, "Number of times the main configuration was reloaded.") \
 
 namespace ProfileEvents
 {
@@ -356,6 +361,24 @@ Event end() { return END; }
 void increment(Event event, Count amount)
 {
     DB::CurrentThread::getProfileEvents().increment(event, amount);
+}
+
+CountersIncrement::CountersIncrement(Counters::Snapshot const & snapshot)
+{
+    init();
+    std::memcpy(increment_holder.get(), snapshot.counters_holder.get(), Counters::num_counters * sizeof(Increment));
+}
+
+CountersIncrement::CountersIncrement(Counters::Snapshot const & after, Counters::Snapshot const & before)
+{
+    init();
+    for (Event i = 0; i < Counters::num_counters; ++i)
+        increment_holder[i] = static_cast<Increment>(after[i]) - static_cast<Increment>(before[i]);
+}
+
+void CountersIncrement::init()
+{
+    increment_holder = std::make_unique<Increment[]>(Counters::num_counters);
 }
 
 }

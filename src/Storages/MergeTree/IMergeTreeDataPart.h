@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <shared_mutex>
 
@@ -70,7 +71,7 @@ public:
         const IMergeTreeDataPart * parent_part_);
 
     IMergeTreeDataPart(
-        MergeTreeData & storage_,
+        const MergeTreeData & storage_,
         const String & name_,
         const VolumePtr & volume,
         const std::optional<String> & relative_path,
@@ -103,7 +104,7 @@ public:
 
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// Otherwise return information about column size on disk.
-    ColumnSize getColumnSize(const String & column_name, const IDataType & /* type */) const;
+    ColumnSize getColumnSize(const String & column_name) const;
 
     /// NOTE: Returns zeros if secondary indexes are not found in checksums.
     /// Otherwise return information about secondary index size on disk.
@@ -127,9 +128,12 @@ public:
 
     String getTypeName() const { return getType().toString(); }
 
-    void setColumns(const NamesAndTypesList & new_columns);
+    void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos = {});
 
     const NamesAndTypesList & getColumns() const { return columns; }
+    const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
+    SerializationInfoByName & getSerializationInfos() { return serialization_infos; }
+    SerializationPtr getSerialization(const NameAndTypePair & column) const;
 
     /// Throws an exception if part is not stored in on-disk format.
     void assertOnDisk() const;
@@ -192,12 +196,12 @@ public:
 
     size_t rows_count = 0;
 
-
     time_t modification_time = 0;
     /// When the part is removed from the working set. Changes once.
     mutable std::atomic<time_t> remove_time { std::numeric_limits<time_t>::max() };
 
     /// If true, the destructor will delete the directory with the part.
+    /// FIXME Why do we need this flag? What's difference from Temporary and DeleteOnDestroy state? Can we get rid of this?
     bool is_temp = false;
 
     /// If true it means that there are no ZooKeeper node for this part, so it should be deleted only from filesystem
@@ -214,19 +218,19 @@ public:
      * Part state should be modified under data_parts mutex.
      *
      * Possible state transitions:
-     * Temporary -> Precommitted:    we are trying to commit a fetched, inserted or merged part to active set
-     * Precommitted -> Outdated:     we could not add a part to active set and are doing a rollback (for example it is duplicated part)
-     * Precommitted -> Committed:    we successfully committed a part to active dataset
-     * Precommitted -> Outdated:     a part was replaced by a covering part or DROP PARTITION
+     * Temporary -> PreActive:       we are trying to add a fetched, inserted or merged part to active set
+     * PreActive -> Outdated:        we could not add a part to active set and are doing a rollback (for example it is duplicated part)
+     * PreActive -> Active:          we successfully added a part to active dataset
+     * PreActive -> Outdated:        a part was replaced by a covering part or DROP PARTITION
      * Outdated -> Deleting:         a cleaner selected this part for deletion
      * Deleting -> Outdated:         if an ZooKeeper error occurred during the deletion, we will retry deletion
-     * Committed -> DeleteOnDestroy: if part was moved to another disk
+     * Active -> DeleteOnDestroy:    if part was moved to another disk
      */
     enum class State
     {
         Temporary,       /// the part is generating now, it is not in data_parts list
-        PreCommitted,    /// the part is in data_parts, but not used for SELECTs
-        Committed,       /// active data part, used by current and upcoming SELECTs
+        PreActive,    /// the part is in data_parts, but not used for SELECTs
+        Active,       /// active data part, used by current and upcoming SELECTs
         Outdated,        /// not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes
         Deleting,        /// not active data part with identity refcounter, it is deleting right now by a cleaner
         DeleteOnDestroy, /// part was moved to another disk and should be deleted in own destructor
@@ -357,7 +361,7 @@ public:
     /// Calculate column and secondary indices sizes on disk.
     void calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
-    String getRelativePathForPrefix(const String & prefix) const;
+    String getRelativePathForPrefix(const String & prefix, bool detached = false) const;
 
     bool isProjectionPart() const { return parent_part != nullptr; }
 
@@ -390,13 +394,15 @@ public:
 
     static inline constexpr auto UUID_FILE_NAME = "uuid.txt";
 
+    /// File that contains information about kinds of serialization of columns
+    /// and information that helps to choose kind of serialization later during merging
+    /// (number of rows, number of rows with default values, etc).
+    static inline constexpr auto SERIALIZATION_FILE_NAME = "serialization.json";
+
     /// Checks that all TTLs (table min/max, column ttls, so on) for part
     /// calculated. Part without calculated TTL may exist if TTL was added after
     /// part creation (using alter query with materialize_ttl setting).
     bool checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const;
-
-    /// Returns serialization for column according to files in which column is written in part.
-    SerializationPtr getSerializationForColumn(const NameAndTypePair & column) const;
 
     /// Return some uniq string for file
     /// Required for distinguish different copies of the same part on S3
@@ -420,6 +426,7 @@ protected:
 
     /// Columns description. Cannot be changed, after part initialization.
     NamesAndTypesList columns;
+
     const Type part_type;
 
     /// Not null when it's a projection part.
@@ -443,6 +450,9 @@ protected:
 private:
     /// In compact parts order of columns is necessary
     NameToNumber column_name_to_position;
+
+    /// Map from name of column to its serialization info.
+    SerializationInfoByName serialization_infos;
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();

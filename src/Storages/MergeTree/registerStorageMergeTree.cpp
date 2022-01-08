@@ -22,6 +22,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
+#include <Databases/DatabaseReplicatedHelpers.h>
 
 namespace DB
 {
@@ -34,6 +35,7 @@ namespace ErrorCodes
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int UNKNOWN_STORAGE;
     extern const int NO_REPLICA_NAME_GIVEN;
+    extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
 
@@ -255,6 +257,34 @@ If you use the Replicated version of engines, see https://clickhouse.com/docs/en
 )";
 
     return help;
+}
+
+static ColumnsDescription getColumnsDescriptionFromZookeeper(const String & raw_zookeeper_path, ContextMutablePtr context)
+{
+    String zookeeper_name = zkutil::extractZooKeeperName(raw_zookeeper_path);
+    String zookeeper_path = zkutil::extractZooKeeperPath(raw_zookeeper_path, true);
+
+    if (!context->hasZooKeeper() && !context->hasAuxiliaryZooKeeper(zookeeper_name))
+        throw Exception{ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot get replica structure without zookeeper, you must specify the structure manually"};
+
+    zkutil::ZooKeeperPtr zookeeper;
+    try
+    {
+        if (zookeeper_name == StorageReplicatedMergeTree::getDefaultZooKeeperName())
+            zookeeper = context->getZooKeeper();
+        else
+            zookeeper = context->getAuxiliaryZooKeeper(zookeeper_name);
+    }
+    catch (...)
+    {
+        throw Exception{ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot get replica structure from zookeeper, because cannot get zookeeper: {}. You must specify structure manually", getCurrentExceptionMessage(false)};
+    }
+
+    if (!zookeeper->exists(zookeeper_path + "/replicas"))
+        throw Exception{ErrorCodes::CANNOT_EXTRACT_TABLE_STRUCTURE, "Cannot get replica structure, because there no other replicas in zookeeper. You must specify the structure manually"};
+
+    Coordination::Stat columns_stat;
+    return ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_path) / "columns", &columns_stat));
 }
 
 
@@ -541,6 +571,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// to make possible copying metadata files between replicas.
         Macros::MacroExpansionInfo info;
         info.table_id = args.table_id;
+        if (is_replicated_database)
+        {
+            auto database = DatabaseCatalog::instance().getDatabase(args.table_id.database_name);
+            info.shard = getReplicatedDatabaseShardName(database);
+            info.replica = getReplicatedDatabaseReplicaName(database);
+        }
         if (!allow_uuid_macro)
             info.table_id.uuid = UUIDHelpers::Nil;
         zookeeper_path = args.getContext()->getMacros()->expand(zookeeper_path, info);
@@ -631,7 +667,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     String date_column_name;
 
     StorageInMemoryMetadata metadata;
-    metadata.setColumns(args.columns);
+
+    ColumnsDescription columns;
+    if (args.columns.empty() && replicated)
+        columns = getColumnsDescriptionFromZookeeper(zookeeper_path, args.getContext());
+    else
+        columns = args.columns;
+
+    metadata.setColumns(columns);
     metadata.setComment(args.comment);
 
     std::unique_ptr<MergeTreeSettings> storage_settings;
@@ -684,8 +727,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
         auto primary_key_asts = metadata.primary_key.expression_list_ast->children;
-        metadata.minmax_count_projection.emplace(
-            ProjectionDescription::getMinMaxCountProjection(args.columns, minmax_columns, primary_key_asts, args.getContext()));
+        metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
+            args.columns, metadata.partition_key.expression_list_ast, minmax_columns, primary_key_asts, args.getContext()));
 
         if (args.storage_def->sample_by)
             metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, args.getContext());
@@ -698,23 +741,25 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (args.query.columns_list && args.query.columns_list->indices)
             for (auto & index : args.query.columns_list->indices->children)
-                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, args.columns, args.getContext()));
+                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, args.getContext()));
 
         if (args.query.columns_list && args.query.columns_list->projections)
             for (auto & projection_ast : args.query.columns_list->projections->children)
             {
-                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, args.columns, args.getContext());
+                auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, args.getContext());
                 metadata.projections.add(std::move(projection));
             }
 
+        auto constraints = metadata.constraints.getConstraints();
         if (args.query.columns_list && args.query.columns_list->constraints)
             for (auto & constraint : args.query.columns_list->constraints->children)
-                metadata.constraints.constraints.push_back(constraint);
+                constraints.push_back(constraint);
+        metadata.constraints = ConstraintsDescription(constraints);
 
-        auto column_ttl_asts = args.columns.getColumnTTLs();
+        auto column_ttl_asts = columns.getColumnTTLs();
         for (const auto & [name, ast] : column_ttl_asts)
         {
-            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, args.columns, args.getContext(), metadata.primary_key);
+            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, args.getContext(), metadata.primary_key);
             metadata.column_ttls_by_name[name] = new_ttl_entry;
         }
 
@@ -764,8 +809,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
         auto primary_key_asts = metadata.primary_key.expression_list_ast->children;
-        metadata.minmax_count_projection.emplace(
-            ProjectionDescription::getMinMaxCountProjection(args.columns, minmax_columns, primary_key_asts, args.getContext()));
+        metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
+            args.columns, metadata.partition_key.expression_list_ast, minmax_columns, primary_key_asts, args.getContext()));
 
         const auto * ast = engine_args[arg_num]->as<ASTLiteral>();
         if (ast && ast->value.getType() == Field::Types::UInt64)
@@ -841,6 +886,7 @@ void registerStorageMergeTree(StorageFactory & factory)
 
     features.supports_replication = true;
     features.supports_deduplication = true;
+    features.supports_schema_inference = true;
 
     factory.registerStorage("ReplicatedMergeTree", create, features);
     factory.registerStorage("ReplicatedCollapsingMergeTree", create, features);

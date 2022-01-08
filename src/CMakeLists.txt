@@ -28,7 +28,8 @@ configure_file (Common/config_version.h.in ${CONFIG_VERSION})
 configure_file (Core/config_core.h.in "${CMAKE_CURRENT_BINARY_DIR}/Core/include/config_core.h")
 
 if (USE_DEBUG_HELPERS)
-    set (INCLUDE_DEBUG_HELPERS "-I\"${ClickHouse_SOURCE_DIR}/base\" -include \"${ClickHouse_SOURCE_DIR}/src/Core/iostream_debug_helpers.h\"")
+    get_target_property(MAGIC_ENUM_INCLUDE_DIR magic_enum INTERFACE_INCLUDE_DIRECTORIES)
+    set (INCLUDE_DEBUG_HELPERS "-I\"${ClickHouse_SOURCE_DIR}/base\" -I\"${MAGIC_ENUM_INCLUDE_DIR}\" -include \"${ClickHouse_SOURCE_DIR}/src/Core/iostream_debug_helpers.h\"")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${INCLUDE_DEBUG_HELPERS}")
 endif ()
 
@@ -103,6 +104,10 @@ endif()
 if (USE_AWS_S3)
     add_headers_and_sources(dbms Common/S3)
     add_headers_and_sources(dbms Disks/S3)
+endif()
+
+if (USE_AZURE_BLOB_STORAGE)
+    add_headers_and_sources(dbms Disks/AzureBlobStorage)
 endif()
 
 if (USE_HDFS)
@@ -208,6 +213,7 @@ add_object_library(clickhouse_storages_mysql Storages/MySQL)
 add_object_library(clickhouse_storages_distributed Storages/Distributed)
 add_object_library(clickhouse_storages_mergetree Storages/MergeTree)
 add_object_library(clickhouse_storages_liveview Storages/LiveView)
+add_object_library(clickhouse_storages_windowview Storages/WindowView)
 add_object_library(clickhouse_client Client)
 add_object_library(clickhouse_bridge Bridge)
 add_object_library(clickhouse_server Server)
@@ -366,13 +372,10 @@ dbms_target_link_libraries (
         clickhouse_common_io
 )
 
-if (NOT_UNBUNDLED)
-    dbms_target_link_libraries (
-        PUBLIC
-            boost::circular_buffer
-            boost::heap
-    )
-endif()
+dbms_target_link_libraries (
+    PUBLIC
+        boost::circular_buffer
+        boost::heap)
 
 target_include_directories(clickhouse_common_io PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include") # uses some includes from core
 dbms_target_include_directories(PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include")
@@ -451,6 +454,11 @@ if (USE_AWS_S3)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${AWS_S3_INCLUDE_DIR})
 endif()
 
+if (USE_AZURE_BLOB_STORAGE)
+    target_link_libraries (clickhouse_common_io PUBLIC ${AZURE_BLOB_STORAGE_LIBRARY})
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${AZURE_SDK_INCLUDES})
+endif()
+
 if (USE_S2_GEOMETRY)
     dbms_target_link_libraries (PUBLIC ${S2_GEOMETRY_LIBRARY})
     dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${S2_GEOMETRY_INCLUDE_DIR})
@@ -518,6 +526,16 @@ if (USE_BZIP2)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${BZIP2_INCLUDE_DIR})
 endif()
 
+if(USE_SIMDJSON)
+    dbms_target_link_libraries(PRIVATE simdjson)
+endif()
+
+if(USE_RAPIDJSON)
+    dbms_target_include_directories(SYSTEM PRIVATE ${RAPIDJSON_INCLUDE_DIR})
+endif()
+
+dbms_target_link_libraries(PUBLIC consistent-hashing)
+
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
 
 if (ENABLE_TESTS AND USE_GTEST)
@@ -549,12 +567,8 @@ if (ENABLE_TESTS AND USE_GTEST)
         clickhouse_storages_system
         dbms
         clickhouse_common_zookeeper
+        clickhouse_common_config
         string_utils)
-
-    # For __udivmodti4 referenced in Core/tests/gtest_DecimalFunctions.cpp
-    if (OS_DARWIN AND COMPILER_GCC)
-        target_link_libraries(unit_tests_dbms PRIVATE gcc)
-    endif ()
 
     add_check(unit_tests_dbms)
 endif ()

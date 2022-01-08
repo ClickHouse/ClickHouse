@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-import os
-import json
 import sys
 import logging
 from github import Github
+
+from env_helper import GITHUB_RUN_ID, GITHUB_REPOSITORY, GITHUB_SERVER_URL
 from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
+from commit_status_helper import get_commit
 
 NAME = 'Run Check (actions)'
 
@@ -21,7 +22,7 @@ DO_NOT_TEST_LABEL = "do not test"
 # Individual trusted contirbutors who are not in any trusted organization.
 # Can be changed in runtime: we will append users that we learned to be in
 # a trusted org, to save GitHub API calls.
-TRUSTED_CONTRIBUTORS = {
+TRUSTED_CONTRIBUTORS = {e.lower() for e in [
     "achimbab",
     "adevyatova ",  # DOCSUP
     "Algunenano",   # Raúl Marín, Tinybird
@@ -33,9 +34,11 @@ TRUSTED_CONTRIBUTORS = {
     "bharatnc",     # Newbie, but already with many contributions.
     "bobrik",       # Seasoned contributor, CloundFlare
     "BohuTANG",
+    "codyrobert",   # Flickerbox engineer
+    "cwurm",        # Employee
     "damozhaeva",   # DOCSUP
     "den-crane",
-    "gyuton",       # DOCSUP
+    "flickerbox-tom", # Flickerbox
     "gyuton",       # technical writer, Yandex
     "hagen1778",    # Roman Khavronenko, seasoned contributor
     "hczhcz",
@@ -63,12 +66,14 @@ TRUSTED_CONTRIBUTORS = {
     "vdimir",       # Employee
     "vzakaznikov",
     "YiuRULE",
-    "zlobober"      # Developer of YT
-}
+    "zlobober",     # Developer of YT
+    "ilejn",        # Arenadata, responsible for Kerberized Kafka
+    "thomoco",      # ClickHouse
+]}
 
 
 def pr_is_by_trusted_user(pr_user_login, pr_user_orgs):
-    if pr_user_login in TRUSTED_CONTRIBUTORS:
+    if pr_user_login.lower() in TRUSTED_CONTRIBUTORS:
         logging.info("User '%s' is trusted", pr_user_login)
         return True
 
@@ -86,6 +91,7 @@ def pr_is_by_trusted_user(pr_user_login, pr_user_orgs):
 # can be skipped entirely.
 def should_run_checks_for_pr(pr_info):
     # Consider the labels and whether the user is trusted.
+    print("Got labels", pr_info.labels)
     force_labels = set(['force tests']).intersection(pr_info.labels)
     if force_labels:
         return True, "Labeled '{}'".format(', '.join(force_labels))
@@ -101,21 +107,15 @@ def should_run_checks_for_pr(pr_info):
 
     return True, "No special conditions apply"
 
-def get_commit(gh, commit_sha):
-    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
-    commit = repo.get_commit(commit_sha)
-    return commit
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
-        event = json.load(event_file)
 
-    pr_info = PRInfo(event, need_orgs=True)
+    pr_info = PRInfo(need_orgs=True, labels_from_api=True)
     can_run, description = should_run_checks_for_pr(pr_info)
     gh = Github(get_best_robot_token())
     commit = get_commit(gh, pr_info.sha)
-    url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
+    url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID}"
     if not can_run:
         print("::notice ::Cannot run")
         commit.create_status(context=NAME, description=description, state="failure", target_url=url)

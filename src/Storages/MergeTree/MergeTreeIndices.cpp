@@ -98,6 +98,9 @@ MergeTreeIndexFactory::MergeTreeIndexFactory()
 
     registerCreator("bloom_filter", bloomFilterIndexCreatorNew);
     registerValidator("bloom_filter", bloomFilterIndexValidatorNew);
+
+    registerCreator("hypothesis", hypothesisIndexCreator);
+    registerValidator("hypothesis", hypothesisIndexValidator);
 }
 
 MergeTreeIndexFactory & MergeTreeIndexFactory::instance()

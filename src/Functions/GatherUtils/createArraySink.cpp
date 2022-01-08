@@ -1,7 +1,7 @@
 #include "GatherUtils.h"
 #include "Sinks.h"
 #include "Sources.h"
-#include <base/Typelists.h>
+#include <base/TypeLists.h>
 
 namespace DB::GatherUtils
 {
@@ -55,7 +55,7 @@ struct ArraySinkCreator<>
 
 std::unique_ptr<IArraySink> createArraySink(ColumnArray & col, size_t column_size)
 {
-    using Creator = TLChangeRoot<ArraySinkCreator, TLNumbersWithUUID>;
+    using Creator = TypeListChangeRoot<ArraySinkCreator, TypeListNumberWithUUID>;
     return Creator::create(col.getData(), col.getOffsets(), column_size);
 }
 }

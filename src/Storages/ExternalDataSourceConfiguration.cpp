@@ -5,9 +5,18 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <IO/WriteBufferFromString.h>
 
+#if USE_AMQPCPP
+#include <Storages/RabbitMQ/RabbitMQSettings.h>
+#endif
+#if USE_RDKAFKA
+#include <Storages/Kafka/KafkaSettings.h>
+#endif
+
+#include <re2/re2.h>
 
 namespace DB
 {
@@ -16,6 +25,12 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
 }
+
+static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
+    "host", "port", "user", "password", "db",
+    "database", "table", "schema", "replica",
+    "update_field", "update_tag", "invalidate_query", "query",
+    "where", "name", "secure", "uri", "collection"};
 
 String ExternalDataSourceConfiguration::toString() const
 {
@@ -47,6 +62,7 @@ void ExternalDataSourceConfiguration::set(const ExternalDataSourceConfiguration 
     database = conf.database;
     table = conf.table;
     schema = conf.schema;
+    addresses = conf.addresses;
     addresses_expr = conf.addresses_expr;
 }
 
@@ -62,9 +78,9 @@ std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const
     if (const auto * collection = typeid_cast<const ASTIdentifier *>(args[0].get()))
     {
         const auto & config = context->getConfigRef();
-        const auto & config_prefix = fmt::format("named_collections.{}", collection->name());
+        const auto & collection_prefix = fmt::format("named_collections.{}", collection->name());
 
-        if (!config.has(config_prefix))
+        if (!config.has(collection_prefix))
         {
             /// For table function remote we do not throw on no collection, because then we consider first arg
             /// as cluster definition from config.
@@ -74,14 +90,14 @@ std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection->name());
         }
 
-        configuration.host = config.getString(config_prefix + ".host", "");
-        configuration.port = config.getInt(config_prefix + ".port", 0);
-        configuration.username = config.getString(config_prefix + ".user", "");
-        configuration.password = config.getString(config_prefix + ".password", "");
-        configuration.database = config.getString(config_prefix + ".database", "");
-        configuration.table = config.getString(config_prefix + ".table", "");
-        configuration.schema = config.getString(config_prefix + ".schema", "");
-        configuration.addresses_expr = config.getString(config_prefix + ".addresses_expr", "");
+        configuration.host = config.getString(collection_prefix + ".host", "");
+        configuration.port = config.getInt(collection_prefix + ".port", 0);
+        configuration.username = config.getString(collection_prefix + ".user", "");
+        configuration.password = config.getString(collection_prefix + ".password", "");
+        configuration.database = config.getString(collection_prefix + ".database", "");
+        configuration.table = config.getString(collection_prefix + ".table", config.getString(collection_prefix + ".collection", ""));
+        configuration.schema = config.getString(collection_prefix + ".schema", "");
+        configuration.addresses_expr = config.getString(collection_prefix + ".addresses_expr", "");
 
         if (!configuration.addresses_expr.empty() && !configuration.host.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot have `addresses_expr` and `host`, `port` in configuration at the same time");
@@ -151,34 +167,48 @@ std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const
     return std::nullopt;
 }
 
+static void validateConfigKeys(
+    const Poco::Util::AbstractConfiguration & dict_config, const String & config_prefix, HasConfigKeyFunc has_config_key_func)
+{
+    Poco::Util::AbstractConfiguration::Keys config_keys;
+    dict_config.keys(config_prefix, config_keys);
+    for (const auto & config_key : config_keys)
+    {
+        if (!has_config_key_func(config_key))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected key `{}` in dictionary source configuration", config_key);
+    }
+}
 
 std::optional<ExternalDataSourceConfiguration> getExternalDataSourceConfiguration(
-    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context)
+    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix,
+    ContextPtr context, HasConfigKeyFunc has_config_key)
 {
+    validateConfigKeys(dict_config, dict_config_prefix, has_config_key);
     ExternalDataSourceConfiguration configuration;
 
     auto collection_name = dict_config.getString(dict_config_prefix + ".name", "");
     if (!collection_name.empty())
     {
         const auto & config = context->getConfigRef();
-        const auto & config_prefix = fmt::format("named_collections.{}", collection_name);
+        const auto & collection_prefix = fmt::format("named_collections.{}", collection_name);
+        validateConfigKeys(dict_config, collection_prefix, has_config_key);
 
-        if (!config.has(config_prefix))
+        if (!config.has(collection_prefix))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection_name);
 
-        configuration.host = dict_config.getString(dict_config_prefix + ".host", config.getString(config_prefix + ".host", ""));
-        configuration.port = dict_config.getInt(dict_config_prefix + ".port", config.getUInt(config_prefix + ".port", 0));
-        configuration.username = dict_config.getString(dict_config_prefix + ".user", config.getString(config_prefix + ".user", ""));
-        configuration.password = dict_config.getString(dict_config_prefix + ".password", config.getString(config_prefix + ".password", ""));
-        configuration.database = dict_config.getString(dict_config_prefix + ".db", config.getString(config_prefix + ".database", ""));
-        configuration.table = dict_config.getString(dict_config_prefix + ".table", config.getString(config_prefix + ".table", ""));
-        configuration.schema = dict_config.getString(dict_config_prefix + ".schema", config.getString(config_prefix + ".schema", ""));
+        configuration.host = dict_config.getString(dict_config_prefix + ".host", config.getString(collection_prefix + ".host", ""));
+        configuration.port = dict_config.getInt(dict_config_prefix + ".port", config.getUInt(collection_prefix + ".port", 0));
+        configuration.username = dict_config.getString(dict_config_prefix + ".user", config.getString(collection_prefix + ".user", ""));
+        configuration.password = dict_config.getString(dict_config_prefix + ".password", config.getString(collection_prefix + ".password", ""));
+        configuration.database = dict_config.getString(dict_config_prefix + ".db", config.getString(dict_config_prefix + ".database",
+            config.getString(collection_prefix + ".db", config.getString(collection_prefix + ".database", ""))));
+        configuration.table = dict_config.getString(dict_config_prefix + ".table", config.getString(collection_prefix + ".table", ""));
+        configuration.schema = dict_config.getString(dict_config_prefix + ".schema", config.getString(collection_prefix + ".schema", ""));
 
-        if (configuration.host.empty() || configuration.port == 0 || configuration.username.empty() || configuration.password.empty()
-            || configuration.database.empty() || configuration.table.empty())
+        if (configuration.host.empty() || configuration.port == 0 || configuration.username.empty() || configuration.table.empty())
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Named collection of connection parameters is missing some of the parameters and dictionary parameters are added");
+                            "Named collection of connection parameters is missing some of the parameters and dictionary parameters are not added");
         }
         return configuration;
     }
@@ -187,11 +217,12 @@ std::optional<ExternalDataSourceConfiguration> getExternalDataSourceConfiguratio
 
 
 ExternalDataSourcesByPriority getExternalDataSourceConfigurationByPriority(
-    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context)
+    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context, HasConfigKeyFunc has_config_key)
 {
+    validateConfigKeys(dict_config, dict_config_prefix, has_config_key);
     ExternalDataSourceConfiguration common_configuration;
 
-    auto named_collection = getExternalDataSourceConfiguration(dict_config, dict_config_prefix, context);
+    auto named_collection = getExternalDataSourceConfiguration(dict_config, dict_config_prefix, context, has_config_key);
     if (named_collection)
     {
         common_configuration = *named_collection;
@@ -202,7 +233,7 @@ ExternalDataSourcesByPriority getExternalDataSourceConfigurationByPriority(
         common_configuration.port = dict_config.getUInt(dict_config_prefix + ".port", 0);
         common_configuration.username = dict_config.getString(dict_config_prefix + ".user", "");
         common_configuration.password = dict_config.getString(dict_config_prefix + ".password", "");
-        common_configuration.database = dict_config.getString(dict_config_prefix + ".db", "");
+        common_configuration.database = dict_config.getString(dict_config_prefix + ".db", dict_config.getString(dict_config_prefix + ".database", ""));
         common_configuration.table = dict_config.getString(fmt::format("{}.table", dict_config_prefix), "");
         common_configuration.schema = dict_config.getString(fmt::format("{}.schema", dict_config_prefix), "");
     }
@@ -226,8 +257,9 @@ ExternalDataSourcesByPriority getExternalDataSourceConfigurationByPriority(
             {
                 ExternalDataSourceConfiguration replica_configuration(common_configuration);
                 String replica_name = dict_config_prefix + "." + config_key;
-                size_t priority = dict_config.getInt(replica_name + ".priority", 0);
+                validateConfigKeys(dict_config, replica_name, has_config_key);
 
+                size_t priority = dict_config.getInt(replica_name + ".priority", 0);
                 replica_configuration.host = dict_config.getString(replica_name + ".host", common_configuration.host);
                 replica_configuration.port = dict_config.getUInt(replica_name + ".port", common_configuration.port);
                 replica_configuration.username = dict_config.getString(replica_name + ".user", common_configuration.username);
@@ -359,4 +391,63 @@ std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const
     return std::nullopt;
 }
 
+template<typename T>
+bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<T> & settings, ContextPtr context)
+{
+    if (args.empty())
+        return false;
+
+    if (const auto * collection = typeid_cast<const ASTIdentifier *>(args[0].get()))
+    {
+        const auto & config = context->getConfigRef();
+        const auto & config_prefix = fmt::format("named_collections.{}", collection->name());
+
+        if (!config.has(config_prefix))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection->name());
+
+        SettingsChanges config_settings;
+        for (const auto & setting : settings.all())
+        {
+            const auto & setting_name = setting.getName();
+            auto setting_value = config.getString(config_prefix + '.' + setting_name, "");
+            if (!setting_value.empty())
+                config_settings.emplace_back(setting_name, setting_value);
+        }
+
+        /// Check key-value arguments.
+        for (size_t i = 1; i < args.size(); ++i)
+        {
+            if (const auto * ast_function = typeid_cast<const ASTFunction *>(args[i].get()))
+            {
+                const auto * args_expr = assert_cast<const ASTExpressionList *>(ast_function->arguments.get());
+                auto function_args = args_expr->children;
+                if (function_args.size() != 2)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument");
+
+                auto arg_name = function_args[0]->as<ASTIdentifier>()->name();
+                auto arg_value_ast = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
+                auto arg_value = arg_value_ast->as<ASTLiteral>()->value;
+                config_settings.emplace_back(arg_name, arg_value);
+            }
+            else
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument");
+            }
+        }
+
+        settings.applyChanges(config_settings);
+        return true;
+    }
+    return false;
+}
+
+#if USE_AMQPCPP
+template
+bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<RabbitMQSettingsTraits> & settings, ContextPtr context);
+#endif
+
+#if USE_RDKAFKA
+template
+bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<KafkaSettingsTraits> & settings, ContextPtr context);
+#endif
 }

@@ -61,7 +61,7 @@ public:
 
 private:
     BlockIO executeToTables(const ASTRenameQuery & rename, const RenameDescriptions & descriptions, TableGuards & ddl_guards);
-    static BlockIO executeToDatabase(const ASTRenameQuery & rename, const RenameDescriptions & descriptions);
+    BlockIO executeToDatabase(const ASTRenameQuery & rename, const RenameDescriptions & descriptions);
 
     AccessRightsElements getRequiredAccess() const;
 

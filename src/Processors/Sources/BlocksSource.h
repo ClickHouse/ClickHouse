@@ -24,9 +24,9 @@ class BlocksSource : public SourceWithProgress
 {
 public:
     /// Acquires shared ownership of the blocks vector
-    BlocksSource(const std::shared_ptr<BlocksPtr> & blocks_ptr_, Block header)
+    BlocksSource(BlocksPtr blocks_ptr_, Block header)
         : SourceWithProgress(std::move(header))
-        , blocks(*blocks_ptr_), it((*blocks_ptr_)->begin()), end((*blocks_ptr_)->end()) {}
+        , blocks(blocks_ptr_), it(blocks_ptr_->begin()), end(blocks_ptr_->end()) {}
 
     String getName() const override { return "Blocks"; }
 

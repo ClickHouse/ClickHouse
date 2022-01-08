@@ -22,6 +22,7 @@ public:
 
     String getName() const override { return "VerticalRowOutputFormat"; }
 
+private:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writeRowStartDelimiter() override;
     void writeRowBetweenDelimiter() override;
@@ -34,8 +35,9 @@ public:
     void writeBeforeTotals() override;
     void writeBeforeExtremes() override;
 
-protected:
-    virtual void writeValue(const IColumn & column, const ISerialization & serialization, size_t row_num) const;
+    void writeValue(const IColumn & column, const ISerialization & serialization, size_t row_num) const;
+
+    void onRowsReadBeforeUpdate() override { row_number = getRowsReadBefore(); }
 
     /// For totals and extremes.
     void writeSpecialRow(const Columns & columns, size_t row_num, const char * title);
@@ -43,7 +45,6 @@ protected:
     const FormatSettings format_settings;
     size_t field_number = 0;
     size_t row_number = 0;
-    bool was_totals_written = false;
 
     using NamesAndPaddings = std::vector<String>;
     NamesAndPaddings names_and_paddings;

@@ -177,7 +177,7 @@ IDiskRemote::Metadata IDiskRemote::createMeta(const String & path) const
 
 void IDiskRemote::removeMeta(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper)
 {
-    LOG_DEBUG(log, "Remove file by path: {}", backQuote(metadata_disk->getPath() + path));
+    LOG_TRACE(log, "Remove file by path: {}", backQuote(metadata_disk->getPath() + path));
 
     if (!metadata_disk->isFile(path))
         throw Exception(ErrorCodes::CANNOT_DELETE_DIRECTORY, "Path '{}' is a directory", path);
@@ -464,7 +464,7 @@ bool IDiskRemote::tryReserve(UInt64 bytes)
     std::lock_guard lock(reservation_mutex);
     if (bytes == 0)
     {
-        LOG_DEBUG(log, "Reserving 0 bytes on remote_fs disk {}", backQuote(name));
+        LOG_TRACE(log, "Reserving 0 bytes on remote_fs disk {}", backQuote(name));
         ++reservation_count;
         return true;
     }
@@ -473,7 +473,7 @@ bool IDiskRemote::tryReserve(UInt64 bytes)
     UInt64 unreserved_space = available_space - std::min(available_space, reserved_bytes);
     if (unreserved_space >= bytes)
     {
-        LOG_DEBUG(log, "Reserving {} on disk {}, having unreserved {}.",
+        LOG_TRACE(log, "Reserving {} on disk {}, having unreserved {}.",
             ReadableSize(bytes), backQuote(name), ReadableSize(unreserved_space));
         ++reservation_count;
         reserved_bytes += bytes;

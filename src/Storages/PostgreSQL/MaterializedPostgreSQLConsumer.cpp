@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Common/SettingsChanges.h>
@@ -26,6 +27,7 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     const std::string & publication_name_,
     const std::string & start_lsn,
     const size_t max_block_size_,
+    bool schema_as_a_part_of_table_name_,
     bool allow_automatic_update_,
     Storages storages_,
     const String & name_for_logger)
@@ -37,6 +39,7 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     , current_lsn(start_lsn)
     , lsn_value(getLSNValue(start_lsn))
     , max_block_size(max_block_size_)
+    , schema_as_a_part_of_table_name(schema_as_a_part_of_table_name_)
     , allow_automatic_update(allow_automatic_update_)
     , storages(storages_)
 {
@@ -273,7 +276,9 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
         {
             Int32 relation_id = readInt32(replication_message, pos, size);
             const auto & table_name = relation_id_to_name[relation_id];
-            assert(!table_name.empty());
+            /// FIXME:If table name is empty here, it means we failed to load it, but it was included in publication. Need to remove?
+            if (table_name.empty())
+                LOG_WARNING(log, "No table mapping for relation id: {}. Probably table failed to be loaded", relation_id);
 
             if (!isSyncAllowed(relation_id, table_name))
                 return;
@@ -291,7 +296,9 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
         {
             Int32 relation_id = readInt32(replication_message, pos, size);
             const auto & table_name = relation_id_to_name[relation_id];
-            assert(!table_name.empty());
+            /// FIXME:If table name is empty here, it means we failed to load it, but it was included in publication. Need to remove?
+            if (table_name.empty())
+                LOG_WARNING(log, "No table mapping for relation id: {}. Probably table failed to be loaded", relation_id);
 
             if (!isSyncAllowed(relation_id, table_name))
                 return;
@@ -340,7 +347,9 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
         {
             Int32 relation_id = readInt32(replication_message, pos, size);
             const auto & table_name = relation_id_to_name[relation_id];
-            assert(!table_name.empty());
+            /// FIXME:If table name is empty here, it means we failed to load it, but it was included in publication. Need to remove?
+            if (table_name.empty())
+                LOG_WARNING(log, "No table mapping for relation id: {}. Probably table failed to be loaded", relation_id);
 
             if (!isSyncAllowed(relation_id, table_name))
                 return;
@@ -374,19 +383,27 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             readString(replication_message, pos, size, relation_namespace);
             readString(replication_message, pos, size, relation_name);
 
+            String table_name;
+            if (!relation_namespace.empty() && schema_as_a_part_of_table_name)
+                table_name = relation_namespace + '.' + relation_name;
+            else
+                table_name = relation_name;
+
             if (!isSyncAllowed(relation_id, relation_name))
                 return;
 
-            if (storages.find(relation_name) == storages.end())
+            if (storages.find(table_name) == storages.end())
             {
-                markTableAsSkipped(relation_id, relation_name);
+                markTableAsSkipped(relation_id, table_name);
+                /// TODO: This can happen if we created a publication with this table but then got an exception that this
+                /// table has primary key or something else.
                 LOG_ERROR(log,
                           "Storage for table {} does not exist, but is included in replication stream. (Storages number: {})",
-                          relation_name, storages.size());
+                          table_name, storages.size());
                 return;
             }
 
-            assert(buffers.count(relation_name));
+            assert(buffers.contains(table_name));
 
 
             /// 'd' - default (primary key if any)
@@ -400,7 +417,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             {
                 LOG_WARNING(log,
                         "Table has replica identity {} - not supported. A table must have a primary key or a replica identity index");
-                markTableAsSkipped(relation_id, relation_name);
+                markTableAsSkipped(relation_id, table_name);
                 return;
             }
 
@@ -412,7 +429,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             bool new_relation_definition = false;
             if (schema_data.find(relation_id) == schema_data.end())
             {
-                relation_id_to_name[relation_id] = relation_name;
+                relation_id_to_name[relation_id] = table_name;
                 schema_data.emplace(relation_id, SchemaData(num_columns));
                 new_relation_definition = true;
             }
@@ -421,7 +438,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
 
             if (current_schema_data.number_of_columns != num_columns)
             {
-                markTableAsSkipped(relation_id, relation_name);
+                markTableAsSkipped(relation_id, table_name);
                 return;
             }
 
@@ -443,13 +460,13 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
                     if (current_schema_data.column_identifiers[i].first != data_type_id
                             || current_schema_data.column_identifiers[i].second != type_modifier)
                     {
-                        markTableAsSkipped(relation_id, relation_name);
+                        markTableAsSkipped(relation_id, table_name);
                         return;
                     }
                 }
             }
 
-            tables_to_sync.insert(relation_name);
+            tables_to_sync.insert(table_name);
 
             break;
         }
@@ -773,7 +790,6 @@ bool MaterializedPostgreSQLConsumer::consume(std::vector<std::pair<Int32, String
     /// false: no data was read, reschedule.
     /// true: some data was read, schedule as soon as possible.
     auto read_next = readFromReplicationSlot();
-    LOG_TRACE(log, "LSN: {}", final_lsn);
     return read_next;
 }
 

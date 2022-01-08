@@ -30,6 +30,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int UNKNOWN_SETTING;
+    extern const int AUTHENTICATION_FAILED;
 }
 
 
@@ -172,7 +173,8 @@ void AccessControl::addUsersConfigStorage(const String & storage_name_, const Po
     auto new_storage = std::make_shared<UsersConfigAccessStorage>(storage_name_, check_setting_name_function);
     new_storage->setConfig(users_config_);
     addStorage(new_storage);
-    LOG_DEBUG(getLogger(), "Added {} access storage '{}', path: {}", String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getPath());
+    LOG_DEBUG(getLogger(), "Added {} access storage '{}', path: {}",
+        String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getPath());
 }
 
 void AccessControl::addUsersConfigStorage(
@@ -225,6 +227,16 @@ void AccessControl::startPeriodicReloadingUsersConfigs()
     {
         if (auto users_config_storage = typeid_cast<std::shared_ptr<UsersConfigAccessStorage>>(storage))
             users_config_storage->startPeriodicReloading();
+    }
+}
+
+void AccessControl::stopPeriodicReloadingUsersConfigs()
+{
+    auto storages = getStoragesPtr();
+    for (const auto & storage : *storages)
+    {
+        if (auto users_config_storage = typeid_cast<std::shared_ptr<UsersConfigAccessStorage>>(storage))
+            users_config_storage->stopPeriodicReloading();
     }
 }
 
@@ -390,9 +402,20 @@ void AccessControl::addStoragesFromMainConfig(
 }
 
 
-UUID AccessControl::login(const Credentials & credentials, const Poco::Net::IPAddress & address) const
+UUID AccessControl::authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address) const
 {
-    return MultipleAccessStorage::login(credentials, address, *external_authenticators);
+    try
+    {
+        return MultipleAccessStorage::authenticate(credentials, address, *external_authenticators);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger(), "from: " + address.toString() + ", user: " + credentials.getUserName()  + ": Authentication failed");
+
+        /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons,
+        /// only the log will show the exact reason.
+        throw Exception(credentials.getUserName() + ": Authentication failed: password is incorrect or there is no user with such name", ErrorCodes::AUTHENTICATION_FAILED);
+    }
 }
 
 void AccessControl::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)

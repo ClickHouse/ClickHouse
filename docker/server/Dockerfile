@@ -1,7 +1,11 @@
 FROM ubuntu:20.04
 
+# ARG for quick switch to a given ubuntu mirror
+ARG apt_archive="http://archive.ubuntu.com"
+RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
+
 ARG repository="deb https://repo.clickhouse.com/deb/stable/ main/"
-ARG version=21.12.1.*
+ARG version=21.13.1.*
 ARG gosu_ver=1.10
 
 # set non-empty deb_location_url url to create a docker image
@@ -25,8 +29,6 @@ ARG DEBIAN_FRONTEND=noninteractive
 # We do that in advance at the begining of Dockerfile before any packages will be
 # installed to prevent picking those uid / gid by some unrelated software.
 # The same uid / gid (101) is used both for alpine and ubuntu.
-
-RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
 RUN groupadd -r clickhouse --gid=101 \
     && useradd -r -g clickhouse --uid=101 --home-dir=/var/lib/clickhouse --shell=/bin/bash clickhouse \

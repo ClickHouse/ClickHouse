@@ -38,7 +38,7 @@ void EmbeddedRocksDBSink::consume(Chunk chunk)
 
     rocksdb::WriteBatch batch;
     rocksdb::Status status;
-    for (size_t i = 0; i < rows; i++)
+    for (size_t i = 0; i < rows; ++i)
     {
         wb_key.restart();
         wb_value.restart();
