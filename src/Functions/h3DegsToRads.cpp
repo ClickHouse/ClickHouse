@@ -38,10 +38,10 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * arg = arguments[0].get();
-        if (!WhichDataType(arg).isUInt64())
+        if (!WhichDataType(arg).isFloat64())
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                "Illegal type {} of argument {} of function {}. Must be Float64",
                 arg->getName(), 1, getName());
 
         return std::make_shared<DataTypeFloat64>();
@@ -58,7 +58,7 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const Float64 degrees = col_degrees->getUInt(row);
+            const Float64 degrees = col_degrees->getFloat64(row);
             auto res = degsToRads(degrees);
             dst_data[row] = res;
         }
