@@ -67,6 +67,8 @@ RUN apt-get update \
         software-properties-common \
         tzdata \
         unixodbc \
+        rustc \
+        cargo \
        --yes --no-install-recommends
 
 RUN pip3 install numpy scipy pandas Jinja2
