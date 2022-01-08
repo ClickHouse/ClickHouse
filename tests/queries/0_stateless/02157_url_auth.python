@@ -5,6 +5,7 @@ import cgi
 import base64
 import json
 from urllib.parse import urlparse, parse_qs
+import sys
 import threading
 
 class CustomServerHandler(http.server.BaseHTTPRequestHandler):
@@ -170,7 +171,7 @@ class CustomHTTPServer(http.server.HTTPServer):
         return t
 
 if __name__ == '__main__':
-    server = CustomHTTPServer(('', 33339))
+    server = CustomHTTPServer(('', int(sys.argv[1])))
     server.set_auth('admin1', 'password')
     server.set_auth('admin2', 'password/')
     server.set_auth('admin3?/', 'PassWord^#?/')
