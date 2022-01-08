@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # We should have correct env vars from shell_config.sh to run this test
 export PORT=33339
-export PID=`lsof -i:${PORT} |awk '{print $2}'| tail -1`
+export PID=$(lsof -i:${PORT} |awk '{print $2}'| tail -1)
 if [ -n "${PID}" ]; then
     kill -9 ${PID}
 fi
