@@ -187,7 +187,6 @@ namespace
                         std::string user_info = request_uri.getUserInfo();
                         if (!user_info.empty())
                         {
-                            // std::string url_decoded_user_info = urlDecode(user_info);
                             char decoded_user_info[user_info.length() + 1];
                             size_t decode_len = decodeURL(user_info.c_str(), user_info.length(), decoded_user_info);
                             std::string url_decoded_user_info(decoded_user_info, decode_len);
@@ -242,8 +241,8 @@ namespace
             };
         }
 
-        /// We assume that size of the dst buf isn't less than src_size. Moved from src/Functions/URL/decodeURLComponent.cpp per @bharatnc suggested.
-        size_t decodeURL(const char * src, size_t src_size, char * dst)
+        // We assume that size of the dst buf isn't less than src_size. Moved from src/Functions/URL/decodeURLComponent.cpp per @bharatnc suggested.
+        static size_t decodeURL(const char * src, size_t src_size, char * dst)
         {
             const char * src_prev_pos = src;
             const char * src_curr_pos = src;
@@ -295,32 +294,6 @@ namespace
 
             return dst_pos - dst;
         }
-
-//        // Deprecated
-//        // decode a url-encoded string
-//        String urlDecode(String str){
-//            String ret;
-//            char ch;
-//            int ii;
-//            String::size_type len = str.length();
-//            for (String::size_type i = 0; i < len; i++){
-//                if (str[i] != '%')
-//                {
-//                    if(str[i] == '+')
-//                        ret += ' ';
-//                    else
-//                        ret += str[i];
-//                }
-//                else
-//                {
-//                    sscanf(str.substr(i + 1, 2).c_str(), "%x", &ii);
-//                    ch = static_cast<char>(ii);
-//                    ret += ch;
-//                    i = i + 2;
-//                }
-//            }
-//            return ret;
-//        }
 
         String getName() const override
         {
