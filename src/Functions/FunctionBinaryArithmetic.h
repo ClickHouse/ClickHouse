@@ -14,6 +14,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
+#include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -26,22 +27,18 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Native.h>
 #include <DataTypes/NumberTraits.h>
+#include <Functions/DivisionUtils.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
+#include <Functions/IsOperation.h>
+#include <Functions/castTypeToEither.h>
 #include <Interpreters/castColumn.h>
 #include <base/TypeList.h>
 #include <base/map.h>
-#include <Common/Arena.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include "Core/DecimalFunctions.h"
-#include "DivisionUtils.h"
-#include "FunctionFactory.h"
-#include "FunctionHelpers.h"
-#include "IFunction.h"
-#include "IsOperation.h"
-#include "castTypeToEither.h"
-
-#include <Common/config.h>
 
 #if USE_EMBEDDED_COMPILER
 #    pragma GCC diagnostic push
@@ -1484,13 +1481,15 @@ public:
         else // we can't avoid the else because otherwise the compiler may assume the ResultDataType may be Invalid
              // and that would produce the compile error.
         {
-            using T0 = std::conditional_t<IsFloatingPoint<ResultDataType>, Float64, typename LeftDataType::FieldType>;
-            using T1 = std::conditional_t<IsFloatingPoint<ResultDataType>, Float64, typename RightDataType::FieldType>;
+            constexpr bool decimal_with_float = (IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>)
+                || (IsFloatingPoint<LeftDataType> && IsDataTypeDecimal<RightDataType>);
+
+            using T0 = std::conditional_t<decimal_with_float, Float64, typename LeftDataType::FieldType>;
+            using T1 = std::conditional_t<decimal_with_float, Float64, typename RightDataType::FieldType>;
             using ResultType = typename ResultDataType::FieldType;
             using ColVecT0 = ColumnVectorOrDecimal<T0>;
             using ColVecT1 = ColumnVectorOrDecimal<T1>;
             using ColVecResult = ColumnVectorOrDecimal<ResultType>;
-
 
             const IColumn * col_left_raw;
             const IColumn * col_right_raw;
