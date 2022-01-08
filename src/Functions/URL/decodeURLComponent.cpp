@@ -83,7 +83,7 @@ static size_t decodeURL(const char * src, size_t src_size, char * dst, bool plus
 
 
 /// Percent decode of URL data.
-template<bool plus_as_space>
+template <bool plus_as_space>
 struct DecodeURLComponentImpl
 {
     static void vector(const ColumnString::Chars & data, const ColumnString::Offsets & offsets,
