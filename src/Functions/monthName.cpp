@@ -5,22 +5,25 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
-class FunctionMonthNameImpl : public IFunction
+class FunctionMonthName : public IFunction
 {
 public:
     static constexpr auto name = "monthName";
 
     static constexpr auto month_str = "month";
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionMonthNameImpl>(context); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionMonthName>(context); }
 
-    explicit FunctionMonthNameImpl(ContextPtr context_) : context(context_) {}
+    explicit FunctionMonthName(ContextPtr context_)
+        : function_resolver(FunctionFactory::instance().get("dateName", std::move(context_)))
+        {}
 
     String getName() const override { return name; }
 
@@ -61,17 +64,17 @@ public:
             arguments[0]
         };
 
-        auto date_name_func = FunctionFactory::instance().get("dateName", context)->build(temporary_columns);
+        auto date_name_func = function_resolver->build(temporary_columns);
         return date_name_func->execute(temporary_columns, result_type, input_rows_count);
     }
 
 private:
-    ContextPtr context;
+    FunctionOverloadResolverPtr function_resolver;
 };
 
 void registerFunctionMonthName(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionMonthNameImpl>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<FunctionMonthName>(FunctionFactory::CaseInsensitive);
 }
 
 }
