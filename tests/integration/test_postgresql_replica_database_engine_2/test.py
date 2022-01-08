@@ -659,6 +659,7 @@ def test_table_schema_changes_2(started_cluster):
     cursor.execute(f"ALTER TABLE {table_name} DROP COLUMN value2")
     instance.query(f"INSERT INTO postgres_database.{table_name} SELECT number, toString(number), toString(number), toString(number), number from numbers(75, 25)")
     check_tables_are_synchronized(table_name);
+    # TODO: ADD RESTART
 
 
 if __name__ == '__main__':
