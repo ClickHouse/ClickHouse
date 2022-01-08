@@ -22,8 +22,6 @@ public:
     Blocks splitBlocks(const Block & block, const size_t & max_rows) const;
 
 private:
-    String getOneElement(const Block & block, int ind) const;
-
     MeiliSearchConnection connection;
     ContextPtr local_context;
     const UInt64 max_block_size;

@@ -32,9 +32,8 @@ MeiliSearchSource::MeiliSearchSource(
 
     String columns_to_get = "[";
     for (const auto & col : description.sample_block)
-    {
         columns_to_get += doubleQuoteString(col.name) + ",";
-    }
+    
     columns_to_get.back() = ']';
 
     query_params[doubleQuoteString("attributesToRetrieve")] = columns_to_get;
@@ -71,9 +70,7 @@ void insertWithTypeId(MutableColumnPtr & column, JSON kv_pair, int type_id)
 Chunk MeiliSearchSource::generate()
 {
     if (all_read)
-    {
         return {};
-    }
 
     MutableColumns columns(description.sample_block.columns());
     const size_t size = columns.size();
@@ -87,9 +84,7 @@ Chunk MeiliSearchSource::generate()
     JSON jres = JSON(response).begin();
 
     if (jres.getName() == "message")
-    {
         throw Exception(ErrorCodes::MEILISEARCH_EXCEPTION, jres.getValue().toString());
-    }
 
     size_t cnt_match = 0;
     String def;

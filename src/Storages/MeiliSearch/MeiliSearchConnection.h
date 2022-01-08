@@ -4,6 +4,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -35,7 +36,7 @@ public:
 
     String searchQuery(const std::unordered_map<String, String> & query_params) const;
 
-    String updateQuery(const String & data) const;
+    String updateQuery(std::string_view data) const;
 
 private:
     MeiliConfig config;
