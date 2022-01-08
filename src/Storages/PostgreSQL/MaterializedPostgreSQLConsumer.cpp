@@ -50,10 +50,18 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     LOG_TRACE(log, "Starting replication. LSN: {} (last: {})", getLSNValue(current_lsn), getLSNValue(final_lsn));
     tx->commit();
 
-    for (const auto & [table_name, storage] : storages)
-    {
-        buffers.emplace(table_name, Buffer(storage));
-    }
+    for (const auto & [table_name, storage_info] : storages)
+        buffers.emplace(table_name, Buffer(storage_info.storage, storage_info.attributes));
+}
+
+
+MaterializedPostgreSQLConsumer::Buffer::Buffer(StoragePtr storage, const PostgreSQLTableStructure::Attributes & attributes_)
+    : attributes(attributes_)
+{
+    createEmptyBuffer(storage);
+    if (attributes.size() + 2 != getColumnsNum()) /// +2 because sign and version columns
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Columns number mismatch. Attributes: {}, buffer: {}", attributes.size(), getColumnsNum());
 }
 
 
@@ -86,7 +94,7 @@ void MaterializedPostgreSQLConsumer::Buffer::createEmptyBuffer(StoragePtr storag
         insert_columns->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
     }
 
-    columnsAST = std::move(insert_columns);
+    columns_ast = std::move(insert_columns);
 }
 
 
@@ -471,25 +479,6 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             Int32 data_type_id;
             Int32 type_modifier; /// For example, n in varchar(n)
 
-            auto schema_def_for_table_iter = schema_data.find(relation_id);
-            bool new_relation_definition = schema_def_for_table_iter == schema_data.end();
-            SchemaData current_schema_data;
-            if (new_relation_definition)
-            {
-                current_schema_data = SchemaData(num_columns);
-            }
-            else
-            {
-                current_schema_data = schema_def_for_table_iter->second;
-                if (current_schema_data.number_of_columns != num_columns)
-                {
-                    markTableAsSkipped(relation_id, table_name);
-                    return;
-                }
-            }
-
-            /// FIXME:!!! If table was reloaded and server restarted before it commited lsn with update point, it
-            /// will be marked as skipped once again and reloaded one more time.
             for (uint16_t i = 0; i < num_columns; ++i)
             {
                 String column_name;
@@ -499,23 +488,12 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
                 data_type_id = readInt32(replication_message, pos, size);
                 type_modifier = readInt32(replication_message, pos, size);
 
-                if (new_relation_definition)
+                if (buffer.attributes[i].atttypid != data_type_id || buffer.attributes[i].atttypmod != type_modifier)
                 {
-                    current_schema_data.column_identifiers.emplace_back(std::make_pair(data_type_id, type_modifier));
-                }
-                else
-                {
-                    if (current_schema_data.column_identifiers[i].first != data_type_id
-                            || current_schema_data.column_identifiers[i].second != type_modifier)
-                    {
-                        markTableAsSkipped(relation_id, table_name);
-                        return;
-                    }
+                    markTableAsSkipped(relation_id, table_name);
+                    return;
                 }
             }
-
-            if (new_relation_definition)
-                schema_data.emplace(relation_id, current_schema_data);
 
             tables_to_sync.insert(table_name);
             break;
@@ -544,14 +522,14 @@ void MaterializedPostgreSQLConsumer::syncTables()
 
             if (result_rows.rows())
             {
-                auto storage = storages[table_name];
+                auto storage = storages.find(table_name)->second.storage;
 
                 auto insert_context = Context::createCopy(context);
                 insert_context->setInternalQuery(true);
 
                 auto insert = std::make_shared<ASTInsertQuery>();
                 insert->table_id = storage->getStorageID();
-                insert->columns = buffer.columnsAST;
+                insert->columns = buffer.columns_ast;
 
                 InterpreterInsertQuery interpreter(insert, insert_context, true);
                 auto io = interpreter.execute();
@@ -654,13 +632,12 @@ void MaterializedPostgreSQLConsumer::markTableAsSkipped(Int32 relation_id, const
 
     if (storages.count(relation_name))
     {
-        /// Erase cached schema identifiers. It will be updated again once table is allowed back into replication stream
-        /// and it receives first data after update.
-        schema_data.erase(relation_id);
-
         /// Clear table buffer.
         auto & buffer = buffers.find(relation_name)->second;
         buffer.columns = buffer.description.sample_block.cloneEmptyColumns();
+        /// Erase cached schema identifiers. It will be updated again once table is allowed back into replication stream
+        /// and it receives first data after update.
+        buffer.attributes.clear();
 
         if (allow_automatic_update)
             LOG_TRACE(log, "Table {} (relation_id: {}) is skipped temporarily. It will be reloaded in the background", relation_name, relation_id);
@@ -670,13 +647,14 @@ void MaterializedPostgreSQLConsumer::markTableAsSkipped(Int32 relation_id, const
 }
 
 
-void MaterializedPostgreSQLConsumer::addNested(const String & postgres_table_name, StoragePtr nested_storage, const String & table_start_lsn)
+void MaterializedPostgreSQLConsumer::addNested(
+    const String & postgres_table_name, StorageInfo nested_storage_info, const String & table_start_lsn)
 {
     /// Cache new pointer to replacingMergeTree table.
-    storages.emplace(postgres_table_name, nested_storage);
+    storages.emplace(postgres_table_name, nested_storage_info);
 
     /// Add new in-memory buffer.
-    buffers.emplace(postgres_table_name, Buffer(nested_storage));
+    buffers.emplace(postgres_table_name, Buffer(nested_storage_info.storage, nested_storage_info.attributes));
 
     /// Replication consumer will read wall and check for currently processed table whether it is allowed to start applying
     /// changes to this table.
@@ -684,14 +662,14 @@ void MaterializedPostgreSQLConsumer::addNested(const String & postgres_table_nam
 }
 
 
-void MaterializedPostgreSQLConsumer::updateNested(const String & table_name, StoragePtr nested_storage, Int32 table_id, const String & table_start_lsn)
+void MaterializedPostgreSQLConsumer::updateNested(const String & table_name, StorageInfo nested_storage_info, Int32 table_id, const String & table_start_lsn)
 {
     /// Cache new pointer to replacingMergeTree table.
-    storages[table_name] = nested_storage;
+    storages.emplace(table_name, nested_storage_info);
 
     /// Create a new empty buffer (with updated metadata), where data is first loaded before syncing into actual table.
     auto & buffer = buffers.find(table_name)->second;
-    buffer.createEmptyBuffer(nested_storage);
+    buffer.createEmptyBuffer(nested_storage_info.storage);
 
     /// Set start position to valid lsn. Before it was an empty string. Further read for table allowed, if it has a valid lsn.
     skip_list[table_id] = table_start_lsn;
