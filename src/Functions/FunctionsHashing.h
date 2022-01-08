@@ -602,12 +602,14 @@ struct ImplBLAKE3
     static constexpr auto name = "BLAKE3";
     enum { length = OUT_LEN };
 
-    static uint8_t* apply(const char * begin)
+    static void apply(const char * begin, const size_t size, unsigned char* out_char_data)
     {
         Hasher_shim hasher = new_hasher();
-        update_shim(&hasher, begin);
+        update_shim(&hasher, begin, static_cast<uint32_t>(size));
         Hash res = finalize_shim(&hasher);
-        return as_bytes_shim(&res);
+        std::memcpy(out_char_data, as_bytes_shim(&res), OUT_LEN);
+        /*if (out_char_data != nullptr)
+            throw Exception(std::string(reinterpret_cast<char*>(out_char_data)), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);*/
     }
 };
 
@@ -1434,5 +1436,7 @@ using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
     using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
     using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
 #endif
+
+using FunctionBLAKE3 = FunctionStringHashFixedString<ImplBLAKE3>;
 
 }
