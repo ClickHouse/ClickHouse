@@ -17,8 +17,8 @@ python3 "$CURDIR/02157_url_auth.python" $PORT &
 
 sleep 1
 
-${CLICKHOUSE_CLIENT} --query "select * from url('http://admin1:password@127.0.0.1:33339/example', 'RawBLOB', 'a String')" | grep Exception
-${CLICKHOUSE_CLIENT} --query "select * from url('http://admin2:password%2F@127.0.0.1:33339/example', 'RawBLOB', 'a String')" | grep Exception
-${CLICKHOUSE_CLIENT} --query "select * from url('http://admin3%3F%2F%3APassWord%5E%23%3F%2F@127.0.0.1:33339/example', 'RawBLOB', 'a String')" | grep Exception
-${CLICKHOUSE_CLIENT} --query "select * from url('http://admin4*%25%3Aok@127.0.0.1:33339/example', 'RawBLOB', 'a String')" | grep Exception
+${CLICKHOUSE_CLIENT_BINARY} --query "select * from url('http://admin1:password@127.0.0.1:33339/example', 'RawBLOB', 'a String')" | grep Exception
+${CLICKHOUSE_CLIENT_BINARY} --query "select * from url('http://admin2:password%2F@127.0.0.1:33339/example', 'RawBLOB', 'a String')" | grep Exception
+${CLICKHOUSE_CLIENT_BINARY} --query "select * from url('http://admin3%3F%2F%3APassWord%5E%23%3F%2F@127.0.0.1:33339/example', 'RawBLOB', 'a String')" | grep Exception
+${CLICKHOUSE_CLIENT_BINARY} --query "select * from url('http://admin4*%25%3Aok@127.0.0.1:33339/example', 'RawBLOB', 'a String')" | grep Exception
 
