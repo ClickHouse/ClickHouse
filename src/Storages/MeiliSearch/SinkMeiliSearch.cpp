@@ -1,5 +1,6 @@
 #include <Storages/MeiliSearch/SinkMeiliSearch.h>
 #include "Core/Field.h"
+#include "Formats/FormatFactory.h"
 #include "IO/WriteBufferFromString.h"
 #include "Processors/Formats/Impl/JSONRowOutputFormat.h"
 #include "base/JSON.h"
@@ -22,64 +23,35 @@ SinkMeiliSearch::SinkMeiliSearch(
 {
 }
 
-String getStringRepresentation(const ColumnWithTypeAndName & col, size_t row)
-{
-    Field elem;
-    if (col.column->size() <= row)
-    {
-        return "";
-    }
-    col.column->get(row, elem);
-    if (elem.getType() == Field::Types::Int64)
-    {
-        return std::to_string(elem.get<Int64>());
-    }
-    else if (elem.getType() == Field::Types::UInt64)
-    {
-        return std::to_string(elem.get<UInt64>());
-    }
-    else if (elem.getType() == Field::Types::String)
-    {
-        return doubleQuoteString(elem.get<String>());
-    }
-    else if (elem.getType() == Field::Types::Float64)
-    {
-        return std::to_string(elem.get<Float64>());
-    }
-    return "";
-}
-
-String SinkMeiliSearch::getOneElement(const Block & block, int ind) const
-{
-    String ans = "{";
-    int id = 0;
-    for (const auto & col : block)
-    {
-        ans += doubleQuoteString(sample_block.getByPosition(id++).name) + ":" + getStringRepresentation(col, ind) + ",";
-    }
-    ans.back() = '}';
-    return ans;
+void extractData(std::string_view& view) {
+    int ind = view.find("\"data\":") + 9;
+    view.remove_prefix(ind);
+    int bal = ind = 1;
+    while (bal > 0) {
+        if (view[ind] == '[') ++bal;
+        else if (view[ind] == ']') --bal;
+        ++ind;
+    } 
+    view.remove_suffix(view.size() - ind);
 }
 
 void SinkMeiliSearch::writeBlockData(const Block & block) const
 {
-    size_t max_col_size = 0;
-    for (const auto & col : block)
-    {
-        max_col_size = std::max(max_col_size, col.column->size());
-    }
-    String json_array = "[";
-    for (size_t i = 0; i < max_col_size; ++i)
-    {
-        json_array += getOneElement(block, i) + ",";
-    }
-    json_array.back() = ']';
-    auto response = connection.updateQuery(json_array);
-    JSON jres = JSON(response).begin();
+    FormatSettings settings = getFormatSettings(local_context);
+    settings.json.quote_64bit_integers = false;
+    WriteBufferFromOwnString buf;
+    auto writer = FormatFactory::instance().getOutputFormat("JSON", buf, sample_block, local_context, {}, settings);
+    writer->write(block);
+    writer->flush();
+    writer->finalize();
+
+    std::string_view vbuf(buf.str());
+    extractData(vbuf);
+
+    auto response = connection.updateQuery(vbuf);
+    auto jres = JSON(response).begin();
     if (jres.getName() == "message")
-    {
         throw Exception(ErrorCodes::MEILISEARCH_EXCEPTION, jres.getValue().toString());
-    }
 }
 
 Blocks SinkMeiliSearch::splitBlocks(const Block & block, const size_t & max_rows) const
@@ -104,9 +76,8 @@ Blocks SinkMeiliSearch::splitBlocks(const Block & block, const size_t & max_rows
         if (idx == split_block_size - 1)
             limits = rows - offsets;
         for (size_t col_idx = 0; col_idx < columns; ++col_idx)
-        {
             split_blocks[idx].getByPosition(col_idx).column = block.getByPosition(col_idx).column->cut(offsets, limits);
-        }
+        
         offsets += max_block_size;
     }
 
@@ -118,9 +89,7 @@ void SinkMeiliSearch::consume(Chunk chunk)
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
     auto blocks = splitBlocks(block, max_block_size);
     for (const auto & b : blocks)
-    {
         writeBlockData(b);
-    }
 }
 
 

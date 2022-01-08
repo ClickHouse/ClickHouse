@@ -38,9 +38,7 @@ String MeiliSearchConnection::searchQuery(const std::unordered_map<String, Strin
     std::string post_fields = "{";
 
     for (const auto & q_attr : query_params)
-    {
         post_fields += q_attr.first + ":" + q_attr.second + ",";
-    }
 
     post_fields.back() = '}';
 
@@ -65,14 +63,12 @@ String MeiliSearchConnection::searchQuery(const std::unordered_map<String, Strin
     curl_slist_free_all(slist1);
 
     if (ret_code != 0)
-    {
         throw Exception(ErrorCodes::NETWORK_ERROR, curl_easy_strerror(ret_code));
-    }
 
     return response_buffer;
 }
 
-String MeiliSearchConnection::updateQuery(const String & data) const
+String MeiliSearchConnection::updateQuery(std::string_view data) const
 {
     CURLcode ret_code;
     CURL * hnd;
@@ -89,7 +85,7 @@ String MeiliSearchConnection::updateQuery(const String & data) const
     curl_easy_setopt(hnd, CURLOPT_BUFFERSIZE, 102400L);
     curl_easy_setopt(hnd, CURLOPT_URL, url.c_str());
     curl_easy_setopt(hnd, CURLOPT_NOPROGRESS, 1L);
-    curl_easy_setopt(hnd, CURLOPT_POSTFIELDS, data.c_str());
+    curl_easy_setopt(hnd, CURLOPT_POSTFIELDS, data.data());
     curl_easy_setopt(hnd, CURLOPT_POSTFIELDSIZE_LARGE, data.size());
     curl_easy_setopt(hnd, CURLOPT_HTTPHEADER, slist1);
     curl_easy_setopt(hnd, CURLOPT_MAXREDIRS, 50L);
@@ -104,9 +100,7 @@ String MeiliSearchConnection::updateQuery(const String & data) const
     curl_slist_free_all(slist1);
 
     if (ret_code != 0)
-    {
         throw Exception(ErrorCodes::NETWORK_ERROR, curl_easy_strerror(ret_code));
-    }
 
     return response_buffer;
 }

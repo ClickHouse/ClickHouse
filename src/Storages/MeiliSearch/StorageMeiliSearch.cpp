@@ -62,28 +62,21 @@ std::string convertASTtoStr(ASTPtr ptr)
 ASTPtr getFunctionParams(ASTPtr node, const std::string & name)
 {
     if (!node)
-    {
         return nullptr;
-    }
+    
     const auto * ptr = node->as<ASTFunction>();
     if (ptr && ptr->name == name)
     {
-        if (node->children.size() == 1)
-        {
+        if (node->children.size() == 1) 
             return node->children[0];
-        }
-        else
-        {
+        else 
             return nullptr;
-        }
     }
     for (const auto & next : node->children)
     {
         auto res = getFunctionParams(next, name);
         if (res != nullptr)
-        {
             return res;
-        }
     }
     return nullptr;
 }
@@ -112,9 +105,8 @@ Pipe StorageMeiliSearch::read(
             auto str = el->getColumnName();
             auto it = find(str.begin(), str.end(), '=');
             if (it == str.end())
-            {
                 throw Exception("meiliMatch function must have parameters of the form \'key=value\'", ErrorCodes::BAD_QUERY_PARAMETER);
-            }
+            
             String key(str.begin() + 1, it);
             String value(it + 1, str.end() - 1);
             kv_pairs_params[key] = value;
@@ -126,9 +118,7 @@ Pipe StorageMeiliSearch::read(
     }
 
     for (const auto & el : kv_pairs_params)
-    {
         LOG_TRACE(log, "Parsed parameter: key = " + el.first + ", value = " + el.second);
-    }
 
     Block sample_block;
     for (const String & column_name : column_names)
