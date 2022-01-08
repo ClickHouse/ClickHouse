@@ -63,6 +63,7 @@
 
 #include <boost/range/adaptor/filtered.hpp>
 #include <boost/algorithm/string/join.hpp>
+#include <boost/algorithm/string/replace.hpp>
 
 #include <base/insertAtEnd.h>
 #include <base/scope_guard_safe.h>
@@ -2458,6 +2459,8 @@ bool MergeTreeData::renameTempPartAndReplace(
     MergeTreePartInfo part_info = part->info;
     String part_name;
 
+    String old_part_name = part->name;
+
     if (DataPartPtr existing_part_in_partition = getAnyPartInPartition(part->info.partition_id, lock))
     {
         if (part->partition.value != existing_part_in_partition->partition.value)
@@ -2521,6 +2524,7 @@ bool MergeTreeData::renameTempPartAndReplace(
     /// So, we maintain invariant: if a non-temporary part in filesystem then it is in data_parts
     ///
     /// If out_transaction is null, we commit the part to the active set immediately, else add it to the transaction.
+
     part->name = part_name;
     part->info = part_info;
     part->is_temp = false;
@@ -2568,6 +2572,9 @@ bool MergeTreeData::renameTempPartAndReplace(
         for (DataPartPtr & covered_part : covered_parts)
             out_covered_parts->emplace_back(std::move(covered_part));
     }
+
+    /// Cleanup shared locks made with old name
+    part->cleanupOldName(old_part_name);
 
     return true;
 }
@@ -3907,8 +3914,8 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr
 
     for (auto & [old_name, new_name, disk] : renamed_parts.old_and_new_names)
     {
-        disk->removeRecursive(fs::path(relative_data_path) / "detached" / new_name / "");
-        LOG_DEBUG(log, "Dropped detached part {}", old_name);
+        bool keep_shared = removeDetachedPart(disk, fs::path(relative_data_path) / "detached" / new_name / "", old_name, false);
+        LOG_DEBUG(log, "Dropped detached part {}, keep shared data: {}", old_name, keep_shared);
         old_name.clear();
     }
 }
@@ -5196,7 +5203,9 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
         LOG_DEBUG(log, "Freezing part {} snapshot will be placed at {}", part->name, backup_path);
 
-        part->volume->getDisk()->createDirectories(backup_path);
+        auto disk = part->volume->getDisk();
+
+        disk->createDirectories(backup_path);
 
         String src_part_path = part->getFullRelativePath();
         String backup_part_path = fs::path(backup_path) / relative_data_path / part->relative_path;
@@ -5207,16 +5216,20 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
             src_part_path = fs::path(relative_data_path) / flushed_part_path / "";
         }
 
-        localBackup(part->volume->getDisk(), src_part_path, backup_part_path);
+        localBackup(disk, src_part_path, backup_part_path);
 
-        part->volume->getDisk()->removeFileIfExists(fs::path(backup_part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
+        // Store metadata for replicated table.
+        // Do nothing for non-replocated.
+        createAndStoreFreezeMetadata(disk, part, backup_part_path);
+
+        disk->removeFileIfExists(fs::path(backup_part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
 
         part->is_frozen.store(true, std::memory_order_relaxed);
         result.push_back(PartitionCommandResultInfo{
             .partition_id = part->info.partition_id,
             .part_name = part->name,
-            .backup_path = fs::path(part->volume->getDisk()->getPath()) / backup_path,
-            .part_backup_path = fs::path(part->volume->getDisk()->getPath()) / backup_part_path,
+            .backup_path = fs::path(disk->getPath()) / backup_path,
+            .part_backup_path = fs::path(disk->getPath()) / backup_part_path,
             .backup_name = backup_name,
         });
         ++parts_processed;
@@ -5224,6 +5237,11 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
     LOG_DEBUG(log, "Freezed {} parts", parts_processed);
     return result;
+}
+
+void MergeTreeData::createAndStoreFreezeMetadata(DiskPtr, DataPartPtr, String) const
+{
+
 }
 
 PartitionCommandsResultInfo MergeTreeData::unfreezePartition(
@@ -5241,6 +5259,13 @@ PartitionCommandsResultInfo MergeTreeData::unfreezeAll(
     TableLockHolder &)
 {
     return unfreezePartitionsByMatcher([] (const String &) { return true; }, backup_name, local_context);
+}
+
+bool MergeTreeData::removeDetachedPart(DiskPtr disk, const String & path, const String &, bool)
+{
+    disk->removeRecursive(path);
+
+    return false;
 }
 
 PartitionCommandsResultInfo MergeTreeData::unfreezePartitionsByMatcher(MatcherFn matcher, const String & backup_name, ContextPtr)
@@ -5271,7 +5296,7 @@ PartitionCommandsResultInfo MergeTreeData::unfreezePartitionsByMatcher(MatcherFn
 
             const auto & path = it->path();
 
-            disk->removeRecursive(path);
+            bool keep_shared = removeDetachedPart(disk, path, partition_directory, true);
 
             result.push_back(PartitionCommandResultInfo{
                 .partition_id = partition_id,
@@ -5281,7 +5306,7 @@ PartitionCommandsResultInfo MergeTreeData::unfreezePartitionsByMatcher(MatcherFn
                 .backup_name = backup_name,
             });
 
-            LOG_DEBUG(log, "Unfreezed part by path {}", disk->getPath() + path);
+            LOG_DEBUG(log, "Unfreezed part by path {}, keep shared data: {}", disk->getPath() + path, keep_shared);
         }
     }
 
