@@ -19,7 +19,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace
@@ -64,7 +63,7 @@ public:
 
             Float64 res = cellAreaM2(resolution);
 
-                dst_data[row] = res;
+            dst_data[row] = res;
         }
 
         return dst;
