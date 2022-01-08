@@ -659,7 +659,18 @@ def test_table_schema_changes_2(started_cluster):
     cursor.execute(f"ALTER TABLE {table_name} DROP COLUMN value2")
     instance.query(f"INSERT INTO postgres_database.{table_name} SELECT number, toString(number), toString(number), toString(number), number from numbers(75, 25)")
     check_tables_are_synchronized(table_name);
-    # TODO: ADD RESTART
+    instance.restart_clickhouse()
+    check_tables_are_synchronized(table_name);
+    cursor.execute(f"ALTER TABLE {table_name} DROP COLUMN value5")
+    cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN value5 Text")
+    instance.query(f"INSERT INTO postgres_database.{table_name} SELECT number, toString(number), toString(number), toString(number), toString(number) from numbers(100, 25)")
+    check_tables_are_synchronized(table_name);
+    cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN value6 Text")
+    cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN value7 Integer")
+    cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN value8 Integer")
+    cursor.execute(f"ALTER TABLE {table_name} DROP COLUMN value5")
+    instance.query(f"INSERT INTO postgres_database.{table_name} SELECT number, toString(number), toString(number), toString(number), toString(number), number, number from numbers(125, 25)")
+    check_tables_are_synchronized(table_name);
 
 
 if __name__ == '__main__':
