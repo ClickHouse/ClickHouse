@@ -346,7 +346,7 @@ ASTPtr StorageMaterializedPostgreSQL::getColumnDeclaration(const DataTypePtr & d
         ast_expression->name = "DateTime64";
         ast_expression->arguments = std::make_shared<ASTExpressionList>();
         ast_expression->arguments->children.emplace_back(std::make_shared<ASTLiteral>(UInt32(6)));
-        return ast_expression;
+        return std::move(ast_expression);
     }
 
     return std::make_shared<ASTIdentifier>(data_type->getName());
@@ -404,7 +404,7 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
                             table_id.database_name, table_id.table_name);
         }
 
-        if (!table_structure->columns && (!table_override || !table_override->columns))
+        if (!table_structure->physical_columns && (!table_override || !table_override->columns))
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No columns returned for table {}.{}",
                             table_id.database_name, table_id.table_name);
@@ -446,7 +446,7 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
             }
             else
             {
-                ordinary_columns_and_types = *table_structure->columns;
+                ordinary_columns_and_types = table_structure->physical_columns->columns;
                 columns_declare_list->set(columns_declare_list->columns, getColumnsExpressionList(ordinary_columns_and_types));
             }
 
@@ -456,7 +456,7 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
         }
         else
         {
-            ordinary_columns_and_types = *table_structure->columns;
+            ordinary_columns_and_types = table_structure->physical_columns->columns;
             columns_declare_list->set(columns_declare_list->columns, getColumnsExpressionList(ordinary_columns_and_types));
         }
 
@@ -466,9 +466,9 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
 
         NamesAndTypesList merging_columns;
         if (table_structure->primary_key_columns)
-            merging_columns = *table_structure->primary_key_columns;
+            merging_columns = table_structure->primary_key_columns->columns;
         else
-            merging_columns = *table_structure->replica_identity_columns;
+            merging_columns = table_structure->replica_identity_columns->columns;
 
         order_by_expression->name = "tuple";
         order_by_expression->arguments = std::make_shared<ASTExpressionList>();
@@ -505,7 +505,7 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
     storage_metadata.setConstraints(constraints);
     setInMemoryMetadata(storage_metadata);
 
-    return create_table_query;
+    return std::move(create_table_query);
 }
 
 
