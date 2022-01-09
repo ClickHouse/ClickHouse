@@ -23,13 +23,16 @@ target_link_libraries(clickhouse_functions
         dbms
         metrohash
         murmurhash
-        blake3
 
     PRIVATE
         ${ZLIB_LIBRARIES}
         boost::filesystem
         divide_impl
 )
+
+if (USE_BLAKE3)
+    target_link_libraries(clickhouse_functions PUBLIC blake3)
+endif()
 
 if (OPENSSL_CRYPTO_LIBRARY)
     target_link_libraries(clickhouse_functions PUBLIC ${OPENSSL_CRYPTO_LIBRARY})
