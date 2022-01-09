@@ -797,9 +797,6 @@ std::set<String> PostgreSQLReplicationHandler::fetchTablesFromPublication(pqxx::
 PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
         pqxx::ReplicationTransaction & tx, const std::string & table_name) const
 {
-    if (!is_materialized_postgresql_database)
-        return nullptr;
-
     PostgreSQLTableStructure structure;
     try
     {
