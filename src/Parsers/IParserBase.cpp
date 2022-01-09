@@ -6,6 +6,9 @@ namespace DB
 
 bool IParserBase::parse(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    if (pos.no_backtrack_on_failure)
+        return false;
+
     expected.add(pos, getName());
 
     return wrapParseImpl(pos, IncreaseDepthTag{}, [&]
