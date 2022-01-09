@@ -1476,6 +1476,18 @@ class ClickHouseCluster:
 
             common_opts = ['--verbose', 'up', '-d']
 
+            images_pull_cmd = self.base_cmd + ['pull']
+            # sometimes dockerhub/proxy can be flaky
+            for i in range(5):
+                try:
+                    run_and_check(images_pull_cmd)
+                    break
+                except Exception as ex:
+                    if i == 4:
+                        raise ex
+                    logging.info("Got exception pulling images: %s", ex)
+                    time.sleep(i * 3)
+
             if self.with_zookeeper_secure and self.base_zookeeper_cmd:
                 logging.debug('Setup ZooKeeper Secure')
                 logging.debug(f'Creating internal ZooKeeper dirs: {self.zookeeper_dirs_to_create}')
@@ -2043,7 +2055,8 @@ class ClickHouseInstance:
                                                            user=user, password=password, database=database)
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
-    def http_query(self, sql, data=None, params=None, user=None, password=None, expect_fail_and_get_error=False):
+    def http_query(self, sql, data=None, params=None, user=None, password=None, expect_fail_and_get_error=False,
+                   port=8123, timeout=None, retry_strategy=None):
         logging.debug(f"Executing query {sql} on {self.name} via HTTP interface")
         if params is None:
             params = {}
@@ -2057,12 +2070,19 @@ class ClickHouseInstance:
             auth = requests.auth.HTTPBasicAuth(user, password)
         elif user:
             auth = requests.auth.HTTPBasicAuth(user, '')
-        url = "http://" + self.ip_address + ":8123/?" + urllib.parse.urlencode(params)
+        url = f"http://{self.ip_address}:{port}/?" + urllib.parse.urlencode(params)
 
-        if data:
-            r = requests.post(url, data, auth=auth)
+        if retry_strategy is None:
+            requester = requests
         else:
-            r = requests.get(url, auth=auth)
+            adapter = requests.adapters.HTTPAdapter(max_retries=retry_strategy)
+            requester = requests.Session()
+            requester.mount("https://", adapter)
+            requester.mount("http://", adapter)
+        if data:
+            r = requester.post(url, data, auth=auth, timeout=timeout)
+        else:
+            r = requester.get(url, auth=auth, timeout=timeout)
 
         def http_code_and_message():
             code = r.status_code
@@ -2236,7 +2256,7 @@ class ClickHouseInstance:
         logging.debug('{} log line(s) matching "{}" appeared in a {:.3f} seconds'.format(repetitions, regexp, wait_duration))
         return wait_duration
 
-    def file_exists(self, path):
+    def path_exists(self, path):
         return self.exec_in_container(
             ["bash", "-c", "echo $(if [ -e '{}' ]; then echo 'yes'; else echo 'no'; fi)".format(path)]) == 'yes\n'
 
@@ -2673,6 +2693,20 @@ class ClickHouseInstance:
     def destroy_dir(self):
         if p.exists(self.path):
             shutil.rmtree(self.path)
+
+    def wait_for_path_exists(self, path, seconds):
+        while seconds > 0:
+            seconds -= 1
+            if self.path_exists(path):
+                return
+            time.sleep(1)
+
+    def get_backuped_s3_objects(self, disk, backup_name):
+        path = f'/var/lib/clickhouse/disks/{disk}/shadow/{backup_name}/store'
+        self.wait_for_path_exists(path, 10)
+        command = ['find', path, '-type', 'f',
+            '-exec', 'grep', '-o', 'r[01]\\{64\\}-file-[[:lower:]]\\{32\\}', '{}', ';']
+        return self.exec_in_container(command).split('\n')
 
 
 class ClickHouseKiller(object):

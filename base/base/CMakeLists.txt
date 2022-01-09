@@ -1,8 +1,6 @@
 set (SRCS
     argsToConfig.cpp
     coverage.cpp
-    DateLUT.cpp
-    DateLUTImpl.cpp
     demangle.cpp
     getFQDNOrHostName.cpp
     getMemoryAmount.cpp
@@ -18,7 +16,6 @@ set (SRCS
     sleep.cpp
     terminalColors.cpp
     errnoToString.cpp
-    getResource.cpp
     StringRef.cpp
 )
 

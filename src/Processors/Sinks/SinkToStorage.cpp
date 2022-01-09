@@ -6,7 +6,7 @@ namespace DB
 
 SinkToStorage::SinkToStorage(const Block & header) : ExceptionKeepingTransform(header, header, false) {}
 
-void SinkToStorage::transform(Chunk & chunk)
+void SinkToStorage::onConsume(Chunk chunk)
 {
     /** Throw an exception if the sizes of arrays - elements of nested data structures doesn't match.
       * We have to make this assertion before writing to table, because storage engine may assume that they have equal sizes.
@@ -16,8 +16,16 @@ void SinkToStorage::transform(Chunk & chunk)
     Nested::validateArraySizes(getHeader().cloneWithColumns(chunk.getColumns()));
 
     consume(chunk.clone());
-    if (lastBlockIsDuplicate())
-        chunk.clear();
+    if (!lastBlockIsDuplicate())
+        cur_chunk = std::move(chunk);
+}
+
+SinkToStorage::GenerateResult SinkToStorage::onGenerate()
+{
+    GenerateResult res;
+    res.chunk = std::move(cur_chunk);
+    res.is_done = true;
+    return res;
 }
 
 }

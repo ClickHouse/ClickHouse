@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import json
 import os
-import urllib
 
 import requests
 from unidiff import PatchSet
@@ -42,8 +41,16 @@ class PRInfo:
                 github_event = {'commits': 1, 'after': 'HEAD', 'ref': None}
         self.event = github_event
         self.changed_files = set([])
+
+        # workflow completed event, used for PRs only
+        if 'action' in github_event and github_event['action'] == 'completed':
+            self.sha = github_event['workflow_run']['head_sha']
+            prs_for_sha = requests.get(f"https://api.github.com/repos/{GITHUB_REPOSITORY}/commits/{self.sha}/pulls").json()
+            if len(prs_for_sha) != 0:
+                github_event['pull_request'] = prs_for_sha[0]
+
         if 'pull_request' in github_event:  # pull request and other similar events
-            self.number = github_event['number']
+            self.number = github_event['pull_request']['number']
             if 'after' in github_event:
                 self.sha = github_event['after']
             else:
@@ -111,21 +118,36 @@ class PRInfo:
                 else:
                     self.diff_url = pull_request['diff_url']
         else:
-            raise Exception("Cannot detect type of event")
+            print(json.dumps(github_event, sort_keys=True, indent=4))
+            self.sha = os.getenv("GITHUB_SHA")
+            self.number = 0
+            self.labels = {}
+            repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
+            self.task_url = f"{repo_prefix}/actions/runs/{GITHUB_RUN_ID or '0'}"
+            self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
+            self.repo_full_name = GITHUB_REPOSITORY
+            self.pr_html_url = f"{repo_prefix}/commits/master"
+            self.base_ref = "master"
+            self.base_name = self.repo_full_name
+            self.head_ref = "master"
+            self.head_name = self.repo_full_name
+
         if need_changed_files:
             self.fetch_changed_files()
 
     def fetch_changed_files(self):
+        if not self.diff_url:
+            raise Exception("Diff URL cannot be find for event")
+
+        response = requests.get(self.diff_url)
+        response.raise_for_status()
         if 'commits' in self.event and self.number == 0:
-            response = requests.get(self.diff_url)
-            response.raise_for_status()
             diff = response.json()
 
             if 'files' in diff:
                 self.changed_files = [f['filename'] for f in diff['files']]
         else:
-            diff = urllib.request.urlopen(self.diff_url)
-            diff_object = PatchSet(diff, diff.headers.get_charsets()[0])
+            diff_object = PatchSet(response.text)
             self.changed_files = {f.path for f in diff_object}
 
     def get_dict(self):

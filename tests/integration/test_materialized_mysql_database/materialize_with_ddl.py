@@ -1066,10 +1066,19 @@ def table_overrides(clickhouse_node, mysql_node, service_name):
         mysql_node.query("COMMIT")
     clickhouse_node.query(f"""
         CREATE DATABASE table_overrides ENGINE=MaterializeMySQL('{service_name}:3306', 'table_overrides', 'root', 'clickhouse')
-        TABLE OVERRIDE t1 (COLUMNS (sensor_id UInt64))
+        TABLE OVERRIDE t1 (COLUMNS (sensor_id UInt64, temp_f Nullable(Float32) ALIAS if(isNull(temperature), NULL, (temperature * 9 / 5) + 32)))
     """)
+    check_query(
+        clickhouse_node,
+        "SELECT type FROM system.columns WHERE database = 'table_overrides' AND table = 't1' AND name = 'sensor_id'",
+        "UInt64\n")
+    check_query(
+        clickhouse_node,
+        "SELECT type, default_kind FROM system.columns WHERE database = 'table_overrides' AND table = 't1' AND name = 'temp_f'",
+        "Nullable(Float32)\tALIAS\n")
     check_query(clickhouse_node, "SELECT count() FROM table_overrides.t1", "1000\n")
-    check_query(clickhouse_node, "SELECT type FROM system.columns WHERE database = 'table_overrides' AND table = 't1' AND name = 'sensor_id'", "UInt64\n")
+    mysql_node.query("INSERT INTO table_overrides.t1 VALUES(1001, '2021-10-01 00:00:00', 42.0)")
+    check_query(clickhouse_node, "SELECT count() FROM table_overrides.t1", "1001\n")
     clickhouse_node.query("DROP DATABASE IF EXISTS table_overrides")
     mysql_node.query("DROP DATABASE IF EXISTS table_overrides")
 

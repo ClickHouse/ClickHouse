@@ -18,7 +18,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
-#include <base/getResource.h>
+#include <Common/getResource.h>
 #include <base/errnoToString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
