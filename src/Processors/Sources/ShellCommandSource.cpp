@@ -1,6 +1,6 @@
 #include <Processors/Sources/ShellCommandSource.h>
 
-#include <sys/poll.h>
+#include <poll.h>
 
 #include <Common/Stopwatch.h>
 
