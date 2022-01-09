@@ -19,6 +19,8 @@
 #include <Storages/MySQL/MySQLSettings.h>
 #endif
 
+#include <re2/re2.h>
+
 namespace DB
 {
 
@@ -28,6 +30,13 @@ namespace ErrorCodes
 }
 
 IMPLEMENT_SETTINGS_TRAITS(EmptySettingsTraits, EMPTY_SETTINGS)
+
+static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
+    "host", "port", "user", "password", "db",
+    "database", "table", "schema", "replica",
+    "update_field", "update_tag", "invalidate_query", "query",
+    "where", "name", "secure", "uri", "collection"};
+
 
 String ExternalDataSourceConfiguration::toString() const
 {
@@ -177,10 +186,23 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
     return std::nullopt;
 }
 
+static void validateConfigKeys(
+    const Poco::Util::AbstractConfiguration & dict_config, const String & config_prefix, HasConfigKeyFunc has_config_key_func)
+{
+    Poco::Util::AbstractConfiguration::Keys config_keys;
+    dict_config.keys(config_prefix, config_keys);
+    for (const auto & config_key : config_keys)
+    {
+        if (!has_config_key_func(config_key))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected key `{}` in dictionary source configuration", config_key);
+    }
+}
 
 std::optional<ExternalDataSourceConfiguration> getExternalDataSourceConfiguration(
-    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context)
+    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix,
+    ContextPtr context, HasConfigKeyFunc has_config_key)
 {
+    validateConfigKeys(dict_config, dict_config_prefix, has_config_key);
     ExternalDataSourceConfiguration configuration;
 
     auto collection_name = dict_config.getString(dict_config_prefix + ".name", "");
@@ -188,6 +210,7 @@ std::optional<ExternalDataSourceConfiguration> getExternalDataSourceConfiguratio
     {
         const auto & config = context->getConfigRef();
         const auto & collection_prefix = fmt::format("named_collections.{}", collection_name);
+        validateConfigKeys(dict_config, collection_prefix, has_config_key);
 
         if (!config.has(collection_prefix))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection_name);
@@ -196,14 +219,15 @@ std::optional<ExternalDataSourceConfiguration> getExternalDataSourceConfiguratio
         configuration.port = dict_config.getInt(dict_config_prefix + ".port", config.getUInt(collection_prefix + ".port", 0));
         configuration.username = dict_config.getString(dict_config_prefix + ".user", config.getString(collection_prefix + ".user", ""));
         configuration.password = dict_config.getString(dict_config_prefix + ".password", config.getString(collection_prefix + ".password", ""));
-        configuration.database = dict_config.getString(dict_config_prefix + ".db", config.getString(collection_prefix + ".database", ""));
+        configuration.database = dict_config.getString(dict_config_prefix + ".db", config.getString(dict_config_prefix + ".database",
+            config.getString(collection_prefix + ".db", config.getString(collection_prefix + ".database", ""))));
         configuration.table = dict_config.getString(dict_config_prefix + ".table", config.getString(collection_prefix + ".table", ""));
         configuration.schema = dict_config.getString(dict_config_prefix + ".schema", config.getString(collection_prefix + ".schema", ""));
 
         if (configuration.host.empty() || configuration.port == 0 || configuration.username.empty() || configuration.table.empty())
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Named collection of connection parameters is missing some of the parameters and dictionary parameters are added");
+                            "Named collection of connection parameters is missing some of the parameters and dictionary parameters are not added");
         }
         return configuration;
     }
@@ -212,11 +236,12 @@ std::optional<ExternalDataSourceConfiguration> getExternalDataSourceConfiguratio
 
 
 ExternalDataSourcesByPriority getExternalDataSourceConfigurationByPriority(
-    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context)
+    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context, HasConfigKeyFunc has_config_key)
 {
+    validateConfigKeys(dict_config, dict_config_prefix, has_config_key);
     ExternalDataSourceConfiguration common_configuration;
 
-    auto named_collection = getExternalDataSourceConfiguration(dict_config, dict_config_prefix, context);
+    auto named_collection = getExternalDataSourceConfiguration(dict_config, dict_config_prefix, context, has_config_key);
     if (named_collection)
     {
         common_configuration = *named_collection;
@@ -227,7 +252,7 @@ ExternalDataSourcesByPriority getExternalDataSourceConfigurationByPriority(
         common_configuration.port = dict_config.getUInt(dict_config_prefix + ".port", 0);
         common_configuration.username = dict_config.getString(dict_config_prefix + ".user", "");
         common_configuration.password = dict_config.getString(dict_config_prefix + ".password", "");
-        common_configuration.database = dict_config.getString(dict_config_prefix + ".db", "");
+        common_configuration.database = dict_config.getString(dict_config_prefix + ".db", dict_config.getString(dict_config_prefix + ".database", ""));
         common_configuration.table = dict_config.getString(fmt::format("{}.table", dict_config_prefix), "");
         common_configuration.schema = dict_config.getString(fmt::format("{}.schema", dict_config_prefix), "");
     }
@@ -251,8 +276,9 @@ ExternalDataSourcesByPriority getExternalDataSourceConfigurationByPriority(
             {
                 ExternalDataSourceConfiguration replica_configuration(common_configuration);
                 String replica_name = dict_config_prefix + "." + config_key;
-                size_t priority = dict_config.getInt(replica_name + ".priority", 0);
+                validateConfigKeys(dict_config, replica_name, has_config_key);
 
+                size_t priority = dict_config.getInt(replica_name + ".priority", 0);
                 replica_configuration.host = dict_config.getString(replica_name + ".host", common_configuration.host);
                 replica_configuration.port = dict_config.getUInt(replica_name + ".port", common_configuration.port);
                 replica_configuration.username = dict_config.getString(replica_name + ".user", common_configuration.username);

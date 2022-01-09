@@ -23,6 +23,8 @@ void registerFunctionsConcat(FunctionFactory &);
 void registerFunctionFormat(FunctionFactory &);
 void registerFunctionFormatRow(FunctionFactory &);
 void registerFunctionSubstring(FunctionFactory &);
+void registerFunctionLeft(FunctionFactory &);
+void registerFunctionRight(FunctionFactory &);
 void registerFunctionCRC(FunctionFactory &);
 void registerFunctionAppendTrailingCharIfAbsent(FunctionFactory &);
 void registerFunctionStartsWith(FunctionFactory &);
@@ -74,6 +76,8 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionFormat(factory);
     registerFunctionFormatRow(factory);
     registerFunctionSubstring(factory);
+    registerFunctionLeft(factory);
+    registerFunctionRight(factory);
     registerFunctionAppendTrailingCharIfAbsent(factory);
     registerFunctionStartsWith(factory);
     registerFunctionEndsWith(factory);

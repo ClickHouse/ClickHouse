@@ -361,6 +361,8 @@ protected:
   * Or:
   * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name [UUID 'uuid'] [ON CLUSTER cluster] AS ENGINE = engine SELECT ...
   *
+  * Or (for engines that supports schema inference):
+  * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name [UUID 'uuid'] [ON CLUSTER cluster] ENGINE = engine
   */
 class ParserCreateTableQuery : public IParserBase
 {

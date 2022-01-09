@@ -358,6 +358,11 @@ struct UTF8StringSource : public StringSource
         return pos;
     }
 
+    size_t getElementSize() const
+    {
+        return UTF8::countCodePoints(&elements[prev_offset], StringSource::getElementSize());
+    }
+
     Slice getSliceFromLeft(size_t offset) const
     {
         const auto * begin = &elements[prev_offset];
