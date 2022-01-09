@@ -1,15 +1,20 @@
-#include "DiskLocal.h"
-#include <Common/createHardLink.h>
-#include "DiskFactory.h"
+#include <Disks/DiskLocal.h>
 
+#include <Disks/DiskFactory.h>
+#include <Disks/DiskMemory.h>
+#include <Disks/DiskRestartProxy.h>
 #include <Disks/LocalDirectorySyncGuard.h>
+#include <IO/createReadBufferFromFileBase.h>
 #include <Interpreters/Context.h>
+#include <Common/createHardLink.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/quoteString.h>
-#include <IO/createReadBufferFromFileBase.h>
+#include <Common/randomSeed.h>
+#include <base/logger_useful.h>
 
 #include <fstream>
 #include <unistd.h>
+#include <sys/stat.h>
 
 
 namespace CurrentMetrics
@@ -19,12 +24,10 @@ namespace CurrentMetrics
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
-    extern const int PATH_ACCESS_DENIED;
     extern const int INCORRECT_DISK_INDEX;
     extern const int CANNOT_TRUNCATE_FILE;
     extern const int CANNOT_UNLINK;
@@ -59,9 +62,6 @@ static void loadDiskLocalConfig(const String & name,
         if (path.back() != '/')
             throw Exception("Disk path must end with /. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
     }
-
-    if (!FS::canRead(path) || !FS::canWrite(path))
-        throw Exception("There is no RW access to the disk " + name + " (" + path + ")", ErrorCodes::PATH_ACCESS_DENIED);
 
     bool has_space_ratio = config.has(config_prefix + ".keep_free_space_ratio");
 
@@ -112,13 +112,50 @@ public:
 
     UInt64 getSize() const override { return size; }
 
-    DiskPtr getDisk(size_t i) const override;
+    DiskPtr getDisk(size_t i) const override
+    {
+        if (i != 0)
+        {
+            throw Exception("Can't use i != 0 with single disk reservation", ErrorCodes::INCORRECT_DISK_INDEX);
+        }
+        return disk;
+    }
 
     Disks getDisks() const override { return {disk}; }
 
-    void update(UInt64 new_size) override;
+    void update(UInt64 new_size) override
+    {
+        std::lock_guard lock(DiskLocal::reservation_mutex);
+        disk->reserved_bytes -= size;
+        size = new_size;
+        disk->reserved_bytes += size;
+    }
 
-    ~DiskLocalReservation() override;
+    ~DiskLocalReservation() override
+    {
+        try
+        {
+            std::lock_guard lock(DiskLocal::reservation_mutex);
+            if (disk->reserved_bytes < size)
+            {
+                disk->reserved_bytes = 0;
+                LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservations size for disk '{}'.", disk->getName());
+            }
+            else
+            {
+                disk->reserved_bytes -= size;
+            }
+
+            if (disk->reservation_count == 0)
+                LOG_ERROR(&Poco::Logger::get("DiskLocal"), "Unbalanced reservation count for disk '{}'.", disk->getName());
+            else
+                --disk->reservation_count;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
 
 private:
     DiskLocalPtr disk;
@@ -187,7 +224,7 @@ bool DiskLocal::tryReserve(UInt64 bytes)
     return false;
 }
 
-UInt64 DiskLocal::getTotalSpace() const
+static UInt64 getTotalSpaceByName(const String & name, const String & disk_path, UInt64 keep_free_space_bytes)
 {
     struct statvfs fs;
     if (name == "default") /// for default disk we get space from path/data/
@@ -200,8 +237,17 @@ UInt64 DiskLocal::getTotalSpace() const
     return total_size - keep_free_space_bytes;
 }
 
+UInt64 DiskLocal::getTotalSpace() const
+{
+    if (broken)
+        return 0;
+    return getTotalSpaceByName(name, disk_path, keep_free_space_bytes);
+}
+
 UInt64 DiskLocal::getAvailableSpace() const
 {
+    if (broken)
+        return 0;
     /// we use f_bavail, because part of b_free space is
     /// available for superuser only and for system purposes
     struct statvfs fs;
@@ -267,7 +313,7 @@ void DiskLocal::moveDirectory(const String & from_path, const String & to_path)
 DiskDirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path)
 {
     fs::path meta_path = fs::path(disk_path) / path;
-    if (fs::exists(meta_path) && fs::is_directory(meta_path))
+    if (!broken && fs::exists(meta_path) && fs::is_directory(meta_path))
         return std::make_unique<DiskLocalDirectoryIterator>(disk_path, path);
     else
         return std::make_unique<DiskLocalDirectoryIterator>();
@@ -292,8 +338,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path,
     return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, read_hint, file_size);
 }
 
-std::unique_ptr<WriteBufferFromFileBase>
-DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode)
+std::unique_ptr<WriteBufferFromFileBase> DiskLocal::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
     int flags = (mode == WriteMode::Append) ? (O_APPEND | O_CREAT | O_WRONLY) : -1;
     return std::make_unique<WriteBufferFromFile>(fs::path(disk_path) / path, buf_size, flags);
@@ -393,7 +438,6 @@ SyncGuardPtr DiskLocal::getDirectorySyncGuard(const String & path) const
     return std::make_unique<LocalDirectorySyncGuard>(fs::path(disk_path) / path);
 }
 
-
 void DiskLocal::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap &)
 {
     String new_disk_path;
@@ -408,49 +452,139 @@ void DiskLocal::applyNewSettings(const Poco::Util::AbstractConfiguration & confi
         keep_free_space_bytes = new_keep_free_space_bytes;
 }
 
-DiskPtr DiskLocalReservation::getDisk(size_t i) const
-{
-    if (i != 0)
-    {
-        throw Exception("Can't use i != 0 with single disk reservation", ErrorCodes::INCORRECT_DISK_INDEX);
-    }
-    return disk;
-}
-
-void DiskLocalReservation::update(UInt64 new_size)
-{
-    std::lock_guard lock(DiskLocal::reservation_mutex);
-    disk->reserved_bytes -= size;
-    size = new_size;
-    disk->reserved_bytes += size;
-}
-
-DiskLocalReservation::~DiskLocalReservation()
+bool DiskLocal::setupAndCheck()
 {
     try
     {
-        std::lock_guard lock(DiskLocal::reservation_mutex);
-        if (disk->reserved_bytes < size)
-        {
-            disk->reserved_bytes = 0;
-            LOG_ERROR(disk->log, "Unbalanced reservations size for disk '{}'.", disk->getName());
-        }
-        else
-        {
-            disk->reserved_bytes -= size;
-        }
-
-        if (disk->reservation_count == 0)
-            LOG_ERROR(disk->log, "Unbalanced reservation count for disk '{}'.", disk->getName());
-        else
-            --disk->reservation_count;
+        fs::create_directories(disk_path);
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        LOG_WARNING(logger, "Cannot create the directory of disk {} ({}).", name, disk_path);
+        return false;
+    }
+
+    try
+    {
+        if (!FS::canRead(disk_path) || !FS::canWrite(disk_path))
+        {
+            LOG_WARNING(logger, "There is no RW access to disk {} ({}).", name, disk_path);
+            return false;
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException("DiskLocal");
+        return false;
+    }
+
+    String file_path = disk_path + ".check";
+    const char * fpath = file_path.c_str();
+    char errmsg[64];
+    if (::access(fpath, F_OK) == 0)
+    {
+        if (::remove(fpath) != 0)
+        {
+            LOG_WARNING(logger, "Fail to delete test file. path = {}, errno = {}, err = {}.", fpath, errno, strerror_r(errno, errmsg, 64));
+            return false;
+        }
+    }
+    else
+    {
+        if (errno != ENOENT)
+        {
+            LOG_WARNING(logger, "Fail to access test file. path = {}, errno = {}, err = {}.", fpath, errno, strerror_r(errno, errmsg, 64));
+            return false;
+        }
+    }
+    int fd;
+    if ((fd = ::open(fpath, O_RDWR | O_CREAT | O_SYNC, S_IRUSR | S_IWUSR)) < 0)
+    {
+        LOG_WARNING(logger, "Fail to create test file. path={}.", fpath);
+        return false;
+    }
+
+    bool read_write_ok = true;
+    if (disk_checker)
+    {
+        auto rw_test = [fd](char * buf, auto && func)
+        {
+            char * ptr = buf;
+            auto buf_size = DiskLocalCheckThread::BUF_SIZE;
+            size_t offset = 0;
+            while (buf_size > 0)
+            {
+                ssize_t size = func(fd, ptr, buf_size, offset);
+                if (size <= 0)
+                {
+                    if (errno != ENOSPC)
+                        return false;
+                }
+                buf_size -= size;
+                ptr += size;
+                offset += size;
+            }
+            return true;
+        };
+
+        if (!rw_test(disk_checker->wbuf, ::pwrite))
+        {
+            LOG_WARNING(logger, "Fail to write test file. [file_name={}, err={}].", fpath, strerror_r(errno, errmsg, 64));
+            read_write_ok = false;
+        }
+        else if (!rw_test(disk_checker->rbuf, ::pread))
+        {
+            LOG_WARNING(logger, "Fail to read test file. [file_name={}, err={}].", fpath, strerror_r(errno, errmsg, 64));
+            read_write_ok = false;
+        }
+        else if (memcmp(disk_checker->wbuf, disk_checker->rbuf, DiskLocalCheckThread::BUF_SIZE) != 0)
+        {
+            LOG_WARNING(logger, "Inconsistent read and write over test file, [file_name = {}].", fpath);
+            read_write_ok = false;
+        }
+    }
+    if (::close(fd) != 0)
+    {
+        LOG_WARNING(logger, "Fail to close test file. [file_name={}].", fpath);
+        return false;
+    }
+    if (::remove(fpath) != 0)
+    {
+        LOG_WARNING(logger, "Fail to delete test file. [err={}, path={}].", strerror_r(errno, errmsg, 64), fpath);
+        return false;
+    }
+    return read_write_ok;
+}
+
+DiskLocal::DiskLocal(const String & name_, const String & path_, UInt64 keep_free_space_bytes_)
+    : name(name_), disk_path(path_), keep_free_space_bytes(keep_free_space_bytes_), logger(&Poco::Logger::get("DiskLocal"))
+{
+}
+
+DiskLocal::DiskLocal(
+    const String & name_, const String & path_, UInt64 keep_free_space_bytes_, ContextPtr context, UInt64 local_disk_check_period_ms)
+    : DiskLocal(name_, path_, keep_free_space_bytes_)
+{
+    if (local_disk_check_period_ms > 0)
+    {
+        disk_checker = std::make_unique<DiskLocalCheckThread>(this, context, local_disk_check_period_ms);
+        pcg64_fast rng(randomSeed());
+        std::generate_n(disk_checker->wbuf, DiskLocalCheckThread::BUF_SIZE, std::ref(rng));
     }
 }
 
+void DiskLocal::startup()
+{
+    broken = !setupAndCheck();
+    if (disk_checker)
+        disk_checker->startup();
+}
+
+void DiskLocal::shutdown()
+{
+    if (disk_checker)
+        disk_checker->shutdown();
+}
 
 void registerDiskLocal(DiskFactory & factory)
 {
@@ -458,11 +592,15 @@ void registerDiskLocal(DiskFactory & factory)
                       const Poco::Util::AbstractConfiguration & config,
                       const String & config_prefix,
                       ContextPtr context,
-                      const DisksMap & /*map*/) -> DiskPtr {
+                      const DisksMap & /*map*/) -> DiskPtr
+    {
         String path;
         UInt64 keep_free_space_bytes;
         loadDiskLocalConfig(name, config, config_prefix, context, path, keep_free_space_bytes);
-        return std::make_shared<DiskLocal>(name, path, keep_free_space_bytes);
+        std::shared_ptr<IDisk> disk
+            = std::make_shared<DiskLocal>(name, path, keep_free_space_bytes, context, config.getUInt("local_disk_check_period_ms", 0));
+        disk->startup();
+        return std::make_shared<DiskRestartProxy>(disk);
     };
     factory.registerDiskType("local", creator);
 }

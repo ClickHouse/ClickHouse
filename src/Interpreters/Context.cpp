@@ -344,14 +344,12 @@ struct ContextSharedPart
         {
             auto lock = std::lock_guard(mutex);
 
-        /** Compiled expressions stored in cache need to be destroyed before destruction of static objects.
-          * Because CHJIT instance can be static object.
-          */
+            /// Compiled expressions stored in cache need to be destroyed before destruction of static objects.
+            /// Because CHJIT instance can be static object.
 #if USE_EMBEDDED_COMPILER
             if (auto * cache = CompiledExpressionCacheFactory::instance().tryGetCache())
                 cache->reset();
 #endif
-
             /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
             /// TODO: Get rid of this.
 
@@ -564,7 +562,7 @@ void Context::setPath(const String & path)
         shared->user_scripts_path = shared->path + "user_scripts/";
 }
 
-VolumePtr Context::setTemporaryStorage(const String & path, const String & policy_name)
+VolumePtr Context::setTemporaryStorage(const Poco::Util::AbstractConfiguration & config, const String & path, const String & policy_name)
 {
     std::lock_guard lock(shared->storage_policies_mutex);
 
@@ -574,7 +572,8 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
         if (!shared->tmp_path.ends_with('/'))
             shared->tmp_path += '/';
 
-        auto disk = std::make_shared<DiskLocal>("_tmp_default", shared->tmp_path, 0);
+        auto disk = std::make_shared<DiskLocal>(
+            "_tmp_default", shared->tmp_path, 0, getGlobalContext(), config.getUInt("local_disk_check_period_ms", 0));
         shared->tmp_volume = std::make_shared<SingleDiskVolume>("_tmp_default", disk, 0);
     }
     else
@@ -2647,6 +2646,19 @@ void Context::shutdown()
         {
             LOG_INFO(shared->log, "Shutdown disk {}", disk_name);
             disk->shutdown();
+        }
+    }
+
+    // Special volumes might also use disks that require shutdown.
+    for (const auto & volume : {shared->tmp_volume, shared->backups_volume})
+    {
+        if (volume)
+        {
+            auto & disks = volume->getDisks();
+            for (auto & disk : disks)
+            {
+                disk->shutdown();
+            }
         }
     }
 

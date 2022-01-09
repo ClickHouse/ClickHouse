@@ -1128,35 +1128,50 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     String from = getFullRelativePath();
     String to = fs::path(storage.relative_data_path) / (parent_part ? parent_part->relative_path : "") / new_relative_path / "";
 
-    if (!volume->getDisk()->exists(from))
-        throw Exception("Part directory " + fullPath(volume->getDisk(), from) + " doesn't exist. Most likely it is a logical error.", ErrorCodes::FILE_DOESNT_EXIST);
-
-    if (volume->getDisk()->exists(to))
+    try
     {
-        if (remove_new_dir_if_exists)
+        if (!volume->getDisk()->exists(from))
+            throw Exception("Part directory " + fullPath(volume->getDisk(), from) + " doesn't exist. Most likely it is a logical error.", ErrorCodes::FILE_DOESNT_EXIST);
+
+        if (volume->getDisk()->exists(to))
         {
-            Names files;
-            volume->getDisk()->listFiles(to, files);
+            if (remove_new_dir_if_exists)
+            {
+                Names files;
+                volume->getDisk()->listFiles(to, files);
 
-            LOG_WARNING(storage.log, "Part directory {} already exists and contains {} files. Removing it.", fullPath(volume->getDisk(), to), files.size());
+                LOG_WARNING(storage.log, "Part directory {} already exists and contains {} files. Removing it.", fullPath(volume->getDisk(), to), files.size());
 
-            volume->getDisk()->removeRecursive(to);
+                volume->getDisk()->removeRecursive(to);
+            }
+            else
+            {
+                throw Exception("Part directory " + fullPath(volume->getDisk(), to) + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+            }
+        }
+
+        volume->getDisk()->setLastModified(from, Poco::Timestamp::fromEpochTime(time(nullptr)));
+        volume->getDisk()->moveDirectory(from, to);
+        relative_path = new_relative_path;
+
+        SyncGuardPtr sync_guard;
+        if (storage.getSettings()->fsync_part_directory)
+            sync_guard = volume->getDisk()->getDirectorySyncGuard(to);
+
+        storage.lockSharedData(*this);
+    }
+    catch (...)
+    {
+        if (startsWith(new_relative_path, "detached/"))
+        {
+            // Don't throw when the destination is to the detached folder. It might be able to
+            // recover in some cases, such as fetching parts into multi-disks while some of the
+            // disks are broken.
+            tryLogCurrentException(__PRETTY_FUNCTION__);
         }
         else
-        {
-            throw Exception("Part directory " + fullPath(volume->getDisk(), to) + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
-        }
+            throw;
     }
-
-    volume->getDisk()->setLastModified(from, Poco::Timestamp::fromEpochTime(time(nullptr)));
-    volume->getDisk()->moveDirectory(from, to);
-    relative_path = new_relative_path;
-
-    SyncGuardPtr sync_guard;
-    if (storage.getSettings()->fsync_part_directory)
-        sync_guard = volume->getDisk()->getDirectorySyncGuard(to);
-
-    storage.lockSharedData(*this);
 }
 
 void IMergeTreeDataPart::cleanupOldName(const String & old_part_name) const

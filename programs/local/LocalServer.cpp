@@ -269,7 +269,7 @@ void LocalServer::tryInitPath()
 
     global_context->setPath(path);
 
-    global_context->setTemporaryStorage(path + "tmp");
+    global_context->setTemporaryStorage(config(), path + "tmp");
     global_context->setFlagsPath(path + "flags");
 
     global_context->setUserFilesPath(""); // user's files are everywhere
