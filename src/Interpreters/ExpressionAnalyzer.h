@@ -64,7 +64,6 @@ struct ExpressionAnalyzerData
 
     bool has_aggregation = false;
     NamesAndTypesList aggregation_keys;
-    NamesAndTypesLists aggregation_keys_list;
     bool has_const_aggregation_keys = false;
     AggregateDescriptions aggregate_descriptions;
 
@@ -94,8 +93,6 @@ private:
 
         explicit ExtractedSettings(const Settings & settings_);
     };
-
-    Poco::Logger * poco_log = &Poco::Logger::get("ExpressionAnalyzer");
 
 public:
     /// Ctor for non-select queries. Generally its usage is:
@@ -324,7 +321,6 @@ public:
 
     const NamesAndTypesList & aggregationKeys() const { return aggregation_keys; }
     bool hasConstAggregationKeys() const { return has_const_aggregation_keys; }
-    const NamesAndTypesLists & aggregationKeysList() const { return aggregation_keys_list; }
     const AggregateDescriptions & aggregates() const { return aggregate_descriptions; }
 
     const PreparedSets & getPreparedSets() const { return prepared_sets; }

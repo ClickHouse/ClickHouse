@@ -142,7 +142,9 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, ContextPt
             res_columns[i++]->insertDefault();
 
         if (dict_ptr)
+        {
             res_columns[i++]->insert(dict_ptr->getDictionaryComment());
+        }
         else
         {
             if (load_result.config && load_result.config->config->has("dictionary.comment"))
