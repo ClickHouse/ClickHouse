@@ -60,8 +60,11 @@ namespace
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_hindex = arguments[0].column.get();
-        const auto * col_resolution = arguments[1].column.get();
+        const auto * col_hindex = checkAndGetColumn<ColumnUInt64>(arguments[0].column.get());
+        const auto & data_hindex =  col_hindex->getData();
+
+        const auto * col_resolution = checkAndGetColumn<ColumnUInt8>(arguments[1].column.get());
+        const auto & data_resolution = col_resolution->getData();
 
         auto dst = ColumnVector<UInt64>::create();
         auto & dst_data = dst->getData();
@@ -69,16 +72,14 @@ namespace
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const UInt64 hindex = col_hindex->getUInt(row);
-            const UInt8 child_resolution = col_resolution->getUInt(row);
 
-            if (child_resolution > MAX_H3_RES)
+            if (data_resolution[row] > MAX_H3_RES)
                 throw Exception(
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                     "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
-                    toString(child_resolution), getName(), toString(MAX_H3_RES));
+                    toString(data_resolution[row]), getName(), toString(MAX_H3_RES));
 
-            UInt64  res = cellToCenterChild(hindex, child_resolution);
+            UInt64  res = cellToCenterChild(data_hindex[row], data_resolution[row]);
 
             dst_data[row] = res;
         }
