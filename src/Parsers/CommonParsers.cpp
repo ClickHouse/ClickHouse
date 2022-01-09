@@ -35,8 +35,6 @@ bool ParserKeyword::parseImpl(Pos & pos, [[maybe_unused]] ASTPtr & node, Expecte
         current_word = next_whitespace + 1;
     }
 
-    /// Avoid excessive backtracking.
-    pos.putBarrier();
     return true;
 }
 

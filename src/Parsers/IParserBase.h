@@ -31,11 +31,7 @@ public:
         bool res = func();
         pos.decreaseDepth();
         if (!res)
-        {
-            if (!(pos <= begin))
-                std::cerr << "Backtracked from " << pos->begin << " to " << begin->begin << "\n";
             pos = begin;
-        }
         return res;
     }
 

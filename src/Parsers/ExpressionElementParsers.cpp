@@ -688,6 +688,9 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     ++pos;
 
+    /// Avoid excessive backtracking.
+    pos.putBarrier();
+
     /// Special cases for expressions that look like functions but contain some syntax sugar:
 
     /// CAST, EXTRACT, POSITION, EXISTS
@@ -715,9 +718,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     String function_name = getIdentifierName(identifier);
     String function_name_lowercase = Poco::toLower(function_name);
 
-    pos.no_backtrack_if_failure = true;
-
-    bool parsed_special_function = false;
+    std::optional<bool> parsed_special_function;
 
     if (function_name_lowercase == "cast")
         parsed_special_function = parseCastAs(pos, node, expected);
@@ -745,8 +746,8 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || function_name_lowercase == "timestampdiff" || function_name_lowercase == "timestamp_diff")
         parsed_special_function = parseDateDiff(pos, node, expected);
 
-    if (parsed_special_function)
-        return ParserToken(TokenType::ClosingRoundBracket).ignore(pos);
+    if (parsed_special_function.has_value())
+        return parsed_special_function.value() && ParserToken(TokenType::ClosingRoundBracket).ignore(pos);
 
     auto pos_after_bracket = pos;
     auto old_expected = expected;
