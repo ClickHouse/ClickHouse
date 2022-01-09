@@ -50,4 +50,6 @@ private:
     LibraryStatePtr state;
 };
 
+using ClickHouseLibrarySourcePtr = std::shared_ptr<ClickHouseLibrarySource>;
+
 }

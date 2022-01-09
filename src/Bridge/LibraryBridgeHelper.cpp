@@ -254,12 +254,8 @@ bool LibraryBridgeHelper::executeRequest(const Poco::URI & uri, ReadWriteBufferF
 Pipe LibraryBridgeHelper::loadBase(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback)
 {
     auto read_settings = getContext()->getReadSettings();
-
     /// A reasonable amout, do not try more because reading from dictionaty source also has its own timeouts.
     read_settings.http_max_tries = MAX_TRIES;
-    /// For the same reason disable backoff while loop.
-    read_settings.http_retry_initial_backoff_ms = 0; /// Zero means disable.
-    read_settings.http_retry_max_backoff_ms = 1;
 
     Poco::Timespan http_keep_alive_timeout{config.getUInt("keep_alive_timeout", 20), 0};
 

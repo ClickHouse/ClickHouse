@@ -328,7 +328,5 @@ def test_long(ch_cluster): # test_long
         LIFETIME(2) ;
     ''')
 
-    for i in range(50):
-        result = instance.query('''select count() from (select dictGet(lib_dict_c, 'value1', toUInt64(number)) from numbers(10000000, 1200000)) settings max_threads=1;''')
-        print(result)
-        assert(int(result) == 1200000)
+    result = instance.query('''select count() from (select dictGet(lib_dict_c, 'value1', toUInt64(number)) from numbers(1000000));''')
+    assert(int(result) == 1000000)

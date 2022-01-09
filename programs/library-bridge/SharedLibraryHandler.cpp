@@ -94,7 +94,7 @@ bool SharedLibraryHandler::supportsSelectiveLoad()
 }
 
 
-std::shared_ptr<ClickHouseLibrarySource> SharedLibraryHandler::loadAll()
+ClickHouseLibrarySourcePtr SharedLibraryHandler::loadAll()
 {
     auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(attributes_names.size());
     ClickHouseLibrary::CStrings columns{static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), attributes_names.size()};
@@ -113,7 +113,7 @@ std::shared_ptr<ClickHouseLibrarySource> SharedLibraryHandler::loadAll()
 }
 
 
-std::shared_ptr<ClickHouseLibrarySource> SharedLibraryHandler::loadIds(const std::vector<uint64_t> & ids)
+ClickHouseLibrarySourcePtr SharedLibraryHandler::loadIds(const std::vector<uint64_t> & ids)
 {
     const ClickHouseLibrary::VectorUInt64 ids_data{bit_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(ids.data()), ids.size()};
 
@@ -132,7 +132,7 @@ std::shared_ptr<ClickHouseLibrarySource> SharedLibraryHandler::loadIds(const std
 }
 
 
-std::shared_ptr<ClickHouseLibrarySource> SharedLibraryHandler::loadKeys(const Columns & key_columns)
+ClickHouseLibrarySourcePtr SharedLibraryHandler::loadKeys(const Columns & key_columns)
 {
     auto holder = std::make_unique<ClickHouseLibrary::Row[]>(key_columns.size());
     std::vector<std::unique_ptr<ClickHouseLibrary::Field[]>> column_data_holders;

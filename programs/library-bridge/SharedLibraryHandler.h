@@ -9,6 +9,7 @@ namespace DB
 {
 
 class ClickHouseLibrarySource;
+using ClickHouseLibrarySourcePtr = std::shared_ptr<ClickHouseLibrarySource>;
 
 /// A class that manages all operations with library dictionary.
 /// Every library dictionary source has its own object of this class, accessed by UUID.
@@ -29,11 +30,11 @@ public:
 
     ~SharedLibraryHandler();
 
-    std::shared_ptr<ClickHouseLibrarySource> loadAll();
+    ClickHouseLibrarySourcePtr loadAll();
 
-    std::shared_ptr<ClickHouseLibrarySource> loadIds(const std::vector<uint64_t> & ids);
+    ClickHouseLibrarySourcePtr loadIds(const std::vector<uint64_t> & ids);
 
-    std::shared_ptr<ClickHouseLibrarySource> loadKeys(const Columns & key_columns);
+    ClickHouseLibrarySourcePtr loadKeys(const Columns & key_columns);
 
     bool isModified();
 
@@ -42,8 +43,6 @@ public:
     const Block & getSampleBlock() { return sample_block; }
 
 private:
-    Block dataToBlock(const ClickHouseLibrary::RawClickHouseLibraryTable data);
-
     std::string library_path;
     const Block sample_block;
     size_t max_block_size;
