@@ -175,6 +175,7 @@ void PostgreSQLReplicationHandler::shutdown()
     startup_task->deactivate();
     consumer_task->deactivate();
     cleanup_task->deactivate();
+    consumer.reset(); /// Clear shared pointers to inner storages.
 }
 
 

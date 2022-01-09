@@ -183,7 +183,7 @@ CREATE TABLE bloom_filter_array_lc_null_types_test (
     fixed_string Array(LowCardinality(Nullable(FixedString(5)))),
     INDEX idx (i8, i16, i32, i64, u8, u16, u32, u64, f32, f64, date, date_time, str, fixed_string)
     TYPE bloom_filter GRANULARITY 1)
-ENGINE = MergeTree() ORDER BY order_key SETTINGS index_granularity = 6;
+ENGINE = MergeTree() ORDER BY order_key SETTINGS index_granularity = 6, allow_nullable_key = 1;
 
 INSERT INTO bloom_filter_array_lc_null_types_test
 SELECT groupArray(number) AS order_key,
