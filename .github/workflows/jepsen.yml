@@ -27,6 +27,8 @@ jobs:
           sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
       - name: Check out repository code
         uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
       - name: Jepsen Test
         run: |
           sudo rm -fr $TEMP_PATH

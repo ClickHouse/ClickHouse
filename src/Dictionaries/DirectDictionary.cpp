@@ -2,7 +2,6 @@
 
 #include <Core/Defines.h>
 #include <Common/HashTable/HashMap.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <Dictionaries/DictionaryFactory.h>

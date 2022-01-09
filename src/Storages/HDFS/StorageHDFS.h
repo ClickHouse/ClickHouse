@@ -31,9 +31,13 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/) override;
 
-    void truncate(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_, TableExclusiveLockHolder &) override;
+    void truncate(
+        const ASTPtr & query,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr local_context,
+        TableExclusiveLockHolder &) override;
 
     NamesAndTypesList getVirtuals() const override;
 
@@ -44,6 +48,12 @@ public:
     /// So we can create a header of only required columns in read method and ask
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
     bool isColumnOriented() const;
+
+    static ColumnsDescription getTableStructureFromData(
+        const String & format,
+        const String & uri,
+        const String & compression_method,
+        ContextPtr ctx);
 
 protected:
     friend class HDFSSource;
@@ -113,6 +123,8 @@ public:
     String getName() const override;
 
     Chunk generate() override;
+
+    void onCancel() override;
 
 private:
     StorageHDFSPtr storage;
