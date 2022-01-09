@@ -16,8 +16,8 @@ public:
     {
         Pos begin = pos;
         bool res = func();
-        if (!res && !pos.no_backtrack_if_failure)
-          pos = begin;
+        if (!res)
+            pos = begin;
         return res;
     }
 
@@ -30,8 +30,12 @@ public:
         pos.increaseDepth();
         bool res = func();
         pos.decreaseDepth();
-        if (!res && !pos.no_backtrack_if_failure)
-          pos = begin;
+        if (!res)
+        {
+            if (!(pos <= begin))
+                std::cerr << "Backtracked from " << pos->begin << " to " << begin->begin << "\n";
+            pos = begin;
+        }
         return res;
     }
 
