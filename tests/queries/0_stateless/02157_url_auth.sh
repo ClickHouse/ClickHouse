@@ -7,10 +7,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 # We should have correct env vars from shell_config.sh to run this test
-PORT=33339
-PID=$(lsof -i:${PORT} |awk '{print $2}'| tail -1)
-if [ -n "${PID}" ]; then
-    kill -9 "$PID"
+PORT=$((RANDOM%10000+20000))
+if [ -n "$(lsof -i:${PORT} |awk '{print $2}'| tail -1)" ]; then
+    PORT=$((RANDOM%10000+20000))
 fi
 
 python3 "$CURDIR/02157_url_auth.python" $PORT &
