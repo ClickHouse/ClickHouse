@@ -59,30 +59,10 @@ public:
     {
         uint32_t depth = 0;
         uint32_t max_depth = 0;
-        TokenIterator barrier;
 
-        Pos(Tokens & tokens_, uint32_t max_depth_) : TokenIterator(tokens_), max_depth(max_depth_), barrier(tokens_)
+        Pos(Tokens & tokens_, uint32_t max_depth_) : TokenIterator(tokens_), max_depth(max_depth_)
         {
         }
-
-        Pos & operator= (const Pos & rhs)
-        {
-            static_cast<TokenIterator &>(*this) = rhs;
-            depth = rhs.depth;
-            max_depth = rhs.max_depth;
-            if (barrier < rhs.barrier)
-                barrier = rhs.barrier;
-            return *this;
-        }
-
-        Pos & operator= (Pos && rhs)
-        {
-            *this = rhs;
-            return *this;
-        }
-
-        Pos(const Pos & rhs) = default;
-        Pos(Pos && rhs) = default;
 
         ALWAYS_INLINE void increaseDepth()
         {
@@ -98,19 +78,6 @@ public:
             if (unlikely(depth == 0))
                 throw Exception("Logical error in parser: incorrect calculation of parse depth", ErrorCodes::LOGICAL_ERROR);
             --depth;
-        }
-
-        /// Will set up a barrier to avoid excessive backtracking.
-        /// E.g. after keyword CAST has been parsed it does not make sense to try to parse other alternatives.
-        void putBarrier()
-        {
-            if (barrier < *this)
-                barrier = *this;
-        }
-
-        bool feasible() const
-        {
-            return barrier <= *this;
         }
     };
 
