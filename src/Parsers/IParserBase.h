@@ -16,7 +16,7 @@ public:
     {
         Pos begin = pos;
         bool res = func();
-        if (!res && !pos.no_backtrack_on_failure)
+        if (!res && !pos.no_backtrack_if_failure)
           pos = begin;
         return res;
     }
@@ -30,7 +30,7 @@ public:
         pos.increaseDepth();
         bool res = func();
         pos.decreaseDepth();
-        if (!res && !pos.no_backtrack_on_failure)
+        if (!res && !pos.no_backtrack_if_failure)
           pos = begin;
         return res;
     }

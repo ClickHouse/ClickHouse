@@ -59,7 +59,12 @@ public:
     {
         uint32_t depth = 0;
         uint32_t max_depth = 0;
-        bool no_backtrack_on_failure = false;
+
+        /// If the current parser return false, we shall no backtrack.
+        bool no_backtrack_if_failure = false;
+
+        /// Current parser returned false and we shall no backtrack.
+        bool failure_no_backtrack = false;
 
         Pos(Tokens & tokens_, uint32_t max_depth_) : TokenIterator(tokens_), max_depth(max_depth_) {}
 
@@ -77,11 +82,6 @@ public:
             if (unlikely(depth == 0))
                 throw Exception("Logical error in parser: incorrect calculation of parse depth", ErrorCodes::LOGICAL_ERROR);
             --depth;
-        }
-
-        void noBacktrackOnFailure()
-        {
-            no_backtrack_on_failure = true;
         }
     };
 

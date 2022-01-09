@@ -6,7 +6,7 @@ namespace DB
 
 bool IParserBase::parse(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (pos.no_backtrack_on_failure)
+    if (pos.failure_no_backtrack)
         return false;
 
     expected.add(pos, getName());
@@ -15,7 +15,12 @@ bool IParserBase::parse(Pos & pos, ASTPtr & node, Expected & expected)
     {
         bool res = parseImpl(pos, node, expected);
         if (!res)
+        {
             node = nullptr;
+            if (pos.no_backtrack_if_failure)
+                pos.failure_no_backtrack = true;
+        }
+        pos.no_backtrack_if_failure = false;
         return res;
     });
 }

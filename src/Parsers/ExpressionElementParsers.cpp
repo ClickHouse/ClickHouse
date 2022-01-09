@@ -308,12 +308,24 @@ protected:
         ASTPtr expr_node;
         ASTPtr type_node;
 
-        if (ParserExpression().parse(pos, expr_node, expected)
-            && ParserKeyword("AS").ignore(pos, expected)
-            && ParserDataType().parse(pos, type_node, expected))
+        if (ParserExpression().parse(pos, expr_node, expected))
         {
-            node = createFunctionCast(expr_node, type_node);
-            return true;
+            if (ParserKeyword("AS").ignore(pos, expected))
+            {
+                if (ParserDataType().parse(pos, type_node, expected))
+                {
+                    node = createFunctionCast(expr_node, type_node);
+                    return true;
+                }
+            }
+            else if (ParserToken(TokenType::Comma).ignore(pos, expected))
+            {
+                if (ParserExpression().parse(pos, type_node, expected))
+                {
+                    node = makeASTFunction("CAST", expr_node, type_node);
+                    return true;
+                }
+            }
         }
 
         return false;
@@ -528,7 +540,18 @@ protected:
 
         IntervalKind interval_kind;
         if (!parseIntervalKind(pos, expected, interval_kind))
-            return false;
+        {
+            ASTPtr expr_list;
+            if (!ParserExpressionList(false, false).parse(pos, expr_list, expected))
+                return false;
+
+            auto res = std::make_shared<ASTFunction>();
+            res->name = "extract";
+            res->arguments = expr_list;
+            res->children.push_back(res->arguments);
+            node = std::move(res);
+            return true;
+        }
 
         ParserKeyword s_from("FROM");
         if (!s_from.ignore(pos, expected))
@@ -549,21 +572,30 @@ protected:
     const char * getName() const override { return "POSITION expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
-        ParserExpression elem_parser;
-
-        ASTPtr in_expr;
-        if (!ParserExpression().parse(pos, in_expr, expected))
+        ASTPtr expr_list_node;
+        if (!ParserExpressionList(false, false).parse(pos, expr_list_node, expected))
             return false;
 
-        auto * in_func = in_expr->as<ASTFunction>();
-        if (!in_func || in_func->name != "in")
-            return false;
+        ASTExpressionList * expr_list = typeid_cast<ASTExpressionList *>(expr_list_node.get());
+        if (expr_list && expr_list->children.size() == 1)
+        {
+            ASTFunction * func_in = typeid_cast<ASTFunction *>(expr_list->children[0].get());
+            if (func_in && func_in->name == "in")
+            {
+                ASTExpressionList * in_args = typeid_cast<ASTExpressionList *>(func_in->arguments.get());
+                if (in_args && in_args->children.size() == 2)
+                {
+                    node = makeASTFunction("position", in_args->children[1], in_args->children[0]);
+                    return true;
+                }
+            }
+        }
 
-        auto & arg_list = in_func->arguments->as<ASTExpressionList &>();
-        if (arg_list.children.size() != 2)
-            return false;
-
-        node = makeASTFunction("position", arg_list.children[1], arg_list.children[0]);
+        auto res = std::make_shared<ASTFunction>();
+        res->name = "position";
+        res->arguments = expr_list_node;
+        res->children.push_back(res->arguments);
+        node = std::move(res);
         return true;
     }
 };
@@ -613,16 +645,16 @@ private:
         }
         else
         {
-            /// function(timestamp, INTERVAL offset unit)
-            if (!ParserExpression().parse(pos, timestamp_node, expected))
+            ASTPtr expr_list;
+            if (!ParserExpressionList(false, false).parse(pos, expr_list, expected))
                 return false;
 
-            if (pos->type != TokenType::Comma)
-                return false;
-            ++pos;
-
-            if (!ParserIntervalOperatorExpression{}.parse(pos, interval_func_node, expected))
-                return false;
+            auto res = std::make_shared<ASTFunction>();
+            res->name = function_name;
+            res->arguments = expr_list;
+            res->children.push_back(res->arguments);
+            node = std::move(res);
+            return true;
         }
 
         node = makeASTFunction(function_name, timestamp_node, interval_func_node);
@@ -642,7 +674,18 @@ protected:
 
         IntervalKind interval_kind;
         if (!parseIntervalKind(pos, expected, interval_kind))
-            return false;
+        {
+            ASTPtr expr_list;
+            if (!ParserExpressionList(false, false).parse(pos, expr_list, expected))
+                return false;
+
+            auto res = std::make_shared<ASTFunction>();
+            res->name = "dateDiff";
+            res->arguments = expr_list;
+            res->children.push_back(res->arguments);
+            node = std::move(res);
+            return true;
+        }
 
         if (pos->type != TokenType::Comma)
             return false;
@@ -708,13 +751,33 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ++pos;
 
     /// Special cases for expressions that look like functions but contain some syntax sugar:
+
     /// CAST, EXTRACT, POSITION, EXISTS
     /// DATE_ADD, DATEADD, TIMESTAMPADD, DATE_SUB, DATESUB, TIMESTAMPSUB,
     /// DATE_DIFF, DATEDIFF, TIMESTAMPDIFF, TIMESTAMP_DIFF,
-    /// SUBSTRING, TRIM, LEFT, RIGHT, POSITION
+    /// SUBSTRING, TRIM, LTRIM, RTRIM, POSITION
+
+    /// Can be parsed as a composition of functions, but the contents must be unwrapped:
+    /// POSITION(x IN y) -> POSITION(in(x, y)) -> POSITION(y, x)
+
+    /// Can be parsed as a function, but not always:
+    /// CAST(x AS type) - alias has to be unwrapped
+    /// CAST(x AS type(params))
+
+    /// Can be parsed as a function, but some identifier arguments have special meanings.
+    /// DATE_ADD(MINUTE, x, y) -> addMinutes(x, y)
+    /// DATE_DIFF(MINUTE, x, y)
+
+    /// Have keywords that have to processed explicitly:
+    /// EXTRACT(x FROM y)
+    /// TRIM(BOTH|LEADING|TRAILING x FROM y)
+    /// SUBSTRING(x FROM a)
+    /// SUBSTRING(x FROM a FOR b)
 
     String function_name = getIdentifierName(identifier);
     String function_name_lowercase = Poco::toLower(function_name);
+
+    pos.no_backtrack_if_failure = true;
 
     if (((function_name_lowercase == "cast" && ParserCastAsExpression().parse(pos, node, expected))
         || (function_name_lowercase == "extract" && ParserExtractExpression().parse(pos, node, expected))
@@ -754,10 +817,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         has_all = true;
 
     if (has_all && has_distinct)
-    {
-        pos.noBacktrackOnFailure();
         return false;
-    }
 
     if (has_all || has_distinct)
     {
@@ -775,17 +835,11 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     const char * contents_begin = pos->begin;
     if (!contents.parse(pos, expr_list_args, expected))
-    {
-        pos.noBacktrackOnFailure();
         return false;
-    }
     const char * contents_end = pos->begin;
 
     if (pos->type != TokenType::ClosingRoundBracket)
-    {
-        pos.noBacktrackOnFailure();
         return false;
-    }
     ++pos;
 
     /** Check for a common error case - often due to the complexity of quoting command-line arguments,
@@ -818,10 +872,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         /// Parametric aggregate functions cannot have DISTINCT in parameters list.
         if (has_distinct)
-        {
-            pos.noBacktrackOnFailure();
             return false;
-        }
 
         expr_list_params = expr_list_args;
         expr_list_args = nullptr;
@@ -839,10 +890,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             has_all = true;
 
         if (has_all && has_distinct)
-        {
-            pos.noBacktrackOnFailure();
             return false;
-        }
 
         if (has_all || has_distinct)
         {
@@ -856,16 +904,10 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
 
         if (!contents.parse(pos, expr_list_args, expected))
-        {
-            pos.noBacktrackOnFailure();
             return false;
-        }
 
         if (pos->type != TokenType::ClosingRoundBracket)
-        {
-            pos.noBacktrackOnFailure();
             return false;
-        }
         ++pos;
     }
 
@@ -898,10 +940,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         ParserFilterClause filter_parser;
         if (!filter_parser.parse(pos, function_node_as_iast, expected))
-        {
-            pos.noBacktrackOnFailure();
             return false;
-        }
     }
 
     if (over.ignore(pos, expected))
@@ -912,10 +951,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         ParserWindowReference window_reference;
         if (!window_reference.parse(pos, function_node_as_iast, expected))
-        {
-            pos.noBacktrackOnFailure();
             return false;
-        }
     }
 
     node = function_node;
