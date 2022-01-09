@@ -295,13 +295,7 @@ ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast)
 
 namespace
 {
-
-class ParserCastAsExpression : public IParserBase
-{
-protected:
-    const char * getName() const override { return "CAST AS expression"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    bool parseCastAs(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     {
         /// expr AS type
 
@@ -330,14 +324,8 @@ protected:
 
         return false;
     }
-};
 
-class ParserSubstringExpression : public IParserBase
-{
-protected:
-    const char * getName() const override { return "SUBSTRING expression"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    bool parseSubstring(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     {
         /// Either SUBSTRING(expr FROM start) or SUBSTRING(expr FROM start FOR length) or SUBSTRING(expr, start, length)
         /// The latter will be parsed normally as a function later.
@@ -386,22 +374,8 @@ protected:
 
         return true;
     }
-};
 
-class ParserTrimExpression : public IParserBase
-{
-public:
-    ParserTrimExpression(bool trim_left_, bool trim_right_)
-        : trim_left(trim_left_), trim_right(trim_right_)
-    {
-    }
-private:
-    bool trim_left = false;
-    bool trim_right = false;
-
-    const char * getName() const override { return "TRIM expression"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    bool parseTrim(bool trim_left, bool trim_right, IParser::Pos & pos, ASTPtr & node, Expected & expected)
     {
         /// Handles all possible TRIM/LTRIM/RTRIM call variants
 
@@ -528,13 +502,8 @@ private:
             node = makeASTFunction(func_name, expr_node);
         return true;
     }
-};
 
-class ParserExtractExpression : public IParserBase
-{
-protected:
-    const char * getName() const override { return "EXTRACT expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    bool parseExtract(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     {
         ASTPtr expr;
 
@@ -564,13 +533,8 @@ protected:
         node = makeASTFunction(interval_kind.toNameOfFunctionExtractTimePart(), expr);
         return true;
     }
-};
 
-class ParserPositionExpression : public IParserBase
-{
-protected:
-    const char * getName() const override { return "POSITION expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    bool parsePosition(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     {
         ASTPtr expr_list_node;
         if (!ParserExpressionList(false, false).parse(pos, expr_list_node, expected))
@@ -598,21 +562,8 @@ protected:
         node = std::move(res);
         return true;
     }
-};
 
-class ParserDateAddExpression : public IParserBase
-{
-public:
-    explicit ParserDateAddExpression(const char * function_name_)
-        : function_name(function_name_)
-    {
-    }
-private:
-    const char * function_name;
-
-    const char * getName() const override { return "DATE_ADD expression"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    bool parseDateAdd(const char * function_name, IParser::Pos & pos, ASTPtr & node, Expected & expected)
     {
         ASTPtr timestamp_node;
         ASTPtr offset_node;
@@ -660,14 +611,8 @@ private:
         node = makeASTFunction(function_name, timestamp_node, interval_func_node);
         return true;
     }
-};
 
-class ParserDateDiffExpression : public IParserBase
-{
-protected:
-    const char * getName() const override { return "DATE_DIFF expression"; }
-
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    bool parseDateDiff(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     {
         ASTPtr left_node;
         ASTPtr right_node;
@@ -704,13 +649,8 @@ protected:
         node = makeASTFunction("dateDiff", std::make_shared<ASTLiteral>(interval_kind.toDateDiffUnit()), left_node, right_node);
         return true;
     }
-};
 
-class ParserExistsExpression : public IParserBase
-{
-protected:
-    const char * getName() const override { return "EXISTS subquery"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    bool parseExists(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     {
         if (!ParserSelectWithUnionQuery().parse(pos, node, expected))
             return false;
@@ -720,8 +660,6 @@ protected:
         node = makeASTFunction("exists", subquery);
         return true;
     }
-};
-
 }
 
 
@@ -779,27 +717,36 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     pos.no_backtrack_if_failure = true;
 
-    if (((function_name_lowercase == "cast" && ParserCastAsExpression().parse(pos, node, expected))
-        || (function_name_lowercase == "extract" && ParserExtractExpression().parse(pos, node, expected))
-        || (function_name_lowercase == "substring" && ParserSubstringExpression().parse(pos, node, expected))
-        || (function_name_lowercase == "position" && ParserPositionExpression().parse(pos, node, expected))
-        || (function_name_lowercase == "exists" && ParserExistsExpression().parse(pos, node, expected))
-        || (function_name_lowercase == "trim" && ParserTrimExpression(false, false).parse(pos, node, expected))
-        || (function_name_lowercase == "ltrim" && ParserTrimExpression(true, false).parse(pos, node, expected))
-        || (function_name_lowercase == "rtrim" && ParserTrimExpression(false, true).parse(pos, node, expected))
-        || ((function_name_lowercase == "dateadd" || function_name_lowercase == "date_add"
-            || function_name_lowercase == "timestampadd" || function_name_lowercase == "timestamp_add")
-            && ParserDateAddExpression("plus").parse(pos, node, expected))
-        || ((function_name_lowercase == "datesub" || function_name_lowercase == "date_sub"
-            || function_name_lowercase == "timestampsub" || function_name_lowercase == "timestamp_sub")
-            && ParserDateAddExpression("minus").parse(pos, node, expected))
-        || ((function_name_lowercase == "datediff" || function_name_lowercase == "date_diff"
-            || function_name_lowercase == "timestampdiff" || function_name_lowercase == "timestamp_diff")
-            && ParserDateDiffExpression().parse(pos, node, expected)))
-        && ParserToken(TokenType::ClosingRoundBracket).ignore(pos))
-    {
-        return true;
-    }
+    bool parsed_special_function = false;
+
+    if (function_name_lowercase == "cast")
+        parsed_special_function = parseCastAs(pos, node, expected);
+    else if (function_name_lowercase == "extract")
+        parsed_special_function = parseExtract(pos, node, expected);
+    else if (function_name_lowercase == "substring")
+        parsed_special_function = parseSubstring(pos, node, expected);
+    else if (function_name_lowercase == "position")
+        parsed_special_function = parsePosition(pos, node, expected);
+    else if (function_name_lowercase == "exists")
+        parsed_special_function = parseExists(pos, node, expected);
+    else if (function_name_lowercase == "trim")
+        parsed_special_function = parseTrim(false, false, pos, node, expected);
+    else if (function_name_lowercase == "ltrim")
+        parsed_special_function = parseTrim(true, false, pos, node, expected);
+    else if (function_name_lowercase == "rtrim")
+        parsed_special_function = parseTrim(false, true, pos, node, expected);
+    else if (function_name_lowercase == "dateadd" || function_name_lowercase == "date_add"
+        || function_name_lowercase == "timestampadd" || function_name_lowercase == "timestamp_add")
+        parsed_special_function = parseDateAdd("plus", pos, node, expected);
+    else if (function_name_lowercase == "datesub" || function_name_lowercase == "date_sub"
+        || function_name_lowercase == "timestampsub" || function_name_lowercase == "timestamp_sub")
+        parsed_special_function = parseDateAdd("minus", pos, node, expected);
+    else if (function_name_lowercase == "datediff" || function_name_lowercase == "date_diff"
+        || function_name_lowercase == "timestampdiff" || function_name_lowercase == "timestamp_diff")
+        parsed_special_function = parseDateDiff(pos, node, expected);
+
+    if (parsed_special_function)
+        return ParserToken(TokenType::ClosingRoundBracket).ignore(pos);
 
     auto pos_after_bracket = pos;
     auto old_expected = expected;
