@@ -175,7 +175,6 @@ function clone_submodules
             contrib/NuRaft
             contrib/jemalloc
             contrib/replxx
-            contrib/BLAKE3
         )
 
         git submodule sync

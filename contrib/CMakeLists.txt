@@ -21,8 +21,6 @@ endif()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
 
-add_subdirectory (BLAKE3)
-
 add_subdirectory (abseil-cpp-cmake)
 add_subdirectory (magic-enum-cmake)
 add_subdirectory (boost-cmake)
@@ -39,6 +37,10 @@ add_subdirectory (murmurhash)
 add_subdirectory (replxx-cmake)
 add_subdirectory (unixodbc-cmake)
 add_subdirectory (nanodbc-cmake)
+
+if (USE_BLAKE3)
+    add_subdirectory(BLAKE3)
+endif()
 
 if (USE_INTERNAL_CAPNP_LIBRARY AND NOT MISSING_INTERNAL_CAPNP_LIBRARY)
     add_subdirectory(capnproto-cmake)

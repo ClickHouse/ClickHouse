@@ -9,7 +9,9 @@
 #include "config_functions.h"
 #include "config_core.h"
 
-#include <blake3.h>
+#if USE_BLAKE3
+#    include <blake3.h>
+#endif
 
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
@@ -596,7 +598,7 @@ struct ImplXxHash64
 
 #endif
 
-
+#if USE_BLAKE3
 struct ImplBLAKE3
 {
     static constexpr auto name = "BLAKE3";
@@ -610,6 +612,7 @@ struct ImplBLAKE3
         std::memcpy(out_char_data, as_bytes_shim(&res), OUT_LEN);
     }
 };
+#endif
 
 
 template <typename Impl>
@@ -1435,6 +1438,7 @@ using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
     using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
 #endif
 
-using FunctionBLAKE3 = FunctionStringHashFixedString<ImplBLAKE3>;
-
+#if USE_BLAKE3
+    using FunctionBLAKE3 = FunctionStringHashFixedString<ImplBLAKE3>;
+#endif
 }

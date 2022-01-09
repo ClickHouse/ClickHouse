@@ -32,7 +32,9 @@ RUN apt-get update -y \
             wget \
             mysql-client=5.7* \
             postgresql-client \
-            sqlite3
+            sqlite3 \
+            rustc \
+            cargo
 
 RUN pip3 install numpy scipy pandas Jinja2
 

@@ -42,6 +42,8 @@ void registerFunctionsHashing(FunctionFactory & factory)
     factory.registerFunction<FunctionXxHash64>();
 #endif
 
+#if USE_BLAKE3
     factory.registerFunction<FunctionBLAKE3>();
+#endif
 }
 }
