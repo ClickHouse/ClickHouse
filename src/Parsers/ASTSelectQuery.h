@@ -83,7 +83,6 @@ public:
     bool group_by_with_rollup = false;
     bool group_by_with_cube = false;
     bool group_by_with_constant_keys = false;
-    bool group_by_with_grouping_sets = false;
     bool limit_with_ties = false;
 
     ASTPtr & refSelect()    { return getExpression(Expression::SELECT); }
