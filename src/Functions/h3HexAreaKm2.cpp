@@ -52,7 +52,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_hindex = arguments[0].column.get();
+        const auto * column = checkAndGetColumn<ColumnUInt8>(arguments[0].column.get());
+        const auto & data = column->getData();
 
         auto dst = ColumnVector<Float64>::create();
         auto & dst_data = dst->getData();
@@ -60,15 +61,16 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const UInt64 resolution = col_hindex->getUInt(row);
+            const UInt64 resolution = data[row];
             if (resolution > MAX_H3_RES)
                 throw Exception(
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                     "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is ",
-                    resolution, getName(), MAX_H3_RES);
+                    resolution,
+                    getName(),
+                    MAX_H3_RES);
 
             Float64 res = getHexagonAreaAvgKm2(resolution);
-
             dst_data[row] = res;
         }
 
