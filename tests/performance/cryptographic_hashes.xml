@@ -15,6 +15,7 @@
            <values>
                <value>sipHash64</value>
                <value>sipHash128</value>
+               <value>BLAKE3</value>
            </values>
         </substitution>
         <substitution>
