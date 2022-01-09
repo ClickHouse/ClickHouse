@@ -988,25 +988,16 @@ class FunctionBinaryArithmetic : public IFunction
 
         static constexpr const bool left_is_decimal = is_decimal<T0>;
         static constexpr const bool right_is_decimal = is_decimal<T1>;
-        static constexpr const bool result_is_decimal = IsDataTypeDecimal<ResultDataType>;
 
         typename ColVecResult::MutablePtr col_res = nullptr;
 
-        const ResultDataType type = [&]
-        {
-            if constexpr (left_is_decimal && IsFloatingPoint<RightDataType>)
-                return DataTypeFloat64{};
-            else if constexpr (right_is_decimal && IsFloatingPoint<LeftDataType>)
-                return DataTypeFloat64{};
-            else
-                return decimalResultType<is_multiply, is_division>(left, right);
-        }();
+        const ResultDataType type = decimalResultType<is_multiply, is_division>(left, right);
 
         const ResultType scale_a = [&]
         {
             if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
                 return right.getScaleMultiplier(); // the division impl uses only the scale_a
-            else if constexpr (result_is_decimal)
+            else
             {
                 if constexpr (is_multiply)
                     // the decimal impl uses scales, but if the result is decimal, both of the arguments are decimal,
@@ -1017,37 +1008,14 @@ class FunctionBinaryArithmetic : public IFunction
                 else
                     return type.scaleFactorFor(left, false);
             }
-            else if constexpr (left_is_decimal)
-            {
-                if (col_left_const)
-                    // the column will be converted to native type later, no need to scale it twice.
-                    // the explicit type is needed to specify lambda return type
-                    return ResultType{1};
-
-                return 1 / DecimalUtils::convertTo<ResultType>(left.getScaleMultiplier(), 0);
-            }
-            else
-                return 1; // the default value which won't cause any re-scale
         }();
 
         const ResultType scale_b = [&]
         {
-            if constexpr (result_is_decimal)
-            {
                 if constexpr (is_multiply)
                     return ResultType{1};
                 else
                     return type.scaleFactorFor(right, is_division);
-            }
-            else if constexpr (right_is_decimal)
-            {
-                if (col_right_const)
-                    return ResultType{1};
-
-                return 1 / DecimalUtils::convertTo<ResultType>(right.getScaleMultiplier(), 0);
-            }
-            else
-                return 1;
         }();
 
         /// non-vector result
@@ -1058,20 +1026,15 @@ class FunctionBinaryArithmetic : public IFunction
 
             ResultType res = {};
             if (!right_nullmap || !(*right_nullmap)[0])
-                res = check_decimal_overflow ? OpImplCheck::template process<left_is_decimal, right_is_decimal>(const_a, const_b, scale_a, scale_b)
+                res = check_decimal_overflow
+                    ? OpImplCheck::template process<left_is_decimal, right_is_decimal>(const_a, const_b, scale_a, scale_b)
                     : OpImpl::template process<left_is_decimal, right_is_decimal>(const_a, const_b, scale_a, scale_b);
 
-            if constexpr (result_is_decimal)
-                return ResultDataType(type.getPrecision(), type.getScale()).createColumnConst(
-                    col_left_const->size(), toField(res, type.getScale()));
-            else
-                 return ResultDataType().createColumnConst(col_left_const->size(), toField(res));
+            return ResultDataType(type.getPrecision(), type.getScale())
+                .createColumnConst(col_left_const->size(), toField(res, type.getScale()));
         }
 
-        if constexpr (result_is_decimal)
-            col_res = ColVecResult::create(0, type.getScale());
-        else
-            col_res = ColVecResult::create(0);
+        col_res = ColVecResult::create(0, type.getScale());
 
         auto & vec_res = col_res->getData();
         vec_res.resize(col_left_size);
@@ -1491,23 +1454,23 @@ public:
             using ColVecT1 = ColumnVectorOrDecimal<T1>;
             using ColVecResult = ColumnVectorOrDecimal<ResultType>;
 
-            const IColumn * col_left_raw;
-            const IColumn * col_right_raw;
+            ColumnPtr left_col = nullptr;
+            ColumnPtr right_col = nullptr;
 
             /// When Decimal op Float32/64, convert both of them into Float64
-            if constexpr ((IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>)&&IsFloatingPoint<ResultDataType>)
+            if constexpr (decimal_with_float)
             {
                 const auto converted_type = std::make_shared<DataTypeFloat64>();
-                auto c0_converted = castColumn(arguments[0], converted_type);
-                auto c1_converted = castColumn(arguments[1], converted_type);
-                col_left_raw = c0_converted.get();
-                col_right_raw = c1_converted.get();
+                left_col = castColumn(std::move(arguments[0]), converted_type);
+                right_col = castColumn(std::move(arguments[1]), converted_type);
             }
             else
             {
-                col_left_raw = arguments[0].column.get();
-                col_right_raw = arguments[1].column.get();
+                left_col = std::move(arguments[0].column);
+                right_col = std::move(arguments[1].column);
             }
+            const auto * const col_left_raw = left_col.get();
+            const auto * const col_right_raw = right_col.get();
 
             const size_t col_left_size = col_left_raw->size();
 
@@ -1517,7 +1480,7 @@ public:
             const ColVecT0 * const col_left = checkAndGetColumn<ColVecT0>(col_left_raw);
             const ColVecT1 * const col_right = checkAndGetColumn<ColVecT1>(col_right_raw);
 
-            if constexpr ((IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>)&&!IsFloatingPoint<ResultDataType>)
+            if constexpr (IsDataTypeDecimal<ResultDataType>)
             {
                 return executeNumericWithDecimal<LeftDataType, RightDataType, ResultDataType>(
                     left, right,
@@ -1571,11 +1534,7 @@ public:
                     const T1 value = col_right_const->template getValue<T1>();
 
                     OpImpl::template process<OpCase::RightConstant>(
-                        col_left->getData().data(),
-                        &value,
-                        vec_res.data(),
-                        vec_res.size(),
-                        right_nullmap);
+                        col_left->getData().data(), &value, vec_res.data(), vec_res.size(), right_nullmap);
                 }
                 else
                     return nullptr;
