@@ -72,8 +72,11 @@ template <typename T = EmptySettingsTraits>
 std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
     const ASTs & args, ContextPtr context, bool is_database_engine = false, bool throw_on_no_collection = true, const BaseSettings<T> & storage_settings = {});
 
+using HasConfigKeyFunc = std::function<bool(const String &)>;
+
 std::optional<ExternalDataSourceConfiguration> getExternalDataSourceConfiguration(
-    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context);
+    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix,
+    ContextPtr context, HasConfigKeyFunc has_config_key);
 
 
 /// Highest priority is 0, the bigger the number in map, the less the priority.
@@ -88,7 +91,7 @@ struct ExternalDataSourcesByPriority
 };
 
 ExternalDataSourcesByPriority
-getExternalDataSourceConfigurationByPriority(const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context);
+getExternalDataSourceConfigurationByPriority(const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context, HasConfigKeyFunc has_config_key);
 
 
 struct URLBasedDataSourceConfiguration
@@ -96,7 +99,7 @@ struct URLBasedDataSourceConfiguration
     String url;
     String format;
     String compression_method = "auto";
-    String structure;
+    String structure = "auto";
 
     std::vector<std::pair<String, Field>> headers;
     String http_method;

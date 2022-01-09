@@ -10,6 +10,7 @@
 #include <base/argsToConfig.h>
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
+#include <Common/MemoryTracker.h>
 #include <base/LineReader.h>
 #include <base/scope_guard_safe.h>
 #include "Common/Exception.h"
@@ -64,6 +65,11 @@
 namespace fs = std::filesystem;
 using namespace std::literals;
 
+
+namespace CurrentMetrics
+{
+    extern const Metric MemoryTracking;
+}
 
 namespace DB
 {
@@ -800,7 +806,7 @@ void ClientBase::onProfileEvents(Block & block)
     if (rows == 0)
         return;
 
-    if (progress_indication.print_hardware_utilization)
+    if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
     {
         const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
         const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
@@ -834,25 +840,25 @@ void ClientBase::onProfileEvents(Block & block)
         }
         auto elapsed_time = profile_events.watch.elapsedMicroseconds();
         progress_indication.updateThreadEventData(thread_times, elapsed_time);
-    }
 
-    if (profile_events.print)
-    {
-        if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms)
+        if (profile_events.print)
         {
-            initLogsOutputStream();
-            progress_indication.clearProgressOutput();
-            logs_out_stream->writeProfileEvents(block);
-            logs_out_stream->flush();
+            if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms)
+            {
+                initLogsOutputStream();
+                progress_indication.clearProgressOutput();
+                logs_out_stream->writeProfileEvents(block);
+                logs_out_stream->flush();
 
-            profile_events.last_block = {};
+                profile_events.last_block = {};
+            }
+            else
+            {
+                incrementProfileEventsBlock(profile_events.last_block, block);
+            }
         }
-        else
-        {
-            incrementProfileEventsBlock(profile_events.last_block, block);
-        }
+        profile_events.watch.restart();
     }
-    profile_events.watch.restart();
 }
 
 
@@ -1812,6 +1818,7 @@ void ClientBase::init(int argc, char ** argv)
 
         ("interactive", "Process queries-file or --query query and start interactive mode")
         ("pager", po::value<std::string>(), "Pipe all output into this command (less or similar)")
+        ("max_memory_usage_in_client", po::value<int>(), "Set memory limit in client/local server")
     ;
 
     addOptions(options_description);
@@ -1909,8 +1916,6 @@ void ClientBase::init(int argc, char ** argv)
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
     if (options.count("server_logs_file"))
         server_logs_file = options["server_logs_file"].as<std::string>();
-    if (options.count("hardware-utilization"))
-        progress_indication.print_hardware_utilization = true;
 
     query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
     profile_events.print = options.count("print-profile-events");
@@ -1919,6 +1924,15 @@ void ClientBase::init(int argc, char ** argv)
     processOptions(options_description, options, external_tables_arguments);
     argsToConfig(common_arguments, config(), 100);
     clearPasswordFromCommandLine(argc, argv);
+
+    /// Limit on total memory usage
+    size_t max_client_memory_usage = config().getInt64("max_memory_usage_in_client", 0 /*default value*/);
+    if (max_client_memory_usage != 0)
+    {
+        total_memory_tracker.setHardLimit(max_client_memory_usage);
+        total_memory_tracker.setDescription("(total)");
+        total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+    }
 }
 
 }

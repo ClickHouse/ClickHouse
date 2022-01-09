@@ -189,7 +189,7 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 |libhdfs3\_conf                                         | ""                      |
 
 ### Limitations {#limitations}
-  * `hadoop_security_kerberos_ticket_cache_path` and `libhdfs3_conf` can be global only, not user specific
+* `hadoop_security_kerberos_ticket_cache_path` and `libhdfs3_conf` can be global only, not user specific
 
 ## Kerberos support {#kerberos-support}
 

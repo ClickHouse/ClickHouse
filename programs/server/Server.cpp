@@ -569,8 +569,10 @@ if (ThreadFuzzer::instance().isEffective())
         [&]() -> std::vector<ProtocolServerMetrics>
         {
             std::vector<ProtocolServerMetrics> metrics;
+            metrics.reserve(servers_to_start_before_tables.size());
             for (const auto & server : servers_to_start_before_tables)
                 metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
+
             std::lock_guard lock(servers_lock);
             for (const auto & server : servers)
                 metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads()});
@@ -904,7 +906,7 @@ if (ThreadFuzzer::instance().isEffective())
             // in a lot of places. For now, disable updating log configuration without server restart.
             //setTextLog(global_context->getTextLog());
             updateLevels(*config, logger());
-            global_context->setClustersConfig(config);
+            global_context->setClustersConfig(config, has_zookeeper);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros", log));
             global_context->setExternalAuthenticatorsConfig(*config);
 
@@ -921,6 +923,12 @@ if (ThreadFuzzer::instance().isEffective())
 
             if (config->has("max_concurrent_queries"))
                 global_context->getProcessList().setMaxSize(config->getInt("max_concurrent_queries", 0));
+
+            if (config->has("max_concurrent_insert_queries"))
+                global_context->getProcessList().setMaxInsertQueriesAmount(config->getInt("max_concurrent_insert_queries", 0));
+
+            if (config->has("max_concurrent_select_queries"))
+                global_context->getProcessList().setMaxSelectQueriesAmount(config->getInt("max_concurrent_select_queries", 0));
 
             if (config->has("keeper_server"))
                 global_context->updateKeeperConfiguration(*config);
@@ -1418,6 +1426,15 @@ if (ThreadFuzzer::instance().isEffective())
                 LOG_INFO(log, "Listening for {}", server.getDescription());
             }
             LOG_INFO(log, "Ready for connections.");
+        }
+
+        try
+        {
+            global_context->startClusterDiscovery();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Caught exception while starting cluster discovery");
         }
 
         SCOPE_EXIT_SAFE({

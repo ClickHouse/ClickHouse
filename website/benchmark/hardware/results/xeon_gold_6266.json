@@ -1,6 +1,6 @@
 [
     {
-        "system":       "Huawei Cloud c6.xlarge.4, 4vCPUs, 16 GiB"
+        "system":       "Huawei Cloud c6.xlarge.4, 4vCPUs, 16 GiB",
         "system_full":  "Huawei Cloud c6.xlarge.4, Xeon Gold 6266C, 3GHz, 4vCPU, 16GiB RAM, vda1 40GB",
         "cpu_vendor":   "Intel",
         "cpu_model":    "Xeon Gold 6266C",
