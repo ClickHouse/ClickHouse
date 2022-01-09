@@ -877,11 +877,11 @@ void StorageWindowView::threadFuncFireEvent()
     std::unique_lock lock(fire_signal_mutex);
     while (!shutdown_called)
     {
-        LOG_TRACE(log, "Fire events: {}", fire_signal.size());
-
         bool signaled = std::cv_status::no_timeout == fire_signal_condition.wait_for(lock, std::chrono::seconds(5));
         if (!signaled)
             continue;
+
+        LOG_TRACE(log, "Fire events: {}", fire_signal.size());
 
         while (!fire_signal.empty())
         {
