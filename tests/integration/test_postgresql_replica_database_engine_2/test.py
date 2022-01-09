@@ -417,23 +417,18 @@ def test_table_override(started_cluster):
 
 
 def test_table_schema_changes_2(started_cluster):
-    drop_materialized_db()
-    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
-                             port=started_cluster.postgres_port,
-                             database=True)
-    cursor = conn.cursor()
-
+    cursor = pg_manager.get_db_cursor()
     table_name = "test_table"
 
     create_postgres_table(cursor, table_name, template=postgres_table_template_2);
     instance.query(f"INSERT INTO postgres_database.{table_name} SELECT number, number, number, number from numbers(25)")
 
-    create_materialized_db(ip=started_cluster.postgres_ip,
-                           port=started_cluster.postgres_port,
-                           settings=["materialized_postgresql_allow_automatic_update = 1, materialized_postgresql_tables_list='test_table'"])
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip, port=started_cluster.postgres_port,
+        settings=["materialized_postgresql_allow_automatic_update = 1, materialized_postgresql_tables_list='test_table'"])
 
     instance.query(f"INSERT INTO postgres_database.{table_name} SELECT number, number, number, number from numbers(25, 25)")
-    check_tables_are_synchronized(table_name);
+    check_tables_are_synchronized(instance, table_name);
 
     cursor.execute(f"ALTER TABLE {table_name} DROP COLUMN value1")
     cursor.execute(f"ALTER TABLE {table_name} DROP COLUMN value2")
@@ -443,24 +438,24 @@ def test_table_schema_changes_2(started_cluster):
     cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN value3 Text")
     cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN value4 Text")
     cursor.execute(f"UPDATE {table_name} SET value3 = 'kek' WHERE key%2=0")
-    check_tables_are_synchronized(table_name);
+    check_tables_are_synchronized(instance, table_name);
     instance.query(f"INSERT INTO postgres_database.{table_name} SELECT number, toString(number), toString(number), toString(number), toString(number) from numbers(50, 25)")
     cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN value5 Integer")
     cursor.execute(f"ALTER TABLE {table_name} DROP COLUMN value2")
     instance.query(f"INSERT INTO postgres_database.{table_name} SELECT number, toString(number), toString(number), toString(number), number from numbers(75, 25)")
-    check_tables_are_synchronized(table_name);
+    check_tables_are_synchronized(instance, table_name);
     instance.restart_clickhouse()
-    check_tables_are_synchronized(table_name);
+    check_tables_are_synchronized(instance, table_name);
     cursor.execute(f"ALTER TABLE {table_name} DROP COLUMN value5")
     cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN value5 Text")
     instance.query(f"INSERT INTO postgres_database.{table_name} SELECT number, toString(number), toString(number), toString(number), toString(number) from numbers(100, 25)")
-    check_tables_are_synchronized(table_name);
+    check_tables_are_synchronized(instance, table_name);
     cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN value6 Text")
     cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN value7 Integer")
     cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN value8 Integer")
     cursor.execute(f"ALTER TABLE {table_name} DROP COLUMN value5")
     instance.query(f"INSERT INTO postgres_database.{table_name} SELECT number, toString(number), toString(number), toString(number), toString(number), number, number from numbers(125, 25)")
-    check_tables_are_synchronized(table_name);
+    check_tables_are_synchronized(instance, table_name);
 
 
 if __name__ == '__main__':
