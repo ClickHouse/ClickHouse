@@ -89,10 +89,6 @@ struct ReadSettings
     /// If reading is done without final position set, throw logical_error.
     bool must_read_until_position = false;
 
-    size_t http_max_tries = 1;
-    size_t http_retry_initial_backoff_ms = 100;
-    size_t http_retry_max_backoff_ms = 200;
-
     ReadSettings adjustBufferSize(size_t file_size) const
     {
         ReadSettings res = *this;

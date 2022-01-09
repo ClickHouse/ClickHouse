@@ -261,7 +261,6 @@ Pipe LibraryBridgeHelper::loadBase(const Poco::URI & uri, ReadWriteBufferFromHTT
     read_settings.http_retry_initial_backoff_ms = 0; /// Zero means disable.
     read_settings.http_retry_max_backoff_ms = 1;
 
-    const auto & settings = getContext()->getSettingsRef();
     Poco::Timespan http_keep_alive_timeout{config.getUInt("keep_alive_timeout", 20), 0};
 
     auto read_buf_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
@@ -272,7 +271,7 @@ Pipe LibraryBridgeHelper::loadBase(const Poco::URI & uri, ReadWriteBufferFromHTT
         credentials,
         0,
         DBMS_DEFAULT_BUFFER_SIZE,
-        getContext()->getReadSettings(),
+        read_settings,
         ReadWriteBufferFromHTTP::HTTPHeaderEntries{});
 
     auto source = FormatFactory::instance().getInput(LibraryBridgeHelper::DEFAULT_FORMAT, *read_buf_ptr, sample_block, getContext(), DEFAULT_BLOCK_SIZE);
