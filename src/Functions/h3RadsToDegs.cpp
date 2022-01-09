@@ -2,6 +2,7 @@
 
 #if USE_H3
 
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
@@ -49,7 +50,8 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_rads = arguments[0].column.get();
+        const auto * column = checkAndGetColumn<ColumnFloat64>(arguments[0].column.get());
+        const auto & col_rads = column->getData();
 
         auto dst = ColumnVector<Float64>::create();
         auto & dst_data = dst->getData();
@@ -58,7 +60,7 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const Float64 rads = col_rads->getFloat64(row);
+            const Float64 rads = col_rads[row];
             auto res = radsToDegs(rads);
             dst_data[row] = res;
         }
