@@ -608,8 +608,6 @@ struct ImplBLAKE3
         update_shim(&hasher, begin, static_cast<uint32_t>(size));
         Hash res = finalize_shim(&hasher);
         std::memcpy(out_char_data, as_bytes_shim(&res), OUT_LEN);
-        /*if (out_char_data != nullptr)
-            throw Exception(std::string(reinterpret_cast<char*>(out_char_data)), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);*/
     }
 };
 
