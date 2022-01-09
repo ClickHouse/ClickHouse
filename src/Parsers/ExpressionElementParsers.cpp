@@ -689,7 +689,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ++pos;
 
     /// Avoid excessive backtracking.
-    pos.putBarrier();
+    //pos.putBarrier();
 
     /// Special cases for expressions that look like functions but contain some syntax sugar:
 
