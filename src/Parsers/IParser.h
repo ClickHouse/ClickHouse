@@ -60,12 +60,6 @@ public:
         uint32_t depth = 0;
         uint32_t max_depth = 0;
 
-        /// If the current parser return false, we shall no backtrack.
-        bool no_backtrack_if_failure = false;
-
-        /// Current parser returned false and we shall no backtrack.
-        bool failure_no_backtrack = false;
-
         Pos(Tokens & tokens_, uint32_t max_depth_) : TokenIterator(tokens_), max_depth(max_depth_) {}
 
         ALWAYS_INLINE void increaseDepth()
