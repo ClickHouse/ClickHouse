@@ -58,8 +58,9 @@ MaterializedPostgreSQLConsumer::StorageData::StorageData(const StorageInfo & sto
     : storage(storage_info.storage), buffer(storage_info.storage->getInMemoryMetadataPtr(), storage_info.attributes)
 {
     auto table_id = storage_info.storage->getStorageID();
-    LOG_TRACE(&Poco::Logger::get("StorageMaterializedPostgreSQL"), "New buffer for table {}.{} ({}), structure: {}",
-              table_id.database_name, table_id.table_name, toString(table_id.uuid), buffer.description.sample_block.dumpStructure());
+    LOG_TRACE(&Poco::Logger::get("StorageMaterializedPostgreSQL"),
+              "New buffer for table {}, number of attributes: {}, number if columns: {}, structure: {}",
+              table_id.getNameForLogs(), buffer.attributes.size(), buffer.getColumnsNum(), buffer.description.sample_block.dumpStructure());
 }
 
 
@@ -69,7 +70,7 @@ MaterializedPostgreSQLConsumer::StorageData::Buffer::Buffer(
 {
     const Block sample_block = storage_metadata->getSampleBlock();
 
-    /// Need to clear type, because in description.init() the types are appended (emplace_back)
+    /// Need to clear type, because in description.init() the types are appended
     description.types.clear();
     description.init(sample_block);
 
@@ -458,10 +459,22 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
 
             if (static_cast<size_t>(num_columns) + 2 != buffer.getColumnsNum()) /// +2 -- sign and version columns
             {
-                LOG_DEBUG(log, "Mismatch in columns size. Got {}, expected {}. Current table structure: {}",
-                          num_columns, buffer.getColumnsNum(), buffer.description.sample_block.dumpStructure()); /// Not an error.
                 markTableAsSkipped(relation_id, table_name);
                 return;
+            }
+
+            if (static_cast<size_t>(num_columns) != buffer.attributes.size())
+            {
+#ifndef NDEBUG
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Mismatch in attributes size. Got {}, expected {}. It's a bug. Current buffer structure: {}",
+                                num_columns, buffer.attributes.size(), buffer.description.sample_block.dumpStructure());
+#else
+                LOG_ERROR(log, "Mismatch in attributes size. Got {}, expected {}. It's a bug. Current buffer structure: {}",
+                          num_columns, buffer.attributes.size(), buffer.description.sample_block.dumpStructure());
+                markTableAsSkipped(relation_id, table_name);
+                return;
+#endif
             }
 
             Int32 data_type_id;
@@ -615,31 +628,20 @@ bool MaterializedPostgreSQLConsumer::isSyncAllowed(Int32 relation_id, const Stri
 
 void MaterializedPostgreSQLConsumer::markTableAsSkipped(Int32 relation_id, const String & relation_name)
 {
-    /// Empty lsn string means - continue waiting for valid lsn.
-    skip_list.insert({relation_id, ""});
-    auto storage_iter = storages.find(relation_name);
+    skip_list.insert({relation_id, ""}); /// Empty lsn string means - continue waiting for valid lsn.
+    storages.erase(relation_name);
 
-    if (storage_iter != storages.end())
-    {
-        /// Clear table buffer.
-        auto & buffer = storage_iter->second.buffer;
-        buffer.columns = buffer.description.sample_block.cloneEmptyColumns();
-        /// Erase cached schema identifiers. It will be updated again once table is allowed back into replication stream
-        /// and it receives first data after update.
-        buffer.attributes.clear();
-
-        if (allow_automatic_update)
-            LOG_TRACE(log, "Table {} (relation_id: {}) is skipped temporarily. It will be reloaded in the background", relation_name, relation_id);
-        else
-            LOG_WARNING(log, "Table {} (relation_id: {}) is skipped, because table schema has changed", relation_name, relation_id);
-    }
+    if (allow_automatic_update)
+        LOG_TRACE(log, "Table {} (relation_id: {}) is skipped temporarily. It will be reloaded in the background", relation_name, relation_id);
+    else
+        LOG_WARNING(log, "Table {} (relation_id: {}) is skipped, because table schema has changed", relation_name, relation_id);
 }
 
 
 void MaterializedPostgreSQLConsumer::addNested(
     const String & postgres_table_name, StorageInfo nested_storage_info, const String & table_start_lsn)
 {
-    /// Cache new pointer to replacingMergeTree table.
+    assert(!storages.contains(postgres_table_name));
     storages.emplace(postgres_table_name, nested_storage_info);
 
     /// Replication consumer will read wall and check for currently processed table whether it is allowed to start applying
@@ -650,7 +652,7 @@ void MaterializedPostgreSQLConsumer::addNested(
 
 void MaterializedPostgreSQLConsumer::updateNested(const String & table_name, StorageInfo nested_storage_info, Int32 table_id, const String & table_start_lsn)
 {
-    /// Cache new pointer to replacingMergeTree table.
+    assert(!storages.contains(table_name));
     storages.emplace(table_name, nested_storage_info);
 
     /// Set start position to valid lsn. Before it was an empty string. Further read for table allowed, if it has a valid lsn.
