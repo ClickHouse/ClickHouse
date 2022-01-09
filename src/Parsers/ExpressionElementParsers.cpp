@@ -754,7 +754,10 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         has_all = true;
 
     if (has_all && has_distinct)
+    {
+        pos.noBacktrackOnFailure();
         return false;
+    }
 
     if (has_all || has_distinct)
     {
@@ -772,11 +775,17 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     const char * contents_begin = pos->begin;
     if (!contents.parse(pos, expr_list_args, expected))
+    {
+        pos.noBacktrackOnFailure();
         return false;
+    }
     const char * contents_end = pos->begin;
 
     if (pos->type != TokenType::ClosingRoundBracket)
+    {
+        pos.noBacktrackOnFailure();
         return false;
+    }
     ++pos;
 
     /** Check for a common error case - often due to the complexity of quoting command-line arguments,
@@ -809,7 +818,10 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         /// Parametric aggregate functions cannot have DISTINCT in parameters list.
         if (has_distinct)
+        {
+            pos.noBacktrackOnFailure();
             return false;
+        }
 
         expr_list_params = expr_list_args;
         expr_list_args = nullptr;
@@ -827,7 +839,10 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             has_all = true;
 
         if (has_all && has_distinct)
+        {
+            pos.noBacktrackOnFailure();
             return false;
+        }
 
         if (has_all || has_distinct)
         {
@@ -841,10 +856,16 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
 
         if (!contents.parse(pos, expr_list_args, expected))
+        {
+            pos.noBacktrackOnFailure();
             return false;
+        }
 
         if (pos->type != TokenType::ClosingRoundBracket)
+        {
+            pos.noBacktrackOnFailure();
             return false;
+        }
         ++pos;
     }
 
@@ -878,6 +899,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ParserFilterClause filter_parser;
         if (!filter_parser.parse(pos, function_node_as_iast, expected))
         {
+            pos.noBacktrackOnFailure();
             return false;
         }
     }
@@ -891,6 +913,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ParserWindowReference window_reference;
         if (!window_reference.parse(pos, function_node_as_iast, expected))
         {
+            pos.noBacktrackOnFailure();
             return false;
         }
     }
