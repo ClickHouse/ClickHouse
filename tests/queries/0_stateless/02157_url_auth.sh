@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
 # Tags: no-fasttest
 # Tag no-fasttest: Not sure why fail even in sequential mode. Disabled for now to make some progress.
 
