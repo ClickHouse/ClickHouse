@@ -1,12 +1,12 @@
 #include "MemoryTracker.h"
 
 #include <IO/WriteHelpers.h>
-#include "Common/TraceCollector.h"
+#include <Interpreters/TraceCollector.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
-#include <base/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
+#include <base/logger_useful.h>
 
 #include <atomic>
 #include <cmath>
