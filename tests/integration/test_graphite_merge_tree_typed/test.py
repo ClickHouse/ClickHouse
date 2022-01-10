@@ -2,6 +2,7 @@ import datetime
 import os.path as p
 import time
 
+import sys
 import pytest
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
@@ -44,7 +45,7 @@ CREATE TABLE test.graphite
     q('DROP TABLE test.graphite')
 
 
-def test_rollup_versions(graphite_table):
+def test_rollup_versions_plain(graphite_table):
     timestamp = int(time.time())
     rounded_timestamp = timestamp - timestamp % 60
     date = datetime.date.today().isoformat()
@@ -78,7 +79,86 @@ one_min.x1	200	{timestamp}	{date}	2
     assert TSV(q('SELECT * FROM test.graphite')) == TSV(expected2)
 
 
-def test_rollup_aggregation(graphite_table):
+def test_rollup_versions_tagged(graphite_table):
+    timestamp = int(time.time())
+    rounded_timestamp = timestamp - timestamp % 60
+    date = datetime.date.today().isoformat()
+
+    # Insert rows with timestamps relative to the current time so that the
+    # first retention clause is active.
+    # Two parts are created.
+    q('''
+INSERT INTO test.graphite (metric, value, timestamp, date, updated)
+      VALUES ('x1?retention=one_min', 100, {timestamp}, '{date}', 1);
+INSERT INTO test.graphite (metric, value, timestamp, date, updated)
+      VALUES ('x1?retention=one_min', 200, {timestamp}, '{date}', 2);
+'''.format(timestamp=timestamp, date=date))
+
+    expected1 = '''\
+x1?retention=one_min	100	{timestamp}	{date}	1
+x1?retention=one_min	200	{timestamp}	{date}	2
+'''.format(timestamp=timestamp, date=date)
+
+    result = q('SELECT * FROM test.graphite ORDER BY metric, updated')
+    mismatch = csv_compare(result, expected1)
+    assert len(mismatch) == 0, f"got\n{result}\nwant\n{expected1}\ndiff\n{mismatch}\n"
+
+    q('OPTIMIZE TABLE test.graphite')
+
+    # After rollup only the row with max version is retained.
+    expected2 = '''\
+x1?retention=one_min	200	{timestamp}	{date}	2
+'''.format(timestamp=rounded_timestamp, date=date)
+
+    result = q('SELECT * FROM test.graphite ORDER BY metric, updated')
+    mismatch = csv_compare(result, expected2)
+    assert len(mismatch) == 0, f"got\n{result}\nwant\n{expected2}\ndiff\n{mismatch}\n"
+
+
+def test_rollup_versions_all(graphite_table):
+    timestamp = int(time.time())
+    rounded_timestamp = timestamp - timestamp % 600
+    date = datetime.date.today().isoformat()
+
+    # Insert rows with timestamps relative to the current time so that the
+    # first retention clause is active.
+    # Two parts are created.
+    q('''
+INSERT INTO test.graphite (metric, value, timestamp, date, updated)
+      VALUES ('ten_min.x1', 100, {timestamp}, '{date}', 1);
+INSERT INTO test.graphite (metric, value, timestamp, date, updated)
+      VALUES ('ten_min.x1', 200, {timestamp}, '{date}', 2);
+INSERT INTO test.graphite (metric, value, timestamp, date, updated)
+      VALUES ('ten_min.x1?env=staging', 100, {timestamp}, '{date}', 1);
+INSERT INTO test.graphite (metric, value, timestamp, date, updated)
+      VALUES ('ten_min.x1?env=staging', 200, {timestamp}, '{date}', 2);
+'''.format(timestamp=timestamp, date=date))
+
+    expected1 = '''\
+ten_min.x1	100	{timestamp}	{date}	1
+ten_min.x1	200	{timestamp}	{date}	2
+ten_min.x1?env=staging	100	{timestamp}	{date}	1
+ten_min.x1?env=staging	200	{timestamp}	{date}	2
+'''.format(timestamp=timestamp, date=date)
+
+    result = q('SELECT * FROM test.graphite ORDER BY metric, updated')
+    mismatch = csv_compare(result, expected1)
+    assert len(mismatch) == 0, f"got\n{result}\nwant\n{expected1}\ndiff\n{mismatch}\n"
+
+    q('OPTIMIZE TABLE test.graphite')
+
+    # After rollup only the row with max version is retained.
+    expected2 = '''\
+ten_min.x1	200	{timestamp}	{date}	2
+ten_min.x1?env=staging	200	{timestamp}	{date}	2
+'''.format(timestamp=rounded_timestamp, date=date)
+
+    result = q('SELECT * FROM test.graphite ORDER BY metric, updated')
+    mismatch = csv_compare(result, expected2)
+    assert len(mismatch) == 0, f"got\n{result}\nwant\n{expected2}\ndiff\n{mismatch}\n"
+
+
+def test_rollup_aggregation_plain(graphite_table):
     # This query essentially emulates what rollup does.
     result1 = q('''
 SELECT avg(v), max(upd)
@@ -124,7 +204,53 @@ one_min.x	999634.9918367347	1111444200	2017-02-02	499999
     assert TSV(result2) == TSV(expected2)
 
 
-def test_rollup_aggregation_2(graphite_table):
+def test_rollup_aggregation_tagged(graphite_table):
+    # This query essentially emulates what rollup does.
+    result1 = q('''
+SELECT avg(v), max(upd)
+FROM (SELECT timestamp,
+            argMax(value, (updated, number)) AS v,
+            max(updated) AS upd
+      FROM (SELECT 'x?retention=one_min' AS metric,
+                   toFloat64(number) AS value,
+                   toUInt32(1111111111 + intDiv(number, 3)) AS timestamp,
+                   toDate('2017-02-02') AS date,
+                   toUInt32(intDiv(number, 2)) AS updated,
+                   number
+            FROM system.numbers LIMIT 1000000)
+      WHERE intDiv(timestamp, 600) * 600 = 1111444200
+      GROUP BY timestamp)
+''')
+
+    expected1 = '''\
+999634.9918367347	499999
+'''
+    assert TSV(result1) == TSV(expected1)
+
+    # Timestamp 1111111111 is in sufficiently distant past
+    # so that the last retention clause is active.
+    result2 = q('''
+INSERT INTO test.graphite
+    SELECT 'x?retention=one_min' AS metric,
+           toFloat64(number) AS value,
+           toUInt32(1111111111 + intDiv(number, 3)) AS timestamp,
+           toDate('2017-02-02') AS date, toUInt32(intDiv(number, 2)) AS updated
+    FROM (SELECT * FROM system.numbers LIMIT 1000000)
+    WHERE intDiv(timestamp, 600) * 600 = 1111444200;
+
+OPTIMIZE TABLE test.graphite PARTITION 201702 FINAL;
+
+SELECT * FROM test.graphite;
+''')
+
+    expected2 = '''\
+x?retention=one_min	999634.9918367347	1111444200	2017-02-02	499999
+'''
+
+    assert TSV(result2) == TSV(expected2)
+
+
+def test_rollup_aggregation_2_plain(graphite_table):
     result = q('''
 INSERT INTO test.graphite
     SELECT 'one_min.x' AS metric,
@@ -146,7 +272,29 @@ one_min.x	24	1111110600	2017-02-02	100
     assert TSV(result) == TSV(expected)
 
 
-def test_multiple_paths_and_versions(graphite_table):
+def test_rollup_aggregation_2_tagged(graphite_table):
+    result = q('''
+INSERT INTO test.graphite
+    SELECT 'x?retention=one_min' AS metric,
+           toFloat64(number) AS value,
+           toUInt32(1111111111 - intDiv(number, 3)) AS timestamp,
+           toDate('2017-02-02') AS date,
+           toUInt32(100 - number) AS updated
+    FROM (SELECT * FROM system.numbers LIMIT 50);
+
+OPTIMIZE TABLE test.graphite PARTITION 201702 FINAL;
+
+SELECT * FROM test.graphite;
+''')
+
+    expected = '''\
+x?retention=one_min	24	1111110600	2017-02-02	100
+'''
+
+    assert TSV(result) == TSV(expected)
+
+
+def test_multiple_paths_and_versions_plain(graphite_table):
     result = q('''
 INSERT INTO test.graphite
     SELECT 'one_min.x' AS metric,
@@ -175,7 +323,41 @@ SELECT * FROM test.graphite;
 ''')
 
     with open(p.join(p.dirname(__file__),
-                     'test_multiple_paths_and_versions.reference')
+                     'test_multiple_paths_and_versions.reference.plain')
+              ) as reference:
+        assert TSV(result) == TSV(reference)
+
+
+def test_multiple_paths_and_versions_tagged(graphite_table):
+    result = q('''
+INSERT INTO test.graphite
+    SELECT 'x?retention=one_min' AS metric,
+           toFloat64(number) AS value,
+           toUInt32(1111111111 + intDiv(number, 3) * 600) AS timestamp,
+           toDate('2017-02-02') AS date,
+           toUInt32(100 - number) AS updated
+    FROM (SELECT * FROM system.numbers LIMIT 50);
+
+OPTIMIZE TABLE test.graphite PARTITION 201702 FINAL;
+
+SELECT * FROM test.graphite;
+
+
+INSERT INTO test.graphite
+    SELECT 'y?retention=one_min' AS metric,
+           toFloat64(number) AS value,
+           toUInt32(1111111111 + number * 600) AS timestamp,
+           toDate('2017-02-02') AS date,
+           toUInt32(100 - number) AS updated
+    FROM (SELECT * FROM system.numbers LIMIT 50);
+
+OPTIMIZE TABLE test.graphite PARTITION 201702 FINAL;
+
+SELECT * FROM test.graphite;
+''')
+
+    with open(p.join(p.dirname(__file__),
+                     'test_multiple_paths_and_versions.reference.tagged')
               ) as reference:
         assert TSV(result) == TSV(reference)
 
@@ -233,16 +415,56 @@ SELECT * FROM test.graphite;
     assert TSV(result) == TSV(expected)
 
 
+def test_rules_isolation(graphite_table):
+    to_insert = '''\
+one_min.x1	100	1000000000	2001-09-09	1
+for_taggged	100	1000000001	2001-09-09	1
+for_taggged	200	1000000001	2001-09-09	2
+one_min?env=staging	100	1000000001	2001-09-09	1
+one_min?env=staging	200	1000000001	2001-09-09	2
+'''
+
+    q('INSERT INTO test.graphite FORMAT TSV', to_insert)
+
+    expected = '''\
+for_taggged	200	1000000001	2001-09-09	2
+one_min.x1	100	999999600	2001-09-09	1
+one_min?env=staging	200	1000000001	2001-09-09	2
+'''
+
+    result = q('''
+OPTIMIZE TABLE test.graphite PARTITION 200109 FINAL;
+
+SELECT * FROM test.graphite;
+''')
+
+    result = q('SELECT * FROM test.graphite ORDER BY metric, updated')
+    mismatch = csv_compare(result, expected)
+    assert len(mismatch) == 0, f"got\n{result}\nwant\n{expected}\ndiff\n{mismatch}\n"
+
+
 def test_system_graphite_retentions(graphite_table):
     expected = '''
-graphite_rollup	all	\\\\.count$	sum	0	0	1	0	['test']	['graphite']
-graphite_rollup	all	\\\\.max$	max	0	0	2	0	['test']	['graphite']
-graphite_rollup	all	^five_min\\\\.		31536000	14400	3	0	['test']	['graphite']
-graphite_rollup	all	^five_min\\\\.		5184000	3600	3	0	['test']	['graphite']
-graphite_rollup	all	^five_min\\\\.		0	300	3	0	['test']	['graphite']
-graphite_rollup	all	^one_min	avg	31536000	600	4	0	['test']	['graphite']
-graphite_rollup	all	^one_min	avg	7776000	300	4	0	['test']	['graphite']
-graphite_rollup	all	^one_min	avg	0	60	4	0	['test']	['graphite']
+graphite_rollup	plain	\\\\.count$	sum	0	0	1	0	['test']	['graphite']
+graphite_rollup	plain	\\\\.max$	max	0	0	2	0	['test']	['graphite']
+graphite_rollup	plain	^five_min\\\\.		31536000	14400	3	0	['test']	['graphite']
+graphite_rollup	plain	^five_min\\\\.		5184000	3600	3	0	['test']	['graphite']
+graphite_rollup	plain	^five_min\\\\.		0	300	3	0	['test']	['graphite']
+graphite_rollup	plain	^one_min	avg	31536000	600	4	0	['test']	['graphite']
+graphite_rollup	plain	^one_min	avg	7776000	300	4	0	['test']	['graphite']
+graphite_rollup	plain	^one_min	avg	0	60	4	0	['test']	['graphite']
+graphite_rollup	tagged	[\\\\?&]retention=one_min(&.*)?$	avg	31536000	600	5	0	['test']	['graphite']
+graphite_rollup	tagged	[\\\\?&]retention=one_min(&.*)?$	avg	7776000	300	5	0	['test']	['graphite']
+graphite_rollup	tagged	[\\\\?&]retention=one_min(&.*)?$	avg	0	60	5	0	['test']	['graphite']
+graphite_rollup	tagged	[\\\\?&]retention=five_min(&.*)?$	avg	31536000	14400	6	0	['test']	['graphite']
+graphite_rollup	tagged	[\\\\?&]retention=five_min(&.*)?$	avg	5184000	3600	6	0	['test']	['graphite']
+graphite_rollup	tagged	[\\\\?&]retention=five_min(&.*)?$	avg	0	300	6	0	['test']	['graphite']
+graphite_rollup	tagged	^for_taggged	avg	31536000	600	7	0	['test']	['graphite']
+graphite_rollup	tagged	^for_taggged	avg	7776000	300	7	0	['test']	['graphite']
+graphite_rollup	tagged	^for_taggged	avg	0	60	7	0	['test']	['graphite']
+graphite_rollup	all	^ten_min\\\\.	sum	31536000	28800	8	0	['test']	['graphite']
+graphite_rollup	all	^ten_min\\\\.	sum	5184000	7200	8	0	['test']	['graphite']
+graphite_rollup	all	^ten_min\\\\.	sum	0	600	8	0	['test']	['graphite']
     '''
     result = q('SELECT * from system.graphite_retentions')
 
@@ -275,7 +497,7 @@ graphite_rollup	['test','test']	['graphite','graphite2']
         Tables.table
     FROM system.graphite_retentions
     ''')
-    assert TSV(result) == TSV(expected)
+    assert csv_compare(result, expected), f"got\n{result}\nwant\n{expected}"
 
 
 def test_path_dangling_pointer(graphite_table):
@@ -356,109 +578,3 @@ def test_combined_rules(graphite_table):
     '''
     assert TSV(q('SELECT * FROM test.graphite'
                  ' ORDER BY (metric, timestamp)')) == TSV(expected_merged)
-
-
-def test_combined_rules_with_default(graphite_table):
-    q('''
-DROP TABLE IF EXISTS test.graphite;
-CREATE TABLE test.graphite
-    (metric String, value Float64, timestamp UInt32, date Date, updated UInt32)
-    ENGINE = GraphiteMergeTree('graphite_rollup_with_default')
-    PARTITION BY toYYYYMM(date)
-    ORDER BY (metric, timestamp)
-    SETTINGS index_granularity=1;
-      ''')
-    # 1487970000 ~ Sat 25 Feb 00:00:00 MSK 2017
-    to_insert = 'INSERT INTO test.graphite VALUES '
-    expected_unmerged = ''
-    for i in range(100):
-        to_insert += "('top_level.count', {v}, {t}, toDate({t}), 1), ".format(
-            v=1, t=1487970000 + (i * 60)
-        )
-        to_insert += "('top_level.max', {v}, {t}, toDate({t}), 1), ".format(
-            v=i, t=1487970000 + (i * 60)
-        )
-        expected_unmerged += ("top_level.count\t{v1}\t{t}\n"
-                              "top_level.max\t{v2}\t{t}\n").format(
-            v1=1, v2=i,
-            t=1487970000 + (i * 60)
-        )
-
-    q(to_insert)
-    assert TSV(q('SELECT metric, value, timestamp FROM test.graphite'
-                 ' ORDER BY (timestamp, metric)')) == TSV(expected_unmerged)
-
-    q('OPTIMIZE TABLE test.graphite PARTITION 201702 FINAL')
-    expected_merged = '''
-        top_level.count	10	1487970000	2017-02-25	1
-        top_level.count	10	1487970600	2017-02-25	1
-        top_level.count	10	1487971200	2017-02-25	1
-        top_level.count	10	1487971800	2017-02-25	1
-        top_level.count	10	1487972400	2017-02-25	1
-        top_level.count	10	1487973000	2017-02-25	1
-        top_level.count	10	1487973600	2017-02-25	1
-        top_level.count	10	1487974200	2017-02-25	1
-        top_level.count	10	1487974800	2017-02-25	1
-        top_level.count	10	1487975400	2017-02-25	1
-        top_level.max	9	1487970000	2017-02-25	1
-        top_level.max	19	1487970600	2017-02-25	1
-        top_level.max	29	1487971200	2017-02-25	1
-        top_level.max	39	1487971800	2017-02-25	1
-        top_level.max	49	1487972400	2017-02-25	1
-        top_level.max	59	1487973000	2017-02-25	1
-        top_level.max	69	1487973600	2017-02-25	1
-        top_level.max	79	1487974200	2017-02-25	1
-        top_level.max	89	1487974800	2017-02-25	1
-        top_level.max	99	1487975400	2017-02-25	1
-    '''
-    assert TSV(q('SELECT * FROM test.graphite'
-                 ' ORDER BY (metric, timestamp)')) == TSV(expected_merged)
-
-
-def test_broken_partial_rollup(graphite_table):
-    q('''
-DROP TABLE IF EXISTS test.graphite;
-CREATE TABLE test.graphite
-    (metric String, value Float64, timestamp UInt32, date Date, updated UInt32)
-    ENGINE = GraphiteMergeTree('graphite_rollup_broken')
-    PARTITION BY toYYYYMM(date)
-    ORDER BY (metric, timestamp)
-    SETTINGS index_granularity=1;
-      ''')
-    to_insert = '''\
-one_min.x1	100	1000000000	2001-09-09	1
-zzzzzzzz	100	1000000001	2001-09-09	1
-zzzzzzzz	200	1000000001	2001-09-09	2
-'''
-
-    q('INSERT INTO test.graphite FORMAT TSV', to_insert)
-
-    expected = '''\
-one_min.x1	100	1000000000	2001-09-09	1
-zzzzzzzz	200	1000000001	2001-09-09	2
-'''
-
-    result = q('''
-OPTIMIZE TABLE test.graphite PARTITION 200109 FINAL;
-
-SELECT * FROM test.graphite;
-''')
-
-    assert TSV(result) == TSV(expected)
-
-
-def test_wrong_rollup_config(graphite_table):
-    with pytest.raises(QueryRuntimeException) as exc:
-        q('''
-CREATE TABLE test.graphite_not_created
-    (metric String, value Float64, timestamp UInt32, date Date, updated UInt32)
-    ENGINE = GraphiteMergeTree('graphite_rollup_wrong_age_precision')
-    PARTITION BY toYYYYMM(date)
-    ORDER BY (metric, timestamp)
-    SETTINGS index_granularity=1;
-        ''')
-
-    # The order of retentions is not guaranteed
-    assert ("age and precision should only grow up: " in str(exc.value))
-    assert ("36000:600" in str(exc.value))
-    assert ("72000:300" in str(exc.value))
