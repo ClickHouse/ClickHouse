@@ -68,10 +68,13 @@ TEST(TestSelect, TestFilter)
                                                            mul_exp,
                                                            dbms::literal(5.0)
                                                                                });
+    auto * type_0 = dbms::scalarFunction(dbms::EQUAL_TO, {dbms::selection(6),
+                                                          dbms::literal("0")});
 
+    auto * filter = dbms::scalarFunction(dbms::AND, {less_exp, type_0});
     auto plan = plan_builder
                     .registerSupportedFunctions()
-                    .filter(less_exp)
+                    .filter(filter)
                     .read(TEST_DATA(/data/iris.parquet), std::move(schema)).build();
 //    ASSERT_TRUE(plan->relations(0).has_read());
     ASSERT_EQ(plan->relations_size(), 1);

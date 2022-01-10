@@ -16,7 +16,8 @@ enum Function
     LESS_THAN,
     MULTIPLY,
     SUM,
-    TO_DATE
+    TO_DATE,
+    EQUAL_TO
 };
 
 using SchemaPtr = substrait::NamedStruct *;
@@ -33,7 +34,8 @@ public:
             .registerFunction(LESS_THAN, "LESS_THAN")
             .registerFunction(MULTIPLY, "MULTIPLY")
             .registerFunction(SUM, "SUM")
-            .registerFunction(TO_DATE, "TO_DATE");
+            .registerFunction(TO_DATE, "TO_DATE")
+            .registerFunction(EQUAL_TO, "EQUAL_TO");
         return *this;
     }
     SerializedPlanBuilder& registerFunction(int id, std::string name);

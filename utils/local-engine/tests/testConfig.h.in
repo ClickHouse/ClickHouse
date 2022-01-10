@@ -1,1 +1,1 @@
-#define TEST_DATA(file) "@TEST_DATA_DIR@"#file
+#define TEST_DATA(file) "file://@TEST_DATA_DIR@"#file

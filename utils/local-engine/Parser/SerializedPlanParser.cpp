@@ -22,7 +22,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <sys/stat.h>
-
+#include <Poco/URI.h>
 
 DB::BatchParquetFileSourcePtr dbms::SerializedPlanParser::parseReadRealWithLocalFile(const substrait::ReadRel & rel)
 {
@@ -31,7 +31,8 @@ DB::BatchParquetFileSourcePtr dbms::SerializedPlanParser::parseReadRealWithLocal
     auto files_info = std::make_shared<FilesInfo>();
     for (const auto & item : rel.local_files().items())
     {
-        files_info->files.push_back(item.uri_file());
+        Poco::URI uri(item.uri_file());
+        files_info->files.push_back(uri.getPath());
     }
     return std::make_shared<BatchParquetFileSource>(files_info, parseNameStruct(rel.base_schema()));
 }
