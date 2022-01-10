@@ -25,6 +25,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Interpreters/applyTableOverride.h>
 #include <Storages/IStorage.h>
 
 namespace DB
@@ -520,10 +521,10 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
     rewritten_query->set(rewritten_query->storage, storage);
     rewritten_query->set(rewritten_query->columns_list, columns);
 
-    if (auto table_override = tryGetTableOverride(mapped_to_database, create_query.table))
+    if (auto override_ast = tryGetTableOverride(mapped_to_database, create_query.table))
     {
-        auto * override_ast = table_override->as<ASTTableOverride>();
-        override_ast->applyToCreateTableQuery(rewritten_query.get());
+        const auto & override = override_ast->as<const ASTTableOverride &>();
+        applyTableOverrideToCreateQuery(override, rewritten_query.get());
     }
 
     return ASTs{rewritten_query};

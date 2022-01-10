@@ -62,12 +62,13 @@ DiskAzureBlobStorage::DiskAzureBlobStorage(
 std::unique_ptr<ReadBufferFromFileBase> DiskAzureBlobStorage::readFile(
     const String & path,
     const ReadSettings & read_settings,
-    std::optional<size_t> /*estimated_size*/) const
+    std::optional<size_t>,
+    std::optional<size_t>) const
 {
     auto settings = current_settings.get();
     auto metadata = readMeta(path);
 
-    LOG_TRACE(log, "Read from file by path: {}", backQuote(metadata_disk->getPath() + path));
+    LOG_TEST(log, "Read from file by path: {}", backQuote(metadata_disk->getPath() + path));
 
     bool threadpool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
 
@@ -160,10 +161,10 @@ void DiskAzureBlobStorage::removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_kee
                 if (!delete_info.Value.Deleted)
                     throw Exception(ErrorCodes::AZURE_BLOB_STORAGE_ERROR, "Failed to delete file in AzureBlob Storage: {}", path);
             }
-            catch (const Azure::Storage::StorageException& e)
+            catch (const Azure::Storage::StorageException & e)
             {
                 LOG_INFO(log, "Caught an error while deleting file {} : {}", path, e.Message);
-                throw e;
+                throw;
             }
         }
     }

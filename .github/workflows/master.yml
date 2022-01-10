@@ -157,6 +157,7 @@ jobs:
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
       - name: Upload build URLs to artifacts
+        if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
@@ -201,6 +202,7 @@ jobs:
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
       - name: Upload build URLs to artifacts
+        if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
@@ -246,6 +248,7 @@ jobs:
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
       - name: Upload build URLs to artifacts
+        if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
@@ -290,6 +293,7 @@ jobs:
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
       - name: Upload build URLs to artifacts
+        if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
@@ -334,6 +338,7 @@ jobs:
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
       - name: Upload build URLs to artifacts
+        if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
@@ -378,6 +383,7 @@ jobs:
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
       - name: Upload build URLs to artifacts
+        if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
@@ -422,6 +428,7 @@ jobs:
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
       - name: Upload build URLs to artifacts
+        if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
@@ -466,6 +473,7 @@ jobs:
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
       - name: Upload build URLs to artifacts
+        if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
@@ -514,6 +522,7 @@ jobs:
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
       - name: Upload build URLs to artifacts
+        if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
@@ -559,6 +568,7 @@ jobs:
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
       - name: Upload build URLs to artifacts
+        if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
@@ -604,6 +614,7 @@ jobs:
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
       - name: Upload build URLs to artifacts
+        if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
@@ -649,6 +660,7 @@ jobs:
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
       - name: Upload build URLs to artifacts
+        if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
@@ -694,6 +706,7 @@ jobs:
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
       - name: Upload build URLs to artifacts
+        if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
@@ -739,6 +752,7 @@ jobs:
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
       - name: Upload build URLs to artifacts
+        if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
@@ -784,6 +798,7 @@ jobs:
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
       - name: Upload build URLs to artifacts
+        if: ${{ success() || failure() }}
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}

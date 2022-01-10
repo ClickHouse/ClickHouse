@@ -40,7 +40,6 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
-#include "Core/NamesAndTypes.h"
 
 #include <DataTypes/DataTypeFactory.h>
 
@@ -116,82 +115,62 @@ bool checkPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_q
         }
     }
 
-    /// In case of expression/function (order by 1+2 and 2*x1, greatest(1, 2)) replace
-    /// positions only if all literals are numbers, otherwise it is not positional.
-    bool positional = true;
+    const auto * ast_literal = typeid_cast<const ASTLiteral *>(argument.get());
+    if (!ast_literal)
+        return false;
 
-    /// Case when GROUP BY element is position.
-    if (const auto * ast_literal = typeid_cast<const ASTLiteral *>(argument.get()))
+    auto which = ast_literal->value.getType();
+    if (which != Field::Types::UInt64)
+        return false;
+
+    auto pos = ast_literal->value.get<UInt64>();
+    if (!pos || pos > columns.size())
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Positional argument out of bounds: {} (exprected in range [1, {}]",
+                        pos, columns.size());
+
+    const auto & column = columns[--pos];
+    if (typeid_cast<const ASTIdentifier *>(column.get()))
     {
-        auto which = ast_literal->value.getType();
-        if (which == Field::Types::UInt64)
+        argument = column->clone();
+    }
+    else if (typeid_cast<const ASTFunction *>(column.get()))
+    {
+        std::function<void(ASTPtr)> throw_if_aggregate_function = [&](ASTPtr node)
         {
-            auto pos = ast_literal->value.get<UInt64>();
-            if (pos > 0 && pos <= columns.size())
+            if (const auto * function = typeid_cast<const ASTFunction *>(node.get()))
             {
-                const auto & column = columns[--pos];
-                if (typeid_cast<const ASTIdentifier *>(column.get()))
+                auto is_aggregate_function = AggregateFunctionFactory::instance().isAggregateFunctionName(function->name);
+                if (is_aggregate_function)
                 {
-                    argument = column->clone();
-                }
-                else if (typeid_cast<const ASTFunction *>(column.get()))
-                {
-                    std::function<void(ASTPtr)> throw_if_aggregate_function = [&](ASTPtr node)
-                    {
-                        if (const auto * function = typeid_cast<const ASTFunction *>(node.get()))
-                        {
-                            auto is_aggregate_function = AggregateFunctionFactory::instance().isAggregateFunctionName(function->name);
-                            if (is_aggregate_function)
-                            {
-                                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                                "Illegal value (aggregate function) for positional argument in {}",
-                                                ASTSelectQuery::expressionToString(expression));
-                            }
-                            else
-                            {
-                                if (function->arguments)
-                                {
-                                    for (const auto & arg : function->arguments->children)
-                                        throw_if_aggregate_function(arg);
-                                }
-                            }
-                        }
-                    };
-
-                    if (expression == ASTSelectQuery::Expression::GROUP_BY)
-                        throw_if_aggregate_function(column);
-
-                    argument = column->clone();
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                    "Illegal value (aggregate function) for positional argument in {}",
+                                    ASTSelectQuery::expressionToString(expression));
                 }
                 else
                 {
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                    "Illegal value for positional argument in {}",
-                                    ASTSelectQuery::expressionToString(expression));
+                    if (function->arguments)
+                    {
+                        for (const auto & arg : function->arguments->children)
+                            throw_if_aggregate_function(arg);
+                    }
                 }
             }
-            else if (pos > columns.size() || !pos)
-            {
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                     "Positional argument out of bounds: {} (exprected in range [1, {}]",
-                                pos, columns.size());
-            }
-        }
-        else
-            positional = false;
-    }
-    else if (const auto * ast_function = typeid_cast<const ASTFunction *>(argument.get()))
-    {
-        if (ast_function->arguments)
-        {
-            for (auto & arg : ast_function->arguments->children)
-                positional &= checkPositionalArguments(arg, select_query, expression);
-        }
+        };
+
+        if (expression == ASTSelectQuery::Expression::GROUP_BY)
+            throw_if_aggregate_function(column);
+
+        argument = column->clone();
     }
     else
-        positional = false;
+    {
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Illegal value for positional argument in {}",
+                        ASTSelectQuery::expressionToString(expression));
+    }
 
-    return positional;
+    return true;
 }
 
 void replaceForPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_query, ASTSelectQuery::Expression expression)
@@ -362,101 +341,44 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
 
                 getRootActionsNoMakeSet(group_asts[i], true, temp_actions, false);
 
-                if (select_query->group_by_with_grouping_sets)
+                const auto & column_name = group_asts[i]->getColumnName();
+
+                const auto * node = temp_actions->tryFindInIndex(column_name);
+                if (!node)
+                    throw Exception("Unknown identifier (in GROUP BY): " + column_name, ErrorCodes::UNKNOWN_IDENTIFIER);
+
+                /// Only removes constant keys if it's an initiator or distributed_group_by_no_merge is enabled.
+                if (getContext()->getClientInfo().distributed_depth == 0 || settings.distributed_group_by_no_merge > 0)
                 {
-                    ASTs group_elements_ast;
-                    const ASTExpressionList * group_ast_element = group_asts[i]->as<const ASTExpressionList>();
-                    if (!group_ast_element)
-                        throw Exception("Grouping Sets element " + group_asts[i]->getColumnName() + " should be an expression type", ErrorCodes::UNKNOWN_IDENTIFIER);
-                    group_elements_ast = group_ast_element->children;
-
-                    NamesAndTypesList grouping_set_list;
-
-                    for (ssize_t j = 0; j < ssize_t(group_elements_ast.size()); ++j)
+                    /// Constant expressions have non-null column pointer at this stage.
+                    if (node->column && isColumnConst(*node->column))
                     {
-                        ssize_t group_size = group_elements_ast.size();
-                        const auto & column_name = group_elements_ast[j]->getColumnName();
-                        const auto * node = temp_actions->tryFindInIndex(column_name);
-                        if (!node)
-                            throw Exception("Unknown identifier (in GROUP BY): " + column_name, ErrorCodes::UNKNOWN_IDENTIFIER);
+                        select_query->group_by_with_constant_keys = true;
 
-                        /// Only removes constant keys if it's an initiator or distributed_group_by_no_merge is enabled.
-                        if (getContext()->getClientInfo().distributed_depth == 0 || settings.distributed_group_by_no_merge > 0)
+                        /// But don't remove last key column if no aggregate functions, otherwise aggregation will not work.
+                        if (!aggregate_descriptions.empty() || size > 1)
                         {
-                            /// Constant expressions have non-null column pointer at this stage.
-                            if (node->column && isColumnConst(*node->column))
-                            {
-                                /// But don't remove last key column if no aggregate functions, otherwise aggregation will not work.
-                                if (!aggregate_descriptions.empty() || group_size > 1)
-                                {
-                                    if (j + 1 < static_cast<ssize_t>(group_size))
-                                        group_elements_ast[j] = std::move(group_elements_ast.back());
+                            if (i + 1 < static_cast<ssize_t>(size))
+                                group_asts[i] = std::move(group_asts.back());
 
-                                    group_elements_ast.pop_back();
+                            group_asts.pop_back();
 
-                                    --j;
-                                    continue;
-                                }
-                            }
-                        }
-
-                        NameAndTypePair key{column_name, node->result_type};
-
-                        grouping_set_list.push_back(key);
-
-                        /// Aggregation keys are unique.
-                        if (!unique_keys.count(key.name))
-                        {
-                            unique_keys.insert(key.name);
-                            aggregation_keys.push_back(key);
-
-                            /// Key is no longer needed, therefore we can save a little by moving it.
-                            aggregated_columns.push_back(std::move(key));
+                            --i;
+                            continue;
                         }
                     }
-
-                    aggregation_keys_list.push_back(std::move(grouping_set_list));
                 }
-                else
+
+                NameAndTypePair key{column_name, node->result_type};
+
+                /// Aggregation keys are uniqued.
+                if (!unique_keys.count(key.name))
                 {
-                    const auto & column_name = group_asts[i]->getColumnName();
-                    const auto * node = temp_actions->tryFindInIndex(column_name);
-                    if (!node)
-                        throw Exception("Unknown identifier (in GROUP BY): " + column_name, ErrorCodes::UNKNOWN_IDENTIFIER);
+                    unique_keys.insert(key.name);
+                    aggregation_keys.push_back(key);
 
-                    /// Only removes constant keys if it's an initiator or distributed_group_by_no_merge is enabled.
-                    if (getContext()->getClientInfo().distributed_depth == 0 || settings.distributed_group_by_no_merge > 0)
-                    {
-                        /// Constant expressions have non-null column pointer at this stage.
-                        if (node->column && isColumnConst(*node->column))
-                        {
-                            select_query->group_by_with_constant_keys = true;
-
-                            /// But don't remove last key column if no aggregate functions, otherwise aggregation will not work.
-                            if (!aggregate_descriptions.empty() || size > 1)
-                            {
-                                if (i + 1 < static_cast<ssize_t>(size))
-                                    group_asts[i] = std::move(group_asts.back());
-
-                                group_asts.pop_back();
-
-                                --i;
-                                continue;
-                            }
-                        }
-                    }
-
-                    NameAndTypePair key{column_name, node->result_type};
-
-                    /// Aggregation keys are uniqued.
-                    if (!unique_keys.count(key.name))
-                    {
-                        unique_keys.insert(key.name);
-                        aggregation_keys.push_back(key);
-
-                        /// Key is no longer needed, therefore we can save a little by moving it.
-                        aggregated_columns.push_back(std::move(key));
-                    }
+                    /// Key is no longer needed, therefore we can save a little by moving it.
+                    aggregated_columns.push_back(std::move(key));
                 }
             }
 
@@ -1217,24 +1139,10 @@ bool SelectQueryExpressionAnalyzer::appendGroupBy(ExpressionActionsChain & chain
     ExpressionActionsChain::Step & step = chain.lastStep(columns_after_join);
 
     ASTs asts = select_query->groupBy()->children;
-    if (select_query->group_by_with_grouping_sets)
+    for (const auto & ast : asts)
     {
-        for (const auto & ast : asts)
-        {
-            for (const auto & ast_element : ast->children)
-            {
-                step.addRequiredOutput(ast_element->getColumnName());
-                getRootActions(ast_element, only_types, step.actions());
-            }
-        }
-    }
-    else
-    {
-        for (const auto & ast : asts)
-        {
-            step.addRequiredOutput(ast->getColumnName());
-            getRootActions(ast, only_types, step.actions());
-        }
+        step.addRequiredOutput(ast->getColumnName());
+        getRootActions(ast, only_types, step.actions());
     }
 
     if (optimize_aggregation_in_order)
@@ -1973,7 +1881,7 @@ std::string ExpressionAnalysisResult::dump() const
     if (!selected_columns.empty())
     {
         ss << "selected_columns ";
-        for (size_t i = 0; i < selected_columns.size(); i++)
+        for (size_t i = 0; i < selected_columns.size(); ++i)
         {
             if (i > 0)
             {

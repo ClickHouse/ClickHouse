@@ -436,25 +436,57 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 ## interserver_http_credentials {#server-settings-interserver-http-credentials}
 
-Имя пользователя и пароль, использующиеся для аутентификации при [репликации](../../operations/server-configuration-parameters/settings.md) движками Replicated\*. Это имя пользователя и пароль используются только для взаимодействия между репликами кластера и никак не связаны с аутентификацией клиентов ClickHouse. Сервер проверяет совпадение имени и пароля для соединяющихся с ним реплик, а также использует это же имя и пароль для соединения с другими репликами. Соответственно, эти имя и пароль должны быть прописаны одинаковыми для всех реплик кластера.
-По умолчанию аутентификация не используется.
+Имя пользователя и пароль, использующиеся для подключения к другим серверам при [репликации](../../engines/table-engines/mergetree-family/replication.md) движками Replicated\*. Сервер использует эти же учетные данные при аутентификации других реплик. Поэтому настройки `interserver_http_credentials` должны быть заданы одинаковыми для всех реплик кластера.
+
+По умолчанию, если секция `interserver_http_credentials` не задана в конфигурации, аутентификация при репликации не используется.
 
 !!! note "Примечание"
-    Эти учетные данные являются общими для обмена данными по протоколам `HTTP` и `HTTPS`.
+    Настройки `interserver_http_credentials` не относятся к [конфигурации](../../interfaces/cli.md#configuration_files) учетных данных клиента ClickHouse.
+
+!!! note "Примечание"
+    Учетные данные в `interserver_http_credentials` являются общими для репликации по `HTTP` и `HTTPS`.
 
 Раздел содержит следующие параметры:
 
 -   `user` — имя пользователя.
 -   `password` — пароль.
+-   `allow_empty` — если `true`, то другие реплики могут подключаться без аутентификации, даже если учетные данные заданы. Если `false`, то подключение без аутентификации не допускается. Значение по умолчанию: `false`.
+-   `old` — секция содержит старые значения `user` и `password`, которые используются в процессе изменения учетных данных. Можно указывать несколько секций `old`.
 
-**Пример конфигурации**
+**Изменение учетных данных**
+
+ClickHouse поддерживает динамическое изменение учетных данных. При этом не требуется одновременно останавливать все реплики, чтобы обновить конфигурацию. Изменение учетных данных выполняется за несколько шагов.
+
+Чтобы включить аутентификацию, установите `interserver_http_credentials.allow_empty` в значение `true` и задайте учетные данные. С такой конфигурацией разрешены подключения как с аутентификацией, так и без нее.
+
+``` xml
+<interserver_http_credentials>
+    <user>admin</user>
+    <password>111</password>
+    <allow_empty>true</allow_empty>
+</interserver_http_credentials>
+```
+
+После конфигурации всех реплик установите `allow_empty` в значение `false` или удалите эту настройку. Это сделает аутентификацию с новыми учетными данными обязательной.
+
+Чтобы изменить учетные данные, перенесите имя пользователя и пароль в секцию `interserver_http_credentials.old` и укажите новые значения для `user` и `password`. Сервер будет использовать новые учетные данные при подключении к другим репликам и при этом будет разрешать подключения как с новыми, так и со старыми учетными данными.
 
 ``` xml
 <interserver_http_credentials>
     <user>admin</user>
     <password>222</password>
+    <old>
+        <user>admin</user>
+        <password>111</password>
+    </old>
+    <old>
+        <user>temp</user>
+        <password>000</password>
+    </old>
 </interserver_http_credentials>
 ```
+
+Когда новые учетные данные обновятся на всех репликах, старые учетные данные можно удалить из конфигурации.
 
 ## keep_alive_timeout {#keep-alive-timeout}
 
@@ -641,7 +673,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 ## max_concurrent_queries {#max-concurrent-queries}
 
-Определяет максимальное количество одновременно обрабатываемых запросов, связанных с таблицей семейства `MergeTree`. Запросы также могут быть ограничены настройками: [max_concurrent_queries_for_user](#max-concurrent-queries-for-user), [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
+Определяет максимальное количество одновременно обрабатываемых запросов, связанных с таблицей семейства `MergeTree`. Запросы также могут быть ограничены настройками: [max_concurrent_insert_queries](#max-concurrent-insert-queries), [max_concurrent_select_queries](#max-concurrent-select-queries), [max_concurrent_queries_for_user](#max-concurrent-queries-for-user), [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
 
 !!! info "Примечание"
 	Параметры этих настроек могут быть изменены во время выполнения запросов и вступят в силу немедленно. Запросы, которые уже запущены, выполнятся без изменений.
@@ -649,12 +681,54 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 Возможные значения:
 
 -   Положительное целое число.
--   0 — выключена.
+-   0 — нет лимита.
+
+Значение по умолчанию: `100`.
 
 **Пример**
 
 ``` xml
 <max_concurrent_queries>100</max_concurrent_queries>
+```
+
+## max_concurrent_insert_queries {#max-concurrent-insert-queries}
+
+Определяет максимальное количество одновременных `INSERT` запросов.
+
+!!! info "Примечание"
+	Параметры этих настроек могут быть изменены во время выполнения запросов и вступят в силу немедленно. Запросы, которые уже запущены, выполнятся без изменений.
+	
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — нет лимита.
+
+Значение по умолчанию: `0`.
+
+**Example**
+
+``` xml
+<max_concurrent_insert_queries>100</max_concurrent_insert_queries>
+```
+
+## max_concurrent_select_queries {#max-concurrent-select-queries}
+
+Определяет максимальное количество одновременных `SELECT` запросов.
+
+!!! info "Примечание"
+	Параметры этих настроек могут быть изменены во время выполнения запросов и вступят в силу немедленно. Запросы, которые уже запущены, выполнятся без изменений.
+	
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — нет лимита.
+
+Значение по умолчанию: `0`.
+
+**Example**
+
+``` xml
+<max_concurrent_select_queries>100</max_concurrent_select_queries>
 ```
 
 ## max_concurrent_queries_for_user {#max-concurrent-queries-for-user}
@@ -664,7 +738,9 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 Возможные значения:
 
 -   Положительное целое число.
--   0 — выключена.
+-   0 — нет лимита.
+
+Значение по умолчанию: `0`.
 
 **Пример**
 
@@ -680,7 +756,12 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 Изменение настройки для одного запроса или пользователя не влияет на другие запросы.
 
-Значение по умолчанию: `0` — отсутствие ограничений.
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — нет лимита.
+
+Значение по умолчанию: `0`.
 
 **Пример**
 

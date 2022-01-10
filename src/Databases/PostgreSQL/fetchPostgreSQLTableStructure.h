@@ -12,9 +12,24 @@ namespace DB
 
 struct PostgreSQLTableStructure
 {
-    std::shared_ptr<NamesAndTypesList> columns = nullptr;
-    std::shared_ptr<NamesAndTypesList> primary_key_columns = nullptr;
-    std::shared_ptr<NamesAndTypesList> replica_identity_columns = nullptr;
+    struct PGAttribute
+    {
+        Int32 atttypid;
+        Int32 atttypmod;
+    };
+    using Attributes = std::vector<PGAttribute>;
+
+    struct ColumnsInfo
+    {
+        NamesAndTypesList columns;
+        Attributes attributes;
+        ColumnsInfo(NamesAndTypesList && columns_, Attributes && attributes_) : columns(columns_), attributes(attributes_) {}
+    };
+    using ColumnsInfoPtr = std::shared_ptr<ColumnsInfo>;
+
+    ColumnsInfoPtr physical_columns;
+    ColumnsInfoPtr primary_key_columns;
+    ColumnsInfoPtr replica_identity_columns;
 };
 
 using PostgreSQLTableStructurePtr = std::unique_ptr<PostgreSQLTableStructure>;
