@@ -28,6 +28,7 @@ public:
     Status del(const String & key);
     Status get(const String & key, String & value);
     void getByPrefix(const String & prefix, Strings & keys, Strings & values);
+    uint64_t getEstimateNumKeys() const;
 
     void shutdown();
 private:

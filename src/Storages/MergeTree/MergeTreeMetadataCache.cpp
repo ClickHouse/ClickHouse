@@ -61,6 +61,13 @@ void MergeTreeMetadataCache::getByPrefix(const String & prefix, Strings & keys, 
     ProfileEvents::increment(ProfileEvents::MergeTreeMetadataCacheSeek);
 }
 
+uint64_t MergeTreeMetadataCache::getEstimateNumKeys() const
+{
+    uint64_t keys = 0;
+    rocksdb->GetAggregatedIntProperty("rocksdb.estimate-num-keys", &keys);
+    return keys;
+}
+
 void MergeTreeMetadataCache::shutdown()
 {
     rocksdb->Close();
