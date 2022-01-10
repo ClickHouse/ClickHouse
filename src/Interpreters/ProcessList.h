@@ -271,11 +271,7 @@ public:
     /// User -> queries
     using UserToQueries = std::unordered_map<String, ProcessListForUser>;
 
-    struct QueryKindAmounts
-    {
-        QueryAmount insert;
-        QueryAmount select;
-    };
+    using QueryKindAmounts = std::unordered_map<IAST::QueryKind, QueryAmount>;
 
 protected:
     friend class ProcessListEntry;
@@ -306,10 +302,10 @@ protected:
     size_t max_select_queries_amount = 0;
 
     /// amount of queries by query kind.
-    QueryKindAmounts * query_kind_amounts = new QueryKindAmounts{0, 0};
+    QueryKindAmounts query_kind_amounts;
 
-    void increaseQueryKindAmount(const IAST::QueryKind & query_kind) const;
-    void decreaseQueryKindAmount(const IAST::QueryKind & query_kind) const;
+    void increaseQueryKindAmount(const IAST::QueryKind & query_kind);
+    void decreaseQueryKindAmount(const IAST::QueryKind & query_kind);
     QueryAmount getQueryKindAmount(const IAST::QueryKind & query_kind) const;
 
 public:
