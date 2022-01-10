@@ -156,6 +156,16 @@ void ASTColumns::formatImpl(const FormatSettings & s, FormatState & state, Forma
             list.children.push_back(elem);
         }
     }
+    if (stats)
+    {
+        for (const auto & stat : stats->children)
+        {
+            auto elem = std::make_shared<ASTColumnsElement>();
+            elem->prefix = "STAT";
+            elem->set(elem->elem, stat->clone());
+            list.children.push_back(elem);
+        }
+    }
     if (constraints)
     {
         for (const auto & constraint : constraints->children)

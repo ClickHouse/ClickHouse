@@ -1,13 +1,14 @@
 #pragma once
 
-#include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <Disks/IDisk.h>
+#include <IO/HashingWriteBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileBase.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <IO/HashingWriteBuffer.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Disks/IDisk.h>
+#include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeStatistic.h>
 
 
 namespace DB
@@ -55,7 +56,8 @@ public:
             const std::string & marks_path_,
             const std::string & marks_file_extension_,
             const CompressionCodecPtr & compression_codec_,
-            size_t max_compress_block_size_);
+            size_t max_compress_block_size_,
+            bool use_marks = true);
 
         String escaped_column_name;
         std::string data_file_extension;
@@ -69,7 +71,8 @@ public:
 
         /// marks -> marks_file
         std::unique_ptr<WriteBufferFromFileBase> marks_file;
-        HashingWriteBuffer marks;
+        std::unique_ptr<HashingWriteBuffer> marks;
+        bool use_marks;
 
         void finalize();
 
@@ -105,11 +108,15 @@ protected:
     /// and one skip index granule can contain multiple "normal" marks. So skip indices serialization
     /// require additional state: skip_indices_aggregators and skip_index_accumulated_marks
     void calculateAndSerializeSkipIndices(const Block & skip_indexes_block, const Granules & granules_to_write);
+    /// Calculate statistics
+    void calculateStatistics(const Block & block, const Granules & granules_to_write);
 
     /// Finishes primary index serialization: write final primary index row (if required) and compute checksums
     void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync);
     /// Finishes skip indices serialization: write all accumulated data to disk and compute checksums
     void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync);
+    /// Finishes stats serialization: write all accumulated data to disk and compute checksums
+    void finishStatisticsSerialization(MergeTreeData::DataPart::Checksums & checksums, bool sync);
 
     /// Get global number of the current which we are writing (or going to start to write)
     size_t getCurrentMark() const { return current_mark; }
@@ -118,6 +125,8 @@ protected:
 
     /// Get unique non ordered skip indices column.
     Names getSkipIndicesColumns() const;
+    /// Get unique non ordered stats column.
+    Names getStatsColumns() const;
 
     const MergeTreeIndices skip_indices;
 
@@ -130,6 +139,8 @@ protected:
     std::vector<StreamPtr> skip_indices_streams;
     MergeTreeIndexAggregators skip_indices_aggregators;
     std::vector<size_t> skip_index_accumulated_marks;
+
+    IMergeTreeColumnDistributionStatisticCollectors stats_collectors;
 
     std::unique_ptr<WriteBufferFromFileBase> index_file_stream;
     std::unique_ptr<HashingWriteBuffer> index_stream;
@@ -149,6 +160,7 @@ protected:
 private:
     void initSkipIndices();
     void initPrimaryIndex();
+    void initStats();
 
     virtual void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) = 0;
 };

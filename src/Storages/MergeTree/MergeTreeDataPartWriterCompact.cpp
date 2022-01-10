@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include "Storages/MergeTree/IMergeTreeDataPartWriter.h"
 
 namespace DB
 {
@@ -168,6 +169,9 @@ void MergeTreeDataPartWriterCompact::writeDataBlockPrimaryIndexAndSkipIndices(co
 
     Block skip_indices_block = getBlockAndPermute(block, getSkipIndicesColumns(), nullptr);
     calculateAndSerializeSkipIndices(skip_indices_block, granules_to_write);
+
+    Block stats_block = getBlockAndPermute(block, getStatsColumns(), nullptr);
+    calculateStatistics(stats_block, granules_to_write);
 }
 
 void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const Granules & granules)
@@ -366,6 +370,7 @@ void MergeTreeDataPartWriterCompact::finish(IMergeTreeDataPart::Checksums & chec
         finishPrimaryIndexSerialization(checksums, sync);
 
     finishSkipIndicesSerialization(checksums, sync);
+    finishStatisticsSerialization(checksums, sync);
 }
 
 }

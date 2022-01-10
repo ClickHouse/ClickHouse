@@ -41,6 +41,7 @@ class ASTColumns : public IAST
 public:
     ASTExpressionList * columns = nullptr;
     ASTExpressionList * indices = nullptr;
+    ASTExpressionList * stats = nullptr;
     ASTExpressionList * constraints = nullptr;
     ASTExpressionList * projections = nullptr;
     IAST              * primary_key = nullptr;
@@ -51,9 +52,12 @@ public:
 
     void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
 
-    bool empty()
+    bool empty() const
     {
-        return (!columns || columns->children.empty()) && (!indices || indices->children.empty()) && (!constraints || constraints->children.empty())
+        return (!columns || columns->children.empty())
+            && (!indices || indices->children.empty())
+            && (!stats || stats->children.empty())
+            && (!constraints || constraints->children.empty())
             && (!projections || projections->children.empty());
     }
 };

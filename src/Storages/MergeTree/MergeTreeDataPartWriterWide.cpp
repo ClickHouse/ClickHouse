@@ -246,6 +246,9 @@ void MergeTreeDataPartWriterWide::write(const Block & block, const IColumn::Perm
 
     calculateAndSerializeSkipIndices(skip_indexes_block, granules_to_write);
 
+    const Block stats_block = getBlockAndPermute(block, getStatsColumns(), permutation);
+    calculateStatistics(stats_block, granules_to_write);
+
     shiftCurrentMark(granules_to_write);
 }
 
@@ -263,10 +266,13 @@ void MergeTreeDataPartWriterWide::writeSingleMark(
 void MergeTreeDataPartWriterWide::flushMarkToFile(const StreamNameAndMark & stream_with_mark, size_t rows_in_mark)
 {
     Stream & stream = *column_streams[stream_with_mark.stream_name];
-    writeIntBinary(stream_with_mark.mark.offset_in_compressed_file, stream.marks);
-    writeIntBinary(stream_with_mark.mark.offset_in_decompressed_block, stream.marks);
-    if (settings.can_use_adaptive_granularity)
-        writeIntBinary(rows_in_mark, stream.marks);
+    if (stream.use_marks)
+    {
+        writeIntBinary(stream_with_mark.mark.offset_in_compressed_file, *stream.marks);
+        writeIntBinary(stream_with_mark.mark.offset_in_decompressed_block, *stream.marks);
+        if (settings.can_use_adaptive_granularity)
+            writeIntBinary(rows_in_mark, *stream.marks);
+    }
 }
 
 StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(
@@ -584,6 +590,7 @@ void MergeTreeDataPartWriterWide::finish(IMergeTreeDataPart::Checksums & checksu
         finishPrimaryIndexSerialization(checksums, sync);
 
     finishSkipIndicesSerialization(checksums, sync);
+    finishStatisticsSerialization(checksums, sync);
 }
 
 void MergeTreeDataPartWriterWide::writeFinalMark(

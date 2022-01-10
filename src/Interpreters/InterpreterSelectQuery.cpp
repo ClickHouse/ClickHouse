@@ -401,7 +401,12 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             view = nullptr;
         }
 
-        if (try_move_to_prewhere && storage && storage->supportsPrewhere() && query.where() && !query.prewhere())
+        if (try_move_to_prewhere &&
+            storage &&
+            storage->supportsPrewhere() &&
+            query.where() &&
+            !query.prewhere() &&
+            !settings.allow_experimental_stats_for_prewhere_optimization)
         {
             /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
             if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty())

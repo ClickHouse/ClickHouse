@@ -1,5 +1,6 @@
 #include "IMergeTreeDataPart.h"
 
+#include <memory>
 #include <optional>
 #include <Core/Defines.h>
 #include <IO/HashingWriteBuffer.h>
@@ -625,6 +626,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     loadIndex();     /// Must be called after loadIndexGranularity as it uses the value of `index_granularity`
     loadRowsCount(); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
     loadPartitionAndMinMaxIndex();
+    loadStats();
     if (!parent_part)
     {
         loadTTLInfos();
@@ -706,6 +708,24 @@ void IMergeTreeDataPart::loadIndex()
             throw Exception("Index file " + fullPath(volume->getDisk(), index_path) + " is unexpectedly long", ErrorCodes::EXPECTED_END_OF_FILE);
 
         index.assign(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
+    }
+}
+
+void IMergeTreeDataPart::loadStats() {
+    /// It can be empty in case of mutations
+    if (!index_granularity.isInitialized())
+        throw Exception("Index granularity is not loaded before index loading", ErrorCodes::LOGICAL_ERROR);
+    // TODO:
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+
+    const String stats_file_path = String(fs::path(getFullRelativePath()) / PART_STATS_FILE_NAME) + PART_STATS_FILE_EXT;
+    stats = MergeTreeStatisticFactory::instance().get(metadata_snapshot->getStatistics());
+    if (volume->getDisk()->exists(stats_file_path))
+    {
+        auto stats_file = openForReading(volume->getDisk(), stats_file_path);
+        stats->deserializeBinary(*stats_file);
+        if (!stats_file->eof())
+                throw Exception("Stats file " + fullPath(volume->getDisk(), stats_file_path) + " is unexpectedly long", ErrorCodes::EXPECTED_END_OF_FILE);
     }
 }
 

@@ -14,6 +14,7 @@
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <Storages/MergeTree/MergeTreeStatistic.h>
 
 #include <shared_mutex>
 
@@ -270,6 +271,8 @@ public:
     using Index = Columns;
     Index index;
 
+    MergeTreeStatisticsPtr stats;
+
     MergeTreePartition partition;
 
     /// Amount of rows between marks
@@ -319,6 +322,9 @@ public:
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
     UInt64 getMarksCount() const;
+
+    //TODO: UInt64 getStatsSizeInBytes() const;
+    //TODO: UInt64 getStatsAllocatedBytes() const;
 
     UInt64 getBytesOnDisk() const { return bytes_on_disk; }
     void setBytesOnDisk(UInt64 bytes_on_disk_) { bytes_on_disk = bytes_on_disk_; }
@@ -469,8 +475,12 @@ private:
     /// Loads index file.
     void loadIndex();
 
+    /// Loads stats 
+    void loadStats();
+
     /// Load rows count for this part from disk (for the newer storage format version).
     /// For the older format version calculates rows count from the size of a column with a fixed size.
+    /// TODO: move to stats in future???
     void loadRowsCount();
 
     /// Loads ttl infos in json format from file ttl.txt. If file doesn't exists assigns ttl infos with all zeros

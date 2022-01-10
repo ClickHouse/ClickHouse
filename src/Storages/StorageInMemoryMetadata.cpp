@@ -27,6 +27,7 @@ namespace ErrorCodes
 StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata & other)
     : columns(other.columns)
     , secondary_indices(other.secondary_indices)
+    , statistics(other.statistics)
     , constraints(other.constraints)
     , projections(other.projections.clone())
     , minmax_count_projection(
@@ -50,6 +51,7 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
 
     columns = other.columns;
     secondary_indices = other.secondary_indices;
+    statistics = other.statistics;
     constraints = other.constraints;
     projections = other.projections.clone();
     if (other.minmax_count_projection)
@@ -86,6 +88,11 @@ void StorageInMemoryMetadata::setColumns(ColumnsDescription columns_)
 void StorageInMemoryMetadata::setSecondaryIndices(IndicesDescription secondary_indices_)
 {
     secondary_indices = std::move(secondary_indices_);
+}
+
+void StorageInMemoryMetadata::setStatistics(StatisticsDescriptions stats_)
+{
+    statistics = std::move(stats_);
 }
 
 void StorageInMemoryMetadata::setConstraints(ConstraintsDescription constraints_)
@@ -134,6 +141,16 @@ const IndicesDescription & StorageInMemoryMetadata::getSecondaryIndices() const
 bool StorageInMemoryMetadata::hasSecondaryIndices() const
 {
     return !secondary_indices.empty();
+}
+
+const StatisticsDescriptions & StorageInMemoryMetadata::getStatistics() const
+{
+    return statistics;
+}
+
+bool StorageInMemoryMetadata::hasStatistics() const
+{
+    return !statistics.empty();
 }
 
 const ConstraintsDescription & StorageInMemoryMetadata::getConstraints() const

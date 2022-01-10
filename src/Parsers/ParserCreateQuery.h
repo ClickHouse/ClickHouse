@@ -276,10 +276,21 @@ protected:
 class ParserIndexDeclaration : public IParserBase
 {
 public:
-    ParserIndexDeclaration() {}
+    ParserIndexDeclaration() = default;
 
 protected:
     const char * getName() const override { return "index declaration"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+/** name BY columns TYPE typename(arg1, arg2, ...) */
+class ParserStatisticDeclaration : public IParserBase
+{
+public:
+    ParserStatisticDeclaration() = default;
+
+protected:
+    const char * getName() const override { return "statistic declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

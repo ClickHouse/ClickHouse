@@ -5,6 +5,7 @@
 
 #include <base/logger_useful.h>
 #include <Common/ActionBlocker.h>
+#include "Storages/StatisticsDescription.h"
 
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -41,6 +42,7 @@ static void extractMergingAndGatheringColumns(
     const NamesAndTypesList & storage_columns,
     const ExpressionActionsPtr & sorting_key_expr,
     const IndicesDescription & indexes,
+    const StatisticsDescriptions & stats,
     const MergeTreeData::MergingParams & merging_params,
     NamesAndTypesList & gathering_columns, Names & gathering_column_names,
     NamesAndTypesList & merging_columns, Names & merging_column_names)
@@ -51,6 +53,14 @@ static void extractMergingAndGatheringColumns(
     {
         Names index_columns_vec = index.expression->getRequiredColumns();
         std::copy(index_columns_vec.cbegin(), index_columns_vec.cend(),
+                  std::inserter(key_columns, key_columns.end()));
+    }
+
+    /// just for now
+    /// TODO: support vertical merge for stats (each stat is calculatated using one column).
+    for (const auto & stat : stats)
+    {
+        std::copy(stat.column_names.cbegin(), stat.column_names.cend(),
                   std::inserter(key_columns, key_columns.end()));
     }
 
@@ -142,6 +152,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         global_ctx->storage_columns,
         global_ctx->metadata_snapshot->getSortingKey().expression,
         global_ctx->metadata_snapshot->getSecondaryIndices(),
+        global_ctx->metadata_snapshot->getStatistics(),
         ctx->merging_params,
         global_ctx->gathering_columns,
         global_ctx->gathering_column_names,

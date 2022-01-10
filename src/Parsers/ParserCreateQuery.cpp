@@ -9,6 +9,7 @@
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTStatisticDeclaration.h>
 #include <Parsers/ASTTableOverrides.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -138,6 +139,40 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     index->set(index->expr, expr);
     index->set(index->type, type);
     node = index;
+
+    return true;
+}
+
+bool ParserStatisticDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserKeyword s_type("TYPE");
+
+    ParserIdentifier name_p;
+    ParserDataType data_type_p;
+    ParserExpressionList expression_list_p(false);
+
+    ASTPtr name;
+    ASTPtr columns;
+    ASTPtr type;
+
+    if (!name_p.parse(pos, name, expected))
+        return false;
+
+    if (!expression_list_p.parse(pos, columns, expected))
+        return false;
+
+    if (!s_type.ignore(pos, expected))
+        return false;
+
+    if (!data_type_p.parse(pos, type, expected))
+        return false;
+
+
+    auto stat = std::make_shared<ASTStatisticDeclaration>();
+    stat->name = name->as<ASTIdentifier &>().name();
+    stat->set(stat->columns, columns);
+    stat->set(stat->type, type);
+    node = stat;
 
     return true;
 }
