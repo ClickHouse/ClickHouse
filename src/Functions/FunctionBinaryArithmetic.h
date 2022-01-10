@@ -1461,13 +1461,13 @@ public:
             if constexpr (decimal_with_float)
             {
                 const auto converted_type = std::make_shared<DataTypeFloat64>();
-                left_col = castColumn(std::move(arguments[0]), converted_type);
-                right_col = castColumn(std::move(arguments[1]), converted_type);
+                left_col = castColumn(arguments[0], converted_type);
+                right_col = castColumn(arguments[1], converted_type);
             }
             else
             {
-                left_col = std::move(arguments[0].column);
-                right_col = std::move(arguments[1].column);
+                left_col = arguments[0].column;
+                right_col = arguments[1].column;
             }
             const auto * const col_left_raw = left_col.get();
             const auto * const col_right_raw = right_col.get();
