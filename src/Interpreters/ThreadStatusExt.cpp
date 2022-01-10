@@ -15,6 +15,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/TraceCollector.h>
+#include <Common/setThreadName.h>
 #include <base/errnoToString.h>
 
 #if defined(OS_LINUX)
