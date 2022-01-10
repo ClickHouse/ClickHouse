@@ -122,6 +122,7 @@ struct Settings;
     M(Bool, enable_mixed_granularity_parts, true, "Enable parts with adaptive and non adaptive granularity", 0) \
     M(MaxThreads, max_part_loading_threads, 0, "The number of threads to load data parts at startup.", 0) \
     M(MaxThreads, max_part_removal_threads, 0, "The number of threads for concurrent removal of inactive data parts. One is usually enough, but in 'Google Compute Environment SSD Persistent Disks' file removal (unlink) operation is extraordinarily slow and you probably have to increase this number (recommended is up to 16).", 0) \
+    M(UInt64, max_part_writing_threads, 0, "The number of threads for concurrent writing data parts. One is usually enough, but for Remote Persistent Disks, file writing operation is extraordinarily slow and you probably have to increase this number (recommended is up to 16).", 0) \
     M(UInt64, concurrent_part_removal_threshold, 100, "Activate concurrent part removal (see 'max_part_removal_threads') only if the number of inactive data parts is at least this.", 0) \
     M(String, storage_policy, "default", "Name of storage disk policy", 0) \
     M(Bool, allow_nullable_key, false, "Allow Nullable types as primary keys.", 0) \
