@@ -21,7 +21,6 @@ SELECT * FROM insert_dedup_token ORDER BY id;
 
 select 'update dedup token, two inserts with the same dedup token, one inserted, one deduplicated by the token';
 set insert_deduplication_token = '\x61\x00\x63';
--- set insert_deduplication_token = '2';
 INSERT INTO insert_dedup_token VALUES(1, 1001);
 INSERT INTO insert_dedup_token VALUES(2, 1002);
 SELECT * FROM insert_dedup_token ORDER BY id;

@@ -28,6 +28,7 @@ select 'create replica 2 and check deduplication';
 CREATE TABLE insert_dedup_token2 (
     id Int32, val UInt32
 ) ENGINE=ReplicatedMergeTree('/clickhouse/tables/{database}/insert_dedup_token', 'r2') ORDER BY id;
+SYSTEM SYNC REPLICA insert_dedup_token2;
 
 select 'inserted value deduplicated by data digest, the same result as before';
 set insert_deduplication_token = '';
