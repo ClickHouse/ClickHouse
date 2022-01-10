@@ -161,6 +161,7 @@ private:
     ContextAccess() {}
     ContextAccess(const AccessControl & access_control_, const Params & params_);
 
+    void subscribeForChanges(const std::shared_ptr<ContextAccess> &res);
     void setUser(const UserPtr & user_) const;
     void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const;
     void setSettingsAndConstraints() const;
