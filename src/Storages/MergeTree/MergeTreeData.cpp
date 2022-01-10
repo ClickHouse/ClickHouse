@@ -872,6 +872,81 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     return res;
 }
 
+MergeTreeStatisticsPtr MergeTreeData::getStatisticsByPartitionPredicate(
+    const SelectQueryInfo & query_info, ContextPtr local_context) const
+{
+    auto parts = getDataPartsVector({DataPartState::Active});
+
+    /// TODO: get rid of copy-paste
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+    ASTPtr expression_ast;
+    Block virtual_columns_block = getBlockWithVirtualPartColumns(parts, true /* one_part */);
+
+    // Generate valid expressions for filtering
+    bool valid = VirtualColumnUtils::prepareFilterBlockWithQuery(query_info.query, local_context, virtual_columns_block, expression_ast);
+
+    PartitionPruner partition_pruner(metadata_snapshot, query_info, local_context, true /* strict */);
+    if (partition_pruner.isUseless() && !valid)
+        return nullptr;
+
+    std::unordered_set<String> part_values;
+    if (valid && expression_ast)
+    {
+        virtual_columns_block = getBlockWithVirtualPartColumns(parts, false /* one_part */);
+        VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, local_context, expression_ast);
+        part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
+        if (part_values.empty())
+            return nullptr;
+    }
+
+    
+    std::unordered_set<String> partitions;
+    for (const auto & part : parts)
+    {
+        if ((part_values.empty() || part_values.find(part->name) != part_values.end()) && !partition_pruner.canBePruned(*part))
+        {
+            partitions.emplace(part->info.partition_id);
+        }   
+    }
+
+    std::vector<MergeTreeStatisticsPtr> stats_for_merge;
+    {
+        std::shared_lock lock(partition_to_stats_mutex);
+        for (const auto & partition : partitions)
+        {
+            auto it = partition_to_stats.find(partition);
+            if (it != std::end(partition_to_stats))
+            {
+                stats_for_merge.push_back(it->second);
+            }
+        }
+    }
+
+    MergeTreeStatisticsPtr res = MergeTreeStatisticFactory::instance().get(metadata_snapshot->getStatistics());
+    for (const auto& stat : stats_for_merge)
+        res->merge(stat);
+    return res;
+}
+
+void MergeTreeData::updateStatisticsByPartition()
+{
+    std::unordered_map<String, MergeTreeStatisticsPtr> partition_to_stats_new;
+
+    auto parts = getDataPartsVector({DataPartState::Active});
+    auto metadata_snapshot = getInMemoryMetadataPtr();
+
+    for (const auto & part : parts)
+    {
+        const String & parition_id = part->info.partition_id;
+        if (partition_to_stats_new.contains(parition_id))
+            partition_to_stats_new[parition_id]->merge(part->loadStats());
+        else 
+            partition_to_stats_new[parition_id] = part->loadStats();
+    }
+
+    std::unique_lock lock(partition_to_stats_mutex);
+    std::swap(partition_to_stats, partition_to_stats_new);
+}
 
 String MergeTreeData::MergingParams::getModeName() const
 {

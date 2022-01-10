@@ -711,15 +711,15 @@ void IMergeTreeDataPart::loadIndex()
     }
 }
 
-void IMergeTreeDataPart::loadStats() {
+MergeTreeStatisticsPtr IMergeTreeDataPart::loadStats() const {
     /// It can be empty in case of mutations
     if (!index_granularity.isInitialized())
         throw Exception("Index granularity is not loaded before index loading", ErrorCodes::LOGICAL_ERROR);
     // TODO:
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    const auto metadata_snapshot = storage.getInMemoryMetadataPtr();
 
     const String stats_file_path = String(fs::path(getFullRelativePath()) / PART_STATS_FILE_NAME) + PART_STATS_FILE_EXT;
-    stats = MergeTreeStatisticFactory::instance().get(metadata_snapshot->getStatistics());
+    auto stats = MergeTreeStatisticFactory::instance().get(metadata_snapshot->getStatistics());
     if (volume->getDisk()->exists(stats_file_path))
     {
         auto stats_file = openForReading(volume->getDisk(), stats_file_path);
@@ -727,6 +727,7 @@ void IMergeTreeDataPart::loadStats() {
         if (!stats_file->eof())
                 throw Exception("Stats file " + fullPath(volume->getDisk(), stats_file_path) + " is unexpectedly long", ErrorCodes::EXPECTED_END_OF_FILE);
     }
+    return stats;
 }
 
 NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const

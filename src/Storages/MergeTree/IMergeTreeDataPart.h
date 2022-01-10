@@ -271,8 +271,6 @@ public:
     using Index = Columns;
     Index index;
 
-    MergeTreeStatisticsPtr stats;
-
     MergeTreePartition partition;
 
     /// Amount of rows between marks
@@ -414,6 +412,11 @@ public:
     /// Required for distinguish different copies of the same part on S3
     String getUniqueId() const;
 
+    /// Loads stats
+    /// Stats sketches are too large to store them in RAM for each part, 
+    /// so we store aggregated stats per each partition.
+    MergeTreeStatisticsPtr loadStats() const;
+
 protected:
 
     /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
@@ -474,9 +477,6 @@ private:
 
     /// Loads index file.
     void loadIndex();
-
-    /// Loads stats 
-    void loadStats();
 
     /// Load rows count for this part from disk (for the newer storage format version).
     /// For the older format version calculates rows count from the size of a column with a fixed size.

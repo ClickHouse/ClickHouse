@@ -1,5 +1,6 @@
 #pragma once
 
+#include <unordered_map>
 #include <Common/SimpleIncrement.h>
 #include <Common/MultiVersion.h>
 #include <Storages/IStorage.h>
@@ -885,7 +886,17 @@ public:
     /// Mutex for currently_submerging_parts and currently_emerging_parts
     mutable std::mutex currently_submerging_emerging_mutex;
 
+    /// Get Statistics for prewhere planning
+    MergeTreeStatisticsPtr getStatisticsByPartitionPredicate(
+        const SelectQueryInfo & query_info, ContextPtr local_context) const;
+
 protected:
+    void updateStatisticsByPartition();
+
+    /// Approximate and updated eventually
+    /// TODO: do I need to use PartitionID here?
+    mutable std::shared_mutex partition_to_stats_mutex;
+    std::unordered_map<String, MergeTreeStatisticsPtr> partition_to_stats;
 
     friend class IMergeTreeDataPart;
     friend class MergeTreeDataMergerMutator;

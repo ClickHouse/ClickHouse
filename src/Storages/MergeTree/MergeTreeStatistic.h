@@ -94,6 +94,8 @@ class MergeTreeStatistics {
 public:
     bool empty() const;
 
+    void merge(const std::shared_ptr<MergeTreeStatistics>& other);
+
     void serializeBinary(WriteBuffer & ostr) const;
     void deserializeBinary(ReadBuffer & istr);
 

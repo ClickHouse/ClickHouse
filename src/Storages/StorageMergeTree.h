@@ -19,6 +19,7 @@
 
 #include <Disks/StoragePolicy.h>
 #include <Common/SimpleIncrement.h>
+#include "Storages/MergeTree/MergeTreeStatistic.h"
 
 
 namespace DB

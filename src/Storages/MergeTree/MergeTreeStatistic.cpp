@@ -44,6 +44,13 @@ bool MergeTreeStatistics::empty() const
     return column_distributions.empty();
 }
 
+void MergeTreeStatistics::merge(const std::shared_ptr<MergeTreeStatistics>& /*other*/)
+{
+    //if (!other)
+    //    return;
+    // Do nothing at current time
+}
+
 // Serialization:
 // <Count:u64>
 // <TYPE:u64><Count:u64><Column/Name:string><DataSizeBytes:u64><data:...><Column/Name:string><DataSizeBytes:u64><data:...>...
