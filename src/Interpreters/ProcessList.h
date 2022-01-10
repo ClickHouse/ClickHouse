@@ -128,7 +128,7 @@ public:
         const String & query_,
         const ClientInfo & client_info_,
         QueryPriorities::Handle && priority_handle_,
-        const IAST::QueryKind & query_kind_
+        IAST::QueryKind query_kind_
         );
 
     ~QueryStatus();
