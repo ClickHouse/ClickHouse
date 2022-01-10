@@ -3,6 +3,13 @@
 -- make the order static
 SET max_threads = 1;
 
+DROP TABLE IF EXISTS mem1;
+DROP TABLE IF EXISTS mem2;
+DROP TABLE IF EXISTS mem3;
+DROP TABLE IF EXISTS dist_1;
+DROP TABLE IF EXISTS dist_2;
+DROP TABLE IF EXISTS dist_3;
+
 -- remote(system.one)
 SELECT 'remote(system.one)';
 SELECT * FROM remote('127.0.0.1', system.one);
