@@ -24,6 +24,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/IStorage.h>
 #include <Common/setThreadName.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <IO/WriteHelpers.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
@@ -286,7 +287,7 @@ void SystemLog<LogElement>::add(const LogElement & element)
     /// The size of allocation can be in order of a few megabytes.
     /// But this should not be accounted for query memory usage.
     /// Otherwise the tests like 01017_uniqCombined_memory_usage.sql will be flacky.
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
 
     /// Should not log messages under mutex.
     bool queue_is_half_full = false;
