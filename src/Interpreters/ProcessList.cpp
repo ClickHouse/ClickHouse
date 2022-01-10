@@ -505,38 +505,33 @@ ProcessList::UserInfo ProcessList::getUserInfo(bool get_profile_events) const
     return per_user_infos;
 }
 
-void ProcessList::increaseQueryKindAmount(const IAST::QueryKind & query_kind) const
+void ProcessList::increaseQueryKindAmount(const IAST::QueryKind & query_kind)
 {
-    if (query_kind == IAST::QueryKind::Insert)
-        query_kind_amounts->insert++;
-    else if (query_kind == IAST::QueryKind::Select)
-        query_kind_amounts->select++;
+    auto found = query_kind_amounts.find(query_kind);
+    if (found == query_kind_amounts.end())
+        query_kind_amounts[query_kind] = 1;
+    else
+        found->second += 1;
 }
 
-void ProcessList::decreaseQueryKindAmount(const IAST::QueryKind & query_kind) const
+void ProcessList::decreaseQueryKindAmount(const IAST::QueryKind & query_kind)
 {
-    if (!(query_kind == IAST::QueryKind::Insert || query_kind == IAST::QueryKind::Select))
-        return;
-
-    QueryAmount amount = getQueryKindAmount(query_kind);
-    if (amount == 0)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong query kind amount: decrease to negative on '{}'", query_kind, amount);
-    }
-    if (query_kind == IAST::QueryKind::Insert)
-        query_kind_amounts->insert--;
-    else if (query_kind == IAST::QueryKind::Select)
-        query_kind_amounts->select--;
+    auto found = query_kind_amounts.find(query_kind);
+    /// TODO: we could just rebuild the map, as we have saved all query_kind.
+    if (found == query_kind_amounts.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong query kind amount: decrease before increase on '{}'", query_kind);
+    else if (found->second == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong query kind amount: decrease to negative on '{}'", query_kind, found->second);
+    else
+        found->second -= 1;
 }
 
 ProcessList::QueryAmount ProcessList::getQueryKindAmount(const IAST::QueryKind & query_kind) const
 {
-    if (query_kind == IAST::QueryKind::Insert)
-        return query_kind_amounts->insert;
-    else if (query_kind == IAST::QueryKind::Select)
-        return query_kind_amounts->select;
-    else
+    auto found = query_kind_amounts.find(query_kind);
+    if (found == query_kind_amounts.end())
         return 0;
+    return found->second;
 }
 
 }
