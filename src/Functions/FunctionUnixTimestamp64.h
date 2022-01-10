@@ -108,8 +108,9 @@ public:
         if (arguments.size() < 1 || arguments.size() > 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} takes one or two arguments", name);
 
-        if (!typeid_cast<const DataTypeInt64 *>(arguments[0].type.get()))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument for function {} must be Int64", name);
+        // if (!typeid_cast<const DataTypeInt64 *>(arguments[0].type.get()))
+        if (!isInteger(arguments[0].type))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument for function {} must be integer", name);
 
         std::string timezone;
         if (arguments.size() == 2)
