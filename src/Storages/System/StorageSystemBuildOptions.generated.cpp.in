@@ -42,7 +42,6 @@ const char * auto_config_build[]
     "USE_PROTOBUF", "@USE_PROTOBUF@",
     "USE_BROTLI", "@USE_BROTLI@",
     "USE_SSL", "@USE_SSL@",
-    "USE_BLAKE3", "@USE_BLAKE3@"
     "USE_HYPERSCAN", "@ENABLE_HYPERSCAN@",
     "USE_SIMDJSON", "@USE_SIMDJSON@",
     "USE_GRPC", "@USE_GRPC@",
