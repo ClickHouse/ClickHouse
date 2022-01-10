@@ -346,6 +346,9 @@ public:
     /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
     virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const;
 
+    /// Cleanup shared locks made with old name after part renaming
+    virtual void cleanupOldName(const String & old_part_name) const;
+
     /// Makes clone of a part in detached/ directory via hard links
     virtual void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const;
 
@@ -412,8 +415,8 @@ public:
     /// part creation (using alter query with materialize_ttl setting).
     bool checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const;
 
-    /// Return some uniq string for file
-    /// Required for distinguish different copies of the same part on S3
+    /// Return some uniq string for file.
+    /// Required for distinguish different copies of the same part on remote FS.
     String getUniqueId() const;
 
     /// Get checksums of metadata file in part directory
@@ -421,6 +424,10 @@ public:
 
     /// Check metadata in cache is consistent with actual metadata on disk(if use_metadata_cache is true)
     std::unordered_map<String, uint128> checkMetadata() const;
+
+    /// Return hardlink count for part.
+    /// Required for keep data on remote FS when part has shadow copies.
+    UInt32 getNumberOfRefereneces() const;
 
 protected:
 

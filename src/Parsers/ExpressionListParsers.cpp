@@ -689,7 +689,7 @@ bool ParserUnaryExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTPtr expr_ast;
-    if (!elem_parser.parse(pos, expr_ast, expected))
+    if (!ParserExpressionElement().parse(pos, expr_ast, expected))
         return false;
 
     ASTPtr type_ast;

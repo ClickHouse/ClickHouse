@@ -1284,6 +1284,14 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     storage.lockSharedData(*this);
 }
 
+void IMergeTreeDataPart::cleanupOldName(const String & old_part_name) const
+{
+    if (name == old_part_name)
+        return;
+
+    storage.unlockSharedData(*this, old_part_name);
+}
+
 std::optional<bool> IMergeTreeDataPart::keepSharedDataInDecoupledStorage() const
 {
     /// NOTE: It's needed for zero-copy replication
@@ -1761,6 +1769,12 @@ String IMergeTreeDataPart::getUniqueId() const
 
     String id = disk->getUniqueId(fs::path(getFullRelativePath()) / "checksums.txt");
     return id;
+}
+
+
+UInt32 IMergeTreeDataPart::getNumberOfRefereneces() const
+{
+    return volume->getDisk()->getRefCount(fs::path(getFullRelativePath()) / "checksums.txt");
 }
 
 
