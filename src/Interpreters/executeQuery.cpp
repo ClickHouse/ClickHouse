@@ -2,6 +2,7 @@
 #include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
 #include <Common/ThreadProfileEvents.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <IO/WriteBufferFromFile.h>
@@ -195,7 +196,7 @@ static void setExceptionStackTrace(QueryLogElement & elem)
 {
     /// Disable memory tracker for stack trace.
     /// Because if exception is "Memory limit (for query) exceed", then we probably can't allocate another one string.
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
 
     try
     {
