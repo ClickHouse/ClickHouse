@@ -246,7 +246,7 @@ std::optional<UInt64> StorageMergeTree::totalRows(const Settings &) const
 
 std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr local_context) const
 {
-    auto parts = getDataPartsVector({DataPartState::Committed});
+    auto parts = getDataPartsVector({DataPartState::Active});
     return totalRowsByPartitionPredicateImpl(query_info, local_context, parts);
 }
 
@@ -1379,7 +1379,7 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, c
     {
         /// Forcefully stop merges and make part outdated
         auto merge_blocker = stopMergesAndWait();
-        auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Committed});
+        auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active});
         if (!part)
             throw Exception("Part " + part_name + " not found, won't try to drop it.", ErrorCodes::NO_SUCH_DATA_PART);
         removePartsFromWorkingSet(txn, {part}, true);
@@ -1391,7 +1391,7 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(MergeTreeTransaction * txn, c
         /// Wait merges selector
         std::unique_lock lock(currently_processing_in_background_mutex);
 
-        auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Committed});
+        auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active});
         /// It's okay, part was already removed
         if (!part)
             return nullptr;

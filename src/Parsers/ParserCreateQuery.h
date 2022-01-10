@@ -361,6 +361,8 @@ protected:
   * Or:
   * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name [UUID 'uuid'] [ON CLUSTER cluster] AS ENGINE = engine SELECT ...
   *
+  * Or (for engines that supports schema inference):
+  * CREATE|ATTACH TABLE [IF NOT EXISTS] [db.]name [UUID 'uuid'] [ON CLUSTER cluster] ENGINE = engine
   */
 class ParserCreateTableQuery : public IParserBase
 {
@@ -387,6 +389,10 @@ protected:
 
 class ParserTableOverrideDeclaration : public IParserBase
 {
+public:
+    const bool is_standalone;
+    ParserTableOverrideDeclaration(bool is_standalone_ = true) : is_standalone(is_standalone_) { }
+
 protected:
     const char * getName() const override { return "table override declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
