@@ -124,7 +124,7 @@ void StorageSystemParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->getTypeName());
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part_state == State::Committed);
+            columns[res_index++]->insert(part_state == State::Active);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->getMarksCount());
         if (columns_mask[src_index++])
@@ -285,7 +285,7 @@ void StorageSystemParts::processNextStorage(
             if (txn)
                 columns[res_index++]->insert(part->versions.isVisible(*txn));
             else
-                columns[res_index++]->insert(part_state == State::Committed);
+                columns[res_index++]->insert(part_state == State::Active);
         }
 
         auto get_tid_as_field = [](const TransactionID & tid) -> Field
