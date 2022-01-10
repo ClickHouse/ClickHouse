@@ -18,6 +18,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int DECIMAL_OVERFLOW;
+    extern const int ILLEGAL_COLUMN;
 }
 
 /// Cast DateTime64 to Int64 representation narrowed down (or scaled up) to any scale value defined in Impl.
@@ -108,7 +109,6 @@ public:
         if (arguments.size() < 1 || arguments.size() > 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} takes one or two arguments", name);
 
-        // if (!typeid_cast<const DataTypeInt64 *>(arguments[0].type.get()))
         if (!isInteger(arguments[0].type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument for function {} must be integer", name);
 
@@ -119,21 +119,49 @@ public:
         return std::make_shared<DataTypeDateTime64>(target_scale, timezone);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    template <typename T>
+    ColumnPtr executeType(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         const auto & src = arguments[0];
         const auto & col = *src.column;
 
-        auto res_column = ColumnDecimal<DateTime64>::create(input_rows_count, target_scale);
-        auto & result_data = res_column->getData();
+        if (!checkAndGetColumn<ColumnVector<T>>(col))
+            return nullptr;
 
-        const auto & source_data = typeid_cast<const ColumnInt64 &>(col).getData();
+        auto result_column = ColumnDecimal<DateTime64>::create(input_rows_count, target_scale);
+        auto & result_data = result_column->getData();
+
+        const auto & source_data = typeid_cast<const ColumnVector<T> &>(col).getData();
 
         for (size_t i = 0; i < input_rows_count; ++i)
             result_data[i] = source_data[i];
 
-        return res_column;
+        return result_column;
     }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    {
+        ColumnPtr result_column;
+
+        if (!((result_column = executeType<UInt8>(arguments, input_rows_count))
+              || (result_column = executeType<UInt16>(arguments, input_rows_count))
+              || (result_column = executeType<UInt32>(arguments, input_rows_count))
+              || (result_column = executeType<UInt32>(arguments, input_rows_count))
+              || (result_column = executeType<UInt64>(arguments, input_rows_count))
+              || (result_column = executeType<Int8>(arguments, input_rows_count))
+              || (result_column = executeType<Int16>(arguments, input_rows_count))
+              || (result_column = executeType<Int32>(arguments, input_rows_count))
+              || (result_column = executeType<Int64>(arguments, input_rows_count))))
+        {
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                            "Illegal column {} of first argument of function {}",
+                            arguments[0].column->getName(),
+                            getName());
+        }
+
+        return result_column;
+    }
+
 };
 
 }
