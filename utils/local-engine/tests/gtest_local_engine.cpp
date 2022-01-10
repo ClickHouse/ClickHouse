@@ -7,7 +7,7 @@
 #include <fstream>
 #include <Parser/SparkColumnToCHColumn.h>
 #include <Parser/CHColumnToSparkRow.h>
-#include <Poco/URI.h>
+//#include <Poco/URI.h>
 
 using namespace dbms;
 
@@ -69,7 +69,7 @@ TEST(TestSelect, TestFilter)
                                                            dbms::literal(5.0)
                                                                                });
     auto * type_0 = dbms::scalarFunction(dbms::EQUAL_TO, {dbms::selection(6),
-                                                          dbms::literal("0")});
+                                                          dbms::literal("类型0")});
 
     auto * filter = dbms::scalarFunction(dbms::AND, {less_exp, type_0});
     auto plan = plan_builder
@@ -88,7 +88,7 @@ TEST(TestSelect, TestFilter)
     {
         std::cout << "fetch batch" << std::endl;
         local_engine::SparkRowInfoPtr spark_row_info = local_executor.next();
-        ASSERT_EQ(spark_row_info->getNumRows(), 99);
+        ASSERT_EQ(spark_row_info->getNumRows(), 50);
         local_engine::SparkColumnToCHColumn converter;
         auto block = converter.convertCHColumnToSparkRow(*spark_row_info, local_executor.getHeader());
         ASSERT_EQ(spark_row_info->getNumRows(), block->rows());
