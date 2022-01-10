@@ -57,8 +57,8 @@ JOIN system.clusters b
 ON _shard_num = b.shard_num
 WHERE b.cluster = 'test_cluster_two_shards_localhost'; -- { serverError 403 }
 
--- rewrite does not work with aliases, hence Missing columns (47)
-SELECT a._shard_num, key FROM dist_1 a; -- { serverError 47; }
+SELECT 'Rewrite with alias';
+SELECT a._shard_num, key FROM dist_1 a;
 -- the same with JOIN, just in case
 SELECT a._shard_num, a.key, b.host_name, b.host_address IN ('::1', '127.0.0.1'), b.port
 FROM dist_1 a
