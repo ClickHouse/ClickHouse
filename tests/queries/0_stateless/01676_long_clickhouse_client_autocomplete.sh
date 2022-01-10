@@ -20,11 +20,11 @@ function test_completion_word_client()
 log_user 0
 set timeout 3
 match_max 100000
-# A default timeout action is to do nothing, change it to fail
 expect_after {
-    timeout {
-        exit 1
-    }
+    # Do not ignore eof from expect
+    eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    timeout { exit 1 }
 }
 
 spawn bash -c "$CLICKHOUSE_CLIENT_BINARY $CLICKHOUSE_CLIENT_OPT"
@@ -104,11 +104,11 @@ function test_completion_word_local()
 log_user 0
 set timeout 3
 match_max 100000
-# A default timeout action is to do nothing, change it to fail
 expect_after {
-    timeout {
-        exit 1
-    }
+    # Do not ignore eof from expect
+    eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    timeout { exit 1 }
 }
 
 spawn bash -c "$CLICKHOUSE_LOCAL"

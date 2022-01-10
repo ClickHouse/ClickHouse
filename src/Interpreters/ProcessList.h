@@ -94,7 +94,7 @@ protected:
     ExecutionSpeedLimits limits;
     OverflowMode overflow_mode;
 
-    QueryPriorities::Handle priority_handle;
+    QueryPriorities::Handle priority_handle = nullptr;
 
     std::atomic<bool> is_killed { false };
 
@@ -118,13 +118,17 @@ protected:
 
     ProcessListForUser * user_process_list = nullptr;
 
+    String query_kind;
+
 public:
 
     QueryStatus(
         ContextPtr context_,
         const String & query_,
         const ClientInfo & client_info_,
-        QueryPriorities::Handle && priority_handle_);
+        QueryPriorities::Handle && priority_handle_,
+        const String & query_kind_
+        );
 
     ~QueryStatus();
 
@@ -256,6 +260,7 @@ class ProcessList
 public:
     using Element = QueryStatus;
     using Entry = ProcessListEntry;
+    using QueryAmount = UInt64;
 
     /// list, for iterators not to invalidate. NOTE: could replace with cyclic buffer, but not worth.
     using Container = std::list<Element>;
@@ -264,6 +269,8 @@ public:
 
     /// User -> queries
     using UserToQueries = std::unordered_map<String, ProcessListForUser>;
+
+    using QueryKindToAmount = std::unordered_map<String, QueryAmount>;
 
 protected:
     friend class ProcessListEntry;
@@ -286,6 +293,19 @@ protected:
 
     /// Call under lock. Finds process with specified current_user and current_query_id.
     QueryStatus * tryGetProcessListElement(const String & current_query_id, const String & current_user);
+
+    /// limit for insert. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
+    size_t max_insert_queries_amount = 0;
+
+    /// limit for select. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
+    size_t max_select_queries_amount = 0;
+
+    /// amount of queries by query kind.
+    QueryKindToAmount query_kind_amounts;
+
+    void increaseQueryKindAmount(const String & query_kind);
+    void decreaseQueryKindAmount(const String & query_kind);
+    QueryAmount getQueryKindAmount(const String & query_kind);
 
 public:
     using EntryPtr = std::shared_ptr<ProcessListEntry>;
@@ -310,6 +330,18 @@ public:
     {
         std::lock_guard lock(mutex);
         max_size = max_size_;
+    }
+
+    void setMaxInsertQueriesAmount(size_t max_insert_queries_amount_)
+    {
+        std::lock_guard lock(mutex);
+        max_insert_queries_amount = max_insert_queries_amount_;
+    }
+
+    void setMaxSelectQueriesAmount(size_t max_select_queries_amount_)
+    {
+        std::lock_guard lock(mutex);
+        max_select_queries_amount = max_select_queries_amount_;
     }
 
     /// Try call cancel() for input and output streams of query with specified id and user
