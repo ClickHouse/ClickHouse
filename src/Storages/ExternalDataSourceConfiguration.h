@@ -74,9 +74,10 @@ std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
 
 using HasConfigKeyFunc = std::function<bool(const String &)>;
 
-std::optional<ExternalDataSourceConfiguration> getExternalDataSourceConfiguration(
+template <typename T = EmptySettingsTraits>
+std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
     const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix,
-    ContextPtr context, HasConfigKeyFunc has_config_key);
+    ContextPtr context, HasConfigKeyFunc has_config_key, const BaseSettings<T> & settings = {});
 
 
 /// Highest priority is 0, the bigger the number in map, the less the priority.
