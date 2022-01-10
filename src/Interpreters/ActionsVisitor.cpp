@@ -697,6 +697,10 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
     for (const auto & name [[maybe_unused]] : tuple_type->getElementNames())
     {
         auto tuple_ast = function->arguments->children[0];
+
+        /// This transformation can lead to exponential growth of AST size, let's check it.
+        tuple_ast->checkSize(data.getContext()->getSettingsRef().max_ast_elements);
+
         if (tid != 0)
             tuple_ast = tuple_ast->clone();
 
