@@ -6,15 +6,15 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-table_engines="MergeTree ReplicatedMergeTree"
-database_engines="Ordinary Atomic"
-use_metadata_caches="false true"
-use_projections="false true"
+table_engines=(MergeTree ReplicatedMergeTree)
+database_engines=(Ordinary Atomic)
+use_metadata_caches=(false true)
+use_projections=(false true)
 
-for table_engine in $table_engines; do
-    for database_engine in $database_engines; do
-        for use_metadata_cache in $use_metadata_caches; do
-            for use_projection in $use_projections; do
+for table_engine in "${table_engines[@]}"; do
+    for database_engine in "${database_engines[@]}"; do
+        for use_metadata_cache in "${use_metadata_caches[@]}"; do
+            for use_projection in "${use_projections[@]}"; do
                 echo "database engine:${database_engine}; table engine:${table_engine}; use metadata cache:${use_metadata_cache}; use projection:${use_projection}"
 
                 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test_metadata_cache.check_part_metadata_cache SYNC;"

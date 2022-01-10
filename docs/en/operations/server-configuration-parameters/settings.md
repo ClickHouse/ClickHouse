@@ -1288,6 +1288,20 @@ Example
 <mysql_port>9004</mysql_port>
 ```
 
+## postgresql_port {#server_configuration_parameters-postgresql_port}
+
+Port for communicating with clients over PostgreSQL protocol.
+
+**Possible values**
+
+Positive integer.
+
+Example
+
+``` xml
+<postgresql_port>9005</postgresql_port>
+```
+
 ## tmp_path {#tmp-path}
 
 Path to temporary data for processing large queries.
