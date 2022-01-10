@@ -11,8 +11,8 @@ SELECT detectLanguageMixed('二兎を追う者は一兎をも得ず二兎を追�
 SELECT detectCharset('Plain English');
 SELECT detectLanguageUnknown('Plain English');
 
-SELECT detectTonality('Милая кошка');
-SELECT detectTonality('Злой человек');
-SELECT detectTonality('Обычная прогулка по ближайшему парку');
+SELECT detectTonality('милая кошка');
+SELECT detectTonality('ненависть к людям');
+SELECT detectTonality('обычная прогулка по ближайшему парку');
 
 SELECT detectProgrammingLanguage('#include <iostream>');

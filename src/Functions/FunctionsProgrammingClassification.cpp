@@ -1,12 +1,18 @@
-#include <Functions/FunctionsTextClassification.h>
 #include <Common/FrequencyHolder.h>
 #include <Functions/FunctionFactory.h>
-#include <IO/ReadHelpers.h>
+#include <Functions/FunctionStringToString.h>
 
 #include <unordered_map>
+#include <string_view>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
+
 /**
   * Determine the programming language from the source code.
   * We calculate all the unigrams and bigrams of commands in the source code.
@@ -15,16 +21,16 @@ namespace DB
   */
 struct ProgrammingClassificationImpl
 {
-
-    using ResultType = String;
     /// Calculate total weight
-    static ALWAYS_INLINE inline Float64 stateMachine(const FrequencyHolder::Map & standard, std::unordered_map<String, Float64> & model)
+    static ALWAYS_INLINE inline Float64 stateMachine(
+        const FrequencyHolder::Map & standard,
+        const std::unordered_map<String, Float64> & model)
     {
         Float64 res = 0;
-        for (auto & el : model)
+        for (const auto & el : model)
         {
             /// Try to find each n-gram in dictionary
-            auto it = standard.find(el.first);
+            const auto * it = standard.find(el.first);
             if (it != standard.end())
             {
                 res += el.second * it->getMapped();
@@ -33,104 +39,44 @@ struct ProgrammingClassificationImpl
         return res;
     }
 
-
-    static void constant(String data, String & res)
-    {
-        auto & programming_freq = FrequencyHolder::getInstance().getProgrammingFrequency();
-        std::unordered_map<String, Float64> data_freq;
-
-        String prev_command;
-        String command;
-        /// Select all commands from the string
-        for (size_t i = 0; i < data.size();)
-        {
-            /// Assume that all commands are split by spaces
-            if (!isspace(data[i]))
-            {
-                command.push_back(data[i]);
-                ++i;
-
-                while ((i < data.size()) && (!isspace(data[i])))
-                {
-                    command.push_back(data[i]);
-                    ++i;
-                }
-                if (prev_command == "")
-                {
-                    prev_command = command;
-                }
-                else
-                {
-                    data_freq[prev_command + command] += 1;
-                    data_freq[prev_command] += 1;
-                    prev_command = command;
-                }
-                command = "";
-            }
-            else
-            {
-                ++i;
-            }
-        }
-
-        String most_liked;
-        Float64 max_result = 0;
-        /// Iterate over all programming languages ​​and find the language with the highest weight
-        for (auto& item : programming_freq)
-        {
-            Float64 result = stateMachine(item.map, data_freq);
-            if (result > max_result)
-            {
-                max_result = result;
-                most_liked = item.name;
-            }
-        }
-        /// If all weights are zero, then we assume that the language is undefined
-        if (most_liked == "")
-        {
-            most_liked = "Undefined";
-        }
-        res = most_liked;
-    }
-
-
     static void vector(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets)
     {
-        auto & programming_freq = FrequencyHolder::getInstance().getProgrammingFrequency();
+        const auto & programming_freq = FrequencyHolder::getInstance().getProgrammingFrequency();
 
-        res_data.reserve(1024);
+        /// Constant 5 is arbitrary
+        res_data.reserve(offsets.size() * 5);
         res_offsets.resize(offsets.size());
 
-        size_t prev_offset = 0;
         size_t res_offset = 0;
 
         for (size_t i = 0; i < offsets.size(); ++i)
         {
-            const char * haystack = reinterpret_cast<const char *>(&data[prev_offset]);
+            const UInt8 * str = data.data() + offsets[i - 1];
+            const size_t str_len = offsets[i] - offsets[i - 1] - 1;
+
             std::unordered_map<String, Float64> data_freq;
-            String str_data = haystack;
 
             String prev_command;
             String command;
             /// Select all commands from the string
-            for (size_t ind = 0; ind < str_data.size();)
+            for (size_t ind = 0; ind < str_len;)
             {
                 /// Assume that all commands are split by spaces
-                if (!isspace(str_data[ind]))
+                if (!isspace(str[ind]))
                 {
-                    command.push_back(str_data[ind]);
+                    command.push_back(str[ind]);
                     ++ind;
 
-                    while ((ind < str_data.size()) && (!isspace(str_data[ind])))
+                    while ((ind < str_len) && (!isspace(str[ind])))
                     {
-                        command.push_back(str_data[ind]);
+                        command.push_back(str[ind]);
                         ++ind;
                     }
-                    if (prev_command == "")
+                    if (prev_command.empty())
                     {
                         prev_command = command;
                     }
@@ -148,39 +94,36 @@ struct ProgrammingClassificationImpl
                 }
             }
 
-            String most_liked;
+            String res;
             Float64 max_result = 0;
             /// Iterate over all programming languages ​​and find the language with the highest weight
-            for (auto& item : programming_freq)
+            for (const auto & item : programming_freq)
             {
                 Float64 result = stateMachine(item.map, data_freq);
                 if (result > max_result)
                 {
                     max_result = result;
-                    most_liked = item.name;
+                    res = item.name;
                 }
             }
             /// If all weights are zero, then we assume that the language is undefined
-            if (most_liked == "")
-            {
-                most_liked = "Undefined";
-            }
+            if (res.empty())
+                res = "Undefined";
 
-            const auto res = most_liked.c_str();
-            size_t cur_offset = offsets[i];
-            size_t ans_size = strlen(res);
-            res_data.resize(res_offset + ans_size + 1);
-            memcpy(&res_data[res_offset], res, ans_size);
-            res_offset += ans_size;
+            res_data.resize(res_offset + res.size() + 1);
+            memcpy(&res_data[res_offset], res.data(), res.size());
 
-            res_data[res_offset] = 0;
-            ++res_offset;
+            res_data[res_offset + res.size()] = 0;
+            res_offset += res.size() + 1;
 
             res_offsets[i] = res_offset;
-            prev_offset = cur_offset;
         }
     }
 
+    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
+    {
+        throw Exception("Cannot apply function detectProgrammingLanguage to fixed string.", ErrorCodes::ILLEGAL_COLUMN);
+    }
 };
 
 struct NameGetProgramming
@@ -189,7 +132,7 @@ struct NameGetProgramming
 };
 
 
-using FunctionGetProgramming = FunctionsTextClassification<ProgrammingClassificationImpl, NameGetProgramming>;
+using FunctionGetProgramming = FunctionStringToString<ProgrammingClassificationImpl, NameGetProgramming, false>;
 
 void registerFunctionsProgrammingClassification(FunctionFactory & factory)
 {

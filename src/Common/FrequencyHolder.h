@@ -1,22 +1,20 @@
 #pragma once
+
+#include <Common/Arena.h>
+#include <Common/getResource.h>
+#include <Common/HashTable/HashMap.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/readFloatText.h>
-#include <IO/Operators.h>
 #include <IO/ZstdInflatingReadBuffer.h>
 
-#include <Common/Arena.h>
 #include <base/StringRef.h>
-#include <Common/HashTable/HashMap.h>
+#include <base/logger_useful.h>
 
 #include <string_view>
-#include <string>
-#include <cstring>
 #include <unordered_map>
-#include <base/logger_useful.h>
-#include <Common/getResource.h>
 
 namespace DB
 {
@@ -25,6 +23,14 @@ namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
 }
+
+/// FrequencyHolder class is responsible for storing and loading dictionaries
+/// needed for text classification functions:
+///
+/// 1. detectLanguageUnknown
+/// 2. detectCharset
+/// 3. detectTonality
+/// 4. detectProgrammingLanguage
 
 class FrequencyHolder
 {
@@ -39,6 +45,7 @@ public:
     struct Encoding
     {
         String name;
+        String lang;
         HashMap<UInt16, Float64> map;
     };
 
@@ -54,14 +61,13 @@ public:
         return instance;
     }
 
-
     void loadEncodingsFrequency()
     {
         Poco::Logger * log = &Poco::Logger::get("EncodingsFrequency");
 
         LOG_TRACE(log, "Loading embedded charset frequencies");
 
-        auto resource = getResource("charset_freq.txt.zst");
+        auto resource = getResource("charset.zst");
             if (resource.empty())
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "There is no embedded charset frequencies");
 
@@ -71,12 +77,12 @@ public:
         String charset_name;
 
         auto buf = std::make_unique<ReadBufferFromMemory>(resource.data(), resource.size());
-        std::unique_ptr<ReadBuffer> in = std::make_unique<ZstdInflatingReadBuffer>(std::move(buf));
+        ZstdInflatingReadBuffer in(std::move(buf));
 
-        while (!in->eof())
+        while (!in.eof())
         {
-            readString(line, *in);
-            ++in->position();
+            readString(line, in);
+            in.ignore();
 
             if (line.empty())
                 continue;
@@ -84,13 +90,21 @@ public:
             ReadBufferFromString buf_line(line);
 
             // Start loading a new charset
-            if (line.starts_with("//"))
+            if (line.starts_with("// "))
             {
+                // Skip "// "
                 buf_line.ignore(3);
                 readString(charset_name, buf_line);
 
+                /* In our dictionary we have lines with form: <Language>_<Charset>
+                * If we need to find language of data, we return <Language>
+                * If we need to find charset of data, we return <Charset>.
+                */
+                size_t sep = charset_name.find('_');
+
                 Encoding enc;
-                enc.name = charset_name;
+                enc.lang = charset_name.substr(0, sep);
+                enc.name = charset_name.substr(sep + 1);
                 encodings_freq.push_back(std::move(enc));
             }
             else
@@ -109,9 +123,9 @@ public:
     void loadEmotionalDict()
     {
         Poco::Logger * log = &Poco::Logger::get("EmotionalDict");
-        LOG_TRACE(log, "Loading embedded emotional dictionary (RU)");
+        LOG_TRACE(log, "Loading embedded emotional dictionary");
 
-        auto resource = getResource("emotional_dictionary_rus.txt.zst");
+        auto resource = getResource("tonality_ru.zst");
             if (resource.empty())
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "There is no embedded emotional dictionary");
 
@@ -121,12 +135,12 @@ public:
         size_t count = 0;
 
         auto buf = std::make_unique<ReadBufferFromMemory>(resource.data(), resource.size());
-        std::unique_ptr<ReadBuffer> in = std::make_unique<ZstdInflatingReadBuffer>(std::move(buf));
+        ZstdInflatingReadBuffer in(std::move(buf));
 
-        while (!in->eof())
+        while (!in.eof())
         {
-            readString(line, *in);
-            ++in->position();
+            readString(line, in);
+            in.ignore();
 
             if (line.empty())
                 continue;
@@ -151,7 +165,7 @@ public:
 
         LOG_TRACE(log, "Loading embedded programming languages frequencies loading");
 
-        auto resource = getResource("prog_freq.txt.zst");
+        auto resource = getResource("programming.zst");
             if (resource.empty())
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "There is no embedded programming languages frequencies");
 
@@ -161,12 +175,12 @@ public:
         String programming_language;
 
         auto buf = std::make_unique<ReadBufferFromMemory>(resource.data(), resource.size());
-        std::unique_ptr<ReadBuffer> in = std::make_unique<ZstdInflatingReadBuffer>(std::move(buf));
+        ZstdInflatingReadBuffer in(std::move(buf));
 
-        while (!in->eof())
+        while (!in.eof())
         {
-            readString(line, *in);
-            ++in->position();
+            readString(line, in);
+            in.ignore();
 
             if (line.empty())
                 continue;
@@ -174,8 +188,9 @@ public:
             ReadBufferFromString buf_line(line);
 
             // Start loading a new language
-            if (line.starts_with("//"))
+            if (line.starts_with("// "))
             {
+                // Skip "// "
                 buf_line.ignore(3);
                 readString(programming_language, buf_line);
 

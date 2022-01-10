@@ -4,7 +4,7 @@
 
 #if USE_NLP
 
-#include <Functions/FunctionsTextClassification.h>
+#include <Functions/FunctionStringToString.h>
 #include <Functions/FunctionFactory.h>
 
 #include <DataTypes/DataTypeMap.h>
@@ -34,9 +34,7 @@ extern const int ILLEGAL_COLUMN;
 
 struct LanguageClassificationImpl
 {
-    using ResultType = String;
-
-    static String codeISO(std::string_view code_string)
+    static std::string_view codeISO(std::string_view code_string)
     {
         if (code_string.ends_with("-Latn"))
             code_string.remove_suffix(code_string.size() - 5);
@@ -61,17 +59,8 @@ struct LanguageClassificationImpl
         if (code_string.size() != 2)
             return "other";
 
-        return String(code_string);
+        return code_string;
     }
-
-    static void constant(const String & data, String & res)
-    {
-        bool is_reliable = true;
-        const char * str = data.c_str();
-        auto lang = CLD2::DetectLanguage(str, strlen(str), true, &is_reliable);
-        res = codeISO(LanguageCode(lang));
-    }
-
 
     static void vector(
         const ColumnString::Chars & data,
@@ -79,42 +68,44 @@ struct LanguageClassificationImpl
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets)
     {
-        res_data.reserve(1024);
+        /// Constant 3 is based on the fact that in general we need 2 characters for ISO code + 1 zero byte
+        res_data.reserve(offsets.size() * 3);
         res_offsets.resize(offsets.size());
 
-        size_t prev_offset = 0;
+        bool is_reliable = true;
         size_t res_offset = 0;
 
         for (size_t i = 0; i < offsets.size(); ++i)
         {
-            const char * str = reinterpret_cast<const char *>(&data[prev_offset]);
-            String res;
-            bool is_reliable = true;
+            const char * str = reinterpret_cast<const char *>(data.data() + offsets[i - 1]);
+            const size_t str_len = offsets[i] - offsets[i - 1] - 1;
 
-            auto lang = CLD2::DetectLanguage(str, strlen(str), true, &is_reliable);
-            res = codeISO(LanguageCode(lang));
-
-            size_t cur_offset = offsets[i];
+            auto lang = CLD2::DetectLanguage(str, str_len, true, &is_reliable);
+            auto res = codeISO(LanguageCode(lang));
 
             res_data.resize(res_offset + res.size() + 1);
             memcpy(&res_data[res_offset], res.data(), res.size());
-            res_offset += res.size();
 
-            res_data[res_offset] = 0;
-            ++res_offset;
+            res_data[res_offset + res.size()] = 0;
+            res_offset += res.size() + 1;
 
             res_offsets[i] = res_offset;
-            prev_offset = cur_offset;
         }
     }
 
-
+    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
+    {
+        throw Exception("Cannot apply function detectProgrammingLanguage to fixed string.", ErrorCodes::ILLEGAL_COLUMN);
+    }
 };
 
 class LanguageClassificationMixedDetect : public IFunction
 {
 public:
     static constexpr auto name = "detectLanguageMixed";
+
+    /// Number of top results
+    static constexpr auto top_N = 3;
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<LanguageClassificationMixedDetect>(); }
 
@@ -132,7 +123,7 @@ public:
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeInt32>());
+        return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeFloat32>());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -145,8 +136,8 @@ public:
                 "Illegal columns " + arguments[0].column->getName() + " of arguments of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
 
-        auto & input_data = col->getChars();
-        auto & input_offsets = col->getOffsets();
+        const auto & input_data = col->getChars();
+        const auto & input_offsets = col->getOffsets();
 
         /// Create and fill the result map.
 
@@ -158,15 +149,15 @@ public:
         MutableColumnPtr values_data = value_type->createColumn();
         MutableColumnPtr offsets = DataTypeNumber<IColumn::Offset>().createColumn();
 
-        size_t total_elements = input_rows_count * 3;
+        size_t total_elements = input_rows_count * top_N;
         keys_data->reserve(total_elements);
         values_data->reserve(total_elements);
         offsets->reserve(input_rows_count);
 
         bool is_reliable = true;
-        CLD2::Language result_lang_top3[3];
-        int32_t pc[3];
-        int bytes[3];
+        CLD2::Language result_lang_top3[top_N];
+        int32_t pc[top_N];
+        int bytes[top_N];
 
         IColumn::Offset current_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
@@ -176,16 +167,16 @@ public:
 
             CLD2::DetectLanguageSummary(str, str_len, true, result_lang_top3, pc, bytes, &is_reliable);
 
-            for (size_t j = 0; j < 3; ++j)
+            for (size_t j = 0; j < top_N; ++j)
             {
                 auto res_str = LanguageClassificationImpl::codeISO(LanguageCode(result_lang_top3[j]));
-                int32_t res_int = static_cast<int>(pc[j]);
+                Float32 res_float = static_cast<Float32>(pc[j]) / 100;
 
                 keys_data->insertData(res_str.data(), res_str.size());
-                values_data->insertData(reinterpret_cast<const char *>(&res_int), sizeof(res_int));
+                values_data->insertData(reinterpret_cast<const char *>(&res_float), sizeof(res_float));
             }
 
-            current_offset += 3;
+            current_offset += top_N;
             offsets->insert(current_offset);
         }
 
@@ -203,7 +194,7 @@ struct NameLanguageUTF8Detect
 };
 
 
-using FunctionLanguageUTF8Detect = FunctionsTextClassification<LanguageClassificationImpl, NameLanguageUTF8Detect>;
+using FunctionLanguageUTF8Detect = FunctionStringToString<LanguageClassificationImpl, NameLanguageUTF8Detect, false>;
 
 void registerFunctionLanguageDetectUTF8(FunctionFactory & factory)
 {

@@ -36,4 +36,4 @@ endif ()
 
 set (USE_NLP 1)
 
-message (STATUS "Using Libraries for NLP functions: contrib/wordnet-blast, contrib/libstemmer_c, contrib/lemmagen-c")
+message (STATUS "Using Libraries for NLP functions: contrib/wordnet-blast, contrib/libstemmer_c, contrib/lemmagen-c, contrib/cld2")
