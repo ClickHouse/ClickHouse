@@ -40,7 +40,7 @@ ClickHouse не работает и не собирается на 32-битны
 
 Выполните в терминале:
 
-    git clone git@github.com:your_github_username/ClickHouse.git
+    git clone git@github.com:your_github_username/ClickHouse.git --recursive
     cd ClickHouse
 
 Замените слово `your_github_username` в команде для git на имя вашего аккаунта на GitHub.
