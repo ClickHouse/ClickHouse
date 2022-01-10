@@ -1201,7 +1201,6 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
 
         auto end_it = current_mutations_by_version.end();
         auto begin_it = current_mutations_by_version.begin();
-        size_t to_delete_count = std::distance(begin_it, end_it);
 
         if (std::optional<Int64> min_version = getMinPartDataVersion())
             end_it = current_mutations_by_version.upper_bound(*min_version);
@@ -1228,7 +1227,7 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
         if (done_count <= finished_mutations_to_keep)
             return 0;
 
-        to_delete_count = done_count - finished_mutations_to_keep;
+        size_t to_delete_count = done_count - finished_mutations_to_keep;
 
         auto it = begin_it;
         for (size_t i = 0; i < to_delete_count; ++i)
