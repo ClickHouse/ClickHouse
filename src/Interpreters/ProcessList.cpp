@@ -6,12 +6,12 @@
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
+#include <Parsers/IAST.h>
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
-#include "Parsers/IAST.h"
 #include <IO/WriteHelpers.h>
 #include <base/logger_useful.h>
 #include <chrono>
@@ -77,6 +77,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
     {
         std::unique_lock lock(mutex);
+        IAST::QueryKind query_kind = ast->getQueryKind();
 
         const auto queue_max_wait_ms = settings.queue_max_wait_ms.totalMilliseconds();
         if (!is_unlimited_query && max_size && processes.size() >= max_size)
@@ -89,12 +90,12 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
         if (!is_unlimited_query)
         {
-            QueryAmount amount = getQueryKindAmount(ast->getQueryKind());
-            if (max_insert_queries_amount && ast->getQueryKind() == IAST::QueryKind::Insert && amount >= max_insert_queries_amount)
+            QueryAmount amount = getQueryKindAmount(query_kind);
+            if (max_insert_queries_amount && query_kind == IAST::QueryKind::Insert && amount >= max_insert_queries_amount)
                 throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                                 "Too many simultaneous insert queries. Maximum: {}, current: {}",
                                 max_insert_queries_amount, amount);
-            if (max_select_queries_amount && ast->getQueryKind() == IAST::QueryKind::Select && amount >= max_select_queries_amount)
+            if (max_select_queries_amount && query_kind == IAST::QueryKind::Select && amount >= max_select_queries_amount)
                 throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                                 "Too many simultaneous select queries. Maximum: {}, current: {}",
                                 max_select_queries_amount, amount);
@@ -190,9 +191,9 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
         }
 
         auto process_it = processes.emplace(processes.end(),
-            query_context, query_, client_info, priorities.insert(settings.priority), ast->getQueryKind());
+            query_context, query_, client_info, priorities.insert(settings.priority), query_kind);
 
-        increaseQueryKindAmount(ast->getQueryKind());
+        increaseQueryKindAmount(query_kind);
 
         res = std::make_shared<Entry>(*this, process_it);
 
@@ -306,7 +307,7 @@ ProcessListEntry::~ProcessListEntry()
 
 
 QueryStatus::QueryStatus(
-    ContextPtr context_, const String & query_, const ClientInfo & client_info_, QueryPriorities::Handle && priority_handle_, const IAST::QueryKind & query_kind_)
+    ContextPtr context_, const String & query_, const ClientInfo & client_info_, QueryPriorities::Handle && priority_handle_, IAST::QueryKind query_kind_)
     : WithContext(context_)
     , query(query_)
     , client_info(client_info_)
