@@ -319,11 +319,8 @@ MergeTreeData::MergeTreeData(
         LOG_WARNING(log, "{} Settings 'min_rows_for_wide_part', 'min_bytes_for_wide_part', "
             "'min_rows_for_compact_part' and 'min_bytes_for_compact_part' will be ignored.", reason);
 
+#if !USE_ROCKSDB
     if (use_metadata_cache)
-#if USE_ROCKSDB
-        if (!getContext()->getMergeTreeMetadataCache())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't use merge tree metadata cache if not config in config.xml");
-#else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't use merge tree metadata cache if clickhouse was compiled without rocksdb");
 #endif
 
