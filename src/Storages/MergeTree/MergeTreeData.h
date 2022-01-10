@@ -427,8 +427,6 @@ public:
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks);
 
-    size_t fileNumberOfDataParts(const DataPartStates & states) const;
-
     String getLogName() const { return log_name; }
 
     Int64 getMaxBlockNumber() const;

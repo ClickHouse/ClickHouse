@@ -149,7 +149,6 @@ public:
     /// Load checksums from checksums.txt if exists. Load index if required.
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
     void appendFilesOfColumnsChecksumsIndexes(Strings & files, bool include_projection = false) const;
-    size_t fileNumberOfColumnsChecksumsIndexes() const;
 
     String getMarksFileExtension() const { return index_granularity_info.marks_file_extension; }
 
