@@ -2291,7 +2291,11 @@ void Context::initializeMergeTreeMetadataCache(const String & dir, size_t size)
     rocksdb::Status status = rocksdb::DB::Open(options, dir, &db);
 
     if (status != rocksdb::Status::OK())
-        throw Exception(ErrorCodes::SYSTEM_ERROR, "Fail to open rocksdb path at: {} status:{}", dir, status.ToString());
+        throw Exception(
+            ErrorCodes::SYSTEM_ERROR,
+            "Fail to open rocksdb path at: {} status:{}. You can try to remove the cache (this will not affect any table data).",
+            dir,
+            status.ToString());
 
     shared->merge_tree_metadata_cache = std::make_shared<MergeTreeMetadataCache>(db);
 }

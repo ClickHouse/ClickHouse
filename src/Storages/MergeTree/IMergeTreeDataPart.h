@@ -1,6 +1,5 @@
 #pragma once
 
-#include <magic_enum.hpp>
 #include <Core/Block.h>
 #include <base/types.h>
 #include <Core/NamesAndTypes.h>

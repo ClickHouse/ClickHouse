@@ -160,14 +160,6 @@ namespace
     };
 }
 
-/*
-static std::unique_ptr<ReadBufferFromFileBase> openForReading(const DiskPtr & disk, const String & path)
-{
-    size_t file_size = disk->getFileSize(path);
-    return disk->readFile(path, ReadSettings().adjustBufferSize(file_size), file_size);
-}
-*/
-
 String MergeTreePartition::getID(const MergeTreeData & storage) const
 {
     return getID(storage.getInMemoryMetadataPtr()->getPartitionKey().sample_block);
