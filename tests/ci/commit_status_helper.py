@@ -25,7 +25,12 @@ def post_commit_status(gh, sha, check_name, description, state, report_url):
     for i in range(RETRY):
         try:
             commit = get_commit(gh, sha, 1)
-            commit.create_status(context=check_name, description=description, state=state, target_url=report_url)
+            commit.create_status(
+                context=check_name,
+                description=description,
+                state=state,
+                target_url=report_url,
+            )
             break
         except Exception as ex:
             if i == RETRY - 1:
