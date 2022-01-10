@@ -8,8 +8,10 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <Interpreters/Context.h>
 
 #include <Common/hex.h>
+#include <Common/CurrentThread.h>
 
 
 namespace DB

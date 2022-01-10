@@ -5,6 +5,8 @@
 #include <Interpreters/SystemLog.h>
 #include <Common/QueryProfiler.h>
 #include <Common/TraceCollector.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/NamesAndAliases.h>
 
 
 namespace DB
