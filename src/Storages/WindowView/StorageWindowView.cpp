@@ -596,7 +596,7 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
         column_dec->name = column.name;
         column_dec->type = ast;
         columns_list->children.push_back(column_dec);
-        if(!is_time_column_func_now && !has_window_id)
+        if (!is_time_column_func_now && !has_window_id)
         {
             if (startsWith(column.name, "windowID"))
                 has_window_id = true;
