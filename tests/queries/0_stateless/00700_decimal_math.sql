@@ -5,7 +5,7 @@ SELECT toDecimal32('42.42', 4) AS x, toDecimal32(log10(x), 4) AS y, round(exp10(
 SELECT toDecimal32('42.42', 4) AS x, toDecimal32(sqrt(x), 3) AS y, y * y;
 SELECT toDecimal32('42.42', 4) AS x, toDecimal32(cbrt(x), 4) AS y, toDecimal64(y, 4) * y * y;
 SELECT toDecimal32('1.0', 5) AS x, erf(x), erfc(x);
-SELECT toDecimal32('42.42', 4) AS x, lgamma(x), tgamma(x);
+SELECT toDecimal32('42.42', 4) AS x, round(lgamma(x), 6), round(tgamma(x) / 1e50, 6);
 
 SELECT toDecimal32('0.0', 2) AS x, round(sin(x), 8), round(cos(x), 8), round(tan(x), 8);
 SELECT toDecimal32(pi(), 8) AS x, round(sin(x), 8), round(cos(x), 8), round(tan(x), 8);
@@ -19,7 +19,7 @@ SELECT toDecimal64('42.42', 4) AS x, toDecimal32(log10(x), 4) AS y, round(exp10(
 SELECT toDecimal64('42.42', 4) AS x, toDecimal32(sqrt(x), 3) AS y, y * y;
 SELECT toDecimal64('42.42', 4) AS x, toDecimal32(cbrt(x), 4) AS y, toDecimal64(y, 4) * y * y;
 SELECT toDecimal64('1.0', 5) AS x, erf(x), erfc(x);
-SELECT toDecimal64('42.42', 4) AS x, lgamma(x), tgamma(x);
+SELECT toDecimal64('42.42', 4) AS x, round(lgamma(x), 6), round(tgamma(x) / 1e50, 6);
 
 SELECT toDecimal64('0.0', 2) AS x, round(sin(x), 8), round(cos(x), 8), round(tan(x), 8);
 SELECT toDecimal64(pi(), 17) AS x, round(sin(x), 8), round(cos(x), 8), round(tan(x), 8);
@@ -33,7 +33,7 @@ SELECT toDecimal128('42.42', 4) AS x, toDecimal32(log10(x), 4) AS y, round(exp10
 SELECT toDecimal128('42.42', 4) AS x, toDecimal32(sqrt(x), 3) AS y, y * y;
 SELECT toDecimal128('42.42', 4) AS x, toDecimal32(cbrt(x), 4) AS y, toDecimal64(y, 4) * y * y;
 SELECT toDecimal128('1.0', 5) AS x, erf(x), erfc(x);
-SELECT toDecimal128('42.42', 4) AS x, lgamma(x), tgamma(x);
+SELECT toDecimal128('42.42', 4) AS x, round(lgamma(x), 6), round(tgamma(x) / 1e50, 6);
 
 SELECT toDecimal128('0.0', 2) AS x, round(sin(x), 8), round(cos(x), 8), round(tan(x), 8);
 SELECT toDecimal128(pi(), 14) AS x, round(sin(x), 8), round(cos(x), 8), round(tan(x), 8);

@@ -24,6 +24,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
+#include <Interpreters/applyTableOverride.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -364,7 +365,7 @@ ASTPtr StorageMaterializedPostgreSQL::getColumnDeclaration(const DataTypePtr & d
         ast_expression->name = "DateTime64";
         ast_expression->arguments = std::make_shared<ASTExpressionList>();
         ast_expression->arguments->children.emplace_back(std::make_shared<ASTLiteral>(UInt32(6)));
-        return ast_expression;
+        return std::move(ast_expression);
     }
 
     return std::make_shared<ASTIdentifier>(data_type->getName());
@@ -395,7 +396,7 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
 {
     auto create_table_query = std::make_shared<ASTCreateQuery>();
     if (table_override)
-        table_override->applyToCreateTableQuery(create_table_query.get());
+        applyTableOverrideToCreateQuery(*table_override, create_table_query.get());
 
     auto table_id = getStorageID();
     create_table_query->setTable(getNestedTableName());
@@ -422,7 +423,7 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
                             table_id.database_name, table_id.table_name);
         }
 
-        if (!table_structure->columns && (!table_override || !table_override->columns))
+        if (!table_structure->physical_columns && (!table_override || !table_override->columns))
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No columns returned for table {}.{}",
                             table_id.database_name, table_id.table_name);
@@ -464,17 +465,17 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
             }
             else
             {
-                ordinary_columns_and_types = *table_structure->columns;
+                ordinary_columns_and_types = table_structure->physical_columns->columns;
                 columns_declare_list->set(columns_declare_list->columns, getColumnsExpressionList(ordinary_columns_and_types));
             }
 
-            auto columns = table_override->columns;
+            auto * columns = table_override->columns;
             if (columns && columns->constraints)
                 constraints = ConstraintsDescription(columns->constraints->children);
         }
         else
         {
-            ordinary_columns_and_types = *table_structure->columns;
+            ordinary_columns_and_types = table_structure->physical_columns->columns;
             columns_declare_list->set(columns_declare_list->columns, getColumnsExpressionList(ordinary_columns_and_types));
         }
 
@@ -484,9 +485,9 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
 
         NamesAndTypesList merging_columns;
         if (table_structure->primary_key_columns)
-            merging_columns = *table_structure->primary_key_columns;
+            merging_columns = table_structure->primary_key_columns->columns;
         else
-            merging_columns = *table_structure->replica_identity_columns;
+            merging_columns = table_structure->replica_identity_columns->columns;
 
         order_by_expression->name = "tuple";
         order_by_expression->arguments = std::make_shared<ASTExpressionList>();
@@ -523,7 +524,7 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
     storage_metadata.setConstraints(constraints);
     setInMemoryMetadata(storage_metadata);
 
-    return create_table_query;
+    return std::move(create_table_query);
 }
 
 

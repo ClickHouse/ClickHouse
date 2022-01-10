@@ -76,7 +76,7 @@ public:
 
         std::vector<H3Index> hindex_vec;
 
-        for (size_t row = 0; row < input_rows_count; row++)
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 parent_hindex = col_hindex->getUInt(row);
             const UInt8 child_resolution = col_resolution->getUInt(row);

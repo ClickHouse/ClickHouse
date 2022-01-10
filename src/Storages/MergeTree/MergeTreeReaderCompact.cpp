@@ -203,6 +203,8 @@ void MergeTreeReaderCompact::readData(
 {
     const auto & [name, type] = name_and_type;
 
+    adjustUpperBound(current_task_last_mark); /// Must go before seek.
+
     if (!isContinuousReading(from_mark, column_position))
         seekToMark(from_mark, column_position);
 
@@ -211,8 +213,6 @@ void MergeTreeReaderCompact::readData(
         if (only_offsets && (substream_path.size() != 1 || substream_path[0].type != ISerialization::Substream::ArraySizes))
             return nullptr;
 
-        /// For asynchronous reading from remote fs.
-        data_buffer->setReadUntilPosition(marks_loader.getMark(current_task_last_mark).offset_in_compressed_file);
         return data_buffer;
     };
 
@@ -272,6 +272,34 @@ void MergeTreeReaderCompact::seekToMark(size_t row_index, size_t column_index)
             e.addMessage("(while seeking to mark (" + toString(row_index) + ", " + toString(column_index) + ")");
 
         throw;
+    }
+}
+
+void MergeTreeReaderCompact::adjustUpperBound(size_t last_mark)
+{
+    auto right_offset = marks_loader.getMark(last_mark).offset_in_compressed_file;
+    if (!right_offset)
+    {
+        /// If already reading till the end of file.
+        if (last_right_offset && *last_right_offset == 0)
+            return;
+
+        last_right_offset = 0; // Zero value means the end of file.
+        if (cached_buffer)
+            cached_buffer->setReadUntilEnd();
+        if (non_cached_buffer)
+            non_cached_buffer->setReadUntilEnd();
+    }
+    else
+    {
+        if (last_right_offset && right_offset <= last_right_offset.value())
+            return;
+
+        last_right_offset = right_offset;
+        if (cached_buffer)
+            cached_buffer->setReadUntilPosition(right_offset);
+        if (non_cached_buffer)
+            non_cached_buffer->setReadUntilPosition(right_offset);
     }
 }
 

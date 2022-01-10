@@ -55,7 +55,7 @@ public:
         Serializer serializer;
         Geometry geometry;
 
-        for (size_t i = 0; i < input_rows_count; i++)
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
             const auto & str = column_string->getDataAt(i).toString();
             boost::geometry::read_wkt(str, geometry);

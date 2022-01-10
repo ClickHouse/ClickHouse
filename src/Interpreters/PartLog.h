@@ -49,7 +49,6 @@ struct PartLogElement
     UInt16 error = 0;
     String exception;
 
-
     static std::string name() { return "PartLog"; }
 
     static NamesAndTypesList getNamesAndTypes();

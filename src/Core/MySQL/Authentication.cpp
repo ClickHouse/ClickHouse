@@ -71,7 +71,7 @@ Native41::Native41(const String & password_, const String & scramble_)
     const Poco::SHA1Engine::Digest & digest = engine3.digest();
 
     scramble.resize(SCRAMBLE_LENGTH);
-    for (size_t i = 0; i < SCRAMBLE_LENGTH; i++)
+    for (size_t i = 0; i < SCRAMBLE_LENGTH; ++i)
         scramble[i] = static_cast<unsigned char>(password_sha1[i] ^ digest[i]);
 }
 
@@ -191,7 +191,7 @@ void Sha256Password::authenticate(
         }
 
         password.resize(plaintext_size);
-        for (int i = 0; i < plaintext_size; i++)
+        for (int i = 0; i < plaintext_size; ++i)
         {
             password[i] = plaintext[i] ^ static_cast<unsigned char>(scramble[i % SCRAMBLE_LENGTH]);
         }

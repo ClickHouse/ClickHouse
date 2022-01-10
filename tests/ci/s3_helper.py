@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import shutil
+import time
 from multiprocessing.dummy import Pool
 
 import boto3
@@ -82,6 +83,58 @@ class S3Helper:
             return self._upload_file_to_s3(S3_BUILDS_BUCKET, file_path, s3_path)
         else:
             return S3Helper.copy_file_to_local(S3_BUILDS_BUCKET, file_path, s3_path)
+
+    def fast_parallel_upload_dir(self, dir_path, s3_dir_path, bucket_name):
+        all_files = []
+
+        for root, _, files in os.walk(dir_path):
+            for file in files:
+                all_files.append(os.path.join(root, file))
+
+        logging.info("Files found %s", len(all_files))
+
+        counter = 0
+        t = time.time()
+        sum_time = 0
+        def upload_task(file_path):
+            nonlocal counter
+            nonlocal t
+            nonlocal sum_time
+            try:
+                s3_path = file_path.replace(dir_path, s3_dir_path)
+                metadata = {}
+                if s3_path.endswith("html"):
+                    metadata['ContentType'] = "text/html; charset=utf-8"
+                elif s3_path.endswith("css"):
+                    metadata['ContentType'] = "text/css; charset=utf-8"
+                elif s3_path.endswith("js"):
+                    metadata['ContentType'] = "text/javascript; charset=utf-8"
+
+                # Retry
+                for i in range(5):
+                    try:
+                        self.client.upload_file(file_path, bucket_name, s3_path, ExtraArgs=metadata)
+                        break
+                    except Exception as ex:
+                        if i == 4:
+                            raise ex
+                        time.sleep(0.1 * i)
+
+                counter += 1
+                if counter % 1000 == 0:
+                    sum_time += int(time.time() - t)
+                    print("Uploaded", counter, "-", int(time.time() - t), "s", "sum time", sum_time, "s")
+                    t = time.time()
+            except Exception as ex:
+                logging.critical("Failed to upload file, expcetion %s", ex)
+            return "https://s3.amazonaws.com/{bucket}/{path}".format(bucket=bucket_name, path=s3_path)
+
+        p = Pool(256)
+
+        logging.basicConfig(level=logging.CRITICAL)
+        result = sorted(_flatten_list(p.map(upload_task, all_files)))
+        logging.basicConfig(level=logging.INFO)
+        return result
 
     def _upload_folder_to_s3(self, folder_path, s3_folder_path, bucket_name, keep_dirs_in_s3_path, upload_symlinks):
         logging.info("Upload folder '%s' to bucket=%s of s3 folder '%s'", folder_path, bucket_name, s3_folder_path)
