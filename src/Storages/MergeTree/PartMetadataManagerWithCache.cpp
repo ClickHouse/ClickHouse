@@ -201,7 +201,7 @@ std::unordered_map<String, IPartMetadataManager::uint128> PartMetadataManagerWit
     if (part->isProjectionPart() || !part->isStoredOnDisk())
         return {};
 
-    /// the directory of projection part is under the directory of its parent part
+    /// The directory of projection part is under the directory of its parent part
     const auto filenames_without_checksums = part->getFileNamesWithoutChecksums();
 
     std::unordered_map<String, uint128> results;
