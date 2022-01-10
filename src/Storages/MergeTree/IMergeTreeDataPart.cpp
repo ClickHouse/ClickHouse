@@ -681,13 +681,6 @@ void IMergeTreeDataPart::appendFilesOfColumnsChecksumsIndexes(Strings & files, b
     }
 }
 
-size_t IMergeTreeDataPart::fileNumberOfColumnsChecksumsIndexes() const
-{
-    Strings files;
-    appendFilesOfColumnsChecksumsIndexes(files, true);
-    return files.size();
-}
-
 void IMergeTreeDataPart::loadProjections(bool require_columns_checksums, bool check_consistency)
 {
     auto metadata_snapshot = storage.getInMemoryMetadataPtr();
