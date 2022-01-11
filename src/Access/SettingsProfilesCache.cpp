@@ -15,24 +15,32 @@ namespace ErrorCodes
 SettingsProfilesCache::SettingsProfilesCache(const AccessControl & access_control_)
     : access_control(access_control_) {}
 
-SettingsProfilesCache::~SettingsProfilesCache() = default;
+
+SettingsProfilesCache::~SettingsProfilesCache()
+{
+    std::lock_guard lock{mutex};
+    unloadAllProfiles();
+}
 
 
-void SettingsProfilesCache::ensureAllProfilesRead()
+void SettingsProfilesCache::loadAllProfiles()
 {
     /// `mutex` is already locked.
-    if (all_profiles_read)
+    if (all_profiles_loaded)
         return;
-    all_profiles_read = true;
+    all_profiles_loaded = true;
 
     subscription = access_control.subscribeForChanges<SettingsProfile>(
-        [&](const UUID & id, const AccessEntityPtr & entity)
-        {
-            if (entity)
-                profileAddedOrChanged(id, typeid_cast<SettingsProfilePtr>(entity));
-            else
-                profileRemoved(id);
-        });
+        [weak_ptr = weak_from_this()](const UUID & id, const AccessEntityPtr & entity)
+    {
+        auto ptr = weak_ptr.lock();
+        if (!ptr)
+            return;
+        if (auto profile = typeid_cast<SettingsProfilePtr>(entity))
+            ptr->profileAddedOrChanged(id, profile);
+        else
+            ptr->profileRemoved(id);
+    });
 
     for (const UUID & id : access_control.findAll<SettingsProfile>())
     {
@@ -43,6 +51,19 @@ void SettingsProfilesCache::ensureAllProfilesRead()
             profiles_by_name[profile->getName()] = id;
         }
     }
+}
+
+
+void SettingsProfilesCache::unloadAllProfiles()
+{
+    /// `mutex` is already locked.
+    subscription.reset();
+    all_profiles.clear();
+    profiles_by_name.clear();
+    all_profiles_loaded = false;
+    enabled_settings.clear();
+    default_profile_id.reset();
+    profile_infos_cache.clear();
 }
 
 
@@ -81,22 +102,13 @@ void SettingsProfilesCache::profileRemoved(const UUID & profile_id)
 }
 
 
-void SettingsProfilesCache::setDefaultProfileName(const String & default_profile_name)
+void SettingsProfilesCache::setDefaultProfileName(const String & default_profile_name_)
 {
     std::lock_guard lock{mutex};
-    ensureAllProfilesRead();
-
-    if (default_profile_name.empty())
-    {
-        default_profile_id = {};
+    if (default_profile_name == default_profile_name_)
         return;
-    }
-
-    auto it = profiles_by_name.find(default_profile_name);
-    if (it == profiles_by_name.end())
-        throw Exception("Settings profile " + backQuote(default_profile_name) + " not found", ErrorCodes::THERE_IS_NO_PROFILE);
-
-    default_profile_id = it->second;
+    default_profile_name = default_profile_name_;
+    default_profile_id = {};
 }
 
 
@@ -117,14 +129,28 @@ void SettingsProfilesCache::mergeSettingsAndConstraints()
 }
 
 
-void SettingsProfilesCache::mergeSettingsAndConstraintsFor(EnabledSettings & enabled) const
+void SettingsProfilesCache::mergeSettingsAndConstraintsFor(EnabledSettings & enabled)
 {
+    /// `mutex` is already locked.
     SettingsProfileElements merged_settings;
-    if (default_profile_id)
+
+    if (!default_profile_name.empty())
     {
-        SettingsProfileElement new_element;
-        new_element.parent_profile = *default_profile_id;
-        merged_settings.emplace_back(new_element);
+        if (!default_profile_id)
+        {
+            auto it = profiles_by_name.find(default_profile_name);
+            if (it == profiles_by_name.end())
+                throw Exception("Settings profile " + backQuote(default_profile_name) + " not found", ErrorCodes::THERE_IS_NO_PROFILE);
+
+            default_profile_id = it->second;
+        }
+
+        if (default_profile_id)
+        {
+            SettingsProfileElement new_element;
+            new_element.parent_profile = *default_profile_id;
+            merged_settings.emplace_back(new_element);
+        }
     }
 
     for (const auto & [profile_id, profile] : all_profiles)
@@ -153,6 +179,8 @@ void SettingsProfilesCache::substituteProfiles(
     std::vector<UUID> & substituted_profiles,
     std::unordered_map<UUID, String> & names_of_substituted_profiles) const
 {
+    /// `mutex` is already locked.
+
     /// We should substitute profiles in reversive order because the same profile can occur
     /// in `elements` multiple times (with some other settings in between) and in this case
     /// the last occurrence should override all the previous ones.
@@ -191,7 +219,7 @@ std::shared_ptr<const EnabledSettings> SettingsProfilesCache::getEnabledSettings
     const SettingsProfileElements & settings_from_enabled_roles)
 {
     std::lock_guard lock{mutex};
-    ensureAllProfilesRead();
+    loadAllProfiles();
 
     EnabledSettings::Params params;
     params.user_id = user_id;
@@ -218,7 +246,7 @@ std::shared_ptr<const EnabledSettings> SettingsProfilesCache::getEnabledSettings
 std::shared_ptr<const SettingsProfilesInfo> SettingsProfilesCache::getSettingsProfileInfo(const UUID & profile_id)
 {
     std::lock_guard lock{mutex};
-    ensureAllProfilesRead();
+    loadAllProfiles();
 
     if (auto pos = this->profile_infos_cache.get(profile_id))
         return *pos;

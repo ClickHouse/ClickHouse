@@ -16,7 +16,7 @@ using QuotaPtr = std::shared_ptr<const Quota>;
 struct RolesOrUsersSet;
 
 /// Stores information how much amount of resources have been consumed and how much are left.
-class QuotaCache
+class QuotaCache : public std::enable_shared_from_this<QuotaCache>
 {
 public:
     QuotaCache(const AccessControl & access_control_);
@@ -52,7 +52,8 @@ private:
         std::unordered_map<String /* quota key */, boost::shared_ptr<const Intervals>> key_to_intervals;
     };
 
-    void ensureAllQuotasRead();
+    void loadAllQuotas();
+    void unloadAllQuotas();
     void quotaAddedOrChanged(const UUID & quota_id, const std::shared_ptr<const Quota> & new_quota);
     void quotaRemoved(const UUID & quota_id);
     void chooseQuotaToConsume();
@@ -61,7 +62,7 @@ private:
     const AccessControl & access_control;
     mutable std::mutex mutex;
     std::unordered_map<UUID /* quota id */, QuotaInfo> all_quotas;
-    bool all_quotas_read = false;
+    bool all_quotas_loaded = false;
     scope_guard subscription;
     std::map<EnabledQuota::Params, std::weak_ptr<EnabledQuota>> enabled_quotas;
 };

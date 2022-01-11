@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <Access/EnabledRowPolicies.h>
 #include <base/scope_guard.h>
@@ -15,7 +15,7 @@ struct RowPolicy;
 using RowPolicyPtr = std::shared_ptr<const RowPolicy>;
 
 /// Stores read and parsed row policies.
-class RowPolicyCache
+class RowPolicyCache : public std::enable_shared_from_this<RowPolicyCache>
 {
 public:
     RowPolicyCache(const AccessControl & access_control_);
@@ -35,15 +35,16 @@ private:
         ASTPtr parsed_filters[static_cast<size_t>(RowPolicyFilterType::MAX)];
     };
 
-    void ensureAllRowPoliciesRead();
-    void rowPolicyAddedOrChanged(const UUID & policy_id, const RowPolicyPtr & new_policy);
-    void rowPolicyRemoved(const UUID & policy_id);
+    void loadAllPolicies();
+    void unloadAllPolicies();
+    void policyAddedOrChanged(const UUID & policy_id, const RowPolicyPtr & new_policy);
+    void policyRemoved(const UUID & policy_id);
     void mixFilters();
     void mixFiltersFor(EnabledRowPolicies & enabled);
 
     const AccessControl & access_control;
     std::unordered_map<UUID, PolicyInfo> all_policies;
-    bool all_policies_read = false;
+    bool all_policies_loaded = false;
     scope_guard subscription;
     std::map<EnabledRowPolicies::Params, std::weak_ptr<EnabledRowPolicies>> enabled_row_policies;
     std::mutex mutex;

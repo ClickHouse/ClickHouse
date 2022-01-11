@@ -143,25 +143,47 @@ namespace
 
 
 ContextAccess::ContextAccess(const AccessControl & access_control_, const Params & params_)
-    : access_control(&access_control_)
-    , params(params_)
+    : access_control(&access_control_), params(params_)
+{}
+
+
+void ContextAccess::initialize()
 {
     std::lock_guard lock{mutex};
+    if (is_full_access)
+    {
+        access = std::make_shared<AccessRights>(AccessRights::getFullAccess());
+        access_with_implicit = std::make_shared<AccessRights>(addImplicitAccessRights(*access));
+        return;
+    }
+
+    auto weak_ptr = weak_from_this();
+    assert(weak_ptr);
 
     subscription_for_user_change = access_control->subscribeForChanges(
-        *params.user_id, [this](const UUID &, const AccessEntityPtr & entity)
+        *params.user_id, [weak_ptr](const UUID &, const AccessEntityPtr & entity)
     {
-        UserPtr changed_user = entity ? typeid_cast<UserPtr>(entity) : nullptr;
-        std::lock_guard lock2{mutex};
-        setUser(changed_user);
+        auto ptr = weak_ptr.lock();
+        if (!ptr)
+            return;
+        std::lock_guard lock2{ptr->mutex};
+        ptr->setUser(typeid_cast<UserPtr>(entity));
     });
 
     setUser(access_control->read<User>(*params.user_id));
 }
 
 
+ContextAccess::~ContextAccess()
+{
+    std::lock_guard lock{mutex};
+    setUser(nullptr);
+}
+
+
 void ContextAccess::setUser(const UserPtr & user_) const
 {
+    /// `mutex` is already locked.
     user = user_;
     if (!user)
     {
@@ -195,10 +217,14 @@ void ContextAccess::setUser(const UserPtr & user_) const
 
     subscription_for_roles_changes.reset();
     enabled_roles = access_control->getEnabledRoles(current_roles, current_roles_with_admin_option);
-    subscription_for_roles_changes = enabled_roles->subscribeForChanges([this](const std::shared_ptr<const EnabledRolesInfo> & roles_info_)
+    subscription_for_roles_changes = enabled_roles->subscribeForChanges(
+        [weak_ptr = weak_from_this()](const std::shared_ptr<const EnabledRolesInfo> & roles_info_)
     {
-        std::lock_guard lock{mutex};
-        setRolesInfo(roles_info_);
+        auto ptr = weak_ptr.lock();
+        if (!ptr)
+            return;
+        std::lock_guard lock{ptr->mutex};
+        ptr->setRolesInfo(roles_info_);
     });
 
     setRolesInfo(enabled_roles->getRolesInfo());
@@ -207,6 +233,7 @@ void ContextAccess::setUser(const UserPtr & user_) const
 
 void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const
 {
+    /// `mutex` is already locked.
     assert(roles_info_);
     roles_info = roles_info_;
     enabled_row_policies = access_control->getEnabledRowPolicies(
@@ -221,6 +248,7 @@ void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> &
 
 void ContextAccess::calculateAccessRights() const
 {
+    /// `mutex` is already locked.
     access = std::make_shared<AccessRights>(mixAccessRightsFromUserAndRoles(*user, *roles_info));
     access_with_implicit = std::make_shared<AccessRights>(addImplicitAccessRights(*access));
 
@@ -302,8 +330,7 @@ std::shared_ptr<const ContextAccess> ContextAccess::getFullAccess()
     {
         auto full_access = std::shared_ptr<ContextAccess>(new ContextAccess);
         full_access->is_full_access = true;
-        full_access->access = std::make_shared<AccessRights>(AccessRights::getFullAccess());
-        full_access->access_with_implicit = std::make_shared<AccessRights>(addImplicitAccessRights(*full_access->access));
+        full_access->initialize();
         return full_access;
     }();
     return res;

@@ -15,13 +15,13 @@ using SettingsProfilePtr = std::shared_ptr<const SettingsProfile>;
 struct SettingsProfilesInfo;
 
 /// Reads and caches all the settings profiles.
-class SettingsProfilesCache
+class SettingsProfilesCache : public std::enable_shared_from_this<SettingsProfilesCache>
 {
 public:
     SettingsProfilesCache(const AccessControl & access_control_);
     ~SettingsProfilesCache();
 
-    void setDefaultProfileName(const String & default_profile_name);
+    void setDefaultProfileName(const String & default_profile_name_);
 
     std::shared_ptr<const EnabledSettings> getEnabledSettings(
         const UUID & user_id,
@@ -32,19 +32,21 @@ public:
     std::shared_ptr<const SettingsProfilesInfo> getSettingsProfileInfo(const UUID & profile_id);
 
 private:
-    void ensureAllProfilesRead();
+    void loadAllProfiles();
+    void unloadAllProfiles();
     void profileAddedOrChanged(const UUID & profile_id, const SettingsProfilePtr & new_profile);
     void profileRemoved(const UUID & profile_id);
     void mergeSettingsAndConstraints();
-    void mergeSettingsAndConstraintsFor(EnabledSettings & enabled) const;
+    void mergeSettingsAndConstraintsFor(EnabledSettings & enabled);
     void substituteProfiles(SettingsProfileElements & elements, std::vector<UUID> & substituted_profiles, std::unordered_map<UUID, String> & names_of_substituted_profiles) const;
 
     const AccessControl & access_control;
     std::unordered_map<UUID, SettingsProfilePtr> all_profiles;
     std::unordered_map<String, UUID> profiles_by_name;
-    bool all_profiles_read = false;
+    bool all_profiles_loaded = false;
     scope_guard subscription;
     std::map<EnabledSettings::Params, std::weak_ptr<EnabledSettings>> enabled_settings;
+    String default_profile_name;
     std::optional<UUID> default_profile_id;
     Poco::LRUCache<UUID, std::shared_ptr<const SettingsProfilesInfo>> profile_infos_cache;
     mutable std::mutex mutex;

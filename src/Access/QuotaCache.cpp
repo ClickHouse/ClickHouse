@@ -163,13 +163,17 @@ QuotaCache::QuotaCache(const AccessControl & access_control_)
 {
 }
 
-QuotaCache::~QuotaCache() = default;
+QuotaCache::~QuotaCache()
+{
+    std::lock_guard lock{mutex};
+    unloadAllQuotas();
+}
 
 
 std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(const UUID & user_id, const String & user_name, const boost::container::flat_set<UUID> & enabled_roles, const Poco::Net::IPAddress & client_address, const String & forwarded_address, const String & client_key)
 {
     std::lock_guard lock{mutex};
-    ensureAllQuotasRead();
+    loadAllQuotas();
 
     EnabledQuota::Params params;
     params.user_id = user_id;
@@ -194,21 +198,24 @@ std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(const UUID & use
 }
 
 
-void QuotaCache::ensureAllQuotasRead()
+void QuotaCache::loadAllQuotas()
 {
     /// `mutex` is already locked.
-    if (all_quotas_read)
+    if (all_quotas_loaded)
         return;
-    all_quotas_read = true;
+    all_quotas_loaded = true;
 
     subscription = access_control.subscribeForChanges<Quota>(
-        [&](const UUID & id, const AccessEntityPtr & entity)
-        {
-            if (entity)
-                quotaAddedOrChanged(id, typeid_cast<QuotaPtr>(entity));
-            else
-                quotaRemoved(id);
-        });
+        [weak_ptr = weak_from_this()](const UUID & id, const AccessEntityPtr & entity)
+    {
+        auto ptr = weak_ptr.lock();
+        if (!ptr)
+            return;
+        if (auto quota = typeid_cast<QuotaPtr>(entity))
+            ptr->quotaAddedOrChanged(id, quota);
+        else
+            ptr->quotaRemoved(id);
+    });
 
     for (const UUID & quota_id : access_control.findAll<Quota>())
     {
@@ -216,6 +223,16 @@ void QuotaCache::ensureAllQuotasRead()
         if (quota)
             all_quotas.emplace(quota_id, QuotaInfo(quota, quota_id));
     }
+}
+
+
+void QuotaCache::unloadAllQuotas()
+{
+    /// `mutex` is already locked.
+    subscription.reset();
+    all_quotas.clear();
+    all_quotas_loaded = false;
+    enabled_quotas.clear();
 }
 
 
@@ -250,7 +267,6 @@ void QuotaCache::quotaRemoved(const UUID & quota_id)
 void QuotaCache::chooseQuotaToConsume()
 {
     /// `mutex` is already locked.
-
     for (auto i = enabled_quotas.begin(), e = enabled_quotas.end(); i != e;)
     {
         auto elem = i->second.lock();

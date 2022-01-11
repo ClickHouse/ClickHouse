@@ -75,6 +75,7 @@ public:
             cache.remove(params);
         }
         auto res = std::shared_ptr<ContextAccess>(new ContextAccess(access_control, params));
+        res->initialize();
         cache.add(params, res);
         return res;
     }
@@ -136,10 +137,10 @@ private:
 AccessControl::AccessControl()
     : MultipleAccessStorage("user directories"),
       context_access_cache(std::make_unique<ContextAccessCache>(*this)),
-      role_cache(std::make_unique<RoleCache>(*this)),
-      row_policy_cache(std::make_unique<RowPolicyCache>(*this)),
-      quota_cache(std::make_unique<QuotaCache>(*this)),
-      settings_profiles_cache(std::make_unique<SettingsProfilesCache>(*this)),
+      role_cache(std::make_shared<RoleCache>(*this)),
+      row_policy_cache(std::make_shared<RowPolicyCache>(*this)),
+      quota_cache(std::make_shared<QuotaCache>(*this)),
+      settings_profiles_cache(std::make_shared<SettingsProfilesCache>(*this)),
       external_authenticators(std::make_unique<ExternalAuthenticators>()),
       custom_settings_prefixes(std::make_unique<CustomSettingsPrefixes>())
 {

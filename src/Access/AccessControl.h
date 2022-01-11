@@ -161,10 +161,10 @@ private:
     class CustomSettingsPrefixes;
 
     std::unique_ptr<ContextAccessCache> context_access_cache;
-    std::unique_ptr<RoleCache> role_cache;
-    std::unique_ptr<RowPolicyCache> row_policy_cache;
-    std::unique_ptr<QuotaCache> quota_cache;
-    std::unique_ptr<SettingsProfilesCache> settings_profiles_cache;
+    std::shared_ptr<RoleCache> role_cache;
+    std::shared_ptr<RowPolicyCache> row_policy_cache;
+    std::shared_ptr<QuotaCache> quota_cache;
+    std::shared_ptr<SettingsProfilesCache> settings_profiles_cache;
     std::unique_ptr<ExternalAuthenticators> external_authenticators;
     std::unique_ptr<CustomSettingsPrefixes> custom_settings_prefixes;
 };

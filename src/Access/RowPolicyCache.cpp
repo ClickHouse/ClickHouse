@@ -95,13 +95,17 @@ RowPolicyCache::RowPolicyCache(const AccessControl & access_control_)
 {
 }
 
-RowPolicyCache::~RowPolicyCache() = default;
+RowPolicyCache::~RowPolicyCache()
+{
+    std::lock_guard lock{mutex};
+    unloadAllPolicies();
+}
 
 
 std::shared_ptr<const EnabledRowPolicies> RowPolicyCache::getEnabledRowPolicies(const UUID & user_id, const boost::container::flat_set<UUID> & enabled_roles)
 {
     std::lock_guard lock{mutex};
-    ensureAllRowPoliciesRead();
+    loadAllPolicies();
 
     EnabledRowPolicies::Params params;
     params.user_id = user_id;
@@ -122,20 +126,23 @@ std::shared_ptr<const EnabledRowPolicies> RowPolicyCache::getEnabledRowPolicies(
 }
 
 
-void RowPolicyCache::ensureAllRowPoliciesRead()
+void RowPolicyCache::loadAllPolicies()
 {
     /// `mutex` is already locked.
-    if (all_policies_read)
+    if (all_policies_loaded)
         return;
-    all_policies_read = true;
+    all_policies_loaded = true;
 
     subscription = access_control.subscribeForChanges<RowPolicy>(
-        [&](const UUID & id, const AccessEntityPtr & entity)
+        [weak_ptr = weak_from_this()](const UUID & id, const AccessEntityPtr & entity)
         {
-            if (entity)
-                rowPolicyAddedOrChanged(id, typeid_cast<RowPolicyPtr>(entity));
+            auto ptr = weak_ptr.lock();
+            if (!ptr)
+                return;
+            if (auto policy = typeid_cast<RowPolicyPtr>(entity))
+                ptr->policyAddedOrChanged(id, policy);
             else
-                rowPolicyRemoved(id);
+                ptr->policyRemoved(id);
         });
 
     for (const UUID & id : access_control.findAll<RowPolicy>())
@@ -147,7 +154,17 @@ void RowPolicyCache::ensureAllRowPoliciesRead()
 }
 
 
-void RowPolicyCache::rowPolicyAddedOrChanged(const UUID & policy_id, const RowPolicyPtr & new_policy)
+void RowPolicyCache::unloadAllPolicies()
+{
+    /// `mutex` is already locked.
+    subscription.reset();
+    all_policies.clear();
+    all_policies_loaded = false;
+    enabled_row_policies.clear();
+}
+
+
+void RowPolicyCache::policyAddedOrChanged(const UUID & policy_id, const RowPolicyPtr & new_policy)
 {
     std::lock_guard lock{mutex};
     auto it = all_policies.find(policy_id);
@@ -167,7 +184,7 @@ void RowPolicyCache::rowPolicyAddedOrChanged(const UUID & policy_id, const RowPo
 }
 
 
-void RowPolicyCache::rowPolicyRemoved(const UUID & policy_id)
+void RowPolicyCache::policyRemoved(const UUID & policy_id)
 {
     std::lock_guard lock{mutex};
     all_policies.erase(policy_id);
@@ -195,7 +212,6 @@ void RowPolicyCache::mixFilters()
 void RowPolicyCache::mixFiltersFor(EnabledRowPolicies & enabled)
 {
     /// `mutex` is already locked.
-
     using MixedFiltersMap = EnabledRowPolicies::MixedFiltersMap;
     using MixedFiltersKey = EnabledRowPolicies::MixedFiltersKey;
     using Hash = EnabledRowPolicies::Hash;

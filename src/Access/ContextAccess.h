@@ -7,6 +7,7 @@
 #include <base/scope_guard.h>
 #include <base/shared_ptr_helper.h>
 #include <boost/container/flat_set.hpp>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
@@ -63,7 +64,7 @@ struct ContextAccessParams
 };
 
 
-class ContextAccess
+class ContextAccess : public std::enable_shared_from_this<ContextAccess>
 {
 public:
     using Params = ContextAccessParams;
@@ -156,10 +157,14 @@ public:
     /// without any limitations. This is used for the global context.
     static std::shared_ptr<const ContextAccess> getFullAccess();
 
+    ~ContextAccess();
+
 private:
     friend class AccessControl;
     ContextAccess() {}
     ContextAccess(const AccessControl & access_control_, const Params & params_);
+
+    void initialize();
 
     void setUser(const UserPtr & user_) const;
     void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const;

@@ -60,7 +60,18 @@ RoleCache::RoleCache(const AccessControl & access_control_)
     : access_control(access_control_), cache(600000 /* 10 minutes */) {}
 
 
-RoleCache::~RoleCache() = default;
+RoleCache::~RoleCache()
+{
+    unloadAllRoles();
+}
+
+
+void RoleCache::unloadAllRoles()
+{
+    std::lock_guard lock{mutex};
+    cache.clear();
+    enabled_roles.clear();
+}
 
 
 std::shared_ptr<const EnabledRoles>
@@ -92,7 +103,6 @@ RoleCache::getEnabledRoles(const std::vector<UUID> & roles, const std::vector<UU
 void RoleCache::collectEnabledRoles(scope_guard & notifications)
 {
     /// `mutex` is already locked.
-
     for (auto i = enabled_roles.begin(), e = enabled_roles.end(); i != e;)
     {
         auto elem = i->second.lock();
@@ -131,19 +141,21 @@ void RoleCache::collectEnabledRoles(EnabledRoles & enabled, scope_guard & notifi
 RolePtr RoleCache::getRole(const UUID & role_id)
 {
     /// `mutex` is already locked.
-
     auto role_from_cache = cache.get(role_id);
     if (role_from_cache)
         return role_from_cache->first;
 
-    auto subscription = access_control.subscribeForChanges(role_id,
-                                                    [this, role_id](const UUID &, const AccessEntityPtr & entity)
+    auto subscription = access_control.subscribeForChanges(
+        role_id,
+        [weak_ptr = weak_from_this(), role_id](const UUID &, const AccessEntityPtr & entity)
     {
-        auto changed_role = entity ? typeid_cast<RolePtr>(entity) : nullptr;
-        if (changed_role)
-            roleChanged(role_id, changed_role);
+        auto ptr = weak_ptr.lock();
+        if (!ptr)
+            return;
+        if (auto role = typeid_cast<RolePtr>(entity))
+            ptr->roleChanged(role_id, role);
         else
-            roleRemoved(role_id);
+            ptr->roleRemoved(role_id);
     });
 
     auto role = access_control.tryRead<Role>(role_id);
