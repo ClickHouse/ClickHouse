@@ -2029,10 +2029,16 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 #if USE_ROCKSDB
 MergeTreeMetadataCachePtr Context::getMergeTreeMetadataCache() const
 {
-    if (!shared->merge_tree_metadata_cache)
+    auto cache = tryGetMergeTreeMetadataCache();
+    if (!cache)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Merge tree metadata cache is not initialized, please add config merge_tree_metadata_cache in config.xml and restart");
+    return cache;
+}
+
+MergeTreeMetadataCachePtr Context::tryGetMergeTreeMetadataCache() const
+{
     return shared->merge_tree_metadata_cache;
 }
 #endif
