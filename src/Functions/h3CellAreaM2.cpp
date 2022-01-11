@@ -60,8 +60,8 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const UInt64 resolution = data[row];
-            Float64 res = cellAreaM2(resolution);
+            const UInt64 index = data[row];
+            Float64 res = cellAreaM2(index);
             dst_data[row] = res;
         }
 
