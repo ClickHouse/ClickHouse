@@ -32,7 +32,7 @@ def test_create_parquet_table(started_cluster):
     CREATE TABLE default.demo_parquet (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String)) ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo') PARTITION BY(day)
             """)
     logging.info("create result {}".format(result))
- 
+    time.sleep(120)
     assert result.strip() == ''
 
 def test_create_orc_table(started_cluster):
@@ -106,6 +106,13 @@ def test_parquet_groupby_with_cache(started_cluster):
     assert result == expected_result
 def test_cache_read_bytes(started_cluster):
     node = started_cluster.instances['h0_0_0']
+    node.query("set input_format_parquet_allow_missing_columns = true")
+    result = node.query("""
+    CREATE TABLE IF NOT EXISTS default.demo_parquet (`id` Nullable(String), `score` Nullable(Int32), `day` Nullable(String)) ENGINE = Hive('thrift://hivetest:9083', 'test', 'demo') PARTITION BY(day)
+            """)
+    result = node.query("""
+    SELECT day, count(*) FROM default.demo_parquet group by day order by day
+            """)
     result = node.query("""
     SELECT day, count(*) FROM default.demo_parquet group by day order by day
             """)
