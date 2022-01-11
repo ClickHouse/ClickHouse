@@ -361,7 +361,6 @@ void Aggregator::compileAggregateFunctionsIfNeeded()
                 auto compiled_aggregate_functions = compileAggregateFunctions(getJITInstance(), functions_to_compile, functions_description);
                 return std::make_shared<CompiledAggregateFunctionsHolder>(std::move(compiled_aggregate_functions));
             });
-
             compiled_aggregate_functions_holder = std::static_pointer_cast<CompiledAggregateFunctionsHolder>(compiled_function_cache_entry);
         }
         else

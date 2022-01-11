@@ -25,7 +25,6 @@
 #include <Common/formatReadable.h>
 #include <Common/TerminalSize.h>
 #include <Common/Config/configReadClient.h>
-#include "Common/MemoryTracker.h"
 
 #include <Core/QueryProcessingStage.h>
 #include <Client/TestHint.h>
@@ -55,11 +54,6 @@
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
-
-namespace CurrentMetrics
-{
-    extern const Metric MemoryTracking;
-}
 
 namespace fs = std::filesystem;
 
@@ -409,16 +403,6 @@ try
 
     std::cout << std::fixed << std::setprecision(3);
     std::cerr << std::fixed << std::setprecision(3);
-
-    /// Limit on total memory usage
-    size_t max_client_memory_usage = config().getInt64("max_memory_usage_in_client", 0 /*default value*/);
-
-    if (max_client_memory_usage != 0)
-    {
-        total_memory_tracker.setHardLimit(max_client_memory_usage);
-        total_memory_tracker.setDescription("(total)");
-        total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
-    }
 
     registerFormats();
     registerFunctions();
@@ -1014,7 +998,6 @@ void Client::addOptions(OptionsDescription & options_description)
         ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
 
         ("no-warnings", "disable warnings when client connects to server")
-        ("max_memory_usage_in_client", po::value<int>(), "sets memory limit in client")
     ;
 
     /// Commandline options related to external tables.

@@ -178,7 +178,7 @@ def assert_number_of_columns(expected, table_name, database_name='test_database'
 def check_tables_are_synchronized(table_name, order_by='key', postgres_database='postgres_database', materialized_database='test_database', schema_name=''):
     assert_nested_table_is_created(table_name, materialized_database, schema_name)
 
-    print("Checking table is synchronized:", table_name)
+    print(f"Checking table is synchronized. Table name: {table_name}, table schema: {schema_name}")
     expected = instance.query('select * from {}.{} order by {};'.format(postgres_database, table_name, order_by))
     if len(schema_name) == 0:
         result = instance.query('select * from {}.{} order by {};'.format(materialized_database, table_name, order_by))
@@ -356,6 +356,11 @@ def test_remove_table_from_replication(started_cluster):
     for i in range(NUM_TABLES):
         cursor.execute('drop table if exists postgresql_replica_{};'.format(i))
 
+    # Removing from replication table which does not exist in PostgreSQL must be ok.
+    instance.query('DETACH TABLE test_database.postgresql_replica_0');
+    assert instance.contains_in_log("from publication, because table does not exist in PostgreSQL")
+    drop_materialized_db()
+
 
 def test_predefined_connection_configuration(started_cluster):
     drop_materialized_db()
@@ -379,6 +384,7 @@ def test_database_with_single_non_default_schema(started_cluster):
 
     NUM_TABLES=5
     schema_name = 'test_schema'
+    materialized_db = 'test_database'
     clickhouse_postgres_db = 'postgres_database_with_schema'
     global insert_counter
     insert_counter = 0
@@ -430,6 +436,14 @@ def test_database_with_single_non_default_schema(started_cluster):
     instance.query(f"INSERT INTO {clickhouse_postgres_db}.postgresql_replica_{altered_table} SELECT number, number, number from numbers(5000, 1000)")
     assert_number_of_columns(3, f'postgresql_replica_{altered_table}')
     check_tables_are_synchronized(f"postgresql_replica_{altered_table}", postgres_database=clickhouse_postgres_db);
+
+    print('DETACH-ATTACH')
+    detached_table_name = "postgresql_replica_1"
+    instance.query(f"DETACH TABLE {materialized_db}.{detached_table_name}")
+    assert not instance.contains_in_log("from publication, because table does not exist in PostgreSQL")
+    instance.query(f"ATTACH TABLE {materialized_db}.{detached_table_name}")
+    check_tables_are_synchronized(detached_table_name, postgres_database=clickhouse_postgres_db);
+
     drop_materialized_db()
 
 
@@ -440,6 +454,7 @@ def test_database_with_multiple_non_default_schemas_1(started_cluster):
     NUM_TABLES = 5
     schema_name = 'test_schema'
     clickhouse_postgres_db = 'postgres_database_with_schema'
+    materialized_db = 'test_database'
     publication_tables = ''
     global insert_counter
     insert_counter = 0
@@ -494,6 +509,15 @@ def test_database_with_multiple_non_default_schemas_1(started_cluster):
     instance.query(f"INSERT INTO {clickhouse_postgres_db}.postgresql_replica_{altered_table} SELECT number, number, number from numbers(5000, 1000)")
     assert_number_of_columns(3, f'{schema_name}.postgresql_replica_{altered_table}')
     check_tables_are_synchronized(f"postgresql_replica_{altered_table}", schema_name=schema_name, postgres_database=clickhouse_postgres_db);
+
+    print('DETACH-ATTACH')
+    detached_table_name = "postgresql_replica_1"
+    instance.query(f"DETACH TABLE {materialized_db}.`{schema_name}.{detached_table_name}`")
+    assert not instance.contains_in_log("from publication, because table does not exist in PostgreSQL")
+    instance.query(f"ATTACH TABLE {materialized_db}.`{schema_name}.{detached_table_name}`")
+    assert_show_tables("test_schema.postgresql_replica_0\ntest_schema.postgresql_replica_1\ntest_schema.postgresql_replica_2\ntest_schema.postgresql_replica_3\ntest_schema.postgresql_replica_4\n")
+    check_tables_are_synchronized(detached_table_name, schema_name=schema_name, postgres_database=clickhouse_postgres_db);
+
     drop_materialized_db()
 
 
@@ -504,6 +528,7 @@ def test_database_with_multiple_non_default_schemas_2(started_cluster):
     NUM_TABLES = 2
     schemas_num = 2
     schema_list = 'schema0, schema1'
+    materialized_db = 'test_database'
     global insert_counter
     insert_counter = 0
 
@@ -557,11 +582,23 @@ def test_database_with_multiple_non_default_schemas_2(started_cluster):
     print('ALTER')
     altered_schema = random.randint(0, schemas_num-1)
     altered_table = random.randint(0, NUM_TABLES-1)
+    clickhouse_postgres_db = f'clickhouse_postgres_db{altered_schema}'
     cursor.execute(f"ALTER TABLE schema{altered_schema}.postgresql_replica_{altered_table} ADD COLUMN value2 integer")
 
     instance.query(f"INSERT INTO clickhouse_postgres_db{altered_schema}.postgresql_replica_{altered_table} SELECT number, number, number from numbers(1000 * {insert_counter}, 1000)")
     assert_number_of_columns(3, f'schema{altered_schema}.postgresql_replica_{altered_table}')
-    check_tables_are_synchronized(f"postgresql_replica_{altered_table}", schema_name=schema_name, postgres_database=clickhouse_postgres_db);
+    check_tables_are_synchronized(f"postgresql_replica_{altered_table}", schema_name=f"schema{altered_schema}", postgres_database=clickhouse_postgres_db);
+
+    print('DETACH-ATTACH')
+    detached_table_name = "postgresql_replica_1"
+    detached_table_schema = "schema0"
+    clickhouse_postgres_db = f'clickhouse_postgres_db0'
+    instance.query(f"DETACH TABLE {materialized_db}.`{detached_table_schema}.{detached_table_name}`")
+    assert not instance.contains_in_log("from publication, because table does not exist in PostgreSQL")
+    instance.query(f"ATTACH TABLE {materialized_db}.`{detached_table_schema}.{detached_table_name}`")
+    assert_show_tables("schema0.postgresql_replica_0\nschema0.postgresql_replica_1\nschema1.postgresql_replica_0\nschema1.postgresql_replica_1\n")
+    check_tables_are_synchronized(f"postgresql_replica_{altered_table}", schema_name=detached_table_schema, postgres_database=clickhouse_postgres_db);
+
     drop_materialized_db()
 
 
@@ -587,6 +624,53 @@ def test_table_override(started_cluster):
     assert_eq_with_retry(instance, query, expected)
     drop_materialized_db()
     drop_postgres_table(cursor, table_name)
+
+
+def test_table_schema_changes_2(started_cluster):
+    drop_materialized_db()
+    conn = get_postgres_conn(ip=started_cluster.postgres_ip,
+                             port=started_cluster.postgres_port,
+                             database=True)
+    cursor = conn.cursor()
+
+    table_name = "test_table"
+
+    create_postgres_table(cursor, table_name, template=postgres_table_template_2);
+    instance.query(f"INSERT INTO postgres_database.{table_name} SELECT number, number, number, number from numbers(25)")
+
+    create_materialized_db(ip=started_cluster.postgres_ip,
+                           port=started_cluster.postgres_port,
+                           settings=["materialized_postgresql_allow_automatic_update = 1, materialized_postgresql_tables_list='test_table'"])
+
+    instance.query(f"INSERT INTO postgres_database.{table_name} SELECT number, number, number, number from numbers(25, 25)")
+    check_tables_are_synchronized(table_name);
+
+    cursor.execute(f"ALTER TABLE {table_name} DROP COLUMN value1")
+    cursor.execute(f"ALTER TABLE {table_name} DROP COLUMN value2")
+    cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN value1 Text")
+    cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN value2 Text")
+    cursor.execute(f"ALTER TABLE {table_name} DROP COLUMN value3")
+    cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN value3 Text")
+    cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN value4 Text")
+    cursor.execute(f"UPDATE {table_name} SET value3 = 'kek' WHERE key%2=0")
+    check_tables_are_synchronized(table_name);
+    instance.query(f"INSERT INTO postgres_database.{table_name} SELECT number, toString(number), toString(number), toString(number), toString(number) from numbers(50, 25)")
+    cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN value5 Integer")
+    cursor.execute(f"ALTER TABLE {table_name} DROP COLUMN value2")
+    instance.query(f"INSERT INTO postgres_database.{table_name} SELECT number, toString(number), toString(number), toString(number), number from numbers(75, 25)")
+    check_tables_are_synchronized(table_name);
+    instance.restart_clickhouse()
+    check_tables_are_synchronized(table_name);
+    cursor.execute(f"ALTER TABLE {table_name} DROP COLUMN value5")
+    cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN value5 Text")
+    instance.query(f"INSERT INTO postgres_database.{table_name} SELECT number, toString(number), toString(number), toString(number), toString(number) from numbers(100, 25)")
+    check_tables_are_synchronized(table_name);
+    cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN value6 Text")
+    cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN value7 Integer")
+    cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN value8 Integer")
+    cursor.execute(f"ALTER TABLE {table_name} DROP COLUMN value5")
+    instance.query(f"INSERT INTO postgres_database.{table_name} SELECT number, toString(number), toString(number), toString(number), toString(number), number, number from numbers(125, 25)")
+    check_tables_are_synchronized(table_name);
 
 
 if __name__ == '__main__':
