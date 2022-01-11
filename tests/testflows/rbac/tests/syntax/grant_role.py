@@ -58,7 +58,7 @@ def feature(self, node="clickhouse1"):
             RQ_SRS_006_RBAC_Grant_Role("1.0")]):
         with setup(0,0):
             with When("I grant nonexistent role to a nonexistent user"):
-                exitcode, message = errors.role_not_found_in_disk(name="role0")
+                exitcode, message = errors.role_not_found_in_disk(name="user0")
                 node.query("GRANT role0 TO user0", exitcode=exitcode, message=message)
 
     with Scenario("I grant a role to multiple users", requirements=[
