@@ -113,10 +113,13 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    /// Check if file is a source of data.
+    Pos before_values = pos;
+    String format_str;
+
+    /// VALUES or FROM INFILE or FORMAT or SELECT
     if (s_from_infile.ignore(pos, expected))
     {
-        /// Read its name to process it later
+        /// Read file name to process it later
         if (!infile_name_p.parse(pos, infile, expected))
             return false;
 
@@ -128,13 +131,14 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (!compression_p.parse(pos, compression, expected))
                 return false;
         }
+
+        /// Read format name
+        if (!s_format.ignore(pos, expected) || !name_p.parse(pos, format, expected))
+            return false;
+
+        tryGetIdentifierNameInto(format, format_str);
     }
-
-    Pos before_values = pos;
-    String format_str;
-
-    /// VALUES or FROM INFILE or FORMAT or SELECT
-    if (!infile && s_values.ignore(pos, expected))
+    else if (s_values.ignore(pos, expected))
     {
         /// If VALUES is defined in query, everything except setting will be parsed as data
         data = pos->begin;
