@@ -179,7 +179,8 @@ public:
             return &getCurrentValue();
         }
 
-        Iterator &operator++() {
+        Iterator &operator++()
+        {
             iterateToNext();
             return *this;
         }
