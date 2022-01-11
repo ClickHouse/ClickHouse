@@ -36,6 +36,38 @@ def get_genuine_zk():
         get_fake_zk
     ]
 )
+
+def test_remove_acl(started_cluster, get_zk):
+    auth_connection = get_zk()
+
+    auth_connection.add_auth('digest', 'user1:password1')
+
+    # Consistent with zookeeper, accept generated digest
+    auth_connection.create("/test_remove_acl1", b"dataX", acl=[make_acl("digest", "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI=", read=True, write=False, create=False, delete=False, admin=False)])
+    auth_connection.create("/test_remove_acl2", b"dataX", acl=[make_acl("digest", "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI=", read=True, write=True, create=False, delete=False, admin=False)])
+    auth_connection.create("/test_remove_acl3", b"dataX", acl=[make_acl("digest", "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI=", all=True)])
+
+    auth_connection.delete("/test_remove_acl2")
+
+    auth_connection.create("/test_remove_acl4", b"dataX", acl=[make_acl("digest", "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI=", read=True, write=True, create=True, delete=False, admin=False)])
+
+    acls, stat = auth_connection.get_acls("/test_remove_acl3")
+
+    assert stat.aversion == 0
+    assert len(acls) == 1
+    for acl in acls:
+        assert acl.acl_list == ['ALL']
+        assert acl.perms == 31
+
+
+@pytest.mark.parametrize(
+    ('get_zk'),
+    [
+        get_genuine_zk,
+        get_fake_zk
+    ]
+)
+
 def test_digest_auth_basic(started_cluster, get_zk):
     auth_connection = get_zk()
 

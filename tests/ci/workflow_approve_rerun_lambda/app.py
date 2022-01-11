@@ -93,6 +93,7 @@ TRUSTED_CONTRIBUTORS = {e.lower() for e in [
     "vzakaznikov",
     "YiuRULE",
     "zlobober",     # Developer of YT
+    "BoloniniD",    # Seasoned contributor, HSE
 ]}
 
 
