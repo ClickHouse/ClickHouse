@@ -191,7 +191,8 @@ InputFormatPtr FormatFactory::getInput(
 
 
         ParallelParsingInputFormat::Params params{
-            buf, sample, parser_creator, file_segmentation_engine, name, settings.max_threads, settings.min_chunk_bytes_for_parallel_parsing};
+            buf, sample, parser_creator, file_segmentation_engine, name, settings.max_threads, settings.min_chunk_bytes_for_parallel_parsing,
+               context->getApplicationType() == Context::ApplicationType::SERVER};
         return std::make_shared<ParallelParsingInputFormat>(params);
     }
 
