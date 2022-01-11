@@ -39,7 +39,7 @@ void KeeperDispatcher::requestThread()
 #if defined(OS_LINUX)
     if (configuration_and_settings->coordination_settings->cpu_affinity)
     {
-        int cpuid = get_nprocs() - 1; // bind to last core
+        int cpuid = 0; // bind to first core
         cpu_set_t cpuset;
         CPU_ZERO(&cpuset);
         CPU_SET(cpuid, &cpuset);
@@ -166,7 +166,7 @@ void KeeperDispatcher::responseThread()
 #if defined(OS_LINUX)
     if (configuration_and_settings->coordination_settings->cpu_affinity)
     {
-        int cpuid = (get_nprocs() - 2) % get_nprocs(); // bind to second last core
+        int cpuid = 1 % get_nprocs(); // bind to second core
         cpu_set_t cpuset;
         CPU_ZERO(&cpuset);
         CPU_SET(cpuid, &cpuset);

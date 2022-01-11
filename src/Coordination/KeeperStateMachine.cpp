@@ -52,8 +52,7 @@ void KeeperStateMachine::asyncCommitThread()
 #if defined(OS_LINUX)
     if (coordination_settings->cpu_affinity)
     {
-        /// bind to last 3 core
-        int cpuid = (get_nprocs() - 3) % get_nprocs();
+        int cpuid = 2 % get_nprocs();
         cpu_set_t cpuset;
         CPU_ZERO(&cpuset);
         CPU_SET(cpuid, &cpuset);
