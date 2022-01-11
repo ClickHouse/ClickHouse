@@ -56,6 +56,8 @@ RUN apt-get update \
         pixz \
         pkg-config \
         tzdata \
+        rustc \
+        cargo \
         --yes --no-install-recommends
 
 # NOTE: Seems like gcc-11 is too new for ubuntu20 repository
