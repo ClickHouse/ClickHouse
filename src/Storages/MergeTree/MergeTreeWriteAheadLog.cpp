@@ -213,7 +213,8 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
                         projection.name,
                         MergeTreeDataWriter::writeInMemoryProjectionPart(storage, log, projection_block, projection, part.get()));
             }
-            part_out.writeSuffixAndFinalizePart(part);
+            auto written_files = part_out.finalizePart(part);
+            part_out.finish(part, std::move(written_files), false);
 
             min_block_number = std::min(min_block_number, part->info.min_block);
             max_block_number = std::max(max_block_number, part->info.max_block);

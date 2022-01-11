@@ -977,7 +977,8 @@ private:
         ctx->mutating_executor.reset();
         ctx->mutating_pipeline.reset();
 
-        static_pointer_cast<MergedBlockOutputStream>(ctx->out)->writeSuffixAndFinalizePart(ctx->new_data_part, ctx->need_sync);
+        auto written_files = static_pointer_cast<MergedBlockOutputStream>(ctx->out)->finalizePart(ctx->new_data_part);
+        static_pointer_cast<MergedBlockOutputStream>(ctx->out)->finish(ctx->new_data_part, std::move(written_files), ctx->need_sync);
         ctx->out.reset();
     }
 
@@ -1135,9 +1136,11 @@ private:
             ctx->mutating_pipeline.reset();
 
             auto changed_checksums =
-                static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->writeSuffixAndGetChecksums(
-                    ctx->new_data_part, ctx->new_data_part->checksums, ctx->need_sync);
+                static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->fillChecksums(
+                    ctx->new_data_part, ctx->new_data_part->checksums);
             ctx->new_data_part->checksums.add(std::move(changed_checksums));
+
+            static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->finish(ctx->need_sync);
         }
 
         for (const auto & [rename_from, rename_to] : ctx->files_to_rename)
