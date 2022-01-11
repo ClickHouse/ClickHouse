@@ -78,6 +78,7 @@ namespace
                 }
 
                 case AuthenticationType::NO_PASSWORD: [[fallthrough]];
+                case AuthenticationType::SSL_CERTIFICATE: [[fallthrough]];
                 case AuthenticationType::MAX:
                     throw Exception("AST: Unexpected authentication type " + toString(auth_type), ErrorCodes::LOGICAL_ERROR);
             }

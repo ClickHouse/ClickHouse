@@ -59,6 +59,11 @@ const AuthenticationTypeInfo & AuthenticationTypeInfo::get(AuthenticationType ty
             static const auto info = make_info("KERBEROS");
             return info;
         }
+        case AuthenticationType::SSL_CERTIFICATE:
+        {
+            static const auto info = make_info("SSL_CERTIFICATE");
+            return info;
+        }
         case AuthenticationType::MAX:
             break;
     }
@@ -112,6 +117,7 @@ void AuthenticationData::setPassword(const String & password_)
         case AuthenticationType::NO_PASSWORD:
         case AuthenticationType::LDAP:
         case AuthenticationType::KERBEROS:
+        case AuthenticationType::SSL_CERTIFICATE:
             throw Exception("Cannot specify password for authentication type " + toString(type), ErrorCodes::LOGICAL_ERROR);
 
         case AuthenticationType::MAX:
@@ -149,7 +155,7 @@ void AuthenticationData::setPasswordHashHex(const String & hash)
 
 String AuthenticationData::getPasswordHashHex() const
 {
-    if (type == AuthenticationType::LDAP || type == AuthenticationType::KERBEROS)
+    if (type == AuthenticationType::LDAP || type == AuthenticationType::KERBEROS || type == AuthenticationType::SSL_CERTIFICATE)
         throw Exception("Cannot get password hex hash for authentication type " + toString(type), ErrorCodes::LOGICAL_ERROR);
 
     String hex;
@@ -194,6 +200,7 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash)
         case AuthenticationType::NO_PASSWORD:
         case AuthenticationType::LDAP:
         case AuthenticationType::KERBEROS:
+        case AuthenticationType::SSL_CERTIFICATE:
             throw Exception("Cannot specify password binary hash for authentication type " + toString(type), ErrorCodes::LOGICAL_ERROR);
 
         case AuthenticationType::MAX:
@@ -202,4 +209,18 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash)
     throw Exception("setPasswordHashBinary(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
 }
 
+void AuthenticationData::clearAllowedCertificates()
+{
+    allowed_certificates.clear();
+}
+
+void AuthenticationData::addSSLCertificateCommonName(const String & x509CommonName)
+{
+    allowed_certificates.insert(x509CommonName);
+}
+
+bool AuthenticationData::containsSSLCertificateCommonName(const String & x509CommonName) const
+{
+    return allowed_certificates.find(x509CommonName) != allowed_certificates.end();
+}
 }

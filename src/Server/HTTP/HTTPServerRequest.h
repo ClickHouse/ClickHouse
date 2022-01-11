@@ -38,6 +38,8 @@ public:
     /// Returns the server's address.
     const Poco::Net::SocketAddress & serverAddress() const { return server_address; }
 
+    Poco::Net::SocketImpl * getSocket() const;
+
 private:
     /// Limits for basic sanity checks when reading a header
     enum Limits

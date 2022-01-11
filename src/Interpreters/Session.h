@@ -4,6 +4,7 @@
 #include <Access/Common/AuthenticationData.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
+#include <Poco/Net/StreamSocket.h>
 
 #include <chrono>
 #include <memory>
@@ -49,6 +50,7 @@ public:
     /// Sets the current user, checks the credentials and that the specified address is allowed to connect from.
     /// The function throws an exception if there is no such user or password is wrong.
     void authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address);
+    void authenticate(const String & user_name, const String & password, const Poco::Net::StreamSocket & socket);
     void authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_);
 
     /// Returns a reference to session ClientInfo.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <set>
 #include <vector>
 
 namespace DB
@@ -26,6 +27,10 @@ enum class AuthenticationType
 
     /// Kerberos authentication performed through GSS-API negotiation loop.
     KERBEROS,
+
+    /// Authentication is done in SSL by checking user certificate.
+    /// Certificates may only be trusted if 'strict' SSL mode is enabled.
+    SSL_CERTIFICATE,
 
     MAX,
 };
@@ -79,6 +84,10 @@ public:
     const String & getKerberosRealm() const { return kerberos_realm; }
     void setKerberosRealm(const String & realm) { kerberos_realm = realm; }
 
+    void clearAllowedCertificates();
+    void addSSLCertificateCommonName(const String & x509CommonName);
+    bool containsSSLCertificateCommonName(const String & x509CommonName) const;
+
     friend bool operator ==(const AuthenticationData & lhs, const AuthenticationData & rhs);
     friend bool operator !=(const AuthenticationData & lhs, const AuthenticationData & rhs) { return !(lhs == rhs); }
 
@@ -97,6 +106,7 @@ private:
     Digest password_hash;
     String ldap_server_name;
     String kerberos_realm;
+    std::set<String> allowed_certificates;
 };
 
 }
