@@ -32,7 +32,7 @@ public:
     explicit AsynchronousReadIndirectBufferFromRemoteFS(
         AsynchronousReaderPtr reader_, const ReadSettings & settings_,
         std::shared_ptr<ReadBufferFromRemoteFSGather> impl_,
-        size_t min_bytes_for_seek = 1024 * 1024);
+        size_t min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE);
 
     ~AsynchronousReadIndirectBufferFromRemoteFS() override;
 
