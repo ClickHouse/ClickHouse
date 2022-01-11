@@ -31,6 +31,7 @@ void registerFunctionH3ToGeoBoundary(FunctionFactory &);
 void registerFunctionH3EdgeAngle(FunctionFactory &);
 void registerFunctionH3EdgeLengthM(FunctionFactory &);
 void registerFunctionH3EdgeLengthKm(FunctionFactory &);
+void registerFunctionH3ExactEdgeLengthM(FunctionFactory &);
 void registerFunctionH3GetResolution(FunctionFactory &);
 void registerFunctionH3IsValid(FunctionFactory &);
 void registerFunctionH3KRing(FunctionFactory &);
@@ -94,6 +95,7 @@ void registerFunctionsGeo(FunctionFactory & factory)
     registerFunctionH3EdgeAngle(factory);
     registerFunctionH3EdgeLengthM(factory);
     registerFunctionH3EdgeLengthKm(factory);
+    registerFunctionH3ExactEdgeLengthM(factory);
     registerFunctionH3GetResolution(factory);
     registerFunctionH3IsValid(factory);
     registerFunctionH3KRing(factory);
