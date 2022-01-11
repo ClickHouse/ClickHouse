@@ -2301,11 +2301,6 @@ private:
                               InsertionState::key_found != idxAndState.second);
     }
 
-    uint64_t timeme()
-    {
-        return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-    }
-
     void initData(size_t max_elements) {
         mNumElements = 0;
         mMask = max_elements - 1;
@@ -2317,13 +2312,10 @@ private:
         auto const numBytesTotal = calcNumBytesTotal(numElementsWithBuffer);
         ROBIN_HOOD_LOG("std::calloc " << numBytesTotal << " = calcNumBytesTotal("
                                       << numElementsWithBuffer << ")")
-        auto be_tm = timeme();
         mKeyVals = reinterpret_cast<Node*>(
             detail::assertNotNull<std::bad_alloc>(std::malloc(numBytesTotal)));
         mInfo = reinterpret_cast<uint8_t*>(mKeyVals + numElementsWithBuffer);
         ::memset(mInfo, 0, numBytesTotal - numElementsWithBuffer * sizeof(Node));
-        auto end_tm = timeme();
-        std::cout << "initdata use time: " << end_tm - be_tm << ", size " << numBytesTotal - numElementsWithBuffer*sizeof(Node)<< std::endl;
 
         // set sentinel
         mInfo[numElementsWithBuffer] = 1;

@@ -4,6 +4,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ZstdDeflatingAppendableWriteBuffer.h>
 #include <filesystem>
+#include <thread>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/trim.hpp>
@@ -316,7 +317,7 @@ void Changelog::cleanThread()
             LOG_INFO(log, "Removed changelog {} because of compaction.", path);
         }
         else
-            std::this_thread::sleep_for(std::chrono::microseconds(200));
+            std::this_thread::sleep_for(std::chrono::microseconds(10));
     }
 }
 
