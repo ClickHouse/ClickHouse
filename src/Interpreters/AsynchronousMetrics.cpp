@@ -576,7 +576,7 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
 
 #if USE_ROCKSDB
     {
-        if (auto metadata_cache = getContext()->getMergeTreeMetadataCache())
+        if (auto metadata_cache = getContext()->tryGetMergeTreeMetadataCache())
         {
             new_values["MergeTreeMetadataCacheSize"] = metadata_cache->getEstimateNumKeys();
         }

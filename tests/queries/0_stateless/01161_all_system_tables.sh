@@ -12,7 +12,7 @@ function run_selects()
 {
     thread_num=$1
     readarray -t tables_arr < <(${CLICKHOUSE_CLIENT} -q "SELECT database || '.' || name FROM system.tables
-    WHERE database in ('system', 'information_schema', 'INFORMATION_SCHEMA') and name!='zookeeper'
+    WHERE database in ('system', 'information_schema', 'INFORMATION_SCHEMA') and name!='zookeeper' and name!='merge_tree_metadata_cache' 
     AND sipHash64(name || toString($RAND)) % $THREADS = $thread_num")
 
     for t in "${tables_arr[@]}"

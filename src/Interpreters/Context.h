@@ -686,6 +686,7 @@ public:
 
 #if USE_ROCKSDB
     MergeTreeMetadataCachePtr getMergeTreeMetadataCache() const;
+    MergeTreeMetadataCachePtr tryGetMergeTreeMetadataCache() const;
 #endif
 
 #if USE_NURAFT
