@@ -998,8 +998,9 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
 }
 
 
-void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPtr context) const
+void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 {
+    const StorageInMemoryMetadata & metadata = table->getInMemoryMetadata();
     auto all_columns = metadata.columns;
     /// Default expression for all added/modified columns
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
@@ -1007,6 +1008,9 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPt
     for (size_t i = 0; i < size(); ++i)
     {
         const auto & command = (*this)[i];
+
+        if (command.ttl && !table->supportsTTL())
+            throw Exception("Engine " + table->getName() + " doesn't support TTL clause", ErrorCodes::BAD_ARGUMENTS);
 
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)
