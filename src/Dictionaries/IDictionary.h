@@ -56,7 +56,7 @@ public:
     {
     }
 
-    const std::string & getFullName() const{ return full_name; }
+    const std::string & getFullName() const { return full_name; }
 
     StorageID getDictionaryID() const
     {
@@ -69,6 +69,7 @@ public:
         std::lock_guard lock{name_mutex};
         assert(new_name.uuid == dictionary_id.uuid && dictionary_id.uuid != UUIDHelpers::Nil);
         dictionary_id = new_name;
+        full_name = dictionary_id.getInternalDictionaryName();
     }
 
     const std::string & getLoadableName() const override final { return getFullName(); }
@@ -234,7 +235,7 @@ private:
     mutable StorageID dictionary_id;
 
 protected:
-    const String full_name;
+    mutable String full_name;
     String dictionary_comment;
 };
 
