@@ -5,6 +5,7 @@
 #include <Access/LDAPClient.h>
 #include <Access/GSSAcceptor.h>
 #include <Common/Exception.h>
+#include <Poco/Net/SecureStreamSocketImpl.h>
 #include <Poco/SHA1Engine.h>
 #include <Common/typeid_cast.h>
 
@@ -14,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+    extern const int WRONG_PASSWORD;
 }
 
 namespace
@@ -67,6 +69,23 @@ namespace
     }
 }
 
+std::string getPeerCertificateCommonName(const Poco::Net::SocketImpl * socketImpl)
+{
+    std::string cn;
+
+    if (socketImpl->secure())
+    {
+        // expect socket is an instance of SecureStreamSocket
+        const Poco::Net::SecureStreamSocketImpl * secureSocketImpl = dynamic_cast<const Poco::Net::SecureStreamSocketImpl *>(socketImpl);
+        if (secureSocketImpl && secureSocketImpl->havePeerCertificate())
+        {
+            Poco::Crypto::X509Certificate cert = secureSocketImpl->peerCertificate();
+            cn = cert.commonName();
+        }
+    }
+
+    return cn;
+}
 
 bool Authentication::areCredentialsValid(const Credentials & credentials, const AuthenticationData & auth_data, const ExternalAuthenticators & external_authenticators)
 {
@@ -86,6 +105,9 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
 
             case AuthenticationType::KERBEROS:
                 return external_authenticators.checkKerberosCredentials(auth_data.getKerberosRealm(), *gss_acceptor_context);
+
+            case AuthenticationType::SSL_CERTIFICATE:
+                throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
 
             case AuthenticationType::MAX:
                 break;
@@ -109,6 +131,9 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
             case AuthenticationType::LDAP:
             case AuthenticationType::KERBEROS:
                 throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
+
+            case AuthenticationType::SSL_CERTIFICATE:
+                throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
 
             case AuthenticationType::MAX:
                 break;
@@ -136,6 +161,35 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
 
             case AuthenticationType::KERBEROS:
                 throw Authentication::Require<GSSAcceptorContext>(auth_data.getKerberosRealm());
+
+            case AuthenticationType::SSL_CERTIFICATE:
+                throw Authentication::Require<BasicCredentials>("ClickHouse X.509 Authentication");
+
+            case AuthenticationType::MAX:
+                break;
+        }
+    }
+
+    if (const auto * certificate_credentials = typeid_cast<const CertificateCredentials *>(&credentials))
+    {
+        switch (auth_data.getType())
+        {
+            case AuthenticationType::NO_PASSWORD:
+            case AuthenticationType::PLAINTEXT_PASSWORD:
+            case AuthenticationType::SHA256_PASSWORD:
+            case AuthenticationType::DOUBLE_SHA1_PASSWORD:
+            case AuthenticationType::LDAP:
+                throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
+
+            case AuthenticationType::KERBEROS:
+                throw Authentication::Require<GSSAcceptorContext>(auth_data.getKerberosRealm());
+
+            case AuthenticationType::SSL_CERTIFICATE:
+                // N.B. the certificate should only be trusted when 'strict' SSL mode is enabled
+                if (!auth_data.containsSSLCertificateCommonName(certificate_credentials->getX509CommonName()))
+                    throw Exception("X.509 certificate is not on allowed list", ErrorCodes::WRONG_PASSWORD);
+
+                return true;
 
             case AuthenticationType::MAX:
                 break;

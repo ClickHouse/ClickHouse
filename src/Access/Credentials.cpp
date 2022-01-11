@@ -48,6 +48,20 @@ void AlwaysAllowCredentials::setUserName(const String & user_name_)
     user_name = user_name_;
 }
 
+CertificateCredentials::CertificateCredentials(const String & user_name_, const String & x509CommonName_)
+    : Credentials(user_name_)
+    , x509CommonName(x509CommonName_)
+{
+    is_ready = true;
+}
+
+const String & CertificateCredentials::getX509CommonName() const
+{
+    if (!isReady())
+        throwNotReady();
+    return x509CommonName;
+}
+
 BasicCredentials::BasicCredentials()
 {
     is_ready = true;

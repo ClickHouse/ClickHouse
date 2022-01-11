@@ -9,9 +9,11 @@
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Server/HTTP/ReadHeaders.h>
 
+#include <Poco/Crypto/X509Certificate.h>
 #include <Poco/Net/HTTPHeaderStream.h>
 #include <Poco/Net/HTTPStream.h>
 #include <Poco/Net/NetException.h>
+#include <Poco/Net/SecureStreamSocketImpl.h>
 
 namespace DB
 {
@@ -67,6 +69,11 @@ bool HTTPServerRequest::checkPeerConnected() const
     }
 
     return true;
+}
+
+Poco::Net::SocketImpl * HTTPServerRequest::getSocket() const
+{
+    return socket;
 }
 
 void HTTPServerRequest::readRequest(ReadBuffer & in)

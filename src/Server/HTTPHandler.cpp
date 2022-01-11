@@ -322,10 +322,35 @@ bool HTTPHandler::authenticateUser(
     std::string user = request.get("X-ClickHouse-User", "");
     std::string password = request.get("X-ClickHouse-Key", "");
     std::string quota_key = request.get("X-ClickHouse-Quota", "");
+    std::string x509_auth = request.get("X-ClickHouse-X509Authentication", "");
 
     std::string spnego_challenge;
+    std::string certificate_common_name;
 
-    if (user.empty() && password.empty() && quota_key.empty())
+    LOG_DEBUG(log, "X-ClickHouse-X509Authentication=\"{}\"", x509_auth);
+
+    bool has_basic_auth = request.hasCredentials() || params.has("user") || params.has("password") || params.has("quota_key");
+    bool has_header_auth = !(user.empty() && password.empty() && quota_key.empty());
+    bool has_x509_auth = !user.empty() && (x509_auth == "yes"); // header values are case sensitive
+
+    if (has_x509_auth)
+    {
+        if (has_header_auth || has_basic_auth)
+            throw Exception("Invalid authentication: it is not allowed to use SSL X.509 certificate authentication and other authentication methods simultaneously", ErrorCodes::AUTHENTICATION_FAILED);
+
+        certificate_common_name = getPeerCertificateCommonName(request.getSocket());
+        if (certificate_common_name.empty())
+            throw Exception("Invalid authentication: empty X.509 certificate Common Name", ErrorCodes::AUTHENTICATION_FAILED);
+
+        LOG_DEBUG(log, "certificate_common_name=\"{}\"", certificate_common_name);
+    }
+    else if (has_header_auth)
+    {
+        /// It is prohibited to mix different authorization schemes.
+        if (has_basic_auth)
+            throw Exception("Invalid authentication: it is not allowed to use X-ClickHouse HTTP headers and other authentication methods simultaneously", ErrorCodes::AUTHENTICATION_FAILED);
+    }
+    else
     {
         /// User name and password can be passed using query parameters
         /// or using HTTP Basic auth (both methods are insecure).
@@ -365,26 +390,17 @@ bool HTTPHandler::authenticateUser(
 
         quota_key = params.get("quota_key", "");
     }
-    else
-    {
-        /// It is prohibited to mix different authorization schemes.
-        if (request.hasCredentials() || params.has("user") || params.has("password") || params.has("quota_key"))
-            throw Exception("Invalid authentication: it is not allowed to use X-ClickHouse HTTP headers and other authentication methods simultaneously", ErrorCodes::AUTHENTICATION_FAILED);
-    }
 
-    if (spnego_challenge.empty()) // I.e., now using user name and password strings ("Basic").
+    if (!certificate_common_name.empty())
     {
         if (!request_credentials)
-            request_credentials = std::make_unique<BasicCredentials>();
+            request_credentials = std::make_unique<CertificateCredentials>(user, certificate_common_name);
 
-        auto * basic_credentials = dynamic_cast<BasicCredentials *>(request_credentials.get());
-        if (!basic_credentials)
-            throw Exception("Invalid authentication: unexpected 'Basic' HTTP Authorization scheme", ErrorCodes::AUTHENTICATION_FAILED);
-
-        basic_credentials->setUserName(user);
-        basic_credentials->setPassword(password);
+        auto * certificate_credentials = dynamic_cast<CertificateCredentials *>(request_credentials.get());
+        if (!certificate_credentials)
+            throw Exception("Invalid authentication: expected SSL certificate authorization scheme", ErrorCodes::AUTHENTICATION_FAILED);
     }
-    else
+    else if (!spnego_challenge.empty())
     {
         if (!request_credentials)
             request_credentials = server.context()->makeGSSAcceptorContext();
@@ -410,6 +426,18 @@ bool HTTPHandler::authenticateUser(
             response.send();
             return false;
         }
+    }
+    else // I.e., now using user name and password strings ("Basic").
+    {
+        if (!request_credentials)
+            request_credentials = std::make_unique<BasicCredentials>();
+
+        auto * basic_credentials = dynamic_cast<BasicCredentials *>(request_credentials.get());
+        if (!basic_credentials)
+            throw Exception("Invalid authentication: expected 'Basic' HTTP Authorization scheme", ErrorCodes::AUTHENTICATION_FAILED);
+
+        basic_credentials->setUserName(user);
+        basic_credentials->setPassword(password);
     }
 
     /// Set client info. It will be used for quota accounting parameters in 'setUser' method.
