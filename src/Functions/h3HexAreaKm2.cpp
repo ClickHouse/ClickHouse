@@ -20,12 +20,13 @@ namespace ErrorCodes
 {
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ARGUMENT_OUT_OF_BOUND;
+extern const int ILLEGAL_COLUMN;
 }
 
 namespace
 {
 
-class FunctionH3HexAreaKm2 : public IFunction
+class FunctionH3HexAreaKm2 final : public IFunction
 {
 public:
     static constexpr auto name = "h3HexAreaKm2";
@@ -53,6 +54,14 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * column = checkAndGetColumn<ColumnUInt8>(arguments[0].column.get());
+        if (!column)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be UInt8",
+                arguments[0].column->getName(),
+                1,
+                getName());
+
         const auto & data = column->getData();
 
         auto dst = ColumnVector<Float64>::create();
