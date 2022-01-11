@@ -261,7 +261,10 @@ void DiskLocal::clearDirectory(const String & path)
 
 void DiskLocal::moveDirectory(const String & from_path, const String & to_path)
 {
-    fs::rename(fs::path(disk_path) / from_path, fs::path(disk_path) / to_path);
+    fs::path from_dir = fs::path(disk_path) / from_path;
+    fs::path to_dir = fs::path(disk_path) / to_path;
+    fs::create_directories(to_dir.parent_path());
+    fs::rename(from_dir, to_dir);
 }
 
 DiskDirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path)
@@ -275,14 +278,15 @@ DiskDirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path)
 
 void DiskLocal::moveFile(const String & from_path, const String & to_path)
 {
-    fs::rename(fs::path(disk_path) / from_path, fs::path(disk_path) / to_path);
+    fs::path from_file = fs::path(disk_path) / from_path;
+    fs::path to_file = fs::path(disk_path) / to_path;
+    fs::create_directories(to_file.parent_path());
+    fs::rename(from_file, to_file);
 }
 
 void DiskLocal::replaceFile(const String & from_path, const String & to_path)
 {
-    fs::path from_file = fs::path(disk_path) / from_path;
-    fs::path to_file = fs::path(disk_path) / to_path;
-    fs::rename(from_file, to_file);
+    moveFile(from_path, to_path);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path, const ReadSettings & settings, std::optional<size_t> read_hint, std::optional<size_t> file_size) const
