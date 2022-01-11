@@ -460,11 +460,12 @@ def feature(self, node="clickhouse1", stress=None, parallel=None):
         if table_type != "MergeTree" and not self.context.stress:
             continue
 
+        args = {"table_type" : table_type}
+
         with Example(str(example)):
             with Pool(5) as pool:
-                tasks = []
                 try:
                     for scenario in loads(current_module(), Scenario):
-                        run_scenario(pool, tasks, Scenario(test=scenario, setup=instrument_clickhouse_server_log), {"table_type" : table_type})
+                        Scenario(test=scenario, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)(**args)
                 finally:
-                    join(tasks)
+                    join()
