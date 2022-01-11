@@ -432,7 +432,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(
             new_data_part->addProjectionPart(
                 projection.name, writeProjectionPart(data, log, projection_block, projection, new_data_part.get()));
     }
-    out.writeSuffixAndFinalizePart(new_data_part, sync_on_insert);
+    auto written_files = out.finalizePart(new_data_part);
+    out.finish(new_data_part, std::move(written_files), sync_on_insert);
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rows());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());
@@ -531,7 +532,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         compression_codec);
 
     out.writeWithPermutation(block, perm_ptr);
-    out.writeSuffixAndFinalizePart(new_data_part);
+    auto written_files = out.finalizePart(new_data_part);
+    out.finish(new_data_part, std::move(written_files), false);
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterRows, block.rows());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterUncompressedBytes, block.bytes());

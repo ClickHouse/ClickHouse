@@ -32,13 +32,16 @@ public:
       */
     void writeWithPermutation(const Block & block, const IColumn::Permutation * permutation);
 
+    using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
+
     /// Finalize writing part and fill inner structures
     /// If part is new and contains projections, they should be added before invoking this method.
-    void writeSuffixAndFinalizePart(
+    WrittenFiles finalizePart(
             MergeTreeData::MutableDataPartPtr & new_part,
-            bool sync = false,
             const NamesAndTypesList * total_columns_list = nullptr,
             MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
+
+    void finish(MergeTreeData::MutableDataPartPtr & new_part, WrittenFiles files_to_finalize, bool sync);
 
 private:
     /** If `permutation` is given, it rearranges the values in the columns when writing.
@@ -46,12 +49,11 @@ private:
       */
     void writeImpl(const Block & block, const IColumn::Permutation * permutation);
 
-    void finalizePartOnDisk(
+    MergedBlockOutputStream::WrittenFiles finalizePartOnDisk(
             const MergeTreeData::MutableDataPartPtr & new_part,
             NamesAndTypesList & part_columns,
             SerializationInfoByName & serialization_infos,
-            MergeTreeData::DataPart::Checksums & checksums,
-            bool sync);
+            MergeTreeData::DataPart::Checksums & checksums);
 
     NamesAndTypesList columns_list;
     IMergeTreeDataPart::MinMaxIndex minmax_idx;
