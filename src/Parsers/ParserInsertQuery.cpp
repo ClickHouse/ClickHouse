@@ -132,7 +132,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
 
-        /// Read format name if any.
+        /// Check if we have FORMAT statement
         if (s_format.ignore(pos, expected))
         {
             if (!name_p.parse(pos, format, expected))
@@ -181,7 +181,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (s_format.ignore(pos, expected) && !name_p.parse(pos, format, expected))
             return false;
     }
-    else if (infile) {} /// Support syntax INSERT INTO ... FROM INFILE ... without FORMAT statement
     else
     {
         /// If all previous conditions were false, query is incorrect
