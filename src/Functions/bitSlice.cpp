@@ -81,43 +81,30 @@ public:
         std::optional<Int64> start_const;
         std::optional<Int64> length_const;
 
-        if (const auto *column_start_const = checkAndGetColumn<ColumnConst>(column_start.get())) {
+        if (const auto * column_start_const = checkAndGetColumn<ColumnConst>(column_start.get()))
+        {
             start_const = column_start_const->getInt(0);
         }
 
         if (number_of_arguments == 3)
         {
             column_length = arguments[2].column;
-            if (const auto *column_length_const =  checkAndGetColumn<ColumnConst>(column_length.get()))
+            if (const auto * column_length_const = checkAndGetColumn<ColumnConst>(column_length.get()))
                 length_const = column_length_const->getInt(0);
         }
 
 
-
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))
-            return executeForSource(
-                column_start,
-                column_length, start_const, length_const,
-                StringSource(*col),
-                input_rows_count);
+            return executeForSource(column_start, column_length, start_const, length_const, StringSource(*col), input_rows_count);
         else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_string.get()))
             return executeForSource(
-                column_start,
-                column_length, start_const, length_const,
-                FixedStringSource(*col_fixed),
-                input_rows_count);
+                column_start, column_length, start_const, length_const, FixedStringSource(*col_fixed), input_rows_count);
         else if (const ColumnConst * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
             return executeForSource(
-                column_start,
-                column_length, start_const, length_const,
-                ConstSource<StringSource>(*col_const),
-                input_rows_count);
+                column_start, column_length, start_const, length_const, ConstSource<StringSource>(*col_const), input_rows_count);
         else if (const ColumnConst * col_const_fixed = checkAndGetColumnConst<ColumnFixedString>(column_string.get()))
             return executeForSource(
-                column_start,
-                column_length, start_const, length_const,
-                ConstSource<FixedStringSource>(*col_const_fixed),
-                input_rows_count);
+                column_start, column_length, start_const, length_const, ConstSource<FixedStringSource>(*col_const_fixed), input_rows_count);
         else
             throw Exception(
                 "Illegal column " + arguments[0].column->getName() + " of first argument of function " + getName(),
@@ -372,8 +359,8 @@ public:
         while (!src.isEnd())
         {
             size_t row_num = src.rowNum();
-            Int64 start =  offset_column.getInt(row_num);
-            Int64 length =  length_column.getInt(row_num);
+            Int64 start = offset_column.getInt(row_num);
+            Int64 length = length_column.getInt(row_num);
 
             if (start && length)
             {
