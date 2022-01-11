@@ -85,7 +85,6 @@ static ColumnWithTypeAndName readColumnWithNumericData(std::shared_ptr<arrow::Ch
 
         /// buffers[0] is a null bitmap and buffers[1] are actual values
         std::shared_ptr<arrow::Buffer> buffer = chunk->data()->buffers[1];
-
         const auto * raw_data = reinterpret_cast<const NumericType *>(buffer->data());
         column_data.insert_assume_reserved(raw_data, raw_data + chunk->length());
     }

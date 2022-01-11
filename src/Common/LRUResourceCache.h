@@ -14,13 +14,13 @@ namespace DB
 template <typename T>
 struct TrivialLRUResourceCacheWeightFunction
 {
-    size_t operator()(const T &) const { return 1; }
+    size_t operator()(const T &) const noexcept { return 1; }
 };
 
 template <typename T>
 struct TrivialLRUResourceCacheReleaseFunction
 {
-    void operator()(std::shared_ptr<T>) { }
+    void operator()(std::shared_ptr<T>) noexcept { }
 };
 
 /**
