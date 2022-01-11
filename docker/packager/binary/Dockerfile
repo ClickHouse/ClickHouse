@@ -50,6 +50,8 @@ RUN apt-get update \
         rename \
         software-properties-common \
         tzdata \
+        rustc \
+        cargo \
         --yes --no-install-recommends \
     && apt-get clean
 
