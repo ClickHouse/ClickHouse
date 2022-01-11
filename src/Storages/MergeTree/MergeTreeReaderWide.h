@@ -55,6 +55,12 @@ private:
         size_t current_task_last_mark,
         ISerialization::SubstreamsCache & cache,
         std::unordered_set<std::string> & prefetched_streams); /// if stream was already prefetched do nothing
+
+    void deserializePrefix(
+        const SerializationPtr & serialization,
+        const NameAndTypePair & name_and_type,
+        size_t current_task_last_mark,
+        ISerialization::SubstreamsCache & cache);
 };
 
 }

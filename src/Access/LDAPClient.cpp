@@ -448,7 +448,7 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
                                 vals = nullptr;
                             });
 
-                            for (std::size_t i = 0; vals[i]; i++)
+                            for (size_t i = 0; vals[i]; ++i)
                             {
                                 if (vals[i]->bv_val && vals[i]->bv_len > 0)
                                     result.emplace(vals[i]->bv_val, vals[i]->bv_len);
@@ -473,7 +473,7 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
                         referrals = nullptr;
                     });
 
-                    for (std::size_t i = 0; referrals[i]; i++)
+                    for (size_t i = 0; referrals[i]; ++i)
                     {
                         LOG_WARNING(&Poco::Logger::get("LDAPClient"), "Received reference during LDAP search but not following it: {}", referrals[i]);
                     }

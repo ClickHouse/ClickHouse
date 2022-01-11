@@ -61,7 +61,7 @@ public:
         return std::make_shared<FlatDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, configuration, update_field_loaded_block);
     }
 
-    const IDictionarySource * getSource() const override { return source_ptr.get(); }
+    DictionarySourcePtr getSource() const override { return source_ptr; }
 
     const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
@@ -133,8 +133,6 @@ private:
             ContainerType<StringRef>,
             ContainerType<Array>>
             container;
-
-        std::unique_ptr<Arena> string_arena;
     };
 
     void createAttributes();
@@ -176,6 +174,7 @@ private:
     mutable std::atomic<size_t> found_count{0};
 
     BlockPtr update_field_loaded_block;
+    Arena string_arena;
 };
 
 }

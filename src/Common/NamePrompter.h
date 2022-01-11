@@ -102,6 +102,13 @@ public:
         return prompter.getHints(name, getAllRegisteredNames());
     }
 
+    IHints() = default;
+
+    IHints(const IHints &) = default;
+    IHints(IHints &&) = default;
+    IHints & operator=(const IHints &) = default;
+    IHints & operator=(IHints &&) = default;
+
     virtual ~IHints() = default;
 
 private:

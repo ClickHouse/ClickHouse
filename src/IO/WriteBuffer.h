@@ -5,6 +5,7 @@
 #include <memory>
 #include <iostream>
 #include <cassert>
+#include <string.h>
 
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>

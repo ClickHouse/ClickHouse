@@ -56,7 +56,7 @@ static bool ALWAYS_INLINE inline is_all_zeros(const UInt8 * flags, size_t size)
         i += 8;
     }
 
-    for (; i < size; i++)
+    for (; i < size; ++i)
         if (flags[i])
             return false;
 

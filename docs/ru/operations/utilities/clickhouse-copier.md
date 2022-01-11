@@ -171,7 +171,7 @@ $ clickhouse-copier --daemon --config zookeeper.xml --task-path /task/path --bas
         </table_hits>
 
         <!-- Next table to copy. It is not copied until previous table is copying. -->
-        </table_visits>
+        <table_visits>
         ...
         </table_visits>
         ...

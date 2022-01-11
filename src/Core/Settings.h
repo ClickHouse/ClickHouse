@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/NamePrompter.h>
 #include <Core/BaseSettings.h>
 #include <Core/SettingsEnums.h>
 #include <Core/Defines.h>
@@ -45,7 +46,6 @@ class IColumn;
     M(UInt64, max_insert_threads, 0, "The maximum number of threads to execute the INSERT SELECT query. Values 0 or 1 means that INSERT SELECT is not run in parallel. Higher values will lead to higher memory usage. Parallel INSERT SELECT has effect only if the SELECT part is run on parallel, see 'max_threads' setting.", 0) \
     M(UInt64, max_final_threads, 16, "The maximum number of threads to read from table with FINAL.", 0) \
     M(MaxThreads, max_threads, 0, "The maximum number of threads to execute the request. By default, it is determined automatically.", 0) \
-    M(MaxThreads, max_alter_threads, 0, "The maximum number of threads to execute the ALTER requests. By default, it is determined automatically.", 0) \
     M(UInt64, max_read_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, "The maximum size of the buffer to read from the filesystem.", 0) \
     M(UInt64, max_distributed_connections, 1024, "The maximum number of connections for distributed processing of one query (should be greater than max_threads).", 0) \
     M(UInt64, max_query_size, DBMS_DEFAULT_MAX_QUERY_SIZE, "Which part of the query can be read into RAM for parsing (the remaining data for INSERT, if any, is read later)", 0) \
@@ -571,7 +571,7 @@ class IColumn;
     MAKE_OBSOLETE(M, UInt64, merge_tree_clear_old_temporary_directories_interval_seconds, 60) \
     MAKE_OBSOLETE(M, UInt64, merge_tree_clear_old_parts_interval_seconds, 1) \
     MAKE_OBSOLETE(M, UInt64, partial_merge_join_optimizations, 0) \
-
+    MAKE_OBSOLETE(M, MaxThreads, max_alter_threads, 0) \
     /** The section above is for obsolete settings. Do not add anything there. */
 
 
@@ -593,8 +593,11 @@ class IColumn;
     M(Bool, input_format_null_as_default, true, "For text input formats initialize null fields with default values if data type of this field is not nullable", 0) \
     M(Bool, input_format_arrow_import_nested, false, "Allow to insert array of structs into Nested table in Arrow input format.", 0) \
     M(Bool, input_format_orc_import_nested, false, "Allow to insert array of structs into Nested table in ORC input format.", 0) \
+    M(Int64, input_format_orc_row_batch_size, 100'000, "Batch size when reading ORC stripes.", 0) \
     M(Bool, input_format_parquet_import_nested, false, "Allow to insert array of structs into Nested table in Parquet input format.", 0) \
     M(Bool, input_format_allow_seeks, true, "Allow seeks while reading in ORC/Parquet/Arrow input formats", 0) \
+    M(UInt64, input_format_msgpack_number_of_columns, 0, "The number of columns in inserted MsgPack data. Used for automatic schema inference from data.", 0) \
+    M(UInt64, input_format_max_rows_to_read_for_schema_inference, 100, "The maximum rows of data to read for automatic schema inference", 0) \
     \
     M(DateTimeInputFormat, date_time_input_format, FormatSettings::DateTimeInputFormat::Basic, "Method to read DateTime from text input formats. Possible values: 'basic' and 'best_effort'.", 0) \
     M(DateTimeOutputFormat, date_time_output_format, FormatSettings::DateTimeOutputFormat::Simple, "Method to write DateTime to text output. Possible values: 'simple', 'iso', 'unix_timestamp'.", 0) \
@@ -660,6 +663,7 @@ class IColumn;
     M(Bool, output_format_arrow_low_cardinality_as_dictionary, false, "Enable output LowCardinality type as Dictionary Arrow type", 0) \
     \
     M(EnumComparingMode, format_capn_proto_enum_comparising_mode, FormatSettings::EnumComparingMode::BY_VALUES, "How to map ClickHouse Enum and CapnProto Enum", 0)\
+
 // End of FORMAT_FACTORY_SETTINGS
 // Please add settings non-related to formats into the COMMON_SETTINGS above.
 
@@ -674,7 +678,7 @@ DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SettingsTraits, LIST_OF_SETTINGS)
 /** Settings of query execution.
   * These settings go to users.xml.
   */
-struct Settings : public BaseSettings<SettingsTraits>
+struct Settings : public BaseSettings<SettingsTraits>, public IHints<2, Settings>
 {
     /// For initialization from empty initializer-list to be "value initialization", not "aggregate initialization" in C++14.
     /// http://en.cppreference.com/w/cpp/language/aggregate_initialization
@@ -698,6 +702,8 @@ struct Settings : public BaseSettings<SettingsTraits>
     /// Check that there is no user-level settings at the top level in config.
     /// This is a common source of mistake (user don't know where to write user-level setting).
     static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);
+
+    std::vector<String> getAllRegisteredNames() const override;
 };
 
 /*

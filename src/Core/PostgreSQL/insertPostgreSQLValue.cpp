@@ -85,7 +85,7 @@ void insertPostgreSQLValue(
             assert_cast<ColumnString &>(column).insertData(value.data(), value.size());
             break;
         case ExternalResultDescription::ValueType::vtUUID:
-            assert_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.data(), value.size()));
+            assert_cast<ColumnUUID &>(column).insertValue(parse<UUID>(value.data(), value.size()));
             break;
         case ExternalResultDescription::ValueType::vtDate:
             assert_cast<ColumnUInt16 &>(column).insertValue(UInt16{LocalDate{std::string(value)}.getDayNum()});

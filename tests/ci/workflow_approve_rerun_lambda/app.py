@@ -23,7 +23,7 @@ SUSPICIOUS_PATTERNS = [
 ]
 
 MAX_RETRY = 5
-MAX_WORKFLOW_RERUN = 5
+MAX_WORKFLOW_RERUN = 7
 
 WorkflowDescription = namedtuple('WorkflowDescription',
                                  ['name', 'action', 'run_id', 'event', 'workflow_id', 'conclusion', 'status', 'api_url',
@@ -41,9 +41,11 @@ TRUSTED_ORG_IDS = {
 
 NEED_RERUN_WORKFLOWS = {
     13241696, # PR
+    14738810, # DocsRelease
     15834118, # Docs
     15522500, # MasterCI
     15516108, # ReleaseCI
+    15797242, # BackportPR
 }
 
 # Individual trusted contirbutors who are not in any trusted organization.
@@ -91,6 +93,7 @@ TRUSTED_CONTRIBUTORS = {e.lower() for e in [
     "vzakaznikov",
     "YiuRULE",
     "zlobober",     # Developer of YT
+    "BoloniniD",    # Seasoned contributor, HSE
 ]}
 
 

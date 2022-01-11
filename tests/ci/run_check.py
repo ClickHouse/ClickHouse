@@ -68,6 +68,8 @@ TRUSTED_CONTRIBUTORS = {e.lower() for e in [
     "YiuRULE",
     "zlobober",     # Developer of YT
     "ilejn",        # Arenadata, responsible for Kerberized Kafka
+    "thomoco",      # ClickHouse
+    "BoloniniD",    # Seasoned contributor, HSE
 ]}
 
 
@@ -90,6 +92,7 @@ def pr_is_by_trusted_user(pr_user_login, pr_user_orgs):
 # can be skipped entirely.
 def should_run_checks_for_pr(pr_info):
     # Consider the labels and whether the user is trusted.
+    print("Got labels", pr_info.labels)
     force_labels = set(['force tests']).intersection(pr_info.labels)
     if force_labels:
         return True, "Labeled '{}'".format(', '.join(force_labels))
@@ -109,7 +112,7 @@ def should_run_checks_for_pr(pr_info):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
-    pr_info = PRInfo(need_orgs=True)
+    pr_info = PRInfo(need_orgs=True, labels_from_api=True)
     can_run, description = should_run_checks_for_pr(pr_info)
     gh = Github(get_best_robot_token())
     commit = get_commit(gh, pr_info.sha)

@@ -422,7 +422,10 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 Значение `query` — это предопределенный запрос `predefined_query_handler`, который выполняется ClickHouse при совпадении HTTP-запроса и возврате результата запроса. Это обязательная настройка.
 
-В следующем примере определяются настройки [max_threads](../operations/settings/settings.md#settings-max_threads) и `max_alter_threads`, а затем запрашивается системная таблица, чтобы проверить, были ли эти параметры успешно установлены.
+В следующем примере определяются настройки [max_threads](../operations/settings/settings.md#settings-max_threads) и `max_final_threads`, а затем запрашивается системная таблица, чтобы проверить, были ли эти параметры успешно установлены.
+
+!!! note "Предупреждение"
+    Чтобы сохранить стандартные `handlers` такие как `query`, `play`, `ping`, используйте правило `<defaults/>`.
 
 Пример:
 
@@ -441,13 +444,14 @@ $ curl -v 'http://localhost:8123/predefined_query'
             <query>SELECT name, value FROM system.settings WHERE name = {name_2:String}</query>
         </handler>
     </rule>
+    <defaults/>
 </http_handlers>
 ```
 
 ``` bash
-$ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:8123/query_param_with_url/1/max_threads/max_alter_threads?max_threads=1&max_alter_threads=2'
+$ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:8123/query_param_with_url/1/max_threads/max_final_threads?max_threads=1&max_final_threads=2'
 1
-max_alter_threads   2
+max_final_threads   2
 ```
 
 !!! note "Предупреждение"
@@ -459,7 +463,7 @@ max_alter_threads   2
 
 ClickHouse извлекает и выполняет значение, соответствующее значению `query_param_name` URL-адресе HTTP-запроса. Значение по умолчанию `query_param_name` — это `/query` . Это необязательная настройка. Если в файле конфигурации нет определения, параметр не передается.
 
-Чтобы поэкспериментировать с этой функциональностью, в примере определяются значения [max_threads](../operations/settings/settings.md#settings-max_threads) и `max_alter_threads` и запрашивается, успешно ли были установлены настройки.
+Чтобы поэкспериментировать с этой функциональностью, в примере определяются значения [max_threads](../operations/settings/settings.md#settings-max_threads) и `max_final_threads` и запрашивается, успешно ли были установлены настройки.
 
 Пример:
 
@@ -473,13 +477,14 @@ ClickHouse извлекает и выполняет значение, соотв
         <query_param_name>query_param</query_param_name>
     </handler>
     </rule>
+    <defaults/>
 </http_handlers>
 ```
 
 ``` bash
-$ curl  -H 'XXX:TEST_HEADER_VALUE_DYNAMIC'  'http://localhost:8123/own?max_threads=1&max_alter_threads=2&param_name_1=max_threads&param_name_2=max_alter_threads&query_param=SELECT%20name,value%20FROM%20system.settings%20where%20name%20=%20%7Bname_1:String%7D%20OR%20name%20=%20%7Bname_2:String%7D'
+$ curl  -H 'XXX:TEST_HEADER_VALUE_DYNAMIC'  'http://localhost:8123/own?max_threads=1&max_final_threads=2&param_name_1=max_threads&param_name_2=max_final_threads&query_param=SELECT%20name,value%20FROM%20system.settings%20where%20name%20=%20%7Bname_1:String%7D%20OR%20name%20=%20%7Bname_2:String%7D'
 max_threads 1
-max_alter_threads   2
+max_final_threads   2
 ```
 
 ### static {#static}
@@ -503,6 +508,7 @@ max_alter_threads   2
                 <response_content>Say Hi!</response_content>
             </handler>
         </rule>
+        <defaults/>
 </http_handlers>
 ```
 

@@ -24,7 +24,12 @@ class ColumnFunction final : public COWHelper<IColumn, ColumnFunction>
 private:
     friend class COWHelper<IColumn, ColumnFunction>;
 
-    ColumnFunction(size_t size, FunctionBasePtr function_, const ColumnsWithTypeAndName & columns_to_capture, bool is_short_circuit_argument_ = false, bool is_function_compiled_ = false);
+    ColumnFunction(
+        size_t size,
+        FunctionBasePtr function_,
+        const ColumnsWithTypeAndName & columns_to_capture,
+        bool is_short_circuit_argument_ = false,
+        bool is_function_compiled_ = false);
 
 public:
     const char * getFamilyName() const override { return "Function"; }
