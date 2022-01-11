@@ -133,8 +133,6 @@ private:
             ContainerType<StringRef>,
             ContainerType<Array>>
             container;
-
-        std::unique_ptr<Arena> string_arena;
     };
 
     void createAttributes();
@@ -176,6 +174,7 @@ private:
     mutable std::atomic<size_t> found_count{0};
 
     BlockPtr update_field_loaded_block;
+    Arena string_arena;
 };
 
 }

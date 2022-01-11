@@ -28,7 +28,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
         auto named_collection = getExternalDataSourceConfiguration(config, config_prefix, context, has_config_key);
         if (named_collection)
         {
-            configuration = *named_collection;
+            configuration = named_collection->configuration;
         }
         else
         {

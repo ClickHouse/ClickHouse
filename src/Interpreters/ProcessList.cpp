@@ -6,6 +6,7 @@
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
+#include <Parsers/IAST.h>
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Common/typeid_cast.h>
@@ -76,6 +77,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
     {
         std::unique_lock lock(mutex);
+        IAST::QueryKind query_kind = ast->getQueryKind();
 
         const auto queue_max_wait_ms = settings.queue_max_wait_ms.totalMilliseconds();
         if (!is_unlimited_query && max_size && processes.size() >= max_size)
@@ -86,15 +88,14 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
                 throw Exception("Too many simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
         }
 
-        String query_kind{ast->getQueryKindString()};
         if (!is_unlimited_query)
         {
-            auto amount = getQueryKindAmount(query_kind);
-            if (max_insert_queries_amount && query_kind == "Insert" && amount >= max_insert_queries_amount)
+            QueryAmount amount = getQueryKindAmount(query_kind);
+            if (max_insert_queries_amount && query_kind == IAST::QueryKind::Insert && amount >= max_insert_queries_amount)
                 throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                                 "Too many simultaneous insert queries. Maximum: {}, current: {}",
                                 max_insert_queries_amount, amount);
-            if (max_select_queries_amount && query_kind == "Select" && amount >= max_select_queries_amount)
+            if (max_select_queries_amount && query_kind == IAST::QueryKind::Select && amount >= max_select_queries_amount)
                 throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                                 "Too many simultaneous select queries. Maximum: {}, current: {}",
                                 max_select_queries_amount, amount);
@@ -258,7 +259,7 @@ ProcessListEntry::~ProcessListEntry()
 
     String user = it->getClientInfo().current_user;
     String query_id = it->getClientInfo().current_query_id;
-    String query_kind = it->query_kind;
+    IAST::QueryKind query_kind = it->query_kind;
 
     const QueryStatus * process_list_element_ptr = &*it;
 
@@ -306,7 +307,7 @@ ProcessListEntry::~ProcessListEntry()
 
 
 QueryStatus::QueryStatus(
-    ContextPtr context_, const String & query_, const ClientInfo & client_info_, QueryPriorities::Handle && priority_handle_, const String & query_kind_)
+    ContextPtr context_, const String & query_, const ClientInfo & client_info_, QueryPriorities::Handle && priority_handle_, IAST::QueryKind query_kind_)
     : WithContext(context_)
     , query(query_)
     , client_info(client_info_)
@@ -505,7 +506,7 @@ ProcessList::UserInfo ProcessList::getUserInfo(bool get_profile_events) const
     return per_user_infos;
 }
 
-void ProcessList::increaseQueryKindAmount(const String & query_kind)
+void ProcessList::increaseQueryKindAmount(const IAST::QueryKind & query_kind)
 {
     auto found = query_kind_amounts.find(query_kind);
     if (found == query_kind_amounts.end())
@@ -514,7 +515,7 @@ void ProcessList::increaseQueryKindAmount(const String & query_kind)
         found->second += 1;
 }
 
-void ProcessList::decreaseQueryKindAmount(const String & query_kind)
+void ProcessList::decreaseQueryKindAmount(const IAST::QueryKind & query_kind)
 {
     auto found = query_kind_amounts.find(query_kind);
     /// TODO: we could just rebuild the map, as we have saved all query_kind.
@@ -524,9 +525,9 @@ void ProcessList::decreaseQueryKindAmount(const String & query_kind)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong query kind amount: decrease to negative on '{}'", query_kind, found->second);
     else
         found->second -= 1;
-
 }
-ProcessList::QueryAmount ProcessList::getQueryKindAmount(const String & query_kind)
+
+ProcessList::QueryAmount ProcessList::getQueryKindAmount(const IAST::QueryKind & query_kind) const
 {
     auto found = query_kind_amounts.find(query_kind);
     if (found == query_kind_amounts.end())
