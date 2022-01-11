@@ -39,6 +39,8 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const size_t number_of_arguments = arguments.size();
@@ -76,62 +78,44 @@ public:
         ColumnPtr column_start = arguments[1].column;
         ColumnPtr column_length;
 
+        std::optional<Int64> start_const;
+        std::optional<Int64> length_const;
+
+        if (const auto *column_start_const = checkAndGetColumn<ColumnConst>(column_start.get())) {
+            start_const = column_start_const->getInt(0);
+        }
+
         if (number_of_arguments == 3)
+        {
             column_length = arguments[2].column;
+            if (const auto *column_length_const =  checkAndGetColumn<ColumnConst>(column_length.get()))
+                length_const = column_length_const->getInt(0);
+        }
 
-        const ColumnConst * column_start_const = checkAndGetColumn<ColumnConst>(column_start.get());
-        const ColumnConst * column_length_const = nullptr;
-
-        if (number_of_arguments == 3)
-            column_length_const = checkAndGetColumn<ColumnConst>(column_length.get());
-
-        Int64 start_value = 0;
-        Int64 length_value = 0;
-
-        if (column_start_const)
-            start_value = column_start_const->getInt(0);
-        if (column_length_const)
-            length_value = column_length_const->getInt(0);
 
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_string.get()))
             return executeForSource(
                 column_start,
-                column_length,
-                column_start_const,
-                column_length_const,
-                start_value,
-                length_value,
+                column_length, start_const, length_const,
                 StringSource(*col),
                 input_rows_count);
         else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_string.get()))
             return executeForSource(
                 column_start,
-                column_length,
-                column_start_const,
-                column_length_const,
-                start_value,
-                length_value,
+                column_length, start_const, length_const,
                 FixedStringSource(*col_fixed),
                 input_rows_count);
         else if (const ColumnConst * col_const = checkAndGetColumnConst<ColumnString>(column_string.get()))
             return executeForSource(
                 column_start,
-                column_length,
-                column_start_const,
-                column_length_const,
-                start_value,
-                length_value,
+                column_length, start_const, length_const,
                 ConstSource<StringSource>(*col_const),
                 input_rows_count);
         else if (const ColumnConst * col_const_fixed = checkAndGetColumnConst<ColumnFixedString>(column_string.get()))
             return executeForSource(
                 column_start,
-                column_length,
-                column_start_const,
-                column_length_const,
-                start_value,
-                length_value,
+                column_length, start_const, length_const,
                 ConstSource<FixedStringSource>(*col_const_fixed),
                 input_rows_count);
         else
@@ -144,10 +128,8 @@ public:
     ColumnPtr executeForSource(
         const ColumnPtr & column_start,
         const ColumnPtr & column_length,
-        const ColumnConst * column_start_const,
-        const ColumnConst * column_length_const,
-        Int64 start_value,
-        Int64 length_value,
+        std::optional<Int64> start_const,
+        std::optional<Int64> length_const,
         Source && source,
         size_t input_rows_count) const
     {
@@ -155,14 +137,15 @@ public:
 
         if (!column_length)
         {
-            if (column_start_const)
+            if (start_const)
             {
+                Int64 start_value = start_const.value();
                 if (start_value > 0)
                     bitSliceFromLeftConstantOffsetUnbounded(
                         source, StringSink(*col_res, input_rows_count), static_cast<size_t>(start_value - 1));
                 else if (start_value < 0)
                     bitSliceFromRightConstantOffsetUnbounded(
-                        source, StringSink(*col_res, input_rows_count), -static_cast<size_t>(start_value));
+                        source, StringSink(*col_res, input_rows_count), static_cast<size_t>(-start_value));
                 else
                     throw Exception("Indices in strings are 1-based", ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX);
             }
@@ -171,14 +154,16 @@ public:
         }
         else
         {
-            if (column_start_const && column_length_const)
+            if (start_const && length_const)
             {
+                Int64 start_value = start_const.value();
+                Int64 length_value = length_const.value();
                 if (start_value > 0)
                     bitSliceFromLeftConstantOffsetBounded(
                         source, StringSink(*col_res, input_rows_count), static_cast<size_t>(start_value - 1), length_value);
                 else if (start_value < 0)
                     bitSliceFromRightConstantOffsetBounded(
-                        source, StringSink(*col_res, input_rows_count), -static_cast<size_t>(start_value), length_value);
+                        source, StringSink(*col_res, input_rows_count), static_cast<size_t>(-start_value), length_value);
                 else
                     throw Exception("Indices in strings are 1-based", ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX);
             }
@@ -265,16 +250,10 @@ public:
     template <class Source>
     void bitSliceDynamicOffsetUnbounded(Source && src, StringSink && sink, const IColumn & offset_column) const
     {
-        const bool is_null = offset_column.onlyNull();
-        const auto * nullable = typeid_cast<const ColumnNullable *>(&offset_column);
-        const ColumnUInt8::Container * null_map = nullable ? &nullable->getNullMapData() : nullptr;
-        const IColumn * nested_column = nullable ? &nullable->getNestedColumn() : &offset_column;
-
         while (!src.isEnd())
         {
             auto row_num = src.rowNum();
-            bool has_offset = !is_null && (null_map && (*null_map)[row_num]);
-            Int64 start = has_offset ? nested_column->getInt(row_num) : 1;
+            Int64 start = offset_column.getInt(row_num);
             if (start != 0)
             {
                 typename std::decay_t<Source>::Slice slice;
@@ -390,36 +369,21 @@ public:
     template <class Source>
     void bitSliceDynamicOffsetBounded(Source && src, StringSink && sink, const IColumn & offset_column, const IColumn & length_column) const
     {
-        const bool is_offset_null = offset_column.onlyNull();
-        const auto * offset_nullable = typeid_cast<const ColumnNullable *>(&offset_column);
-        const ColumnUInt8::Container * offset_null_map = offset_nullable ? &offset_nullable->getNullMapData() : nullptr;
-        const IColumn * offset_nested_column = offset_nullable ? &offset_nullable->getNestedColumn() : &offset_column;
-
-        const bool is_length_null = length_column.onlyNull();
-        const auto * length_nullable = typeid_cast<const ColumnNullable *>(&length_column);
-        const ColumnUInt8::Container * length_null_map = length_nullable ? &length_nullable->getNullMapData() : nullptr;
-        const IColumn * length_nested_column = length_nullable ? &length_nullable->getNestedColumn() : &length_column;
-
-
         while (!src.isEnd())
         {
             size_t row_num = src.rowNum();
-            bool has_offset = !is_offset_null && !(offset_null_map && (*offset_null_map)[row_num]);
-            bool has_length = !is_length_null && !(length_null_map && (*length_null_map)[row_num]);
-            Int64 start = has_offset ? offset_nested_column->getInt(row_num) : 1;
-            Int64 length = has_length ? length_nested_column->getInt(row_num) : static_cast<Int64>(src.getElementSize());
+            Int64 start =  offset_column.getInt(row_num);
+            Int64 length =  length_column.getInt(row_num);
 
             if (start && length)
             {
                 bool left_offset = start > 0;
                 size_t offset = left_offset ? start - 1 : -start;
+                size_t size = src.getElementSize();
+
                 size_t offset_byte;
                 size_t offset_bit;
                 size_t shift_bit;
-                size_t length_byte;
-                size_t over_bit;
-                size_t size = src.getElementSize();
-
                 if (left_offset)
                 {
                     offset_byte = offset / word_size;
@@ -437,6 +401,9 @@ public:
                 }
 
                 ssize_t remain_byte = left_offset ? size - offset_byte : offset_byte;
+
+                size_t length_byte;
+                size_t over_bit;
                 if (length > 0)
                 {
                     length_byte = (length + offset_bit) / word_size;
@@ -458,7 +425,6 @@ public:
                 if (slice.size)
                     writeSliceWithLeftShift(slice, sink, shift_bit, abandon_last_bit);
             }
-
 
             sink.next();
             src.next();
