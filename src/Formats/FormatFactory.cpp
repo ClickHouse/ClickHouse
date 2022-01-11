@@ -14,6 +14,8 @@
 #include <Poco/URI.h>
 #include <Common/Exception.h>
 
+#include <boost/algorithm/string/case_conv.hpp>
+
 namespace DB
 {
 
@@ -411,6 +413,7 @@ String FormatFactory::getFormatFromFileName(String file_name)
         return "";
 
     String file_extension = file_name.substr(pos + 1, String::npos);
+    boost::algorithm::to_lower(file_extension);
     return file_extension_formats[file_extension];
 }
 

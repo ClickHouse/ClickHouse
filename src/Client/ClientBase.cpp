@@ -495,14 +495,11 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
                 const auto & id = query_with_output->format->as<ASTIdentifier &>();
                 current_format = id.name();
             }
-            else
+            else if (query_with_output->out_file)
             {
-                if (query_with_output->out_file)
-                {
-                    const auto & format_name = FormatFactory::instance().getFormatFromFileName(out_file);
-                    if (!format_name.empty())
-                        current_format = format_name;
-                }
+                const auto & format_name = FormatFactory::instance().getFormatFromFileName(out_file);
+                if (!format_name.empty())
+                    current_format = format_name;
             }
         }
 
