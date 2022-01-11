@@ -35,15 +35,9 @@ private:
 
     std::unique_ptr<arrow::adapters::orc::ORCFileReader> file_reader;
 
-    std::shared_ptr<arrow::RecordBatchReader> batch_reader;
-
     std::unique_ptr<ArrowColumnToCHColumn> arrow_column_to_ch_column;
 
     std::vector<String> column_names;
-
-    int stripe_total = 0;
-
-    int stripe_current = 0;
 
     // indices of columns to read from ORC file
     std::vector<int> include_indices;
