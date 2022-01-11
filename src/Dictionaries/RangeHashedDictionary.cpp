@@ -401,15 +401,8 @@ void RangeHashedDictionary<dictionary_key_type>::getItemsImpl(
             RangeInterval min_range {max_range_value, max_range_value};
             bool has_interval = false;
 
-            std::cout << "Date " << date << " intervals size " << interval_tree.getIntervalsSize() << std::endl;
-            for (auto & [range, _] : interval_tree)
-            {
-                std::cout << "Range left " << range.left << " range right " << range.right << std::endl;
-            }
-
             interval_tree.find(date, [&](auto & interval, auto & value)
             {
-                std::cerr << "Find interval " << std::endl;
                 has_interval = true;
 
                 if (min_range < interval)
@@ -417,22 +410,8 @@ void RangeHashedDictionary<dictionary_key_type>::getItemsImpl(
 
                 return true;
             });
-            // auto value_it = std::lower_bound(
-            //     std::begin(ranges_and_values),
-            //     std::end(ranges_and_values),
-            //     Range{date, date},
-            //     [](const Value<AttributeType> & value, const Range & date_range)
-            //     {
-            //         return value.range < date_range;
-            //     });
 
-            // if (value_it != std::end(ranges_and_values) && value_it != ranges_and_values.begin())
-            //     --value_it;
-
-            std::cout << "Has interval " << has_interval << " min interval ";
-            std::cout << " left " << min_range.left << " right " << min_range.right << std::endl;
-
-            if (min_value.has_value())
+            if (has_interval)
             {
                 ++keys_found;
 
