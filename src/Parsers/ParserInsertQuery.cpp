@@ -132,11 +132,14 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
 
-        /// Read format name
-        if (!s_format.ignore(pos, expected) || !name_p.parse(pos, format, expected))
-            return false;
+        /// Read format name if any.
+        if (s_format.ignore(pos, expected))
+        {
+            if (!name_p.parse(pos, format, expected))
+                return false;
 
-        tryGetIdentifierNameInto(format, format_str);
+            tryGetIdentifierNameInto(format, format_str);
+        }
     }
     else if (s_values.ignore(pos, expected))
     {
