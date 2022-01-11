@@ -35,6 +35,8 @@ RUN apt-get update \
             tzdata \
             vim \
             wget \
+            rustc \
+            cargo \
     && pip3 --no-cache-dir install 'clickhouse-driver==0.2.1' scipy \
     && apt-get purge --yes python3-dev g++ \
     && apt-get autoremove --yes \
