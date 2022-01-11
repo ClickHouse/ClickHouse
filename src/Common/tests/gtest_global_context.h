@@ -18,8 +18,11 @@ struct ContextHolder
     ContextHolder(ContextHolder &&) = default;
 };
 
-inline const ContextHolder & getContext()
+const ContextHolder & getContext()
 {
-    static ContextHolder holder;
-    return holder;
+    static ContextHolder * holder;
+    static std::once_flag once;
+    std::call_once(once, [&]() { holder = new ContextHolder(); });
+    return *holder;
 }
+
