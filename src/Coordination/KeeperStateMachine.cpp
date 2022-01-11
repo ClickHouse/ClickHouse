@@ -419,11 +419,13 @@ int KeeperStateMachine::read_logical_snp_obj(
         if (chunk == MAP_FAILED)
         {
             LOG_WARNING(log, "Error mmapping {}.", latest_snapshot_path);
+            ::close(fd);
             return -1;
         }
         data_out = nuraft::buffer::alloc(file_size);
         data_out->put_raw(chunk, file_size);
         ::munmap(chunk, file_size);
+        ::close(fd);
         //data_out = nuraft::buffer::clone(*latest_snapshot_buf);
         is_last_obj = true;
     }
