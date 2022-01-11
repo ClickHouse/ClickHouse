@@ -40,7 +40,8 @@ struct Settings;
     M(Bool, force_sync, true, "Call fsync on each change in RAFT changelog", 0) \
     M(Bool, compress_logs, true, "Write compressed coordination logs in ZSTD format", 0) \
     M(Bool, compress_snapshots_with_zstd_format, true, "Write compressed snapshots in ZSTD format (instead of custom LZ4)", 0) \
-    M(UInt64, configuration_change_tries_count, 20, "How many times we will try to apply configuration change (add/remove server) to the cluster", 0)
+    M(UInt64, configuration_change_tries_count, 20, "How many times we will try to apply configuration change (add/remove server) to the cluster", 0) \
+    M(Bool, cpu_affinity, true, "Set cpu affinity for performance", 0)
 
 DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
 

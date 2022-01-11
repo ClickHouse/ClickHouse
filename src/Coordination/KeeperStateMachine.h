@@ -83,8 +83,6 @@ public:
         nuraft::snapshot & s,
         nuraft::async_result<bool>::handler_type & when_done) override;
 
-    virtual bool chk_create_snapshot() override { return false; }
-
     /// Save snapshot which was send by leader to us. After that we will apply it in apply_snapshot.
     void save_logical_snp_obj(
         nuraft::snapshot & s,
@@ -181,7 +179,7 @@ private:
     /// Special part of ACL system -- superdigest specified in server config.
     const std::string superdigest;
 
-    //ConcurrentBoundedQueue<QueueParam> async_commit_queue{1024};
+    /// Nuraft commit thread is a single thread, safe to use ringbuffer
     boost::lockfree::spsc_queue<QueueParam> async_commit_queue{1024};
     ThreadFromGlobalPool async_commit_thread;
     bool shutdown{false};

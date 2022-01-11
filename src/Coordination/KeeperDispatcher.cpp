@@ -1,3 +1,4 @@
+#include "Coordination/CoordinationSettings.h"
 #if defined(OS_LINUX)
 #   include <sys/sysinfo.h>
 #endif
@@ -36,15 +37,18 @@ void KeeperDispatcher::requestThread()
 {
     setThreadName("KeeperReqT");
 #if defined(OS_LINUX)
-    int cpuid = get_nprocs() - 1;
-    cpu_set_t cpuset;
-    CPU_ZERO(&cpuset);
-    CPU_SET(cpuid, &cpuset);
-    int rc = pthread_setaffinity_np(pthread_self(),
-                                    sizeof(cpu_set_t), &cpuset);
-    if (rc != 0)
+    if (configuration_and_settings->coordination_settings->cpu_affinity)
     {
-        LOG_WARNING(log, "Error calling pthread_setaffinity_np, return code {}.", rc);
+        int cpuid = get_nprocs() - 1; // bind to last core
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        CPU_SET(cpuid, &cpuset);
+        int rc = pthread_setaffinity_np(pthread_self(),
+                                        sizeof(cpu_set_t), &cpuset);
+        if (rc != 0)
+        {
+            LOG_WARNING(log, "Error calling pthread_setaffinity_np, return code {}.", rc);
+        }
     }
 #endif
 
@@ -160,15 +164,18 @@ void KeeperDispatcher::responseThread()
 {
     setThreadName("KeeperRspT");
 #if defined(OS_LINUX)
-    int cpuid = get_nprocs() - 2;
-    cpu_set_t cpuset;
-    CPU_ZERO(&cpuset);
-    CPU_SET(cpuid, &cpuset);
-    int rc = pthread_setaffinity_np(pthread_self(),
-                                    sizeof(cpu_set_t), &cpuset);
-    if (rc != 0)
+    if (configuration_and_settings->coordination_settings->cpu_affinity)
     {
-        LOG_WARNING(log, "Error calling pthread_setaffinity_np, return code {}.", rc);
+        int cpuid = (get_nprocs() - 2) % get_nprocs(); // bind to second last core
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        CPU_SET(cpuid, &cpuset);
+        int rc = pthread_setaffinity_np(pthread_self(),
+                                        sizeof(cpu_set_t), &cpuset);
+        if (rc != 0)
+        {
+            LOG_WARNING(log, "Error calling pthread_setaffinity_np, return code {}.", rc);
+        }
     }
 #endif
     while (!shutdown_called)

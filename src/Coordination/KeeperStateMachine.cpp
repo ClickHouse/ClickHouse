@@ -7,6 +7,7 @@
 #include "base/logger_useful.h"
 #include <Coordination/KeeperSnapshotManager.h>
 #include <libnuraft/state_machine.hxx>
+#include <sys/sysinfo.h>
 #include <cstddef>
 #include <future>
 #include <thread>
@@ -49,15 +50,19 @@ void KeeperStateMachine::asyncCommitThread()
 {
     setThreadName("AsyncCommitT");
 #if defined(OS_LINUX)
-    int cpuid = get_nprocs() - 4;
-    cpu_set_t cpuset;
-    CPU_ZERO(&cpuset);
-    CPU_SET(cpuid, &cpuset);
-    int rc = pthread_setaffinity_np(pthread_self(),
-                                    sizeof(cpu_set_t), &cpuset);
-    if (rc != 0)
+    if (coordination_settings->cpu_affinity)
     {
-        LOG_WARNING(log, "Error calling pthread_setaffinity_np, return code {}.", rc);
+        /// bind to last 3 core
+        int cpuid = (get_nprocs() - 3) % get_nprocs();
+        cpu_set_t cpuset;
+        CPU_ZERO(&cpuset);
+        CPU_SET(cpuid, &cpuset);
+        int rc = pthread_setaffinity_np(pthread_self(),
+                                        sizeof(cpu_set_t), &cpuset);
+        if (rc != 0)
+        {
+            LOG_WARNING(log, "Error calling pthread_setaffinity_np, return code {}.", rc);
+        }
     }
 #endif
     while (!shutdown)
