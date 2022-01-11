@@ -8,25 +8,18 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/HashTable/HashSet.h>
+#include <Common/IntervalTree.h>
+
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryHelpers.h>
 
+
 namespace DB
 {
 
 using RangeStorageType = Int64;
-
-struct Range
-{
-    RangeStorageType left;
-    RangeStorageType right;
-
-    static bool isCorrectDate(const RangeStorageType & date);
-    bool contains(const RangeStorageType & value) const;
-};
 
 template <DictionaryKeyType dictionary_key_type>
 class RangeHashedDictionary final : public IDictionary
@@ -94,15 +87,11 @@ public:
     Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
 private:
-    template <typename T>
-    struct Value final
-    {
-        Range range;
-        std::optional<T> value;
-    };
+
+    using RangeInterval = Interval<RangeStorageType>;
 
     template <typename T>
-    using Values = std::vector<Value<T>>;
+    using Values = IntervalMap<RangeInterval, std::optional<T>>;
 
     template <typename Value>
     using CollectionType = std::conditional_t<
@@ -160,10 +149,12 @@ private:
 
     void blockToAttributes(const Block & block);
 
-    template <typename T>
-    void setAttributeValueImpl(Attribute & attribute, KeyType key, const Range & range, const Field & value);
+    void constructAttributeIntervalTrees();
 
-    void setAttributeValue(Attribute & attribute, KeyType key, const Range & range, const Field & value);
+    template <typename T>
+    void setAttributeValueImpl(Attribute & attribute, KeyType key, const RangeInterval & range, const Field & value);
+
+    void setAttributeValue(Attribute & attribute, KeyType key, const RangeInterval & range, const Field & value);
 
     template <typename RangeType>
     void getKeysAndDates(
