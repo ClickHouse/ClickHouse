@@ -178,7 +178,6 @@ xflags = {
 def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
     """RBAC regression.
     """
-    top().terminating = False
     nodes = {
         "clickhouse":
             ("clickhouse1", "clickhouse2", "clickhouse3")
