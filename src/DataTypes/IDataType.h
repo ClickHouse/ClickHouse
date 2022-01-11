@@ -522,6 +522,7 @@ inline bool isBool(const DataTypePtr & data_type)
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;
 template <typename DataType> constexpr bool IsDataTypeNumber = false;
 template <typename DataType> constexpr bool IsDataTypeDateOrDateTime = false;
+template <typename DataType> constexpr bool IsDataTypeInteger = false;
 
 template <typename DataType> constexpr bool IsDataTypeDecimalOrNumber = IsDataTypeDecimal<DataType> || IsDataTypeNumber<DataType>;
 
@@ -545,5 +546,14 @@ template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate32> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime64> = true;
+
+template <> inline constexpr bool IsDataTypeInteger<DataTypeNumber<Int8>> = true;
+template <> inline constexpr bool IsDataTypeInteger<DataTypeNumber<Int16>> = true;
+template <> inline constexpr bool IsDataTypeInteger<DataTypeNumber<Int32>> = true;
+template <> inline constexpr bool IsDataTypeInteger<DataTypeNumber<Int64>> = true;
+template <> inline constexpr bool IsDataTypeInteger<DataTypeNumber<UInt8>> = true;
+template <> inline constexpr bool IsDataTypeInteger<DataTypeNumber<UInt16>> = true;
+template <> inline constexpr bool IsDataTypeInteger<DataTypeNumber<UInt32>> = true;
+template <> inline constexpr bool IsDataTypeInteger<DataTypeNumber<UInt64>> = true;
 
 }

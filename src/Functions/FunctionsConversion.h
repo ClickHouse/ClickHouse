@@ -45,6 +45,7 @@
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/toFixedString.h>
 #include <Functions/TransformDateTime64.h>
+#include <Functions/IsOverflow.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Interpreters/Context.h>
@@ -96,6 +97,14 @@ inline UInt32 extractToDecimalScale(const ColumnWithTypeAndName & named_column)
     return field.get<UInt32>();
 }
 
+template <typename DataType>
+inline typename DataType::FieldType getZeroValue()
+{
+    if constexpr (std::is_same_v<DataType, DataTypeDate32>)
+        return DataTypeDate32::getZeroValue();
+    return static_cast<typename DataType::FieldType>(0);
+}
+
 /// Function toUnixTimestamp has exactly the same implementation as toDateTime of String type.
 struct NameToUnixTimestamp { static constexpr auto name = "toUnixTimestamp"; };
 
@@ -109,7 +118,7 @@ struct AccurateOrNullConvertStrategyAdditions
     UInt32 scale { 0 };
 };
 
-struct DateOrNullConvertStrategyAdditions
+struct AccurateOrZeroConvertStrategyAdditions
 {
     UInt32 scale { 0 };
 };
@@ -117,16 +126,11 @@ struct DateOrNullConvertStrategyAdditions
 struct ConvertDefaultBehaviorTag {};
 struct ConvertReturnNullOnErrorTag {};
 
-template <typename FromType>
-static inline NO_SANITIZE_UNDEFINED bool isNegative(const FromType & from)
-{
-    return from < 0;
-}
-
 /** Conversion of number types to each other, enums to numbers, dates and datetimes to numbers and back: done by straight assignment.
   *  (Date is represented internally as number of days from some day; DateTime - as unix timestamp)
   */
-template <typename FromDataType, typename ToDataType, typename Name, typename SpecialTag = ConvertDefaultBehaviorTag>
+template <typename FromDataType, typename ToDataType, typename Name, typename SpecialTag = ConvertDefaultBehaviorTag,
+          typename IsOverflow = IsOverflowNoOp<typename FromDataType::FieldType, typename ToDataType::FieldType>>
 struct ConvertImpl
 {
     using FromFieldType = typename FromDataType::FieldType;
@@ -167,7 +171,7 @@ struct ConvertImpl
                 UInt32 scale;
                 if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
                     || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
-                    || std::is_same_v<Additions, DateOrNullConvertStrategyAdditions>)
+                    || std::is_same_v<Additions, AccurateOrZeroConvertStrategyAdditions>)
                 {
                     scale = additions.scale;
                 }
@@ -187,8 +191,7 @@ struct ConvertImpl
 
             ColumnUInt8::MutablePtr col_null_map_to;
             ColumnUInt8::Container * vec_null_map_to [[maybe_unused]] = nullptr;
-            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
-            || std::is_same_v<Additions, DateOrNullConvertStrategyAdditions>)
+            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
             {
                 col_null_map_to = ColumnUInt8::create(input_rows_count, false);
                 vec_null_map_to = &col_null_map_to->getData();
@@ -216,6 +219,8 @@ struct ConvertImpl
                                 convert_result = tryConvertFromDecimal<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), result);
                             else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
                                 convert_result = tryConvertToDecimal<FromDataType, ToDataType>(vec_from[i], vec_to.getScale(), result);
+                            else
+                                throw Exception("Unsupported data type in conversion function", ErrorCodes::CANNOT_CONVERT_TYPE);
 
                             if (convert_result)
                                 vec_to[i] = result;
@@ -255,16 +260,28 @@ struct ConvertImpl
                             }
                         }
 
-                        if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
+                        if constexpr ((std::is_same_v<ToDataType, DataTypeDate32> || std::is_same_v<ToDataType, DataTypeDate>)
+                                      && IsInteger<typename FromDataType::FieldType>
+                                      && (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
+                                          || std::is_same_v<Additions, AccurateOrZeroConvertStrategyAdditions>))
+                        {
+                            bool convert_result = !IsOverflow::overflow(vec_from[i]) && accurate::convertNumeric(vec_from[i], vec_to[i]);
+                            if (!convert_result)
+                            {
+                                vec_to[i] = getZeroValue<ToDataType>();
+                                if (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
+                                    (*vec_null_map_to)[i] = true;
+                            }
+                        }
+                        else if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
                                 || std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
                         {
                             bool convert_result = accurate::convertNumeric(vec_from[i], vec_to[i]);
-
                             if (!convert_result)
                             {
                                 if (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                                 {
-                                    vec_to[i] = 0;
+                                    vec_to[i] = getZeroValue<ToDataType>();
                                     (*vec_null_map_to)[i] = true;
                                 }
                                 else
@@ -278,22 +295,7 @@ struct ConvertImpl
                         }
                         else
                         {
-                            if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDateOrDateTime<ToDataType>)
-                            {
-                                if (isNegative(vec_from[i]))
-                                {
-                                    vec_to[i] = 0;
-
-                                    if constexpr (std::is_same_v<Additions, DateOrNullConvertStrategyAdditions>)
-                                        (*vec_null_map_to)[i] = true;
-                                }
-
-                                else
-                                    vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
-                            }
-                            else
-                                vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
-
+                            vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
                         }
                     }
 
@@ -306,8 +308,7 @@ struct ConvertImpl
             }
 
 
-            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>
-                    || std::is_same_v<Additions, DateOrNullConvertStrategyAdditions>)
+            if constexpr (std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                 return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
             else
                 return col_to;
@@ -433,7 +434,7 @@ struct ToDate32Transform32Or64Signed
 
     static inline NO_SANITIZE_UNDEFINED ToType execute(const FromType & from, const DateLUTImpl & time_zone)
     {
-        static const Int32 daynum_min_offset = -static_cast<Int32>(DateLUT::instance().getDayNumOffsetEpoch());
+        static const Int32 daynum_min_offset = DataTypeDate32::getZeroValue();
         if (from < daynum_min_offset)
             return daynum_min_offset;
         return (from < DATE_LUT_MAX_EXTEND_DAY_NUM)
@@ -462,34 +463,34 @@ struct ToDate32Transform8Or16Signed
   *  when user write toDate(UInt32), expecting conversion of unix timestamp to Date.
   *  (otherwise such usage would be frequent mistake).
   */
-template <typename Name> struct ConvertImpl<DataTypeUInt32, DataTypeDate, Name, ConvertDefaultBehaviorTag>
+template <typename Name> struct ConvertImpl<DataTypeUInt32, DataTypeDate, Name, ConvertDefaultBehaviorTag, IsOverflowDateOrDate32From32Or64<UInt32, UInt16>>
     : DateTimeTransformImpl<DataTypeUInt32, DataTypeDate, ToDateTransform32Or64<UInt32, UInt16>> {};
-template <typename Name> struct ConvertImpl<DataTypeUInt64, DataTypeDate, Name, ConvertDefaultBehaviorTag>
+template <typename Name> struct ConvertImpl<DataTypeUInt64, DataTypeDate, Name, ConvertDefaultBehaviorTag, IsOverflowDateOrDate32From32Or64<UInt64, UInt16>>
     : DateTimeTransformImpl<DataTypeUInt64, DataTypeDate, ToDateTransform32Or64<UInt64, UInt16>> {};
-template <typename Name> struct ConvertImpl<DataTypeInt8, DataTypeDate, Name, ConvertDefaultBehaviorTag>
+template <typename Name> struct ConvertImpl<DataTypeInt8, DataTypeDate, Name, ConvertDefaultBehaviorTag, IsOverflowDateOrDate32From8Or16Signed<Int8, UInt16>>
     : DateTimeTransformImpl<DataTypeInt8, DataTypeDate, ToDateTransform8Or16Signed<Int8, UInt16>> {};
-template <typename Name> struct ConvertImpl<DataTypeInt16, DataTypeDate, Name, ConvertDefaultBehaviorTag>
+template <typename Name> struct ConvertImpl<DataTypeInt16, DataTypeDate, Name, ConvertDefaultBehaviorTag, IsOverflowDateOrDate32From8Or16Signed<Int16, UInt16>>
     : DateTimeTransformImpl<DataTypeInt16, DataTypeDate, ToDateTransform8Or16Signed<Int16, UInt16>> {};
-template <typename Name> struct ConvertImpl<DataTypeInt32, DataTypeDate, Name, ConvertDefaultBehaviorTag>
+template <typename Name> struct ConvertImpl<DataTypeInt32, DataTypeDate, Name, ConvertDefaultBehaviorTag, IsOverflowDateOrDate32From32Or64Signed<Int32, UInt16>>
     : DateTimeTransformImpl<DataTypeInt32, DataTypeDate, ToDateTransform32Or64Signed<Int32, UInt16>> {};
-template <typename Name> struct ConvertImpl<DataTypeInt64, DataTypeDate, Name, ConvertDefaultBehaviorTag>
+template <typename Name> struct ConvertImpl<DataTypeInt64, DataTypeDate, Name, ConvertDefaultBehaviorTag, IsOverflowDateOrDate32From32Or64Signed<Int64, UInt16>>
     : DateTimeTransformImpl<DataTypeInt64, DataTypeDate, ToDateTransform32Or64Signed<Int64, UInt16>> {};
 template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeFloat32, DataTypeDate, ToDateTransform32Or64Signed<Float32, UInt16>> {};
 template <typename Name> struct ConvertImpl<DataTypeFloat64, DataTypeDate, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeFloat64, DataTypeDate, ToDateTransform32Or64Signed<Float64, UInt16>> {};
 
-template <typename Name> struct ConvertImpl<DataTypeUInt32, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
+template <typename Name> struct ConvertImpl<DataTypeUInt32, DataTypeDate32, Name, ConvertDefaultBehaviorTag, IsOverflowDateOrDate32From32Or64Signed<Int64, Int32>>
     : DateTimeTransformImpl<DataTypeUInt32, DataTypeDate32, ToDate32Transform32Or64<UInt32, Int32>> {};
-template <typename Name> struct ConvertImpl<DataTypeUInt64, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
+template <typename Name> struct ConvertImpl<DataTypeUInt64, DataTypeDate32, Name, ConvertDefaultBehaviorTag, IsOverflowDateOrDate32From32Or64<UInt64, Int32>>
     : DateTimeTransformImpl<DataTypeUInt64, DataTypeDate32, ToDate32Transform32Or64<UInt64, Int32>> {};
-template <typename Name> struct ConvertImpl<DataTypeInt8, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
+template <typename Name> struct ConvertImpl<DataTypeInt8, DataTypeDate32, Name, ConvertDefaultBehaviorTag, IsOverflowDateOrDate32From8Or16Signed<Int8, Int32>>
     : DateTimeTransformImpl<DataTypeInt8, DataTypeDate32, ToDate32Transform8Or16Signed<Int8, Int32>> {};
-template <typename Name> struct ConvertImpl<DataTypeInt16, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
+template <typename Name> struct ConvertImpl<DataTypeInt16, DataTypeDate32, Name, ConvertDefaultBehaviorTag, IsOverflowDateOrDate32From8Or16Signed<Int16, Int32>>
     : DateTimeTransformImpl<DataTypeInt16, DataTypeDate32, ToDate32Transform8Or16Signed<Int16, Int32>> {};
-template <typename Name> struct ConvertImpl<DataTypeInt32, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
+template <typename Name> struct ConvertImpl<DataTypeInt32, DataTypeDate32, Name, ConvertDefaultBehaviorTag, IsOverflowDateOrDate32From32Or64Signed<Int32, Int32>>
     : DateTimeTransformImpl<DataTypeInt32, DataTypeDate32, ToDate32Transform32Or64Signed<Int32, Int32>> {};
-template <typename Name> struct ConvertImpl<DataTypeInt64, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
+template <typename Name> struct ConvertImpl<DataTypeInt64, DataTypeDate32, Name, ConvertDefaultBehaviorTag, IsOverflowDateOrDate32From32Or64Signed<Int64, Int32>>
     : DateTimeTransformImpl<DataTypeInt64, DataTypeDate32, ToDate32Transform32Or64Signed<Int64, Int32>> {};
 template <typename Name> struct ConvertImpl<DataTypeFloat32, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeFloat32, DataTypeDate32, ToDate32Transform32Or64Signed<Float32, Int32>> {};
@@ -613,54 +614,7 @@ struct ToDateTime64TransformFloat
         return convertToDecimal<FromDataType, DataTypeDateTime64>(from, scale);
     }
 };
-template <typename FromDataType, typename ToDataType, typename FromType>
-static bool toDateTypeOrDateTimeTypeIsOverflow(const FromType & from, [[maybe_unused]]const DateLUTImpl & time_zone)
-{
-    if constexpr (std::is_same_v<ToDataType, DataTypeDate> &&
-    (std::is_same_v<FromDataType, DataTypeInt32>
-    || std::is_same_v<FromDataType, DataTypeInt64>
-    || std::is_same_v<FromDataType, DataTypeFloat32>
-    || std::is_same_v<FromDataType, DataTypeFloat64>))
-    {
-        return static_cast<bool>(from < 0 || from > DATE_LUT_MAX_DAY_NUM);
-    }
-    else if constexpr (std::is_same_v<ToDataType, DataTypeDate> &&
-    (std::is_same_v<FromDataType, DataTypeInt8>
-    || std::is_same_v<FromDataType, DataTypeInt16>))
-    {
-        return static_cast<bool>(from < 0);
-    }
-    else if constexpr (std::is_same_v<ToDataType, DataTypeDate32> &&
-    (std::is_same_v<FromDataType, DataTypeUInt32>
-    ||std::is_same_v<FromDataType, DataTypeUInt64>))
-    {
-        return static_cast<bool>(from > DATE_LUT_MAX_EXTEND_DAY_NUM);
-    }
-    else if constexpr (std::is_same_v<ToDataType, DataTypeDate32> &&
-    (std::is_same_v<FromDataType, DataTypeInt32>
-    || std::is_same_v<FromDataType, DataTypeInt64>
-    || std::is_same_v<FromDataType, DataTypeFloat32>
-    || std::is_same_v<FromDataType, DataTypeFloat64>))
-    {
-        static const Int32 daynum_min_offset = -static_cast<Int32>(DateLUT::instance().getDayNumOffsetEpoch());
-        return static_cast<bool>(from < daynum_min_offset || from > DATE_LUT_MAX_EXTEND_DAY_NUM);
-    }
-    else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime> &&
-    (std::is_same_v<FromDataType, DataTypeInt8>
-    || std::is_same_v<FromDataType, DataTypeInt16>
-    || std::is_same_v<FromDataType, DataTypeInt32>))
-    {
-        return static_cast<bool>(from < 0);
-    }
-    else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime> &&
-    (std::is_same_v<FromDataType, DataTypeInt64>
-    || std::is_same_v<FromDataType, DataTypeFloat32>
-    || std::is_same_v<FromDataType, DataTypeFloat64>))
-    {
-        return static_cast<bool>(from < 0);
-    }
 
-}
 template <typename Name> struct ConvertImpl<DataTypeInt8, DataTypeDateTime64, Name>
     : DateTimeTransformImpl<DataTypeInt8, DataTypeDateTime64, ToDateTime64TransformSigned<Int8>> {};
 template <typename Name> struct ConvertImpl<DataTypeInt16, DataTypeDateTime64, Name>
@@ -1332,16 +1286,7 @@ struct ConvertThroughParsing
                     parsed = false;
 
                 if (!parsed)
-                {
-                    if constexpr (std::is_same_v<ToDataType, DataTypeDate32>)
-                    {
-                        vec_to[i] = -static_cast<Int32>(DateLUT::instance().getDayNumOffsetEpoch());
-                    }
-                    else
-                    {
-                        vec_to[i] = static_cast<typename ToDataType::FieldType>(0);
-                    }
-                }
+                    vec_to[i] = getZeroValue<ToDataType>();
 
                 if constexpr (exception_mode == ConvertExceptionMode::Null)
                     (*vec_null_map_to)[i] = !parsed;
@@ -1944,8 +1889,8 @@ public:
                     ", should be 1 or 2. Second argument only make sense for DateTime (time zone, optional) and Decimal (scale).",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-            if (!isStringOrFixedString(arguments[0].type) &&
-                !(isInteger(arguments[0].type) && IsDataTypeDateOrDateTime<ToDataType>))
+            if (!isStringOrFixedString(arguments[0].type)
+                && !(isInteger(arguments[0].type) && IsDataTypeDateOrDateTime<ToDataType>))
             {
                 if (this->getName().find("OrZero") != std::string::npos ||
                     this->getName().find("OrNull") != std::string::npos)
@@ -1997,10 +1942,7 @@ public:
         }
 
         if constexpr (exception_mode == ConvertExceptionMode::Null)
-        {
-            if (!(std::is_same_v<ToDataType, DataTypeDate32> && isInteger(arguments[0].type)))
-                res = std::make_shared<DataTypeNullable>(res);
-        }
+            res = std::make_shared<DataTypeNullable>(res);
 
         return res;
     }
@@ -2025,26 +1967,25 @@ public:
             TypeIndex from_type_index = from_type->getTypeId();
             ColumnPtr result_column;
 
-            auto res = callOnIndexAndDataType<ToDataType>(from_type_index, [&](const auto & types) -> bool {
+            auto converted = callOnIndexAndDataType<ToDataType>(from_type_index, [&](const auto & types) -> bool
+            {
                 using Types = std::decay_t<decltype(types)>;
                 using FromDataType = typename Types::LeftType;
+                using convert_tag = std::conditional<(ConvertExceptionMode::Null == exception_mode), ConvertReturnNullOnErrorTag, ConvertDefaultBehaviorTag>;
 
                 if constexpr (!IsDataTypeNumber<FromDataType>)
                     return false;
 
-                if constexpr (std::is_same_v<ConvertToDataType, DataTypeDate32> && IsDataTypeNumber<FromDataType>)
-                {
-                    result_column = ConvertImpl<FromDataType, ConvertToDataType, Name, ConvertDefaultBehaviorTag>::execute(
-                        arguments, result_type, input_rows_count);
-                    return true;
-                }
-                else if constexpr (IsDataTypeDateOrDateTime<ConvertToDataType> && IsDataTypeNumber<FromDataType>)
+                if constexpr (IsDataTypeDateOrDateTime<ConvertToDataType> && IsDataTypeInteger<FromDataType>)
                 {
                     if constexpr (exception_mode == ConvertExceptionMode::Null)
-                    result_column = ConvertImpl<FromDataType, ConvertToDataType, Name, ConvertDefaultBehaviorTag()>::execute(
-                            arguments, result_type, input_rows_count, DateOrNullConvertStrategyAdditions());
+                        result_column = ConvertImpl<FromDataType, ConvertToDataType, Name, convert_tag>::execute(
+                            arguments, result_type, input_rows_count, AccurateOrNullConvertStrategyAdditions());
+                    else if constexpr (exception_mode == ConvertExceptionMode::Zero)
+                        result_column =  ConvertImpl<FromDataType, ConvertToDataType, Name, convert_tag>::execute(
+                            arguments, result_type, input_rows_count, AccurateOrZeroConvertStrategyAdditions());
                     else
-                        result_column =  ConvertImpl<FromDataType, ConvertToDataType, Name, ConvertDefaultBehaviorTag()>::execute(
+                        result_column =  ConvertImpl<FromDataType, ConvertToDataType, Name, convert_tag>::execute(
                             arguments, result_type, input_rows_count, scale);
 
                     return true;
@@ -2053,7 +1994,7 @@ public:
                 return false;
             });
 
-            if (res)
+            if (converted)
                 return result_column;
         }
 

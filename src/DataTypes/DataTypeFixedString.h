@@ -25,6 +25,7 @@ private:
 
 public:
     using ColumnType = ColumnFixedString;
+    using FieldType = String;
 
     static constexpr bool is_parametric = true;
     static constexpr auto type_id = TypeIndex::FixedString;
