@@ -133,40 +133,10 @@ public:
         Case<IsDataTypeDecimal<LeftDataType> && IsIntegralOrExtended<RightDataType>, LeftDataType>,
         Case<IsDataTypeDecimal<RightDataType> && IsIntegralOrExtended<LeftDataType>, RightDataType>,
 
-        /// e.g Decimal + Float64 = Float64
-        Case<IsOperation<Operation>::plus && IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>,
+        /// e.g Decimal +-*/ Float, least(Decimal, Float), greatest(Decimal, Float) = Float64
+        Case<IsOperation<Operation>::allow_decimal && IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>,
             DataTypeFloat64>,
-        Case<IsOperation<Operation>::plus && IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>,
-            DataTypeFloat64>,
-
-        /// e.g Decimal - Float64 = Float64
-        Case<IsOperation<Operation>::minus && IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>,
-            DataTypeFloat64>,
-        Case<IsOperation<Operation>::minus && IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>,
-            DataTypeFloat64>,
-
-        /// e.g Decimal * Float64 = Float64
-        Case<IsOperation<Operation>::multiply && IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>,
-            DataTypeFloat64>,
-        Case<IsOperation<Operation>::multiply && IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>,
-            DataTypeFloat64>,
-
-        /// e.g Decimal / Float64 = Float64
-        Case<IsOperation<Operation>::division && IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>,
-            DataTypeFloat64>,
-        Case<IsOperation<Operation>::division && IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>,
-            DataTypeFloat64>,
-
-        /// e.g least(Decimal, Float64) = Float64
-        Case<IsOperation<Operation>::least && IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>,
-            DataTypeFloat64>,
-        Case<IsOperation<Operation>::least && IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>,
-            DataTypeFloat64>,
-
-        /// e.g greatest(Decimal, Float64) = Float64
-        Case<IsOperation<Operation>::greatest && IsDataTypeDecimal<LeftDataType> && IsFloatingPoint<RightDataType>,
-            DataTypeFloat64>,
-        Case<IsOperation<Operation>::greatest && IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>,
+        Case<IsOperation<Operation>::allow_decimal && IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>,
             DataTypeFloat64>,
 
         /// Decimal <op> Real is not supported (traditional DBs convert Decimal <op> Real to Real)
