@@ -106,11 +106,15 @@ namespace
             switch (ch)
             {
                 case '(':
+                    dest += "\\28";
+                    break;
                 case ')':
-                    dest += '\\';
-                    break;         
+                    dest += "\\29";
+                    break;
+                default:
+                    dest += ch;
+                    break;
             }
-            dest += ch;
         }
 
         return dest;
