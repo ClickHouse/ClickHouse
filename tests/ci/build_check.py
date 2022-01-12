@@ -180,6 +180,28 @@ def get_release_or_pr(
     return str(pr_info.number)
 
 
+def upload_master_static_binaries(
+    pr_info: PRInfo,
+    build_config: BuildConfig,
+    s3_helper: S3Helper,
+    build_output_path: str,
+):
+    """Upload binary artifacts to a static S3 links"""
+    if pr_info.number != 0:
+        return
+    elif build_config["package_type"] != "binary":
+        return
+    elif pr_info.base_ref == "master":
+        return
+
+    s3_path = "/".join(
+        (pr_info.base_ref, os.path.basename(build_output_path), "clickhouse")
+    )
+    binary = os.path.join(build_output_path, "clickhouse")
+    url = s3_helper.upload_build_file_to_s3(binary, s3_path)
+    print(f"::notice ::Binary static URL: {url}")
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
 
@@ -317,6 +339,8 @@ def main():
     create_json_artifact(
         TEMP_PATH, build_name, log_url, build_urls, build_config, elapsed, success
     )
+
+    upload_master_static_binaries(pr_info, build_config, s3_helper, build_output_path)
     # Fail build job if not successeded
     if not success:
         sys.exit(1)
