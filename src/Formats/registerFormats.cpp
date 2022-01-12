@@ -103,6 +103,8 @@ void registerTSKVSchemaReader(FormatFactory & factory);
 void registerValuesSchemaReader(FormatFactory & factory);
 void registerTemplateSchemaReader(FormatFactory & factory);
 
+void registerFileExtensions(FormatFactory & factory);
+
 void registerFormats()
 {
     auto & factory = FormatFactory::instance();
@@ -196,16 +198,6 @@ void registerFormats()
     registerTSKVSchemaReader(factory);
     registerValuesSchemaReader(factory);
     registerTemplateSchemaReader(factory);
-
-    factory.registerFileExtension("csv", "CSV");
-    factory.registerFileExtension("tsv", "TSV");
-    factory.registerFileExtension("parquet", "Parquet");
-    factory.registerFileExtension("orc", "ORC");
-    factory.registerFileExtension("native", "Native");
-    factory.registerFileExtension("json", "JSON");
-    factory.registerFileExtension("ndjson", "JSONEachRow");
-    factory.registerFileExtension("xml", "XML");
-    factory.registerFileExtension("avro", "Avro");
 }
 
 }

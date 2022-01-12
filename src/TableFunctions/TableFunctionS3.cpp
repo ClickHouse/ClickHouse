@@ -71,6 +71,7 @@ void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr con
         /// Size -> argument indexes
         static auto size_to_args = std::map<size_t, std::map<String, size_t>>
         {
+            {1, {{}}},
             {2, {{"format", 1}}},
             {3, {{"format", 1}, {"structure", 2}}},
             {5, {{"access_key_id", 1}, {"secret_access_key", 2}, {"format", 3}, {"structure", 4}}},
@@ -111,6 +112,13 @@ void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr con
 
         if (args_to_idx.contains("secret_access_key"))
             configuration.secret_access_key = args[args_to_idx["secret_access_key"]]->as<ASTLiteral &>().value.safeGet<String>();
+    }
+
+    if (configuration.format == "auto")
+    {
+        configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.url);
+        if (configuration.format.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot determine the file format by it's extension, you should provide the format manually");
     }
 
     s3_configuration = std::move(configuration);

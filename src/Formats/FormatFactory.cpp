@@ -375,6 +375,7 @@ void FormatFactory::registerInputFormat(const String & name, InputCreator input_
     if (target)
         throw Exception("FormatFactory: Input format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
     target = std::move(input_creator);
+    registerFileExtension(name, name);
 }
 
 void FormatFactory::registerNonTrivialPrefixAndSuffixChecker(const String & name, NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker)
@@ -391,11 +392,12 @@ void FormatFactory::registerOutputFormat(const String & name, OutputCreator outp
     if (target)
         throw Exception("FormatFactory: Output format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
     target = std::move(output_creator);
+    registerFileExtension(name, name);
 }
 
 void FormatFactory::registerFileExtension(const String & extension, const String & format_name)
 {
-    file_extension_formats[extension] = format_name;
+    file_extension_formats[boost::to_lower_copy(extension)] = format_name;
 }
 
 String FormatFactory::getFormatFromFileName(String file_name)
