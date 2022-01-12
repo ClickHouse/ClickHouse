@@ -10,6 +10,7 @@
 #include <base/argsToConfig.h>
 #include <Common/DateLUT.h>
 #include <Common/LocalDate.h>
+#include <Common/MemoryTracker.h>
 #include <base/LineReader.h>
 #include <base/scope_guard_safe.h>
 #include "Common/Exception.h"
@@ -64,6 +65,11 @@
 namespace fs = std::filesystem;
 using namespace std::literals;
 
+
+namespace CurrentMetrics
+{
+    extern const Metric MemoryTracking;
+}
 
 namespace DB
 {
@@ -457,12 +463,13 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
         /// The query can specify output format or output file.
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
         {
+            String out_file;
             if (query_with_output->out_file)
             {
                 select_into_file = true;
 
                 const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
-                const auto & out_file = out_file_node.value.safeGet<std::string>();
+                out_file = out_file_node.value.safeGet<std::string>();
 
                 std::string compression_method;
                 if (query_with_output->compression)
@@ -487,6 +494,12 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
                     throw Exception("Output format already specified", ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED);
                 const auto & id = query_with_output->format->as<ASTIdentifier &>();
                 current_format = id.name();
+            }
+            else if (query_with_output->out_file)
+            {
+                const auto & format_name = FormatFactory::instance().getFormatFromFileName(out_file);
+                if (!format_name.empty())
+                    current_format = format_name;
             }
         }
 
@@ -1002,11 +1015,15 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             compression_method = compression_method_node.value.safeGet<std::string>();
         }
 
+        String current_format = parsed_insert_query->format;
+        if (current_format.empty())
+            current_format = FormatFactory::instance().getFormatFromFileName(in_file);
+
         /// Create temporary storage file, to support globs and parallel reading
         StorageFile::CommonArguments args{
             WithContext(global_context),
             parsed_insert_query->table_id,
-            parsed_insert_query->format,
+            current_format,
             getFormatSettings(global_context),
             compression_method,
             columns_description_for_query,
@@ -1812,6 +1829,7 @@ void ClientBase::init(int argc, char ** argv)
 
         ("interactive", "Process queries-file or --query query and start interactive mode")
         ("pager", po::value<std::string>(), "Pipe all output into this command (less or similar)")
+        ("max_memory_usage_in_client", po::value<int>(), "Set memory limit in client/local server")
     ;
 
     addOptions(options_description);
@@ -1917,6 +1935,15 @@ void ClientBase::init(int argc, char ** argv)
     processOptions(options_description, options, external_tables_arguments);
     argsToConfig(common_arguments, config(), 100);
     clearPasswordFromCommandLine(argc, argv);
+
+    /// Limit on total memory usage
+    size_t max_client_memory_usage = config().getInt64("max_memory_usage_in_client", 0 /*default value*/);
+    if (max_client_memory_usage != 0)
+    {
+        total_memory_tracker.setHardLimit(max_client_memory_usage);
+        total_memory_tracker.setDescription("(total)");
+        total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+    }
 }
 
 }

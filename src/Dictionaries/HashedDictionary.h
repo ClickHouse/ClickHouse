@@ -173,8 +173,6 @@ private:
             CollectionType<StringRef>,
             CollectionType<Array>>
             container;
-
-        std::unique_ptr<Arena> string_arena;
     };
 
     void createAttributes();
@@ -202,8 +200,6 @@ private:
 
     void resize(size_t added_rows);
 
-    StringRef copyKeyInArena(StringRef key);
-
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const HashedDictionaryStorageConfiguration configuration;
@@ -217,7 +213,7 @@ private:
     mutable std::atomic<size_t> found_count{0};
 
     BlockPtr update_field_loaded_block;
-    Arena complex_key_arena;
+    Arena string_arena;
 };
 
 extern template class HashedDictionary<DictionaryKeyType::Simple, false>;
