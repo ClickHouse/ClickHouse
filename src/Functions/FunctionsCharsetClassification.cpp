@@ -1,6 +1,6 @@
 #include <Common/FrequencyHolder.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionStringToString.h>
+#include <Functions/FunctionsTextClassification.h>
 
 #include <memory>
 #include <unordered_map>
@@ -8,17 +8,12 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_COLUMN;
-}
-
 /* Determine language and charset of text data. For each text, we build the distribution of bigrams bytes.
  * Then we use marked-up dictionaries with distributions of bigram bytes of various languages ​​and charsets.
  * Using a naive Bayesian classifier, find the most likely charset and language and return it
  */
 
-template <size_t N, bool detect_language>
+template <bool detect_language>
 struct CharsetClassificationImpl
 {
     /* We need to solve zero-frequency problem for Naive Bayes Classifier
@@ -121,32 +116,27 @@ struct CharsetClassificationImpl
             res_offsets[i] = res_offset;
         }
     }
-
-    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
-    {
-        throw Exception("Cannot apply function detectProgrammingLanguage to fixed string.", ErrorCodes::ILLEGAL_COLUMN);
-    }
 };
 
 
-struct NameCharsetDetect
+struct NameDetectCharset
 {
     static constexpr auto name = "detectCharset";
 };
 
-struct NameLanguageDetect
+struct NameDetectLanguageUnknown
 {
     static constexpr auto name = "detectLanguageUnknown";
 };
 
 
-using FunctionCharsetDetect = FunctionStringToString<CharsetClassificationImpl<2, false>, NameCharsetDetect, false>;
-using FunctionLanguageDetect = FunctionStringToString<CharsetClassificationImpl<2, true>, NameLanguageDetect, false>;
+using FunctionDetectCharset = FunctionTextClassificationString<CharsetClassificationImpl<false>, NameDetectCharset>;
+using FunctionDetectLanguageUnknown = FunctionTextClassificationString<CharsetClassificationImpl<true>, NameDetectLanguageUnknown>;
 
-void registerFunctionsCharsetClassification(FunctionFactory & factory)
+void registerFunctionDetectCharset(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionCharsetDetect>();
-    factory.registerFunction<FunctionLanguageDetect>();
+    factory.registerFunction<FunctionDetectCharset>();
+    factory.registerFunction<FunctionDetectLanguageUnknown>();
 }
 
 }

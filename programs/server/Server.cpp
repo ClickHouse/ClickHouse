@@ -80,9 +80,6 @@
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
-
-#include <Common/FrequencyHolder.h>
-
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Compression/CompressionCodecEncrypted.h>
 #include <filesystem>
@@ -703,7 +700,6 @@ if (ThreadFuzzer::instance().isEffective())
     global_context->setRemoteHostFilter(config());
 
     std::string path_str = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
-
     fs::path path = path_str;
     std::string default_database = config().getString("default_database", "default");
 

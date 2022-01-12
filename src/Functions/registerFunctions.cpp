@@ -1,9 +1,5 @@
 #include "config_core.h"
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
-
 #include <Functions/FunctionFactory.h>
 
 
@@ -39,9 +35,6 @@ void registerFunctionsStringArray(FunctionFactory &);
 void registerFunctionsStringSearch(FunctionFactory &);
 void registerFunctionsStringRegexp(FunctionFactory &);
 void registerFunctionsStringSimilarity(FunctionFactory &);
-void registerFunctionsCharsetClassification(FunctionFactory &);
-void registerFunctionsTonalityClassification(FunctionFactory &);
-void registerFunctionsProgrammingClassification(FunctionFactory &);
 void registerFunctionsStringTokenExtractor(FunctionFactory &);
 void registerFunctionsURL(FunctionFactory &);
 void registerFunctionsVisitParam(FunctionFactory &);
@@ -62,10 +55,6 @@ void registerFunctionsSnowflake(FunctionFactory & factory);
 void registerFunctionTid(FunctionFactory & factory);
 void registerFunctionLogTrace(FunctionFactory & factory);
 void registerFunctionsTimeWindow(FunctionFactory &);
-
-#if USE_NLP
-void registerFunctionLanguageDetectUTF8(FunctionFactory &);
-#endif
 
 #if USE_SSL
 void registerFunctionEncrypt(FunctionFactory & factory);
@@ -109,9 +98,6 @@ void registerFunctions()
     registerFunctionsStringSearch(factory);
     registerFunctionsStringRegexp(factory);
     registerFunctionsStringSimilarity(factory);
-    registerFunctionsCharsetClassification(factory);
-    registerFunctionsTonalityClassification(factory);
-    registerFunctionsProgrammingClassification(factory);
     registerFunctionsStringTokenExtractor(factory);
     registerFunctionsURL(factory);
     registerFunctionsVisitParam(factory);
@@ -130,10 +116,6 @@ void registerFunctions()
     registerFunctionValidateNestedArraySizes(factory);
     registerFunctionsSnowflake(factory);
     registerFunctionsTimeWindow(factory);
-
-#if USE_NLP
-    registerFunctionLanguageDetectUTF8(factory);
-#endif
 
 #if USE_SSL
     registerFunctionEncrypt(factory);
