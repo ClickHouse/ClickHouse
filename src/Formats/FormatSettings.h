@@ -200,6 +200,7 @@ struct FormatSettings
     struct
     {
         bool import_nested = false;
+        int64_t row_batch_size = 100'000;
     } orc;
 
     /// For capnProto format we should determine how to
