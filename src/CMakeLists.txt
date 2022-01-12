@@ -582,6 +582,7 @@ if (ENABLE_TESTS AND USE_GTEST)
         clickhouse_parsers
         clickhouse_storages_system
         dbms
+        clickhouse_common_config
         clickhouse_common_zookeeper
         clickhouse_common_config
         string_utils)

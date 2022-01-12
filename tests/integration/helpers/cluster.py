@@ -2278,7 +2278,7 @@ class ClickHouseInstance:
         logging.debug('{} log line(s) matching "{}" appeared in a {:.3f} seconds'.format(repetitions, regexp, wait_duration))
         return wait_duration
 
-    def file_exists(self, path):
+    def path_exists(self, path):
         return self.exec_in_container(
             ["bash", "-c", "echo $(if [ -e '{}' ]; then echo 'yes'; else echo 'no'; fi)".format(path)]) == 'yes\n'
 
@@ -2719,6 +2719,20 @@ class ClickHouseInstance:
     def destroy_dir(self):
         if p.exists(self.path):
             shutil.rmtree(self.path)
+
+    def wait_for_path_exists(self, path, seconds):
+        while seconds > 0:
+            seconds -= 1
+            if self.path_exists(path):
+                return
+            time.sleep(1)
+
+    def get_backuped_s3_objects(self, disk, backup_name):
+        path = f'/var/lib/clickhouse/disks/{disk}/shadow/{backup_name}/store'
+        self.wait_for_path_exists(path, 10)
+        command = ['find', path, '-type', 'f',
+            '-exec', 'grep', '-o', 'r[01]\\{64\\}-file-[[:lower:]]\\{32\\}', '{}', ';']
+        return self.exec_in_container(command).split('\n')
 
 
 class ClickHouseKiller(object):
