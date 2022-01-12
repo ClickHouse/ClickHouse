@@ -6,7 +6,6 @@ RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
 ARG repository="deb https://repo.clickhouse.com/deb/stable/ main/"
 ARG version=21.13.1.*
-ARG gosu_ver=1.10
 
 # set non-empty deb_location_url url to create a docker image
 # from debs created by CI build, for example:
@@ -68,8 +67,14 @@ RUN groupadd -r clickhouse --gid=101 \
                 clickhouse-client=$version \
                 clickhouse-server=$version ; \
        fi \
-    && wget --progress=bar:force:noscroll "https://github.com/tianon/gosu/releases/download/$gosu_ver/gosu-$(dpkg --print-architecture)" -O /bin/gosu \
-    && chmod +x /bin/gosu \
+    && wget --progress=bar:force:noscroll -O /usr/local/bin/su-exec.c https://raw.githubusercontent.com/ncopa/su-exec/master/su-exec.c && \
+        apt-get install -y --no-install-recommends gcc libc-dev && \
+        gcc -Wall \
+         /usr/local/bin/su-exec.c -o/bin/su-exec && \
+        chown root:root /bin/su-exec && \
+        chmod 0755 /bin/su-exec && \
+        rm /usr/local/bin/su-exec.c && \
+        apt-get purge -y --auto-remove gcc libc-dev \
     && clickhouse-local -q 'SELECT * FROM system.build_options' \
     && rm -rf \
         /var/lib/apt/lists/* \
