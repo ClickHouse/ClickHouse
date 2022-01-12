@@ -29,8 +29,7 @@ struct KeeperStorageSnapshot;
 class KeeperStorage
 {
 public:
-    #pragma pack(push, 1)
-    struct Node
+    struct alignas(8) Node
     {
         String data;
         uint64_t acl_id = 0; /// 0 -- no ACL by default
@@ -85,8 +84,6 @@ public:
             return size_bytes;
         }
     };
-    #pragma pack(pop)
-
 
     struct ResponseForSession
     {
