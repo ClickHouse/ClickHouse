@@ -1262,6 +1262,7 @@ void IMergeTreeDataPart::remove() const
         try
         {
             /// Remove each expected file in directory, then remove directory itself.
+            IDisk::RemoveBatchRequest request;
 
     #if !defined(__clang__)
     #    pragma GCC diagnostic push
@@ -1270,18 +1271,19 @@ void IMergeTreeDataPart::remove() const
             for (const auto & [file, _] : checksums.files)
             {
                 if (projection_directories.find(file) == projection_directories.end())
-                    disk->removeSharedFile(fs::path(to) / file, *keep_shared_data);
+                    request.emplace_back(fs::path(to) / file);
             }
     #if !defined(__clang__)
     #    pragma GCC diagnostic pop
     #endif
 
             for (const auto & file : {"checksums.txt", "columns.txt"})
-                disk->removeSharedFile(fs::path(to) / file, *keep_shared_data);
+                request.emplace_back(fs::path(to) / file);
 
-            disk->removeSharedFileIfExists(fs::path(to) / DEFAULT_COMPRESSION_CODEC_FILE_NAME, *keep_shared_data);
-            disk->removeSharedFileIfExists(fs::path(to) / DELETE_ON_DESTROY_MARKER_FILE_NAME, *keep_shared_data);
+            request.emplace_back(fs::path(to) / DEFAULT_COMPRESSION_CODEC_FILE_NAME, true);
+            request.emplace_back(fs::path(to) / DELETE_ON_DESTROY_MARKER_FILE_NAME, true);
 
+            disk->removeSharedFiles(request, *keep_shared_data);
             disk->removeDirectory(to);
         }
         catch (...)
@@ -1315,22 +1317,24 @@ void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_sh
         try
         {
             /// Remove each expected file in directory, then remove directory itself.
+            IDisk::RemoveBatchRequest request;
 
     #if !defined(__clang__)
     #    pragma GCC diagnostic push
     #    pragma GCC diagnostic ignored "-Wunused-variable"
     #endif
             for (const auto & [file, _] : checksums.files)
-                disk->removeSharedFile(to + "/" + file, keep_shared_data);
+                request.emplace_back(to + "/" + file);
     #if !defined(__clang__)
     #    pragma GCC diagnostic pop
     #endif
 
             for (const auto & file : {"checksums.txt", "columns.txt"})
-                disk->removeSharedFile(to + "/" + file, keep_shared_data);
-            disk->removeSharedFileIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME, keep_shared_data);
-            disk->removeSharedFileIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME, keep_shared_data);
+                request.emplace_back(to + "/" + file);
+            request.emplace_back(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME, true);
+            request.emplace_back(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME, true);
 
+            disk->removeSharedFiles(request, keep_shared_data);
             disk->removeSharedRecursive(to, keep_shared_data);
         }
         catch (...)
