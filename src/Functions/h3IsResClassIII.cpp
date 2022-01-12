@@ -58,6 +58,7 @@ public:
                 arguments[0].type->getName(),
                 1,
                 getName());
+        
         const auto & data = column->getData();
 
         auto dst = ColumnVector<UInt8>::create();
