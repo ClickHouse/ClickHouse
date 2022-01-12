@@ -568,7 +568,6 @@ if (ENABLE_TESTS AND USE_GTEST)
         dbms
         clickhouse_common_config
         clickhouse_common_zookeeper
-        clickhouse_common_config
         string_utils)
 
     add_check(unit_tests_dbms)
