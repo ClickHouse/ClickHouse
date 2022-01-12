@@ -22,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -61,9 +62,23 @@ namespace
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * col_hindex = checkAndGetColumn<ColumnUInt64>(arguments[0].column.get());
-        const auto & data_hindex =  col_hindex->getData();
+        if (!col_hindex)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be UInt64.",
+                arguments[0].type->getName(),
+                1,
+                getName());
+        const auto & data_hindex = col_hindex->getData();
 
         const auto * col_resolution = checkAndGetColumn<ColumnUInt8>(arguments[1].column.get());
+        if (!col_resolution)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be UInt8.",
+                arguments[0].type->getName(),
+                1,
+                getName());
         const auto & data_resolution = col_resolution->getData();
 
         auto dst = ColumnVector<UInt64>::create();
@@ -72,14 +87,15 @@ namespace
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-
             if (data_resolution[row] > MAX_H3_RES)
                 throw Exception(
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                     "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is {}",
-                    toString(data_resolution[row]), getName(), toString(MAX_H3_RES));
+                    toString(data_resolution[row]),
+                    getName(),
+                    toString(MAX_H3_RES));
 
-            UInt64  res = cellToCenterChild(data_hindex[row], data_resolution[row]);
+            UInt64 res = cellToCenterChild(data_hindex[row], data_resolution[row]);
 
             dst_data[row] = res;
         }
