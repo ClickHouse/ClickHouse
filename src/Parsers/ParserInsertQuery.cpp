@@ -113,10 +113,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    Pos before_values = pos;
-    String format_str;
-
-    /// VALUES or FROM INFILE or FORMAT or SELECT
+    /// Check if file is a source of data.
     if (s_from_infile.ignore(pos, expected))
     {
         /// Read file name to process it later
@@ -131,17 +128,14 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (!compression_p.parse(pos, compression, expected))
                 return false;
         }
-
-        /// Check if we have FORMAT statement
-        if (s_format.ignore(pos, expected))
-        {
-            if (!name_p.parse(pos, format, expected))
-                return false;
-
-            tryGetIdentifierNameInto(format, format_str);
-        }
     }
-    else if (s_values.ignore(pos, expected))
+
+    Pos before_values = pos;
+    String format_str;
+
+    /// VALUES or FORMAT or SELECT or WITH or WATCH.
+    /// After FROM INFILE we expect FORMAT, SELECT, WITH or nothing.
+    if (!infile && s_values.ignore(pos, expected))
     {
         /// If VALUES is defined in query, everything except setting will be parsed as data
         data = pos->begin;
@@ -169,21 +163,17 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         tryGetIdentifierNameInto(format, format_str);
     }
-    else if (s_watch.ignore(pos, expected))
+    else if (!infile && s_watch.ignore(pos, expected))
     {
         /// If WATCH is defined, return to position before WATCH and parse
         /// rest of query as WATCH query.
         pos = before_values;
         ParserWatchQuery watch_p;
         watch_p.parse(pos, watch, expected);
-
-        /// FORMAT section is expected if we have input() in SELECT part
-        if (s_format.ignore(pos, expected) && !name_p.parse(pos, format, expected))
-            return false;
     }
-    else
+    else if (!infile)
     {
-        /// If all previous conditions were false, query is incorrect
+        /// If all previous conditions were false and it's not FROM INFILE, query is incorrect
         return false;
     }
 
