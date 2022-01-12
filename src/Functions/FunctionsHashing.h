@@ -607,9 +607,14 @@ struct ImplBLAKE3
     static void apply(const char * begin, const size_t size, unsigned char* out_char_data)
     {
         Hasher_shim hasher = new_hasher();
-        update_shim(&hasher, begin, static_cast<uint32_t>(size));
+        auto err_msg = update_shim(&hasher, begin, static_cast<uint32_t>(size));
+        if (err_msg != nullptr) {
+            throw Exception("Function returned error message: " + std::string(err_msg), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            free_char_pointer(err_msg);
+        }
         Hash res = finalize_shim(&hasher);
-        std::memcpy(out_char_data, as_bytes_shim(&res), OUT_LEN);
+        free_hasher(hasher.hasher);
+        std::memcpy(out_char_data, res._0, OUT_LEN);
     }
 };
 #endif
