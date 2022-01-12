@@ -153,11 +153,14 @@ ContextAccess::ContextAccess(const AccessControl & access_control_, const Params
 void ContextAccess::subscribeForChanges(const std::shared_ptr<ContextAccess> &res)
 {
      subscription_for_user_change = access_control->subscribeForChanges(
-         *params.user_id, [res](const UUID &, const AccessEntityPtr & entity)
+         *params.user_id, [weak_ptr = weak_from_this()](const UUID &, const AccessEntityPtr & entity)
      {
+         auto ptr = weak_ptr.lock();
+         if(!ptr)
+             return;
          UserPtr changed_user = entity ? typeid_cast<UserPtr>(entity) : nullptr;
-         std::lock_guard lock{res->mutex};
-         res->setUser(changed_user);
+         std::lock_guard lock{ptr->mutex};
+         ptr->setUser(changed_user);
      });
 }
 
