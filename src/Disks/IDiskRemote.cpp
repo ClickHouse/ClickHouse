@@ -361,6 +361,19 @@ void IDiskRemote::removeSharedFileIfExists(const String & path, bool keep_in_rem
     }
 }
 
+void IDiskRemote::removeSharedFiles(const RemoveBatchRequest & files, bool keep_in_remote_fs)
+{
+    RemoteFSPathKeeperPtr fs_paths_keeper = createFSPathKeeper();
+    for (const auto & file : files)
+    {
+        bool skip = file.if_exists && !metadata_disk->exists(file.path);
+        if (!skip)
+            removeMeta(file.path, fs_paths_keeper);
+    }
+
+    if (!keep_in_remote_fs)
+        removeFromRemoteFS(fs_paths_keeper);
+}
 
 void IDiskRemote::removeSharedRecursive(const String & path, bool keep_in_remote_fs)
 {
