@@ -8,6 +8,7 @@
                <value>SHA224</value>
                <value>SHA256</value>
                <value>halfMD5</value>
+               <value>BLAKE3</value>
           </values>
         </substitution>
         <substitution>
@@ -15,7 +16,6 @@
            <values>
                <value>sipHash64</value>
                <value>sipHash128</value>
-               <value>BLAKE3</value>
            </values>
         </substitution>
         <substitution>
