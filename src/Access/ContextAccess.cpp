@@ -150,7 +150,7 @@ ContextAccess::ContextAccess(const AccessControl & access_control_, const Params
 }
 
 
-void ContextAccess::subscribeForChanges(const std::shared_ptr<ContextAccess> &res)
+void ContextAccess::subscribeForChanges()
 {
      subscription_for_user_change = access_control->subscribeForChanges(
          *params.user_id, [weak_ptr = weak_from_this()](const UUID &, const AccessEntityPtr & entity)
