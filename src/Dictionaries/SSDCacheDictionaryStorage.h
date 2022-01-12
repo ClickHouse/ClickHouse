@@ -1148,10 +1148,7 @@ private:
             if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
             {
                 /// Copy complex key into arena and put in cache
-                size_t key_size = key.size;
-                char * place_for_key = complex_key_arena.alloc(key_size);
-                memcpy(reinterpret_cast<void *>(place_for_key), reinterpret_cast<const void *>(key.data), key_size);
-                KeyType updated_key{place_for_key, key_size};
+                KeyType updated_key = copyStringInArena(complex_key_arena, key);
                 ssd_cache_key.key = updated_key;
             }
 
