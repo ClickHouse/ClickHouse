@@ -87,8 +87,6 @@ namespace
                 case ';':
                 case '"':
                 case '=':
-                case '(':
-                case ')':
                     dest += '\\';
                     break;
             }
@@ -98,6 +96,26 @@ namespace
         return dest;
     }
     
+    auto escapeForLDAPFilter(const String & src)
+    {
+        String dest;
+        dest.reserve(src.size() * 2);
+
+        for (auto ch : src)
+        {
+            switch (ch)
+            {
+                case '(':
+                case ')':
+                    dest += '\\';
+                    break;         
+            }
+            dest += ch;
+        }
+
+        return dest;
+    }
+
     auto replacePlaceholders(const String & src, const std::vector<std::pair<String, String>> & pairs)
     {
         String dest = src;
@@ -321,7 +339,7 @@ void LDAPClient::openConnection()
                 if (user_dn_search_results.size() > 1)
                     throw Exception("Failed to detect user DN: more than one entry in the search results", ErrorCodes::LDAP_ERROR);
 
-                final_user_dn = escapeForLDAP(*user_dn_search_results.begin());
+                final_user_dn = escapeForLDAPFilter(*user_dn_search_results.begin());
             }
 
             break;
