@@ -160,7 +160,7 @@ void ContextAccess::initialize()
          if(!ptr)
              return;
          UserPtr changed_user = entity ? typeid_cast<UserPtr>(entity) : nullptr;
-         std::lock_guard lock{ptr->mutex};
+         std::lock_guard lock2{ptr->mutex};
          ptr->setUser(changed_user);
      });
      setUser(access_control->read<User>(*params.user_id));
