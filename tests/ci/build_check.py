@@ -6,20 +6,23 @@ import json
 import os
 import sys
 import time
-from github import Github
+from typing import List, Optional, Tuple
 
 from env_helper import REPO_COPY, TEMP_PATH, CACHES_PATH, IMAGES_PATH
 from s3_helper import S3Helper
 from pr_info import PRInfo
-from get_robot_token import get_best_robot_token
-from version_helper import get_version_from_repo, update_version_local
+from version_helper import (
+    ClickHouseVersion,
+    get_version_from_repo,
+    update_version_local,
+)
 from ccache_utils import get_ccache_if_not_exists, upload_ccache
-from ci_config import CI_CONFIG
+from ci_config import CI_CONFIG, BuildConfig
 from docker_pull_helper import get_image_with_version
 from tee_popen import TeePopen
 
 
-def get_build_config(build_check_name, build_name):
+def get_build_config(build_check_name: str, build_name: str) -> BuildConfig:
     if build_check_name == "ClickHouse build check (actions)":
         build_config_name = "build_config"
     else:
@@ -28,7 +31,7 @@ def get_build_config(build_check_name, build_name):
     return CI_CONFIG[build_config_name][build_name]
 
 
-def _can_export_binaries(build_config):
+def _can_export_binaries(build_config: BuildConfig) -> bool:
     if build_config["package_type"] != "deb":
         return False
     if build_config["bundled"] != "bundled":
@@ -43,14 +46,14 @@ def _can_export_binaries(build_config):
 
 
 def get_packager_cmd(
-    build_config,
-    packager_path,
-    output_path,
-    build_version,
-    image_version,
-    ccache_path,
-    pr_info,
-):
+    build_config: BuildConfig,
+    packager_path: str,
+    output_path: str,
+    build_version: str,
+    image_version: str,
+    ccache_path: str,
+    pr_info: PRInfo,
+) -> str:
     package_type = build_config["package_type"]
     comp = build_config["compiler"]
     cmd = (
@@ -83,15 +86,18 @@ def get_packager_cmd(
     return cmd
 
 
-def get_image_name(build_config):
+def get_image_name(build_config: BuildConfig) -> str:
     if build_config["package_type"] != "deb":
         return "clickhouse/binary-builder"
     else:
         return "clickhouse/deb-builder"
 
 
-def build_clickhouse(packager_cmd, logs_path, build_output_path):
+def build_clickhouse(
+    packager_cmd: str, logs_path: str, build_output_path: str
+) -> Tuple[str, bool]:
     build_log_path = os.path.join(logs_path, "build_log.log")
+    success = False
     with TeePopen(packager_cmd, build_log_path) as process:
         retcode = process.wait()
         if os.path.exists(build_output_path):
@@ -100,7 +106,8 @@ def build_clickhouse(packager_cmd, logs_path, build_output_path):
             build_results = []
 
         if retcode == 0:
-            if len(build_results) != 0:
+            if len(build_results) > 0:
+                success = True
                 logging.info("Built successfully")
             else:
                 logging.info(
@@ -108,10 +115,12 @@ def build_clickhouse(packager_cmd, logs_path, build_output_path):
                 )
         else:
             logging.info("Build failed")
-    return build_log_path, retcode == 0 and len(build_results) > 0
+    return build_log_path, success
 
 
-def get_build_results_if_exists(s3_helper, s3_prefix):
+def get_build_results_if_exists(
+    s3_helper: S3Helper, s3_prefix: str
+) -> Optional[List[str]]:
     try:
         content = s3_helper.list_prefix(s3_prefix)
         return content
@@ -121,7 +130,13 @@ def get_build_results_if_exists(s3_helper, s3_prefix):
 
 
 def create_json_artifact(
-    temp_path, build_name, log_url, build_urls, build_config, elapsed, success
+    temp_path: str,
+    build_name: str,
+    log_url: str,
+    build_urls: List[str],
+    build_config: BuildConfig,
+    elapsed: int,
+    success: bool,
 ):
     subprocess.check_call(
         f"echo 'BUILD_NAME=build_urls_{build_name}' >> $GITHUB_ENV", shell=True
@@ -150,40 +165,40 @@ def create_json_artifact(
         json.dump(result, build_links)
 
 
-if __name__ == "__main__":
+def get_release_or_pr(
+    pr_info: PRInfo, build_config: BuildConfig, version: ClickHouseVersion
+) -> str:
+    if "release" in pr_info.labels or "release-lts" in pr_info.labels:
+        # for release pull requests we use branch names prefixes, not pr numbers
+        return pr_info.head_ref
+    elif pr_info.number == 0 and build_config["package_type"] != "performance":
+        # for pushes to master - major version, but not for performance builds
+        # they havily relies on a fixed path for build package and nobody going
+        # to deploy them somewhere, so it's ok.
+        return ".".join(version.as_tuple()[:2])
+    # PR number for anything else
+    return str(pr_info.number)
+
+
+def main():
     logging.basicConfig(level=logging.INFO)
-    repo_path = REPO_COPY
-    temp_path = TEMP_PATH
-    caches_path = CACHES_PATH
 
     build_check_name = sys.argv[1]
     build_name = sys.argv[2]
 
     build_config = get_build_config(build_check_name, build_name)
 
-    if not os.path.exists(temp_path):
-        os.makedirs(temp_path)
+    if not os.path.exists(TEMP_PATH):
+        os.makedirs(TEMP_PATH)
 
     pr_info = PRInfo()
 
-    logging.info("Repo copy path %s", repo_path)
+    logging.info("Repo copy path %s", REPO_COPY)
 
-    gh = Github(get_best_robot_token())
     s3_helper = S3Helper("https://s3.amazonaws.com")
 
-    version = get_version_from_repo(repo_path)
-    release_or_pr = None
-    if "release" in pr_info.labels or "release-lts" in pr_info.labels:
-        # for release pull requests we use branch names prefixes, not pr numbers
-        release_or_pr = pr_info.head_ref
-    elif pr_info.number == 0 and build_config["package_type"] != "performance":
-        # for pushes to master - major version, but not for performance builds
-        # they havily relies on a fixed path for build package and nobody going
-        # to deploy them somewhere, so it's ok.
-        release_or_pr = ".".join(version.as_tuple()[:2])
-    else:
-        # PR number for anything else
-        release_or_pr = str(pr_info.number)
+    version = get_version_from_repo(REPO_COPY)
+    release_or_pr = get_release_or_pr(pr_info, build_config, version)
 
     s3_path_prefix = "/".join((release_or_pr, pr_info.sha, build_name))
 
@@ -205,7 +220,7 @@ if __name__ == "__main__":
                     + url.replace("+", "%2B").replace(" ", "%20")
                 )
         create_json_artifact(
-            temp_path,
+            TEMP_PATH,
             build_name,
             log_url,
             build_urls,
@@ -213,7 +228,7 @@ if __name__ == "__main__":
             0,
             len(build_urls) > 0,
         )
-        sys.exit(0)
+        return
 
     image_name = get_image_name(build_config)
     docker_image = get_image_with_version(IMAGES_PATH, image_name)
@@ -225,20 +240,20 @@ if __name__ == "__main__":
     if "release" in pr_info.labels or "release-lts" in pr_info.labels:
         version_type = "stable"
 
-    update_version_local(repo_path, pr_info.sha, version, version_type)
+    update_version_local(REPO_COPY, pr_info.sha, version, version_type)
 
     logging.info("Updated local files with version")
 
     logging.info("Build short name %s", build_name)
 
-    build_output_path = os.path.join(temp_path, build_name)
+    build_output_path = os.path.join(TEMP_PATH, build_name)
     if not os.path.exists(build_output_path):
         os.makedirs(build_output_path)
 
-    ccache_path = os.path.join(caches_path, build_name + "_ccache")
+    ccache_path = os.path.join(CACHES_PATH, build_name + "_ccache")
 
     logging.info("Will try to fetch cache for our build")
-    get_ccache_if_not_exists(ccache_path, s3_helper, pr_info.number, temp_path)
+    get_ccache_if_not_exists(ccache_path, s3_helper, pr_info.number, TEMP_PATH)
 
     if not os.path.exists(ccache_path):
         logging.info("cache was not fetched, will create empty dir")
@@ -247,12 +262,12 @@ if __name__ == "__main__":
     if build_config["package_type"] == "performance" and pr_info.number != 0:
         # because perf tests store some information about git commits
         subprocess.check_call(
-            f"cd {repo_path} && git fetch origin master:master", shell=True
+            f"cd {REPO_COPY} && git fetch origin master:master", shell=True
         )
 
     packager_cmd = get_packager_cmd(
         build_config,
-        os.path.join(repo_path, "docker/packager"),
+        os.path.join(REPO_COPY, "docker/packager"),
         build_output_path,
         version.get_version_string(),
         image_version,
@@ -261,7 +276,7 @@ if __name__ == "__main__":
     )
     logging.info("Going to run packager with %s", packager_cmd)
 
-    build_clickhouse_log = os.path.join(temp_path, "build_log")
+    build_clickhouse_log = os.path.join(TEMP_PATH, "build_log")
     if not os.path.exists(build_clickhouse_log):
         os.makedirs(build_clickhouse_log)
 
@@ -277,7 +292,7 @@ if __name__ == "__main__":
     logging.info("Build finished with %s, log path %s", success, log_path)
 
     logging.info("Will upload cache")
-    upload_ccache(ccache_path, s3_helper, pr_info.number, temp_path)
+    upload_ccache(ccache_path, s3_helper, pr_info.number, TEMP_PATH)
 
     if os.path.exists(log_path):
         log_url = s3_helper.upload_build_file_to_s3(
@@ -300,8 +315,12 @@ if __name__ == "__main__":
     print("::notice ::Log URL: {}".format(log_url))
 
     create_json_artifact(
-        temp_path, build_name, log_url, build_urls, build_config, elapsed, success
+        TEMP_PATH, build_name, log_url, build_urls, build_config, elapsed, success
     )
     # Fail build job if not successeded
     if not success:
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
