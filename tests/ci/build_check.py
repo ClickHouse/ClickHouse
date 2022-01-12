@@ -191,6 +191,8 @@ def upload_master_static_binaries(
         return
     elif build_config["package_type"] != "binary":
         return
+    elif build_config["splitted"] == "splitted":
+        return
     elif pr_info.base_ref != "master":
         return
 
