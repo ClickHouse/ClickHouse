@@ -168,7 +168,7 @@ void deserializeKeeperStorageFromSnapshot(KeeperStorage & storage, const std::st
     auto max_session_id = deserializeSessionAndTimeout(storage, reader);
     LOG_INFO(log, "Sessions and timeouts deserialized");
 
-    storage.session_id_counter = max_session_id;
+    storage.session_id_counter = max_session_id + 1; /// session_id_counter poniter to next slot
     deserializeACLMap(storage, reader);
     LOG_INFO(log, "ACLs deserialized");
 
