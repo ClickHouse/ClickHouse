@@ -37,6 +37,9 @@ void registerFunctionEncodeXMLComponent(FunctionFactory &);
 void registerFunctionDecodeXMLComponent(FunctionFactory &);
 void registerFunctionExtractTextFromHTML(FunctionFactory &);
 void registerFunctionToStringCutToZero(FunctionFactory &);
+void registerFunctionDetectCharset(FunctionFactory &);
+void registerFunctionDetectTonality(FunctionFactory &);
+void registerFunctionDetectProgrammingLanguage(FunctionFactory &);
 
 #if USE_BASE64
 void registerFunctionBase64Encode(FunctionFactory &);
@@ -48,6 +51,7 @@ void registerFunctionTryBase64Decode(FunctionFactory &);
 void registerFunctionStem(FunctionFactory &);
 void registerFunctionSynonyms(FunctionFactory &);
 void registerFunctionLemmatize(FunctionFactory &);
+void registerFunctionsDetectLanguage(FunctionFactory &);
 #endif
 
 #if USE_ICU
@@ -87,6 +91,9 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionDecodeXMLComponent(factory);
     registerFunctionExtractTextFromHTML(factory);
     registerFunctionToStringCutToZero(factory);
+    registerFunctionDetectCharset(factory);
+    registerFunctionDetectTonality(factory);
+    registerFunctionDetectProgrammingLanguage(factory);
 
 #if USE_BASE64
     registerFunctionBase64Encode(factory);
@@ -98,6 +105,7 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionStem(factory);
     registerFunctionSynonyms(factory);
     registerFunctionLemmatize(factory);
+    registerFunctionsDetectLanguage(factory);
 #endif
 
 #if USE_ICU

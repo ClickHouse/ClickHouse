@@ -1,24 +1,21 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
+#include "config_functions.h"
 
 #if USE_NLP
-
-#include <Functions/FunctionStringToString.h>
-#include <Functions/FunctionFactory.h>
-
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionHelpers.h>
 
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsTextClassification.h>
+#include <Interpreters/Context.h>
 
-#include "compact_lang_det.h"
+#include <compact_lang_det.h>
 
 namespace DB
 {
@@ -30,11 +27,12 @@ namespace ErrorCodes
 {
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int ILLEGAL_COLUMN;
+extern const int SUPPORT_IS_DISABLED;
 }
 
-struct LanguageClassificationImpl
+struct FunctionDetectLanguageImpl
 {
-    static std::string_view codeISO(std::string_view code_string)
+    static ALWAYS_INLINE inline std::string_view codeISO(std::string_view code_string)
     {
         if (code_string.ends_with("-Latn"))
             code_string.remove_suffix(code_string.size() - 5);
@@ -92,14 +90,9 @@ struct LanguageClassificationImpl
             res_offsets[i] = res_offset;
         }
     }
-
-    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
-    {
-        throw Exception("Cannot apply function detectProgrammingLanguage to fixed string.", ErrorCodes::ILLEGAL_COLUMN);
-    }
 };
 
-class LanguageClassificationMixedDetect : public IFunction
+class FunctionDetectLanguageMixed : public IFunction
 {
 public:
     static constexpr auto name = "detectLanguageMixed";
@@ -107,7 +100,14 @@ public:
     /// Number of top results
     static constexpr auto top_N = 3;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<LanguageClassificationMixedDetect>(); }
+    static FunctionPtr create(ContextPtr context)
+    {
+        if (!context->getSettingsRef().allow_experimental_nlp_functions)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Natural language processing function '{}' is experimental. Set `allow_experimental_nlp_functions` setting to enable it", name);
+
+        return std::make_shared<FunctionDetectLanguageMixed>();
+    }
 
     String getName() const override { return name; }
 
@@ -120,8 +120,9 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!isString(arguments[0]))
-            throw Exception(
-                "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}. Must be String.",
+                arguments[0]->getName(), getName());
 
         return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeFloat32>());
     }
@@ -169,7 +170,7 @@ public:
 
             for (size_t j = 0; j < top_N; ++j)
             {
-                auto res_str = LanguageClassificationImpl::codeISO(LanguageCode(result_lang_top3[j]));
+                auto res_str = FunctionDetectLanguageImpl::codeISO(LanguageCode(result_lang_top3[j]));
                 Float32 res_float = static_cast<Float32>(pc[j]) / 100;
 
                 keys_data->insertData(res_str.data(), res_str.size());
@@ -188,18 +189,18 @@ public:
     }
 };
 
-struct NameLanguageUTF8Detect
+struct NameDetectLanguage
 {
     static constexpr auto name = "detectLanguage";
 };
 
 
-using FunctionLanguageUTF8Detect = FunctionStringToString<LanguageClassificationImpl, NameLanguageUTF8Detect, false>;
+using FunctionDetectLanguage = FunctionTextClassificationString<FunctionDetectLanguageImpl, NameDetectLanguage>;
 
-void registerFunctionLanguageDetectUTF8(FunctionFactory & factory)
+void registerFunctionsDetectLanguage(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionLanguageUTF8Detect>();
-    factory.registerFunction<LanguageClassificationMixedDetect>();
+    factory.registerFunction<FunctionDetectLanguage>();
+    factory.registerFunction<FunctionDetectLanguageMixed>();
 }
 
 }

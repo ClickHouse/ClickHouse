@@ -1,6 +1,7 @@
 #include <Common/FrequencyHolder.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionStringToString.h>
+#include <Functions/FunctionsTextClassification.h>
 
 #include <unordered_map>
 #include <string_view>
@@ -8,18 +9,13 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_COLUMN;
-}
-
 /**
   * Determine the programming language from the source code.
   * We calculate all the unigrams and bigrams of commands in the source code.
   * Then using a marked-up dictionary with weights of unigrams and bigrams of commands for various programming languages
   * Find the biggest weight of the programming language and return it
   */
-struct ProgrammingClassificationImpl
+struct FunctionDetectProgrammingLanguageImpl
 {
     /// Calculate total weight
     static ALWAYS_INLINE inline Float64 stateMachine(
@@ -32,9 +28,7 @@ struct ProgrammingClassificationImpl
             /// Try to find each n-gram in dictionary
             const auto * it = standard.find(el.first);
             if (it != standard.end())
-            {
                 res += el.second * it->getMapped();
-            }
         }
         return res;
     }
@@ -59,42 +53,32 @@ struct ProgrammingClassificationImpl
             const size_t str_len = offsets[i] - offsets[i - 1] - 1;
 
             std::unordered_map<String, Float64> data_freq;
-
             String prev_command;
             String command;
+
             /// Select all commands from the string
-            for (size_t ind = 0; ind < str_len;)
+            for (size_t ind = 0; ind < str_len; ++ind)
             {
                 /// Assume that all commands are split by spaces
-                if (!isspace(str[ind]))
+                if (isWhitespaceASCII(str[ind]))
+                    continue;
+
+                while (ind < str_len && !isWhitespaceASCII(str[ind]))
                 {
                     command.push_back(str[ind]);
                     ++ind;
+                }
 
-                    while ((ind < str_len) && (!isspace(str[ind])))
-                    {
-                        command.push_back(str[ind]);
-                        ++ind;
-                    }
-                    if (prev_command.empty())
-                    {
-                        prev_command = command;
-                    }
-                    else
-                    {
-                        data_freq[prev_command + command] += 1;
-                        data_freq[prev_command] += 1;
-                        prev_command = command;
-                    }
-                    command = "";
-                }
-                else
-                {
-                    ++ind;
-                }
+                /// We add both unigrams and bigrams to later search for them in the dictionary
+                if (!prev_command.empty())
+                    data_freq[prev_command + command] += 1;
+
+                data_freq[command] += 1;
+                command.swap(prev_command);
+                command.clear();
             }
 
-            String res;
+            std::string_view res;
             Float64 max_result = 0;
             /// Iterate over all programming languages ​​and find the language with the highest weight
             for (const auto & item : programming_freq)
@@ -119,24 +103,19 @@ struct ProgrammingClassificationImpl
             res_offsets[i] = res_offset;
         }
     }
-
-    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
-    {
-        throw Exception("Cannot apply function detectProgrammingLanguage to fixed string.", ErrorCodes::ILLEGAL_COLUMN);
-    }
 };
 
-struct NameGetProgramming
+struct NameDetectProgrammingLanguage
 {
     static constexpr auto name = "detectProgrammingLanguage";
 };
 
 
-using FunctionGetProgramming = FunctionStringToString<ProgrammingClassificationImpl, NameGetProgramming, false>;
+using FunctionDetectProgrammingLanguage = FunctionTextClassificationString<FunctionDetectProgrammingLanguageImpl, NameDetectProgrammingLanguage>;
 
-void registerFunctionsProgrammingClassification(FunctionFactory & factory)
+void registerFunctionDetectProgrammingLanguage(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionGetProgramming>();
+    factory.registerFunction<FunctionDetectProgrammingLanguage>();
 }
 
 }
