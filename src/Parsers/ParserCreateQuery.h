@@ -389,6 +389,10 @@ protected:
 
 class ParserTableOverrideDeclaration : public IParserBase
 {
+public:
+    const bool is_standalone;
+    ParserTableOverrideDeclaration(bool is_standalone_ = true) : is_standalone(is_standalone_) { }
+
 protected:
     const char * getName() const override { return "table override declaration"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
