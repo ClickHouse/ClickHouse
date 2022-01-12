@@ -80,6 +80,9 @@ static ColumnWithTypeAndName readColumnWithNumericData(std::shared_ptr<arrow::Ch
     for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
         std::shared_ptr<arrow::Array> chunk = arrow_column->chunk(chunk_i);
+        if (chunk->length() == 0)
+            continue;
+
         /// buffers[0] is a null bitmap and buffers[1] are actual values
         std::shared_ptr<arrow::Buffer> buffer = chunk->data()->buffers[1];
 
@@ -146,6 +149,9 @@ static ColumnWithTypeAndName readColumnWithBooleanData(std::shared_ptr<arrow::Ch
     for (size_t chunk_i = 0, num_chunks = static_cast<size_t>(arrow_column->num_chunks()); chunk_i < num_chunks; ++chunk_i)
     {
         arrow::BooleanArray & chunk = dynamic_cast<arrow::BooleanArray &>(*(arrow_column->chunk(chunk_i)));
+        if (chunk.length() == 0)
+            continue;
+
         /// buffers[0] is a null bitmap and buffers[1] are actual values
         std::shared_ptr<arrow::Buffer> buffer = chunk.data()->buffers[1];
 
