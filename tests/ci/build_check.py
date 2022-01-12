@@ -191,7 +191,7 @@ def upload_master_static_binaries(
         return
     elif build_config["package_type"] != "binary":
         return
-    elif pr_info.base_ref == "master":
+    elif pr_info.base_ref != "master":
         return
 
     s3_path = "/".join(
