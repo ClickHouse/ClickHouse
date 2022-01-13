@@ -160,7 +160,7 @@ void LDAPClient::diag(const int rc, String text)
     }
 }
 
-void LDAPClient::openConnection()
+bool LDAPClient::openConnection()
 {
     std::scoped_lock lock(ldap_global_mutex);
 
@@ -306,7 +306,10 @@ void LDAPClient::openConnection()
             cred.bv_val = const_cast<char *>(params.password.c_str());
             cred.bv_len = params.password.size();
 
-            diag(ldap_sasl_bind_s(handle, final_bind_dn.c_str(), LDAP_SASL_SIMPLE, &cred, nullptr, nullptr, nullptr));
+            int rc = ldap_sasl_bind_s(handle, final_bind_dn.c_str(), LDAP_SASL_SIMPLE, &cred, nullptr, nullptr, nullptr);
+            if (rc == LDAP_INVALID_CREDENTIALS)
+                return false;
+            diag(rc);
 
             // Once bound, run the user DN search query and update the default value, if asked.
             if (params.user_dn_detection)
@@ -322,7 +325,7 @@ void LDAPClient::openConnection()
                 final_user_dn = *user_dn_search_results.begin();
             }
 
-            break;
+            return true;
         }
 
         default:
@@ -541,8 +544,9 @@ bool LDAPSimpleAuthClient::authenticate(const RoleSearchParamsList * role_search
 
     SCOPE_EXIT({ closeConnection(); });
 
-    // Will throw on any error, including invalid credentials.
-    openConnection();
+    // Will return false on invalid credentials, will throw on any other error.
+    if (!openConnection())
+        return false;
 
     // While connected, run search queries and save the results, if asked.
     if (role_search_params)
@@ -574,7 +578,7 @@ void LDAPClient::diag(const int, String)
     throw Exception("ClickHouse was built without LDAP support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
 }
 
-void LDAPClient::openConnection()
+bool LDAPClient::openConnection()
 {
     throw Exception("ClickHouse was built without LDAP support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
 }
