@@ -1247,7 +1247,10 @@ public:
                     const auto converted_type = std::make_shared<DataTypeFloat64>();
                     ColumnPtr c0_converted = castColumn(col_with_type_and_name_left, converted_type);
                     ColumnPtr c1_converted = castColumn(col_with_type_and_name_right, converted_type);
-                    return executeGenericIdenticalTypes(c0_converted.get(), c1_converted.get());
+
+                    auto new_arguments
+                        = ColumnsWithTypeAndName{{c0_converted, converted_type, "left"}, {c1_converted, converted_type, "right"}};
+                    return executeImpl(new_arguments, result_type, input_rows_count);
                 }
                 return executeDecimal(col_with_type_and_name_left, col_with_type_and_name_right);
             }
