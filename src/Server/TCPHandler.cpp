@@ -325,7 +325,7 @@ void TCPHandler::runImpl()
                 if (state.is_cancelled)
                     return std::nullopt;
 
-                sendMergeTreeReadTaskRequstAssumeLocked(std::move(request));
+                sendMergeTreeReadTaskRequestAssumeLocked(std::move(request));
                 return receivePartitionMergeTreeReadTaskResponseAssumeLocked();
             });
 
@@ -805,7 +805,7 @@ void TCPHandler::sendReadTaskRequestAssumeLocked()
 }
 
 
-void TCPHandler::sendMergeTreeReadTaskRequstAssumeLocked(PartitionReadRequest request)
+void TCPHandler::sendMergeTreeReadTaskRequestAssumeLocked(PartitionReadRequest request)
 {
     writeVarUInt(Protocol::Server::MergeTreeReadTaskRequest, *out);
     request.serialize(*out);

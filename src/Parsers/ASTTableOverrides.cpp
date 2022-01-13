@@ -31,13 +31,19 @@ void ASTTableOverride::formatImpl(const FormatSettings & settings_, FormatState 
     String hl_keyword = settings.hilite ? hilite_keyword : "";
     String hl_none = settings.hilite ? hilite_none : "";
 
-    settings.ostr << hl_keyword << "TABLE OVERRIDE " << hl_none;
-    ASTIdentifier(table_name).formatImpl(settings, state, frame);
+    if (is_standalone)
+    {
+        settings.ostr << hl_keyword << "TABLE OVERRIDE " << hl_none;
+        ASTIdentifier(table_name).formatImpl(settings, state, frame);
+    }
     if (!columns && (!storage || storage->children.empty()))
         return;
     auto override_frame = frame;
-    ++override_frame.indent;
-    settings.ostr << nl_or_ws << '(' << nl_or_nothing;
+    if (is_standalone)
+    {
+        ++override_frame.indent;
+        settings.ostr << nl_or_ws << '(' << nl_or_nothing;
+    }
     String indent_str = settings.one_line ? "" : String(4 * override_frame.indent, ' ');
     size_t override_elems = 0;
     if (columns)
@@ -68,7 +74,8 @@ void ASTTableOverride::formatImpl(const FormatSettings & settings_, FormatState 
         format_storage_elem(storage->ttl_table, "TTL");
     }
 
-    settings.ostr << nl_or_nothing << ')';
+    if (is_standalone)
+        settings.ostr << nl_or_nothing << ')';
 }
 
 ASTPtr ASTTableOverrideList::clone() const
