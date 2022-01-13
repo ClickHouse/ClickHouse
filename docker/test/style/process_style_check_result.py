@@ -23,8 +23,8 @@ def process_result(result_folder):
         test_results.append(("Style check", "OK"))
 
     typos_log_path = "{}/typos_output.txt".format(result_folder)
-    if not os.path.exists(style_log_path):
-        logging.info("No typos check log on path %s", style_log_path)
+    if not os.path.exists(typos_log_path):
+        logging.info("No typos check log on path %s", typos_log_path)
         return "exception", "No typos check log", []
     elif os.stat(typos_log_path).st_size != 0:
         description += "Typos check failed. "
@@ -34,8 +34,8 @@ def process_result(result_folder):
         test_results.append(("Typos check", "OK"))
 
     whitespaces_log_path = "{}/whitespaces_output.txt".format(result_folder)
-    if not os.path.exists(style_log_path):
-        logging.info("No whitespaces check log on path %s", style_log_path)
+    if not os.path.exists(whitespaces_log_path):
+        logging.info("No whitespaces check log on path %s", whitespaces_log_path)
         return "exception", "No whitespaces check log", []
     elif os.stat(whitespaces_log_path).st_size != 0:
         description += "Whitespaces check failed. "
