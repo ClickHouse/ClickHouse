@@ -1,6 +1,5 @@
 SELECT count()
 FROM t_02156_merge1
-PREWHERE k = 1
 WHERE (k = 1) AND notEmpty(v)
 2
 SELECT count()
