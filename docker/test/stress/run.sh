@@ -146,6 +146,7 @@ handle SIGUSR2 nostop noprint pass
 handle SIG$RTMIN nostop noprint pass
 info signals
 continue
+gcore
 backtrace full
 info locals
 info registers
@@ -263,3 +264,10 @@ done
 # Write check result into check_status.tsv
 clickhouse-local --structure "test String, res String" -q "SELECT 'failure', test FROM table WHERE res != 'OK' order by (lower(test) like '%hung%') LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
+
+# Core dumps (see gcore)
+# Default filename is 'core.PROCESS_ID'
+for core in core.*; do
+    pigz $core
+    mv $core.gz /output/
+done
