@@ -96,7 +96,7 @@ namespace
         return dest;
     }
     
-    auto escapeForLDAPFilter(const String & src)
+    auto escapeForFilter(const String & src)
     {
         String dest;
         dest.reserve(src.size() * 2);
