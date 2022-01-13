@@ -1,34 +1,69 @@
 #!/usr/bin/env python3
 
-import requests
 import argparse
-import jwt
 import sys
 import json
 import time
 from collections import namedtuple
+
+import jwt
+import requests
 import boto3
+from botocore.exceptions import ClientError
 
 
 def get_dead_runners_in_ec2(runners):
     ids = {
-        runner.name: runner for runner in runners if runner.offline and not runner.busy
+        runner.name: runner
+        for runner in runners
+        # Only `i-deadbead123` are valid names for an instance ID
+        if runner.offline and not runner.busy and runner.name.startswith("i-")
     }
+    result_to_delete = [
+        runner
+        for runner in runners
+        if not ids.get(runner.name) and runner.offline and not runner.busy
+    ]
     if not ids:
         return []
 
     client = boto3.client("ec2")
 
-    print("Checking ids", list(ids.keys()))
-    instances_statuses = client.describe_instance_status(InstanceIds=list(ids.keys()))
+    i = 0
+    inc = 100
+
+    print("Checking ids", ids.keys())
+    instances_statuses = []
+    while i < len(ids.keys()):
+        try:
+            instances_statuses.append(
+                client.describe_instance_status(
+                    InstanceIds=list(ids.keys())[i : i + inc]
+                )
+            )
+            i += inc
+        except ClientError as e:
+            # The list of non-existent instances is in the message
+            message = e.response["Error"]["Message"]
+            if message.startswith("The instance IDs '") and message.endswith(
+                "' do not exist"
+            ):
+                non_existent = message[18:-14].split(", ")
+                for n in non_existent:
+                    result_to_delete.append(ids.pop(n))
+            else:
+                raise
+
     found_instances = set([])
     print("Response", instances_statuses)
-    for instance_status in instances_statuses["InstanceStatuses"]:
-        if instance_status["InstanceState"]["Name"] in ("pending", "running"):
-            found_instances.add(instance_status["InstanceId"])
+    for instances_status in instances_statuses:
+        for instance_status in instances_status["InstanceStatuses"]:
+            if instance_status["InstanceState"]["Name"] in ("pending", "running"):
+                found_instances.add(instance_status["InstanceId"])
 
     print("Found instances", found_instances)
-    result_to_delete = []
+    for runner in result_to_delete:
+        print("Instance", runner.name, "is not alive, going to remove it")
     for instance_id, runner in ids.items():
         if instance_id not in found_instances:
             print("Instance", instance_id, "is not alive, going to remove it")
