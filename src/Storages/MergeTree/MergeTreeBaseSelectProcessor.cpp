@@ -52,7 +52,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     for (auto it = virt_column_names.rbegin(); it != virt_column_names.rend(); ++it)
     {
         // Do not remove _is_deleted from virtual columns, since it is going to be added after.
-        if (*it != "_is_deleted" && header_without_virtual_columns.has(*it))
+//        if (*it != "_is_deleted" && header_without_virtual_columns.has(*it))
             header_without_virtual_columns.erase(*it);
     }
 
@@ -178,31 +178,11 @@ Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
         read_result.columns.clear();
 
     auto sample_block = task->range_reader.getSampleBlock();
-    DUMP(sample_block, read_result.is_deleted, storage.getVirtuals());
     if (read_result.num_rows != 0 && sample_block.columns() != read_result.columns.size())
         throw Exception("Inconsistent number of columns got from MergeTreeRangeReader. "
                         "Have " + toString(sample_block.columns()) + " in sample block "
                         "and " + toString(read_result.columns.size()) + " columns in list", ErrorCodes::LOGICAL_ERROR);
 
-    const auto & virtuals = storage.getVirtuals();
-    auto is_deleted_virtual_col = virtuals.tryGetByName("_is_deleted");
-    if (read_result.is_deleted)
-    {
-        DUMP("inserting _is_deleted column");
-        {
-            sample_block.insert(ColumnWithTypeAndName(read_result.is_deleted, is_deleted_virtual_col->type, is_deleted_virtual_col->name));
-            read_result.columns.push_back(read_result.is_deleted);
-        }
-    }
-    else
-    {
-        DUMP("faking _is_deleted column");
-        sample_block.insert(ColumnWithTypeAndName(
-                is_deleted_virtual_col->type->createColumn(),
-                is_deleted_virtual_col->type,
-                is_deleted_virtual_col->name));
-    }
-    DUMP("after inserting new col:", sample_block);
     /// TODO: check columns have the same types as in header.
 
     UInt64 num_filtered_rows = read_result.numReadRows() - read_result.num_rows;

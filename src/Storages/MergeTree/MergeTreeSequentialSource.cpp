@@ -82,6 +82,7 @@ try
 
         if (rows_read)
         {
+            const auto read_range = std::make_pair(current_row, current_row + rows_read);
             current_row += rows_read;
             current_mark += (rows_to_read == rows_read);
 
@@ -94,6 +95,18 @@ try
             }
 
             reader->performRequiredConversions(columns);
+
+            // Prepare deleted rows filter
+            const auto & deleted_rows = data_part->getDeletedMask().getDeletedRows();
+            const auto deleted_rows_filter = IColumn::Filter(deleted_rows.getData().begin() + read_range.first, deleted_rows.getData().begin() + read_range.second);
+
+            // Filter only if some items were deleted
+            if (auto num_deleted_rows = std::count(deleted_rows_filter.begin(), deleted_rows_filter.end(), 1))
+            {
+                const auto remaining_rows = deleted_rows_filter.size() - num_deleted_rows;
+                for (auto & col : columns)
+                    col = col->filter(deleted_rows_filter, remaining_rows);
+            }
 
             /// Reorder columns and fill result block.
             size_t num_columns = sample.size();
