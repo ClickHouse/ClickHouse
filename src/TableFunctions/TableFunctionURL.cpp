@@ -51,15 +51,10 @@ void TableFunctionURL::parseArguments(const ASTPtr & ast_function, ContextPtr co
 
         filename = configuration.url;
         format = configuration.format;
+        if (format == "auto")
+            format = FormatFactory::instance().getFormatFromFileName(filename, true);
         structure = configuration.structure;
         compression_method = configuration.compression_method;
-
-        if (format == "auto")
-        {
-            format = FormatFactory::instance().getFormatFromFileName(configuration.url);
-            if (format.empty())
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot determine the file format by it's extension, you should provide the format manually");
-        }
     }
     else
     {

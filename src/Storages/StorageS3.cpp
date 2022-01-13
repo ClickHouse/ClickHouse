@@ -687,9 +687,9 @@ StorageS3Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPt
     }
     else
     {
-        if (engine_args.size() < 2 || engine_args.size() > 5)
+        if (engine_args.size() < 1 || engine_args.size() > 5)
             throw Exception(
-                "Storage S3 requires 2 to 5 arguments: url, [access_key_id, secret_access_key], name of used format and [compression_method].",
+                "Storage S3 requires 1 to 5 arguments: url, [access_key_id, secret_access_key], name of used format and [compression_method].",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (auto & engine_arg : engine_args)
@@ -707,12 +707,15 @@ StorageS3Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPt
             configuration.compression_method = engine_args.back()->as<ASTLiteral &>().value.safeGet<String>();
             configuration.format = engine_args[engine_args.size() - 2]->as<ASTLiteral &>().value.safeGet<String>();
         }
-        else
+        else if (engine_args.size() != 1)
         {
             configuration.compression_method = "auto";
             configuration.format = engine_args.back()->as<ASTLiteral &>().value.safeGet<String>();
         }
     }
+
+    if (configuration.format == "auto")
+        configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.url, true);
 
     return configuration;
 }
