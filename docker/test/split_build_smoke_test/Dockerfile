@@ -1,4 +1,4 @@
-# rebuild in #33609
+# rebuild in #33610
 # docker build -t clickhouse/split-build-smoke-test .
 ARG FROM_TAG=latest
 FROM clickhouse/binary-builder:$FROM_TAG

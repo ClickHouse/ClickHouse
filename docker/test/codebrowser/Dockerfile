@@ -1,4 +1,4 @@
-# rebuild in #33609
+# rebuild in #33610
 # docker build --network=host -t clickhouse/codebrowser .
 # docker run --volume=path_to_repo:/repo_folder --volume=path_to_result:/test_output clickhouse/codebrowser
 ARG FROM_TAG=latest
