@@ -58,7 +58,7 @@ private:
     virtual void writePrefix() override;
     virtual void writeSuffix() override;
 
-    void createFileWriter();Z
+    void createFileWriter();
 
     FormatSettings settings;
     AvroSerializer serializer;
