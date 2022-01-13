@@ -168,10 +168,10 @@ def main():
     args = parse_args()
     push = not args.no_push_images
     if push:
-        subprocess.check_output(
-            "docker login --username 'robotclickhouse' --password '{}'".format(
-                get_parameter_from_ssm("dockerhub_robot_password")
-            ),
+        subprocess.check_output(  # pylint: disable=unexpected-keyword-arg
+            "docker login --username 'robotclickhouse' --password-stdin",
+            input=get_parameter_from_ssm("dockerhub_robot_password"),
+            encoding="utf-8",
             shell=True,
         )
 
