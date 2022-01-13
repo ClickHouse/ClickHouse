@@ -1,3 +1,4 @@
+# rebuild in #33609
 # docker build -t clickhouse/fuzzer .
 ARG FROM_TAG=latest
 FROM clickhouse/test-base:$FROM_TAG
