@@ -41,6 +41,7 @@ class PRInfo:
                 github_event = {'commits': 1, 'after': 'HEAD', 'ref': None}
         self.event = github_event
         self.changed_files = set([])
+        self.body = ""
         ref = github_event.get("ref", "refs/head/master")
         if ref.startswith('refs/heads/'):
             ref = ref[11:]
@@ -70,6 +71,7 @@ class PRInfo:
             self.base_name = github_event['pull_request']['base']['repo']['full_name']
             self.head_ref = github_event['pull_request']['head']['ref']
             self.head_name = github_event['pull_request']['head']['repo']['full_name']
+            self.body = github_event['pull_request']['body']
 
             if labels_from_api:
                 response = requests.get(f"https://api.github.com/repos/{GITHUB_REPOSITORY}/issues/{self.number}/labels")

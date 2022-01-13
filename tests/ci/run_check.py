@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import sys
 import logging
+import re
 from github import Github
 
 from env_helper import GITHUB_RUN_ID, GITHUB_REPOSITORY, GITHUB_SERVER_URL
@@ -123,6 +124,85 @@ def should_run_checks_for_pr(pr_info):
     return True, "No special conditions apply"
 
 
+def check_pr_description(pr_info):
+    description = pr_info.body
+
+    lines = [
+        line
+        for line in map(
+            lambda x: x.strip(), description.split("\n") if description else []
+        )
+    ]
+    lines = [re.sub(r"\s+", " ", l) for l in lines]
+
+    category = ""
+    entry = ""
+
+    i = 0
+    while i < len(lines):
+        if re.match(r"(?i)^[>*_ ]*change\s*log\s*category", lines[i]):
+            i += 1
+            if i >= len(lines):
+                break
+            # Can have one empty line between header and the category
+            # itself. Filter it out.
+            if not lines[i]:
+                i += 1
+                if i >= len(lines):
+                    break
+            category = re.sub(r"^[-*\s]*", "", lines[i])
+            i += 1
+
+            # Should not have more than one category. Require empty line
+            # after the first found category.
+            if i >= len(lines):
+                break
+            if lines[i]:
+                second_category = re.sub(r"^[-*\s]*", "", lines[i])
+                result_status = (
+                    "More than one changelog category specified: '"
+                    + category
+                    + "', '"
+                    + second_category
+                    + "'"
+                )
+                return result_status[:140]
+
+        elif re.match(
+            r"(?i)^[>*_ ]*(short\s*description|change\s*log\s*entry)", lines[i]
+        ):
+            i += 1
+            # Can have one empty line between header and the entry itself.
+            # Filter it out.
+            if i < len(lines) and not lines[i]:
+                i += 1
+            # All following lines until empty one are the changelog entry.
+            entry_lines = []
+            while i < len(lines) and lines[i]:
+                entry_lines.append(lines[i])
+                i += 1
+            entry = " ".join(entry_lines)
+            # Don't accept changelog entries like '...'.
+            entry = re.sub(r"[#>*_.\- ]", "", entry)
+        else:
+            i += 1
+
+    if not category:
+        return "Changelog category is empty"
+
+    # Filter out the PR categories that are not for changelog.
+    if re.match(
+        r"(?i)doc|((non|in|not|un)[-\s]*significant)|(not[ ]*for[ ]*changelog)",
+        category,
+    ):
+        return ""
+
+    if not entry:
+        return "Changelog entry required for category '{}'".format(category)
+
+    return ""
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
@@ -130,6 +210,22 @@ if __name__ == "__main__":
     can_run, description = should_run_checks_for_pr(pr_info)
     gh = Github(get_best_robot_token())
     commit = get_commit(gh, pr_info.sha)
+
+    description_report = check_pr_description(pr_info)[:139]
+    if description_report:
+        print("::notice ::Cannot run, description does not match the template")
+        url = (
+            f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/"
+            "blob/master/.github/PULL_REQUEST_TEMPLATE.md?plain=1"
+        )
+        commit.create_status(
+            context=NAME,
+            description=description_report,
+            state="failure",
+            target_url=url,
+        )
+        sys.exit(1)
+
     url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID}"
     if not can_run:
         print("::notice ::Cannot run")
