@@ -53,6 +53,7 @@ bool inside_main=true;
 TEST(TestSelect, TestFilter)
 {
     dbms::SerializedSchemaBuilder schema_builder;
+    // sorted by key
     auto* schema = schema_builder
                         .column("sepal_length", "FP64")
                         .column("sepal_width", "FP64")
@@ -61,15 +62,18 @@ TEST(TestSelect, TestFilter)
                         .column("type", "I64").column("type_string", "String")
                         .build();
     dbms::SerializedPlanBuilder plan_builder;
+    // sepal_length * 0.8
     auto * mul_exp = dbms::scalarFunction(dbms::MULTIPLY,
-                                             {dbms::selection(3),
+                                             {dbms::selection(2),
                                               dbms::literal(0.8)});
+    // sepal_length * 0.8 < 4.0
     auto * less_exp = dbms::scalarFunction(dbms::LESS_THAN, {
                                                            mul_exp,
-                                                           dbms::literal(5.0)
+                                                           dbms::literal(4.0)
                                                                                });
-    auto * type_0 = dbms::scalarFunction(dbms::EQUAL_TO, {dbms::selection(6),
-                                                          dbms::literal("类型0")});
+    // type_string = '类型1'
+    auto * type_0 = dbms::scalarFunction(dbms::EQUAL_TO, {dbms::selection(5),
+                                                          dbms::literal("类型1")});
 
     auto * filter = dbms::scalarFunction(dbms::AND, {less_exp, type_0});
     auto plan = plan_builder
@@ -88,7 +92,7 @@ TEST(TestSelect, TestFilter)
     {
         std::cout << "fetch batch" << std::endl;
         local_engine::SparkRowInfoPtr spark_row_info = local_executor.next();
-        ASSERT_EQ(spark_row_info->getNumRows(), 50);
+        ASSERT_EQ(spark_row_info->getNumRows(), 1);
         local_engine::SparkColumnToCHColumn converter;
         auto block = converter.convertCHColumnToSparkRow(*spark_row_info, local_executor.getHeader());
         ASSERT_EQ(spark_row_info->getNumRows(), block->rows());
@@ -98,6 +102,7 @@ TEST(TestSelect, TestFilter)
 TEST(TestSelect, TestAgg)
 {
     dbms::SerializedSchemaBuilder schema_builder;
+    // sorted by key
     auto* schema = schema_builder
                         .column("sepal_length", "FP64")
                         .column("sepal_width", "FP64")
@@ -107,16 +112,16 @@ TEST(TestSelect, TestAgg)
                         .build();
     dbms::SerializedPlanBuilder plan_builder;
     auto * mul_exp = dbms::scalarFunction(dbms::MULTIPLY,
-                                          {dbms::selection(3),
+                                          {dbms::selection(2),
                                            dbms::literal(0.8)});
     auto * less_exp = dbms::scalarFunction(dbms::LESS_THAN, {
                                                                 mul_exp,
-                                                                dbms::literal(5.0)
+                                                                dbms::literal(4.0)
                                                             });
     auto * mul_exp2 = dbms::scalarFunction(dbms::MULTIPLY,
-                                          {dbms::selection(3),
+                                          {dbms::selection(2),
                                            dbms::literal(1.1)});
-    auto * measure = dbms::measureFunction(dbms::SUM, {dbms::selection(3)});
+    auto * measure = dbms::measureFunction(dbms::SUM, {dbms::selection(2)});
     auto plan = plan_builder
                     .registerSupportedFunctions()
                     .aggregate({}, {measure})
@@ -141,7 +146,7 @@ TEST(TestSelect, TestAgg)
         ASSERT_EQ(spark_row_info->getNumRows(), block->rows());
         auto reader = SparkRowReader(spark_row_info->getNumCols());
         reader.pointTo(reinterpret_cast<int64_t>(spark_row_info->getBufferAddress() + spark_row_info->getOffsets()[1]), spark_row_info->getLengths()[0]);
-        std::cout << "result: " << reader.getDouble(0) << std::endl;
+        ASSERT_EQ(reader.getDouble(0), 103.2);
     }
 }
 

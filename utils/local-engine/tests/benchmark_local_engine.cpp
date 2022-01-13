@@ -73,7 +73,8 @@ static void BM_SimpleAggregate(benchmark::State& state) {
                           //                      .column("l_comment", "String")
                           .build();
         dbms::SerializedPlanBuilder plan_builder;
-        auto * measure = dbms::measureFunction(dbms::SUM, {dbms::selection(5)});
+        // sum(l_quantity)
+        auto * measure = dbms::measureFunction(dbms::SUM, {dbms::selection(6)});
         auto plan = plan_builder.registerSupportedFunctions().aggregate({}, {measure}).read("/home/kyligence/Documents/test-dataset/intel-gazelle-test-"+std::to_string(state.range(0))+".snappy.parquet", std::move(schema)).build();
         dbms::SerializedPlanParser parser(SerializedPlanParser::global_context);
         auto query_plan = parser.parse(std::move(plan));
@@ -97,9 +98,9 @@ static void BM_TPCH_Q6(benchmark::State& state) {
 //                          .column("l_partkey", "I64")
 //                          .column("l_suppkey", "I64")
 //                          .column("l_linenumber", "I32")
-                          .column("l_quantity", "FP64")
-                          .column("l_extendedprice", "FP64")
                           .column("l_discount", "FP64")
+                          .column("l_extendedprice", "FP64")
+                          .column("l_quantity", "FP64")
 //                          .column("l_tax", "FP64")
                           //                      .column("l_returnflag", "String")
                           //                      .column("l_linestatus", "String")
@@ -111,13 +112,13 @@ static void BM_TPCH_Q6(benchmark::State& state) {
                           //                      .column("l_comment", "String")
                           .build();
         dbms::SerializedPlanBuilder plan_builder;
-        auto *agg_mul = dbms::scalarFunction(dbms::MULTIPLY, {dbms::selection(2), dbms::selection(3)});
+        auto *agg_mul = dbms::scalarFunction(dbms::MULTIPLY, {dbms::selection(1), dbms::selection(0)});
         auto * measure1 = dbms::measureFunction(dbms::SUM, {agg_mul});
-        auto * measure2 = dbms::measureFunction(dbms::SUM, {dbms::selection(2)});
-        auto * measure3 = dbms::measureFunction(dbms::SUM, {dbms::selection(1)});
+        auto * measure2 = dbms::measureFunction(dbms::SUM, {dbms::selection(1)});
+        auto * measure3 = dbms::measureFunction(dbms::SUM, {dbms::selection(2)});
         auto plan = plan_builder.registerSupportedFunctions()
                         .aggregate({}, {measure1, measure2, measure3})
-                        .project({dbms::selection(1), dbms::selection(2), dbms::selection(3)})
+                        .project({dbms::selection(2), dbms::selection(1), dbms::selection(0)})
                         .filter(dbms::scalarFunction(dbms::AND, {
                                                                     dbms::scalarFunction(AND, {
                                                                                                   dbms::scalarFunction(AND, {
@@ -125,20 +126,20 @@ static void BM_TPCH_Q6(benchmark::State& state) {
                                                                                                                                                               dbms::scalarFunction(AND, {
                                                                                                                                                                                             dbms::scalarFunction(AND, {
                                                                                                                                                                                                                           dbms::scalarFunction(AND, {
-                                                                                                                                                                                                                                                        scalarFunction(IS_NOT_NULL, {selection(4)}),
-                                                                                                                                                                                                                                                        scalarFunction(IS_NOT_NULL, {selection(3)})
+                                                                                                                                                                                                                                                        scalarFunction(IS_NOT_NULL, {selection(3)}),
+                                                                                                                                                                                                                                                        scalarFunction(IS_NOT_NULL, {selection(0)})
                                                                                                                                                                                                                                                     }),
-                                                                                                                                                                                                                          scalarFunction(IS_NOT_NULL, {selection(1)})
+                                                                                                                                                                                                                          scalarFunction(IS_NOT_NULL, {selection(2)})
                                                                                                                                                                                                                       }),
-                                                                                                                                                                                            dbms::scalarFunction(GREATER_THAN_OR_EQUAL, {selection(4), literalDate(8766)})
+                                                                                                                                                                                            dbms::scalarFunction(GREATER_THAN_OR_EQUAL, {selection(3), literalDate(8766)})
                                                                                                                                                                                         }),
-                                                                                                                                                              scalarFunction(LESS_THAN, {selection(4), literalDate(9131)})
+                                                                                                                                                              scalarFunction(LESS_THAN, {selection(3), literalDate(9131)})
                                                                                                                                                           }),
-                                                                                                                                scalarFunction(GREATER_THAN_OR_EQUAL, {selection(3), literal(0.05)})
+                                                                                                                                scalarFunction(GREATER_THAN_OR_EQUAL, {selection(0), literal(0.05)})
                                                                                                                             }),
-                                                                                                  scalarFunction(LESS_THAN_OR_EQUAL, {selection(3), literal(0.07)})
+                                                                                                  scalarFunction(LESS_THAN_OR_EQUAL, {selection(0), literal(0.07)})
                                                                                               }),
-                                                                    scalarFunction(LESS_THAN, {selection(1), literal(24.0)})
+                                                                    scalarFunction(LESS_THAN, {selection(2), literal(24.0)})
                                                                 }))
                         .read("/home/kyligence/Documents/test-dataset/intel-gazelle-test-"+std::to_string(state.range(0))+".snappy.parquet", std::move(schema)).build();
         dbms::SerializedPlanParser parser(SerializedPlanParser::global_context);
