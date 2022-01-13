@@ -402,6 +402,8 @@ void KeeperDispatcher::sessionCleanerTask()
                     request->xid = Coordination::CLOSE_XID;
                     KeeperStorage::RequestForSession request_info;
                     request_info.request = request;
+                    using namespace std::chrono;
+                    request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
                     request_info.session_id = dead_session;
                     {
                         std::lock_guard lock(push_request_mutex);
@@ -479,6 +481,8 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
     request->server_id = server->getServerID();
 
     request_info.request = request;
+    using namespace std::chrono;
+    request_info.time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
     request_info.session_id = -1;
 
     auto promise = std::make_shared<std::promise<int64_t>>();
