@@ -69,7 +69,7 @@ namespace
 
     std::recursive_mutex ldap_global_mutex;
 
-    auto escapeForLDAP(const String & src)
+    auto escapeForDN(const String & src)
     {
         String dest;
         dest.reserve(src.size() * 2);
@@ -327,7 +327,7 @@ void LDAPClient::openConnection()
     if (params.enable_tls == LDAPClient::Params::TLSEnable::YES_STARTTLS)
         diag(ldap_start_tls_s(handle, nullptr, nullptr));
 
-    final_user_name = escapeForLDAP(params.user);
+    final_user_name = escapeForDN(params.user);
     final_bind_dn = replacePlaceholders(params.bind_dn, { {"{user_name}", final_user_name} });
     final_user_dn = final_bind_dn; // The default value... may be updated right after a successful bind.
 
