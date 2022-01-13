@@ -58,7 +58,7 @@ ActionsDAGPtr addMissingDefaults(
             continue;
 
         String offsets_name = Nested::extractTableName(column.name);
-        const auto * array_type = typeid_cast<const DataTypeArray *>(column.type.get())
+        const auto * array_type = typeid_cast<const DataTypeArray *>(column.type.get());
         if (array_type && nested_groups.count(offsets_name))
         {
             const auto & nested_type = array_type->getNestedType();
