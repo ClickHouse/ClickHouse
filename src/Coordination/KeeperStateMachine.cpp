@@ -7,7 +7,9 @@
 #include "base/logger_useful.h"
 #include <Coordination/KeeperSnapshotManager.h>
 #include <libnuraft/state_machine.hxx>
+#if defined(OS_LINUX)
 #include <sys/sysinfo.h>
+#endif
 #include <cstddef>
 #include <future>
 #include <thread>
