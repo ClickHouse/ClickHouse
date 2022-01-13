@@ -252,7 +252,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--push-to-cloudwatch",
         action="store_true",
-        help="Store received token in parameter store",
+        help="Push metrics for active and busy runners to cloudwatch",
     )
     parser.add_argument(
         "--delete-offline", action="store_true", help="Remove offline runners"
@@ -274,8 +274,11 @@ if __name__ == "__main__":
 
     if args.private_key:
         private_key = args.private_key
-    else:
+    elif args.private_key_path:
         with open(args.private_key_path, "r") as key_file:
             private_key = key_file.read()
+    else:
+        print("Attempt to get key and id from AWS secret manager")
+        private_key, args.app_id = get_key_and_app_from_aws()
 
     main(private_key, args.app_id, args.push_to_cloudwatch, args.delete_offline)
