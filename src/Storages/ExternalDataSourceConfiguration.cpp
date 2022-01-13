@@ -15,6 +15,9 @@
 #if USE_RDKAFKA
 #include <Storages/Kafka/KafkaSettings.h>
 #endif
+#if USE_MYSQL
+#include <Storages/MySQL/MySQLSettings.h>
+#endif
 
 #include <re2/re2.h>
 
@@ -26,11 +29,30 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+IMPLEMENT_SETTINGS_TRAITS(EmptySettingsTraits, EMPTY_SETTINGS)
+
 static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
     "host", "port", "user", "password", "db",
     "database", "table", "schema", "replica",
     "update_field", "update_tag", "invalidate_query", "query",
     "where", "name", "secure", "uri", "collection"};
+
+
+template<typename T>
+SettingsChanges getSettingsChangesFromConfig(
+    const BaseSettings<T> & settings, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+{
+    SettingsChanges config_settings;
+    for (const auto & setting : settings.all())
+    {
+        const auto & setting_name = setting.getName();
+        auto setting_value = config.getString(config_prefix + '.' + setting_name, "");
+        if (!setting_value.empty())
+            config_settings.emplace_back(setting_name, setting_value);
+    }
+    return config_settings;
+}
+
 
 String ExternalDataSourceConfiguration::toString() const
 {
@@ -67,7 +89,9 @@ void ExternalDataSourceConfiguration::set(const ExternalDataSourceConfiguration 
 }
 
 
-std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const ASTs & args, ContextPtr context, bool is_database_engine, bool throw_on_no_collection)
+template <typename T>
+std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
+    const ASTs & args, ContextPtr context, bool is_database_engine, bool throw_on_no_collection, const BaseSettings<T> & storage_settings)
 {
     if (args.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
@@ -89,6 +113,8 @@ std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const
 
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection->name());
         }
+
+        SettingsChanges config_settings = getSettingsChangesFromConfig(storage_settings, config, collection_prefix);
 
         configuration.host = config.getString(collection_prefix + ".host", "");
         configuration.port = config.getInt(collection_prefix + ".port", 0);
@@ -131,6 +157,7 @@ std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const
                 if (arg_value_literal)
                 {
                     auto arg_value = arg_value_literal->value;
+
                     if (arg_name == "host")
                         configuration.host = arg_value.safeGet<String>();
                     else if (arg_name == "port")
@@ -147,6 +174,8 @@ std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const
                         configuration.schema = arg_value.safeGet<String>();
                     else if (arg_name == "addresses_expr")
                         configuration.addresses_expr = arg_value.safeGet<String>();
+                    else if (storage_settings.has(arg_name))
+                        config_settings.emplace_back(arg_name, arg_value);
                     else
                         non_common_args.emplace_back(std::make_pair(arg_name, arg_value_ast));
                 }
@@ -161,8 +190,7 @@ std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const
             }
         }
 
-        ExternalDataSourceConfig source_config{ .configuration = configuration, .specific_args = non_common_args };
-        return source_config;
+        return ExternalDataSourceInfo{ .configuration = configuration, .specific_args = non_common_args, .settings_changes = config_settings };
     }
     return std::nullopt;
 }
@@ -179,9 +207,10 @@ static void validateConfigKeys(
     }
 }
 
-std::optional<ExternalDataSourceConfiguration> getExternalDataSourceConfiguration(
+template <typename T>
+std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
     const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix,
-    ContextPtr context, HasConfigKeyFunc has_config_key)
+    ContextPtr context, HasConfigKeyFunc has_config_key, const BaseSettings<T> & settings)
 {
     validateConfigKeys(dict_config, dict_config_prefix, has_config_key);
     ExternalDataSourceConfiguration configuration;
@@ -192,6 +221,10 @@ std::optional<ExternalDataSourceConfiguration> getExternalDataSourceConfiguratio
         const auto & config = context->getConfigRef();
         const auto & collection_prefix = fmt::format("named_collections.{}", collection_name);
         validateConfigKeys(dict_config, collection_prefix, has_config_key);
+        auto config_settings = getSettingsChangesFromConfig(settings, config, collection_prefix);
+        auto dict_settings = getSettingsChangesFromConfig(settings, dict_config, dict_config_prefix);
+        /// dictionary config settings override collection settings.
+        config_settings.insert(config_settings.end(), dict_settings.begin(), dict_settings.end());
 
         if (!config.has(collection_prefix))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection_name);
@@ -210,7 +243,7 @@ std::optional<ExternalDataSourceConfiguration> getExternalDataSourceConfiguratio
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Named collection of connection parameters is missing some of the parameters and dictionary parameters are not added");
         }
-        return configuration;
+        return ExternalDataSourceInfo{ .configuration = configuration, .specific_args = {}, .settings_changes = config_settings };
     }
     return std::nullopt;
 }
@@ -225,7 +258,7 @@ ExternalDataSourcesByPriority getExternalDataSourceConfigurationByPriority(
     auto named_collection = getExternalDataSourceConfiguration(dict_config, dict_config_prefix, context, has_config_key);
     if (named_collection)
     {
-        common_configuration = *named_collection;
+        common_configuration = named_collection->configuration;
     }
     else
     {
@@ -391,6 +424,7 @@ std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const
     return std::nullopt;
 }
 
+
 template<typename T>
 bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<T> & settings, ContextPtr context)
 {
@@ -405,14 +439,7 @@ bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<T> & set
         if (!config.has(config_prefix))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection->name());
 
-        SettingsChanges config_settings;
-        for (const auto & setting : settings.all())
-        {
-            const auto & setting_name = setting.getName();
-            auto setting_value = config.getString(config_prefix + '.' + setting_name, "");
-            if (!setting_value.empty())
-                config_settings.emplace_back(setting_name, setting_value);
-        }
+        auto config_settings = getSettingsChangesFromConfig(settings, config, config_prefix);
 
         /// Check key-value arguments.
         for (size_t i = 1; i < args.size(); ++i)
@@ -449,5 +476,33 @@ bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<RabbitMQ
 #if USE_RDKAFKA
 template
 bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<KafkaSettingsTraits> & settings, ContextPtr context);
+#endif
+
+template
+std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
+    const ASTs & args, ContextPtr context, bool is_database_engine, bool throw_on_no_collection, const BaseSettings<EmptySettingsTraits> & storage_settings);
+
+template
+std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
+    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix,
+    ContextPtr context, HasConfigKeyFunc has_config_key, const BaseSettings<EmptySettingsTraits> & settings);
+
+template
+SettingsChanges getSettingsChangesFromConfig(
+    const BaseSettings<EmptySettingsTraits> & settings, const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
+
+#if USE_MYSQL
+template
+std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
+    const ASTs & args, ContextPtr context, bool is_database_engine, bool throw_on_no_collection, const BaseSettings<MySQLSettingsTraits> & storage_settings);
+
+template
+std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
+    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix,
+    ContextPtr context, HasConfigKeyFunc has_config_key, const BaseSettings<MySQLSettingsTraits> & settings);
+
+template
+SettingsChanges getSettingsChangesFromConfig(
+    const BaseSettings<MySQLSettingsTraits> & settings, const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
 #endif
 }
