@@ -209,6 +209,8 @@ CI_CONFIG = {
         ],
     },
     "tests_config": {
+        # required_build - build name for artifacts
+        # force_tests - force success status for tests
         "Stateful tests (address, actions)": {
             "required_build": "package_asan",
         },
@@ -226,6 +228,10 @@ CI_CONFIG = {
         },
         "Stateful tests (release, actions)": {
             "required_build": "package_release",
+        },
+        "Stateful tests (aarch64, actions)": {
+            "required_build": "package_aarch64",
+            "force_tests": True,
         },
         "Stateful tests (release, DatabaseOrdinary, actions)": {
             "required_build": "package_release",
@@ -250,6 +256,10 @@ CI_CONFIG = {
         },
         "Stateless tests (release, actions)": {
             "required_build": "package_release",
+        },
+        "Stateless tests (aarch64, actions)": {
+            "required_build": "package_aarch64",
+            "force_tests": True,
         },
         "Stateless tests (release, wide parts enabled, actions)": {
             "required_build": "package_release",
