@@ -81,7 +81,7 @@ A function configuration contains the following settings:
 -   `max_command_execution_time` - maximum execution time in seconds for processing block of data. This setting is valid for `executable_pool` commands only. Optional. Default value is `10`.
 -   `command_termination_timeout` - time in seconds during which a command should finish after its pipe is closed. After that time `SIGTERM` is sent to the process executing the command. Optional. Default value is `10`.
 -   `command_read_timeout` - timeout for reading data from command stdout in milliseconds. Default value 10000. Optional parameter.
--   `command_read_timeout` - timeout for writing data to command stdin in milliseconds. Default value 10000. Optional parameter.
+-   `command_write_timeout` - timeout for writing data to command stdin in milliseconds. Default value 10000. Optional parameter.
 -   `pool_size` - the size of a command pool. Optional. Default value is `16`.
 -   `send_chunk_header` - controls whether to send row count before sending a chunk of data to process. Optional. Default value is `false`.
 -   `execute_direct` - If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder. Additional script arguments can be specified using whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `1`. Optional parameter.
