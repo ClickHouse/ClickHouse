@@ -407,7 +407,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 `query` 是一个预定义的`predefined_query_handler`查询，它由ClickHouse在匹配HTTP请求并返回查询结果时执行。这是一个必须的配置。
 
-以下是定义的[max_threads](../operations/settings/settings.md#settings-max_threads)和`max_alter_threads`设置， 然后查询系统表以检查这些设置是否设置成功。
+以下是定义的[max_threads](../operations/settings/settings.md#settings-max_threads)和`max_final_threads`设置， 然后查询系统表以检查这些设置是否设置成功。
 
 示例:
 
@@ -430,9 +430,9 @@ $ curl -v 'http://localhost:8123/predefined_query'
 ```
 
 ``` bash
-$ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:8123/query_param_with_url/1/max_threads/max_alter_threads?max_threads=1&max_alter_threads=2'
+$ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:8123/query_param_with_url/1/max_threads/max_final_threads?max_threads=1&max_final_threads=2'
 1
-max_alter_threads   2
+max_final_threads   2
 ```
 
 !!! note "警告"
@@ -444,7 +444,7 @@ max_alter_threads   2
 
 ClickHouse提取并执行与HTTP请求URL中的`query_param_name`值对应的值。`query_param_name`的默认值是`/query`。这是一个可选的配置。如果配置文件中没有定义，则不会传入参数。
 
-为了试验这个功能，示例定义了[max_threads](../operations/settings/settings.md#settings-max_threads)和`max_alter_threads`，`queries`设置是否成功的值。
+为了试验这个功能，示例定义了[max_threads](../operations/settings/settings.md#settings-max_threads)和`max_final_threads`，`queries`设置是否成功的值。
 
 示例:
 
@@ -462,9 +462,9 @@ ClickHouse提取并执行与HTTP请求URL中的`query_param_name`值对应的值
 ```
 
 ``` bash
-$ curl  -H 'XXX:TEST_HEADER_VALUE_DYNAMIC'  'http://localhost:8123/own?max_threads=1&max_alter_threads=2&param_name_1=max_threads&param_name_2=max_alter_threads&query_param=SELECT%20name,value%20FROM%20system.settings%20where%20name%20=%20%7Bname_1:String%7D%20OR%20name%20=%20%7Bname_2:String%7D'
+$ curl  -H 'XXX:TEST_HEADER_VALUE_DYNAMIC'  'http://localhost:8123/own?max_threads=1&max_final_threads=2&param_name_1=max_threads&param_name_2=max_final_threads&query_param=SELECT%20name,value%20FROM%20system.settings%20where%20name%20=%20%7Bname_1:String%7D%20OR%20name%20=%20%7Bname_2:String%7D'
 max_threads 1
-max_alter_threads   2
+max_final_threads   2
 ```
 
 ### static {#static}

@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
 
+from typing import Dict, TypeVar
+
+ConfValue = TypeVar("ConfValue", str, bool)
+BuildConfig = Dict[str, ConfValue]
+
 CI_CONFIG = {
     "build_config": {
         "package_release": {
@@ -334,4 +339,4 @@ CI_CONFIG = {
             "required_build": "performance",
         },
     },
-}
+}  # type: dict
