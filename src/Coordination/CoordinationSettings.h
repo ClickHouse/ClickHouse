@@ -64,6 +64,7 @@ struct KeeperConfigurationAndSettings
     KeeperConfigurationAndSettings();
     int server_id;
 
+    bool enable_ipv6;
     int tcp_port;
     int tcp_port_secure;
 
