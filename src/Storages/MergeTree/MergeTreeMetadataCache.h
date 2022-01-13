@@ -21,6 +21,8 @@ public:
         assert(rocksdb);
     }
 
+    static std::unique_ptr<MergeTreeMetadataCache> create(const String & dir, size_t size);
+
     MergeTreeMetadataCache(const MergeTreeMetadataCache &) = delete;
     MergeTreeMetadataCache & operator=(const MergeTreeMetadataCache &) = delete;
 

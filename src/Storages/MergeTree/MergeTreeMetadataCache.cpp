@@ -14,6 +14,33 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int SYSTEM_ERROR;
+}
+
+std::unique_ptr<MergeTreeMetadataCache> MergeTreeMetadataCache::create(const String & dir, size_t size)
+{
+    assert(size != 0);
+    rocksdb::Options options;
+    rocksdb::BlockBasedTableOptions table_options;
+    rocksdb::DB * db;
+
+    options.create_if_missing = true;
+    options.statistics = rocksdb::CreateDBStatistics();
+    auto cache = rocksdb::NewLRUCache(size);
+    table_options.block_cache = cache;
+    options.table_factory.reset(rocksdb::NewBlockBasedTableFactory(table_options));
+    rocksdb::Status status = rocksdb::DB::Open(options, dir, &db);
+    if (status != rocksdb::Status::OK())
+        throw Exception(
+            ErrorCodes::SYSTEM_ERROR,
+            "Fail to open rocksdb path at: {} status:{}. You can try to remove the cache (this will not affect any table data).",
+            dir,
+            status.ToString());
+    return std::make_unique<MergeTreeMetadataCache>(db);
+}
+
 MergeTreeMetadataCache::Status MergeTreeMetadataCache::put(const String & key, const String & value)
 {
     auto options = rocksdb::WriteOptions();
@@ -59,6 +86,7 @@ void MergeTreeMetadataCache::getByPrefix(const String & prefix, Strings & keys, 
     }
     LOG_TRACE(log, "Seek with prefix:{} from MergeTreeMetadataCache items:{}", prefix, keys.size());
     ProfileEvents::increment(ProfileEvents::MergeTreeMetadataCacheSeek);
+    delete it;
 }
 
 uint64_t MergeTreeMetadataCache::getEstimateNumKeys() const
@@ -71,6 +99,7 @@ uint64_t MergeTreeMetadataCache::getEstimateNumKeys() const
 void MergeTreeMetadataCache::shutdown()
 {
     rocksdb->Close();
+    rocksdb.reset();
 }
 
 }
