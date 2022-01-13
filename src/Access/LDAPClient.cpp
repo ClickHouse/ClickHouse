@@ -352,7 +352,7 @@ void LDAPClient::openConnection()
                 if (user_dn_search_results.size() > 1)
                     throw Exception("Failed to detect user DN: more than one entry in the search results", ErrorCodes::LDAP_ERROR);
 
-                final_user_dn = escapeForFilter(*user_dn_search_results.begin());
+                final_user_dn = *user_dn_search_results.begin();
             }
 
             break;
@@ -399,10 +399,10 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
     });
 
     const auto final_search_filter = replacePlaceholders(search_params.search_filter, {
-        {"{user_name}", final_user_name},
-        {"{bind_dn}", final_bind_dn},
-        {"{user_dn}", final_user_dn},
-        {"{base_dn}", final_base_dn}
+        {"{user_name}", escapeForFilter(final_user_name)},
+        {"{bind_dn}", escapeForFilter(final_bind_dn)},
+        {"{user_dn}", escapeForFilter(final_user_dn)},
+        {"{base_dn}", escapeForFilter(final_base_dn)}
     });
 
     char * attrs[] = { const_cast<char *>(search_params.attribute.c_str()), nullptr };
