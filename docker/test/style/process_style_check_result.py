@@ -11,6 +11,28 @@ def process_result(result_folder):
     description = ""
     test_results = []
 
+    duplicate_log_path = "{}/duplicate_output.txt".format(result_folder)
+    if not os.path.exists(duplicate_log_path):
+        logging.info("No header duplicates check log on path %s", duplicate_log_path)
+        return "exception", "No header duplicates check log", []
+    elif os.stat(duplicate_log_path).st_size != 0:
+        description += " Header duplicates check failed. "
+        test_results.append(("Header duplicates check", "FAIL"))
+        status = "failure"
+    else:
+        test_results.append(("Header duplicates check", "OK"))
+
+    shellcheck_log_path = "{}/shellcheck_output.txt".format(result_folder)
+    if not os.path.exists(shellcheck_log_path):
+        logging.info("No shellcheck  log on path %s", shellcheck_log_path)
+        return "exception", "No shellcheck log", []
+    elif os.stat(shellcheck_log_path).st_size != 0:
+        description += " Shellcheck check failed. "
+        test_results.append(("Shellcheck ", "FAIL"))
+        status = "failure"
+    else:
+        test_results.append(("Shellcheck", "OK"))
+
     style_log_path = "{}/style_output.txt".format(result_folder)
     if not os.path.exists(style_log_path):
         logging.info("No style check log on path %s", style_log_path)
@@ -18,7 +40,7 @@ def process_result(result_folder):
     elif os.stat(style_log_path).st_size != 0:
         description += "Style check failed. "
         test_results.append(("Style check", "FAIL"))
-        status = "failure"  # Disabled for now
+        status = "failure"
     else:
         test_results.append(("Style check", "OK"))
 
@@ -44,27 +66,16 @@ def process_result(result_folder):
     else:
         test_results.append(("Whitespaces check", "OK"))
 
-    duplicate_log_path = "{}/duplicate_output.txt".format(result_folder)
-    if not os.path.exists(duplicate_log_path):
-        logging.info("No header duplicates check log on path %s", duplicate_log_path)
-        return "exception", "No header duplicates check log", []
-    elif os.stat(duplicate_log_path).st_size != 0:
-        description += " Header duplicates check failed. "
-        test_results.append(("Header duplicates check", "FAIL"))
+    workflows_log_path = "{}/workflows_output.txt".format(result_folder)
+    if not os.path.exists(workflows_log_path):
+        logging.info("No workflows check log on path %s", style_log_path)
+        return "exception", "No workflows check log", []
+    elif os.stat(whitespaces_log_path).st_size != 0:
+        description += "Workflows check failed. "
+        test_results.append(("Workflows check", "FAIL"))
         status = "failure"
     else:
-        test_results.append(("Header duplicates check", "OK"))
-
-    shellcheck_log_path = "{}/shellcheck_output.txt".format(result_folder)
-    if not os.path.exists(shellcheck_log_path):
-        logging.info("No shellcheck  log on path %s", shellcheck_log_path)
-        return "exception", "No shellcheck log", []
-    elif os.stat(shellcheck_log_path).st_size != 0:
-        description += " Shellcheck check failed. "
-        test_results.append(("Shellcheck ", "FAIL"))
-        status = "failure"
-    else:
-        test_results.append(("Shellcheck", "OK"))
+        test_results.append(("Workflows check", "OK"))
 
     if not description:
         description += "Style check success"
