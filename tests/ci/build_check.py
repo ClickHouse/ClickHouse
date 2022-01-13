@@ -186,19 +186,16 @@ def upload_master_static_binaries(
     s3_helper: S3Helper,
     build_output_path: str,
 ):
+    static_binary_name = build_config.get("static_binary_name", False)
     """Upload binary artifacts to a static S3 links"""
     if pr_info.number != 0:
         return
-    elif build_config["package_type"] != "binary":
-        return
-    elif build_config["splitted"] == "splitted":
+    elif not static_binary_name:
         return
     elif pr_info.base_ref != "master":
         return
 
-    s3_path = "/".join(
-        (pr_info.base_ref, os.path.basename(build_output_path), "clickhouse")
-    )
+    s3_path = "/".join((pr_info.base_ref, static_binary_name, "clickhouse"))
     binary = os.path.join(build_output_path, "clickhouse")
     url = s3_helper.upload_build_file_to_s3(binary, s3_path)
     print(f"::notice ::Binary static URL: {url}")
