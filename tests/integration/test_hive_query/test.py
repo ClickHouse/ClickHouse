@@ -121,6 +121,7 @@ def test_cache_read_bytes(started_cluster):
 2021-11-11	1
 2021-11-16	2
 """
+    time.sleep(120)
     assert result == expected_result
     result = node.query("select sum(ProfileEvent_ExternalDataSourceLocalCacheReadBytes)  from system.metric_log where ProfileEvent_ExternalDataSourceLocalCacheReadBytes > 0")
     logging.info("Read bytes from cache:{}".format(result))
