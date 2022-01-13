@@ -15,9 +15,13 @@ class MergeTreeMetadataCacheTest : public ::testing::Test
 public:
     void SetUp() override
     {
-        const auto & context_holder = getContext();
-        context_holder.context->initializeMergeTreeMetadataCache("./db/", 256 << 20);
-        cache = context_holder.context->getMergeTreeMetadataCache();
+        cache = MergeTreeMetadataCache::create("./db/", 268435456);
+    }
+
+    void TearDown() override
+    {
+        cache->shutdown();
+        cache.reset();
     }
 
     MergeTreeMetadataCachePtr cache;
