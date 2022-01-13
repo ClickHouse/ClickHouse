@@ -186,8 +186,8 @@ def upload_master_static_binaries(
     s3_helper: S3Helper,
     build_output_path: str,
 ):
-    static_binary_name = build_config.get("static_binary_name", False)
     """Upload binary artifacts to a static S3 links"""
+    static_binary_name = build_config.get("static_binary_name", False)
     if pr_info.number != 0:
         return
     elif not static_binary_name:
