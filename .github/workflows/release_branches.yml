@@ -13,7 +13,6 @@ on: # yamllint disable-line rule:truthy
       - '24.[1-9][1-9]'
 jobs:
   DockerHubPushAarch64:
-    needs: CheckLabels
     runs-on: [self-hosted, func-tester-aarch64]
     steps:
       - name: Clear repository
@@ -31,7 +30,6 @@ jobs:
           name: changed_images_aarch64
           path: ${{ runner.temp }}/docker_images_check/changed_images_aarch64.json
   DockerHubPushAmd64:
-    needs: CheckLabels
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Clear repository
