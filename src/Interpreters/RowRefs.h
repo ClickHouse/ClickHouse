@@ -103,7 +103,7 @@ struct RowRefList : RowRef
             }
         }
 
-        bool ok() const { return first || (batch && position < batch->size); }
+        bool ok() const { return first || batch; }
 
     private:
         const RowRefList * root;

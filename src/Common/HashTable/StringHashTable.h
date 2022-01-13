@@ -280,7 +280,7 @@ public:
                 if ((reinterpret_cast<uintptr_t>(p) & 2048) == 0)
                 {
                     memcpy(&n[0], p, 8);
-                    n[0] &= -1ul >> s;
+                    n[0] &= -1ULL >> s;
                 }
                 else
                 {

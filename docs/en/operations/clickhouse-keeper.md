@@ -3,14 +3,14 @@ toc_priority: 66
 toc_title: ClickHouse Keeper
 ---
 
-# [pre-production] ClickHouse Keeper
+# [pre-production] ClickHouse Keeper {#clickHouse-keeper}
 
 ClickHouse server uses [ZooKeeper](https://zookeeper.apache.org/) coordination system for data [replication](../engines/table-engines/mergetree-family/replication.md) and [distributed DDL](../sql-reference/distributed-ddl.md) queries execution. ClickHouse Keeper is an alternative coordination system compatible with ZooKeeper.
 
 !!! warning "Warning"
     This feature is currently in the pre-production stage. We test it in our CI and on small internal installations.
 
-## Implementation details
+## Implementation details {#implementation-details}
 
 ZooKeeper is one of the first well-known open-source coordination systems. It's implemented in Java, has quite a simple and powerful data model. ZooKeeper's coordination algorithm called ZAB (ZooKeeper Atomic Broadcast) doesn't provide linearizability guarantees for reads, because each ZooKeeper node serves reads locally. Unlike ZooKeeper ClickHouse Keeper is written in C++ and uses [RAFT algorithm](https://raft.github.io/) [implementation](https://github.com/eBay/NuRaft). This algorithm allows to have linearizability for reads and writes, has several open-source implementations in different languages.
 
@@ -21,7 +21,7 @@ ClickHouse Keeper supports Access Control List (ACL) the same way as [ZooKeeper]
 !!! info "Note"
     External integrations are not supported.
 
-## Configuration
+## Configuration {#configuration}
 
 ClickHouse Keeper can be used as a standalone replacement for ZooKeeper or as an internal part of the ClickHouse server, but in both cases configuration is almost the same `.xml` file. The main ClickHouse Keeper configuration tag is `<keeper_server>`. Keeper configuration has the following parameters:
 
@@ -103,7 +103,7 @@ Examples of configuration for quorum with three nodes can be found in [integrati
 </keeper_server>
 ```
 
-## How to run
+## How to run {#how-to-run}
 
 ClickHouse Keeper is bundled into the ClickHouse server package, just add configuration of `<keeper_server>` and start ClickHouse server as always. If you want to run standalone ClickHouse Keeper you can start it in a similar way with:
 
@@ -111,13 +111,14 @@ ClickHouse Keeper is bundled into the ClickHouse server package, just add config
 clickhouse-keeper --config /etc/your_path_to_config/config.xml --daemon
 ```
 
-## Four Letter Word Commands
+## Four Letter Word Commands {#four-letter-word-commands}
 
 ClickHouse Keeper also provides 4lw commands which are almost the same with Zookeeper. Each command is composed of four letters such as `mntr`, `stat` etc. There are some more interesting commands: `stat` gives some general information about the server and connected clients, while `srvr` and `cons` give extended details on server and connections respectively.  
 
 The 4lw commands has a white list configuration `four_letter_word_white_list` which has default value "conf,cons,crst,envi,ruok,srst,srvr,stat,wchc,wchs,dirs,mntr,isro".
 
 You can issue the commands to ClickHouse Keeper via telnet or nc, at the client port.
+
 ```
 echo mntr | nc localhost 9181
 ```
@@ -297,7 +298,7 @@ Sessions with Ephemerals (1):
  /clickhouse/task_queue/ddl
 ```
 
-## [experimental] Migration from ZooKeeper
+## [experimental] Migration from ZooKeeper {#migration-from-zookeeper}
 
 Seamlessly migration from ZooKeeper to ClickHouse Keeper is impossible you have to stop your ZooKeeper cluster, convert data and start ClickHouse Keeper. `clickhouse-keeper-converter` tool allows converting ZooKeeper logs and snapshots to ClickHouse Keeper snapshot. It works only with ZooKeeper > 3.4. Steps for migration:
 
