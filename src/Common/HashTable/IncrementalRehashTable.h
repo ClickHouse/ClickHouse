@@ -1,8 +1,9 @@
+#pragma once
 #include "robin_hood.h"
 
 template <bool IsFlat, size_t MaxLoadFactor100, typename Key, typename T, typename Hash,
           typename KeyEqual>
-class IncrementalRehashTable 
+class IncrementalRehashTable
 {
 public:
     static constexpr bool is_flat = IsFlat;
@@ -205,7 +206,8 @@ public:
     {
         if (store[0]->contains(t))
             return true;
-        if (rehashing && store[1]->contains(t)) {
+        if (rehashing && store[1]->contains(t))
+        {
             return true;
         }
         return false;
@@ -221,13 +223,11 @@ public:
     const_iterator end() const
     {
         if (rehashing)
-        {
-            return const_iterator(this, store[1]->end(), 1); 
-        }
-        return const_iterator(this, store[0]->end(), 0); 
+            return const_iterator(this, store[1]->end(), 1);
+        return const_iterator(this, store[0]->end(), 0);
     }
     size_t htsize()
-    { 
+    {
         return store[0]->size() + (rehashing ? store[1]->size() : 0);
     }
     void clear()
@@ -239,7 +239,7 @@ public:
     template< class... Args >
     std::pair<iterator,bool> emplace(Args&&... args)
     {
-        if (rehashing) 
+        if (rehashing)
         {
             auto res = store[1]->emplace(std::forward<Args>(args)...);
             if (res.second)

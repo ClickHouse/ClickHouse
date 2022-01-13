@@ -301,7 +301,7 @@ Changelog::Changelog(
 
     if (existing_changelogs.empty())
         LOG_WARNING(log, "No logs exists in {}. It's Ok if it's the first run of clickhouse-keeper.", changelogs_dir);
-    
+
     clean_log_thread = ThreadFromGlobalPool([this] { cleanThread(); });
 }
 
@@ -309,7 +309,6 @@ void Changelog::cleanThread()
 {
     while (!shutdown_clean_thread.load(std::memory_order_relaxed))
     {
-    
         std::string path;
         if (del_log_q.pop(path))
         {
@@ -577,7 +576,7 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
     /// Everything >= index must be removed
     //std::erase_if(logs, [index] (const auto & item) { return item.first >= index; });
     robin_hood::erase_if(logs, [index] (const auto & item) { return item.first >= index; });
-    
+
     /// Now we can actually override entry at index
     appendEntry(index, log_entry);
 }
