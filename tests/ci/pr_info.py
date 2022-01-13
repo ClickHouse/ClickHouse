@@ -41,6 +41,9 @@ class PRInfo:
                 github_event = {'commits': 1, 'after': 'HEAD', 'ref': None}
         self.event = github_event
         self.changed_files = set([])
+        ref = github_event.get("ref", "refs/head/master")
+        if ref.startswith('refs/heads/'):
+            ref = ref[11:]
 
         # workflow completed event, used for PRs only
         if 'action' in github_event and github_event['action'] == 'completed':
@@ -93,10 +96,10 @@ class PRInfo:
             if pull_request is None or pull_request['state'] == 'closed':  # it's merged PR to master
                 self.number = 0
                 self.labels = {}
-                self.pr_html_url = f"{repo_prefix}/commits/master"
-                self.base_ref = "master"
+                self.pr_html_url = f"{repo_prefix}/commits/{ref}"
+                self.base_ref = ref
                 self.base_name = self.repo_full_name
-                self.head_ref = "master"
+                self.head_ref = ref
                 self.head_name = self.repo_full_name
                 self.diff_url = \
                     f"https://api.github.com/repos/{GITHUB_REPOSITORY}/compare/{github_event['before']}...{self.sha}"
@@ -126,10 +129,10 @@ class PRInfo:
             self.task_url = f"{repo_prefix}/actions/runs/{GITHUB_RUN_ID or '0'}"
             self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
             self.repo_full_name = GITHUB_REPOSITORY
-            self.pr_html_url = f"{repo_prefix}/commits/master"
-            self.base_ref = "master"
+            self.pr_html_url = f"{repo_prefix}/commits/{ref}"
+            self.base_ref = ref
             self.base_name = self.repo_full_name
-            self.head_ref = "master"
+            self.head_ref = ref
             self.head_name = self.repo_full_name
 
         if need_changed_files:
