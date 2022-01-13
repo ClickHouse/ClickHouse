@@ -1,3 +1,4 @@
+# rebuild in #33609
 # docker build -t clickhouse/pvs-test .
 
 ARG FROM_TAG=latest
