@@ -1,4 +1,4 @@
-DROP TABLE IF EXISTS test_nested_default
+DROP TABLE IF EXISTS test_nested_default;
 
 CREATE TABLE test_nested_default
 (
