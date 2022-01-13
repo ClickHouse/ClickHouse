@@ -16,6 +16,7 @@
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #endif
 
+#include <Disks/IO/CacheableReadBufferFromRemoteFS.h>
 #include <base/logger_useful.h>
 #include <filesystem>
 #include <iostream>
@@ -26,33 +27,44 @@ namespace DB
 {
 
 #if USE_AWS_S3
-SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const String & path, size_t read_until_position_) const
+SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const String & path) const
 {
-    return std::make_unique<ReadBufferFromS3>(client_ptr, bucket,
-        fs::path(metadata.remote_fs_root_path) / path, max_single_read_retries, settings, threadpool_read, read_until_position_);
+    bool use_external_buffer = settings.remote_fs_method == RemoteFSReadMethod::threadpool;
+
+    auto reader = std::make_unique<ReadBufferFromS3>(
+        client_ptr, bucket, fs::path(metadata.remote_fs_root_path) / path, max_single_read_retries,
+        settings, use_external_buffer, read_until_position, true);
+
+    auto cache = settings.remote_fs_cache;
+    if (cache)
+        return std::make_shared<CacheableReadBufferFromRemoteFS>(path, std::move(cache), std::move(reader), settings, read_until_position);
+
+    return std::move(reader);
 }
 #endif
 
 
 #if USE_AZURE_BLOB_STORAGE
-SeekableReadBufferPtr ReadBufferFromAzureBlobStorageGather::createImplementationBuffer(const String & path, size_t read_until_position_) const
+SeekableReadBufferPtr ReadBufferFromAzureBlobStorageGather::createImplementationBuffer(const String & path) const
 {
+    bool use_external_buffer = settings.remote_fs_method == RemoteFSReadMethod::threadpool;
     return std::make_unique<ReadBufferFromAzureBlobStorage>(blob_container_client, path, max_single_read_retries,
-        max_single_download_retries, settings.remote_fs_buffer_size, threadpool_read, read_until_position_);
+        max_single_download_retries, settings.remote_fs_buffer_size, use_external_buffer, read_until_position);
 }
 #endif
 
 
-SeekableReadBufferPtr ReadBufferFromWebServerGather::createImplementationBuffer(const String & path, size_t read_until_position_) const
+SeekableReadBufferPtr ReadBufferFromWebServerGather::createImplementationBuffer(const String & path) const
 {
-    return std::make_unique<ReadBufferFromWebServer>(fs::path(uri) / path, context, settings, threadpool_read, read_until_position_);
+    bool use_external_buffer = settings.remote_fs_method == RemoteFSReadMethod::threadpool;
+    return std::make_unique<ReadBufferFromWebServer>(fs::path(uri) / path, context, settings, use_external_buffer, read_until_position);
 }
 
 
 #if USE_HDFS
-SeekableReadBufferPtr ReadBufferFromHDFSGather::createImplementationBuffer(const String & path, size_t read_until_position_) const
+SeekableReadBufferPtr ReadBufferFromHDFSGather::createImplementationBuffer(const String & path) const
 {
-    return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, fs::path(hdfs_directory) / path, config, buf_size, read_until_position_);
+    return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, fs::path(hdfs_directory) / path, config, buf_size);
 }
 #endif
 
@@ -75,8 +87,8 @@ ReadBufferFromRemoteFSGather::ReadResult ReadBufferFromRemoteFSGather::readInto(
 
     file_offset_of_buffer_end = offset;
     bytes_to_ignore = ignore;
-    if (bytes_to_ignore)
-        assert(initialized());
+
+    assert(!bytes_to_ignore || initialized());
 
     auto result = nextImpl();
 
@@ -100,11 +112,10 @@ void ReadBufferFromRemoteFSGather::initialize()
             /// Do not create a new buffer if we already have what we need.
             if (!current_buf || current_buf_idx != i)
             {
-                current_buf = createImplementationBuffer(file_path, read_until_position);
                 current_buf_idx = i;
-
-                if (auto * in = dynamic_cast<SeekableReadBufferWithSize *>(current_buf.get()))
-                    in->setReadType(SeekableReadBufferWithSize::ReadType::DISK_READ);
+                if (!read_until_position)
+                    read_until_position = metadata.remote_fs_objects[current_buf_idx].second;
+                current_buf = createImplementationBuffer(file_path);
             }
 
             current_buf->seek(current_buf_offset, SEEK_SET);
@@ -139,8 +150,10 @@ bool ReadBufferFromRemoteFSGather::nextImpl()
 
     ++current_buf_idx;
 
-    const auto & current_path = metadata.remote_fs_objects[current_buf_idx].first;
-    current_buf = createImplementationBuffer(current_path, read_until_position);
+    const auto & [path, size] = metadata.remote_fs_objects[current_buf_idx];
+    if (!read_until_position)
+        read_until_position = size;
+    current_buf = createImplementationBuffer(path);
 
     return readImpl();
 }

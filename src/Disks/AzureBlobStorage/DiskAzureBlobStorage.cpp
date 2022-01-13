@@ -53,7 +53,7 @@ DiskAzureBlobStorage::DiskAzureBlobStorage(
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     SettingsPtr settings_,
     GetDiskSettings settings_getter_) :
-    IDiskRemote(name_, "", metadata_disk_, "DiskAzureBlobStorage", settings_->thread_pool_size),
+    IDiskRemote(name_, "", metadata_disk_, nullptr, "DiskAzureBlobStorage", settings_->thread_pool_size),
     blob_container_client(blob_container_client_),
     current_settings(std::move(settings_)),
     settings_getter(settings_getter_) {}
@@ -70,13 +70,11 @@ std::unique_ptr<ReadBufferFromFileBase> DiskAzureBlobStorage::readFile(
 
     LOG_TEST(log, "Read from file by path: {}", backQuote(metadata_disk->getPath() + path));
 
-    bool threadpool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
-
     auto reader_impl = std::make_unique<ReadBufferFromAzureBlobStorageGather>(
         path, blob_container_client, metadata, settings->max_single_read_retries,
-        settings->max_single_download_retries, read_settings, threadpool_read);
+        settings->max_single_download_retries, read_settings);
 
-    if (threadpool_read)
+    if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
         auto reader = getThreadPoolReader();
         return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, read_settings, std::move(reader_impl));

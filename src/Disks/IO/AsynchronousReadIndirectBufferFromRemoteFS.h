@@ -44,7 +44,7 @@ public:
 
     void prefetch() override;
 
-    void setReadUntilPosition(size_t position) override;
+    void setReadUntilPosition(size_t position) override; /// [..., position).
 
     void setReadUntilEnd() override;
 

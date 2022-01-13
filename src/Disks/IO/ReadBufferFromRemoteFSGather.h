@@ -52,9 +52,11 @@ public:
     bool initialized() const { return current_buf != nullptr; }
 
 protected:
-    virtual SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t read_until_position) const = 0;
+    virtual SeekableReadBufferPtr createImplementationBuffer(const String & path) const = 0;
 
     RemoteMetadata metadata;
+
+    size_t read_until_position = 0;
 
 private:
     bool nextImpl() override;
@@ -76,8 +78,6 @@ private:
      */
     size_t bytes_to_ignore = 0;
 
-    size_t read_until_position = 0;
-
     String canonical_path;
 };
 
@@ -93,25 +93,22 @@ public:
         const String & bucket_,
         IDiskRemote::Metadata metadata_,
         size_t max_single_read_retries_,
-        const ReadSettings & settings_,
-        bool threadpool_read_ = false)
+        const ReadSettings & settings_)
         : ReadBufferFromRemoteFSGather(metadata_, path_)
         , client_ptr(std::move(client_ptr_))
         , bucket(bucket_)
         , max_single_read_retries(max_single_read_retries_)
         , settings(settings_)
-        , threadpool_read(threadpool_read_)
     {
     }
 
-    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t read_until_position) const override;
+    SeekableReadBufferPtr createImplementationBuffer(const String & path) const override;
 
 private:
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
     String bucket;
     UInt64 max_single_read_retries;
     ReadSettings settings;
-    bool threadpool_read;
 };
 #endif
 
@@ -127,25 +124,22 @@ public:
         IDiskRemote::Metadata metadata_,
         size_t max_single_read_retries_,
         size_t max_single_download_retries_,
-        const ReadSettings & settings_,
-        bool threadpool_read_ = false)
+        const ReadSettings & settings_)
         : ReadBufferFromRemoteFSGather(metadata_, path_)
         , blob_container_client(blob_container_client_)
         , max_single_read_retries(max_single_read_retries_)
         , max_single_download_retries(max_single_download_retries_)
         , settings(settings_)
-        , threadpool_read(threadpool_read_)
     {
     }
 
-    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t read_until_position) const override;
+    SeekableReadBufferPtr createImplementationBuffer(const String & path) const override;
 
 private:
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
     size_t max_single_read_retries;
     size_t max_single_download_retries;
     ReadSettings settings;
-    bool threadpool_read;
 };
 #endif
 
@@ -158,22 +152,19 @@ public:
             const String & uri_,
             RemoteMetadata metadata_,
             ContextPtr context_,
-            size_t threadpool_read_,
             const ReadSettings & settings_)
         : ReadBufferFromRemoteFSGather(metadata_, path_)
         , uri(uri_)
         , context(context_)
-        , threadpool_read(threadpool_read_)
         , settings(settings_)
     {
     }
 
-    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t read_until_position) const override;
+    SeekableReadBufferPtr createImplementationBuffer(const String & path) const override;
 
 private:
     String uri;
     ContextPtr context;
-    bool threadpool_read;
     ReadSettings settings;
 };
 
@@ -198,7 +189,7 @@ public:
         hdfs_uri = hdfs_uri_.substr(0, begin_of_path);
     }
 
-    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t read_until_position) const override;
+    SeekableReadBufferPtr createImplementationBuffer(const String & path) const override;
 
 private:
     const Poco::Util::AbstractConfiguration & config;

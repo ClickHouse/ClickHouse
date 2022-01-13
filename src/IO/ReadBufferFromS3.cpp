@@ -42,7 +42,8 @@ ReadBufferFromS3::ReadBufferFromS3(
     UInt64 max_single_read_retries_,
     const ReadSettings & settings_,
     bool use_external_buffer_,
-    size_t read_until_position_)
+    size_t read_until_position_,
+    bool restricted_seek_)
     : SeekableReadBufferWithSize(nullptr, 0)
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
@@ -51,6 +52,7 @@ ReadBufferFromS3::ReadBufferFromS3(
     , read_settings(settings_)
     , use_external_buffer(use_external_buffer_)
     , read_until_position(read_until_position_)
+    , restricted_seek(restricted_seek_)
 {
 }
 
@@ -152,8 +154,6 @@ bool ReadBufferFromS3::nextImpl()
 
 off_t ReadBufferFromS3::seek(off_t offset_, int whence)
 {
-    bool restricted_seek = read_type == SeekableReadBufferWithSize::ReadType::DISK_READ;
-
     if (impl && restricted_seek)
         throw Exception("Seek is allowed only before first read attempt from the buffer.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
@@ -217,6 +217,12 @@ std::optional<size_t> ReadBufferFromS3::getTotalSize()
 off_t ReadBufferFromS3::getPosition()
 {
     return offset - available();
+}
+
+void ReadBufferFromS3::setReadUntilPosition(size_t position)
+{
+    read_until_position = position;
+    impl.reset();
 }
 
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()

@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <string>
 #include <Core/Defines.h>
+#include <Common/FileCache_fwd.h>
 
 namespace DB
 {
@@ -78,6 +79,8 @@ struct ReadSettings
     size_t remote_fs_read_backoff_max_tries = 4;
 
     size_t remote_read_min_bytes_for_seek = DBMS_DEFAULT_BUFFER_SIZE;
+
+    FileCachePtr remote_fs_cache;
 
     size_t http_max_tries = 1;
     size_t http_retry_initial_backoff_ms = 100;

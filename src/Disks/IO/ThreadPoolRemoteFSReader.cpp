@@ -6,6 +6,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/assert_cast.h>
 #include <Common/setThreadName.h>
+#include <Common/CurrentThread.h>
 
 #include <IO/SeekableReadBuffer.h>
 
@@ -41,9 +42,16 @@ ThreadPoolRemoteFSReader::ThreadPoolRemoteFSReader(size_t pool_size, size_t queu
 
 std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Request request)
 {
-    auto task = std::make_shared<std::packaged_task<Result()>>([request]
+    ThreadGroupStatusPtr running_group = CurrentThread::isInitialized() && CurrentThread::get().getThreadGroup()
+            ? CurrentThread::get().getThreadGroup()
+            : MainThreadStatus::getInstance().getThreadGroup();
+
+    auto task = std::make_shared<std::packaged_task<Result()>>([request, running_group]
     {
+        ThreadStatus thread_status;
+        thread_status.attachQuery(running_group);
         setThreadName("VFSRead");
+
         CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
         auto * remote_fs_fd = assert_cast<RemoteFSFileDescriptor *>(request.descriptor.get());
 

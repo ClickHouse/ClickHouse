@@ -280,6 +280,7 @@ IDiskRemote::IDiskRemote(
     const String & name_,
     const String & remote_fs_root_path_,
     DiskPtr metadata_disk_,
+    FileCachePtr cache_,
     const String & log_name_,
     size_t thread_pool_size)
     : IDisk(std::make_unique<AsyncExecutor>(log_name_, thread_pool_size))
@@ -287,6 +288,7 @@ IDiskRemote::IDiskRemote(
     , name(name_)
     , remote_fs_root_path(remote_fs_root_path_)
     , metadata_disk(metadata_disk_)
+    , cache(cache_)
 {
 }
 
