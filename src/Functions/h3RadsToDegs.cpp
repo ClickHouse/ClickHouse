@@ -16,12 +16,13 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int ILLEGAL_COLUMN;
 }
 
 namespace
 {
 
-class FunctionH3RadsToDegs : public IFunction
+class FunctionH3RadsToDegs final : public IFunction
 {
 public:
     static constexpr auto name = "h3RadsToDegs";
@@ -51,6 +52,14 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const auto * column = checkAndGetColumn<ColumnFloat64>(arguments[0].column.get());
+        if (!column)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be Float64",
+                arguments[0].type->getName(),
+                1,
+                getName());
+
         const auto & col_rads = column->getData();
 
         auto dst = ColumnVector<Float64>::create();
