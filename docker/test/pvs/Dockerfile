@@ -1,8 +1,13 @@
 # docker build -t clickhouse/pvs-test .
 
-FROM clickhouse/binary-builder
+ARG FROM_TAG=latest
+FROM clickhouse/binary-builder:$FROM_TAG
 
-RUN apt-get update --yes \
+# PVS studio doesn't support aarch64/arm64, so there is a check for it everywhere
+# We'll produce an empty image for arm64
+ARG TARGETARCH
+
+RUN test x$TARGETARCH = xarm64 || ( apt-get update --yes \
     && apt-get install \
         bash \
         wget \
@@ -15,7 +20,7 @@ RUN apt-get update --yes \
         libprotoc-dev \
         libgrpc++-dev \
         libc-ares-dev \
-        --yes --no-install-recommends
+        --yes --no-install-recommends )
 
 #RUN wget -nv -O - http://files.viva64.com/etc/pubkey.txt | sudo apt-key add -
 #RUN sudo wget -nv -O /etc/apt/sources.list.d/viva64.list http://files.viva64.com/etc/viva64.list
@@ -27,7 +32,7 @@ RUN apt-get update --yes \
 
 ENV PKG_VERSION="pvs-studio-latest"
 
-RUN set -x \
+RUN test x$TARGETARCH = xarm64 || ( set -x \
     && export PUBKEY_HASHSUM="ad369a2e9d8b8c30f5a9f2eb131121739b79c78e03fef0f016ea51871a5f78cd4e6257b270dca0ac3be3d1f19d885516" \
     && wget -nv https://files.viva64.com/etc/pubkey.txt -O /tmp/pubkey.txt \
     && echo "${PUBKEY_HASHSUM} /tmp/pubkey.txt" | sha384sum -c \
@@ -35,7 +40,7 @@ RUN set -x \
     && wget -nv "https://files.viva64.com/${PKG_VERSION}.deb" \
     && { debsig-verify ${PKG_VERSION}.deb \
     || echo "WARNING: Some file was just downloaded from the internet without any validation and we are installing it into the system"; } \
-    && dpkg -i "${PKG_VERSION}.deb"
+    && dpkg -i "${PKG_VERSION}.deb" )
 
 ENV CCACHE_DIR=/test_output/ccache
 
