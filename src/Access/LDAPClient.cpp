@@ -105,11 +105,20 @@ namespace
         {
             switch (ch)
             {
+                case '*':
+                    dest += "\\2A";
+                    break;
                 case '(':
                     dest += "\\28";
                     break;
                 case ')':
                     dest += "\\29";
+                    break;
+                case '\\':
+                    dest += "\\5C";
+                    break;
+                case '\0':
+                    dest += "\\00";
                     break;
                 default:
                     dest += ch;
