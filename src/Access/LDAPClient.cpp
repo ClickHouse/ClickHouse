@@ -95,7 +95,6 @@ namespace
 
         return dest;
     }
-    
     auto escapeForFilter(const String & src)
     {
         String dest;
