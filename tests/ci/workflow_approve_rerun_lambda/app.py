@@ -41,6 +41,7 @@ TRUSTED_ORG_IDS = {
 
 NEED_RERUN_WORKFLOWS = {
     13241696, # PR
+    14738810, # DocsRelease
     15834118, # Docs
     15522500, # MasterCI
     15516108, # ReleaseCI
@@ -92,6 +93,7 @@ TRUSTED_CONTRIBUTORS = {e.lower() for e in [
     "vzakaznikov",
     "YiuRULE",
     "zlobober",     # Developer of YT
+    "BoloniniD",    # Seasoned contributor, HSE
 ]}
 
 
