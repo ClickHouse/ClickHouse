@@ -63,7 +63,7 @@ struct ContextAccessParams
 };
 
 
-class ContextAccess : std::enable_shared_from_this<ContextAccess>
+class ContextAccess : public std::enable_shared_from_this<ContextAccess>
 {
 public:
     using Params = ContextAccessParams;
