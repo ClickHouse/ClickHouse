@@ -400,7 +400,7 @@ void FormatFactory::registerFileExtension(const String & extension, const String
     file_extension_formats[boost::to_lower_copy(extension)] = format_name;
 }
 
-String FormatFactory::getFormatFromFileName(String file_name)
+String FormatFactory::getFormatFromFileName(String file_name, bool throw_if_not_found)
 {
     CompressionMethod compression_method = chooseCompressionMethod(file_name, "");
     if (CompressionMethod::None != compression_method)
@@ -416,7 +416,14 @@ String FormatFactory::getFormatFromFileName(String file_name)
 
     String file_extension = file_name.substr(pos + 1, String::npos);
     boost::algorithm::to_lower(file_extension);
-    return file_extension_formats[file_extension];
+    auto it = file_extension_formats.find(file_extension);
+    if (it == file_extension_formats.end())
+    {
+        if (throw_if_not_found)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot determine the file format by it's extension");
+        return "";
+    }
+    return it->second;
 }
 
 void FormatFactory::registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine)

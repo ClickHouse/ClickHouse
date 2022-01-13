@@ -115,11 +115,7 @@ void TableFunctionS3::parseArguments(const ASTPtr & ast_function, ContextPtr con
     }
 
     if (configuration.format == "auto")
-    {
-        configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.url);
-        if (configuration.format.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot determine the file format by it's extension, you should provide the format manually");
-    }
+        configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.url, true);
 
     s3_configuration = std::move(configuration);
 }

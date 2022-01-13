@@ -65,11 +65,7 @@ void ITableFunctionFileLike::parseArguments(const ASTPtr & ast_function, Context
         format = args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
     if (format == "auto")
-    {
-        format = FormatFactory::instance().getFormatFromFileName(filename);
-        if (format.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot determine the file format by it's extension, you should provide the format manually");
-    }
+        format = FormatFactory::instance().getFormatFromFileName(filename, true);
 
     if (args.size() <= 2)
     {
