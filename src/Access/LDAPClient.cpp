@@ -351,7 +351,7 @@ void LDAPClient::openConnection()
                 if (user_dn_search_results.size() > 1)
                     throw Exception("Failed to detect user DN: more than one entry in the search results", ErrorCodes::LDAP_ERROR);
 
-                final_user_dn = escapeForLDAPFilter(*user_dn_search_results.begin());
+                final_user_dn = escapeForFilter(*user_dn_search_results.begin());
             }
 
             break;
