@@ -612,9 +612,9 @@ struct ImplBLAKE3
             throw Exception("Function returned error message: " + std::string(err_msg), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             free_char_pointer(err_msg);
         }
-        Hash res = finalize_shim(&hasher);
+        OutputReader res = finalize_xof_shim(&hasher);
         free_hasher(hasher.hasher);
-        std::memcpy(out_char_data, res._0, OUT_LEN);
+        fill_shim(&res, out_char_data);
     }
 };
 #endif
