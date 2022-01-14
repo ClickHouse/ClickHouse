@@ -47,7 +47,7 @@ public:
                 "Illegal type {} of argument {} of function {}. Must be UInt8",
                 arg->getName(), 1, getName());
 
-        return std::make_shared<DataTypeFloat64>();
+        return std::make_shared<DataTypeInt64>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -63,7 +63,7 @@ public:
 
         const auto & data = column->getData();
 
-        auto dst = ColumnVector<Float64>::create();
+        auto dst = ColumnVector<Int64>::create();
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
@@ -75,7 +75,7 @@ public:
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                     "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is ",
                     resolution, getName(), MAX_H3_RES);
-            Float64 res = getNumCells(resolution);
+            Int64 res = getNumCells(resolution);
             dst_data[row] = res;
         }
 
