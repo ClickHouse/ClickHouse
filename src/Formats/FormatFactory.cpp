@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int FORMAT_IS_NOT_SUITABLE_FOR_INPUT;
     extern const int FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT;
+    extern const int BAD_ARGUMENTS;
 }
 
 const FormatFactory::Creators & FormatFactory::getCreators(const String & name) const
@@ -412,7 +413,11 @@ String FormatFactory::getFormatFromFileName(String file_name, bool throw_if_not_
 
     auto pos = file_name.find_last_of('.');
     if (pos == String::npos)
+    {
+        if (throw_if_not_found)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot determine the file format by it's extension");
         return "";
+    }
 
     String file_extension = file_name.substr(pos + 1, String::npos);
     boost::algorithm::to_lower(file_extension);
