@@ -47,8 +47,8 @@ ${CLICKHOUSE_CLIENT} --query "INSERT INTO TABLE 02165_in_tb FROM INFILE '${CLICK
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM 02165_in_tb;"
 ${CLICKHOUSE_CLIENT} --query "TRUNCATE TABLE 02165_in_tb;"
 
-${CLICKHOUSE_CLIENT} --query "SELECT * FROM 02165_out_tb INTO OUTFILE '${CLICKHOUSE_TMP}/museum...protobuf';"
-${CLICKHOUSE_CLIENT} --query "INSERT INTO TABLE 02165_in_tb FROM INFILE '${CLICKHOUSE_TMP}/museum...protobuf' FORMAT TabSeparated;"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM 02165_out_tb INTO OUTFILE '${CLICKHOUSE_TMP}/museum...JSONEachRow';"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO TABLE 02165_in_tb FROM INFILE '${CLICKHOUSE_TMP}/museum...JSONEachRow';"
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM 02165_in_tb;"
 ${CLICKHOUSE_CLIENT} --query "TRUNCATE TABLE 02165_in_tb;"
 
@@ -69,4 +69,4 @@ rm "${CLICKHOUSE_TMP}"/hello.world.csv
 rm "${CLICKHOUSE_TMP}"/hello.world.csv.xz
 rm "${CLICKHOUSE_TMP}"/.htaccess.json
 rm "${CLICKHOUSE_TMP}"/example.com.
-rm "${CLICKHOUSE_TMP}"/museum...protobuf
+rm "${CLICKHOUSE_TMP}"/museum...JSONEachRow
