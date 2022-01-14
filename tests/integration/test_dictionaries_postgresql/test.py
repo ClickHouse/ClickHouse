@@ -282,6 +282,7 @@ def test_postgres_schema(started_cluster):
     cursor.execute('INSERT INTO test_schema.test_table SELECT i, i FROM generate_series(0, 99) as t(i)')
 
     node1.query('''
+    DROP DICTIONARY IF EXISTS postgres_dict;
     CREATE DICTIONARY postgres_dict (id UInt32, value UInt32)
     PRIMARY KEY id
     SOURCE(POSTGRESQL(
@@ -311,6 +312,7 @@ def test_predefined_connection_configuration(started_cluster):
     cursor.execute('INSERT INTO test_table SELECT i, i FROM generate_series(0, 99) as t(i)')
 
     node1.query('''
+    DROP DICTIONARY IF EXISTS postgres_dict;
     CREATE DICTIONARY postgres_dict (id UInt32, value UInt32)
     PRIMARY KEY id
     SOURCE(POSTGRESQL(NAME postgres1))
