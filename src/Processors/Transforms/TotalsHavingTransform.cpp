@@ -6,7 +6,7 @@
 #include <Columns/ColumnsCommon.h>
 
 #include <Common/typeid_cast.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataStreams/finalizeBlock.h>
 #include <Interpreters/ExpressionActions.h>
 
 namespace DB
@@ -27,25 +27,6 @@ void finalizeChunk(Chunk & chunk)
             column = ColumnAggregateFunction::convertToValues(IColumn::mutate(std::move(column)));
 
     chunk.setColumns(std::move(columns), num_rows);
-}
-
-void finalizeBlock(Block & block)
-{
-    for (size_t i = 0; i < block.columns(); ++i)
-    {
-        ColumnWithTypeAndName & current = block.getByPosition(i);
-        const DataTypeAggregateFunction * unfinalized_type = typeid_cast<const DataTypeAggregateFunction *>(current.type.get());
-
-        if (unfinalized_type)
-        {
-            current.type = unfinalized_type->getReturnType();
-            if (current.column)
-            {
-                auto mut_column = IColumn::mutate(std::move(current.column));
-                current.column = ColumnAggregateFunction::convertToValues(std::move(mut_column));
-            }
-        }
-    }
 }
 
 Block TotalsHavingTransform::transformHeader(

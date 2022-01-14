@@ -6,7 +6,6 @@
 #include <string>
 #include <Core/Field.h>
 #include <Core/SettingsEnums.h>
-#include <Common/IntervalKind.h>
 
 class Collator;
 
@@ -28,11 +27,7 @@ struct FillColumnDescription
     /// Range [FROM, TO) respects sorting direction
     Field fill_from;        /// Fill value >= FILL_FROM
     Field fill_to;          /// Fill value + STEP < FILL_TO
-    Field fill_step;        /// Default = +1 or -1 according to direction
-    std::optional<IntervalKind> step_kind;
-
-    using StepFunction = std::function<void(Field &)>;
-    StepFunction step_func;
+    Field fill_step;        /// Default = 1 or -1 according to direction
 };
 
 /// Description of the sorting rule by one column.
@@ -47,15 +42,15 @@ struct SortColumnDescription
     bool with_fill;
     FillColumnDescription fill_description;
 
-    explicit SortColumnDescription(
-            size_t column_number_, int direction_ = 1, int nulls_direction_ = 1,
+    SortColumnDescription(
+            size_t column_number_, int direction_, int nulls_direction_,
             const std::shared_ptr<Collator> & collator_ = nullptr,
             bool with_fill_ = false, const FillColumnDescription & fill_description_ = {})
             : column_number(column_number_), direction(direction_), nulls_direction(nulls_direction_), collator(collator_)
             , with_fill(with_fill_), fill_description(fill_description_) {}
 
-    explicit SortColumnDescription(
-            const std::string & column_name_, int direction_ = 1, int nulls_direction_ = 1,
+    SortColumnDescription(
+            const std::string & column_name_, int direction_, int nulls_direction_,
             const std::shared_ptr<Collator> & collator_ = nullptr,
             bool with_fill_ = false, const FillColumnDescription & fill_description_ = {})
             : column_name(column_name_), column_number(0), direction(direction_), nulls_direction(nulls_direction_)

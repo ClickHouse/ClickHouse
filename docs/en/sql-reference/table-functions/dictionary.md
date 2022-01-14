@@ -13,7 +13,7 @@ Displays the [dictionary](../../sql-reference/dictionaries/external-dictionaries
 dictionary('dict')
 ```
 
-**Arguments**
+**Arguments** 
 
 -   `dict` — A dictionary name. [String](../../sql-reference/data-types/string.md).
 

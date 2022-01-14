@@ -21,7 +21,7 @@ Columns:
 │ default │ /var/lib/clickhouse/ │ 276392587264 │ 490652508160 │               0 │
 └─────────┴──────────────────────┴──────────────┴──────────────┴─────────────────┘
 
-1 rows in set. Elapsed: 0.001 sec.
+1 rows in set. Elapsed: 0.001 sec. 
 ```
 
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/disks) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system-tables/disks) <!--hide-->

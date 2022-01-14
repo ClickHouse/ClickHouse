@@ -1,5 +1,3 @@
--- Tags: no-fasttest
-
 SELECT 'uniqTheta many agrs';
 
 SELECT

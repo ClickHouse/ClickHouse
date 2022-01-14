@@ -1,8 +1,7 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-#include <base/shared_ptr_helper.h>
-#include <QueryPipeline/Pipe.h>
+#include <common/shared_ptr_helper.h>
 
 namespace DB
 {
@@ -16,7 +15,7 @@ public:
     String getName() const override { return "Input"; }
 
     /// A table will read from this stream.
-    void setPipe(Pipe pipe_);
+    void setInputStream(BlockInputStreamPtr input_stream_);
 
     Pipe read(
         const Names & column_names,
@@ -28,7 +27,7 @@ public:
         unsigned num_streams) override;
 
 private:
-    Pipe pipe;
+    BlockInputStreamPtr input_stream;
 
 protected:
     StorageInput(const StorageID & table_id, const ColumnsDescription & columns_);

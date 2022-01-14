@@ -3,9 +3,9 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Access/AccessControl.h>
+#include <Access/AccessControlManager.h>
 #include <Access/Role.h>
-#include <Access/Common/AccessFlags.h>
+#include <Access/AccessFlags.h>
 #include <Interpreters/Context.h>
 
 
@@ -26,7 +26,7 @@ NamesAndTypesList StorageSystemRoles::getNamesAndTypes()
 void StorageSystemRoles::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     context->checkAccess(AccessType::SHOW_ROLES);
-    const auto & access_control = context->getAccessControl();
+    const auto & access_control = context->getAccessControlManager();
     std::vector<UUID> ids = access_control.findAll<Role>();
 
     size_t column_index = 0;

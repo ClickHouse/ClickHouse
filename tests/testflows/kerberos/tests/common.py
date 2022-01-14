@@ -31,10 +31,10 @@ def xml_parse_file(filename):
 def create_default_config(filename):
     contents = ""
     if "kerberos_users.xml" in filename:
-        contents = "<clickhouse><users><kerberos_user><kerberos><realm>EXAMPLE.COM" \
-               "</realm></kerberos></kerberos_user></users></clickhouse>"
+        contents = "<yandex><users><kerberos_user><kerberos><realm>EXAMPLE.COM" \
+               "</realm></kerberos></kerberos_user></users></yandex>"
     elif "kerberos.xml" in filename:
-        contents = "<clickhouse><kerberos><realm>EXAMPLE.COM</realm></kerberos></clickhouse>"
+        contents = "<yandex><kerberos><realm>EXAMPLE.COM</realm></kerberos></yandex>"
 
     with open(filename, "w") as f:
         f.write(contents)
@@ -68,8 +68,8 @@ def create_server_principal(self, node):
     """
     try:
         node.cmd("echo pwd | kinit admin/admin")
-        node.cmd(f"kadmin -w pwd -q \"add_principal -randkey HTTP/kerberos_env_{node.name}_1.krbnet\"")
-        node.cmd(f"kadmin -w pwd -q \"ktadd -k /etc/krb5.keytab HTTP/kerberos_env_{node.name}_1.krbnet\"")
+        node.cmd(f"kadmin -w pwd -q \"add_principal -randkey HTTP/docker-compose_{node.name}_1.docker-compose_default\"")
+        node.cmd(f"kadmin -w pwd -q \"ktadd -k /etc/krb5.keytab HTTP/docker-compose_{node.name}_1.docker-compose_default\"")
         yield
     finally:
         node.cmd("kdestroy")
@@ -104,7 +104,7 @@ def temp_erase(self, node, filename=None):
     try:
         with Then("I overwrite file to be dummy"):
             with open(filename, 'w') as f:
-                f.write("<clickhouse></clickhouse>\n")
+                f.write("<yandex></yandex>\n")
             node.restart()
             yield
     finally:
@@ -170,7 +170,7 @@ def check_wrong_config(self, node, client, config_path, modify_file, log_error="
             config_contents = xmltree.tostring(root, encoding='utf8', method='xml').decode('utf-8')
             command = f"cat <<HEREDOC > {full_config_path}\n{config_contents}\nHEREDOC"
             node.command(command, steps=False, exitcode=0)
-            time.sleep(1)
+            # time.sleep(1)
 
         with Then(f"{preprocessed_name} should be updated", description=f"timeout {timeout}"):
             started = time.time()
@@ -183,13 +183,10 @@ def check_wrong_config(self, node, client, config_path, modify_file, log_error="
             assert exitcode == 0, error()
 
         with When("I restart ClickHouse to apply the config changes"):
-            node.cmd("kdestroy")
-            # time.sleep(1)
             if output:
                 node.restart(safe=False, wait_healthy=True)
             else:
                 node.restart(safe=False, wait_healthy=False)
-
 
         if output != "":
             with Then(f"check {output} is in output"):
@@ -204,7 +201,7 @@ def check_wrong_config(self, node, client, config_path, modify_file, log_error="
                         break
                     time.sleep(1)
                 else:
-                    assert output in r.output, error()
+                    assert False, error()
 
     finally:
         with Finally("I restore original config"):
@@ -226,19 +223,3 @@ def check_wrong_config(self, node, client, config_path, modify_file, log_error="
             assert exitcode == 0, error()
 
 
-@TestStep(Given)
-def instrument_clickhouse_server_log(self, clickhouse_server_log="/var/log/clickhouse-server/clickhouse-server.log"):
-    """Instrument clickhouse-server.log for the current test
-    by adding start and end messages that include
-    current test name to the clickhouse-server.log of the specified node and
-    if the test fails then dump the messages from
-    the clickhouse-server.log for this test.
-    """
-    all_nodes = self.context.ch_nodes + [self.context.krb_server]
-
-    for node in all_nodes:
-        if node.name != "kerberos":
-            with When(f"output stats for {node.repr()}"):
-                node.command(f"echo -e \"\\n-- {current().name} -- top --\\n\" && top -bn1")
-                node.command(f"echo -e \"\\n-- {current().name} -- df --\\n\" && df -h")
-                node.command(f"echo -e \"\\n-- {current().name} -- free --\\n\" && free -mh")

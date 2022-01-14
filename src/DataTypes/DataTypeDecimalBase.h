@@ -53,13 +53,14 @@ inline UInt32 leastDecimalPrecisionFor(TypeIndex int_type)
 /// Operation between two decimals leads to Decimal(P, S), where
 ///     P is one of (9, 18, 38, 76); equals to the maximum precision for the biggest underlying type of operands.
 ///     S is maximum scale of operands. The allowed valuas are [0, precision]
-template <is_decimal T>
+template <typename T>
 class DataTypeDecimalBase : public IDataType
 {
+    static_assert(IsDecimalNumber<T>);
+
 public:
     using FieldType = T;
     using ColumnType = ColumnDecimal<T>;
-    static constexpr auto type_id = TypeId<T>;
 
     static constexpr bool is_parametric = true;
 

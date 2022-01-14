@@ -53,7 +53,6 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     /// Called if at least one function argument is a lambda expression.
     /// For argument-lambda expressions, it defines the types of arguments of these expressions.

@@ -1,1 +1,0 @@
-../../en/development/adding_test_queries.md

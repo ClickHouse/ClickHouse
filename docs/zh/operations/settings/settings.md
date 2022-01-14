@@ -1252,7 +1252,7 @@ ClickHouse生成异常
 
 默认值：16。
 
-[原始文章](https://clickhouse.com/docs/en/operations/settings/settings/) <!-- hide -->
+[原始文章](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
 
 ## transform_null_in {#transform_null_in}
 

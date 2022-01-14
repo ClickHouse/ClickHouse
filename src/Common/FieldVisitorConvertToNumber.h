@@ -2,7 +2,7 @@
 
 #include <Common/FieldVisitors.h>
 #include <Common/NaNUtils.h>
-#include <base/demangle.h>
+#include <common/demangle.h>
 #include <type_traits>
 
 
@@ -116,7 +116,7 @@ public:
     template <typename U, typename = std::enable_if_t<is_big_int_v<U>> >
     T operator() (const U & x) const
     {
-        if constexpr (is_decimal<T>)
+        if constexpr (IsDecimalNumber<T>)
             return static_cast<T>(static_cast<typename T::NativeType>(x));
         else if constexpr (std::is_same_v<T, UInt128>)
             throw Exception("No conversion to old UInt128 from " + demangle(typeid(U).name()), ErrorCodes::NOT_IMPLEMENTED);

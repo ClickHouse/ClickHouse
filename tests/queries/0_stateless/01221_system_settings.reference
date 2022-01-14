@@ -1,4 +1,4 @@
 send_timeout	300	0		\N	\N	0	Seconds
-storage_policy	default	0	Name of storage disk policy	String
+replicated_max_parallel_sends	0	0	Limit parallel sends.	UInt64
 1
 1

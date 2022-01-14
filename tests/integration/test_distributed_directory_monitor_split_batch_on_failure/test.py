@@ -42,7 +42,6 @@ def test_distributed_directory_monitor_split_batch_on_failure_OFF(started_cluste
             # max_memory_usage is the limit for the batch on the remote node
             # (local query should not be affected since 30MB is enough for 100K rows)
             'max_memory_usage': '30Mi',
-            'max_untracked_memory': '0'
         })
     # "Received from" is mandatory, since the exception should be thrown on the remote node.
     with pytest.raises(QueryRuntimeException, match=r'DB::Exception: Received from.*Memory limit \(for query\) exceeded: .*while pushing to view default\.mv'):
@@ -56,7 +55,6 @@ def test_distributed_directory_monitor_split_batch_on_failure_ON(started_cluster
             # max_memory_usage is the limit for the batch on the remote node
             # (local query should not be affected since 30MB is enough for 100K rows)
             'max_memory_usage': '30Mi',
-            'max_untracked_memory': '0'
         })
     node1.query('system flush distributed dist')
     assert int(node1.query('select count() from dist_data')) == 100000

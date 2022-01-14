@@ -28,7 +28,7 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <IO/UseSSL.h>
-#include <QueryPipeline/RemoteQueryExecutor.h>
+#include <DataStreams/RemoteBlockInputStream.h>
 #include <Interpreters/Context.h>
 #include <Client/Connection.h>
 #include <Common/InterruptListener.h>
@@ -58,8 +58,7 @@ namespace ErrorCodes
 class Benchmark : public Poco::Util::Application
 {
 public:
-    Benchmark(unsigned concurrency_, double delay_,
-            Strings && hosts_, Ports && ports_, bool round_robin_,
+    Benchmark(unsigned concurrency_, double delay_, Strings && hosts_, Ports && ports_,
             bool cumulative_, bool secure_, const String & default_database_,
             const String & user_, const String & password_, const String & stage,
             bool randomize_, size_t max_iterations_, double max_time_,
@@ -67,7 +66,7 @@ public:
             const String & query_id_, const String & query_to_execute_, bool continue_on_errors_,
             bool reconnect_, bool print_stacktrace_, const Settings & settings_)
         :
-        round_robin(round_robin_), concurrency(concurrency_), delay(delay_), queue(concurrency), randomize(randomize_),
+        concurrency(concurrency_), delay(delay_), queue(concurrency), randomize(randomize_),
         cumulative(cumulative_), max_iterations(max_iterations_), max_time(max_time_),
         json_path(json_path_), confidence(confidence_), query_id(query_id_),
         query_to_execute(query_to_execute_), continue_on_errors(continue_on_errors_), reconnect(reconnect_),
@@ -79,8 +78,8 @@ public:
         size_t connections_cnt = std::max(ports_.size(), hosts_.size());
 
         connections.reserve(connections_cnt);
-        comparison_info_total.reserve(round_robin ? 1 : connections_cnt);
-        comparison_info_per_interval.reserve(round_robin ? 1 : connections_cnt);
+        comparison_info_total.reserve(connections_cnt);
+        comparison_info_per_interval.reserve(connections_cnt);
 
         for (size_t i = 0; i < connections_cnt; ++i)
         {
@@ -91,17 +90,11 @@ public:
                 concurrency,
                 cur_host, cur_port,
                 default_database_, user_, password_,
-                /* cluster_= */ "",
-                /* cluster_secret_= */ "",
-                /* client_name_= */ "benchmark",
-                Protocol::Compression::Enable,
-                secure));
-
-            if (!round_robin || comparison_info_per_interval.empty())
-            {
-                comparison_info_per_interval.emplace_back(std::make_shared<Stats>());
-                comparison_info_total.emplace_back(std::make_shared<Stats>());
-            }
+                "", /* cluster */
+                "", /* cluster_secret */
+                "benchmark", Protocol::Compression::Enable, secure));
+            comparison_info_per_interval.emplace_back(std::make_shared<Stats>());
+            comparison_info_total.emplace_back(std::make_shared<Stats>());
         }
 
         global_context->makeGlobalContext();
@@ -141,7 +134,6 @@ private:
     using EntryPtr = std::shared_ptr<Entry>;
     using EntryPtrs = std::vector<EntryPtr>;
 
-    bool round_robin;
     unsigned concurrency;
     double delay;
 
@@ -279,8 +271,7 @@ private:
 
             if (max_time > 0 && total_watch.elapsedSeconds() >= max_time)
             {
-                std::cout << "Stopping launch of queries."
-                          << " Requested time limit " << max_time << " seconds is exhausted.\n";
+                std::cout << "Stopping launch of queries. Requested time limit is exhausted.\n";
                 return false;
             }
 
@@ -322,7 +313,6 @@ private:
         }
         catch (...)
         {
-            shutdown = true;
             pool.wait();
             throw;
         }
@@ -378,7 +368,8 @@ private:
             {
                 extracted = queue.tryPop(query, 100);
 
-                if (shutdown || (max_iterations && queries_executed == max_iterations))
+                if (shutdown
+                    || (max_iterations && queries_executed == max_iterations))
                 {
                     return;
                 }
@@ -391,9 +382,8 @@ private:
             }
             catch (...)
             {
-                std::lock_guard lock(mutex);
-                std::cerr << "An error occurred while processing the query " << "'" << query << "'"
-                          << ": " << getCurrentExceptionMessage(false) << std::endl;
+                std::cerr << "An error occurred while processing the query '"
+                          << query << "'.\n";
                 if (!continue_on_errors)
                 {
                     shutdown = true;
@@ -404,9 +394,8 @@ private:
                     std::cerr << getCurrentExceptionMessage(print_stacktrace,
                         true /*check embedded stack trace*/) << std::endl;
 
-                    size_t info_index = round_robin ? 0 : connection_index;
-                    comparison_info_per_interval[info_index]->errors++;
-                    comparison_info_total[info_index]->errors++;
+                    comparison_info_per_interval[connection_index]->errors++;
+                    comparison_info_total[connection_index]->errors++;
                 }
             }
             // Count failed queries toward executed, so that we'd reach
@@ -424,28 +413,28 @@ private:
         if (reconnect)
             connection.disconnect();
 
-        RemoteQueryExecutor executor(
+        RemoteBlockInputStream stream(
             connection, query, {}, global_context, nullptr, Scalars(), Tables(), query_processing_stage);
         if (!query_id.empty())
-            executor.setQueryId(query_id);
+            stream.setQueryId(query_id);
 
         Progress progress;
-        executor.setProgressCallback([&progress](const Progress & value) { progress.incrementPiecewiseAtomically(value); });
+        stream.setProgressCallback([&progress](const Progress & value) { progress.incrementPiecewiseAtomically(value); });
 
-        ProfileInfo info;
-        while (Block block = executor.read())
-            info.update(block);
+        stream.readPrefix();
+        while (Block block = stream.read());
 
-        executor.finish();
+        stream.readSuffix();
+
+        const BlockStreamProfileInfo & info = stream.getProfileInfo();
 
         double seconds = watch.elapsedSeconds();
 
         std::lock_guard lock(mutex);
 
-        size_t info_index = round_robin ? 0 : connection_index;
-        comparison_info_per_interval[info_index]->add(seconds, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
-        comparison_info_total[info_index]->add(seconds, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
-        t_test.add(info_index, seconds);
+        comparison_info_per_interval[connection_index]->add(seconds, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
+        comparison_info_total[connection_index]->add(seconds, progress.read_rows, progress.read_bytes, info.rows, info.bytes);
+        t_test.add(connection_index, seconds);
     }
 
     void report(MultiStats & infos)
@@ -463,19 +452,8 @@ private:
 
             double seconds = info->work_time / concurrency;
 
-            std::string connection_description = connections[i]->getDescription();
-            if (round_robin)
-            {
-                connection_description.clear();
-                for (const auto & conn : connections)
-                {
-                    if (!connection_description.empty())
-                        connection_description += ", ";
-                    connection_description += conn->getDescription();
-                }
-            }
             std::cerr
-                    << connection_description << ", "
+                    << connections[i]->getDescription() << ", "
                     << "queries " << info->queries << ", ";
             if (info->errors)
             {
@@ -608,9 +586,8 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("timelimit,t",   value<double>()->default_value(0.),               "stop launch of queries after specified time limit")
             ("randomize,r",   value<bool>()->default_value(false),              "randomize order of execution")
             ("json",          value<std::string>()->default_value(""),          "write final report to specified file in JSON format")
-            ("host,h",        value<Strings>()->multitoken(),                   "list of hosts")
-            ("port,p",        value<Ports>()->multitoken(),                     "list of ports")
-            ("roundrobin",                                                      "Instead of comparing queries for different --host/--port just pick one random --host/--port for every query and send query to it.")
+            ("host,h",        value<Strings>()->multitoken(),                   "")
+            ("port,p",        value<Ports>()->multitoken(),                     "")
             ("cumulative",                                                      "prints cumulative data instead of data per interval")
             ("secure,s",                                                        "Use TLS connection")
             ("user",          value<std::string>()->default_value("default"),   "")
@@ -657,7 +634,6 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["delay"].as<double>(),
             std::move(hosts),
             std::move(ports),
-            options.count("roundrobin"),
             options.count("cumulative"),
             options.count("secure"),
             options["database"].as<std::string>(),

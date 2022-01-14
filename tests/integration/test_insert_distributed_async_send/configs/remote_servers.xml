@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <remote_servers>
         <insert_distributed_async_send_cluster_two_replicas>
             <shard>
@@ -28,5 +28,5 @@
             </shard>
         </insert_distributed_async_send_cluster_two_shards>
     </remote_servers>
-</clickhouse>
+</yandex>
 

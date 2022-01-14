@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/OffsetTransform.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 
@@ -29,7 +29,7 @@ OffsetStep::OffsetStep(const DataStream & input_stream_, size_t offset_)
 {
 }
 
-void OffsetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void OffsetStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     auto transform = std::make_shared<OffsetTransform>(
             pipeline.getHeader(), offset, pipeline.getNumStreams());

@@ -1,13 +1,15 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
+#endif
 
 #if USE_HDFS
 
 #include <Storages/IStorage.h>
 #include <Poco/URI.h>
-#include <base/logger_useful.h>
-#include <base/shared_ptr_helper.h>
+#include <common/logger_useful.h>
+#include <common/shared_ptr_helper.h>
 
 namespace DB
 {
@@ -30,22 +32,13 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     void truncate(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_, TableExclusiveLockHolder &) override;
 
     NamesAndTypesList getVirtuals() const override;
 
-    bool supportsPartitionBy() const override { return true; }
-
-    /// Check if the format is column-oriented.
-    /// Is is useful because column oriented formats could effectively skip unknown columns
-    /// So we can create a header of only required columns in read method and ask
-    /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
-    bool isColumnOriented() const;
-
 protected:
-    friend class HDFSSource;
     StorageHDFS(
         const String & uri_,
         const StorageID & table_id_,
@@ -54,14 +47,12 @@ protected:
         const ConstraintsDescription & constraints_,
         const String & comment,
         ContextPtr context_,
-        const String & compression_method_,
-        ASTPtr partition_by = nullptr);
+        const String & compression_method_);
 
 private:
     const String uri;
     String format_name;
     String compression_method;
-    ASTPtr partition_by;
 
     Poco::Logger * log = &Poco::Logger::get("StorageHDFS");
 };

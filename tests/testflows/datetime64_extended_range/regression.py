@@ -61,29 +61,33 @@ xfails = {
     RQ_SRS_010_DateTime64_ExtendedRange("1.0"),
 )
 @XFails(xfails)
-def regression(self, local, clickhouse_binary_path, stress=False):
+def regression(self, local, clickhouse_binary_path, parallel=False, stress=False):
     """ClickHouse DateTime64 Extended Range regression module.
     """
+    top().terminating = False
     nodes = {
         "clickhouse": ("clickhouse1", "clickhouse2", "clickhouse3"),
     }
 
     if stress is not None:
         self.context.stress = stress
+    if parallel is not None:
+        self.context.parallel = parallel
 
     with Cluster(local, clickhouse_binary_path, nodes=nodes,
             docker_compose_project_dir=os.path.join(current_dir(), "datetime64_extended_range_env")) as cluster:
         self.context.cluster = cluster
 
+        tasks = []
         with Pool(2) as pool:
             try:
-                Scenario(run=load("datetime64_extended_range.tests.generic", "generic"), parallel=True, executor=pool)
-                Scenario(run=load("datetime64_extended_range.tests.non_existent_time", "feature"), parallel=True, executor=pool)
-                Scenario(run=load("datetime64_extended_range.tests.reference_times", "reference_times"), parallel=True, executor=pool)
-                Scenario(run=load("datetime64_extended_range.tests.date_time_functions", "date_time_funcs"), parallel=True, executor=pool)
-                Scenario(run=load("datetime64_extended_range.tests.type_conversion", "type_conversion"), parallel=True, executor=pool)
+                run_scenario(pool, tasks, Scenario(test=load("datetime64_extended_range.tests.generic", "generic")))
+                run_scenario(pool, tasks, Scenario(test=load("datetime64_extended_range.tests.non_existent_time", "feature")))
+                run_scenario(pool, tasks, Scenario(test=load("datetime64_extended_range.tests.reference_times", "reference_times")))
+                run_scenario(pool, tasks, Scenario(test=load("datetime64_extended_range.tests.date_time_functions", "date_time_funcs")))
+                run_scenario(pool, tasks, Scenario(test=load("datetime64_extended_range.tests.type_conversion", "type_conversion")))
             finally:
-                join()
+                join(tasks)
 
 if main():
     regression()

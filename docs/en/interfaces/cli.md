@@ -127,9 +127,6 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 -   `--secure` – If specified, will connect to server over secure connection.
 -   `--history_file` — Path to a file containing command history.
 -   `--param_<name>` — Value for a [query with parameters](#cli-queries-with-parameters).
--   `--hardware-utilization` — Print hardware utilization information in progress bar.
--   `--print-profile-events` – Print `ProfileEvents` packets.
--   `--profile-events-delay-ms` – Delay between printing `ProfileEvents` packets (-1 - print only totals, 0 - print every single packet).
 
 Since version 20.5, `clickhouse-client` has automatic syntax highlighting (always enabled).
 
@@ -144,7 +141,7 @@ Since version 20.5, `clickhouse-client` has automatic syntax highlighting (alway
 
 Example of a config file:
 
-```xml
+``` xml
 <config>
     <user>username</user>
     <password>password</password>
@@ -152,30 +149,4 @@ Example of a config file:
 </config>
 ```
 
-### Query ID Format {#query-id-format}
-
-In interactive mode `clickhouse-client` shows query ID for every query. By default, the ID is formatted like this:
-
-```sql
-Query id: 927f137d-00f1-4175-8914-0dd066365e96
-```
-
-A custom format may be specified in a configuration file inside a `query_id_formats` tag. `{query_id}` placeholder in the format string is replaced with the ID of a query. Several format strings are allowed inside the tag.
-This feature can be used to generate URLs to facilitate profiling of queries.
-
-**Example**
-
-```xml
-<config>
-  <query_id_formats>
-    <speedscope>http://speedscope-host/#profileURL=qp%3Fid%3D{query_id}</speedscope>
-  </query_id_formats>
-</config>
-```
-
-If the configuration above is applied, the ID of a query is shown in the following format:
-
-``` text
-speedscope:http://speedscope-host/#profileURL=qp%3Fid%3Dc8ecc783-e753-4b38-97f1-42cddfb98b7d
-```
-
+[Original article](https://clickhouse.tech/docs/en/interfaces/cli/) <!--hide-->

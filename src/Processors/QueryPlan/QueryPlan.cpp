@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
 #include <Interpreters/ActionsDAG.h>
@@ -9,7 +9,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Common/JSONBuilder.h>
 
 namespace DB
@@ -134,7 +133,7 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
                     " input expected", ErrorCodes::LOGICAL_ERROR);
 }
 
-QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
+QueryPipelinePtr QueryPlan::buildQueryPipeline(
     const QueryPlanOptimizationSettings & optimization_settings,
     const BuildQueryPipelineSettings & build_pipeline_settings)
 {
@@ -144,10 +143,10 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     struct Frame
     {
         Node * node = {};
-        QueryPipelineBuilders pipelines = {};
+        QueryPipelines pipelines = {};
     };
 
-    QueryPipelineBuilderPtr last_pipeline;
+    QueryPipelinePtr last_pipeline;
 
     std::stack<Frame> stack;
     stack.push(Frame{.node = root});
@@ -193,10 +192,10 @@ Pipe QueryPlan::convertToPipe(
     if (isCompleted())
         throw Exception("Cannot convert completed QueryPlan to Pipe", ErrorCodes::LOGICAL_ERROR);
 
-    return QueryPipelineBuilder::getPipe(std::move(*buildQueryPipeline(optimization_settings, build_pipeline_settings)));
+    return QueryPipeline::getPipe(std::move(*buildQueryPipeline(optimization_settings, build_pipeline_settings)));
 }
 
-void QueryPlan::addInterpreterContext(ContextPtr context)
+void QueryPlan::addInterpreterContext(std::shared_ptr<Context> context)
 {
     interpreter_context.emplace_back(std::move(context));
 }
@@ -433,61 +432,6 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
     QueryPlanOptimizations::optimizeTree(optimization_settings, *root, nodes);
-}
-
-void QueryPlan::explainEstimate(MutableColumns & columns)
-{
-    checkInitialized();
-
-    struct EstimateCounters
-    {
-        std::string database_name;
-        std::string table_name;
-        UInt64 parts = 0;
-        UInt64 rows = 0;
-        UInt64 marks = 0;
-
-        EstimateCounters(const std::string & database, const std::string & table) : database_name(database), table_name(table)
-        {
-        }
-    };
-
-    using CountersPtr = std::shared_ptr<EstimateCounters>;
-    std::unordered_map<std::string, CountersPtr> counters;
-    using processNodeFuncType = std::function<void(const Node * node)>;
-    processNodeFuncType process_node = [&counters, &process_node] (const Node * node)
-    {
-        if (!node)
-            return;
-        if (const auto * step = dynamic_cast<ReadFromMergeTree*>(node->step.get()))
-        {
-            const auto & id = step->getStorageID();
-            auto key = id.database_name + "." + id.table_name;
-            auto it = counters.find(key);
-            if (it == counters.end())
-            {
-                it = counters.insert({key, std::make_shared<EstimateCounters>(id.database_name, id.table_name)}).first;
-            }
-            it->second->parts += step->getSelectedParts();
-            it->second->rows += step->getSelectedRows();
-            it->second->marks += step->getSelectedMarks();
-        }
-        for (const auto * child : node->children)
-            process_node(child);
-    };
-    process_node(root);
-
-    for (const auto & counter : counters)
-    {
-        size_t index = 0;
-        const auto & database_name = counter.second->database_name;
-        const auto & table_name = counter.second->table_name;
-        columns[index++]->insertData(database_name.c_str(), database_name.size());
-        columns[index++]->insertData(table_name.c_str(), table_name.size());
-        columns[index++]->insert(counter.second->parts);
-        columns[index++]->insert(counter.second->rows);
-        columns[index++]->insert(counter.second->marks);
-    }
 }
 
 }

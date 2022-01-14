@@ -2,7 +2,7 @@
 #include <IO/ReadHelpers.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
-#include <base/scope_guard_safe.h>
+#include <common/scope_guard_safe.h>
 
 namespace DB
 {
@@ -26,7 +26,8 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
 
             {
                 std::unique_lock<std::mutex> lock(mutex);
-                segmentator_condvar.wait(lock, [&] { return unit.status == READY_TO_INSERT || parsing_finished; });
+                segmentator_condvar.wait(lock,
+                                         [&]{ return unit.status == READY_TO_INSERT || parsing_finished; });
             }
 
             if (parsing_finished)
@@ -37,7 +38,7 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupStatusPtr 
             // Segmentating the original input.
             unit.segment.resize(0);
 
-            auto [have_more_data, currently_read_rows] = file_segmentation_engine(*in, unit.segment, min_chunk_bytes);
+            auto [have_more_data, currently_read_rows] = file_segmentation_engine(in, unit.segment, min_chunk_bytes);
 
             unit.offset = successfully_read_rows_count;
             successfully_read_rows_count += currently_read_rows;

@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
-# Tags: race, zookeeper, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
-# shellcheck source=./replication.lib
-. "$CURDIR"/replication.lib
 
 set -e
 
@@ -101,8 +98,6 @@ timeout $TIMEOUT bash -c thread5 2> /dev/null &
 timeout $TIMEOUT bash -c thread6 2>&1 | grep "was not completely removed from ZooKeeper" &
 
 wait
-
-check_replication_consistency "alter_table_" "count(), sum(a), sum(b), round(sum(c))"
 
 for i in {0..9}; do
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS alter_table_$i" 2>&1 | grep "was not completely removed from ZooKeeper" &

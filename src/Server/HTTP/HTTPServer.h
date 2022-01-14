@@ -5,7 +5,7 @@
 #include <Poco/Net/HTTPServerParams.h>
 #include <Poco/Net/TCPServer.h>
 
-#include <base/types.h>
+#include <common/types.h>
 
 
 namespace DB

@@ -8,12 +8,10 @@ toc_title: SHOW
 ## SHOW CREATE TABLE {#show-create-table}
 
 ``` sql
-SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY|VIEW] [db.]table|view [INTO OUTFILE filename] [FORMAT format]
+SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY] [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
 Returns a single `String`-type ‘statement’ column, which contains a single value – the `CREATE` query used for creating the specified object.
-
-Note that if you use this statement to get `CREATE` query of system tables, you will get a *fake* query, which only declares table structure, but cannot be used to create table.
 
 ## SHOW DATABASES {#show-databases}
 
@@ -93,7 +91,7 @@ Result:
 
 ### See Also {#see-also}
 
--   [CREATE DATABASE](https://clickhouse.com/docs/en/sql-reference/statements/create/database/#query-language-create-database)
+-   [CREATE DATABASE](https://clickhouse.tech/docs/en/sql-reference/statements/create/database/#query-language-create-database)
 
 ## SHOW PROCESSLIST {#show-processlist}
 
@@ -192,8 +190,8 @@ Result:
 
 ### See Also {#see-also}
 
--   [Create Tables](https://clickhouse.com/docs/en/getting-started/tutorial/#create-tables)
--   [SHOW CREATE TABLE](https://clickhouse.com/docs/en/sql-reference/statements/show/#show-create-table)
+-   [Create Tables](https://clickhouse.tech/docs/en/getting-started/tutorial/#create-tables)
+-   [SHOW CREATE TABLE](https://clickhouse.tech/docs/en/sql-reference/statements/show/#show-create-table)
 
 ## SHOW DICTIONARIES {#show-dictionaries}
 
@@ -299,7 +297,7 @@ Returns a list of [user account](../../operations/access-rights.md#user-account-
 ``` sql
 SHOW USERS
 ```
-
+ 
 ## SHOW ROLES {#show-roles-statement}
 
 Returns a list of [roles](../../operations/access-rights.md#role-management). To view another parameters, see system tables [system.roles](../../operations/system-tables/roles.md#system_tables-roles) and [system.role-grants](../../operations/system-tables/role-grants.md#system_tables-role_grants).
@@ -337,8 +335,8 @@ Returns a list of [quotas](../../operations/access-rights.md#quotas-management).
 
 ``` sql
 SHOW QUOTAS
-```
-
+```  
+    
 ## SHOW QUOTA {#show-quota-statement}
 
 Returns a [quota](../../operations/quotas.md) consumption for all users or for current user. To view another parameters, see system tables [system.quotas_usage](../../operations/system-tables/quotas_usage.md#system_tables-quotas_usage) and [system.quota_usage](../../operations/system-tables/quota_usage.md#system_tables-quota_usage).
@@ -495,4 +493,4 @@ Result:
 
 -   [system.settings](../../operations/system-tables/settings.md) table
 
-[Original article](https://clickhouse.com/docs/en/sql-reference/statements/show/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/show/) <!--hide-->

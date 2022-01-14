@@ -9,40 +9,37 @@
 * 4 [Requirements](#requirements)
   * 4.1 [Generic](#generic)
     * 4.1.1 [RQ.SRS-016.Kerberos](#rqsrs-016kerberos)
-  * 4.2 [Ping](#ping)
-    * 4.2.1 [RQ.SRS-016.Kerberos.Ping](#rqsrs-016kerberosping)
-  * 4.3 [Configuration](#configuration)
-    * 4.3.1 [RQ.SRS-016.Kerberos.Configuration.MultipleAuthMethods](#rqsrs-016kerberosconfigurationmultipleauthmethods)
-    * 4.3.2 [RQ.SRS-016.Kerberos.Configuration.KerberosNotEnabled](#rqsrs-016kerberosconfigurationkerberosnotenabled)
-    * 4.3.3 [RQ.SRS-016.Kerberos.Configuration.MultipleKerberosSections](#rqsrs-016kerberosconfigurationmultiplekerberossections)
-    * 4.3.4 [RQ.SRS-016.Kerberos.Configuration.WrongUserRealm](#rqsrs-016kerberosconfigurationwronguserrealm)
-    * 4.3.5 [RQ.SRS-016.Kerberos.Configuration.PrincipalAndRealmSpecified](#rqsrs-016kerberosconfigurationprincipalandrealmspecified)
-    * 4.3.6 [RQ.SRS-016.Kerberos.Configuration.MultiplePrincipalSections](#rqsrs-016kerberosconfigurationmultipleprincipalsections)
-    * 4.3.7 [RQ.SRS-016.Kerberos.Configuration.MultipleRealmSections](#rqsrs-016kerberosconfigurationmultiplerealmsections)
-  * 4.4 [Valid User](#valid-user)
-    * 4.4.1 [RQ.SRS-016.Kerberos.ValidUser.XMLConfiguredUser](#rqsrs-016kerberosvaliduserxmlconfigureduser)
-    * 4.4.2 [RQ.SRS-016.Kerberos.ValidUser.RBACConfiguredUser](#rqsrs-016kerberosvaliduserrbacconfigureduser)
-    * 4.4.3 [RQ.SRS-016.Kerberos.ValidUser.KerberosNotConfigured](#rqsrs-016kerberosvaliduserkerberosnotconfigured)
-  * 4.5 [Invalid User](#invalid-user)
-    * 4.5.1 [RQ.SRS-016.Kerberos.InvalidUser](#rqsrs-016kerberosinvaliduser)
-    * 4.5.2 [RQ.SRS-016.Kerberos.InvalidUser.UserDeleted](#rqsrs-016kerberosinvaliduseruserdeleted)
-  * 4.6 [Kerberos Not Available](#kerberos-not-available)
-    * 4.6.1 [RQ.SRS-016.Kerberos.KerberosNotAvailable.InvalidServerTicket](#rqsrs-016kerberoskerberosnotavailableinvalidserverticket)
-    * 4.6.2 [RQ.SRS-016.Kerberos.KerberosNotAvailable.InvalidClientTicket](#rqsrs-016kerberoskerberosnotavailableinvalidclientticket)
-    * 4.6.3 [RQ.SRS-016.Kerberos.KerberosNotAvailable.ValidTickets](#rqsrs-016kerberoskerberosnotavailablevalidtickets)
-  * 4.7 [Kerberos Restarted](#kerberos-restarted)
-    * 4.7.1 [RQ.SRS-016.Kerberos.KerberosServerRestarted](#rqsrs-016kerberoskerberosserverrestarted)
-  * 4.8 [Performance](#performance)
-    * 4.8.1 [RQ.SRS-016.Kerberos.Performance](#rqsrs-016kerberosperformance)
-  * 4.9 [Parallel Requests processing](#parallel-requests-processing)
-    * 4.9.1 [RQ.SRS-016.Kerberos.Parallel](#rqsrs-016kerberosparallel)
-    * 4.9.2 [RQ.SRS-016.Kerberos.Parallel.ValidRequests.KerberosAndNonKerberos](#rqsrs-016kerberosparallelvalidrequestskerberosandnonkerberos)
-    * 4.9.3 [RQ.SRS-016.Kerberos.Parallel.ValidRequests.SameCredentials](#rqsrs-016kerberosparallelvalidrequestssamecredentials)
-    * 4.9.4 [RQ.SRS-016.Kerberos.Parallel.ValidRequests.DifferentCredentials](#rqsrs-016kerberosparallelvalidrequestsdifferentcredentials)
-    * 4.9.5 [RQ.SRS-016.Kerberos.Parallel.ValidInvalid](#rqsrs-016kerberosparallelvalidinvalid)
-    * 4.9.6 [RQ.SRS-016.Kerberos.Parallel.Deletion](#rqsrs-016kerberosparalleldeletion)
+  * 4.2 [Configuration](#configuration)
+    * 4.2.1 [RQ.SRS-016.Kerberos.Configuration.MultipleAuthMethods](#rqsrs-016kerberosconfigurationmultipleauthmethods)
+    * 4.2.2 [RQ.SRS-016.Kerberos.Configuration.KerberosNotEnabled](#rqsrs-016kerberosconfigurationkerberosnotenabled)
+    * 4.2.3 [RQ.SRS-016.Kerberos.Configuration.MultipleKerberosSections](#rqsrs-016kerberosconfigurationmultiplekerberossections)
+    * 4.2.4 [RQ.SRS-016.Kerberos.Configuration.WrongUserRealm](#rqsrs-016kerberosconfigurationwronguserrealm)
+    * 4.2.5 [RQ.SRS-016.Kerberos.Configuration.PrincipalAndRealmSpecified](#rqsrs-016kerberosconfigurationprincipalandrealmspecified)
+    * 4.2.6 [RQ.SRS-016.Kerberos.Configuration.MultiplePrincipalSections](#rqsrs-016kerberosconfigurationmultipleprincipalsections)
+    * 4.2.7 [RQ.SRS-016.Kerberos.Configuration.MultipleRealmSections](#rqsrs-016kerberosconfigurationmultiplerealmsections)
+  * 4.3 [Valid User](#valid-user)
+    * 4.3.1 [RQ.SRS-016.Kerberos.ValidUser.XMLConfiguredUser](#rqsrs-016kerberosvaliduserxmlconfigureduser)
+    * 4.3.2 [RQ.SRS-016.Kerberos.ValidUser.RBACConfiguredUser](#rqsrs-016kerberosvaliduserrbacconfigureduser)
+    * 4.3.3 [RQ.SRS-016.Kerberos.ValidUser.KerberosNotConfigured](#rqsrs-016kerberosvaliduserkerberosnotconfigured)
+  * 4.4 [Invalid User](#invalid-user)
+    * 4.4.1 [RQ.SRS-016.Kerberos.InvalidUser](#rqsrs-016kerberosinvaliduser)
+    * 4.4.2 [RQ.SRS-016.Kerberos.InvalidUser.UserDeleted](#rqsrs-016kerberosinvaliduseruserdeleted)
+  * 4.5 [Kerberos Not Available](#kerberos-not-available)
+    * 4.5.1 [RQ.SRS-016.Kerberos.KerberosNotAvailable.InvalidServerTicket](#rqsrs-016kerberoskerberosnotavailableinvalidserverticket)
+    * 4.5.2 [RQ.SRS-016.Kerberos.KerberosNotAvailable.InvalidClientTicket](#rqsrs-016kerberoskerberosnotavailableinvalidclientticket)
+    * 4.5.3 [RQ.SRS-016.Kerberos.KerberosNotAvailable.ValidTickets](#rqsrs-016kerberoskerberosnotavailablevalidtickets)
+  * 4.6 [Kerberos Restarted](#kerberos-restarted)
+    * 4.6.1 [RQ.SRS-016.Kerberos.KerberosServerRestarted](#rqsrs-016kerberoskerberosserverrestarted)
+  * 4.7 [Performance](#performance)
+    * 4.7.1 [RQ.SRS-016.Kerberos.Performance](#rqsrs-016kerberosperformance)
+  * 4.8 [Parallel Requests processing](#parallel-requests-processing)
+    * 4.8.1 [RQ.SRS-016.Kerberos.Parallel](#rqsrs-016kerberosparallel)
+    * 4.8.2 [RQ.SRS-016.Kerberos.Parallel.ValidRequests.KerberosAndNonKerberos](#rqsrs-016kerberosparallelvalidrequestskerberosandnonkerberos)
+    * 4.8.3 [RQ.SRS-016.Kerberos.Parallel.ValidRequests.SameCredentials](#rqsrs-016kerberosparallelvalidrequestssamecredentials)
+    * 4.8.4 [RQ.SRS-016.Kerberos.Parallel.ValidRequests.DifferentCredentials](#rqsrs-016kerberosparallelvalidrequestsdifferentcredentials)
+    * 4.8.5 [RQ.SRS-016.Kerberos.Parallel.ValidInvalid](#rqsrs-016kerberosparallelvalidinvalid)
+    * 4.8.6 [RQ.SRS-016.Kerberos.Parallel.Deletion](#rqsrs-016kerberosparalleldeletion)
 * 5 [References](#references)
-
 
 ## Revision History
 
@@ -88,13 +85,6 @@ version: 1.0
 
 [ClickHouse] SHALL support user authentication using [Kerberos] server.
 
-### Ping
-
-#### RQ.SRS-016.Kerberos.Ping
-version: 1.0
-
-Docker containers SHALL be able to ping each other.
-
 ### Configuration
 
 #### RQ.SRS-016.Kerberos.Configuration.MultipleAuthMethods
@@ -108,26 +98,26 @@ version: 1.0
 [ClickHouse] SHALL reject [Kerberos] authentication in case user is properly configured for using Kerberos, but Kerberos itself is not enabled in `config.xml`. For example:
 
 ```xml
-<clickhouse>
+<yandex>
     <!- ... -->
     <kerberos />
-</clickhouse>
+</yandex>
 ```
 ```xml
-<clickhouse>
+<yandex>
     <!- ... -->
     <kerberos>
         <principal>HTTP/clickhouse.example.com@EXAMPLE.COM</principal>
     </kerberos>
-</clickhouse>
+</yandex>
 ```
 ```xml
-<clickhouse>
+<yandex>
     <!- ... -->
     <kerberos>
         <realm>EXAMPLE.COM</realm>
     </kerberos>
-</clickhouse>
+</yandex>
 ```
 
 #### RQ.SRS-016.Kerberos.Configuration.MultipleKerberosSections
@@ -163,7 +153,7 @@ version: 1.0
 [ClickHouse] SHALL accept [Kerberos] authentication for a user that is configured in `users.xml` and has [Kerberos] enabled, i.e.:
 
 ```xml
-<clickhouse>
+<yandex>
     <!- ... -->
     <users>
         <!- ... -->
@@ -174,7 +164,7 @@ version: 1.0
             </kerberos>
         </my_user>
     </users>
-</clickhouse>
+</yandex>
 ```
 
 #### RQ.SRS-016.Kerberos.ValidUser.RBACConfiguredUser
@@ -274,7 +264,7 @@ version: 1.0
 
 ## References
 
-* **ClickHouse:** https://clickhouse.com
+* **ClickHouse:** https://clickhouse.tech
 * **GitHub Repository:** https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/kerberos/requirements/requirements.md
 * **Revision History:** https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/kerberos/requirements/requirements.md
 * **Git:** https://git-scm.com/
@@ -282,9 +272,10 @@ version: 1.0
 
 [Kerberos]: https://en.wikipedia.org/wiki/Kerberos_(protocol)
 [SPNEGO]: https://en.wikipedia.org/wiki/SPNEGO
-[ClickHouse]: https://clickhouse.com
+[ClickHouse]: https://clickhouse.tech
 [GitHub]: https://gitlab.com
 [GitHub Repository]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/kerberos/requirements/requirements.md
 [Revision History]: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/kerberos/requirements/requirements.md
 [Git]: https://git-scm.com/
 [Kerberos terminology]: https://web.mit.edu/kerberos/kfw-4.1/kfw-4.1/kfw-4.1-help/html/kerberos_terminology.htm
+

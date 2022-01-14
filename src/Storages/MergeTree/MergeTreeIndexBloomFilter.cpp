@@ -2,13 +2,18 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <base/types.h>
-#include <base/bit_cast.h>
+#include <common/types.h>
+#include <common/bit_cast.h>
+#include <Parsers/ASTLiteral.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionBloomFilter.h>
+#include <Parsers/queryToString.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Interpreters/BloomFilterHash.h>
-#include <Parsers/ASTFunction.h>
 
 
 namespace DB
@@ -41,26 +46,17 @@ MergeTreeIndexGranulePtr MergeTreeIndexBloomFilter::createIndexGranule() const
 
 bool MergeTreeIndexBloomFilter::mayBenefitFromIndexForIn(const ASTPtr & node) const
 {
-    Names required_columns = index.expression->getRequiredColumns();
-    NameSet required_columns_set(required_columns.begin(), required_columns.end());
+    const String & column_name = node->getColumnName();
 
-    std::vector<ASTPtr> nodes_to_check;
-    nodes_to_check.emplace_back(node);
-
-    while (!nodes_to_check.empty())
-    {
-        auto node_to_check = nodes_to_check.back();
-        nodes_to_check.pop_back();
-
-        const auto & column_name = node_to_check->getColumnName();
-        if (required_columns_set.find(column_name) != required_columns_set.end())
+    for (const auto & cname : index.column_names)
+        if (column_name == cname)
             return true;
 
-        if (const auto * function = typeid_cast<const ASTFunction *>(node_to_check.get()))
-        {
-            auto & function_arguments_children = function->arguments->children;
-            nodes_to_check.insert(nodes_to_check.end(), function_arguments_children.begin(), function_arguments_children.end());
-        }
+    if (const auto * func = typeid_cast<const ASTFunction *>(node.get()))
+    {
+        for (const auto & children : func->arguments->children)
+            if (mayBenefitFromIndexForIn(children))
+                return true;
     }
 
     return false;

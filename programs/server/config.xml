@@ -5,7 +5,7 @@
   You can either move the settings to the right place inside "users.xml" file
    or add <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings> here.
 -->
-<clickhouse>
+<yandex>
     <logger>
         <!-- Possible levels [1]:
 
@@ -18,7 +18,6 @@
           - information
           - debug
           - trace
-          - test (not for production usage)
 
             [1]: https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/Logger.h#L105-L114
         -->
@@ -61,27 +60,6 @@
         </levels>
         -->
     </logger>
-
-    <!-- Add headers to response in options request. OPTIONS method is used in CORS preflight requests. -->
-    <!-- It is off by default. Next headers are obligate for CORS.-->
-    <!-- http_options_response>
-        <header>
-            <name>Access-Control-Allow-Origin</name>
-            <value>*</value>
-        </header>
-        <header>
-            <name>Access-Control-Allow-Headers</name>
-            <value>origin, x-requested-with</value>
-        </header>
-        <header>
-            <name>Access-Control-Allow-Methods</name>
-            <value>POST, GET, OPTIONS</value>
-        </header>
-        <header>
-            <name>Access-Control-Max-Age</name>
-            <value>86400</value>
-        </header>
-    </http_options_response -->
 
     <!-- It is the name that will be shown in the clickhouse-client.
          By default, anything with "production" will be highlighted in red in query prompt.
@@ -152,7 +130,6 @@
          This setting could be used to switch replication to another network interface
          (the server may be connected to multiple networks via multiple addresses)
       -->
-
     <!--
     <interserver_http_host>example.yandex.ru</interserver_http_host>
     -->
@@ -178,7 +155,6 @@
       -->
     <!-- <listen_host>::</listen_host> -->
 
-
     <!-- Same for hosts without support for IPv6: -->
     <!-- <listen_host>0.0.0.0</listen_host> -->
 
@@ -195,7 +171,7 @@
       -->
     <!-- <listen_reuse_port>0</listen_reuse_port> -->
 
-    <!-- <listen_backlog>4096</listen_backlog> -->
+    <!-- <listen_backlog>64</listen_backlog> -->
 
     <max_connections>4096</max_connections>
 
@@ -217,11 +193,11 @@
         <!-- The following file is used only if ssl_require_client_auth=1 -->
         <ssl_ca_cert_file>/path/to/ssl_ca_cert_file</ssl_ca_cert_file>
 
-        <!-- Default compression algorithm (applied if client doesn't specify another algorithm, see result_compression in QueryInfo).
+        <!-- Default compression algorithm (applied if client doesn't specify another algorithm).
              Supported algorithms: none, deflate, gzip, stream_gzip -->
         <compression>deflate</compression>
 
-        <!-- Default compression level (applied if client doesn't specify another level, see result_compression in QueryInfo).
+        <!-- Default compression level (applied if client doesn't specify another level).
              Supported levels: none, low, medium, high -->
         <compression_level>medium</compression_level>
 
@@ -295,10 +271,6 @@
 
     <max_thread_pool_size>10000</max_thread_pool_size>
 
-    <!-- Number of workers to recycle connections in background (see also drain_timeout).
-         If the pool is full, connection will be drained synchronously. -->
-    <!-- <max_threads_for_connection_collector>10</max_threads_for_connection_collector> -->
-
     <!-- On memory constrained environments you may have to set this to value larger than 1.
       -->
     <max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>
@@ -348,7 +320,7 @@
          The amount of data in mapped files can be monitored
          in system.metrics, system.metric_log by the MMappedFiles, MMappedFileBytes metrics
          and in system.asynchronous_metrics, system.asynchronous_metrics_log by the MMapCacheCells metric,
-         and also in system.events, system.processes, system.query_log, system.query_thread_log, system.query_views_log by the
+         and also in system.events, system.processes, system.query_log, system.query_thread_log by the
          CreatedReadBufferMMap, CreatedReadBufferMMapFailed, MMappedFileCacheHits, MMappedFileCacheMisses events.
          Note that the amount of data in mapped files does not consume memory directly and is not accounted
          in query or server memory usage - because this memory can be discarded similar to OS page cache.
@@ -616,7 +588,7 @@
     -->
 
     <!-- Configuration of clusters that could be used in Distributed tables.
-         https://clickhouse.com/docs/en/operations/table_engines/distributed/
+         https://clickhouse.tech/docs/en/operations/table_engines/distributed/
       -->
     <remote_servers>
         <!-- Test only shard config for testing distributed storage -->
@@ -656,38 +628,6 @@
                 </replica>
             </shard>
         </test_shard_localhost>
-        <test_cluster_one_shard_three_replicas_localhost>
-            <shard>
-                <internal_replication>false</internal_replication>
-                <replica>
-                    <host>127.0.0.1</host>
-                    <port>9000</port>
-                </replica>
-                <replica>
-                    <host>127.0.0.2</host>
-                    <port>9000</port>
-                </replica>
-                <replica>
-                    <host>127.0.0.3</host>
-                    <port>9000</port>
-                </replica>
-            </shard>
-            <!--shard>
-                <internal_replication>false</internal_replication>
-                <replica>
-                    <host>127.0.0.1</host>
-                    <port>9000</port>
-                </replica>
-                <replica>
-                    <host>127.0.0.2</host>
-                    <port>9000</port>
-                </replica>
-                <replica>
-                    <host>127.0.0.3</host>
-                    <port>9000</port>
-                </replica>
-            </shard-->
-        </test_cluster_one_shard_three_replicas_localhost>
         <test_cluster_two_shards_localhost>
              <shard>
                  <replica>
@@ -780,13 +720,13 @@
 
     <!-- If element has 'incl' attribute, then for it's value will be used corresponding substitution from another file.
          By default, path to file with substitutions is /etc/metrika.xml. It could be changed in config in 'include_from' element.
-         Values for substitutions are specified in /clickhouse/name_of_substitution elements in that file.
+         Values for substitutions are specified in /yandex/name_of_substitution elements in that file.
       -->
 
     <!-- ZooKeeper is used to store metadata about replicas, when using Replicated tables.
          Optional. If you don't use replicated tables, you could omit that.
 
-         See https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replication/
+         See https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/replication/
       -->
 
     <!--
@@ -809,7 +749,7 @@
     <!-- Substitutions for parameters of replicated tables.
           Optional. If you don't use replicated tables, you could omit that.
 
-         See https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replication/#creating-replicated-tables
+         See https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/replication/#creating-replicated-tables
       -->
     <!--
     <macros>
@@ -896,7 +836,7 @@
         <database>system</database>
         <table>query_log</table>
         <!--
-            PARTITION BY expr: https://clickhouse.com/docs/en/table_engines/mergetree-family/custom_partitioning_key/
+            PARTITION BY expr: https://clickhouse.yandex/docs/en/table_engines/mergetree-family/custom_partitioning_key/
             Example:
                 event_date
                 toMonday(event_date)
@@ -905,7 +845,7 @@
         -->
         <partition_by>toYYYYMM(event_date)</partition_by>
         <!--
-            Table TTL specification: https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree/#mergetree-table-ttl
+            Table TTL specification: https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/mergetree/#mergetree-table-ttl
             Example:
                 event_date + INTERVAL 1 WEEK
                 event_date + INTERVAL 7 DAY DELETE
@@ -941,23 +881,14 @@
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </query_thread_log>
 
-    <!-- Query views log. Has information about all dependent views associated with a query.
-         Used only for queries with setting log_query_views = 1. -->
-    <query_views_log>
-        <database>system</database>
-        <table>query_views_log</table>
-        <partition_by>toYYYYMM(event_date)</partition_by>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-    </query_views_log>
-
     <!-- Uncomment if use part log.
-         Part log contains information about all actions with parts in MergeTree tables (creation, deletion, merges, downloads).-->
+         Part log contains information about all actions with parts in MergeTree tables (creation, deletion, merges, downloads).
     <part_log>
         <database>system</database>
         <table>part_log</table>
-        <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </part_log>
+    -->
 
     <!-- Uncomment to write text log into table.
          Text log contains all information from usual server log but stores it in structured and efficient way.
@@ -1027,17 +958,8 @@
         <flush_interval_milliseconds>1000</flush_interval_milliseconds>
     </crash_log>
 
-    <!-- Session log. Stores user log in (successful or not) and log out events. -->
-    <session_log>
-        <database>system</database>
-        <table>session_log</table>
-
-        <partition_by>toYYYYMM(event_date)</partition_by>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-    </session_log>
-
     <!-- Parameters for embedded dictionaries, used in Yandex.Metrica.
-         See https://clickhouse.com/docs/en/dicts/internal_dicts/
+         See https://clickhouse.yandex/docs/en/dicts/internal_dicts/
     -->
 
     <!-- Path to file with region hierarchy. -->
@@ -1061,12 +983,9 @@
     </top_level_domains_lists>
 
     <!-- Configuration of external dictionaries. See:
-         https://clickhouse.com/docs/en/sql-reference/dictionaries/external-dictionaries/external-dicts
+         https://clickhouse.tech/docs/en/sql-reference/dictionaries/external-dictionaries/external-dicts
     -->
     <dictionaries_config>*_dictionary.xml</dictionaries_config>
-
-    <!-- Configuration of user defined executable functions -->
-    <user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
 
     <!-- Uncomment if you want data to be compressed 30-100% better.
          Don't do that if you just started using ClickHouse.
@@ -1085,34 +1004,6 @@
         </case>
     </compression>
     -->
-
-    <!-- Configuration of encryption. The server executes a command to
-         obtain an encryption key at startup if such a command is
-         defined, or encryption codecs will be disabled otherwise. The
-         command is executed through /bin/sh and is expected to write
-         a Base64-encoded key to the stdout. -->
-    <encryption_codecs>
-        <!-- aes_128_gcm_siv -->
-            <!-- Example of getting hex key from env -->
-            <!-- the code should use this key and throw an exception if its length is not 16 bytes -->
-            <!--key_hex from_env="..."></key_hex -->
-
-            <!-- Example of multiple hex keys. They can be imported from env or be written down in config-->
-            <!-- the code should use these keys and throw an exception if their length is not 16 bytes -->
-            <!-- key_hex id="0">...</key_hex -->
-            <!-- key_hex id="1" from_env=".."></key_hex -->
-            <!-- key_hex id="2">...</key_hex -->
-            <!-- current_key_id>2</current_key_id -->
-
-            <!-- Example of getting hex key from config -->
-            <!-- the code should use this key and throw an exception if its length is not 16 bytes -->
-            <!-- key>...</key -->
-
-            <!-- example of adding nonce -->
-            <!-- nonce>...</nonce -->
-
-        <!-- /aes_128_gcm_siv -->
-    </encryption_codecs>
 
     <!-- Allow to execute distributed DDL queries (CREATE, DROP, ALTER, RENAME) on cluster.
          Works only if ZooKeeper is enabled. Comment it if such functionality isn't required. -->
@@ -1268,27 +1159,4 @@
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->
     <!-- <disable_internal_dns_cache>1</disable_internal_dns_cache> -->
-
-    <!-- You can also configure rocksdb like this: -->
-    <!--
-    <rocksdb>
-        <options>
-            <max_background_jobs>8</max_background_jobs>
-        </options>
-        <column_family_options>
-            <num_levels>2</num_levels>
-        </column_family_options>
-        <tables>
-            <table>
-                <name>TABLE</name>
-                <options>
-                    <max_background_jobs>8</max_background_jobs>
-                </options>
-                <column_family_options>
-                    <num_levels>2</num_levels>
-                </column_family_options>
-            </table>
-        </tables>
-    </rocksdb>
-    -->
-</clickhouse>
+</yandex>

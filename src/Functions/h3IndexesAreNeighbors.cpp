@@ -1,4 +1,6 @@
-#include "config_functions.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
 
 #if USE_H3
 
@@ -7,7 +9,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
-#include <base/range.h>
+#include <common/range.h>
 
 #include <h3api.h>
 
@@ -33,23 +35,20 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * arg = arguments[0].get();
         if (!WhichDataType(arg).isUInt64())
             throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt64",
-                arg->getName(), 1, getName());
+                "Illegal type " + arg->getName() + " of argument " + std::to_string(1) + " of function " + getName() + ". Must be UInt64",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         arg = arguments[1].get();
         if (!WhichDataType(arg).isUInt64())
             throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt64",
-                arg->getName(), 2, getName());
+                "Illegal type " + arg->getName() + " of argument " + std::to_string(2) + " of function " + getName() + ". Must be UInt64",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeUInt8>();
     }
@@ -63,12 +62,12 @@ public:
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
-        for (size_t row = 0; row < input_rows_count; ++row)
+        for (const auto row : collections::range(0, input_rows_count))
         {
             const UInt64 hindex_origin = col_hindex_origin->getUInt(row);
             const UInt64 hindex_dest = col_hindex_dest->getUInt(row);
 
-            UInt8 res = areNeighborCells(hindex_origin, hindex_dest);
+            UInt8 res = h3IndexesAreNeighbors(hindex_origin, hindex_dest);
 
             dst_data[row] = res;
         }

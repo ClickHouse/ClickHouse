@@ -21,7 +21,6 @@ struct ExternalQueryBuilder
     const std::string db;
     const std::string schema;
     const std::string table;
-    const std::string query;
     const std::string where;
 
     IdentifierQuotingStyle quoting_style;
@@ -32,7 +31,6 @@ struct ExternalQueryBuilder
         const std::string & db_,
         const std::string & schema_,
         const std::string & table_,
-        const std::string & query_,
         const std::string & where_,
         IdentifierQuotingStyle quoting_style_);
 
@@ -43,7 +41,7 @@ struct ExternalQueryBuilder
     std::string composeUpdateQuery(const std::string & update_field, const std::string & time_point) const;
 
     /** Generate a query to load data by set of UInt64 keys. */
-    std::string composeLoadIdsQuery(const std::vector<UInt64> & ids) const;
+    std::string composeLoadIdsQuery(const std::vector<UInt64> & ids);
 
     /** Generate a query to load data by set of composite keys.
       * There are three methods of specification of composite keys in WHERE:
@@ -58,7 +56,7 @@ struct ExternalQueryBuilder
         CASSANDRA_SEPARATE_PARTITION_KEY,
     };
 
-    std::string composeLoadKeysQuery(const Columns & key_columns, const std::vector<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix = 0) const;
+    std::string composeLoadKeysQuery(const Columns & key_columns, const std::vector<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix = 0);
 
 
 private:
@@ -69,25 +67,16 @@ private:
     /// In the following methods `beg` and `end` specifies which columns to write in expression
 
     /// Expression in form (x = c1 AND y = c2 ...)
-    void composeKeyCondition(const Columns & key_columns, size_t row, WriteBuffer & out, size_t beg, size_t end) const;
+    void composeKeyCondition(const Columns & key_columns, const size_t row, WriteBuffer & out, size_t beg, size_t end) const;
 
     /// Expression in form (x, y, ...) IN ((c1, c2, ...), ...)
-    void composeInWithTuples(const Columns & key_columns, const std::vector<size_t> & requested_rows, WriteBuffer & out, size_t beg, size_t end) const;
+    void composeInWithTuples(const Columns & key_columns, const std::vector<size_t> & requested_rows, WriteBuffer & out, size_t beg, size_t end);
 
     /// Expression in form (x, y, ...)
     void composeKeyTupleDefinition(WriteBuffer & out, size_t beg, size_t end) const;
 
     /// Expression in form (c1, c2, ...)
-    void composeKeyTuple(const Columns & key_columns, size_t row, WriteBuffer & out, size_t beg, size_t end) const;
-
-    /// Compose update condition
-    static void composeUpdateCondition(const std::string & update_field, const std::string & time_point, WriteBuffer & out);
-
-    /// Compose ids condition
-    void composeIdsCondition(const std::vector<UInt64> & ids, WriteBuffer & out) const;
-
-    /// Compose keys condition
-    void composeKeysCondition(const Columns & key_columns, const std::vector<size_t> & requested_rows, LoadKeysMethod method, size_t partition_key_prefix, WriteBuffer & out) const;
+    void composeKeyTuple(const Columns & key_columns, const size_t row, WriteBuffer & out, size_t beg, size_t end) const;
 
     /// Write string with specified quoting style.
     void writeQuoted(const std::string & s, WriteBuffer & out) const;

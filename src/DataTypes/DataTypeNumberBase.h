@@ -20,12 +20,11 @@ class DataTypeNumberBase : public IDataType
 public:
     static constexpr bool is_parametric = false;
     static constexpr auto family_name = TypeName<T>;
-    static constexpr auto type_id = TypeId<T>;
 
     using FieldType = T;
     using ColumnType = ColumnVector<T>;
 
-    const char * getFamilyName() const override { return TypeName<T>.data(); }
+    const char * getFamilyName() const override { return TypeName<T>; }
     TypeIndex getTypeId() const override { return TypeId<T>; }
 
     Field getDefault() const override;

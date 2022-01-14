@@ -2,14 +2,14 @@ version: "2"
 
 services:
   builder:
-    image: clickhouse/clickhouse-builder
+    image: yandex/clickhouse-builder
     build: docker/builder
   client:
-    image: clickhouse/clickhouse-client
+    image: yandex/clickhouse-client
     build: docker/client
     command: ['--host', 'server']
   server:
-    image: clickhouse/clickhouse-server
+    image: yandex/clickhouse-server
     build: docker/server
     ports:
       - 8123:8123

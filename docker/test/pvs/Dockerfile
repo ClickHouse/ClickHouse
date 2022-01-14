@@ -37,10 +37,8 @@ RUN set -x \
     || echo "WARNING: Some file was just downloaded from the internet without any validation and we are installing it into the system"; } \
     && dpkg -i "${PKG_VERSION}.deb"
 
-ENV CCACHE_DIR=/test_output/ccache
-
-CMD echo "Running PVS version $PKG_VERSION" && mkdir -p $CCACHE_DIR && cd /repo_folder && pvs-studio-analyzer credentials $LICENCE_NAME $LICENCE_KEY -o ./licence.lic  \
-    && cmake . -D"ENABLE_EMBEDDED_COMPILER"=OFF -D"DISABLE_HERMETIC_BUILD"=ON -DCMAKE_C_COMPILER=clang-13 -DCMAKE_CXX_COMPILER=clang\+\+-13 \
+CMD echo "Running PVS version $PKG_VERSION" && cd /repo_folder && pvs-studio-analyzer credentials $LICENCE_NAME $LICENCE_KEY -o ./licence.lic  \
+    && cmake . -D"ENABLE_EMBEDDED_COMPILER"=OFF -D"USE_INTERNAL_PROTOBUF_LIBRARY"=OFF -D"USE_INTERNAL_GRPC_LIBRARY"=OFF \
     && ninja re2_st clickhouse_grpc_protos \
     && pvs-studio-analyzer analyze -o pvs-studio.log -e contrib -j 4 -l ./licence.lic; \
     cp /repo_folder/pvs-studio.log /test_output; \

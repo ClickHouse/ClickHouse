@@ -1,5 +1,5 @@
 #include <Processors/QueryPlan/JoinStep.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Interpreters/IJoin.h>
 
@@ -26,12 +26,12 @@ JoinStep::JoinStep(
     };
 }
 
-QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
+QueryPipelinePtr JoinStep::updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings &)
 {
     if (pipelines.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStep expect two input steps");
 
-    return QueryPipelineBuilder::joinPipelines(std::move(pipelines[0]), std::move(pipelines[1]), join, max_block_size, &processors);
+    return QueryPipeline::joinPipelines(std::move(pipelines[0]), std::move(pipelines[1]), join, max_block_size, &processors);
 }
 
 void JoinStep::describePipeline(FormatSettings & settings) const
@@ -67,7 +67,7 @@ FilledJoinStep::FilledJoinStep(const DataStream & input_stream_, JoinPtr join_, 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FilledJoinStep expects Join to be filled");
 }
 
-void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void FilledJoinStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     bool default_totals = false;
     if (!pipeline.hasTotals() && join->getTotals())
@@ -78,9 +78,9 @@ void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
 
     auto finish_counter = std::make_shared<JoiningTransform::FinishCounter>(pipeline.getNumStreams());
 
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
     {
-        bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
+        bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
         auto counter = on_totals ? nullptr : finish_counter;
         return std::make_shared<JoiningTransform>(header, join, max_block_size, on_totals, default_totals, counter);
     });

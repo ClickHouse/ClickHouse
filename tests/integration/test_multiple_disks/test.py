@@ -1265,14 +1265,8 @@ def test_kill_while_insert(start_cluster):
         disks = get_used_disks_for_table(node1, name)
         assert set(disks) == {"jbod1"}
 
-        def ignore_exceptions(f, *args):
-            try:
-                f(*args)
-            except:
-                """(っಠ‿ಠ)っ"""
-
         start_time = time.time()
-        long_select = threading.Thread(target=ignore_exceptions, args=(node1.query, "SELECT sleep(3) FROM {name}".format(name=name)))
+        long_select = threading.Thread(target=node1.query, args=("SELECT sleep(3) FROM {name}".format(name=name),))
         long_select.start()
 
         time.sleep(0.5)

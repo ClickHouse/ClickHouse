@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/Transforms/FilterTransform.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
@@ -65,13 +65,13 @@ void FilterStep::updateInputStream(DataStream input_stream, bool keep_header)
     input_streams.emplace_back(std::move(input_stream));
 }
 
-void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
+void FilterStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings & settings)
 {
     auto expression = std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings());
 
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
     {
-        bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
+        bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
         return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column, on_totals);
     });
 

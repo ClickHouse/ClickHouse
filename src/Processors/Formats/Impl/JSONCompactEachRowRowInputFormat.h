@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
+#include <Processors/Formats/IRowInputFormat.h>
 #include <Formats/FormatSettings.h>
 #include <Common/HashTable/HashMap.h>
 
@@ -17,47 +17,49 @@ class ReadBuffer;
  *  - JSONCompactStringsEachRowWithNamesAndTypes
  *
 */
-class JSONCompactEachRowRowInputFormat : public RowInputFormatWithNamesAndTypes
+class JSONCompactEachRowRowInputFormat : public IRowInputFormat
 {
 public:
     JSONCompactEachRowRowInputFormat(
-        const Block & header_,
         ReadBuffer & in_,
+        const Block & header_,
         Params params_,
+        const FormatSettings & format_settings_,
         bool with_names_,
-        bool with_types_,
-        bool yield_strings_,
-        const FormatSettings & format_settings_);
+        bool yield_strings_);
 
     String getName() const override { return "JSONCompactEachRowRowInputFormat"; }
 
-private:
+
+    void readPrefix() override;
+    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
+    void resetParser() override;
 
-    bool parseRowStartWithDiagnosticInfo(WriteBuffer & out) override;
-    bool parseFieldDelimiterWithDiagnosticInfo(WriteBuffer & out) override;
-    bool parseRowEndWithDiagnosticInfo(WriteBuffer & out) override;
-    bool isGarbageAfterField(size_t, ReadBuffer::Position pos) override
-    {
-        return *pos != ',' && *pos != ']' && *pos != ' ' && *pos != '\t';
-    }
+private:
+    void addInputColumn(const String & column_name);
+    void skipEndOfLine();
+    void readField(size_t index, MutableColumns & columns);
 
-    bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
+    const FormatSettings format_settings;
 
-    void skipField(size_t file_column) override;
-    void skipHeaderRow();
-    void skipNames() override { skipHeaderRow(); }
-    void skipTypes() override { skipHeaderRow(); }
-    void skipRowStartDelimiter() override;
-    void skipFieldDelimiter() override;
-    void skipRowEndDelimiter() override;
+    using IndexesMap = std::unordered_map<String, size_t>;
+    IndexesMap column_indexes_by_names;
 
-    std::vector<String> readHeaderRow();
-    std::vector<String> readNames() override { return readHeaderRow(); }
-    std::vector<String> readTypes() override { return readHeaderRow(); }
-    String readFieldIntoString();
+    using OptionalIndexes = std::vector<std::optional<size_t>>;
+    OptionalIndexes column_indexes_for_input_fields;
 
+    DataTypes data_types;
+    std::vector<UInt8> read_columns;
+    std::vector<size_t> not_seen_columns;
+
+    /// This is for the correct exceptions in skipping unknown fields.
+    std::vector<String> names_of_columns;
+
+    /// For *WithNamesAndTypes formats.
+    bool with_names;
+    /// For JSONCompactString* formats.
     bool yield_strings;
 };
 

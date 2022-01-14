@@ -1,33 +1,12 @@
 #include "ProgressIndication.h"
-#include <algorithm>
-#include <cstddef>
-#include <numeric>
-#include <cmath>
 #include <IO/WriteBufferFromFileDescriptor.h>
-#include <base/types.h>
-#include "Common/formatReadable.h"
 #include <Common/TerminalSize.h>
 #include <Common/UnicodeBar.h>
-#include "IO/WriteBufferFromString.h"
 #include <Databases/DatabaseMemory.h>
 
-
-namespace
-{
-    constexpr UInt64 ALL_THREADS = 0;
-
-    UInt64 calculateCoresNumber(DB::ThreadIdToTimeMap times, UInt64 elapsed)
-    {
-        auto accumulated = std::accumulate(times.begin(), times.end(), 0,
-        [](Int64 acc, const auto & elem)
-        {
-            if (elem.first == ALL_THREADS)
-                return acc;
-            return acc + elem.second.time();
-        });
-        return (static_cast<UInt64>(accumulated) + elapsed - 1) / elapsed;
-    }
-}
+/// FIXME: progress bar in clickhouse-local needs to be cleared after query execution
+///        - same as it is now in clickhouse-client. Also there is no writeFinalProgress call
+///        in clickhouse-local.
 
 namespace DB
 {
@@ -53,8 +32,6 @@ void ProgressIndication::resetProgress()
     show_progress_bar = false;
     written_progress_chars = 0;
     write_progress_on_update = false;
-    host_active_cores.clear();
-    thread_data.clear();
 }
 
 void ProgressIndication::setFileProgressCallback(ContextMutablePtr context, bool write_progress_on_update_)
@@ -67,57 +44,6 @@ void ProgressIndication::setFileProgressCallback(ContextMutablePtr context, bool
         if (write_progress_on_update)
             writeProgress();
     });
-}
-
-void ProgressIndication::addThreadIdToList(String const & host, UInt64 thread_id)
-{
-    auto & thread_to_times = thread_data[host];
-    if (thread_to_times.contains(thread_id))
-        return;
-    thread_to_times[thread_id] = {};
-}
-
-void ProgressIndication::updateThreadEventData(HostToThreadTimesMap & new_thread_data, UInt64 elapsed_time)
-{
-    for (auto & new_host_map : new_thread_data)
-    {
-        auto new_cores = calculateCoresNumber(new_host_map.second, elapsed_time);
-        host_active_cores[new_host_map.first] = new_cores;
-        thread_data[new_host_map.first] = std::move(new_host_map.second);
-    }
-}
-
-size_t ProgressIndication::getUsedThreadsCount() const
-{
-    return std::accumulate(thread_data.cbegin(), thread_data.cend(), 0,
-        [] (size_t acc, auto const & threads)
-        {
-            return acc + threads.second.size();
-        });
-}
-
-UInt64 ProgressIndication::getApproximateCoresNumber() const
-{
-    return std::accumulate(host_active_cores.cbegin(), host_active_cores.cend(), 0,
-        [](UInt64 acc, auto const & elem)
-        {
-            return acc + elem.second;
-        });
-}
-
-ProgressIndication::MemoryUsage ProgressIndication::getMemoryUsage() const
-{
-    return std::accumulate(thread_data.cbegin(), thread_data.cend(), MemoryUsage{},
-        [](MemoryUsage const & acc, auto const & host_data)
-        {
-            UInt64 host_usage = 0;
-            // In ProfileEvents packets thread id 0 specifies common profiling information
-            // for all threads executing current query on specific host. So instead of summing per thread
-            // memory consumption it's enough to look for data with thread id 0.
-            if (auto it = host_data.second.find(ALL_THREADS); it != host_data.second.end())
-                host_usage = it->second.memory_usage;
-            return MemoryUsage{.total = acc.total + host_usage, .max = std::max(acc.max, host_usage)};
-        });
 }
 
 void ProgressIndication::writeFinalProgress()
@@ -183,27 +109,6 @@ void ProgressIndication::writeProgress()
 
     written_progress_chars = message.count() - prefix_size - (strlen(indicator) - 2); /// Don't count invisible output (escape sequences).
 
-    // If approximate cores number is known, display it.
-    auto cores_number = getApproximateCoresNumber();
-    std::string profiling_msg;
-    if (cores_number != 0 && print_hardware_utilization)
-    {
-        WriteBufferFromOwnString profiling_msg_builder;
-        // Calculated cores number may be not accurate
-        // so it's better to print min(threads, cores).
-        UInt64 threads_number = getUsedThreadsCount();
-        profiling_msg_builder << " Running " << threads_number << " threads on "
-            << std::min(cores_number, threads_number) << " cores";
-
-        auto [memory_usage, max_host_usage] = getMemoryUsage();
-        if (memory_usage != 0)
-            profiling_msg_builder << " with " << formatReadableSizeWithDecimalSuffix(memory_usage) << " RAM used";
-        if (thread_data.size() > 1 && max_host_usage)
-            profiling_msg_builder << " total (per host max: " << formatReadableSizeWithDecimalSuffix(max_host_usage) << ")";
-        profiling_msg_builder << ".";
-        profiling_msg = profiling_msg_builder.str();
-    }
-
     /// If the approximate number of rows to process is known, we can display a progress bar and percentage.
     if (progress.total_rows_to_read || progress.total_raw_bytes_to_read)
     {
@@ -230,7 +135,7 @@ void ProgressIndication::writeProgress()
 
             if (show_progress_bar)
             {
-                ssize_t width_of_progress_bar = static_cast<ssize_t>(terminal_width) - written_progress_chars - strlen(" 99%") - profiling_msg.length();
+                ssize_t width_of_progress_bar = static_cast<ssize_t>(terminal_width) - written_progress_chars - strlen(" 99%");
                 if (width_of_progress_bar > 0)
                 {
                     std::string bar
@@ -246,7 +151,6 @@ void ProgressIndication::writeProgress()
         message << ' ' << (99 * current_count / max_count) << '%';
     }
 
-    message << profiling_msg;
     message << CLEAR_TO_END_OF_LINE;
     ++increment;
 

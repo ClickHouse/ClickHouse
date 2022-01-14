@@ -7,9 +7,7 @@ import csv
 import sys
 
 from github import Github
-
-from env_helper import CACHES_PATH, TEMP_PATH
-from pr_info import PRInfo
+from pr_info import PRInfo, get_event
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from upload_result_helper import upload_results
@@ -68,13 +66,13 @@ if __name__ == "__main__":
 
     stopwatch = Stopwatch()
 
-    temp_path = TEMP_PATH
-    caches_path = CACHES_PATH
+    temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
+    caches_path = os.getenv("CACHES_PATH", temp_path)
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    pr_info = PRInfo()
+    pr_info = PRInfo(get_event())
 
     gh = Github(get_best_robot_token())
 

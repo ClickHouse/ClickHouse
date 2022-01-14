@@ -16,12 +16,12 @@ $ sudo service clickhouse-server restart
 If you installed ClickHouse using something other than the recommended `deb` packages, use the appropriate update method.
 
 !!! note "Note"
-    You can update multiple servers at once as soon as there is no moment when all replicas of one shard are offline.
+    You can update multiple servers at once as soon as there is no moment when all replicas of one shard are offline.    
 
 The upgrade of older version of ClickHouse to specific version:
 
 As an example:
-
+ 
 `xx.yy.a.b` is a current stable version. The latest stable version could be found [here](https://github.com/ClickHouse/ClickHouse/releases)
 
 ```bash

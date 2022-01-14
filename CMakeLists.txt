@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.3)
 
 foreach(policy
         CMP0023
@@ -45,7 +45,6 @@ include (cmake/arch.cmake)
 include (cmake/target.cmake)
 include (cmake/tools.cmake)
 include (cmake/analysis.cmake)
-include (cmake/git_status.cmake)
 
 # Ignore export() since we don't use it,
 # but it gets broken with a global targets via link_libraries()
@@ -80,16 +79,16 @@ include (cmake/find/ccache.cmake)
 # ccache ignore it.
 option(ENABLE_CHECK_HEAVY_BUILDS "Don't allow C++ translation units to compile too long or to take too much memory while compiling." OFF)
 if (ENABLE_CHECK_HEAVY_BUILDS)
-    # set DATA (since RSS does not work since 2.6.x+) to 5G
+    # set DATA (since RSS does not work since 2.6.x+) to 2G
     set (RLIMIT_DATA 5000000000)
     # set VIRT (RLIMIT_AS) to 10G (DATA*10)
     set (RLIMIT_AS 10000000000)
-    # set CPU time limit to 1000 seconds
-    set (RLIMIT_CPU 1000)
+    # set CPU time limit to 600 seconds
+    set (RLIMIT_CPU 600)
 
     # gcc10/gcc10/clang -fsanitize=memory is too heavy
     if (SANITIZE STREQUAL "memory" OR COMPILER_GCC)
-       set (RLIMIT_DATA 10000000000) # 10G
+       set (RLIMIT_DATA 10000000000)
     endif()
 
     set (CMAKE_CXX_COMPILER_LAUNCHER prlimit --as=${RLIMIT_AS} --data=${RLIMIT_DATA} --cpu=${RLIMIT_CPU} ${CMAKE_CXX_COMPILER_LAUNCHER})
@@ -127,32 +126,13 @@ if (USE_STATIC_LIBRARIES)
     list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 endif ()
 
+# Implies ${WITH_COVERAGE}
 option (ENABLE_FUZZING "Fuzzy testing using libfuzzer" OFF)
 
 if (ENABLE_FUZZING)
-    # Also set WITH_COVERAGE=1 for better fuzzing process
-    # By default this is disabled, because fuzzers are built in CI with the clickhouse itself.
-    # And we don't want to enable coverage for it.
     message (STATUS "Fuzzing instrumentation enabled")
+    set (WITH_COVERAGE ON)
     set (FUZZER "libfuzzer")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdlib++")
-    set (ENABLE_CLICKHOUSE_ODBC_BRIDGE OFF)
-    set (ENABLE_LIBRARIES 0)
-    set (ENABLE_SSL 1)
-    set (USE_INTERNAL_SSL_LIBRARY 1)
-    set (USE_UNWIND ON)
-    set (ENABLE_EMBEDDED_COMPILER 0)
-    set (ENABLE_EXAMPLES 0)
-    set (ENABLE_UTILS 0)
-    set (ENABLE_THINLTO 0)
-    set (ENABLE_TCMALLOC 0)
-    set (ENABLE_JEMALLOC 0)
-    set (ENABLE_CHECK_HEAVY_BUILDS 1)
-    set (GLIBC_COMPATIBILITY OFF)
-
-    # For codegen_select_fuzzer
-    set (ENABLE_PROTOBUF 1)
-    set (USE_INTERNAL_PROTOBUF_LIBRARY 1)
 endif()
 
 # Global libraries
@@ -170,10 +150,11 @@ if (CMAKE_GENERATOR STREQUAL "Ninja" AND NOT DISABLE_COLORED_BUILD)
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-color=always")
 endif ()
 
-include (cmake/check_flags.cmake)
 include (cmake/add_warning.cmake)
 
-set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror and many more is also added inside cmake/warnings.cmake
+if (NOT MSVC)
+    set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror and many more is also added inside cmake/warnings.cmake
+endif ()
 
 if (COMPILER_CLANG)
     # clang: warning: argument unused during compilation: '-specs=/usr/share/dpkg/no-pie-compile.specs' [-Wunused-command-line-argument]
@@ -182,44 +163,49 @@ if (COMPILER_CLANG)
     if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
         set(COMPILER_FLAGS "${COMPILER_FLAGS} -gdwarf-aranges")
     endif ()
-
-    if (HAS_USE_CTOR_HOMING)
-        # For more info see https://blog.llvm.org/posts/2021-04-05-constructor-homing-for-debug-info/
-		if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO")
-            set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Xclang -fuse-ctor-homing")
-            set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Xclang -fuse-ctor-homing")
-        endif()
-    endif()
-endif ()
-
-# If compiler has support for -Wreserved-identifier. It is difficult to detect by clang version,
-# because there are two different branches of clang: clang and AppleClang.
-# (AppleClang is not supported by ClickHouse, but some developers have misfortune to use it).
-if (HAS_RESERVED_IDENTIFIER)
-    add_compile_definitions (HAS_RESERVED_IDENTIFIER)
 endif ()
 
 # If turned `ON`, assumes the user has either the system GTest library or the bundled one.
 option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" ON)
 option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
 
-if (OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND NOT USE_MUSL)
+if (OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
     # Only for Linux, x86_64 or aarch64.
     option(GLIBC_COMPATIBILITY "Enable compatibility with older glibc libraries." ON)
 elseif(GLIBC_COMPATIBILITY)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Glibc compatibility cannot be enabled in current configuration")
 endif ()
 
-if (GLIBC_COMPATIBILITY)
-    # NOTE: we may also want to check glibc version and add -include only for 2.32+
-    # however this is extra complexity, especially for cross compiling.
-    # And anyway it should not break anything for <2.32.
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -include ${CMAKE_CURRENT_SOURCE_DIR}/base/glibc-compatibility/glibc-compat-2.32.h")
-    set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -include ${CMAKE_CURRENT_SOURCE_DIR}/base/glibc-compatibility/glibc-compat-2.32.h")
-endif()
+if (NOT CMAKE_VERSION VERSION_GREATER "3.9.0")
+    message (WARNING "CMake version must be greater than 3.9.0 for production builds.")
+endif ()
 
 # Make sure the final executable has symbols exported
 set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
+
+find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-12" "llvm-objcopy-11" "llvm-objcopy-10" "llvm-objcopy-9" "llvm-objcopy-8" "objcopy")
+
+if (NOT OBJCOPY_PATH AND OS_DARWIN)
+    find_program (BREW_PATH NAMES "brew")
+    if (BREW_PATH)
+        execute_process (COMMAND ${BREW_PATH} --prefix llvm ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE LLVM_PREFIX)
+        if (LLVM_PREFIX)
+            find_program (OBJCOPY_PATH NAMES "llvm-objcopy" PATHS "${LLVM_PREFIX}/bin" NO_DEFAULT_PATH)
+        endif ()
+        if (NOT OBJCOPY_PATH)
+            execute_process (COMMAND ${BREW_PATH} --prefix binutils ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE BINUTILS_PREFIX)
+            if (BINUTILS_PREFIX)
+                find_program (OBJCOPY_PATH NAMES "objcopy" PATHS "${BINUTILS_PREFIX}/bin" NO_DEFAULT_PATH)
+            endif ()
+        endif ()
+    endif ()
+endif ()
+
+if (OBJCOPY_PATH)
+    message (STATUS "Using objcopy: ${OBJCOPY_PATH}")
+else ()
+    message (FATAL_ERROR "Cannot find objcopy.")
+endif ()
 
 if (OS_DARWIN)
     # The `-all_load` flag forces loading of all symbols from all libraries,
@@ -227,7 +213,7 @@ if (OS_DARWIN)
     # from a _specific_ library, which is what we need.
     set(WHOLE_ARCHIVE -force_load)
     # The `-noall_load` flag is the default and now obsolete.
-    set(NO_WHOLE_ARCHIVE "-undefined,error") # Effectively, a no-op. Here to avoid empty "-Wl, " sequence to be generated in the command line.
+    set(NO_WHOLE_ARCHIVE "")
 else ()
     set(WHOLE_ARCHIVE --whole-archive)
     set(NO_WHOLE_ARCHIVE --no-whole-archive)
@@ -255,13 +241,6 @@ if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
         endif()
     endif ()
 endif()
-
-if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
-    set(USE_DEBUG_HELPERS ON)
-else ()
-    set(USE_DEBUG_HELPERS ON)
-endif()
-option(USE_DEBUG_HELPERS "Enable debug helpers" ${USE_DEBUG_HELPERS})
 
 # Create BuildID when using lld. For other linkers it is created by default.
 if (LINKER_NAME MATCHES "lld$")
@@ -292,14 +271,16 @@ endif()
 
 include(cmake/cpu_features.cmake)
 
+option(ARCH_NATIVE "Add -march=native compiler flag. This makes your binaries non-portable but more performant code may be generated.")
+
+if (ARCH_NATIVE)
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
+endif ()
+
 # Asynchronous unwind tables are needed for Query Profiler.
 # They are already by default on some platforms but possibly not on all platforms.
 # Enable it explicitly.
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -fasynchronous-unwind-tables")
-
-# Reproducible builds
-set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
-set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
 
 if (${CMAKE_VERSION} VERSION_LESS "3.12.4")
     # CMake < 3.12 doesn't support setting 20 as a C++ standard version.
@@ -332,10 +313,6 @@ endif ()
 # benchmarks.
 if (COMPILER_GCC OR COMPILER_CLANG)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32")
-endif ()
-
-if (COMPILER_GCC)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fcoroutines")
 endif ()
 
 # Compiler-specific coverage flags e.g. -fcoverage-mapping for gcc
@@ -381,8 +358,6 @@ if (COMPILER_CLANG)
         option(ENABLE_THINLTO "Clang-specific link time optimization" ON)
     endif()
 
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fstrict-vtable-pointers")
-
     # Set new experimental pass manager, it's a performance, build time and binary size win.
     # Can be removed after https://reviews.llvm.org/D66490 merged and released to at least two versions of clang.
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexperimental-new-pass-manager")
@@ -393,11 +368,30 @@ if (COMPILER_CLANG)
     # completely.
     if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
         # Link time optimization
-        set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
-        set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
-        set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
+        set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin")
+        set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin")
+        set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin")
     elseif (ENABLE_THINLTO)
         message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot enable ThinLTO")
+    endif ()
+
+    # Always prefer llvm tools when using clang. For instance, we cannot use GNU ar when llvm LTO is enabled
+    find_program (LLVM_AR_PATH NAMES "llvm-ar" "llvm-ar-12" "llvm-ar-11" "llvm-ar-10" "llvm-ar-9" "llvm-ar-8")
+
+    if (LLVM_AR_PATH)
+        message(STATUS "Using llvm-ar: ${LLVM_AR_PATH}.")
+        set (CMAKE_AR ${LLVM_AR_PATH})
+    else ()
+        message(WARNING "Cannot find llvm-ar. System ar will be used instead. It does not work with ThinLTO.")
+    endif ()
+
+    find_program (LLVM_RANLIB_PATH NAMES "llvm-ranlib" "llvm-ranlib-12" "llvm-ranlib-11" "llvm-ranlib-10" "llvm-ranlib-9" "llvm-ranlib-8")
+
+    if (LLVM_RANLIB_PATH)
+        message(STATUS "Using llvm-ranlib: ${LLVM_RANLIB_PATH}.")
+        set (CMAKE_RANLIB ${LLVM_RANLIB_PATH})
+    else ()
+        message(WARNING "Cannot find llvm-ranlib. System ranlib will be used instead. It does not work with ThinLTO.")
     endif ()
 
 elseif (ENABLE_THINLTO)
@@ -407,7 +401,19 @@ endif ()
 # Turns on all external libs like s3, kafka, ODBC, ...
 option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 
-if (NOT (OS_LINUX OR OS_DARWIN))
+# We recommend avoiding this mode for production builds because we can't guarantee all needed libraries exist in your
+# system.
+# This mode exists for enthusiastic developers who are searching for trouble.
+# Useful for maintainers of OS packages.
+option (UNBUNDLED "Use system libraries instead of ones in contrib/" OFF)
+
+if (UNBUNDLED)
+    set(NOT_UNBUNDLED OFF)
+else ()
+    set(NOT_UNBUNDLED ON)
+endif ()
+
+if (UNBUNDLED OR NOT (OS_LINUX OR OS_DARWIN))
     # Using system libs can cause a lot of warnings in includes (on macro expansion).
     option(WERROR "Enable -Werror compiler option" OFF)
 else ()
@@ -447,10 +453,23 @@ if (MAKE_STATIC_LIBRARIES)
         # It's disabled for ARM because otherwise ClickHouse cannot run on Android.
         set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-pie")
         set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -fno-pie")
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -no-pie -Wl,-no-pie")
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-no-pie")
     endif ()
 else ()
     set (CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif ()
+
+# https://github.com/include-what-you-use/include-what-you-use
+option (USE_INCLUDE_WHAT_YOU_USE "Automatically reduce unneeded includes in source code (external tool)" OFF)
+
+if (USE_INCLUDE_WHAT_YOU_USE)
+    find_program(IWYU_PATH NAMES include-what-you-use iwyu)
+    if (NOT IWYU_PATH)
+        message(FATAL_ERROR "Could not find the program include-what-you-use")
+    endif()
+    if (${CMAKE_VERSION} VERSION_LESS "3.3.0")
+        message(FATAL_ERROR "include-what-you-use requires CMake version at least 3.3.")
+    endif()
 endif ()
 
 if (ENABLE_TESTS)
@@ -473,6 +492,7 @@ message (STATUS
     USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES}
     MAKE_STATIC_LIBRARIES=${MAKE_STATIC_LIBRARIES}
     SPLIT_SHARED=${SPLIT_SHARED_LIBRARIES}
+    UNBUNDLED=${UNBUNDLED}
     CCACHE=${CCACHE_FOUND} ${CCACHE_VERSION}")
 
 include (GNUInstallDirs)
@@ -508,7 +528,6 @@ include (cmake/find/hdfs3.cmake) # uses protobuf
 include (cmake/find/poco.cmake)
 include (cmake/find/curl.cmake)
 include (cmake/find/s3.cmake)
-include (cmake/find/blob_storage.cmake)
 include (cmake/find/base64.cmake)
 include (cmake/find/parquet.cmake)
 include (cmake/find/simdjson.cmake)
@@ -517,15 +536,10 @@ include (cmake/find/rapidjson.cmake)
 include (cmake/find/fastops.cmake)
 include (cmake/find/odbc.cmake)
 include (cmake/find/nanodbc.cmake)
-include (cmake/find/sqlite.cmake)
 include (cmake/find/rocksdb.cmake)
 include (cmake/find/libpqxx.cmake)
 include (cmake/find/nuraft.cmake)
 include (cmake/find/yaml-cpp.cmake)
-include (cmake/find/s2geometry.cmake)
-include (cmake/find/nlp.cmake)
-include (cmake/find/bzip2.cmake)
-include (cmake/find/filelog.cmake)
 
 if(NOT USE_INTERNAL_PARQUET_LIBRARY)
     set (ENABLE_ORC OFF CACHE INTERNAL "")
@@ -536,8 +550,8 @@ include (cmake/find/avro.cmake)
 include (cmake/find/msgpack.cmake)
 include (cmake/find/cassandra.cmake)
 include (cmake/find/sentry.cmake)
+include (cmake/find/stats.cmake)
 include (cmake/find/datasketches.cmake)
-include (cmake/find/libprotobuf-mutator.cmake)
 
 set (USE_INTERNAL_CITYHASH_LIBRARY ON CACHE INTERNAL "")
 find_contrib_lib(cityhash)
@@ -553,6 +567,8 @@ include (cmake/find/mysqlclient.cmake)
 
 # When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.
 
+include (cmake/print_flags.cmake)
+
 if (TARGET global-group)
     install (EXPORT global DESTINATION cmake)
 endif ()
@@ -567,7 +583,7 @@ macro (add_executable target)
     # invoke built-in add_executable
     # explicitly acquire and interpose malloc symbols by clickhouse_malloc
     # if GLIBC_COMPATIBILITY is ON and ENABLE_THINLTO is on than provide memcpy symbol explicitly to neutrialize thinlto's libcall generation.
-    if (ARCH_AMD64 AND GLIBC_COMPATIBILITY AND ENABLE_THINLTO)
+    if (GLIBC_COMPATIBILITY AND ENABLE_THINLTO)
         _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc> $<TARGET_OBJECTS:memcpy>)
     else ()
         _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
@@ -578,23 +594,7 @@ macro (add_executable target)
         # disabled for TSAN and gcc since libtsan.a provides overrides too
         if (TARGET clickhouse_new_delete)
             # operator::new/delete for executables (MemoryTracker stuff)
-            target_link_libraries (${target} PRIVATE clickhouse_new_delete)
-        endif()
-
-        # In case of static jemalloc, because zone_register() is located in zone.c and
-        # is never used outside (it is declared as constructor) it is omitted
-        # by the linker, and so jemalloc will not be registered as system
-        # allocator under osx [1], and clickhouse will SIGSEGV.
-        #
-        #   [1]: https://github.com/jemalloc/jemalloc/issues/708
-        #
-        # About symbol name:
-        # - _zone_register not zone_register due to Mach-O binary format,
-        # - _je_zone_register due to JEMALLOC_PRIVATE_NAMESPACE=je_ under OS X.
-        # - but jemalloc-cmake does not run private_namespace.sh
-        #   so symbol name should be _zone_register
-        if (ENABLE_JEMALLOC AND MAKE_STATIC_LIBRARIES AND OS_DARWIN)
-            set_property(TARGET ${target} APPEND PROPERTY LINK_OPTIONS -u_zone_register)
+            target_link_libraries (${target} PRIVATE clickhouse_new_delete ${MALLOC_LIBRARIES})
         endif()
     endif()
 endmacro()
@@ -604,7 +604,9 @@ include_directories(${ConfigIncludePath})
 
 # Add as many warnings as possible for our own code.
 include (cmake/warnings.cmake)
-include (cmake/print_flags.cmake)
+
+# Check if needed compiler flags are supported
+include (cmake/check_flags.cmake)
 
 add_subdirectory (base)
 add_subdirectory (src)

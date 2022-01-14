@@ -25,20 +25,4 @@ void ExpressionTransform::transform(Chunk & chunk)
     chunk.setColumns(block.getColumns(), num_rows);
 }
 
-ConvertingTransform::ConvertingTransform(const Block & header_, ExpressionActionsPtr expression_)
-    : ExceptionKeepingTransform(header_, ExpressionTransform::transformHeader(header_, expression_->getActionsDAG()))
-    , expression(std::move(expression_))
-{
-}
-
-void ConvertingTransform::transform(Chunk & chunk)
-{
-    size_t num_rows = chunk.getNumRows();
-    auto block = getInputPort().getHeader().cloneWithColumns(chunk.detachColumns());
-
-    expression->execute(block, num_rows);
-
-    chunk.setColumns(block.getColumns(), num_rows);
-}
-
 }

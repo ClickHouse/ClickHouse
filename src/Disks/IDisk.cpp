@@ -4,7 +4,7 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/copyData.h>
 #include <Poco/Logger.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Common/setThreadName.h>
 
 namespace DB
@@ -58,7 +58,7 @@ void asyncCopy(IDisk & from_disk, String from_path, IDisk & to_disk, String to_p
     }
 }
 
-void IDisk::copyThroughBuffers(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
+void IDisk::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
 {
     auto & exec = to_disk->getExecutor();
     ResultsCollector results;
@@ -69,11 +69,6 @@ void IDisk::copyThroughBuffers(const String & from_path, const std::shared_ptr<I
         result.wait();
     for (auto & result : results)
         result.get();
-}
-
-void IDisk::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
-{
-    copyThroughBuffers(from_path, to_disk, to_path);
 }
 
 void IDisk::truncateFile(const String &, size_t)

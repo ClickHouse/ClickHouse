@@ -13,14 +13,15 @@ public:
 
     ~WriteBufferFromFileDecorator() override;
 
+    void finalize() override;
+
     void sync() override;
 
     std::string getFileName() const override;
 
 protected:
-    void finalizeImpl() override;
-
     std::unique_ptr<WriteBuffer> impl;
+    bool finalized = false;
 
 private:
     void nextImpl() override;

@@ -1,9 +1,8 @@
--- Tags: no-parallel
-
 DROP DATABASE IF EXISTS test_dict_db;
 CREATE DATABASE test_dict_db;
 
-set check_table_dependencies=0;
+DROP TABLE IF EXISTS test_dict_db.table1;
+DROP DICTIONARY IF EXISTS test_dict_db.table1_dict;
 
 CREATE TABLE test_dict_db.table1
 (

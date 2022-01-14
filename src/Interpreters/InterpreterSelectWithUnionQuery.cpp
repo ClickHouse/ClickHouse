@@ -2,10 +2,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/InterpreterSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/queryToString.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -86,9 +84,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     if (num_children == 1 && settings_limit_offset_needed)
     {
         const ASTPtr first_select_ast = ast->list_of_selects->children.at(0);
-        ASTSelectQuery * select_query = dynamic_cast<ASTSelectQuery *>(first_select_ast.get());
-        if (!select_query)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid type in list_of_selects: {}", first_select_ast->getID());
+        ASTSelectQuery * select_query = first_select_ast->as<ASTSelectQuery>();
 
         if (!select_query->withFill() && !select_query->limit_with_ties)
         {
@@ -214,24 +210,14 @@ InterpreterSelectWithUnionQuery::buildCurrentChildInterpreter(const ASTPtr & ast
 {
     if (ast_ptr_->as<ASTSelectWithUnionQuery>())
         return std::make_unique<InterpreterSelectWithUnionQuery>(ast_ptr_, context, options, current_required_result_column_names);
-    else if (ast_ptr_->as<ASTSelectQuery>())
-        return std::make_unique<InterpreterSelectQuery>(ast_ptr_, context, options, current_required_result_column_names);
     else
-        return std::make_unique<InterpreterSelectIntersectExceptQuery>(ast_ptr_, context, options);
+        return std::make_unique<InterpreterSelectQuery>(ast_ptr_, context, options, current_required_result_column_names);
 }
 
 InterpreterSelectWithUnionQuery::~InterpreterSelectWithUnionQuery() = default;
 
 Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_, ContextPtr context_, bool is_subquery)
 {
-    if (!context_->hasQueryContext())
-    {
-        if (is_subquery)
-            return InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().subquery().analyze()).getSampleBlock();
-        else
-            return InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().analyze()).getSampleBlock();
-    }
-
     auto & cache = context_->getSampleBlockCache();
     /// Using query string because query_ptr changes for every internal SELECT
     auto key = queryToString(query_ptr_);
@@ -241,14 +227,10 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_,
     }
 
     if (is_subquery)
-    {
         return cache[key]
             = InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().subquery().analyze()).getSampleBlock();
-    }
     else
-    {
         return cache[key] = InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().analyze()).getSampleBlock();
-    }
 }
 
 
@@ -293,7 +275,7 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
         query_plan.unitePlans(std::move(union_step), std::move(plans));
 
         const auto & query = query_ptr->as<ASTSelectWithUnionQuery &>();
-        if (query.union_mode == SelectUnionMode::DISTINCT)
+        if (query.union_mode == ASTSelectWithUnionQuery::Mode::DISTINCT)
         {
             /// Add distinct transform
             SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
@@ -330,13 +312,13 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
     QueryPlan query_plan;
     buildQueryPlan(query_plan);
 
-    auto pipeline_builder = query_plan.buildQueryPipeline(
+    auto pipeline = query_plan.buildQueryPipeline(
         QueryPlanOptimizationSettings::fromContext(context),
         BuildQueryPipelineSettings::fromContext(context));
 
-    pipeline_builder->addInterpreterContext(context);
+    res.pipeline = std::move(*pipeline);
+    res.pipeline.addInterpreterContext(context);
 
-    res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline_builder));
     return res;
 }
 

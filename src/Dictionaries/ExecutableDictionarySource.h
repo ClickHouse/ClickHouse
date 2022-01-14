@@ -1,12 +1,11 @@
 #pragma once
 
-#include <base/logger_useful.h>
-
+#include "DictionaryStructure.h"
+#include "IDictionarySource.h"
 #include <Core/Block.h>
 #include <Interpreters/Context.h>
 
-#include <Dictionaries/IDictionarySource.h>
-#include <Dictionaries/DictionaryStructure.h>
+namespace Poco { class Logger; }
 
 
 namespace DB
@@ -19,15 +18,13 @@ public:
 
     struct Configuration
     {
-        std::string command;
-        std::string format;
-        std::string update_field;
-        UInt64 update_lag;
+        const std::string command;
+        const std::string format;
+        const std::string update_field;
+        const UInt64 update_lag;
         /// Implicit key means that the source script will return only values,
         /// and the correspondence to the requested keys is determined implicitly - by the order of rows in the result.
-        bool implicit_key;
-        /// Send number_of_rows\n before sending chunk to process
-        bool send_chunk_header;
+        const bool implicit_key;
     };
 
     ExecutableDictionarySource(
@@ -39,17 +36,17 @@ public:
     ExecutableDictionarySource(const ExecutableDictionarySource & other);
     ExecutableDictionarySource & operator=(const ExecutableDictionarySource &) = delete;
 
-    Pipe loadAll() override;
+    BlockInputStreamPtr loadAll() override;
 
     /** The logic of this method is flawed, absolutely incorrect and ignorant.
       * It may lead to skipping some values due to clock sync or timezone changes.
       * The intended usage of "update_field" is totally different.
       */
-    Pipe loadUpdatedAll() override;
+    BlockInputStreamPtr loadUpdatedAll() override;
 
-    Pipe loadIds(const std::vector<UInt64> & ids) override;
+    BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
 
-    Pipe loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
 
@@ -61,7 +58,7 @@ public:
 
     std::string toString() const override;
 
-    Pipe getStreamForBlock(const Block & block);
+    BlockInputStreamPtr getStreamForBlock(const Block & block);
 
 private:
     Poco::Logger * log;

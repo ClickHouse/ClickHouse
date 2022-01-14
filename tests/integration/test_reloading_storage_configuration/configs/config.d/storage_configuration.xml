@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
 
 <storage_configuration>
     <disks>
@@ -110,4 +110,4 @@
 
 </storage_configuration>
 
-</clickhouse>
+</yandex>

@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 -- NOTE: database = currentDatabase() is not mandatory
 
 SELECT avg(blockSize()) <= 10 FROM system.tables SETTINGS max_block_size = 10;

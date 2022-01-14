@@ -10,12 +10,7 @@ namespace DB
 void RewriteSumIfFunctionMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (auto * func = ast->as<ASTFunction>())
-    {
-        if (func->is_window_function)
-            return;
-
         visit(*func, ast, data);
-    }
 }
 
 void RewriteSumIfFunctionMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data &)

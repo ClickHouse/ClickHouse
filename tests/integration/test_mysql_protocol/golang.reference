@@ -1,7 +1,7 @@
 Columns:
 a
 Column types:
-a UNSIGNED BIGINT
+a BIGINT
 Result:
 0
 1
@@ -10,15 +10,14 @@ name
 a
 Column types:
 name CHAR
-a UNSIGNED TINYINT
+a TINYINT
 Result:
-tables 1
 tables 1
 Columns:
 a
 b
 Column types:
 a CHAR
-b UNSIGNED TINYINT
+b TINYINT
 Result:
 тест 1

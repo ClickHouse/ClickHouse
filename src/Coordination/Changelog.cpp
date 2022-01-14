@@ -2,15 +2,13 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
-#include <IO/ZstdDeflatingAppendableWriteBuffer.h>
 #include <filesystem>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
-#include <base/logger_useful.h>
-
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -19,7 +17,6 @@ namespace ErrorCodes
 {
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int CORRUPTED_DATA;
-    extern const int UNSUPPORTED_METHOD;
     extern const int UNKNOWN_FORMAT_VERSION;
     extern const int LOGICAL_ERROR;
 }
@@ -32,7 +29,7 @@ constexpr auto DEFAULT_PREFIX = "changelog";
 std::string formatChangelogPath(const std::string & prefix, const ChangelogFileDescription & name)
 {
     std::filesystem::path path(prefix);
-    path /= std::filesystem::path(name.prefix + "_" + std::to_string(name.from_log_index) + "_" + std::to_string(name.to_log_index) + "." + name.extension);
+    path /= std::filesystem::path(name.prefix + "_" + std::to_string(name.from_log_index) + "_" + std::to_string(name.to_log_index) + ".bin");
     return path;
 }
 
@@ -49,7 +46,6 @@ ChangelogFileDescription getChangelogFileDescription(const std::string & path_st
     result.prefix = filename_parts[0];
     result.from_log_index = parse<uint64_t>(filename_parts[1]);
     result.to_log_index = parse<uint64_t>(filename_parts[2]);
-    result.extension = path.extension();
     result.path = path_str;
     return result;
 }
@@ -79,55 +75,52 @@ class ChangelogWriter
 public:
     ChangelogWriter(const std::string & filepath_, WriteMode mode, uint64_t start_index_)
         : filepath(filepath_)
-        , file_buf(std::make_unique<WriteBufferFromFile>(filepath, DBMS_DEFAULT_BUFFER_SIZE, mode == WriteMode::Rewrite ? -1 : (O_APPEND | O_CREAT | O_WRONLY)))
+        , plain_buf(filepath, DBMS_DEFAULT_BUFFER_SIZE, mode == WriteMode::Rewrite ? -1 : (O_APPEND | O_CREAT | O_WRONLY))
         , start_index(start_index_)
+    {}
+
+
+    off_t appendRecord(ChangelogRecord && record)
     {
-        auto compression_method = chooseCompressionMethod(filepath_, "");
-        if (compression_method != CompressionMethod::Zstd && compression_method != CompressionMethod::None)
-        {
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Unsupported coordination log serialization format {}", toContentEncodingName(compression_method));
-        }
-        else if (compression_method == CompressionMethod::Zstd)
-        {
-            compressed_buffer = std::make_unique<ZstdDeflatingAppendableWriteBuffer>(std::move(file_buf), /* compression level = */ 3, /* append_to_existing_stream = */ mode == WriteMode::Append);
-        }
-        else
-        {
-            /// no compression, only file buffer
-        }
-    }
+        off_t result = plain_buf.count();
+        writeIntBinary(computeRecordChecksum(record), plain_buf);
 
-
-    void appendRecord(ChangelogRecord && record)
-    {
-        writeIntBinary(computeRecordChecksum(record), getBuffer());
-
-        writeIntBinary(record.header.version, getBuffer());
-        writeIntBinary(record.header.index, getBuffer());
-        writeIntBinary(record.header.term, getBuffer());
-        writeIntBinary(record.header.value_type, getBuffer());
-        writeIntBinary(record.header.blob_size, getBuffer());
+        writeIntBinary(record.header.version, plain_buf);
+        writeIntBinary(record.header.index, plain_buf);
+        writeIntBinary(record.header.term, plain_buf);
+        writeIntBinary(record.header.value_type, plain_buf);
+        writeIntBinary(record.header.blob_size, plain_buf);
 
         if (record.header.blob_size != 0)
-            getBuffer().write(reinterpret_cast<char *>(record.blob->data_begin()), record.blob->size());
+            plain_buf.write(reinterpret_cast<char *>(record.blob->data_begin()), record.blob->size());
+
+        entries_written++;
+
+        return result;
+    }
+
+    void truncateToLength(off_t new_length)
+    {
+        plain_buf.next();
+        plain_buf.truncate(new_length);
+        plain_buf.seek(new_length, SEEK_SET);
     }
 
     void flush(bool force_fsync)
     {
-        if (compressed_buffer)
-        {
-            /// Flush compressed data to WriteBufferFromFile working_buffer
-            compressed_buffer->next();
-        }
-
-        WriteBuffer * working_buf = compressed_buffer ? compressed_buffer->getNestedBuffer() : file_buf.get();
-
-            /// Flush working buffer to file system
-        working_buf->next();
-
-        /// Fsync file system if needed
+        plain_buf.next();
         if (force_fsync)
-            working_buf->sync();
+            plain_buf.sync();
+    }
+
+    uint64_t getEntriesWritten() const
+    {
+        return entries_written;
+    }
+
+    void setEntriesWritten(uint64_t entries_written_)
+    {
+        entries_written = entries_written_;
     }
 
     uint64_t getStartIndex() const
@@ -135,17 +128,15 @@ public:
         return start_index;
     }
 
-private:
-    WriteBuffer & getBuffer()
+    void setStartIndex(uint64_t start_index_)
     {
-        if (compressed_buffer)
-            return *compressed_buffer;
-        return *file_buf;
+        start_index = start_index_;
     }
 
+private:
     std::string filepath;
-    std::unique_ptr<WriteBufferFromFile> file_buf;
-    std::unique_ptr<WriteBufferWithOwnMemoryDecorator> compressed_buffer;
+    WriteBufferFromFile plain_buf;
+    uint64_t entries_written = 0;
     uint64_t start_index;
 };
 
@@ -176,48 +167,49 @@ class ChangelogReader
 public:
     explicit ChangelogReader(const std::string & filepath_)
         : filepath(filepath_)
+        , read_buf(filepath)
     {
-        auto compression_method = chooseCompressionMethod(filepath, "");
-        auto read_buffer_from_file = std::make_unique<ReadBufferFromFile>(filepath);
-        read_buf = wrapReadBufferWithCompressionMethod(std::move(read_buffer_from_file), compression_method);
     }
 
     /// start_log_index -- all entries with index < start_log_index will be skipped, but accounted into total_entries_read_from_log
-    ChangelogReadResult readChangelog(IndexToLogEntry & logs, uint64_t start_log_index, Poco::Logger * log)
+    ChangelogReadResult readChangelog(IndexToLogEntry & logs, uint64_t start_log_index, IndexToOffset & index_to_offset, Poco::Logger * log)
     {
+        uint64_t previous_index = 0;
         ChangelogReadResult result{};
         try
         {
-            while (!read_buf->eof())
+            while (!read_buf.eof())
             {
-                result.last_position = read_buf->count();
-                /// Read checksum
+                result.last_position = read_buf.count();
                 Checksum record_checksum;
-                readIntBinary(record_checksum, *read_buf);
+                readIntBinary(record_checksum, read_buf);
 
-                /// Read header
+                /// Initialization is required, otherwise checksums may fail
                 ChangelogRecord record;
-                readIntBinary(record.header.version, *read_buf);
-                readIntBinary(record.header.index, *read_buf);
-                readIntBinary(record.header.term, *read_buf);
-                readIntBinary(record.header.value_type, *read_buf);
-                readIntBinary(record.header.blob_size, *read_buf);
+                readIntBinary(record.header.version, read_buf);
+                readIntBinary(record.header.index, read_buf);
+                readIntBinary(record.header.term, read_buf);
+                readIntBinary(record.header.value_type, read_buf);
+                readIntBinary(record.header.blob_size, read_buf);
 
                 if (record.header.version > CURRENT_CHANGELOG_VERSION)
                     throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unsupported changelog version {} on path {}", record.header.version, filepath);
 
-                /// Read data
                 if (record.header.blob_size != 0)
                 {
                     auto buffer = nuraft::buffer::alloc(record.header.blob_size);
                     auto * buffer_begin = reinterpret_cast<char *>(buffer->data_begin());
-                    read_buf->readStrict(buffer_begin, record.header.blob_size);
+                    read_buf.readStrict(buffer_begin, record.header.blob_size);
                     record.blob = buffer;
                 }
                 else
                     record.blob = nullptr;
 
-                /// Compare checksums
+                if (previous_index != 0 && previous_index + 1 != record.header.index)
+                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Previous log entry {}, next log entry {}, seems like some entries skipped", previous_index, record.header.index);
+
+                previous_index = record.header.index;
+
                 Checksum checksum = computeRecordChecksum(record);
                 if (checksum != record_checksum)
                 {
@@ -226,23 +218,22 @@ public:
                                     filepath, record.header.version, record.header.index, record.header.blob_size);
                 }
 
-                /// Check for duplicated changelog ids
                 if (logs.count(record.header.index) != 0)
-                    std::erase_if(logs, [record] (const auto & item) { return item.first >= record.header.index; });
+                    throw Exception(ErrorCodes::CORRUPTED_DATA, "Duplicated index id {} in log {}", record.header.index, filepath);
 
                 result.total_entries_read_from_log += 1;
 
-                /// Read but skip this entry because our state is already more fresh
                 if (record.header.index < start_log_index)
+                {
                     continue;
+                }
 
-                /// Create log entry for read data
                 auto log_entry = nuraft::cs_new<nuraft::log_entry>(record.header.term, record.blob, record.header.value_type);
                 if (result.first_read_index == 0)
                     result.first_read_index = record.header.index;
 
-                /// Put it into in memory structure
                 logs.emplace(record.header.index, log_entry);
+                index_to_offset[record.header.index] = result.last_position;
                 result.last_read_index = record.header.index;
 
                 if (result.total_entries_read_from_log % 50000 == 0)
@@ -262,7 +253,6 @@ public:
             result.error = true;
             tryLogCurrentException(log);
         }
-
         LOG_TRACE(log, "Totally read from changelog {} {} entries", filepath, result.total_entries_read_from_log);
 
         return result;
@@ -270,22 +260,19 @@ public:
 
 private:
     std::string filepath;
-    std::unique_ptr<ReadBuffer> read_buf;
+    ReadBufferFromFile read_buf;
 };
 
 Changelog::Changelog(
     const std::string & changelogs_dir_,
     uint64_t rotate_interval_,
     bool force_sync_,
-    Poco::Logger * log_,
-    bool compress_logs_)
+    Poco::Logger * log_)
     : changelogs_dir(changelogs_dir_)
     , rotate_interval(rotate_interval_)
     , force_sync(force_sync_)
     , log(log_)
-    , compress_logs(compress_logs_)
 {
-    /// Load all files in changelog directory
     namespace fs = std::filesystem;
     if (!fs::exists(changelogs_dir))
         fs::create_directories(changelogs_dir);
@@ -295,9 +282,6 @@ Changelog::Changelog(
         auto file_description = getChangelogFileDescription(p.path());
         existing_changelogs[file_description.from_log_index] = file_description;
     }
-
-    if (existing_changelogs.empty())
-        LOG_WARNING(log, "No logs exists in {}. It's Ok if it's the first run of clickhouse-keeper.", changelogs_dir);
 }
 
 void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uint64_t logs_to_keep)
@@ -307,10 +291,7 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
     /// Last log has some free space to write
     bool last_log_is_not_complete = false;
 
-    /// We must start to read from this log index
     uint64_t start_to_read_from = last_commited_log_index;
-
-    /// If we need to have some reserved log read additional `logs_to_keep` logs
     if (start_to_read_from > logs_to_keep)
         start_to_read_from -= logs_to_keep;
     else
@@ -319,15 +300,10 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
     /// Got through changelog files in order of start_index
     for (const auto & [changelog_start_index, changelog_description] : existing_changelogs)
     {
-
-        /// [from_log_index.>=.......start_to_read_from.....<=.to_log_index]
         if (changelog_description.to_log_index >= start_to_read_from)
         {
             if (!last_log_read_result) /// still nothing was read
             {
-                /// Our first log starts from the more fresh log_id than we required to read and this changelog is not empty log.
-                /// So we are missing something in our logs, but it's not dataloss, we will receive snapshot and required
-                /// entries from leader.
                 if (changelog_description.from_log_index > last_commited_log_index && (changelog_description.from_log_index - last_commited_log_index) > 1)
                 {
                     LOG_ERROR(log, "Some records was lost, last committed log index {}, smallest available log index on disk {}. Hopefully will receive missing records from leader.", last_commited_log_index, changelog_description.from_log_index);
@@ -339,21 +315,12 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
                     return;
                 }
                 else if (changelog_description.from_log_index > start_to_read_from)
-                {
-                    /// We don't have required amount of reserved logs, but nothing was lost.
                     LOG_WARNING(log, "Don't have required amount of reserved log records. Need to read from {}, smallest available log index on disk {}.", start_to_read_from, changelog_description.from_log_index);
-                }
             }
 
             ChangelogReader reader(changelog_description.path);
-            last_log_read_result = reader.readChangelog(logs, start_to_read_from, log);
-            last_log_read_result->log_start_index = changelog_description.from_log_index;
+            last_log_read_result = reader.readChangelog(logs, start_to_read_from, index_to_start_pos, log);
 
-            if (last_log_read_result->error)
-            {
-                last_log_is_not_complete = true;
-                break;
-            }
             /// Otherwise we have already initialized it
             if (min_log_id == 0)
                 min_log_id = last_log_read_result->first_read_index;
@@ -361,11 +328,13 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
             if (last_log_read_result->last_read_index != 0)
                 max_log_id = last_log_read_result->last_read_index;
 
+            last_log_read_result->log_start_index = changelog_description.from_log_index;
+
             /// How many entries we have in the last changelog
             uint64_t expected_entries_in_log = changelog_description.expectedEntriesCountInLog();
 
-            /// Unfinished log
-            if (last_log_read_result->error || last_log_read_result->total_entries_read_from_log < expected_entries_in_log)
+            /// May happen after truncate, crash or simply unfinished log
+            if (last_log_read_result->total_entries_read_from_log < expected_entries_in_log)
             {
                 last_log_is_not_complete = true;
                 break;
@@ -393,29 +362,19 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
     else if (last_log_is_not_complete) /// if it's complete just start new one
     {
         assert(last_log_read_result != std::nullopt);
-        assert(!existing_changelogs.empty());
-
         /// Actually they shouldn't exist, but to be sure we remove them
         removeAllLogsAfter(last_log_read_result->log_start_index);
 
-        /// This log, even if it finished with error shouldn't be removed
-        assert(existing_changelogs.find(last_log_read_result->log_start_index) != existing_changelogs.end());
+        assert(!existing_changelogs.empty());
         assert(existing_changelogs.find(last_log_read_result->log_start_index)->first == existing_changelogs.rbegin()->first);
 
-        /// Continue to write into incomplete existing log if it doesn't finished with error
+        /// Continue to write into incomplete existing log
         auto description = existing_changelogs[last_log_read_result->log_start_index];
 
-        if (last_log_read_result->last_read_index == 0 || last_log_read_result->error) /// If it's broken log then remove it
-        {
-            LOG_INFO(log, "Removing log {} because it's empty or read finished with error", description.path);
-            std::filesystem::remove(description.path);
-            existing_changelogs.erase(last_log_read_result->log_start_index);
-            std::erase_if(logs, [last_log_read_result] (const auto & item) { return item.first >= last_log_read_result->log_start_index; });
-        }
+        if (last_log_read_result->error)
+            initWriter(description, last_log_read_result->total_entries_read_from_log,  /* truncate_to_offset = */ last_log_read_result->last_position);
         else
-        {
-            initWriter(description);
-        }
+            initWriter(description, last_log_read_result->total_entries_read_from_log);
     }
 
     /// Start new log if we don't initialize writer from previous log. All logs can be "complete".
@@ -424,32 +383,33 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
 }
 
 
-void Changelog::initWriter(const ChangelogFileDescription & description)
+void Changelog::initWriter(const ChangelogFileDescription & description, uint64_t entries_already_written, std::optional<uint64_t> truncate_to_offset)
 {
     if (description.expectedEntriesCountInLog() != rotate_interval)
         LOG_TRACE(log, "Looks like rotate_logs_interval was changed, current {}, expected entries in last log {}", rotate_interval, description.expectedEntriesCountInLog());
 
     LOG_TRACE(log, "Continue to write into {}", description.path);
     current_writer = std::make_unique<ChangelogWriter>(description.path, WriteMode::Append, description.from_log_index);
+    current_writer->setEntriesWritten(entries_already_written);
+
+    if (truncate_to_offset)
+    {
+        LOG_WARNING(log, "Changelog {} contain broken enties, truncating all broken log entries", description.path);
+        current_writer->truncateToLength(*truncate_to_offset);
+    }
 }
 
-void Changelog::removeAllLogsAfter(uint64_t remove_after_log_start_index)
+void Changelog::removeAllLogsAfter(uint64_t start_to_remove_from_id)
 {
-    auto start_to_remove_from_itr = existing_changelogs.upper_bound(remove_after_log_start_index);
-    if (start_to_remove_from_itr == existing_changelogs.end())
-        return;
-
-    size_t start_to_remove_from_log_id = start_to_remove_from_itr->first;
+    auto start_to_remove_from = existing_changelogs.upper_bound(start_to_remove_from_id);
 
     /// All subsequent logs shouldn't exist. But they may exist if we crashed after writeAt started. Remove them.
-    for (auto itr = start_to_remove_from_itr; itr != existing_changelogs.end();)
+    for (auto itr = start_to_remove_from; itr != existing_changelogs.end();)
     {
         LOG_WARNING(log, "Removing changelog {}, because it's goes after broken changelog entry", itr->second.path);
         std::filesystem::remove(itr->second.path);
         itr = existing_changelogs.erase(itr);
     }
-
-    std::erase_if(logs, [start_to_remove_from_log_id] (const auto & item) { return item.first >= start_to_remove_from_log_id; });
 }
 
 void Changelog::removeAllLogs()
@@ -461,7 +421,6 @@ void Changelog::removeAllLogs()
         std::filesystem::remove(itr->second.path);
         itr = existing_changelogs.erase(itr);
     }
-    logs.clear();
 }
 
 void Changelog::rotate(uint64_t new_start_log_index)
@@ -469,15 +428,10 @@ void Changelog::rotate(uint64_t new_start_log_index)
     /// Flush previous log
     flush();
 
-    /// Start new one
     ChangelogFileDescription new_description;
     new_description.prefix = DEFAULT_PREFIX;
     new_description.from_log_index = new_start_log_index;
     new_description.to_log_index = new_start_log_index + rotate_interval - 1;
-    new_description.extension = "bin";
-
-    if (compress_logs)
-        new_description.extension += "." + toContentEncodingName(CompressionMethod::Zstd);
 
     new_description.path = formatChangelogPath(changelogs_dir, new_description);
 
@@ -489,7 +443,7 @@ void Changelog::rotate(uint64_t new_start_log_index)
 ChangelogRecord Changelog::buildRecord(uint64_t index, const LogEntryPtr & log_entry)
 {
     ChangelogRecord record;
-    record.header.version = ChangelogVersion::V1;
+    record.header.version = ChangelogVersion::V0;
     record.header.index = index;
     record.header.term = log_entry->get_term();
     record.header.value_type = log_entry->get_val_type();
@@ -512,37 +466,42 @@ void Changelog::appendEntry(uint64_t index, const LogEntryPtr & log_entry)
     if (logs.empty())
         min_log_id = index;
 
-    const auto & current_changelog_description = existing_changelogs[current_writer->getStartIndex()];
-    const bool log_is_complete = index - current_writer->getStartIndex() == current_changelog_description.expectedEntriesCountInLog();
-
-    if (log_is_complete)
+    if (current_writer->getEntriesWritten() == rotate_interval)
         rotate(index);
 
-    current_writer->appendRecord(buildRecord(index, log_entry));
+    auto offset = current_writer->appendRecord(buildRecord(index, log_entry));
+    if (!index_to_start_pos.try_emplace(index, offset).second)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Record with index {} already exists", index);
+
     logs[index] = makeClone(log_entry);
     max_log_id = index;
 }
 
 void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
 {
-    /// This write_at require to overwrite everything in this file and also in previous file(s)
-    const bool go_to_previous_file = index < current_writer->getStartIndex();
+    if (index_to_start_pos.count(index) == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot write at index {} because changelog doesn't contain it", index);
 
+    bool go_to_previous_file = index < current_writer->getStartIndex();
     if (go_to_previous_file)
     {
         auto index_changelog = existing_changelogs.lower_bound(index);
-
         ChangelogFileDescription description;
-
-        if (index_changelog->first == index) /// exactly this file starts from index
+        if (index_changelog->first == index)
             description = index_changelog->second;
         else
             description = std::prev(index_changelog)->second;
 
-        /// Initialize writer from this log file
         current_writer = std::make_unique<ChangelogWriter>(description.path, WriteMode::Append, index_changelog->first);
+        current_writer->setEntriesWritten(description.to_log_index - description.from_log_index + 1);
+    }
 
-        /// Remove all subsequent files if overwritten something in previous one
+    auto entries_written = current_writer->getEntriesWritten();
+    current_writer->truncateToLength(index_to_start_pos[index]);
+
+    if (go_to_previous_file)
+    {
+        /// Remove all subsequent files
         auto to_remove_itr = existing_changelogs.upper_bound(index);
         for (auto itr = to_remove_itr; itr != existing_changelogs.end();)
         {
@@ -552,10 +511,18 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
     }
 
     /// Remove redundant logs from memory
-    /// Everything >= index must be removed
-    std::erase_if(logs, [index] (const auto & item) { return item.first >= index; });
+    for (uint64_t i = index; ; ++i)
+    {
+        auto log_itr = logs.find(i);
+        if (log_itr == logs.end())
+            break;
+        logs.erase(log_itr);
+        index_to_start_pos.erase(i);
+        entries_written--;
+    }
 
-    /// Now we can actually override entry at index
+    current_writer->setEntriesWritten(entries_written);
+
     appendEntry(index, log_entry);
 }
 
@@ -586,6 +553,7 @@ void Changelog::compact(uint64_t up_to_log_index)
             }
 
             LOG_INFO(log, "Removing changelog {} because of compaction", itr->second.path);
+            std::erase_if(index_to_start_pos, [right_index = itr->second.to_log_index] (const auto & item) { return item.first <= right_index; });
             std::filesystem::remove(itr->second.path);
             itr = existing_changelogs.erase(itr);
         }
@@ -604,7 +572,6 @@ void Changelog::compact(uint64_t up_to_log_index)
 
 LogEntryPtr Changelog::getLastEntry() const
 {
-    /// This entry treaded in special way by NuRaft
     static LogEntryPtr fake_entry = nuraft::cs_new<nuraft::log_entry>(0, nuraft::buffer::alloc(sizeof(uint64_t)));
 
     auto entry = logs.find(max_log_id);
@@ -639,14 +606,6 @@ LogEntryPtr Changelog::entryAt(uint64_t index)
 
     src = entry->second;
     return src;
-}
-
-LogEntryPtr Changelog::getLatestConfigChange() const
-{
-    for (const auto & [_, entry] : logs)
-        if (entry->get_val_type() == nuraft::conf)
-            return entry;
-    return nullptr;
 }
 
 nuraft::ptr<nuraft::buffer> Changelog::serializeEntriesToBuffer(uint64_t index, int32_t count)

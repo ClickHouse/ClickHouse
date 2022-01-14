@@ -1,9 +1,9 @@
 #include "DNSResolver.h"
-#include <base/CachedFn.h>
+#include <common/SimpleCache.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Names.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/DNS.h>
 #include <Poco/Net/NetException.h>
@@ -15,7 +15,7 @@
 
 namespace ProfileEvents
 {
-    extern const Event DNSError;
+    extern Event DNSError;
 }
 
 namespace std
@@ -109,19 +109,11 @@ static DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host)
     /// It should not affect client address checking, since client cannot connect from IPv6 address
     /// if server has no IPv6 addresses.
     flags |= Poco::Net::DNS::DNS_HINT_AI_ADDRCONFIG;
-
-    DNSResolver::IPAddresses addresses;
-
-    try
-    {
-        addresses = Poco::Net::DNS::hostByName(host, flags).addresses();
-    }
-    catch (const Poco::Net::DNSException & e)
-    {
-        LOG_ERROR(&Poco::Logger::get("DNSResolver"), "Cannot resolve host ({}), error {}: {}.", host, e.code(), e.message());
-        addresses.clear();
-    }
-
+#if defined(ARCADIA_BUILD)
+    auto addresses = Poco::Net::DNS::hostByName(host, &Poco::Net::DNS::DEFAULT_DNS_TIMEOUT, flags).addresses();
+#else
+    auto addresses = Poco::Net::DNS::hostByName(host, flags).addresses();
+#endif
     if (addresses.empty())
         throw Exception("Not found address of host: " + host, ErrorCodes::DNS_ERROR);
 
@@ -142,8 +134,8 @@ static String reverseResolveImpl(const Poco::Net::IPAddress & address)
 
 struct DNSResolver::Impl
 {
-    CachedFn<&resolveIPAddressImpl> cache_host;
-    CachedFn<&reverseResolveImpl> cache_address;
+    SimpleCache<decltype(resolveIPAddressImpl), &resolveIPAddressImpl> cache_host;
+    SimpleCache<decltype(reverseResolveImpl), &reverseResolveImpl> cache_address;
 
     std::mutex drop_mutex;
     std::mutex update_mutex;

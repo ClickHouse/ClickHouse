@@ -1,5 +1,3 @@
--- Tags: long, no-parallel
-
 --
 -- Simple key
 --

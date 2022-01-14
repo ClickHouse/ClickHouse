@@ -13,7 +13,7 @@ toc_title: dictionary
 dictionary('dict')
 ```
 
-**Аргументы**
+**Аргументы** 
 
 -   `dict` — имя словаря. [String](../../sql-reference/data-types/string.md).
 

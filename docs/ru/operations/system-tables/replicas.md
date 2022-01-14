@@ -8,48 +8,43 @@
 ``` sql
 SELECT *
 FROM system.replicas
-WHERE table = 'test_table'
+WHERE table = 'visits'
 FORMAT Vertical
 ```
 
 ``` text
-Query id: dc6dcbcb-dc28-4df9-ae27-4354f5b3b13e
-
 Row 1:
-───────
-database:                    db
-table:                       test_table
-engine:                      ReplicatedMergeTree
-is_leader:                   1
-can_become_leader:           1
-is_readonly:                 0
-is_session_expired:          0
-future_parts:                0
-parts_to_check:              0
-zookeeper_path:              /test/test_table
-replica_name:                r1
-replica_path:                /test/test_table/replicas/r1
-columns_version:             -1
-queue_size:                  27
-inserts_in_queue:            27
-merges_in_queue:             0
-part_mutations_in_queue:     0
-queue_oldest_time:           2021-10-12 14:48:48
-inserts_oldest_time:         2021-10-12 14:48:48
-merges_oldest_time:          1970-01-01 03:00:00
-part_mutations_oldest_time:  1970-01-01 03:00:00
-oldest_part_to_get:          1_17_17_0
-oldest_part_to_merge_to:     
-oldest_part_to_mutate_to:    
-log_max_index:               206
-log_pointer:                 207
-last_queue_update:           2021-10-12 14:50:08
-absolute_delay:              99
-total_replicas:              5
-active_replicas:             5
-last_queue_update_exception: 
-zookeeper_exception:         
-replica_is_active:           {'r1':1,'r2':1}
+──────
+database:                   merge
+table:                      visits
+engine:                     ReplicatedCollapsingMergeTree
+is_leader:                  1
+can_become_leader:          1
+is_readonly:                0
+is_session_expired:         0
+future_parts:               1
+parts_to_check:             0
+zookeeper_path:             /clickhouse/tables/01-06/visits
+replica_name:               example01-06-1.yandex.ru
+replica_path:               /clickhouse/tables/01-06/visits/replicas/example01-06-1.yandex.ru
+columns_version:            9
+queue_size:                 1
+inserts_in_queue:           0
+merges_in_queue:            1
+part_mutations_in_queue:    0
+queue_oldest_time:          2020-02-20 08:34:30
+inserts_oldest_time:        0000-00-00 00:00:00
+merges_oldest_time:         2020-02-20 08:34:30
+part_mutations_oldest_time: 0000-00-00 00:00:00
+oldest_part_to_get:
+oldest_part_to_merge_to:    20200220_20284_20840_7
+oldest_part_to_mutate_to:
+log_max_index:              596273
+log_pointer:                596274
+last_queue_update:          2020-02-20 08:34:32
+absolute_delay:             0
+total_replicas:             2
+active_replicas:            2
 ```
 
 Столбцы:
@@ -83,13 +78,10 @@ replica_is_active:           {'r1':1,'r2':1}
 
 -   `log_max_index` (`UInt64`) - максимальный номер записи в общем логе действий.
 -   `log_pointer` (`UInt64`) - максимальный номер записи из общего лога действий, которую реплика скопировала в свою очередь для выполнения, плюс единица. Если log_pointer сильно меньше log_max_index, значит что-то не так.
--   `last_queue_update` (`DateTime`) - время последнего обновления запроса.
--   `absolute_delay` (`UInt64`) - задержка (в секундах) для текущей реплики.
+-   `last_queue_update` (`DateTime`) - When the queue was updated last time.
+-   `absolute_delay` (`UInt64`) - How big lag in seconds the current replica has.
 -   `total_replicas` (`UInt8`) - общее число известных реплик этой таблицы.
 -   `active_replicas` (`UInt8`) - число реплик этой таблицы, имеющих сессию в ZK; то есть, число работающих реплик.
--   `last_queue_update_exception` (`String`) - если в очереди есть битые записи. Особенно важно, когда в ClickHouse нарушается обратная совместимость между версиями, а записи журнала, сделанные более новыми версиями, не могут быть проанализированы старыми версиями.
--   `zookeeper_exception` (`String`) - последнее сообщение об исключении. Появляется, если ошибка произошла при получении информации из ZooKeeper.
--   `replica_is_active` ([Map(String, UInt8)](../../sql-reference/data-types/map.md)) — соответствие между именем реплики и признаком активности реплики.
 
 Если запрашивать все столбцы, то таблица может работать слегка медленно, так как на каждую строчку делается несколько чтений из ZK.
 Если не запрашивать последние 4 столбца (log_max_index, log_pointer, total_replicas, active_replicas), то таблица работает быстро.

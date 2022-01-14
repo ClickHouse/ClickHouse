@@ -10,7 +10,7 @@ class Chunk;
 class QueryPipeline;
 class PipelineExecutor;
 class PullingOutputFormat;
-struct ProfileInfo;
+struct BlockStreamProfileInfo;
 
 using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
 
@@ -46,7 +46,7 @@ public:
     Block getExtremesBlock();
 
     /// Get query profile info.
-    ProfileInfo & getProfileInfo();
+    BlockStreamProfileInfo & getProfileInfo();
 
 private:
     std::atomic_bool has_data_flag = false;

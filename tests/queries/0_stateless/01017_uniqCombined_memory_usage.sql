@@ -1,8 +1,3 @@
--- Tags: no-tsan, no-asan, no-msan, no-replicated-database
--- Tag no-tsan: Fine thresholds on memory usage
--- Tag no-asan: Fine thresholds on memory usage
--- Tag no-msan: Fine thresholds on memory usage
-
 -- each uniqCombined state should not use > sizeof(HLL) in memory,
 -- sizeof(HLL) is (2^K * 6 / 8)
 -- hence max_memory_usage for 100 rows = (96<<10)*100 = 9830400

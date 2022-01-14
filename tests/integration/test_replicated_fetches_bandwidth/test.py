@@ -34,7 +34,7 @@ def test_limited_fetch_single_table(start_cluster):
         node2.query("SYSTEM STOP FETCHES limited_fetch_table")
 
         for i in range(5):
-            node1.query("INSERT INTO limited_fetch_table SELECT {}, (select randomPrintableASCII(104857)) FROM numbers(300)".format(i))
+            node1.query("INSERT INTO limited_fetch_table SELECT {}, '{}' FROM numbers(300)".format(i, get_random_string(104857)))
 
         n1_net = NetThroughput(node1)
         n2_net = NetThroughput(node2)
@@ -66,7 +66,7 @@ def test_limited_send_single_table(start_cluster):
         node2.query("SYSTEM STOP FETCHES limited_send_table")
 
         for i in range(5):
-            node1.query("INSERT INTO limited_send_table SELECT {}, (select randomPrintableASCII(104857)) FROM numbers(150)".format(i))
+            node1.query("INSERT INTO limited_send_table SELECT {}, '{}' FROM numbers(150)".format(i, get_random_string(104857)))
 
         n1_net = NetThroughput(node1)
         n2_net = NetThroughput(node2)
@@ -100,7 +100,7 @@ def test_limited_fetches_for_server(start_cluster):
         for j in range(5):
             node3.query(f"SYSTEM STOP FETCHES limited_fetches{j}")
             for i in range(5):
-                node1.query("INSERT INTO limited_fetches{} SELECT {}, (select randomPrintableASCII(104857)) FROM numbers(50)".format(j, i))
+                node1.query("INSERT INTO limited_fetches{} SELECT {}, '{}' FROM numbers(50)".format(j, i, get_random_string(104857)))
 
         n1_net = NetThroughput(node1)
         n3_net = NetThroughput(node3)
@@ -137,7 +137,7 @@ def test_limited_sends_for_server(start_cluster):
         for j in range(5):
             node1.query(f"SYSTEM STOP FETCHES limited_sends{j}")
             for i in range(5):
-                node3.query("INSERT INTO limited_sends{} SELECT {}, (select randomPrintableASCII(104857)) FROM numbers(50)".format(j, i))
+                node3.query("INSERT INTO limited_sends{} SELECT {}, '{}' FROM numbers(50)".format(j, i, get_random_string(104857)))
 
         n1_net = NetThroughput(node1)
         n3_net = NetThroughput(node3)
@@ -173,7 +173,7 @@ def test_should_execute_fetch(start_cluster):
         node2.query("SYSTEM STOP FETCHES should_execute_table")
 
         for i in range(3):
-            node1.query("INSERT INTO should_execute_table SELECT {}, (select randomPrintableASCII(104857)) FROM numbers(200)".format(i))
+            node1.query("INSERT INTO should_execute_table SELECT {}, '{}' FROM numbers(200)".format(i, get_random_string(104857)))
 
         n1_net = NetThroughput(node1)
         n2_net = NetThroughput(node2)
@@ -181,7 +181,7 @@ def test_should_execute_fetch(start_cluster):
         node2.query("SYSTEM START FETCHES should_execute_table")
 
         for i in range(10):
-            node1.query("INSERT INTO should_execute_table SELECT {}, (select randomPrintableASCII(104857)) FROM numbers(3)".format(i))
+            node1.query("INSERT INTO should_execute_table SELECT {}, '{}' FROM numbers(3)".format(i, get_random_string(104857)))
 
         n2_fetch_speed = []
         replication_queue_data = []

@@ -32,7 +32,6 @@ public:
     String getName() const override { return "ValuesBlockInputFormat"; }
 
     void resetParser() override;
-    void setReadBuffer(ReadBuffer & in_) override;
 
     /// TODO: remove context somehow.
     void setContext(ContextPtr context_) { context = Context::createCopy(context_); }
@@ -40,9 +39,6 @@ public:
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 
 private:
-    ValuesBlockInputFormat(std::unique_ptr<PeekableReadBuffer> buf_, const Block & header_, const RowInputFormatParams & params_,
-                           const FormatSettings & format_settings_);
-
     enum class ParserType
     {
         Streaming,
@@ -70,7 +66,7 @@ private:
 
     bool skipToNextRow(size_t min_chunk_bytes = 0, int balance = 0);
 
-    std::unique_ptr<PeekableReadBuffer> buf;
+    PeekableReadBuffer buf;
 
     const RowInputFormatParams params;
 

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Core/QueryProcessingStage.h>
 #include <Parsers/IAST.h>
 
 namespace DB
@@ -18,8 +17,6 @@ class QueryPlan;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-struct StorageID;
-
 namespace ClusterProxy
 {
 
@@ -34,18 +31,13 @@ class IStreamFactory;
 ///   - optimize_skip_unused_shards_nesting
 ///
 /// @return new Context with adjusted settings
-ContextMutablePtr updateSettingsForCluster(
-    const Cluster & cluster, ContextPtr context, const Settings & settings, Poco::Logger * log = nullptr);
+ContextMutablePtr updateSettingsForCluster(const Cluster & cluster, ContextPtr context, const Settings & settings, Poco::Logger * log = nullptr);
 
 /// Execute a distributed query, creating a vector of BlockInputStreams, from which the result can be read.
 /// `stream_factory` object encapsulates the logic of creating streams for a different type of query
 /// (currently SELECT, DESCRIBE).
 void executeQuery(
     QueryPlan & query_plan,
-    const Block & header,
-    QueryProcessingStage::Enum processed_stage,
-    const StorageID & main_table,
-    const ASTPtr & table_func_ptr,
     IStreamFactory & stream_factory, Poco::Logger * log,
     const ASTPtr & query_ast, ContextPtr context, const SelectQueryInfo & query_info,
     const ExpressionActionsPtr & sharding_key_expr,

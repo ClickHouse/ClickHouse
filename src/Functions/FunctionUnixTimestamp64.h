@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 
-#include <base/arithmeticOverflow.h>
+#include <common/arithmeticOverflow.h>
 
 
 namespace DB
@@ -35,7 +35,6 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
     bool isVariadic() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -56,7 +55,7 @@ public:
 
         const auto & source_data = typeid_cast<const ColumnDecimal<DateTime64> &>(col).getData();
 
-        const Int32 scale_diff = typeid_cast<const DataTypeDateTime64 &>(*src.type).getScale() - target_scale;
+        Int32 scale_diff = typeid_cast<const DataTypeDateTime64 &>(*src.type).getScale() - target_scale;
         if (scale_diff == 0)
         {
             for (size_t i = 0; i < input_rows_count; ++i)
@@ -100,7 +99,6 @@ public:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

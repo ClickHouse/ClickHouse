@@ -39,8 +39,8 @@ protected:
         T & query = static_cast<T &>(*query_ptr);
 
         query.cluster.clear();
-        if (!query.database)
-            query.setDatabase(new_database);
+        if (query.database.empty())
+            query.database = new_database;
 
         return query_ptr;
     }

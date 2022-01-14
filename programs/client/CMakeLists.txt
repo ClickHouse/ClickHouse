@@ -1,6 +1,8 @@
 set (CLICKHOUSE_CLIENT_SOURCES
     Client.cpp
-    TestTags.cpp
+    ConnectionParameters.cpp
+    QueryFuzzer.cpp
+    Suggest.cpp
 )
 
 set (CLICKHOUSE_CLIENT_LINK

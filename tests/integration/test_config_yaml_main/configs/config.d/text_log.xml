@@ -1,7 +1,7 @@
-<clickhouse>
+<yandex>
     <text_log>
         <database>system</database>
         <table>text_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </text_log>
-</clickhouse>
+</yandex>

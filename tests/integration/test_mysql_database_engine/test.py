@@ -9,7 +9,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)
-clickhouse_node = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml', 'configs/named_collections.xml'], with_mysql=True, stay_alive=True)
+clickhouse_node = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], with_mysql=True, stay_alive=True)
 
 
 @pytest.fixture(scope="module")
@@ -234,7 +234,7 @@ uint16_values = [0, 1, 65535]
 int8_values = [0, 1, -1, 127, -128]
 uint8_values = [0, 1, 255]
 # string_values = ["'ClickHouse'", 'NULL']
-string_values = ["'ClickHouse'"]
+string_values = ["'ClickHouse'"] 
 
 
 decimal_values = [0, 0.123, 0.4, 5.67, 8.91011, 123456789.123, -0.123, -0.4, -5.67, -8.91011, -123456789.123]
@@ -321,8 +321,7 @@ def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, m
     )
 
     clickhouse_query_settings = dict(
-        mysql_datatypes_support_level=setting_mysql_datatypes_support_level,
-        output_format_decimal_trailing_zeros=1
+        mysql_datatypes_support_level=setting_mysql_datatypes_support_level
     )
 
     def execute_query(node, query, **kwargs):
@@ -406,26 +405,6 @@ def test_mysql_types(started_cluster, case_name, mysql_type, expected_ch_type, m
             execute_query(clickhouse_node,
                           "SELECT value FROM mysql('mysql57:3306', '${mysql_db}', '${table_name}', 'root', 'clickhouse')",
                           settings=clickhouse_query_settings)
-
-
-def test_predefined_connection_configuration(started_cluster):
-    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', started_cluster.mysql_ip, started_cluster.mysql_port)) as mysql_node:
-        mysql_node.query("DROP DATABASE IF EXISTS test_database")
-        mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
-        mysql_node.query('CREATE TABLE `test_database`.`test_table` ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;')
-
-        clickhouse_node.query("DROP DATABASE IF EXISTS test_database")
-        clickhouse_node.query("CREATE DATABASE test_database ENGINE = MySQL(mysql1)")
-        clickhouse_node.query("INSERT INTO `test_database`.`test_table` select number from numbers(100)")
-        assert clickhouse_node.query("SELECT count() FROM `test_database`.`test_table`").rstrip() == '100'
-
-        clickhouse_node.query("DROP DATABASE test_database")
-        clickhouse_node.query_and_get_error("CREATE DATABASE test_database ENGINE = MySQL(mysql2)")
-        clickhouse_node.query_and_get_error("CREATE DATABASE test_database ENGINE = MySQL(unknown_collection)")
-        clickhouse_node.query_and_get_error("CREATE DATABASE test_database ENGINE = MySQL(mysql1, 1)")
-
-        clickhouse_node.query("CREATE DATABASE test_database ENGINE = MySQL(mysql1, port=3306)")
-        assert clickhouse_node.query("SELECT count() FROM `test_database`.`test_table`").rstrip() == '100'
 
 
 def test_restart_server(started_cluster):

@@ -1,45 +1,25 @@
 none
 Received exception from server:
-Code: 57. Error: Received from localhost:9000. Error: There was an error on [localhost:9000]: Code: 57. Error: Table default.none already exists. (TABLE_ALREADY_EXISTS)
-(query: create table none on cluster test_shard_localhost (n int) engine=Memory;)
+Code: 57. Error: Received from localhost:9000. Error: There was an error on [localhost:9000]: Code: 57, e.displayText() = Error: Table default.throw already exists
 Received exception from server:
-Code: 159. Error: Received from localhost:9000. Error: Watching task <task> is executing longer than distributed_ddl_task_timeout (=1) seconds. There are 1 unfinished hosts (0 of them are currently active), they are going to execute the query in background. (TIMEOUT_EXCEEDED)
-(query: drop table if exists none on cluster test_unavailable_shard;)
+Code: 159. Error: Received from localhost:9000. Error: Watching task <task> is executing longer than distributed_ddl_task_timeout (=8) seconds. There are 1 unfinished hosts (0 of them are currently active), they are going to execute the query in background.
 throw
 localhost	9000	0		0	0
+localhost	9000	57	Code: 57, e.displayText() = Error: Table default.throw already exists.	0	0
 Received exception from server:
-Code: 57. Error: Received from localhost:9000. Error: There was an error on [localhost:9000]: Code: 57. Error: Table default.throw already exists. (TABLE_ALREADY_EXISTS)
-(query: create table throw on cluster test_shard_localhost (n int) engine=Memory format Null;)
+Code: 57. Error: Received from localhost:9000. Error: There was an error on [localhost:9000]: Code: 57, e.displayText() = Error: Table default.throw already exists
 localhost	9000	0		1	0
 Received exception from server:
-Code: 159. Error: Received from localhost:9000. Error: Watching task <task> is executing longer than distributed_ddl_task_timeout (=1) seconds. There are 1 unfinished hosts (0 of them are currently active), they are going to execute the query in background. (TIMEOUT_EXCEEDED)
-(query: drop table if exists throw on cluster test_unavailable_shard;)
+Code: 159. Error: Received from localhost:9000. Error: Watching task <task> is executing longer than distributed_ddl_task_timeout (=8) seconds. There are 1 unfinished hosts (0 of them are currently active), they are going to execute the query in background.
 null_status_on_timeout
 localhost	9000	0		0	0
+localhost	9000	57	Code: 57, e.displayText() = Error: Table default.null_status already exists.	0	0
 Received exception from server:
-Code: 57. Error: Received from localhost:9000. Error: There was an error on [localhost:9000]: Code: 57. Error: Table default.null_status already exists. (TABLE_ALREADY_EXISTS)
-(query: create table null_status on cluster test_shard_localhost (n int) engine=Memory format Null;)
+Code: 57. Error: Received from localhost:9000. Error: There was an error on [localhost:9000]: Code: 57, e.displayText() = Error: Table default.null_status already exists
 localhost	9000	0		1	0
 localhost	1	\N	\N	1	0
 never_throw
 localhost	9000	0		0	0
-localhost	9000	57	Code: 57. Error: Table default.never_throw already exists. (TABLE_ALREADY_EXISTS)	0	0
+localhost	9000	57	Code: 57, e.displayText() = Error: Table default.never_throw already exists.	0	0
 localhost	9000	0		1	0
 localhost	1	\N	\N	1	0
-distributed_ddl_queue
-2	localhost	9000	test_shard_localhost	CREATE TABLE default.none ON CLUSTER test_shard_localhost (`n` int) ENGINE = Memory	1	localhost	9000	Finished	0		1	1
-2	localhost	9000	test_shard_localhost	CREATE TABLE default.none ON CLUSTER test_shard_localhost (`n` int) ENGINE = Memory	1	localhost	9000	Finished	57	Code: 57. DB::Error: Table default.none already exists. (TABLE_ALREADY_EXISTS)	1	1
-2	localhost	9000	test_unavailable_shard	DROP TABLE IF EXISTS default.none ON CLUSTER test_unavailable_shard	1	localhost	1	Inactive	\N	\N	\N	\N
-2	localhost	9000	test_unavailable_shard	DROP TABLE IF EXISTS default.none ON CLUSTER test_unavailable_shard	1	localhost	9000	Finished	0		1	1
-2	localhost	9000	test_shard_localhost	CREATE TABLE default.throw ON CLUSTER test_shard_localhost (`n` int) ENGINE = Memory	1	localhost	9000	Finished	0		1	1
-2	localhost	9000	test_shard_localhost	CREATE TABLE default.throw ON CLUSTER test_shard_localhost (`n` int) ENGINE = Memory	1	localhost	9000	Finished	57	Code: 57. DB::Error: Table default.throw already exists. (TABLE_ALREADY_EXISTS)	1	1
-2	localhost	9000	test_unavailable_shard	DROP TABLE IF EXISTS default.throw ON CLUSTER test_unavailable_shard	1	localhost	1	Inactive	\N	\N	\N	\N
-2	localhost	9000	test_unavailable_shard	DROP TABLE IF EXISTS default.throw ON CLUSTER test_unavailable_shard	1	localhost	9000	Finished	0		1	1
-2	localhost	9000	test_shard_localhost	CREATE TABLE default.null_status ON CLUSTER test_shard_localhost (`n` int) ENGINE = Memory	1	localhost	9000	Finished	0		1	1
-2	localhost	9000	test_shard_localhost	CREATE TABLE default.null_status ON CLUSTER test_shard_localhost (`n` int) ENGINE = Memory	1	localhost	9000	Finished	57	Code: 57. DB::Error: Table default.null_status already exists. (TABLE_ALREADY_EXISTS)	1	1
-2	localhost	9000	test_unavailable_shard	DROP TABLE IF EXISTS default.null_status ON CLUSTER test_unavailable_shard	1	localhost	1	Inactive	\N	\N	\N	\N
-2	localhost	9000	test_unavailable_shard	DROP TABLE IF EXISTS default.null_status ON CLUSTER test_unavailable_shard	1	localhost	9000	Finished	0		1	1
-2	localhost	9000	test_shard_localhost	CREATE TABLE default.never_throw ON CLUSTER test_shard_localhost (`n` int) ENGINE = Memory	1	localhost	9000	Finished	0		1	1
-2	localhost	9000	test_shard_localhost	CREATE TABLE default.never_throw ON CLUSTER test_shard_localhost (`n` int) ENGINE = Memory	1	localhost	9000	Finished	57	Code: 57. DB::Error: Table default.never_throw already exists. (TABLE_ALREADY_EXISTS)	1	1
-2	localhost	9000	test_unavailable_shard	DROP TABLE IF EXISTS default.never_throw ON CLUSTER test_unavailable_shard	1	localhost	1	Inactive	\N	\N	\N	\N
-2	localhost	9000	test_unavailable_shard	DROP TABLE IF EXISTS default.never_throw ON CLUSTER test_unavailable_shard	1	localhost	9000	Finished	0		1	1

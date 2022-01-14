@@ -1,2 +1,4 @@
 contrib/* linguist-vendored
 *.h linguist-language=C++
+# to avoid frequent conflicts
+tests/queries/0_stateless/arcadia_skip_list.txt text merge=union

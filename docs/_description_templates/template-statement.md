@@ -12,9 +12,9 @@ Syntax of the statement.
 
 Examples of descriptions with a complicated structure:
 
-- https://clickhouse.com/docs/en/sql-reference/statements/grant/
-- https://clickhouse.com/docs/en/sql-reference/statements/revoke/
-- https://clickhouse.com/docs/en/sql-reference/statements/select/join/
+- https://clickhouse.tech/docs/en/sql-reference/statements/grant/
+- https://clickhouse.tech/docs/en/sql-reference/statements/revoke/
+- https://clickhouse.tech/docs/en/sql-reference/statements/select/join/
 
 
 **See Also** (Optional)

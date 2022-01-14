@@ -1,14 +1,16 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
+#endif
 
 #if USE_HDFS
 #include <memory>
 #include <type_traits>
 #include <vector>
 
-#include <hdfs/hdfs.h>
-#include <base/types.h>
+#include <hdfs/hdfs.h> // Y_IGNORE
+#include <common/types.h>
 #include <mutex>
 
 #include <Interpreters/Context.h>

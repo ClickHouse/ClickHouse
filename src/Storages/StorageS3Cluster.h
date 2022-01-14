@@ -1,13 +1,15 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
+#endif
 
 #if USE_AWS_S3
 
 #include <memory>
 #include <optional>
 
-#include <base/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 #include "Client/Connection.h"
 #include <Interpreters/Cluster.h>
@@ -48,6 +50,8 @@ protected:
         const String & compression_method_);
 
 private:
+    /// Connections from initiator to other nodes
+    std::vector<std::shared_ptr<Connection>> connections;
     StorageS3::ClientAuthentication client_auth;
 
     String filename;

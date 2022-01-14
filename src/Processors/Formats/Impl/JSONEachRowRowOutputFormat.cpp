@@ -125,9 +125,9 @@ void JSONEachRowRowOutputFormat::writeSuffix()
 }
 
 
-void registerOutputFormatJSONEachRow(FormatFactory & factory)
+void registerOutputFormatProcessorJSONEachRow(FormatFactory & factory)
 {
-    factory.registerOutputFormat("JSONEachRow", [](
+    factory.registerOutputFormatProcessor("JSONEachRow", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,
@@ -140,7 +140,7 @@ void registerOutputFormatJSONEachRow(FormatFactory & factory)
     });
     factory.markOutputFormatSupportsParallelFormatting("JSONEachRow");
 
-    factory.registerOutputFormat("JSONStringsEachRow", [](
+    factory.registerOutputFormatProcessor("JSONStringsEachRow", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,

@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
-#include <base/range.h>
+#include <common/range.h>
 #include <Common/PODArray.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -48,8 +48,6 @@ struct AggregateFunctionSequenceMatchData final
 
     bool sorted = true;
     PODArrayWithStackMemory<TimestampEvents, 64> events_list;
-    /// sequenceMatch conditions met at least once in events_list
-    std::bitset<max_events> conditions_met;
 
     void add(const Timestamp timestamp, const Events & events)
     {
@@ -58,7 +56,6 @@ struct AggregateFunctionSequenceMatchData final
         {
             events_list.emplace_back(timestamp, events);
             sorted = false;
-            conditions_met |= events;
         }
     }
 
@@ -67,9 +64,29 @@ struct AggregateFunctionSequenceMatchData final
         if (other.events_list.empty())
             return;
 
+        const auto size = events_list.size();
+
         events_list.insert(std::begin(other.events_list), std::end(other.events_list));
-        sorted = false;
-        conditions_met |= other.conditions_met;
+
+        /// either sort whole container or do so partially merging ranges afterwards
+        if (!sorted && !other.sorted)
+            std::sort(std::begin(events_list), std::end(events_list), Comparator{});
+        else
+        {
+            const auto begin = std::begin(events_list);
+            const auto middle = std::next(begin, size);
+            const auto end = std::end(events_list);
+
+            if (!sorted)
+                std::sort(begin, middle, Comparator{});
+
+            if (!other.sorted)
+                std::sort(middle, end, Comparator{});
+
+            std::inplace_merge(begin, middle, end, Comparator{});
+        }
+
+        sorted = true;
     }
 
     void sort()
@@ -152,19 +169,14 @@ public:
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         this->data(place).serialize(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
     {
         this->data(place).deserialize(buf);
-    }
-
-    bool haveSameStateRepresentation(const IAggregateFunction & rhs) const override
-    {
-        return this->getName() == rhs.getName() && this->haveEqualArgumentTypes(rhs);
     }
 
 private:
@@ -273,7 +285,6 @@ private:
                     dfa_states.back().transition = DFATransition::SpecificEvent;
                     dfa_states.back().event = event_number - 1;
                     dfa_states.emplace_back();
-                    conditions_in_pattern.set(event_number - 1);
                 }
 
                 if (!match(")"))
@@ -502,64 +513,6 @@ protected:
         return action_it == action_end;
     }
 
-    /// Splits the pattern into deterministic parts separated by non-deterministic fragments
-    /// (time constraints and Kleene stars), and tries to match the deterministic parts in their specified order,
-    /// ignoring the non-deterministic fragments.
-    /// This function can quickly check that a full match is not possible if some deterministic fragment is missing.
-    template <typename EventEntry>
-    bool couldMatchDeterministicParts(const EventEntry events_begin, const EventEntry events_end, bool limit_iterations = true) const
-    {
-        size_t events_processed = 0;
-        auto events_it = events_begin;
-
-        const auto actions_end = std::end(actions);
-        auto actions_it = std::begin(actions);
-        auto det_part_begin = actions_it;
-
-        auto match_deterministic_part = [&events_it, events_end, &events_processed, det_part_begin, actions_it, limit_iterations]()
-        {
-            auto events_it_init = events_it;
-            auto det_part_it = det_part_begin;
-
-            while (det_part_it != actions_it && events_it != events_end)
-            {
-                /// matching any event
-                if (det_part_it->type == PatternActionType::AnyEvent)
-                    ++events_it, ++det_part_it;
-
-                /// matching specific event
-                else
-                {
-                    if (events_it->second.test(det_part_it->extra))
-                        ++events_it, ++det_part_it;
-
-                    /// abandon current matching, try to match the deterministic fragment further in the list
-                    else
-                    {
-                        events_it = ++events_it_init;
-                        det_part_it = det_part_begin;
-                    }
-                }
-
-                if (limit_iterations && ++events_processed > sequence_match_max_iterations)
-                    throw Exception{"Pattern application proves too difficult, exceeding max iterations (" + toString(sequence_match_max_iterations) + ")",
-                        ErrorCodes::TOO_SLOW};
-            }
-
-            return det_part_it == actions_it;
-        };
-
-        for (; actions_it != actions_end; ++actions_it)
-            if (actions_it->type != PatternActionType::SpecificEvent && actions_it->type != PatternActionType::AnyEvent)
-            {
-                if (!match_deterministic_part())
-                    return false;
-                det_part_begin = std::next(actions_it);
-            }
-
-        return match_deterministic_part();
-    }
-
 private:
     enum class DFATransition : char
     {
@@ -600,8 +553,6 @@ private:
 protected:
     /// `True` if the parsed pattern contains time assertions (?t...), `false` otherwise.
     bool pattern_has_time;
-    /// sequenceMatch conditions met at least once in the pattern
-    std::bitset<max_events> conditions_in_pattern;
 
 private:
     std::string pattern;
@@ -628,12 +579,6 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        auto & output = assert_cast<ColumnUInt8 &>(to).getData();
-        if ((this->conditions_in_pattern & this->data(place).conditions_met) != this->conditions_in_pattern)
-        {
-            output.push_back(false);
-            return;
-        }
         this->data(place).sort();
 
         const auto & data_ref = this->data(place);
@@ -642,10 +587,8 @@ public:
         const auto events_end = std::end(data_ref.events_list);
         auto events_it = events_begin;
 
-        bool match = (this->pattern_has_time ?
-            (this->couldMatchDeterministicParts(events_begin, events_end) && this->backtrackingMatch(events_it, events_end)) :
-            this->dfaMatch(events_it, events_end));
-        output.push_back(match);
+        bool match = this->pattern_has_time ? this->backtrackingMatch(events_it, events_end) : this->dfaMatch(events_it, events_end);
+        assert_cast<ColumnUInt8 &>(to).getData().push_back(match);
     }
 };
 
@@ -666,14 +609,8 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        auto & output = assert_cast<ColumnUInt64 &>(to).getData();
-        if ((this->conditions_in_pattern & this->data(place).conditions_met) != this->conditions_in_pattern)
-        {
-            output.push_back(0);
-            return;
-        }
         this->data(place).sort();
-        output.push_back(count(place));
+        assert_cast<ColumnUInt64 &>(to).getData().push_back(count(place));
     }
 
 private:
@@ -686,12 +623,8 @@ private:
         auto events_it = events_begin;
 
         size_t count = 0;
-        // check if there is a chance of matching the sequence at least once
-        if (this->couldMatchDeterministicParts(events_begin, events_end))
-        {
-            while (events_it != events_end && this->backtrackingMatch(events_it, events_end))
-                ++count;
-        }
+        while (events_it != events_end && this->backtrackingMatch(events_it, events_end))
+            ++count;
 
         return count;
     }

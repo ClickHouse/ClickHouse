@@ -1,5 +1,3 @@
--- Tags: shard
-
 CREATE TABLE dummy(foo Int64) ENGINE = Memory();
 INSERT INTO dummy VALUES (1);
 SELECT avgWeighted(100., .1) FROM remote('127.0.0.{2,3}', currentDatabase(), dummy);

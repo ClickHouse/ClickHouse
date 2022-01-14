@@ -2,8 +2,6 @@
 #include <Functions/FunctionFactory.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Interpreters/IdentifierSemantic.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSubquery.h>
 
 

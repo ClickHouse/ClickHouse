@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: race
 
 unset CLICKHOUSE_LOG_COMMENT
 

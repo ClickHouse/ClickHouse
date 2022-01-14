@@ -67,29 +67,6 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
     task->schedule();
 }
 
-void ReplicatedMergeTreePartCheckThread::cancelRemovedPartsCheck(const MergeTreePartInfo & drop_range_info)
-{
-    /// Wait for running tasks to finish and temporarily stop checking
-    stop();
-    SCOPE_EXIT({ start(); });
-    {
-        std::lock_guard lock(parts_mutex);
-        for (auto it = parts_queue.begin(); it != parts_queue.end();)
-        {
-            if (drop_range_info.contains(MergeTreePartInfo::fromPartName(it->first, storage.format_version)))
-            {
-                /// Remove part from the queue to avoid part resurrection
-                /// if we will check it and enqueue fetch after DROP/REPLACE execution.
-                parts_set.erase(it->first);
-                it = parts_queue.erase(it);
-            }
-            else
-            {
-                ++it;
-            }
-        }
-    }
-}
 
 size_t ReplicatedMergeTreePartCheckThread::size() const
 {
@@ -134,18 +111,6 @@ ReplicatedMergeTreePartCheckThread::MissingPartSearchResult ReplicatedMergeTreeP
     bool found_part_with_the_same_max_block = false;
 
     Strings replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas");
-    /// Move our replica to the end of replicas
-    for (auto it = replicas.begin(); it != replicas.end(); ++it)
-    {
-        String replica_path = storage.zookeeper_path + "/replicas/" + *it;
-        if (replica_path == storage.replica_path)
-        {
-            std::iter_swap(it, replicas.rbegin());
-            break;
-        }
-    }
-
-    /// Check all replicas and our replica must be this last one
     for (const String & replica : replicas)
     {
         String replica_path = storage.zookeeper_path + "/replicas/" + replica;
@@ -181,7 +146,7 @@ ReplicatedMergeTreePartCheckThread::MissingPartSearchResult ReplicatedMergeTreeP
                 if (found_part_with_the_same_min_block && found_part_with_the_same_max_block)
                 {
                     /// FIXME It may never appear
-                    LOG_WARNING(log, "Found parts with the same min block and with the same max block as the missing part {} on replica {}. Hoping that it will eventually appear as a result of a merge.", part_name, replica);
+                    LOG_WARNING(log, "Found parts with the same min block and with the same max block as the missing part {}. Hoping that it will eventually appear as a result of a merge.", part_name);
                     return MissingPartSearchResult::FoundAndDontNeedFetch;
                 }
             }

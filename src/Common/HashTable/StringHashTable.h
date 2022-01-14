@@ -237,12 +237,7 @@ public:
     // 1. Always memcpy 8 times bytes
     // 2. Use switch case extension to generate fast dispatching table
     // 3. Funcs are named callables that can be force_inlined
-    //
     // NOTE: It relies on Little Endianness
-    //
-    // NOTE: It requires padded to 8 bytes keys (IOW you cannot pass
-    // std::string here, but you can pass i.e. ColumnString::getDataAt()),
-    // since it copies 8 bytes at a time.
     template <typename Self, typename KeyHolder, typename Func>
     static auto ALWAYS_INLINE dispatch(Self & self, KeyHolder && key_holder, Func && func)
     {

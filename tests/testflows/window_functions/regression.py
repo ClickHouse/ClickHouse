@@ -91,9 +91,10 @@ xflags = {
 @Requirements(
     RQ_SRS_019_ClickHouse_WindowFunctions("1.0")
 )
-def regression(self, local, clickhouse_binary_path, stress=None):
+def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
     """Window functions regression.
     """
+    top().terminating = False
     nodes = {
         "clickhouse":
             ("clickhouse1", "clickhouse2", "clickhouse3")
@@ -101,6 +102,8 @@ def regression(self, local, clickhouse_binary_path, stress=None):
 
     if stress is not None:
         self.context.stress = stress
+    if parallel is not None:
+        self.context.parallel = parallel
 
     with Cluster(local, clickhouse_binary_path, nodes=nodes,
             docker_compose_project_dir=os.path.join(current_dir(), "window_functions_env")) as cluster:

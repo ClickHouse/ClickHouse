@@ -64,7 +64,6 @@ public:
         return getDictionary().getDataAtWithTerminatingZero(getIndexes().getUInt(n));
     }
 
-    bool isDefaultAt(size_t n) const override { return getDictionary().isDefaultAt(getIndexes().getUInt(n)); }
     UInt64 get64(size_t n) const override { return getDictionary().get64(getIndexes().getUInt(n)); }
     UInt64 getUInt(size_t n) const override { return getDictionary().getUInt(getIndexes().getUInt(n)); }
     Int64 getInt(size_t n) const override { return getDictionary().getInt(getIndexes().getUInt(n)); }
@@ -109,11 +108,6 @@ public:
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint));
-    }
-
-    void expand(const Filter & mask, bool inverted) override
-    {
-        idx.getPositionsPtr()->expand(mask, inverted);
     }
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override
@@ -181,16 +175,6 @@ public:
         return false;
     }
 
-    double getRatioOfDefaultRows(double sample_ratio) const override
-    {
-        return getIndexes().getRatioOfDefaultRows(sample_ratio);
-    }
-
-    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
-    {
-        return getIndexes().getIndicesOfNonDefaultRows(indices, from, limit);
-    }
-
     bool valuesHaveFixedSize() const override { return getDictionary().valuesHaveFixedSize(); }
     bool isFixedAndContiguous() const override { return false; }
     size_t sizeOfValueIfFixed() const override { return getDictionary().sizeOfValueIfFixed(); }
@@ -203,14 +187,12 @@ public:
      * So LC(Nullable(T)) would return true, LC(U) -- false.
      */
     bool nestedIsNullable() const { return isColumnNullable(*dictionary.getColumnUnique().getNestedColumn()); }
-    bool nestedCanBeInsideNullable() const { return dictionary.getColumnUnique().getNestedColumn()->canBeInsideNullable(); }
     void nestedToNullable() { dictionary.getColumnUnique().nestedToNullable(); }
     void nestedRemoveNullable() { dictionary.getColumnUnique().nestedRemoveNullable(); }
 
     const IColumnUnique & getDictionary() const { return dictionary.getColumnUnique(); }
     IColumnUnique & getDictionary() { return dictionary.getColumnUnique(); }
     const ColumnPtr & getDictionaryPtr() const { return dictionary.getColumnUniquePtr(); }
-    ColumnPtr & getDictionaryPtr() { return dictionary.getColumnUniquePtr(); }
     /// IColumnUnique & getUnique() { return static_cast<IColumnUnique &>(*column_unique); }
     /// ColumnPtr getUniquePtr() const { return column_unique; }
 
@@ -344,6 +326,9 @@ private:
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator=nullptr) const;
 
     void getPermutationImpl(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, const Collator * collator = nullptr) const;
+
+    template <typename Cmp>
+    void updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_ranges, Cmp comparator) const;
 };
 
 

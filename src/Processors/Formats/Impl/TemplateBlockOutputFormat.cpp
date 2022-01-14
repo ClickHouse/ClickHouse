@@ -1,6 +1,5 @@
 #include <Processors/Formats/Impl/TemplateBlockOutputFormat.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/EscapingRuleUtils.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
@@ -40,7 +39,7 @@ TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, Writ
             case static_cast<size_t>(ResultsetPart::Totals):
             case static_cast<size_t>(ResultsetPart::ExtremesMin):
             case static_cast<size_t>(ResultsetPart::ExtremesMax):
-                if (format.escaping_rules[i] != EscapingRule::None)
+                if (format.formats[i] != ColumnFormat::None)
                     format.throwInvalidFormat("Serialization type for data, totals, min and max must be empty or None", i);
                 break;
             case static_cast<size_t>(ResultsetPart::Rows):
@@ -48,7 +47,7 @@ TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, Writ
             case static_cast<size_t>(ResultsetPart::TimeElapsed):
             case static_cast<size_t>(ResultsetPart::RowsRead):
             case static_cast<size_t>(ResultsetPart::BytesRead):
-                if (format.escaping_rules[i] == EscapingRule::None)
+                if (format.formats[i] == ColumnFormat::None)
                     format.throwInvalidFormat("Serialization type for output part rows, rows_before_limit, time, "
                                               "rows_read or bytes_read is not specified", i);
                 break;
@@ -69,7 +68,7 @@ TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, Writ
         if (header_.columns() <= *row_format.format_idx_to_column_idx[i])
             row_format.throwInvalidFormat("Column index " + std::to_string(*row_format.format_idx_to_column_idx[i]) +
                                           " must be less then number of columns (" + std::to_string(header_.columns()) + ")", i);
-        if (row_format.escaping_rules[i] == EscapingRule::None)
+        if (row_format.formats[i] == ColumnFormat::None)
             row_format.throwInvalidFormat("Serialization type for file column is not specified", i);
     }
 }
@@ -106,21 +105,50 @@ void TemplateBlockOutputFormat::writeRow(const Chunk & chunk, size_t row_num)
         writeString(row_format.delimiters[j], out);
 
         size_t col_idx = *row_format.format_idx_to_column_idx[j];
-        serializeFieldByEscapingRule(*chunk.getColumns()[col_idx], *serializations[col_idx], out, row_num, row_format.escaping_rules[j], settings);
+        serializeField(*chunk.getColumns()[col_idx], *serializations[col_idx], row_num, row_format.formats[j]);
     }
     writeString(row_format.delimiters[columns], out);
 }
 
-template <typename U, typename V> void TemplateBlockOutputFormat::writeValue(U value, EscapingRule escaping_rule)
+void TemplateBlockOutputFormat::serializeField(const IColumn & column, const ISerialization & serialization, size_t row_num, ColumnFormat col_format)
+{
+    switch (col_format)
+    {
+        case ColumnFormat::Escaped:
+            serialization.serializeTextEscaped(column, row_num, out, settings);
+            break;
+        case ColumnFormat::Quoted:
+            serialization.serializeTextQuoted(column, row_num, out, settings);
+            break;
+        case ColumnFormat::Csv:
+            serialization.serializeTextCSV(column, row_num, out, settings);
+            break;
+        case ColumnFormat::Json:
+            serialization.serializeTextJSON(column, row_num, out, settings);
+            break;
+        case ColumnFormat::Xml:
+            serialization.serializeTextXML(column, row_num, out, settings);
+            break;
+        case ColumnFormat::Raw:
+            serialization.serializeText(column, row_num, out, settings);
+            break;
+        default:
+            __builtin_unreachable();
+    }
+}
+
+template <typename U, typename V> void TemplateBlockOutputFormat::writeValue(U value, ColumnFormat col_format)
 {
     auto type = std::make_unique<V>();
     auto col = type->createColumn();
     col->insert(value);
-    serializeFieldByEscapingRule(*col, *type->getDefaultSerialization(), out, 0, escaping_rule, settings);
+    serializeField(*col, *type->getDefaultSerialization(), 0, col_format);
 }
 
 void TemplateBlockOutputFormat::consume(Chunk chunk)
 {
+    doWritePrefix();
+
     size_t rows = chunk.getNumRows();
 
     for (size_t i = 0; i < rows; ++i)
@@ -133,20 +161,23 @@ void TemplateBlockOutputFormat::consume(Chunk chunk)
     }
 }
 
-void TemplateBlockOutputFormat::writePrefix()
+void TemplateBlockOutputFormat::doWritePrefix()
 {
-    writeString(format.delimiters.front(), out);
+    if (need_write_prefix)
+    {
+        writeString(format.delimiters.front(), out);
+        need_write_prefix = false;
+    }
 }
 
-void TemplateBlockOutputFormat::finalizeImpl()
+void TemplateBlockOutputFormat::finalize()
 {
     if (finalized)
         return;
 
+    doWritePrefix();
+
     size_t parts = format.format_idx_to_column_idx.size();
-    auto outside_statistics = getOutsideStatistics();
-    if (outside_statistics)
-        statistics = std::move(*outside_statistics);
 
     for (size_t i = 0; i < parts; ++i)
     {
@@ -155,36 +186,36 @@ void TemplateBlockOutputFormat::finalizeImpl()
         switch (static_cast<ResultsetPart>(*format.format_idx_to_column_idx[i]))
         {
             case ResultsetPart::Totals:
-                if (!statistics.totals || !statistics.totals.hasRows())
+                if (!totals || !totals.hasRows())
                     format.throwInvalidFormat("Cannot print totals for this request", i);
-                writeRow(statistics.totals, 0);
+                writeRow(totals, 0);
                 break;
             case ResultsetPart::ExtremesMin:
-                if (!statistics.extremes)
+                if (!extremes)
                     format.throwInvalidFormat("Cannot print extremes for this request", i);
-                writeRow(statistics.extremes, 0);
+                writeRow(extremes, 0);
                 break;
             case ResultsetPart::ExtremesMax:
-                if (!statistics.extremes)
+                if (!extremes)
                     format.throwInvalidFormat("Cannot print extremes for this request", i);
-                writeRow(statistics.extremes, 1);
+                writeRow(extremes, 1);
                 break;
             case ResultsetPart::Rows:
-                writeValue<size_t, DataTypeUInt64>(row_count, format.escaping_rules[i]);
+                writeValue<size_t, DataTypeUInt64>(row_count, format.formats[i]);
                 break;
             case ResultsetPart::RowsBeforeLimit:
-                if (!statistics.applied_limit)
+                if (!rows_before_limit_set)
                     format.throwInvalidFormat("Cannot print rows_before_limit for this request", i);
-                writeValue<size_t, DataTypeUInt64>(statistics.rows_before_limit, format.escaping_rules[i]);
+                writeValue<size_t, DataTypeUInt64>(rows_before_limit, format.formats[i]);
                 break;
             case ResultsetPart::TimeElapsed:
-                writeValue<double, DataTypeFloat64>(statistics.watch.elapsedSeconds(), format.escaping_rules[i]);
+                writeValue<double, DataTypeFloat64>(watch.elapsedSeconds(), format.formats[i]);
                 break;
             case ResultsetPart::RowsRead:
-                writeValue<size_t, DataTypeUInt64>(statistics.progress.read_rows.load(), format.escaping_rules[i]);
+                writeValue<size_t, DataTypeUInt64>(progress.read_rows.load(), format.formats[i]);
                 break;
             case ResultsetPart::BytesRead:
-                writeValue<size_t, DataTypeUInt64>(statistics.progress.read_bytes.load(), format.escaping_rules[i]);
+                writeValue<size_t, DataTypeUInt64>(progress.read_bytes.load(), format.formats[i]);
                 break;
             default:
                 break;
@@ -196,9 +227,9 @@ void TemplateBlockOutputFormat::finalizeImpl()
 }
 
 
-void registerOutputFormatTemplate(FormatFactory & factory)
+void registerOutputFormatProcessorTemplate(FormatFactory & factory)
 {
-    factory.registerOutputFormat("Template", [](
+    factory.registerOutputFormatProcessor("Template", [](
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams &,
@@ -209,7 +240,7 @@ void registerOutputFormatTemplate(FormatFactory & factory)
         {
             /// Default format string: "${data}"
             resultset_format.delimiters.resize(2);
-            resultset_format.escaping_rules.emplace_back(ParsedTemplateFormatString::EscapingRule::None);
+            resultset_format.formats.emplace_back(ParsedTemplateFormatString::ColumnFormat::None);
             resultset_format.format_idx_to_column_idx.emplace_back(0);
             resultset_format.column_names.emplace_back("data");
         }
@@ -234,6 +265,18 @@ void registerOutputFormatTemplate(FormatFactory & factory)
                 });
 
         return std::make_shared<TemplateBlockOutputFormat>(sample, buf, settings, resultset_format, row_format, settings.template_settings.row_between_delimiter);
+    });
+
+    factory.registerOutputFormatProcessor("CustomSeparated", [](
+            WriteBuffer & buf,
+            const Block & sample,
+            const RowOutputFormatParams &,
+            const FormatSettings & settings)
+    {
+        ParsedTemplateFormatString resultset_format = ParsedTemplateFormatString::setupCustomSeparatedResultsetFormat(settings.custom);
+        ParsedTemplateFormatString row_format = ParsedTemplateFormatString::setupCustomSeparatedRowFormat(settings.custom, sample);
+
+        return std::make_shared<TemplateBlockOutputFormat>(sample, buf, settings, resultset_format, row_format, settings.custom.row_between_delimiter);
     });
 }
 }

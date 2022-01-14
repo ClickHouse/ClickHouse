@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-# Tags: no-replicated-database, no-parallel, no-fasttest
-
 import os
 import sys
 

@@ -2,15 +2,12 @@
 
 #include <DataTypes/IDataType.h>
 #include <Common/PODArray_fwd.h>
-#include <Common/Exception.h>
 
 #define MAX_FIXEDSTRING_SIZE 0xFFFFFF
 
 
 namespace DB
 {
-
-class ColumnFixedString;
 
 namespace ErrorCodes
 {
@@ -24,10 +21,7 @@ private:
     size_t n;
 
 public:
-    using ColumnType = ColumnFixedString;
-
     static constexpr bool is_parametric = true;
-    static constexpr auto type_id = TypeIndex::FixedString;
 
     DataTypeFixedString(size_t n_) : n(n_)
     {
@@ -38,7 +32,7 @@ public:
     }
 
     std::string doGetName() const override;
-    TypeIndex getTypeId() const override { return type_id; }
+    TypeIndex getTypeId() const override { return TypeIndex::FixedString; }
 
     const char * getFamilyName() const override { return "FixedString"; }
 

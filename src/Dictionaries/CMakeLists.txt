@@ -10,7 +10,6 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELW
     set_source_files_properties(
         FlatDictionary.cpp
         HashedDictionary.cpp
-        HashedArrayDictionary.cpp
         CacheDictionary.cpp
         RangeHashedDictionary.cpp
         DirectDictionary.cpp

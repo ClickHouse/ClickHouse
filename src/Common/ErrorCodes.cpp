@@ -1,5 +1,4 @@
 #include <Common/ErrorCodes.h>
-#include <Common/Exception.h>
 #include <chrono>
 
 /** Previously, these constants were located in one enum.
@@ -470,7 +469,6 @@
     M(497, ACCESS_DENIED) \
     M(498, LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED) \
     M(499, S3_ERROR) \
-    M(500, AZURE_BLOB_STORAGE_ERROR) \
     M(501, CANNOT_CREATE_DATABASE) \
     M(502, CANNOT_SIGQUEUE) \
     M(503, AGGREGATE_FUNCTION_THROW) \
@@ -495,6 +493,7 @@
     M(523, UNKNOWN_ROW_POLICY) \
     M(524, ALTER_OF_COLUMN_IS_FORBIDDEN) \
     M(525, INCORRECT_DISK_INDEX) \
+    M(526, UNKNOWN_VOLUME_TYPE) \
     M(527, NO_SUITABLE_FUNCTION_IMPLEMENTATION) \
     M(528, CASSANDRA_INTERNAL_ERROR) \
     M(529, NOT_A_LEADER) \
@@ -559,51 +558,8 @@
     M(588, DISTRIBUTED_BROKEN_BATCH_INFO) \
     M(589, DISTRIBUTED_BROKEN_BATCH_FILES) \
     M(590, CANNOT_SYSCONF) \
-    M(591, SQLITE_ENGINE_ERROR) \
-    M(592, DATA_ENCRYPTION_ERROR) \
-    M(593, ZERO_COPY_REPLICATION_ERROR) \
-    M(594, BZIP2_STREAM_DECODER_FAILED) \
-    M(595, BZIP2_STREAM_ENCODER_FAILED) \
-    M(596, INTERSECT_OR_EXCEPT_RESULT_STRUCTURES_MISMATCH) \
-    M(597, NO_SUCH_ERROR_CODE) \
-    M(598, BACKUP_ALREADY_EXISTS) \
-    M(599, BACKUP_NOT_FOUND) \
-    M(600, BACKUP_VERSION_NOT_SUPPORTED) \
-    M(601, BACKUP_DAMAGED) \
-    M(602, NO_BASE_BACKUP) \
-    M(603, WRONG_BASE_BACKUP) \
-    M(604, BACKUP_ENTRY_ALREADY_EXISTS) \
-    M(605, BACKUP_ENTRY_NOT_FOUND) \
-    M(606, BACKUP_IS_EMPTY) \
-    M(607, BACKUP_ELEMENT_DUPLICATE) \
-    M(608, CANNOT_RESTORE_TABLE) \
-    M(609, FUNCTION_ALREADY_EXISTS) \
-    M(610, CANNOT_DROP_FUNCTION) \
-    M(611, CANNOT_CREATE_RECURSIVE_FUNCTION) \
-    M(612, OBJECT_ALREADY_STORED_ON_DISK) \
-    M(613, OBJECT_WAS_NOT_STORED_ON_DISK) \
-    M(614, POSTGRESQL_CONNECTION_FAILURE) \
-    M(615, CANNOT_ADVISE) \
-    M(616, UNKNOWN_READ_METHOD) \
-    M(617, LZ4_ENCODER_FAILED) \
-    M(618, LZ4_DECODER_FAILED) \
-    M(619, POSTGRESQL_REPLICATION_INTERNAL_ERROR) \
-    M(620, QUERY_NOT_ALLOWED) \
-    M(621, CANNOT_NORMALIZE_STRING) \
-    M(622, CANNOT_PARSE_CAPN_PROTO_SCHEMA) \
-    M(623, CAPN_PROTO_BAD_CAST) \
-    M(624, BAD_FILE_TYPE) \
-    M(625, IO_SETUP_ERROR) \
-    M(626, CANNOT_SKIP_UNKNOWN_FIELD) \
-    M(627, BACKUP_ENGINE_NOT_FOUND) \
-    M(628, OFFSET_FETCH_WITHOUT_ORDER_BY) \
-    M(629, HTTP_RANGE_NOT_SATISFIABLE) \
-    M(630, HAVE_DEPENDENT_OBJECTS) \
-    M(631, UNKNOWN_FILE_SIZE) \
-    M(632, UNEXPECTED_DATA_AFTER_PARSED_VALUE) \
-    M(633, QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW) \
-    M(634, MONGODB_ERROR) \
     \
+    M(998, POSTGRESQL_CONNECTION_FAILURE) \
     M(999, KEEPER_EXCEPTION) \
     M(1000, POCO_EXCEPTION) \
     M(1001, STD_EXCEPTION) \
@@ -638,21 +594,6 @@ namespace ErrorCodes
         if (error_code < 0 || error_code >= END)
             return std::string_view();
         return error_codes_names.names[error_code];
-    }
-
-    ErrorCode getErrorCodeByName(std::string_view error_name)
-    {
-        for (size_t i = 0, end = ErrorCodes::end(); i < end; ++i)
-        {
-            std::string_view name = ErrorCodes::getName(i);
-
-            if (name.empty())
-                continue;
-
-            if (name == error_name)
-                return i;
-        }
-        throw Exception(NO_SUCH_ERROR_CODE, "No error code with name: '{}'", error_name);
     }
 
     ErrorCode end() { return END + 1; }

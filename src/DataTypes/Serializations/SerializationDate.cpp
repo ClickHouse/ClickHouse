@@ -5,6 +5,7 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Formats/ProtobufReader.h>
+#include <Formats/ProtobufWriter.h>
 
 #include <Common/assert_cast.h>
 
@@ -19,8 +20,6 @@ void SerializationDate::serializeText(const IColumn & column, size_t row_num, Wr
 void SerializationDate::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     deserializeTextEscaped(column, istr, settings);
-    if (!istr.eof())
-        throwUnexpectedDataAfterParsedValue(column, istr, settings, "Date");
 }
 
 void SerializationDate::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const

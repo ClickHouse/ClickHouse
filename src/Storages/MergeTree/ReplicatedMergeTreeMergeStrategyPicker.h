@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 #include <optional>
 #include <mutex>
 #include <vector>
@@ -54,10 +54,11 @@ public:
 
     /// return true if remote_fs_execute_merges_on_single_replica_time_threshold feature is active
     /// and we may need to do a fetch (or postpone) instead of merge
-    bool shouldMergeOnSingleReplicaShared(const ReplicatedMergeTreeLogEntryData & entry) const;
+    bool shouldMergeOnSingleReplicaS3Shared(const ReplicatedMergeTreeLogEntryData & entry) const;
 
     /// returns the replica name
     /// and it's not current replica should do the merge
+    /// used in shouldExecuteLogEntry and in tryExecuteMerge
     std::optional<String> pickReplicaToExecuteMerge(const ReplicatedMergeTreeLogEntryData & entry);
 
     /// checks (in zookeeper) if the picked replica finished the merge

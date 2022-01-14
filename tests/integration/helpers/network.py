@@ -151,7 +151,7 @@ class _NetworkManager:
     def _iptables_cmd_suffix(
             source=None, destination=None,
             source_port=None, destination_port=None,
-            action=None, probability=None, custom_args=None):
+            action=None, probability=None):
         ret = []
         if probability is not None:
             ret.extend(['-m', 'statistic', '--mode', 'random', '--probability', str(probability)])
@@ -166,8 +166,6 @@ class _NetworkManager:
             ret.extend(['--dport', str(destination_port)])
         if action is not None:
             ret.extend(['-j'] + action.split())
-        if custom_args is not None:
-            ret.extend(custom_args)
         return ret
 
     def __init__(
@@ -214,8 +212,6 @@ class _NetworkManager:
             self._container = self._docker_client.containers.run('clickhouse/integration-helper',
                                                                  auto_remove=True,
                                                                  command=('sleep %s' % self.container_exit_timeout),
-                                                                 # /run/xtables.lock passed inside for correct iptables --wait
-                                                                 volumes={'/run/xtables.lock': {'bind': '/run/xtables.lock', 'mode': 'ro' }},
                                                                  detach=True, network_mode='host')
             container_id = self._container.id
             self._container_expire_time = time.time() + self.container_expire_timeout
@@ -244,27 +240,15 @@ class _NetworkManager:
 
 # Approximately mesure network I/O speed for interface
 class NetThroughput(object):
-    def __init__(self, node):
+    def __init__(self, node, interface="eth0"):
+        self.interface = interface
         self.node = node
-        # trying to get default interface and check it in /proc/net/dev
-        self.interface = self.node.exec_in_container(["bash", "-c", "awk '{print $1 \" \" $2}' /proc/net/route | grep 00000000 | awk '{print $1}'"]).strip()
-        check = self.node.exec_in_container(["bash", "-c", f'grep "^ *{self.interface}:" /proc/net/dev']).strip()
-        if not check: # if check is not successful just try eth{1-10}
-            for i in range(10):
-                try:
-                    self.interface = self.node.exec_in_container(["bash", "-c", f"awk '{{print $1}}' /proc/net/route | grep 'eth{i}'"]).strip()
-                    break
-                except Exception as ex:
-                    print(f"No interface eth{i}")
-            else:
-                raise Exception("No interface eth{1-10} and default interface not specified in /proc/net/route, maybe some special network configuration")
-
         try:
-            check = self.node.exec_in_container(["bash", "-c", f'grep "^ *{self.interface}:" /proc/net/dev']).strip()
+            check = subprocess.check_output(f'grep "^ *{self.interface}:" /proc/net/dev', shell=True)
             if not check:
                 raise Exception(f"No such interface {self.interface} found in /proc/net/dev")
         except:
-            logging.error("All available interfaces %s", self.node.exec_in_container(["bash", "-c", "cat /proc/net/dev"]))
+            logging.error("All available interfaces %s", subprocess.check_output("cat /proc/net/dev", shell=True))
             raise Exception(f"No such interface {self.interface} found in /proc/net/dev")
 
         self.current_in = self._get_in_bytes()

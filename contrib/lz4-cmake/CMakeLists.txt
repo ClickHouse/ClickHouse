@@ -1,4 +1,4 @@
-option (USE_INTERNAL_LZ4_LIBRARY "Use internal lz4 library" ON)
+option (USE_INTERNAL_LZ4_LIBRARY "Use internal lz4 library" ${NOT_UNBUNDLED})
 
 if (NOT USE_INTERNAL_LZ4_LIBRARY)
     find_library (LIBRARY_LZ4 lz4)

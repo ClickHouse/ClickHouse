@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <Poco/Timestamp.h>
 

@@ -77,7 +77,6 @@ public:
 
     bool isDeterministic() const override { return true; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getResultType() const override { return return_type; }
@@ -170,7 +169,6 @@ public:
 
     bool isDeterministic() const override { return true; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     const DataTypes & getArgumentTypes() const override { return capture->captured_types; }
     const DataTypePtr & getResultType() const override { return return_type; }
@@ -238,7 +236,7 @@ public:
 
         capture = std::make_shared<Capture>(Capture{
                 .captured_names = captured_names_,
-                .captured_types = std::move(captured_types), //-V1030
+                .captured_types = std::move(captured_types),
                 .lambda_arguments = lambda_arguments_,
                 .return_name = expression_return_name_,
                 .return_type = function_return_type_,

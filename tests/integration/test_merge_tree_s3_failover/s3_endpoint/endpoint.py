@@ -18,16 +18,6 @@ def fail_request(_request_number):
     return 'OK'
 
 
-@route('/throttle_request/<_request_number>')
-def fail_request(_request_number):
-    request_number = int(_request_number)
-    if request_number > 0:
-        cache['throttle_request_number'] = request_number
-    else:
-        cache.pop('throttle_request_number', None)
-    return 'OK'
-
-
 # Handle for MultipleObjectsDelete.
 @route('/<_bucket>', ['POST'])
 def delete(_bucket):
@@ -46,15 +36,6 @@ def server(_bucket, _path):
             response.status = 500
             response.content_type = 'text/xml'
             return '<?xml version="1.0" encoding="UTF-8"?><Error><Code>ExpectedError</Code><Message>Expected Error</Message><RequestId>txfbd566d03042474888193-00608d7537</RequestId></Error>'
-
-    if cache.get('throttle_request_number', None):
-        request_number = cache.pop('throttle_request_number') - 1
-        if request_number > 0:
-            cache['throttle_request_number'] = request_number
-        else:
-            response.status = 429
-            response.content_type = 'text/xml'
-            return '<?xml version="1.0" encoding="UTF-8"?><Error><Code>TooManyRequestsException</Code><Message>Please reduce your request rate.</Message><RequestId>txfbd566d03042474888193-00608d7538</RequestId></Error>'
 
     response.set_header("Location", "http://minio1:9001/" + _bucket + '/' + _path)
     response.status = 307

@@ -1,4 +1,6 @@
-#include "config_formats.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_formats.h"
+#endif
 
 #if USE_PROTOBUF
 #    include <Formats/FormatSchemaInfo.h>

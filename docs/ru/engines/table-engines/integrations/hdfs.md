@@ -7,7 +7,7 @@ toc_title: HDFS
 
 Управляет данными в HDFS. Данный движок похож на движки [File](../special/file.md#table_engines-file) и [URL](../special/url.md#table_engines-url).
 
-## Использование движка {#usage}
+## Использование движка {#ispolzovanie-dvizhka}
 
 ``` sql
 ENGINE = HDFS(URI, format)
@@ -44,13 +44,13 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 └──────┴───────┘
 ```
 
-## Детали реализации {#implementation-details}
+## Детали реализации {#detali-realizatsii}
 
 -   Поддерживается многопоточное чтение и запись.
--   Поддерживается репликация без копирования данных ([zero-copy](../../../operations/storing-data.md#zero-copy)).  
 -   Не поддерживается:
     -   использование операций `ALTER` и `SELECT...SAMPLE`;
-    -   индексы.
+    -   индексы;
+    -   репликация.
 
 **Шаблоны в пути**
 
@@ -67,12 +67,12 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 
 1.  Предположим, у нас есть несколько файлов со следующими URI в HDFS:
 
--   'hdfs://hdfs1:9000/some_dir/some_file_1'
--   'hdfs://hdfs1:9000/some_dir/some_file_2'
--   'hdfs://hdfs1:9000/some_dir/some_file_3'
--   'hdfs://hdfs1:9000/another_dir/some_file_1'
--   'hdfs://hdfs1:9000/another_dir/some_file_2'
--   'hdfs://hdfs1:9000/another_dir/some_file_3'
+-   ‘hdfs://hdfs1:9000/some_dir/some_file_1’
+-   ‘hdfs://hdfs1:9000/some_dir/some_file_2’
+-   ‘hdfs://hdfs1:9000/some_dir/some_file_3’
+-   ‘hdfs://hdfs1:9000/another_dir/some_file_1’
+-   ‘hdfs://hdfs1:9000/another_dir/some_file_2’
+-   ‘hdfs://hdfs1:9000/another_dir/some_file_3’
 
 1.  Есть несколько возможностей создать таблицу, состояющую из этих шести файлов:
 
@@ -122,9 +122,8 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
   </hdfs_root>
 ```
 
-### Параметры конфигурации {#configuration-options}
-
-#### Поддерживаемые из libhdfs3 {#supported-by-libhdfs3}
+### Список возможных опций конфигурации со значениями по умолчанию
+#### Поддерживаемые из libhdfs3
 
 
 | **параметр**                                          | **по умолчанию**        |
@@ -181,7 +180,7 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 |hadoop\_kerberos\_principal                            | ""                      |
 |hadoop\_kerberos\_kinit\_command                       | kinit                   |
 
-### Ограничения {#limitations}
+#### Ограничения {#limitations}
   * hadoop\_security\_kerberos\_ticket\_cache\_path могут быть определены только на глобальном уровне
 
 ## Поддержка Kerberos {#kerberos-support}
@@ -194,7 +193,7 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 
 Если hadoop\_kerberos\_keytab, hadoop\_kerberos\_principal или hadoop\_kerberos\_kinit\_command указаны в настройках, kinit будет вызван. hadoop\_kerberos\_keytab и hadoop\_kerberos\_principal обязательны в этом случае. Необходимо также будет установить kinit и файлы конфигурации krb5.
 
-## Виртуальные столбцы {#virtual-columns}
+## Виртуальные столбцы {#virtualnye-stolbtsy}
 
 -   `_path` — Путь к файлу.
 -   `_file` — Имя файла.
@@ -202,3 +201,4 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 **См. также**
 
 -   [Виртуальные колонки](../../../engines/table-engines/index.md#table_engines-virtual_columns)
+

@@ -1,7 +1,6 @@
 #include <Interpreters/castColumn.h>
 
 #include <Functions/FunctionsConversion.h>
-#include <Functions/CastOverloadResolver.h>
 
 namespace DB
 {
@@ -9,7 +8,7 @@ namespace DB
 template <CastType cast_type = CastType::nonAccurate>
 static ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type)
 {
-    if (arg.type->equals(*type) && cast_type != CastType::accurateOrNull)
+    if (arg.type->equals(*type))
         return arg.column;
 
     ColumnsWithTypeAndName arguments
@@ -22,7 +21,7 @@ static ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr
         }
     };
 
-    FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<cast_type>::createImpl();
+    FunctionOverloadResolverPtr func_builder_cast = CastOverloadResolver<cast_type>::createImpl(false);
 
     auto func_cast = func_builder_cast->build(arguments);
 

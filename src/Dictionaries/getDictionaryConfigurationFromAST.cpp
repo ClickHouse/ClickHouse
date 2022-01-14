@@ -4,20 +4,18 @@
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Text.h>
+#include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
 #include <Core/Names.h>
 #include <Common/FieldVisitorToString.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Functions/FunctionFactory.h>
-#include <Common/isLocalAddress.h>
-#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -29,14 +27,12 @@ namespace ErrorCodes
     extern const int INCORRECT_DICTIONARY_DEFINITION;
 }
 
-
 /// There are a lot of code, but it's very simple and straightforward
-/// We just perform conversion.
+/// We just convert
 namespace
 {
 
 using NamesToTypeNames = std::unordered_map<std::string, std::string>;
-
 /// Get value from field and convert it to string.
 /// Also remove quotes from strings.
 String getFieldAsString(const Field & field)
@@ -49,8 +45,8 @@ String getFieldAsString(const Field & field)
 
 using namespace Poco;
 using namespace Poco::XML;
-
-/* Transforms next definition
+/*
+ * Transforms next definition
  *  LIFETIME(MIN 10, MAX 100)
  * to the next configuration
  *  <lifetime>
@@ -79,7 +75,8 @@ void buildLifetimeConfiguration(
     }
 }
 
-/* Transforms next definition
+/*
+ * Transforms next definition
  *  LAYOUT(FLAT())
  * to the next configuration
  *  <layout>
@@ -106,7 +103,6 @@ void buildLayoutConfiguration(
     layout_element->appendChild(layout_type_element);
 
     if (layout->parameters)
-    {
         for (const auto & param : layout->parameters->children)
         {
             const ASTPair * pair = param->as<ASTPair>();
@@ -139,11 +135,10 @@ void buildLayoutConfiguration(
             layout_type_parameter_element->appendChild(value_to_append);
             layout_type_element->appendChild(layout_type_parameter_element);
         }
-    }
 }
 
-
-/* Transforms next definition
+/*
+ * Transforms next definition
  *  RANGE(MIN StartDate, MAX EndDate)
  * to the next configuration
  *  <range_min><name>StartDate</name></range_min>
@@ -186,9 +181,9 @@ Names getPrimaryKeyColumns(const ASTExpressionList * primary_key)
     Names result;
     const auto & children = primary_key->children;
 
-    for (const auto & child : children)
+    for (size_t index = 0; index != children.size(); ++index)
     {
-        const ASTIdentifier * key_part = child->as<const ASTIdentifier>();
+        const ASTIdentifier * key_part = children[index]->as<const ASTIdentifier>();
         result.push_back(key_part->name());
     }
     return result;
@@ -220,7 +215,8 @@ void buildAttributeExpressionIfNeeded(
     }
 }
 
-/** Transofrms single dictionary attribute to configuration
+/**
+  * Transofrms single dictionary attribute to configuration
   *  third_column UInt8 DEFAULT 2 EXPRESSION rand() % 100 * 77
   * to
   *  <attribute>
@@ -284,7 +280,8 @@ void buildSingleAttribute(
 }
 
 
-/** Transforms
+/**
+  * Transforms
   *   PRIMARY KEY Attr1 ,..., AttrN
   * to the next configuration
   *  <id><name>Attr1</name></id>
@@ -371,7 +368,8 @@ void buildPrimaryKeyConfiguration(
 }
 
 
-/** Transforms list of ASTDictionaryAttributeDeclarations to list of dictionary attributes
+/**
+  * Transforms list of ASTDictionaryAttributeDeclarations to list of dictionary attributes
   */
 NamesToTypeNames buildDictionaryAttributesConfiguration(
     AutoPtr<Document> doc,
@@ -404,9 +402,9 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
     ContextPtr context)
 {
     const auto & children = ast_expr_list->children;
-    for (const auto & child : children)
+    for (size_t i = 0; i != children.size(); ++i)
     {
-        const ASTPair * pair = child->as<const ASTPair>();
+        const ASTPair * pair = children[i]->as<const ASTPair>();
         AutoPtr<Element> current_xml_element(doc->createElement(pair->first));
         root->appendChild(current_xml_element);
 
@@ -498,6 +496,9 @@ void checkAST(const ASTCreateQuery & query)
     if (!query.is_dictionary || query.dictionary == nullptr)
         throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot convert dictionary to configuration from non-dictionary AST.");
 
+    if (query.dictionary_attributes_list == nullptr || query.dictionary_attributes_list->children.empty())
+        throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot create dictionary with empty attributes list");
+
     if (query.dictionary->layout == nullptr)
         throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot create dictionary with empty layout");
 
@@ -511,6 +512,8 @@ void checkAST(const ASTCreateQuery & query)
 
     if (query.dictionary->source == nullptr)
         throw Exception(ErrorCodes::INCORRECT_DICTIONARY_DEFINITION, "Cannot create dictionary with empty source");
+
+    /// Range can be empty
 }
 
 void checkPrimaryKey(const NamesToTypeNames & all_attrs, const Names & key_attrs)
@@ -537,12 +540,12 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
 
     AutoPtr<Poco::XML::Element> name_element(xml_document->createElement("name"));
     current_dictionary->appendChild(name_element);
-    AutoPtr<Text> name(xml_document->createTextNode(query.getTable()));
+    AutoPtr<Text> name(xml_document->createTextNode(query.table));
     name_element->appendChild(name);
 
     AutoPtr<Poco::XML::Element> database_element(xml_document->createElement("database"));
     current_dictionary->appendChild(database_element);
-    AutoPtr<Text> database(xml_document->createTextNode(!database_.empty() ? database_ : query.getDatabase()));
+    AutoPtr<Text> database(xml_document->createTextNode(!database_.empty() ? database_ : query.database));
     database_element->appendChild(database);
 
     if (query.uuid != UUIDHelpers::Nil)
@@ -574,41 +577,8 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
     if (query.dictionary->range)
         buildRangeConfiguration(xml_document, structure_element, query.dictionary->range, all_attr_names_and_types);
 
-    if (query.comment)
-    {
-        AutoPtr<Element> comment_element(xml_document->createElement("comment"));
-        current_dictionary->appendChild(comment_element);
-        AutoPtr<Text> comment_value(xml_document->createTextNode(query.comment->as<ASTLiteral>()->value.safeGet<String>()));
-
-        comment_element->appendChild(comment_value);
-    }
-
     conf->load(xml_document);
     return conf;
-}
-
-std::optional<ClickHouseDictionarySourceInfo>
-getInfoIfClickHouseDictionarySource(DictionaryConfigurationPtr & config, ContextPtr global_context)
-{
-    ClickHouseDictionarySourceInfo info;
-
-    String host = config->getString("dictionary.source.clickhouse.host", "");
-    UInt16 port = config->getUInt("dictionary.source.clickhouse.port", 0);
-    String database = config->getString("dictionary.source.clickhouse.db", "");
-    String table = config->getString("dictionary.source.clickhouse.table", "");
-    bool secure = config->getBool("dictionary.source.clickhouse.secure", false);
-
-    if (host.empty() || port == 0 || table.empty())
-        return {};
-
-    info.table_name = {database, table};
-
-    UInt16 default_port = secure ? global_context->getTCPPortSecure().value_or(0) : global_context->getTCPPort();
-    if (!isLocalAddress({host, port}, default_port))
-        return info;
-
-    info.is_local = true;
-    return info;
 }
 
 }

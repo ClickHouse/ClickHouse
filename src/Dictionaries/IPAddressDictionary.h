@@ -10,8 +10,8 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
 #include <Poco/Net/IPAddress.h>
-#include <base/StringRef.h>
-#include <base/logger_useful.h>
+#include <common/StringRef.h>
+#include <common/logger_useful.h>
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
@@ -56,7 +56,7 @@ public:
         return std::make_shared<IPAddressDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty);
     }
 
-    DictionarySourcePtr getSource() const override { return source_ptr; }
+    const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
     const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
@@ -64,10 +64,10 @@ public:
 
     bool isInjective(const std::string & attribute_name) const override
     {
-        return dict_struct.getAttribute(attribute_name).injective;
+        return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
     }
 
-    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::Complex; }
+    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::complex; }
 
     ColumnPtr getColumn(
         const std::string& attribute_name,
@@ -78,7 +78,7 @@ public:
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
-    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
+    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
 private:
 

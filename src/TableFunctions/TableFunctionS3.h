@@ -5,7 +5,6 @@
 #if USE_AWS_S3
 
 #include <TableFunctions/ITableFunction.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 
 
 namespace DB
@@ -37,7 +36,12 @@ protected:
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
-    std::optional<StorageS3Configuration> s3_configuration;
+    String filename;
+    String format;
+    String structure;
+    String access_key_id;
+    String secret_access_key;
+    String compression_method = "auto";
 };
 
 class TableFunctionCOS : public TableFunctionS3
