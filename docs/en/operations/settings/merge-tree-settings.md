@@ -27,6 +27,10 @@ An example of changing the settings for a specific table with the `ALTER TABLE .
 ``` sql
 ALTER TABLE foo
     MODIFY SETTING max_suspicious_broken_parts = 100;
+    
+-- reset to default (use value from system.merge_tree_settings)
+ALTER TABLE foo
+    RESET SETTING max_suspicious_broken_parts;
 ```
 
 ## parts_to_throw_insert {#parts-to-throw-insert}

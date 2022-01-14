@@ -9,6 +9,7 @@
 #include <QueryPipeline/ExecutionSpeedLimits.h>
 #include <Storages/IStorage_fwd.h>
 #include <Poco/Condition.h>
+#include <Parsers/IAST.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
@@ -118,7 +119,7 @@ protected:
 
     ProcessListForUser * user_process_list = nullptr;
 
-    String query_kind;
+    IAST::QueryKind query_kind;
 
 public:
 
@@ -127,7 +128,7 @@ public:
         const String & query_,
         const ClientInfo & client_info_,
         QueryPriorities::Handle && priority_handle_,
-        const String & query_kind_
+        IAST::QueryKind query_kind_
         );
 
     ~QueryStatus();
@@ -270,7 +271,7 @@ public:
     /// User -> queries
     using UserToQueries = std::unordered_map<String, ProcessListForUser>;
 
-    using QueryKindToAmount = std::unordered_map<String, QueryAmount>;
+    using QueryKindAmounts = std::unordered_map<IAST::QueryKind, QueryAmount>;
 
 protected:
     friend class ProcessListEntry;
@@ -301,11 +302,11 @@ protected:
     size_t max_select_queries_amount = 0;
 
     /// amount of queries by query kind.
-    QueryKindToAmount query_kind_amounts;
+    QueryKindAmounts query_kind_amounts;
 
-    void increaseQueryKindAmount(const String & query_kind);
-    void decreaseQueryKindAmount(const String & query_kind);
-    QueryAmount getQueryKindAmount(const String & query_kind);
+    void increaseQueryKindAmount(const IAST::QueryKind & query_kind);
+    void decreaseQueryKindAmount(const IAST::QueryKind & query_kind);
+    QueryAmount getQueryKindAmount(const IAST::QueryKind & query_kind) const;
 
 public:
     using EntryPtr = std::shared_ptr<ProcessListEntry>;
