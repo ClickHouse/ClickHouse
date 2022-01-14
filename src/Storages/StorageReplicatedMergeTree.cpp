@@ -7128,11 +7128,11 @@ bool StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & par
 }
 
 
-bool StorageReplicatedMergeTree::unlockSharedDataByID(String id, const String & table_uuid, const String & part_name,
+bool StorageReplicatedMergeTree::unlockSharedDataByID(String part_id, const String & table_uuid, const String & part_name,
         const String & replica_name_, DiskPtr disk, zkutil::ZooKeeperPtr zookeeper_ptr, const MergeTreeSettings & settings,
         Poco::Logger * logger, const String & zookeeper_path_old)
 {
-    boost::replace_all(id, "/", "_");
+    boost::replace_all(part_id, "/", "_");
 
     Strings zc_zookeeper_paths = getZeroCopyPartPath(settings, disk->getType(), table_uuid, part_name, zookeeper_path_old);
 
@@ -7140,13 +7140,16 @@ bool StorageReplicatedMergeTree::unlockSharedDataByID(String id, const String & 
 
     for (const auto & zc_zookeeper_path : zc_zookeeper_paths)
     {
-        String zookeeper_part_uniq_node = fs::path(zc_zookeeper_path) / id;
-        String zookeeper_node = fs::path(zookeeper_part_uniq_node) / replica_name_;
+        String zookeeper_part_uniq_node = fs::path(zc_zookeeper_path) / part_id;
 
-        LOG_TRACE(logger, "Remove zookeeper lock {}", zookeeper_node);
+        /// Delete our replica node for part from zookeeper (we are not interested in it anymore)
+        String zookeeper_part_replica_node = fs::path(zookeeper_part_uniq_node) / replica_name_;
 
-        zookeeper_ptr->tryRemove(zookeeper_node);
+        LOG_TRACE(logger, "Remove zookeeper lock {}", zookeeper_part_replica_node);
 
+        zookeeper_ptr->tryRemove(zookeeper_part_replica_node);
+
+        /// Check, maybe we were the last replica and can remove part forever
         Strings children;
         zookeeper_ptr->tryGetChildren(zookeeper_part_uniq_node, children);
 
@@ -7157,9 +7160,9 @@ bool StorageReplicatedMergeTree::unlockSharedDataByID(String id, const String & 
             continue;
         }
 
-        auto e = zookeeper_ptr->tryRemove(zookeeper_part_uniq_node);
+        auto error_code = zookeeper_ptr->tryRemove(zookeeper_part_uniq_node);
 
-        LOG_TRACE(logger, "Remove parent zookeeper lock {} : {}", zookeeper_part_uniq_node, e != Coordination::Error::ZNOTEMPTY);
+        LOG_TRACE(logger, "Remove parent zookeeper lock {} : {}", zookeeper_part_uniq_node, error_code != Coordination::Error::ZNOTEMPTY);
 
         /// Even when we have lock with same part name, but with different uniq, we can remove files on S3
         children.clear();
@@ -7168,9 +7171,9 @@ bool StorageReplicatedMergeTree::unlockSharedDataByID(String id, const String & 
         if (children.empty())
         {
             /// Cleanup after last uniq removing
-            e = zookeeper_ptr->tryRemove(zookeeper_part_node);
+            error_code = zookeeper_ptr->tryRemove(zookeeper_part_node);
 
-            LOG_TRACE(logger, "Remove parent zookeeper lock {} : {}", zookeeper_part_node, e != Coordination::Error::ZNOTEMPTY);
+            LOG_TRACE(logger, "Remove parent zookeeper lock {} : {}", zookeeper_part_node, error_code != Coordination::Error::ZNOTEMPTY);
         }
         else
         {
@@ -7213,7 +7216,7 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
 
     zkutil::ZooKeeperPtr zookeeper = tryGetZooKeeper();
     if (!zookeeper)
-        return best_replica;
+        return "";
 
     Strings zc_zookeeper_paths = getZeroCopyPartPath(*getSettings(), disk_type, getTableSharedID(), part.name,
             zookeeper_path);
@@ -7251,7 +7254,7 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
     LOG_TRACE(log, "Found zookeper active replicas for part {}: {}", part.name, active_replicas.size());
 
     if (active_replicas.empty())
-        return best_replica;
+        return "";
 
     /** You must select the best (most relevant) replica.
     * This is a replica with the maximum `log_pointer`, then with the minimum `queue` size.
