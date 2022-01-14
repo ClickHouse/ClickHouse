@@ -79,7 +79,15 @@ SELECT sum(x) FROM distributed WITH TOTALS SETTINGS
         pm.drop_instance_zk_connections(node_1_2)
         pm.drop_instance_zk_connections(node_2_2)
 
-        time.sleep(4)  # allow pings to zookeeper to timeout (must be greater than ZK session timeout).
+        # allow pings to zookeeper to timeout (must be greater than ZK session timeout).
+        for _ in range(20):
+            try:
+                node_2_2.query("SELECT * FROM system.zookeeper where path = '/'")
+                time.sleep(0.5)
+            except:
+                break
+        else:
+            raise Exception("Connection with zookeeper was not lost")
 
         # At this point all replicas are stale, but the query must still go to second replicas which are the least stale ones.
         assert instance_with_dist_table.query('''
@@ -96,7 +104,7 @@ SELECT sum(x) FROM distributed SETTINGS
     max_replica_delay_for_distributed_queries=1
 ''').strip() == '3'
 
-        # If we forbid stale replicas, the query must fail.
+        # If we forbid stale replicas, the query must fail. But sometimes we must have bigger timeouts.
         with pytest.raises(Exception):
             print(instance_with_dist_table.query('''
 SELECT count() FROM distributed SETTINGS
