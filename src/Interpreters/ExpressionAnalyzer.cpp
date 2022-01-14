@@ -340,8 +340,6 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                 if (getContext()->getSettingsRef().enable_positional_arguments)
                     replaceForPositionalArguments(group_asts[i], select_query, ASTSelectQuery::Expression::GROUP_BY);
 
-                getRootActionsNoMakeSet(group_asts[i], true, temp_actions, false);
-
                 if (select_query->group_by_with_grouping_sets)
                 {
                     ASTs group_elements_ast;
@@ -354,6 +352,8 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
 
                     for (ssize_t j = 0; j < ssize_t(group_elements_ast.size()); ++j)
                     {
+                        getRootActionsNoMakeSet(group_elements_ast[j], true, temp_actions, false);
+
                         ssize_t group_size = group_elements_ast.size();
                         const auto & column_name = group_elements_ast[j]->getColumnName();
                         const auto * node = temp_actions->tryFindInIndex(column_name);
@@ -366,6 +366,8 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                             /// Constant expressions have non-null column pointer at this stage.
                             if (node->column && isColumnConst(*node->column))
                             {
+                                select_query->group_by_with_constant_keys = true;
+
                                 /// But don't remove last key column if no aggregate functions, otherwise aggregation will not work.
                                 if (!aggregate_descriptions.empty() || group_size > 1)
                                 {
@@ -399,6 +401,8 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAGPtr & temp_actions)
                 }
                 else
                 {
+                    getRootActionsNoMakeSet(group_asts[i], true, temp_actions, false);
+
                     const auto & column_name = group_asts[i]->getColumnName();
                     const auto * node = temp_actions->tryFindInIndex(column_name);
                     if (!node)
