@@ -412,6 +412,11 @@ StoragePtr StorageMaterializedView::tryGetTargetTable() const
     return DatabaseCatalog::instance().tryGetTable(target_table_id, getContext());
 }
 
+NamesAndTypesList StorageMaterializedView::getVirtuals() const
+{
+    return getTargetTable()->getVirtuals();
+}
+
 Strings StorageMaterializedView::getDataPaths() const
 {
     if (auto table = tryGetTargetTable())

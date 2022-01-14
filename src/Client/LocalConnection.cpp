@@ -214,6 +214,12 @@ bool LocalConnection::poll(size_t)
     if (next_packet_type)
         return true;
 
+    if (state->exception)
+    {
+        next_packet_type = Protocol::Server::Exception;
+        return true;
+    }
+
     if (!state->is_finished)
     {
         if (send_progress && (state->after_send_progress.elapsedMicroseconds() >= query_context->getSettingsRef().interactive_delay))

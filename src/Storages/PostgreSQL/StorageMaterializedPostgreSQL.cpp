@@ -87,14 +87,8 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
             *replication_settings,
             /* is_materialized_postgresql_database */false);
 
-    if (!is_attach)
-    {
-        replication_handler->addStorage(remote_table_name, this);
-        /// Start synchronization preliminary setup immediately and throw in case of failure.
-        /// It should be guaranteed that if MaterializedPostgreSQL table was created successfully, then
-        /// its nested table was also created.
-        replication_handler->startSynchronization(/* throw_on_error */ true);
-    }
+    replication_handler->addStorage(remote_table_name, this);
+    replication_handler->startup(/* delayed */is_attach);
 }
 
 
@@ -231,19 +225,6 @@ void StorageMaterializedPostgreSQL::set(StoragePtr nested_storage)
     nested_table_id = nested_storage->getStorageID();
     setInMemoryMetadata(nested_storage->getInMemoryMetadata());
     has_nested.store(true);
-}
-
-
-void StorageMaterializedPostgreSQL::startup()
-{
-    /// replication_handler != nullptr only in case of single table engine MaterializedPostgreSQL.
-    if (replication_handler && is_attach)
-    {
-        replication_handler->addStorage(remote_table_name, this);
-        /// In case of attach table use background startup in a separate thread. First wait until connection is reachable,
-        /// then check for nested table -- it should already be created.
-        replication_handler->startup();
-    }
 }
 
 
