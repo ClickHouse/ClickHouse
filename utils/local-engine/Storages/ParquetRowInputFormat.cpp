@@ -184,7 +184,7 @@ void local_engine::ParquetRowInputFormat::fillColumnWithDate32Data(duckdb::Vecto
     auto* duck_data = duckdb::FlatVector::GetData<duckdb::date_t>(vector);
     for (idx_t i = 0; i < num_rows; ++i)
     {
-        UInt32 days_num = static_cast<UInt32>(duck_data[i].days);
+        UInt16 days_num = static_cast<UInt16>(duck_data[i].days);
         if (days_num > DATE_LUT_MAX_DAY_NUM)
             throw std::runtime_error("data is out of range (ClickHouse Date)");
         column_data.emplace_back(days_num);

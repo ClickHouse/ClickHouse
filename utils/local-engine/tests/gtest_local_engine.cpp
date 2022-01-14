@@ -49,6 +49,35 @@ TEST(TestSelect, ReadRel)
         ASSERT_EQ(spark_row_info->getNumRows(), block->rows());
     }
 }
+
+TEST(TestSelect, ReadDate)
+{
+    dbms::SerializedSchemaBuilder schema_builder;
+    auto* schema = schema_builder
+                        .column("date", "Date")
+                        .build();
+    dbms::SerializedPlanBuilder plan_builder;
+    auto plan = plan_builder.read(TEST_DATA(/data/date.parquet), std::move(schema)).build();
+
+    ASSERT_TRUE(plan->relations(0).root().input().has_read());
+    ASSERT_EQ(plan->relations_size(), 1);
+    std::cout << "start execute" <<std::endl;
+    dbms::LocalExecutor local_executor;
+    dbms::SerializedPlanParser parser(dbms::SerializedPlanParser::global_context);
+    auto query_plan = parser.parse(std::move(plan));
+    local_executor.execute(std::move(query_plan));
+    ASSERT_TRUE(local_executor.hasNext());
+    while (local_executor.hasNext())
+    {
+        std::cout << "fetch batch" << std::endl;
+        local_engine::SparkRowInfoPtr spark_row_info = local_executor.next();
+        ASSERT_GT(spark_row_info->getNumRows(), 0);
+        local_engine::SparkColumnToCHColumn converter;
+        auto block = converter.convertCHColumnToSparkRow(*spark_row_info, local_executor.getHeader());
+        ASSERT_EQ(spark_row_info->getNumRows(), block->rows());
+    }
+}
+
 bool inside_main=true;
 TEST(TestSelect, TestFilter)
 {

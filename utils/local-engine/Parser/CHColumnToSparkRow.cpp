@@ -115,6 +115,10 @@ void writeValue(
     {
         WRITE_VECTOR_COLUMN(Int16, int16_t, get64)
     }
+    else if (which.isUInt16())
+    {
+        WRITE_VECTOR_COLUMN(UInt16, uint16_t , get64)
+    }
     else if (which.isInt32())
     {
         WRITE_VECTOR_COLUMN(Int32, int32_t, get64)

@@ -59,7 +59,7 @@ static void writeRowToColumns(std::vector<MutableColumnPtr> & columns, SparkRowR
             auto & column_data = assert_cast<ColumnVector<Float64> &>(*columns[i]).getData();
             column_data.emplace_back(spark_row_reader.getDouble(i));
         }
-        else if (which.isDate())
+        else if (which.isDate() || which.isUInt16())
         {
             auto & column_data = assert_cast<ColumnVector<UInt16> &>(*columns[i]).getData();
             column_data.emplace_back(spark_row_reader.getUnsignedShort(i));
