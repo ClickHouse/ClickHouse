@@ -21,12 +21,12 @@ jobs:
     steps:
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -rf "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Labels check
         run: |
-          cd $GITHUB_WORKSPACE/tests/ci
+          cd "$GITHUB_WORKSPACE/tests/ci"
           python3 run_check.py
   DockerHubPushAarch64:
     needs: CheckLabels
@@ -34,12 +34,12 @@ jobs:
     steps:
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Images check
         run: |
-          cd $GITHUB_WORKSPACE/tests/ci
+          cd "$GITHUB_WORKSPACE/tests/ci"
           python3 docker_images_check.py --suffix aarch64
       - name: Upload images files to artifacts
         uses: actions/upload-artifact@v2
@@ -52,12 +52,12 @@ jobs:
     steps:
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Images check
         run: |
-          cd $GITHUB_WORKSPACE/tests/ci
+          cd "$GITHUB_WORKSPACE/tests/ci"
           python3 docker_images_check.py --suffix amd64
       - name: Upload images files to artifacts
         uses: actions/upload-artifact@v2
@@ -70,7 +70,7 @@ jobs:
     steps:
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Download changed aarch64 images
@@ -85,7 +85,7 @@ jobs:
           path: ${{ runner.temp }}
       - name: Images check
         run: |
-          cd $GITHUB_WORKSPACE/tests/ci
+          cd "$GITHUB_WORKSPACE/tests/ci"
           python3 docker_manifests_merge.py --suffix amd64 --suffix aarch64
       - name: Upload images files to artifacts
         uses: actions/upload-artifact@v2
@@ -109,17 +109,17 @@ jobs:
           path: ${{ env.TEMP_PATH }}
       - name: Clear repository
         run: |
-          sudo rm -rf $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -rf "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Docs Check
         run: |
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 docs_check.py
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"

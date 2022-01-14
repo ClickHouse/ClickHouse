@@ -24,12 +24,12 @@ jobs:
     steps:
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Images check
         run: |
-          cd $GITHUB_WORKSPACE/tests/ci
+          cd "$GITHUB_WORKSPACE/tests/ci"
           python3 docker_images_check.py --suffix aarch64
       - name: Upload images files to artifacts
         uses: actions/upload-artifact@v2
@@ -41,12 +41,12 @@ jobs:
     steps:
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Images check
         run: |
-          cd $GITHUB_WORKSPACE/tests/ci
+          cd "$GITHUB_WORKSPACE/tests/ci"
           python3 docker_images_check.py --suffix amd64
       - name: Upload images files to artifacts
         uses: actions/upload-artifact@v2
@@ -59,7 +59,7 @@ jobs:
     steps:
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Download changed aarch64 images
@@ -74,7 +74,7 @@ jobs:
           path: ${{ runner.temp }}
       - name: Images check
         run: |
-          cd $GITHUB_WORKSPACE/tests/ci
+          cd "$GITHUB_WORKSPACE/tests/ci"
           python3 docker_manifests_merge.py --suffix amd64 --suffix aarch64
       - name: Upload images files to artifacts
         uses: actions/upload-artifact@v2
@@ -98,7 +98,7 @@ jobs:
           EOF
       - name: Clear repository
         run: |
-          sudo rm -fr $GITHUB_WORKSPACE && mkdir $GITHUB_WORKSPACE
+          sudo rm -fr "$GITHUB_WORKSPACE" && mkdir "$GITHUB_WORKSPACE"
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Download changed images
@@ -108,14 +108,14 @@ jobs:
           path: ${{ env.TEMP_PATH }}
       - name: Docs Release
         run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
+          sudo rm -fr "$TEMP_PATH"
+          mkdir -p "$TEMP_PATH"
+          cp -r "$GITHUB_WORKSPACE" "$TEMP_PATH"
+          cd "$REPO_COPY/tests/ci"
           python3 docs_release.py
       - name: Cleanup
         if: always()
         run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          docker kill "$(docker ps -q)" ||:
+          docker rm -f "$(docker ps -a -q)" ||:
+          sudo rm -fr "$TEMP_PATH"
