@@ -1,3 +1,4 @@
+# rebuild in #33610
 # docker build -t clickhouse/docs-build .
 FROM ubuntu:20.04
 

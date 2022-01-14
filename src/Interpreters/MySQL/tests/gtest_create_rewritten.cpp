@@ -13,7 +13,7 @@
 #include <Common/tests/gtest_global_register.h>
 #include <Poco/String.h>
 
-
+#if USE_MYSQL
 using namespace DB;
 
 static inline ASTPtr tryRewrittenCreateQuery(const String & query, ContextPtr context)
@@ -255,3 +255,4 @@ TEST(MySQLCreateRewritten, QueryWithEnum)
         std::string(MATERIALIZEDMYSQL_TABLE_COLUMNS) +
         ") ENGINE = ReplacingMergeTree(_version) PARTITION BY intDiv(key, 4294967) ORDER BY tuple(key)");
 }
+#endif
