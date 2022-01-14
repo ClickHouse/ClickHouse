@@ -99,7 +99,7 @@ namespace
     auto escapeForFilter(const String & src)
     {
         String dest;
-        dest.reserve(src.size() * 2);
+        dest.reserve(src.size() * 3);
 
         for (auto ch : src)
         {
