@@ -157,7 +157,7 @@ void ContextAccess::initialize()
          *params.user_id, [weak_ptr = weak_from_this()](const UUID &, const AccessEntityPtr & entity)
      {
          auto ptr = weak_ptr.lock();
-         if (!ptr)
+         if(!ptr)
              return;
          UserPtr changed_user = entity ? typeid_cast<UserPtr>(entity) : nullptr;
          std::lock_guard lock2{ptr->mutex};
