@@ -67,7 +67,6 @@ struct RestoreQualifiedNamesMatcher
     {
         DatabaseAndTableWithAlias distributed_table;
         DatabaseAndTableWithAlias remote_table;
-        bool rename = false;
 
         void changeTable(ASTIdentifier & identifier) const;
     };
