@@ -51,8 +51,21 @@ void MergedBlockOutputStream::writeWithPermutation(const Block & block, const IC
     writeImpl(block, permutation);
 }
 
-MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePart(
+struct MergedBlockOutputStream::Finalizer::Impl
+{
+    MergeTreeData::MutableDataPartPtr part;
+    std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
+    bool sync;
+};
+
+MergedBlockOutputStream::Finalizer::~Finalizer() = default;
+MergedBlockOutputStream::Finalizer::Finalizer(Finalizer &&) = default;
+MergedBlockOutputStream::Finalizer & MergedBlockOutputStream::Finalizer::operator=(Finalizer &&) = default;
+MergedBlockOutputStream::Finalizer::Finalizer(std::unique_ptr<Impl> impl_) : impl(std::move(impl_)) {}
+
+MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePart(
         MergeTreeData::MutableDataPartPtr & new_part,
+        bool sync,
         const NamesAndTypesList * total_columns_list,
         MergeTreeData::DataPart::Checksums * additional_column_checksums)
 {
@@ -64,6 +77,8 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePart(
 
     /// Finish columns serialization.
     writer->fillChecksums(checksums);
+
+    LOG_TRACE(&Poco::Logger::get("MergedBlockOutputStream"), "filled checksums {}", new_part->getNameWithState());
 
     for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
         checksums.addFile(
@@ -81,9 +96,11 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePart(
         ? new_serialization_infos
         : new_part->getSerializationInfos();
 
-    WrittenFiles written_files;
+    auto finalizer = std::make_unique<Finalizer::Impl>();
+    finalizer->sync = sync;
+    finalizer->part = new_part;
     if (new_part->isStoredOnDisk())
-        written_files = finalizePartOnDisk(new_part, part_columns, serialization_infos, checksums);
+        finalizer->written_files = finalizePartOnDisk(new_part, part_columns, serialization_infos, checksums);
 
     if (reset_columns)
         new_part->setColumns(part_columns, serialization_infos);
@@ -96,23 +113,24 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePart(
     new_part->index_granularity = writer->getIndexGranularity();
     new_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
-    return written_files;
+    if (default_codec != nullptr)
+        new_part->default_codec = default_codec;
+
+    return Finalizer(std::move(finalizer));
 }
 
-void MergedBlockOutputStream::finish(MergeTreeData::MutableDataPartPtr & new_part, WrittenFiles files_to_finalize, bool sync)
+void MergedBlockOutputStream::finish(Finalizer finalizer)
 {
-    writer->finish(sync);
+    writer->finish(finalizer.impl->sync);
 
-    for (auto & file : files_to_finalize)
+    for (auto & file : finalizer.impl->written_files)
     {
         file->finalize();
         if (sync)
             file->sync();
     }
 
-    if (default_codec != nullptr)
-        new_part->default_codec = default_codec;
-    new_part->storage.lockSharedData(*new_part);
+    finalizer.impl->part->storage.lockSharedData(*finalizer.impl->part);
 }
 
 MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDisk(
@@ -121,6 +139,9 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     SerializationInfoByName & serialization_infos,
     MergeTreeData::DataPart::Checksums & checksums)
 {
+
+    LOG_TRACE(&Poco::Logger::get("MergedBlockOutputStream"), "finalizing {}", new_part->getNameWithState());
+
     WrittenFiles written_files;
     if (new_part->isProjectionPart())
     {

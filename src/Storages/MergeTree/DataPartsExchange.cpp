@@ -593,8 +593,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
             CompressionCodecFactory::instance().get("NONE", {}));
 
         part_out.write(block);
-        auto written_files = part_out.finalizePart(new_projection_part);
-        part_out.finish(new_projection_part, std::move(written_files), false);
+        auto finalizer = part_out.finalizePart(new_projection_part, false);
+        part_out.finish(std::move(finalizer));
         new_projection_part->checksums.checkEqual(checksums, /* have_uncompressed = */ true);
         new_data_part->addProjectionPart(projection_name, std::move(new_projection_part));
     }
@@ -618,8 +618,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
         CompressionCodecFactory::instance().get("NONE", {}));
 
     part_out.write(block);
-    auto written_files = part_out.finalizePart(new_data_part);
-    part_out.finish(new_data_part, std::move(written_files), false);
+    auto finalizer = part_out.finalizePart(new_data_part, false);
+    part_out.finish(std::move(finalizer));
     new_data_part->checksums.checkEqual(checksums, /* have_uncompressed = */ true);
 
     return new_data_part;
