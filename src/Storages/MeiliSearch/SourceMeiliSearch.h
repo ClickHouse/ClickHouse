@@ -15,7 +15,6 @@ public:
         const MeiliSearchConfiguration & config,
         const Block & sample_block,
         UInt64 max_block_size_,
-        UInt64 offset_,
         std::unordered_map<String, String> query_params_);
 
     ~MeiliSearchSource() override;

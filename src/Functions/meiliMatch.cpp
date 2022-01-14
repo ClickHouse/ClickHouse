@@ -9,6 +9,9 @@ namespace DB
 namespace
 {
 
+
+// This class is a stub for the meiliMatch function in the where section of the query, 
+// this function is used to pass parameters to the MeiliSearch storage engine
 class FunctionMeiliMatch : public IFunction
 {
 public:
@@ -39,15 +42,19 @@ public:
         return 0;
     }
 
-    bool isVariadic() const override {
-        return true;
+    bool isVariadic() const override 
+    {
+        return true; 
     }
 
-    bool isDeterministic() const override { return false; }
+    bool isDeterministic() const override 
+    { 
+        return false; 
+    }
 
-    bool isDeterministicInScopeOfQuery() const override
-    {
-        return false;
+    bool isDeterministicInScopeOfQuery() const override 
+    { 
+        return false; 
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
@@ -55,7 +62,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName&, const DataTypePtr&, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return ColumnUInt8::create(input_rows_count, 1u);
     }

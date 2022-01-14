@@ -610,10 +610,3 @@ add_subdirectory (utils)
 include (cmake/print_include_directories.cmake)
 
 include (cmake/sanitize_target_link_libraries.cmake)
-
-
-add_executable (meili   src/Storages/MeiliSearch/meili.cpp 
-                        src/Storages/MeiliSearch/MeiliSearchConnection.cpp 
-                        )
-target_link_libraries (meili PRIVATE CURL::libcurl)
-target_link_libraries (meili PRIVATE clickhouse_common_io)
