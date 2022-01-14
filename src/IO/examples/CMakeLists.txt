@@ -72,3 +72,10 @@ target_link_libraries (dragonbox_test PRIVATE dragonbox_to_chars)
 
 add_executable (zstd_buffers zstd_buffers.cpp)
 target_link_libraries (zstd_buffers PRIVATE clickhouse_common_io)
+
+add_executable (snappy_read_buffer snappy_read_buffer.cpp)
+target_link_libraries (snappy_read_buffer PRIVATE clickhouse_common_io)
+
+add_executable (hadoop_snappy_read_buffer hadoop_snappy_read_buffer.cpp)
+target_link_libraries (hadoop_snappy_read_buffer PRIVATE clickhouse_common_io)
+
