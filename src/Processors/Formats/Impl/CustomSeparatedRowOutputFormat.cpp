@@ -94,7 +94,7 @@ void registerOutputFormatCustomSeparated(FormatFactory & factory)
 
         factory.registerAppendSupportChecker(format_name, [](const FormatSettings & settings)
         {
-            return !settings.custom.result_after_delimiter.empty();
+            return settings.custom.result_after_delimiter.empty();
         });
     };
 

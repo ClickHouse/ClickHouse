@@ -402,7 +402,7 @@ void FormatFactory::registerAppendSupportChecker(const String & name, AppendSupp
 
 void FormatFactory::markFormatDoesntSupportAppend(const String & name)
 {
-    registerAppendSupportChecker(name, [](const FormatSettings &){ return true; });
+    registerAppendSupportChecker(name, [](const FormatSettings &){ return false; });
 }
 
 bool FormatFactory::checkIfFormatSupportAppend(const String & name, ContextPtr context, const std::optional<FormatSettings> & format_settings_)

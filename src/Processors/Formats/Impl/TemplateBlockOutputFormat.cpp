@@ -239,7 +239,7 @@ void registerOutputFormatTemplate(FormatFactory & factory)
     factory.registerAppendSupportChecker("Template", [](const FormatSettings & settings)
     {
         if (settings.template_settings.resultset_format.empty())
-            return false;
+            return true;
         auto resultset_format = ParsedTemplateFormatString(
             FormatSchemaInfo(settings.template_settings.resultset_format, "Template", false,
                              settings.schema.is_server, settings.schema.format_schema_path),
@@ -247,7 +247,7 @@ void registerOutputFormatTemplate(FormatFactory & factory)
             {
                 return static_cast<size_t>(TemplateBlockOutputFormat::stringToResultsetPart(partName));
             });
-        return !resultset_format.delimiters.empty() && !resultset_format.delimiters.back().empty();
+        return resultset_format.delimiters.empty() || resultset_format.delimiters.back().empty();
     });
 }
 }
