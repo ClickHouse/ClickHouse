@@ -6,7 +6,7 @@ RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
 ARG repository="deb https://repo.clickhouse.com/deb/stable/ main/"
 ARG version=22.1.1.*
-ARG gosu_ver=1.10
+ARG gosu_ver=1.14
 
 # set non-empty deb_location_url url to create a docker image
 # from debs created by CI build, for example:
@@ -100,4 +100,3 @@ VOLUME /var/lib/clickhouse
 ENV CLICKHOUSE_CONFIG /etc/clickhouse-server/config.xml
 
 ENTRYPOINT ["/entrypoint.sh"]
-
