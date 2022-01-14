@@ -516,6 +516,9 @@ std::optional<UUID> LDAPAccessStorage::authenticateImpl(
 
     if (new_user)
     {
+        // TODO: if these were AlwaysAllowCredentials, then mapped external roles are not available here,
+        // since without a password we can't authenticate and retrieve roles from the LDAP server.
+
         assignRolesNoLock(*new_user, external_roles);
         id = memory_storage.insert(new_user);
     }
