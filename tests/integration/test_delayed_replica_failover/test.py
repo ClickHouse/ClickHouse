@@ -105,13 +105,19 @@ SELECT sum(x) FROM distributed SETTINGS
 ''').strip() == '3'
 
         # If we forbid stale replicas, the query must fail. But sometimes we must have bigger timeouts.
-        with pytest.raises(Exception):
-            print(instance_with_dist_table.query('''
+        for _ in range(20):
+            try:
+                instance_with_dist_table.query('''
 SELECT count() FROM distributed SETTINGS
     load_balancing='in_order',
     max_replica_delay_for_distributed_queries=1,
     fallback_to_stale_replicas_for_distributed_queries=0
-'''))
+''')
+                time.sleep(0.5)
+            except:
+                break
+        else:
+            raise Exception("Didn't raise when stale replicas are not allowed")
 
         # Now partition off the remote replica of the local shard and test that failover still works.
         pm.partition_instances(node_1_1, node_1_2, port=9000)
