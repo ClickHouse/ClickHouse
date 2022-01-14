@@ -33,7 +33,7 @@ public:
         if (!block)
             return {};
 
-        assertBlocksHaveEqualStructure(getPort().getHeader(), block, getName());
+        assertBlocksHaveEqualStructure(getPort().getHeader(), block, getName().c_str());
         block.checkNumberOfRows();
 
         size_t num_rows = block.rows();
