@@ -306,10 +306,15 @@ bool LDAPClient::openConnection()
             cred.bv_val = const_cast<char *>(params.password.c_str());
             cred.bv_len = params.password.size();
 
-            int rc = ldap_sasl_bind_s(handle, final_bind_dn.c_str(), LDAP_SASL_SIMPLE, &cred, nullptr, nullptr, nullptr);
-            if (rc == LDAP_INVALID_CREDENTIALS)
-                return false;
-            diag(rc);
+            {
+                const auto rc = ldap_sasl_bind_s(handle, final_bind_dn.c_str(), LDAP_SASL_SIMPLE, &cred, nullptr, nullptr, nullptr);
+
+                // Handle invalid credentials gracefully.
+                if (rc == LDAP_INVALID_CREDENTIALS)
+                    return false;
+
+                diag(rc);
+            }
 
             // Once bound, run the user DN search query and update the default value, if asked.
             if (params.user_dn_detection)
