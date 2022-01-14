@@ -146,7 +146,6 @@ ContextAccess::ContextAccess(const AccessControl & access_control_, const Params
     : access_control(&access_control_)
     , params(params_)
 {
-    
 }
 
 
