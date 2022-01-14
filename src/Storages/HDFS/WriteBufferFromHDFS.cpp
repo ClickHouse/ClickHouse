@@ -15,7 +15,6 @@ namespace ErrorCodes
 extern const int NETWORK_ERROR;
 extern const int CANNOT_OPEN_FILE;
 extern const int CANNOT_FSYNC;
-extern const int BAD_ARGUMENTS;
 }
 
 

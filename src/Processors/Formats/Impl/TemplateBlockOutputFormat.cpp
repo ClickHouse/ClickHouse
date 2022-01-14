@@ -236,7 +236,7 @@ void registerOutputFormatTemplate(FormatFactory & factory)
         return std::make_shared<TemplateBlockOutputFormat>(sample, buf, settings, resultset_format, row_format, settings.template_settings.row_between_delimiter);
     });
 
-    factory.registerSuffixChecker("Template", [](const FormatSettings & settings)
+    factory.registerAppendSupportChecker("Template", [](const FormatSettings & settings)
     {
         if (settings.template_settings.resultset_format.empty())
             return false;

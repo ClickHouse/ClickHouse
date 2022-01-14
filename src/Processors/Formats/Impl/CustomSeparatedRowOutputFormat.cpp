@@ -92,7 +92,7 @@ void registerOutputFormatCustomSeparated(FormatFactory & factory)
 
         factory.markOutputFormatSupportsParallelFormatting(format_name);
 
-        factory.registerSuffixChecker(format_name, [](const FormatSettings & settings)
+        factory.registerAppendSupportChecker(format_name, [](const FormatSettings & settings)
         {
             return !settings.custom.result_after_delimiter.empty();
         });

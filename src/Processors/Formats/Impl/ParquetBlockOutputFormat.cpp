@@ -85,7 +85,7 @@ void registerOutputFormatParquet(FormatFactory & factory)
         {
             return std::make_shared<ParquetBlockOutputFormat>(buf, sample, format_settings);
         });
-    factory.markFormatWithSuffix("Parquet");
+    factory.markFormatDoesntSupportAppend("Parquet");
 }
 
 }

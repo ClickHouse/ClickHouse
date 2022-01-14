@@ -52,6 +52,7 @@ namespace ErrorCodes
     extern const int ACCESS_DENIED;
     extern const int DATABASE_ACCESS_DENIED;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+    extern const int BAD_ARGUMENTS;
 }
 namespace
 {
