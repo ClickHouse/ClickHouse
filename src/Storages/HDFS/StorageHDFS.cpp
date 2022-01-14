@@ -536,40 +536,7 @@ Pipe StorageHDFS::read(
 
 SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context_)
 {
-    if (is_path_with_globs)
-        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "URI '{}' contains globs, so the table is in readonly mode", uris.back());
-
     String current_uri = uris.back();
-
-    const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(current_uri);
-
-    HDFSBuilderWrapper builder = createHDFSBuilder(uri_without_path + "/", context_->getGlobalContext()->getConfigRef());
-    HDFSFSPtr fs = createHDFSFS(builder.get());
-
-    bool truncate_on_insert = context_->getSettingsRef().hdfs_truncate_on_insert;
-    if (!truncate_on_insert && !hdfsExists(fs.get(), path_from_uri.c_str()))
-    {
-        if (context_->getSettingsRef().hdfs_create_new_file_on_insert)
-        {
-            auto pos = uris[0].find_first_of('.', uris[0].find_last_of('/'));
-            size_t index = uris.size();
-            String new_uri;
-            do
-            {
-                new_uri = uris[0].substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : uris[0].substr(pos));
-                ++index;
-            }
-            while (!hdfsExists(fs.get(), new_uri.c_str()));
-            uris.push_back(new_uri);
-            current_uri = new_uri;
-        }
-        else
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "File with path {} already exists. If you want to overwrite it, enable setting hdfs_truncate_on_insert, "
-                "if you want to create new file on each insert, enable setting hdfs_create_new_file_on_insert",
-                path_from_uri);
-    }
 
     bool has_wildcards = current_uri.find(PartitionedSink::PARTITION_ID_WILDCARD) != String::npos;
     const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
@@ -588,6 +555,39 @@ SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataP
     }
     else
     {
+        if (is_path_with_globs)
+            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "URI '{}' contains globs, so the table is in readonly mode", uris.back());
+
+        const auto [path_from_uri, uri_without_path] = getPathFromUriAndUriWithoutPath(current_uri);
+
+        HDFSBuilderWrapper builder = createHDFSBuilder(uri_without_path + "/", context_->getGlobalContext()->getConfigRef());
+        HDFSFSPtr fs = createHDFSFS(builder.get());
+
+        bool truncate_on_insert = context_->getSettingsRef().hdfs_truncate_on_insert;
+        if (!truncate_on_insert && !hdfsExists(fs.get(), path_from_uri.c_str()))
+        {
+            if (context_->getSettingsRef().hdfs_create_new_file_on_insert)
+            {
+                auto pos = uris[0].find_first_of('.', uris[0].find_last_of('/'));
+                size_t index = uris.size();
+                String new_uri;
+                do
+                {
+                    new_uri = uris[0].substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : uris[0].substr(pos));
+                    ++index;
+                }
+                while (!hdfsExists(fs.get(), new_uri.c_str()));
+                uris.push_back(new_uri);
+                current_uri = new_uri;
+            }
+            else
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "File with path {} already exists. If you want to overwrite it, enable setting hdfs_truncate_on_insert, "
+                    "if you want to create new file on each insert, enable setting hdfs_create_new_file_on_insert",
+                    path_from_uri);
+        }
+
         return std::make_shared<HDFSSink>(current_uri,
             format_name,
             metadata_snapshot->getSampleBlock(),

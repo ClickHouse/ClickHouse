@@ -605,7 +605,7 @@ public:
         int table_fd_,
         bool use_table_fd_,
         std::string base_path_,
-        std::vector<std::string> paths_,
+        std::string path_,
         const CompressionMethod compression_method_,
         const std::optional<FormatSettings> & format_settings_,
         const String format_name_,
@@ -617,7 +617,7 @@ public:
         , table_fd(table_fd_)
         , use_table_fd(use_table_fd_)
         , base_path(base_path_)
-        , paths(paths_)
+        , path(path_)
         , compression_method(compression_method_)
         , format_name(format_name_)
         , format_settings(format_settings_)
@@ -634,7 +634,7 @@ public:
         int table_fd_,
         bool use_table_fd_,
         std::string base_path_,
-        std::vector<std::string> paths_,
+        const std::string & path_,
         const CompressionMethod compression_method_,
         const std::optional<FormatSettings> & format_settings_,
         const String format_name_,
@@ -646,7 +646,7 @@ public:
         , table_fd(table_fd_)
         , use_table_fd(use_table_fd_)
         , base_path(base_path_)
-        , paths(paths_)
+        , path(path_)
         , compression_method(compression_method_)
         , format_name(format_name_)
         , format_settings(format_settings_)
@@ -668,9 +668,8 @@ public:
         }
         else
         {
-            assert(!paths.empty());
             flags |= O_WRONLY | O_APPEND | O_CREAT;
-            naked_buffer = std::make_unique<WriteBufferFromFile>(paths.back(), DBMS_DEFAULT_BUFFER_SIZE, flags);
+            naked_buffer = std::make_unique<WriteBufferFromFile>(path, DBMS_DEFAULT_BUFFER_SIZE, flags);
         }
 
         /// In case of formats with prefixes if file is not empty we have already written prefix.
@@ -710,7 +709,7 @@ private:
     int table_fd;
     bool use_table_fd;
     std::string base_path;
-    std::vector<std::string> paths;
+    std::string path;
     CompressionMethod compression_method;
     std::string format_name;
     std::optional<FormatSettings> format_settings;
@@ -753,7 +752,6 @@ public:
     {
         auto partition_path = PartitionedSink::replaceWildcards(path, partition_id);
         PartitionedSink::validatePartitionKey(partition_path, true);
-        Strings result_paths = {partition_path};
         checkCreationIsAllowed(context, context->getUserFilesPath(), partition_path);
         return std::make_shared<StorageFileSink>(
             metadata_snapshot,
@@ -761,7 +759,7 @@ public:
             -1,
             /* use_table_fd */false,
             base_path,
-            result_paths,
+            partition_path,
             compression_method,
             format_settings,
             format_name,
@@ -795,7 +793,6 @@ SinkToStoragePtr StorageFile::write(
 
     int flags = 0;
 
-    std::string path;
     if (context->getSettingsRef().engine_file_truncate_on_insert)
         flags |= O_TRUNC;
 
@@ -816,7 +813,7 @@ SinkToStoragePtr StorageFile::write(
             std::unique_lock{rwlock, getLockTimeout(context)},
             base_path,
             path_for_partitioned_write,
-            chooseCompressionMethod(path, compression_method),
+            chooseCompressionMethod(path_for_partitioned_write, compression_method),
             format_settings,
             format_name,
             context,
@@ -824,13 +821,14 @@ SinkToStoragePtr StorageFile::write(
     }
     else
     {
+        String path;
         if (!paths.empty())
         {
-            path = paths[0];
-            fs::create_directories(fs::path(path).parent_path());
-
             if (is_path_with_globs)
                 throw Exception("Table '" + getStorageID().getNameForLogs() + "' is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
+
+            path = paths.back();
+            fs::create_directories(fs::path(path).parent_path());
 
             if (!context->getSettingsRef().engine_file_truncate_on_insert && !is_path_with_globs
                 && !FormatFactory::instance().checkIfFormatSupportAppend(format_name, context, format_settings) && fs::exists(paths.back())
@@ -848,6 +846,7 @@ SinkToStoragePtr StorageFile::write(
                     }
                     while (fs::exists(new_path));
                     paths.push_back(new_path);
+                    path = new_path;
                 }
                 else
                     throw Exception(
@@ -866,7 +865,7 @@ SinkToStoragePtr StorageFile::write(
             table_fd,
             use_table_fd,
             base_path,
-            paths,
+            path,
             chooseCompressionMethod(path, compression_method),
             format_settings,
             format_name,

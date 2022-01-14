@@ -633,35 +633,6 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
 {
     updateClientAndAuthSettings(local_context, client_auth);
 
-    if (is_key_with_globs)
-        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "S3 key '{}' contains globs, so the table is in readonly mode", client_auth.uri.key);
-
-    bool truncate_in_insert = local_context->getSettingsRef().s3_truncate_on_insert;
-
-    if (!truncate_in_insert && checkIfObjectExists(client_auth.client, client_auth.uri.bucket, keys.back()))
-    {
-        if (local_context->getSettingsRef().s3_create_new_file_on_insert)
-        {
-            size_t index = keys.size();
-            auto pos = keys[0].find_first_of('.');
-            String new_key;
-            do
-            {
-                new_key = keys[0].substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : keys[0].substr(pos));
-                ++index;
-            }
-            while (checkIfObjectExists(client_auth.client, client_auth.uri.bucket, new_key));
-            keys.push_back(new_key);
-        }
-        else
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Object in bucket {} with key {} already exists. If you want to overwrite it, enable setting s3_truncate_on_insert, if you "
-                "want to create a new file on each insert, enable setting s3_create_new_file_on_insert",
-                client_auth.uri.bucket,
-                keys.back());
-    }
-
     auto sample_block = metadata_snapshot->getSampleBlock();
     auto chosen_compression_method = chooseCompressionMethod(keys.back(), compression_method);
     bool has_wildcards = client_auth.uri.bucket.find(PARTITION_ID_WILDCARD) != String::npos || keys.back().find(PARTITION_ID_WILDCARD) != String::npos;
@@ -687,6 +658,35 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
     }
     else
     {
+        if (is_key_with_globs)
+            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "S3 key '{}' contains globs, so the table is in readonly mode", client_auth.uri.key);
+
+        bool truncate_in_insert = local_context->getSettingsRef().s3_truncate_on_insert;
+
+        if (!truncate_in_insert && checkIfObjectExists(client_auth.client, client_auth.uri.bucket, keys.back()))
+        {
+            if (local_context->getSettingsRef().s3_create_new_file_on_insert)
+            {
+                size_t index = keys.size();
+                auto pos = keys[0].find_first_of('.');
+                String new_key;
+                do
+                {
+                    new_key = keys[0].substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : keys[0].substr(pos));
+                    ++index;
+                }
+                while (checkIfObjectExists(client_auth.client, client_auth.uri.bucket, new_key));
+                keys.push_back(new_key);
+            }
+            else
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Object in bucket {} with key {} already exists. If you want to overwrite it, enable setting s3_truncate_on_insert, if you "
+                    "want to create a new file on each insert, enable setting s3_create_new_file_on_insert",
+                    client_auth.uri.bucket,
+                    keys.back());
+        }
+
         return std::make_shared<StorageS3Sink>(
             format_name,
             sample_block,
