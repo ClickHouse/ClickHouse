@@ -60,7 +60,7 @@ RUN dockerd --version; docker --version
 
 ARG TARGETARCH
 # FIXME: psycopg2-binary is not available for aarch64, we skip it for now
-RUN test x$TARGETARCH = xarm64 || ( python3 -m pip install \
+RUN python3 -m pip install \
     PyMySQL \
     aerospike==4.0.0 \
     avro==1.10.2 \
@@ -77,7 +77,7 @@ RUN test x$TARGETARCH = xarm64 || ( python3 -m pip install \
     lz4 \
     minio \
     protobuf \
-    psycopg2-binary==2.8.6 \
+    psycopg2-binary==2.9.3 \
     pymongo==3.11.0 \
     pytest \
     pytest-order==1.0.0 \
@@ -90,7 +90,7 @@ RUN test x$TARGETARCH = xarm64 || ( python3 -m pip install \
     urllib3 \
     requests-kerberos \
     pyhdfs \
-    azure-storage-blob )
+    azure-storage-blob
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/
