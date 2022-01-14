@@ -620,17 +620,23 @@ void registerStorageHDFS(StorageFactory & factory)
     {
         ASTs & engine_args = args.engine_args;
 
-        if (engine_args.size() != 2 && engine_args.size() != 3)
+        if (engine_args.empty() || engine_args.size() > 3)
             throw Exception(
-                "Storage HDFS requires 2 or 3 arguments: url, name of used format and optional compression method.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                "Storage HDFS requires 1, 2 or 3 arguments: url, name of used format (taken from file extension by default) and optional compression method.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.getLocalContext());
 
         String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
-        engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.getLocalContext());
+        String format_name = "auto";
+        if (engine_args.size() > 1)
+        {
+            engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.getLocalContext());
+            format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        }
 
-        String format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        if (format_name == "auto")
+            format_name = FormatFactory::instance().getFormatFromFileName(url, true);
 
         String compression_method;
         if (engine_args.size() == 3)

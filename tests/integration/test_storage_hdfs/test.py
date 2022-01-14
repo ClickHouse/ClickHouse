@@ -398,6 +398,13 @@ def test_multiple_inserts(started_cluster):
     result = node1.query(f"select count() from test_multiple_inserts")
     assert(int(result) == 60)
 
+    
+def test_format_detection(started_cluster):
+    node1.query(f"create table arrow_table (x UInt64) engine=HDFS('hdfs://hdfs1:9000/data.arrow')")
+    node1.query(f"insert into arrow_table select 1")
+    result = node1.query(f"select * from hdfs('hdfs://hdfs1:9000/data.arrow')")
+    assert(int(result) == 1)
+
 
 if __name__ == '__main__':
     cluster.start()

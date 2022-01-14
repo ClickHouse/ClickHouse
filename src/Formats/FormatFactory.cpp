@@ -25,6 +25,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int FORMAT_IS_NOT_SUITABLE_FOR_INPUT;
     extern const int FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT;
+    extern const int BAD_ARGUMENTS;
 }
 
 const FormatFactory::Creators & FormatFactory::getCreators(const String & name) const
@@ -382,6 +383,7 @@ void FormatFactory::registerInputFormat(const String & name, InputCreator input_
     if (target)
         throw Exception("FormatFactory: Input format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
     target = std::move(input_creator);
+    registerFileExtension(name, name);
 }
 
 void FormatFactory::registerNonTrivialPrefixAndSuffixChecker(const String & name, NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker)
@@ -419,14 +421,15 @@ void FormatFactory::registerOutputFormat(const String & name, OutputCreator outp
     if (target)
         throw Exception("FormatFactory: Output format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
     target = std::move(output_creator);
+    registerFileExtension(name, name);
 }
 
 void FormatFactory::registerFileExtension(const String & extension, const String & format_name)
 {
-    file_extension_formats[extension] = format_name;
+    file_extension_formats[boost::to_lower_copy(extension)] = format_name;
 }
 
-String FormatFactory::getFormatFromFileName(String file_name)
+String FormatFactory::getFormatFromFileName(String file_name, bool throw_if_not_found)
 {
     CompressionMethod compression_method = chooseCompressionMethod(file_name, "");
     if (CompressionMethod::None != compression_method)
@@ -438,11 +441,22 @@ String FormatFactory::getFormatFromFileName(String file_name)
 
     auto pos = file_name.find_last_of('.');
     if (pos == String::npos)
+    {
+        if (throw_if_not_found)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot determine the file format by it's extension");
         return "";
+    }
 
     String file_extension = file_name.substr(pos + 1, String::npos);
     boost::algorithm::to_lower(file_extension);
-    return file_extension_formats[file_extension];
+    auto it = file_extension_formats.find(file_extension);
+    if (it == file_extension_formats.end())
+    {
+        if (throw_if_not_found)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot determine the file format by it's extension");
+        return "";
+    }
+    return it->second;
 }
 
 void FormatFactory::registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine)
