@@ -80,7 +80,7 @@ SELECT sum(x) FROM distributed WITH TOTALS SETTINGS
         pm.drop_instance_zk_connections(node_2_2)
 
         # allow pings to zookeeper to timeout (must be greater than ZK session timeout).
-        for _ in range(20):
+        for _ in range(30):
             try:
                 node_2_2.query("SELECT * FROM system.zookeeper where path = '/'")
                 time.sleep(0.5)
