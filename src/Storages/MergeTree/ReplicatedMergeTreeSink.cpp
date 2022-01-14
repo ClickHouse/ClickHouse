@@ -147,11 +147,11 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
 
         /// Write part to the filesystem under temporary name. Calculate a checksum.
 
-        MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block, metadata_snapshot, context);
+        auto temp_part = storage.writer.writeTempPart(current_block, metadata_snapshot, context);
 
         /// If optimize_on_insert setting is true, current_block could become empty after merge
         /// and we didn't create part.
-        if (!part)
+        if (!temp_part.part)
             continue;
 
         String block_id;
@@ -160,7 +160,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
         {
             /// We add the hash from the data and partition identifier to deduplication ID.
             /// That is, do not insert the same data to the same partition twice.
-            block_id = part->getZeroLevelPartBlockID();
+            block_id = temp_part.part->getZeroLevelPartBlockID();
 
             LOG_DEBUG(log, "Wrote block with ID '{}', {} rows", block_id, current_block.block.rows());
         }
@@ -168,6 +168,11 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
         {
             LOG_DEBUG(log, "Wrote block with {} rows", current_block.block.rows());
         }
+
+        for (auto & stream : temp_part.streams)
+            stream.stream->finish(std::move(stream.finalizer));
+
+        auto & part = temp_part.part;
 
         try
         {

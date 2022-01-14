@@ -7405,8 +7405,8 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     /// TODO(ab): What projections should we add to the empty part? How can we make sure that it
     /// won't block future merges? Perhaps we should also check part emptiness when selecting parts
     /// to merge.
-    auto written_files = out.finalizePart(new_data_part);
-    out.finish(new_data_part, std::move(written_files), sync_on_insert);
+    auto finalizer = out.finalizePart(new_data_part, sync_on_insert);
+    out.finish(std::move(finalizer));
 
     try
     {

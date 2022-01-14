@@ -805,8 +805,12 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
             const auto & projection = *ctx->projections_to_build[i];
             auto projection_block = projection_squashes[i].add(projection.calculate(cur_block, ctx->context));
             if (projection_block)
-                projection_parts[projection.name].emplace_back(MergeTreeDataWriter::writeTempProjectionPart(
-                    *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num));
+            {
+                auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
+                    *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num);
+                tmp_part.finalize();
+                projection_parts[projection.name].emplace_back(std::move(tmp_part.part));
+            }
         }
 
         (*ctx->mutate_entry)->rows_written += cur_block.rows();
@@ -824,8 +828,10 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         auto projection_block = projection_squash.add({});
         if (projection_block)
         {
-            projection_parts[projection.name].emplace_back(MergeTreeDataWriter::writeTempProjectionPart(
-                *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num));
+            auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
+                *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num);
+            temp_part.finalize();
+            projection_parts[projection.name].emplace_back(std::move(temp_part.part));
         }
     }
 
@@ -977,8 +983,8 @@ private:
         ctx->mutating_executor.reset();
         ctx->mutating_pipeline.reset();
 
-        auto written_files = static_pointer_cast<MergedBlockOutputStream>(ctx->out)->finalizePart(ctx->new_data_part);
-        static_pointer_cast<MergedBlockOutputStream>(ctx->out)->finish(ctx->new_data_part, std::move(written_files), ctx->need_sync);
+        auto finalizer = static_pointer_cast<MergedBlockOutputStream>(ctx->out)->finalizePart(ctx->new_data_part, ctx->need_sync);
+        static_pointer_cast<MergedBlockOutputStream>(ctx->out)->finish(std::move(finalizer));
         ctx->out.reset();
     }
 

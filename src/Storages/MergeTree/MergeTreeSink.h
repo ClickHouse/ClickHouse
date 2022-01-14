@@ -16,26 +16,27 @@ class MergeTreeSink : public SinkToStorage
 public:
     MergeTreeSink(
         StorageMergeTree & storage_,
-        const StorageMetadataPtr metadata_snapshot_,
+        StorageMetadataPtr metadata_snapshot_,
         size_t max_parts_per_block_,
-        ContextPtr context_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
-        , storage(storage_)
-        , metadata_snapshot(metadata_snapshot_)
-        , max_parts_per_block(max_parts_per_block_)
-        , context(context_)
-    {
-    }
+        ContextPtr context_);
+
+    ~MergeTreeSink() override;
 
     String getName() const override { return "MergeTreeSink"; }
     void consume(Chunk chunk) override;
     void onStart() override;
+    void onFinish() override;
 
 private:
     StorageMergeTree & storage;
     StorageMetadataPtr metadata_snapshot;
     size_t max_parts_per_block;
     ContextPtr context;
+
+    struct PrevPart;
+    std::unique_ptr<PrevPart> prev_part;
+
+    void finishPrevPart();
 };
 
 }
