@@ -43,7 +43,10 @@ def get_dead_runners_in_ec2(runners):
             )
             i += inc
         except ClientError as e:
-            # The list of non-existent instances is in the message
+            # The list of non-existent instances is in the message:
+            #   The instance IDs 'i-069b1c256c06cf4e3, i-0f26430432b044035,
+            #   i-0faa2ff44edbc147e, i-0eccf2514585045ec, i-0ee4ee53e0daa7d4a,
+            #   i-07928f15acd473bad, i-0eaddda81298f9a85' do not exist
             message = e.response["Error"]["Message"]
             if message.startswith("The instance IDs '") and message.endswith(
                 "' do not exist"
