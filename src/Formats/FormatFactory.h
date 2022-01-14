@@ -93,9 +93,9 @@ private:
     /// The checker should return true if parallel parsing should be disabled.
     using NonTrivialPrefixAndSuffixChecker = std::function<bool(ReadBuffer & buf)>;
 
-    /// Some formats can have suffix after data depending on settings.
-    /// The checker should return true if format will write some suffix after data.
-    using SuffixChecker = std::function<bool(const FormatSettings & settings)>;
+    /// Some formats can support append depending on settings.
+    /// The checker should return true if format support append.
+    using AppendSupportChecker = std::function<bool(const FormatSettings & settings)>;
 
     using SchemaReaderCreator = std::function<SchemaReaderPtr(ReadBuffer & in, const FormatSettings & settings, ContextPtr context)>;
     using ExternalSchemaReaderCreator = std::function<ExternalSchemaReaderPtr(const FormatSettings & settings)>;
@@ -110,7 +110,7 @@ private:
         bool supports_parallel_formatting{false};
         bool is_column_oriented{false};
         NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker;
-        SuffixChecker suffix_checker;
+        AppendSupportChecker append_support_checker;
     };
 
     using FormatsDictionary = std::unordered_map<String, Creators>;
@@ -172,13 +172,13 @@ public:
 
     void registerNonTrivialPrefixAndSuffixChecker(const String & name, NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker);
 
-    void registerSuffixChecker(const String & name, SuffixChecker suffix_checker);
+    void registerAppendSupportChecker(const String & name, AppendSupportChecker append_support_checker);
 
-    /// If format always contains suffix, you an use this method instead of
-    /// registerSuffixChecker with suffix_checker that always returns true.
-    void markFormatWithSuffix(const String & name);
+    /// If format always doesn't support append, you can use this method instead of
+    /// registerAppendSupportChecker with append_support_checker that always returns true.
+    void markFormatDoesntSupportAppend(const String & name);
 
-    bool checkIfFormatHasSuffix(const String & name, ContextPtr context, const std::optional<FormatSettings> & format_settings_ = std::nullopt);
+    bool checkIfFormatSupportAppend(const String & name, ContextPtr context, const std::optional<FormatSettings> & format_settings_ = std::nullopt);
 
     /// Register format by its name.
     void registerInputFormat(const String & name, InputCreator input_creator);

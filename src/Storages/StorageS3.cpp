@@ -555,7 +555,6 @@ StorageS3::StorageS3(
 
 std::shared_ptr<StorageS3Source::IteratorWrapper> StorageS3::createFileIterator(const ClientAuthentication & client_auth, const std::vector<String> & keys, bool is_key_with_globs, bool distributed_processing, ContextPtr local_context)
 {
-    std::shared_ptr<StorageS3Source::IteratorWrapper> iterator_wrapper{nullptr};
     if (distributed_processing)
     {
         return std::make_shared<StorageS3Source::IteratorWrapper>(
@@ -567,7 +566,7 @@ std::shared_ptr<StorageS3Source::IteratorWrapper> StorageS3::createFileIterator(
     {
         /// Iterate through disclosed globs and make a source for each file
         auto glob_iterator = std::make_shared<StorageS3Source::DisclosedGlobIterator>(*client_auth.client, client_auth.uri);
-        iterator_wrapper = std::make_shared<StorageS3Source::IteratorWrapper>([glob_iterator]()
+        return std::make_shared<StorageS3Source::IteratorWrapper>([glob_iterator]()
         {
             return glob_iterator->next();
         });
@@ -575,7 +574,7 @@ std::shared_ptr<StorageS3Source::IteratorWrapper> StorageS3::createFileIterator(
     else
     {
         auto keys_iterator = std::make_shared<StorageS3Source::KeysIterator>(keys);
-        iterator_wrapper = std::make_shared<StorageS3Source::IteratorWrapper>([keys_iterator]()
+        return std::make_shared<StorageS3Source::IteratorWrapper>([keys_iterator]()
         {
             return keys_iterator->next();
         });
@@ -662,7 +661,7 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
                 client_auth.uri.bucket,
                 keys.back());
     }
-    
+
     auto sample_block = metadata_snapshot->getSampleBlock();
     auto chosen_compression_method = chooseCompressionMethod(keys.back(), compression_method);
     bool has_wildcards = client_auth.uri.bucket.find(PARTITION_ID_WILDCARD) != String::npos || keys.back().find(PARTITION_ID_WILDCARD) != String::npos;

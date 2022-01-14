@@ -833,7 +833,7 @@ SinkToStoragePtr StorageFile::write(
                 throw Exception("Table '" + getStorageID().getNameForLogs() + "' is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
 
             if (!context->getSettingsRef().engine_file_truncate_on_insert && !is_path_with_globs
-                && FormatFactory::instance().checkIfFormatHasSuffix(format_name, context, format_settings) && fs::exists(paths.back())
+                && !FormatFactory::instance().checkIfFormatSupportAppend(format_name, context, format_settings) && fs::exists(paths.back())
                 && fs::file_size(paths.back()) != 0)
             {
                 if (context->getSettingsRef().engine_file_allow_create_multiple_files)
