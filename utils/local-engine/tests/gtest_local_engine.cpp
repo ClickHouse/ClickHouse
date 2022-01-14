@@ -161,6 +161,19 @@ TEST(TestSelect, MergeTreeWriteTest)
 //    auto storage_setting = std::make_unique<DB::MergeTreeSettings>();
 
 //    DB::MergeTreeData(id, relative_path, storage_in_memory_metadata, global, "", merging_params, std::move(storage_setting), false, false, nullptr);
+//std::string uri = "hdfs://d-bdap-nn-0002.cebbank.com:8020/user/ke/11";
+//const size_t begin_of_path = uri.find('/', uri.find("//") + 2);
+//const String path_from_uri = uri.substr(begin_of_path);
+//const String uri_without_path = uri.substr(0, begin_of_path);
+//std::cout << path_from_uri <<std::endl << uri_without_path <<std::endl;
+//String for_match = path_from_uri;
+//String path_for_ls = "/";
+//const size_t first_glob = for_match.find_first_of("*?{");
+//
+//const size_t end_of_path_without_globs = for_match.substr(0, first_glob).rfind('/');
+//const String suffix_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
+//const String prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs); /// ends with '/'
+//std::cout << suffix_with_globs <<std::endl << prefix_without_globs;
 }
 
 int main(int argc, char **argv)

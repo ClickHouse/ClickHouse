@@ -236,6 +236,9 @@ Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, c
 
     HDFSFileInfo ls;
     ls.file_info = hdfsListDirectory(fs.get(), prefix_without_globs.data(), &ls.length);
+    if (ls.file_info == NULL) {
+        throw std::runtime_error("Unable to connect to HDFS: " + String(hdfsGetLastError()));
+    }
     Strings result;
     for (int i = 0; i < ls.length; ++i)
     {

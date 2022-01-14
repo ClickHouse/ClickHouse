@@ -66,31 +66,15 @@ add_subdirectory(proto)
 add_subdirectory(Builder)
 add_headers_and_sources(builder Builder)
 add_headers_and_sources(parser Parser)
-#include (../../cmake/find/parquet.cmake)
+add_headers_and_sources(storages Storages)
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/proto)
 include_directories(${ClickHouse_SOURCE_DIR}/utils/local-engine)
-#add_executable (local_engine
-#        local_engine.cpp
-#        ${builder_headers}
-#        ${builder_sources}
-#        ${parser_headers}
-#        ${parser_sources}
-#        )
-#target_include_directories(local_engine PRIVATE
-#        ${RAPIDJSON_INCLUDE_DIR}
-#        ${SUBSTRAIT_HEADERS}
-#        ${ARROW_INCLUDE_DIR}
-#        )
+
 
 include_directories(
         ${RAPIDJSON_INCLUDE_DIR}
         ${ARROW_INCLUDE_DIR}
         )
-
-
-
-#target_link_libraries(local_engine ${CLICKHOUSE_SERVER_LINK} )
-#create_javah()
 
 set(LOCALENGINE_SHARED_LIB local_engine_jni)
 
@@ -100,9 +84,9 @@ add_library(${LOCALENGINE_SHARED_LIB} SHARED
         ${builder_sources}
         ${parser_headers}
         ${parser_sources}
+        ${storages_sources}
         )
 set_property(TARGET ${LOCALENGINE_SHARED_LIB} PROPERTY POSITION_INDEPENDENT_CODE ON)
-#add_executable(${LOCALENGINE_SHARED_LIB} ${JNI_NATIVE_SOURCES})
 add_dependencies(${LOCALENGINE_SHARED_LIB} local_engine_headers)
 target_link_libraries(${LOCALENGINE_SHARED_LIB} ${CLICKHOUSE_SERVER_LINK} )
 
@@ -110,14 +94,6 @@ install(TARGETS ${LOCALENGINE_SHARED_LIB}
         LIBRARY DESTINATION lib
         )
 
-#install(TARGETS ${LOCALENGINE_SHARED_LIB} RUNTIME_DEPENDENCY_SET myset
-#        LIBRARY DESTINATION lib)
-#install(RUNTIME_DEPENDENCY_SET myset
-#        LIBRARY DESTINATION lib
-#        )
-#install(TARGETS ${LOCALENGINE_SHARED_LIB} RUNTIME_DEPENDENCIES
-#        DIRECTORIES lib
-#        )
 install( FILES
         ${CMAKE_CURRENT_BINARY_DIR}/../../src/AggregateFunctions/libclickhouse_aggregate_functions.so
         ${CMAKE_CURRENT_BINARY_DIR}/../../src/Functions/libclickhouse_functions.so

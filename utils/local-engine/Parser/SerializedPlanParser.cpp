@@ -23,6 +23,7 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <sys/stat.h>
 #include <Poco/URI.h>
+#include <Storages/ParquetRowInputFormat.h>
 
 DB::BatchParquetFileSourcePtr dbms::SerializedPlanParser::parseReadRealWithLocalFile(const substrait::ReadRel & rel)
 {
@@ -402,7 +403,7 @@ DB::Chunk DB::BatchParquetFileSource::generate()
 
 
             read_buf = std::move(nested_buffer);
-            auto format = DB::ParquetBlockInputFormat::getParquetFormat(*read_buf, header);
+            ProcessorPtr format = std::make_shared<local_engine::ParquetRowInputFormat>(*read_buf, header);
 
             pipeline = std::make_unique<QueryPipeline>();
             pipeline->init(Pipe(format));
