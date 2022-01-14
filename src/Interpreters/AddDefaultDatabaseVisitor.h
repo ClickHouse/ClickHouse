@@ -34,10 +34,12 @@ public:
     explicit AddDefaultDatabaseVisitor(
         ContextPtr context_,
         const String & database_name_,
-        bool only_replace_current_database_function_ = false)
+        bool only_replace_current_database_function_ = false,
+        bool only_replace_in_join_ = false)
         : context(context_)
         , database_name(database_name_)
         , only_replace_current_database_function(only_replace_current_database_function_)
+        , only_replace_in_join(only_replace_in_join_)
     {
         if (!context->isGlobalContext())
         {
@@ -93,6 +95,7 @@ private:
     std::set<String> external_tables;
 
     bool only_replace_current_database_function = false;
+    bool only_replace_in_join = false;
 
     void visit(ASTSelectWithUnionQuery & select, ASTPtr &) const
     {
@@ -134,6 +137,9 @@ private:
 
     void visit(ASTTablesInSelectQueryElement & tables_element, ASTPtr &) const
     {
+        if (only_replace_in_join && !tables_element.table_join)
+            return;
+
         if (tables_element.table_expression)
             tryVisit<ASTTableExpression>(tables_element.table_expression);
     }
