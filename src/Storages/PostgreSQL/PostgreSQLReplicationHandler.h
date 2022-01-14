@@ -29,7 +29,7 @@ public:
             bool is_materialized_postgresql_database_);
 
     /// Activate task to be run from a separate thread: wait until connection is available and call startReplication().
-    void startup();
+    void startup(bool delayed);
 
     /// Stop replication without cleanup.
     void shutdown();

@@ -137,7 +137,8 @@ void ParallelParsingInputFormat::onBackgroundException(size_t offset)
             if (e->getLineNumber() != -1)
                 e->setLineNumber(e->getLineNumber() + offset);
     }
-    tryLogCurrentException(__PRETTY_FUNCTION__);
+    if (is_server)
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     parsing_finished = true;
     first_parser_finished.set();
     reader_condvar.notify_all();

@@ -17,57 +17,8 @@ else()
     set(ARROW_FULL_SO_VERSION "${ARROW_SO_VERSION}.${ARROW_VERSION_PATCH}.0")
 endif()
 
-# === thrift
-
-set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp")
-# contrib/thrift/lib/cpp/CMakeLists.txt
-set(thriftcpp_SOURCES
-        "${LIBRARY_DIR}/src/thrift/TApplicationException.cpp"
-        "${LIBRARY_DIR}/src/thrift/TOutput.cpp"
-        "${LIBRARY_DIR}/src/thrift/async/TAsyncChannel.cpp"
-        "${LIBRARY_DIR}/src/thrift/async/TAsyncProtocolProcessor.cpp"
-        "${LIBRARY_DIR}/src/thrift/async/TConcurrentClientSyncInfo.h"
-        "${LIBRARY_DIR}/src/thrift/async/TConcurrentClientSyncInfo.cpp"
-        "${LIBRARY_DIR}/src/thrift/concurrency/ThreadManager.cpp"
-        "${LIBRARY_DIR}/src/thrift/concurrency/TimerManager.cpp"
-        "${LIBRARY_DIR}/src/thrift/concurrency/Util.cpp"
-        "${LIBRARY_DIR}/src/thrift/processor/PeekProcessor.cpp"
-        "${LIBRARY_DIR}/src/thrift/protocol/TBase64Utils.cpp"
-        "${LIBRARY_DIR}/src/thrift/protocol/TDebugProtocol.cpp"
-        "${LIBRARY_DIR}/src/thrift/protocol/TJSONProtocol.cpp"
-        "${LIBRARY_DIR}/src/thrift/protocol/TMultiplexedProtocol.cpp"
-        "${LIBRARY_DIR}/src/thrift/protocol/TProtocol.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/TTransportException.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/TFDTransport.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/TSimpleFileTransport.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/THttpTransport.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/THttpClient.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/THttpServer.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/TSocket.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/TSocketPool.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/TServerSocket.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/TTransportUtils.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/TBufferTransports.cpp"
-        "${LIBRARY_DIR}/src/thrift/server/TConnectedClient.cpp"
-        "${LIBRARY_DIR}/src/thrift/server/TServerFramework.cpp"
-        "${LIBRARY_DIR}/src/thrift/server/TSimpleServer.cpp"
-        "${LIBRARY_DIR}/src/thrift/server/TThreadPoolServer.cpp"
-        "${LIBRARY_DIR}/src/thrift/server/TThreadedServer.cpp"
-        )
-set(thriftcpp_threads_SOURCES
-        "${LIBRARY_DIR}/src/thrift/concurrency/ThreadFactory.cpp"
-        "${LIBRARY_DIR}/src/thrift/concurrency/Thread.cpp"
-        "${LIBRARY_DIR}/src/thrift/concurrency/Monitor.cpp"
-        "${LIBRARY_DIR}/src/thrift/concurrency/Mutex.cpp"
-        )
-add_library(${THRIFT_LIBRARY} ${thriftcpp_SOURCES} ${thriftcpp_threads_SOURCES})
-set_target_properties(${THRIFT_LIBRARY} PROPERTIES CXX_STANDARD 14) # REMOVE after https://github.com/apache/thrift/pull/1641
-target_include_directories(${THRIFT_LIBRARY} SYSTEM PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src")
-target_link_libraries (${THRIFT_LIBRARY} PRIVATE boost::headers_only)
-
 
 # === orc
-
 set(ORC_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/orc/c++")
 set(ORC_INCLUDE_DIR "${ORC_SOURCE_DIR}/include")
 set(ORC_SOURCE_SRC_DIR "${ORC_SOURCE_DIR}/src")
@@ -463,6 +414,7 @@ set(PARQUET_SRCS
 #list(TRANSFORM PARQUET_SRCS PREPEND "${LIBRARY_DIR}/") # cmake 3.12
 add_library(${PARQUET_LIBRARY} ${PARQUET_SRCS})
 target_include_directories(${PARQUET_LIBRARY} SYSTEM PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src" "${CMAKE_CURRENT_SOURCE_DIR}/cpp/src" PRIVATE ${OPENSSL_INCLUDE_DIR})
+# include("${ClickHouse_SOURCE_DIR}/contrib/thrift/build/cmake/ConfigureChecks.cmake") # makes config.h
 
 set (HAVE_ARPA_INET_H 1)
 set (HAVE_FCNTL_H 1)
