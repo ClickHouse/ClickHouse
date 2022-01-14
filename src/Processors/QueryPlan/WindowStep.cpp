@@ -77,7 +77,7 @@ void WindowStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
     });
 
     assertBlocksHaveEqualStructure(pipeline.getHeader(), output_stream->header,
-        ("WindowStep transform for '" + window_description.window_name + "'").c_str());
+        "WindowStep transform for '" + window_description.window_name + "'");
 }
 
 void WindowStep::describeActions(FormatSettings & settings) const
