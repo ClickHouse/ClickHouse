@@ -2,17 +2,10 @@
 #include <Coordination/ReadBufferFromNuraftBuffer.h>
 #include <Coordination/WriteBufferFromNuraftBuffer.h>
 #include <IO/ReadHelpers.h>
-#include "Common/ThreadPool.h"
 #include <Common/ZooKeeper/ZooKeeperIO.h>
-#include "base/logger_useful.h"
 #include <Coordination/KeeperSnapshotManager.h>
-#include <libnuraft/state_machine.hxx>
-#if defined(OS_LINUX)
-#include <sys/sysinfo.h>
-#endif
 #include <cstddef>
 #include <future>
-#include <thread>
 
 namespace DB
 {
@@ -48,77 +41,6 @@ namespace
     }
 }
 
-void KeeperStateMachine::asyncCommitThread()
-{
-    setThreadName("AsyncCommitT");
-#if defined(OS_LINUX)
-    if (coordination_settings->cpu_affinity)
-    {
-        int cpuid = 2 % get_nprocs();
-        cpu_set_t cpuset;
-        CPU_ZERO(&cpuset);
-        CPU_SET(cpuid, &cpuset);
-        int rc = pthread_setaffinity_np(pthread_self(),
-                                        sizeof(cpu_set_t), &cpuset);
-        if (rc != 0)
-        {
-            LOG_WARNING(log, "Error calling pthread_setaffinity_np, return code {}.", rc);
-        }
-    }
-#endif
-    while (!shutdown)
-    {
-        QueueParam param(0, nullptr);
-        if (async_commit_queue.pop(param))
-        {
-            auto request_for_session = parseRequest(*param.ptr_data);
-            auto log_idx = param.idx;
-            /// Special processing of session_id request
-            if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
-            {
-                const Coordination::ZooKeeperSessionIDRequest & session_id_request
-                    = dynamic_cast<const Coordination::ZooKeeperSessionIDRequest &>(*request_for_session.request);
-                int64_t session_id;
-                std::shared_ptr<Coordination::ZooKeeperSessionIDResponse> response
-                    = std::make_shared<Coordination::ZooKeeperSessionIDResponse>();
-                response->internal_id = session_id_request.internal_id;
-                response->server_id = session_id_request.server_id;
-                KeeperStorage::ResponseForSession response_for_session;
-                response_for_session.session_id = -1;
-                response_for_session.response = response;
-                {
-                    std::lock_guard lock(storage_and_responses_lock);
-                    session_id = storage->getSessionID(session_id_request.session_timeout_ms);
-                    LOG_DEBUG(log, "Session ID response {} with timeout {}", session_id, session_id_request.session_timeout_ms);
-                    response->session_id = session_id;
-                    if (!responses_queue.push(response_for_session))
-                        throw Exception(
-                            ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", session_id);
-                }
-            }
-            else
-            {
-                std::lock_guard lock(storage_and_responses_lock);
-                KeeperStorage::ResponsesForSessions responses_for_sessions
-                    = storage->processRequest(request_for_session.request, request_for_session.session_id, log_idx);
-                for (auto & response_for_session : responses_for_sessions)
-                    if (!responses_queue.push(response_for_session))
-                        throw Exception(
-                            ErrorCodes::SYSTEM_ERROR,
-                            "Could not push response with session id {} into responses queue",
-                            response_for_session.session_id);
-            }
-
-            last_committed_idx = log_idx;
-        }
-        else
-        {
-            //std::this_thread::sleep_for(std::chrono::microseconds(1));
-            std::this_thread::yield();
-        }
-    }
-}
-
 KeeperStateMachine::KeeperStateMachine(
         ResponsesQueue & responses_queue_,
         SnapshotsQueue & snapshots_queue_,
@@ -136,7 +58,6 @@ KeeperStateMachine::KeeperStateMachine(
     , log(&Poco::Logger::get("KeeperStateMachine"))
     , superdigest(superdigest_)
 {
-    async_commit_thread = ThreadFromGlobalPool([this] { asyncCommitThread(); });
 }
 
 void KeeperStateMachine::init()
@@ -186,18 +107,6 @@ void KeeperStateMachine::init()
         storage = std::make_unique<KeeperStorage>(coordination_settings->dead_session_check_period_ms.totalMilliseconds(), superdigest);
 }
 
-nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit_ext(const nuraft::state_machine::ext_op_params & params)
-{
-    QueueParam param(params.log_idx, params.data);
-    while (!async_commit_queue.push(param))
-    {
-        //LOG_INFO(log, "Commit queue full {}/{}", async_commit_queue.read_available(), async_commit_queue.write_available());
-        std::this_thread::yield();
-    }
-    return nullptr;
-}
-
-#if 1
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
     auto request_for_session = parseRequest(data);
@@ -233,7 +142,6 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, n
     last_committed_idx = log_idx;
     return nullptr;
 }
-#endif
 
 bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
 {
@@ -259,7 +167,6 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
     last_committed_idx = s.get_last_log_idx();
     return true;
 }
-
 
 void KeeperStateMachine::commit_config(const uint64_t /*log_idx*/, nuraft::ptr<nuraft::cluster_config> & new_conf)
 {

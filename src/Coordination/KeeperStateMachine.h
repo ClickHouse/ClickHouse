@@ -1,18 +1,12 @@
 #pragma once
 
-#if defined(OS_LINUX)
-#   include <sys/sysinfo.h>
-#endif
-#include "Common/ThreadPool.h"
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Coordination/KeeperStorage.h>
 #include <boost/lockfree/spsc_queue.hpp>
-#include <libnuraft/buffer.hxx>
 #include <libnuraft/nuraft.hxx>
 #include <base/logger_useful.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperSnapshotManager.h>
-#include <libnuraft/state_machine.hxx>
 
 
 namespace DB
@@ -26,36 +20,10 @@ using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 class KeeperStateMachine : public nuraft::state_machine
 {
 public:
-    struct QueueParam
-    {
-        QueueParam(): idx(0), ptr_data(nullptr) {}
-        QueueParam(uint64_t i, nuraft::ptr<nuraft::buffer> c)
-            : idx(i), ptr_data(c) {}
-        QueueParam(const QueueParam & other)
-        {
-            idx = other.idx;
-            ptr_data = other.ptr_data;
-        }
-        void operator=(const QueueParam & other)
-        {
-            if (this != &other)
-            {
-                idx = other.idx;
-                ptr_data = other.ptr_data;
-            }
-        }
-        uint64_t idx;
-        nuraft::ptr<nuraft::buffer> ptr_data;
-    };
     KeeperStateMachine(
         ResponsesQueue & responses_queue_, SnapshotsQueue & snapshots_queue_,
         const std::string & snapshots_path_, const CoordinationSettingsPtr & coordination_settings_,
         const std::string & superdigest_ = "");
-    ~KeeperStateMachine() override
-    {
-        shutdown = true;
-        async_commit_thread.join();
-    }
     /// Read state from the latest snapshot
     void init();
 
@@ -63,7 +31,6 @@ public:
     nuraft::ptr<nuraft::buffer> pre_commit(const uint64_t /*log_idx*/, nuraft::buffer & /*data*/) override { return nullptr; }
 
     nuraft::ptr<nuraft::buffer> commit(const uint64_t log_idx, nuraft::buffer & data) override;
-    nuraft::ptr<nuraft::buffer> commit_ext(const nuraft::state_machine::ext_op_params & params) override;
 
     /// Save new cluster config to our snapshot (copy of the config stored in StateManager)
     void commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf) override;
@@ -131,8 +98,6 @@ public:
     uint64_t getTotalEphemeralNodesCount() const;
     uint64_t getApproximateDataSize() const;
 
-    void asyncCommitThread();
-
 private:
 
     /// In our state machine we always have a single snapshot which is stored
@@ -178,11 +143,6 @@ private:
 
     /// Special part of ACL system -- superdigest specified in server config.
     const std::string superdigest;
-
-    /// Nuraft commit thread is a single thread, safe to use ringbuffer
-    boost::lockfree::spsc_queue<QueueParam> async_commit_queue{1024};
-    ThreadFromGlobalPool async_commit_thread;
-    bool shutdown{false};
 };
 
 }
