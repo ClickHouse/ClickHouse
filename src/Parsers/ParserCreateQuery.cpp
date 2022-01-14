@@ -969,14 +969,15 @@ bool ParserTableOverrideDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
     ASTPtr sample_by;
     ASTPtr ttl_table;
 
-    if (!s_table_override.ignore(pos, expected))
-        return false;
-
-    if (!table_name_p.parse(pos, table_name, expected))
-        return false;
-
-    if (!lparen_p.ignore(pos, expected))
-        return false;
+    if (is_standalone)
+    {
+        if (!s_table_override.ignore(pos, expected))
+            return false;
+        if (!table_name_p.parse(pos, table_name, expected))
+            return false;
+        if (!lparen_p.ignore(pos, expected))
+            return false;
+    }
 
     while (true)
     {
@@ -1034,7 +1035,7 @@ bool ParserTableOverrideDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
         break;
     }
 
-    if (!rparen_p.ignore(pos, expected))
+    if (is_standalone && !rparen_p.ignore(pos, expected))
         return false;
 
     auto storage = std::make_shared<ASTStorage>();
@@ -1045,7 +1046,9 @@ bool ParserTableOverrideDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expecte
     storage->set(storage->ttl_table, ttl_table);
 
     auto res = std::make_shared<ASTTableOverride>();
-    res->table_name = table_name->as<ASTIdentifier>()->name();
+    if (table_name)
+        res->table_name = table_name->as<ASTIdentifier>()->name();
+    res->is_standalone = is_standalone;
     res->set(res->storage, storage);
     if (columns)
         res->set(res->columns, columns);

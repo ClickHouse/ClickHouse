@@ -5,6 +5,7 @@
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <IO/BufferWithOwnMemory.h>
+#include <IO/CompressionMethod.h>
 #include <base/types.h>
 #include <Core/NamesAndTypes.h>
 
@@ -113,6 +114,7 @@ private:
     };
 
     using FormatsDictionary = std::unordered_map<String, Creators>;
+    using FileExtensionFormats = std::unordered_map<String, String>;
 
 public:
     static FormatFactory & instance();
@@ -182,6 +184,10 @@ public:
     void registerInputFormat(const String & name, InputCreator input_creator);
     void registerOutputFormat(const String & name, OutputCreator output_creator);
 
+    /// Register file extension for format
+    void registerFileExtension(const String & extension, const String & format_name);
+    String getFormatFromFileName(String file_name);
+
     /// Register schema readers for format its name.
     void registerSchemaReader(const String & name, SchemaReaderCreator schema_reader_creator);
     void registerExternalSchemaReader(const String & name, ExternalSchemaReaderCreator external_schema_reader_creator);
@@ -205,6 +211,7 @@ public:
 
 private:
     FormatsDictionary dict;
+    FileExtensionFormats file_extension_formats;
 
     const Creators & getCreators(const String & name) const;
 
