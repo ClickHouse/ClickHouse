@@ -2063,12 +2063,15 @@ void InterpreterSelectQuery::initAggregatorParams(
             for (const auto & key : aggregation_keys)
             {
                 size_t key_name_pos = current_data_stream_header.getPositionByName(key.name);
-                keys_set.insert(key_name_pos);
+                if (!keys_set.contains(key_name_pos))
+                {
+                    keys_set.insert(key_name_pos);
+                    all_keys.push_back(key_name_pos);
+                }
                 keys.push_back(key_name_pos);
             }
             keys_vector.push_back(keys);
         }
-        all_keys.assign(keys_set.begin(), keys_set.end());
 
         params_ptr = std::make_unique<Aggregator::Params>(
             current_data_stream_header,
