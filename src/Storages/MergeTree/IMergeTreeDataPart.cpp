@@ -1156,13 +1156,15 @@ void IMergeTreeDataPart::loadVersionMetadata() const
     ///         so part will be ether broken or known to be created by transaction.
     /// 4. Fsyncs in storeVersionMetadata() work incorrectly.
 
+    TransactionInfoContext txn_context{storage.getStorageID(), name};
+
     if (!disk->exists(tmp_version_file_name))
     {
         /// Case 1 (or 3).
         /// We do not have version metadata and transactions history for old parts,
         /// so let's consider that such parts were created by some ancient transaction
         /// and were committed with some prehistoric CSN.
-        versions.setMinTID(Tx::PrehistoricTID);
+        versions.setMinTID(Tx::PrehistoricTID, txn_context);
         versions.mincsn = Tx::PrehistoricCSN;
         return;
     }
@@ -1170,7 +1172,7 @@ void IMergeTreeDataPart::loadVersionMetadata() const
     /// Case 2.
     /// Content of *.tmp file may be broken, just use fake TID.
     /// Transaction was not committed if *.tmp file was not renamed, so we should complete rollback by removing part.
-    versions.setMinTID(Tx::DummyTID);
+    versions.setMinTID(Tx::DummyTID, txn_context);
     versions.mincsn = Tx::RolledBackCSN;
     remove_tmp_file();
 }

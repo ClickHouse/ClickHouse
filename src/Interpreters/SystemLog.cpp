@@ -10,6 +10,7 @@
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/ZooKeeperLog.h>
+#include <Interpreters/TransactionsInfoLog.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 #include <base/logger_useful.h>
@@ -130,6 +131,8 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     query_views_log = createSystemLog<QueryViewsLog>(global_context, "system", "query_views_log", config, "query_views_log");
     zookeeper_log = createSystemLog<ZooKeeperLog>(global_context, "system", "zookeeper_log", config, "zookeeper_log");
     session_log = createSystemLog<SessionLog>(global_context, "system", "session_log", config, "session_log");
+    transactions_info_log = createSystemLog<TransactionsInfoLog>(
+        global_context, "system", "transactions_info_log", config, "transactions_info_log");
 
     if (query_log)
         logs.emplace_back(query_log.get());
@@ -155,6 +158,8 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         logs.emplace_back(zookeeper_log.get());
     if (session_log)
         logs.emplace_back(session_log.get());
+    if (transactions_info_log)
+        logs.emplace_back(transactions_info_log.get());
 
     try
     {

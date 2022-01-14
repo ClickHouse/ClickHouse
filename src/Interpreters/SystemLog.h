@@ -78,6 +78,7 @@ class OpenTelemetrySpanLog;
 class QueryViewsLog;
 class ZooKeeperLog;
 class SessionLog;
+class TransactionsInfoLog;
 
 
 class ISystemLog
@@ -125,6 +126,8 @@ struct SystemLogs
     std::shared_ptr<ZooKeeperLog> zookeeper_log;
     /// Login, LogOut and Login failure events
     std::shared_ptr<SessionLog> session_log;
+    /// Events related to transactions
+    std::shared_ptr<TransactionsInfoLog> transactions_info_log;
 
     std::vector<ISystemLog *> logs;
 };
