@@ -1329,7 +1329,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                 /// Transaction that tried to remove this part was not committed. Clear maxtid.
                 LOG_TRACE(log, "Will fix version metadata of {} after unclean restart: clearing maxtid={}",
                           part->name, versions.maxtid);
-                versions.unlockMaxTID(versions.maxtid);
+                versions.unlockMaxTID(versions.maxtid, TransactionInfoContext{getStorageID(), part->name});
             }
             versions_updated = true;
         }
@@ -4445,7 +4445,7 @@ void MergeTreeData::Transaction::rollback()
                 DataPartPtr covering_part;
                 DataPartsVector covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, lock);
                 for (auto & covered : covered_parts)
-                    covered->versions.unlockMaxTID(Tx::PrehistoricTID);
+                    covered->versions.unlockMaxTID(Tx::PrehistoricTID, TransactionInfoContext{data.getStorageID(), covered->name});
             }
         }
 

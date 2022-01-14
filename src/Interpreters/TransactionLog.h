@@ -10,6 +10,8 @@
 namespace DB
 {
 
+class TransactionsInfoLog;
+using TransactionsInfoLogPtr = std::shared_ptr<TransactionsInfoLog>;
 using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 
 class TransactionLog final : private boost::noncopyable

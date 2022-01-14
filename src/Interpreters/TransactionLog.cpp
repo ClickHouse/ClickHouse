@@ -1,6 +1,7 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/TransactionsInfoLog.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -14,13 +15,34 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+    extern const int LOGICAL_ERROR;
+}
+
+static void tryWriteEventToSystemLog(Poco::Logger * log, ContextPtr context,
+                                     TransactionsInfoLogElement::Type type, const TransactionID & tid, CSN csn = Tx::UnknownCSN)
+try
+{
+    auto system_log = context->getTransactionsInfoLog();
+    if (!system_log)
+        return;
+
+    TransactionsInfoLogElement elem;
+    elem.type = type;
+    elem.tid = tid;
+    elem.csn = csn;
+    elem.fillCommonFields(nullptr);
+    system_log->add(elem);
+}
+catch (...)
+{
+    tryLogCurrentException(log);
 }
 
 TransactionLog & TransactionLog::instance()
 {
-    static TransactionLog inst;
-    return inst;
+    /// Use unique_ptr to avoid races on initialization retries if exceptions was thrown from ctor
+    static std::unique_ptr<TransactionLog> inst = std::make_unique<TransactionLog>();
+    return *inst;
 }
 
 TransactionLog::TransactionLog()
@@ -214,7 +236,10 @@ MergeTreeTransactionPtr TransactionLog::beginTransaction()
             throw Exception(ErrorCodes::LOGICAL_ERROR, "I's a bug: TID {} {} exists", txn->tid.getHash(), txn->tid);
         txn->snapshot_in_use_it = snapshots_in_use.insert(snapshots_in_use.end(), snapshot);
     }
-    LOG_TRACE(log, "Beginning transaction {} ({})", txn->tid, txn->tid.getHash());
+
+    LOG_TEST(log, "Beginning transaction {} ({})", txn->tid, txn->tid.getHash());
+    tryWriteEventToSystemLog(log, global_context, TransactionsInfoLogElement::BEGIN, txn->tid);
+
     return txn;
 }
 
@@ -226,8 +251,9 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn)
     /// TODO Transactions: reset local_tid_counter
     if (txn->isReadOnly())
     {
-        LOG_TRACE(log, "Closing readonly transaction {}", txn->tid);
+        LOG_TEST(log, "Closing readonly transaction {}", txn->tid);
         new_csn = txn->snapshot;
+        tryWriteEventToSystemLog(log, global_context, TransactionsInfoLogElement::COMMIT, txn->tid, new_csn);
     }
     else
     {
@@ -236,7 +262,9 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn)
         /// TODO support batching
         String path_created = zookeeper->create(zookeeper_path + "/csn-", writeTID(txn->tid), zkutil::CreateMode::PersistentSequential);    /// Commit point
         new_csn = parseCSN(path_created.substr(zookeeper_path.size() + 1));
+
         LOG_INFO(log, "Transaction {} committed with CSN={}", txn->tid, new_csn);
+        tryWriteEventToSystemLog(log, global_context, TransactionsInfoLogElement::COMMIT, txn->tid, new_csn);
 
         /// Wait for committed changes to become actually visible, so the next transaction will see changes
         /// TODO it's optional, add a setting for this
@@ -257,13 +285,16 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "I's a bug: TID {} {} doesn't exist", txn->tid.getHash(), txn->tid);
         snapshots_in_use.erase(txn->snapshot_in_use_it);
     }
+
     return new_csn;
 }
 
 void TransactionLog::rollbackTransaction(const MergeTreeTransactionPtr & txn) noexcept
 {
     LOG_TRACE(log, "Rolling back transaction {}", txn->tid);
-    if (txn->rollback())
+    if (!txn->rollback())
+        return;
+
     {
         std::lock_guard lock{running_list_mutex};
         bool removed = running_list.erase(txn->tid.getHash());
@@ -271,6 +302,8 @@ void TransactionLog::rollbackTransaction(const MergeTreeTransactionPtr & txn) no
             abort();
         snapshots_in_use.erase(txn->snapshot_in_use_it);
     }
+
+    tryWriteEventToSystemLog(log, global_context, TransactionsInfoLogElement::ROLLBACK, txn->tid);
 }
 
 MergeTreeTransactionPtr TransactionLog::tryGetRunningTransaction(const TIDHash & tid)

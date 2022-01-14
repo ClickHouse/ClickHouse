@@ -31,5 +31,16 @@ select 7, name, maxtid, maxcsn from system.parts where database=currentDatabase(
 select 8, transactionID().3 == serverUUID();
 commit;
 
+begin transaction;
+insert into txn_counters(n) values (5);
+alter table txn_counters drop partition id 'all';
+rollback;
+
+system flush logs;
+select indexOf((select arraySort(groupUniqArray(tid)) from system.transactions_info_log where database=currentDatabase() and table='txn_counters'), tid),
+       (toDecimal64(now64(6), 6) - toDecimal64(event_time, 6)) < 100, type, thread_id!=0, length(query_id)=length(queryID()), tid_hash!=0, csn=0, part
+from system.transactions_info_log
+where tid in (select tid from system.transactions_info_log where database=currentDatabase() and table='txn_counters' and not (tid.1=1 and tid.2=1))
+or (database=currentDatabase() and table='txn_counters') order by event_time;
 
 drop table txn_counters;

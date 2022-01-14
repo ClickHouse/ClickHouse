@@ -159,7 +159,7 @@ tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 # Replace the engine with Ordinary to avoid extra symlinks stuff in artifacts.
 # (so that clickhouse-local --path can read it w/o extra care).
 sed -i -e "s/ATTACH DATABASE _ UUID '[^']*'/ATTACH DATABASE system/" -e "s/Atomic/Ordinary/" /var/lib/clickhouse/metadata/system.sql
-for table in text_log query_log zookeeper_log trace_log; do
+for table in text_log query_log zookeeper_log trace_log transactions_info_log; do
     sed -i "s/ATTACH TABLE _ UUID '[^']*'/ATTACH TABLE $table/" /var/lib/clickhouse/metadata/system/${table}.sql
     tar -chf /test_output/${table}_dump.tar /var/lib/clickhouse/metadata/system.sql /var/lib/clickhouse/metadata/system/${table}.sql /var/lib/clickhouse/data/system/${table} ||:
 done

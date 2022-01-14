@@ -33,7 +33,7 @@ void MergeTreeTransaction::addNewPart(const StoragePtr & storage, const DataPart
 {
     TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
 
-    new_part->versions.setMinTID(tid);
+    new_part->versions.setMinTID(tid, TransactionInfoContext{storage->getStorageID(), new_part->name});
     if (txn)
         txn->addNewPart(storage, new_part);
 }
@@ -41,10 +41,8 @@ void MergeTreeTransaction::addNewPart(const StoragePtr & storage, const DataPart
 void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataPartPtr & part_to_remove, MergeTreeTransaction * txn)
 {
     TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
-    String error_context = fmt::format("Table: {}, part name: {}",
-                                       part_to_remove->storage.getStorageID().getNameForLogs(),
-                                       part_to_remove->name);
-    part_to_remove->versions.lockMaxTID(tid, error_context);
+    TransactionInfoContext context{storage->getStorageID(), part_to_remove->name};
+    part_to_remove->versions.lockMaxTID(tid, context);
     if (txn)
         txn->removeOldPart(storage, part_to_remove);
 }
@@ -53,17 +51,16 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage
 {
     TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
 
-    new_part->versions.setMinTID(tid);
+    TransactionInfoContext context{storage->getStorageID(), new_part->name};
+    new_part->versions.setMinTID(tid, context);
     if (txn)
         txn->addNewPart(storage, new_part);
 
-    String error_context = fmt::format("Table: {}, covering part name: {}",
-                                       new_part->storage.getStorageID().getNameForLogs(),
-                                       new_part->name);
-    error_context += ", part_name: {}";
+    context.covering_part = std::move(context.part_name);
     for (const auto & covered : covered_parts)
     {
-        covered->versions.lockMaxTID(tid, fmt::format(error_context, covered->name));
+        context.part_name = covered->name;
+        covered->versions.lockMaxTID(tid, context);
         if (txn)
             txn->removeOldPart(storage, covered);
     }
@@ -152,7 +149,7 @@ bool MergeTreeTransaction::rollback() noexcept
         part->versions.mincsn.store(Tx::RolledBackCSN);
 
     for (const auto & part : removing_parts)
-        part->versions.unlockMaxTID(tid);
+        part->versions.unlockMaxTID(tid, TransactionInfoContext{part->storage.getStorageID(), part->name});
 
     /// FIXME const_cast
     for (const auto & part : creating_parts)
