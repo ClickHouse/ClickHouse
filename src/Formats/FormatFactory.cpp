@@ -14,6 +14,8 @@
 #include <Poco/URI.h>
 #include <Common/Exception.h>
 
+#include <boost/algorithm/string/case_conv.hpp>
+
 namespace DB
 {
 
@@ -191,7 +193,8 @@ InputFormatPtr FormatFactory::getInput(
 
 
         ParallelParsingInputFormat::Params params{
-            buf, sample, parser_creator, file_segmentation_engine, name, settings.max_threads, settings.min_chunk_bytes_for_parallel_parsing};
+            buf, sample, parser_creator, file_segmentation_engine, name, settings.max_threads, settings.min_chunk_bytes_for_parallel_parsing,
+               context->getApplicationType() == Context::ApplicationType::SERVER};
         return std::make_shared<ParallelParsingInputFormat>(params);
     }
 
@@ -389,6 +392,30 @@ void FormatFactory::registerOutputFormat(const String & name, OutputCreator outp
     if (target)
         throw Exception("FormatFactory: Output format " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
     target = std::move(output_creator);
+}
+
+void FormatFactory::registerFileExtension(const String & extension, const String & format_name)
+{
+    file_extension_formats[extension] = format_name;
+}
+
+String FormatFactory::getFormatFromFileName(String file_name)
+{
+    CompressionMethod compression_method = chooseCompressionMethod(file_name, "");
+    if (CompressionMethod::None != compression_method)
+    {
+        auto pos = file_name.find_last_of('.');
+        if (pos != String::npos)
+            file_name = file_name.substr(0, pos);
+    }
+
+    auto pos = file_name.find_last_of('.');
+    if (pos == String::npos)
+        return "";
+
+    String file_extension = file_name.substr(pos + 1, String::npos);
+    boost::algorithm::to_lower(file_extension);
+    return file_extension_formats[file_extension];
 }
 
 void FormatFactory::registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine)
