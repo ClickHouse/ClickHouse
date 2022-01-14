@@ -60,7 +60,7 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const UInt64 resolution = col_hindex->getUInt(row);
+            const int resolution = col_hindex->getUInt(row);
             if (resolution > MAX_H3_RES)
                 throw Exception(
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND,
