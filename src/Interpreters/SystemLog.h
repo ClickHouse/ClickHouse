@@ -168,6 +168,8 @@ public:
     void shutdown() override
     {
         stopFlushThread();
+
+        auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
         if (table)
             table->flushAndShutdown();
     }
@@ -186,7 +188,6 @@ private:
     /* Saving thread data */
     const StorageID table_id;
     const String storage_def;
-    StoragePtr table;
     String create_query;
     String old_create_query;
     bool is_prepared = false;
@@ -525,7 +526,7 @@ void SystemLog<LogElement>::prepareTable()
 {
     String description = table_id.getNameForLogs();
 
-    table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+    auto table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
 
     if (table)
     {

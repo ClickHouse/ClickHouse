@@ -60,19 +60,25 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
 
         auto settings_config_prefix = config_prefix + ".mysql";
         std::shared_ptr<mysqlxx::PoolWithFailover> pool;
-        auto has_config_key = [](const String & key) { return dictionary_allowed_keys.contains(key) || key.starts_with("replica"); };
+        MySQLSettings mysql_settings;
+        auto has_config_key = [&](const String & key)
+        {
+            return dictionary_allowed_keys.contains(key) || key.starts_with("replica") || mysql_settings.has(key);
+        };
         StorageMySQLConfiguration configuration;
         auto named_collection = created_from_ddl
-                              ? getExternalDataSourceConfiguration(config, settings_config_prefix, global_context, has_config_key)
+                              ? getExternalDataSourceConfiguration(config, settings_config_prefix, global_context, has_config_key, mysql_settings)
                               : std::nullopt;
         if (named_collection)
         {
-            configuration.set(*named_collection);
+            mysql_settings.applyChanges(named_collection->settings_changes);
+            configuration.set(named_collection->configuration);
             configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
-            MySQLSettings mysql_settings;
             const auto & settings = global_context->getSettingsRef();
-            mysql_settings.connect_timeout = settings.external_storage_connect_timeout_sec;
-            mysql_settings.read_write_timeout = settings.external_storage_rw_timeout_sec;
+            if (!mysql_settings.isChanged("connect_timeout"))
+                mysql_settings.connect_timeout = settings.external_storage_connect_timeout_sec;
+            if (!mysql_settings.isChanged("read_write_timeout"))
+                mysql_settings.read_write_timeout = settings.external_storage_rw_timeout_sec;
             pool = std::make_shared<mysqlxx::PoolWithFailover>(createMySQLPoolWithFailover(configuration, mysql_settings));
         }
         else

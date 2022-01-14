@@ -1,23 +1,17 @@
 #include <stdlib.h>
 #include <fcntl.h>
-#include <signal.h>
 #include <map>
 #include <iostream>
-#include <fstream>
 #include <iomanip>
-#include <unordered_set>
-#include <algorithm>
 #include <optional>
 #include <base/scope_guard_safe.h>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
-#include <Poco/String.h>
 #include <filesystem>
 #include <string>
 #include "Client.h"
 #include "Core/Protocol.h"
 
-#include <base/argsToConfig.h>
 #include <base/find_symbols.h>
 
 #include <Common/config_version.h>
