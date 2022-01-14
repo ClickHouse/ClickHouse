@@ -246,9 +246,9 @@ public:
 
     void cloneChildren();
 
-    enum QueryKind
+    enum class QueryKind : uint8_t
     {
-        None,
+        None = 0,
         Alter,
         Create,
         Drop,
