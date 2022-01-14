@@ -69,4 +69,4 @@ rm "${CLICKHOUSE_TMP}"/hello.world.csv
 rm "${CLICKHOUSE_TMP}"/hello.world.csv.xz
 rm "${CLICKHOUSE_TMP}"/.htaccess.json
 rm "${CLICKHOUSE_TMP}"/example.com.
-rm "${CLICKHOUSE_TMP}"/museum...msgpack
+rm "${CLICKHOUSE_TMP}"/museum...JSONEachRow
