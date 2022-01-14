@@ -624,7 +624,7 @@ URLBasedDataSourceConfiguration StorageURL::getConfiguration(ASTs & args, Contex
     }
     else
     {
-        if (args.size() < 1 || args.size() > 3)
+        if (args.empty() || args.size() > 3)
             throw Exception(
                 "Storage URL requires 1, 2 or 3 arguments: url, name of used format (taken from file extension by default) and optional compression method.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);

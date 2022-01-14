@@ -687,7 +687,7 @@ StorageS3Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPt
     }
     else
     {
-        if (engine_args.size() < 1 || engine_args.size() > 5)
+        if (engine_args.empty() || engine_args.size() > 5)
             throw Exception(
                 "Storage S3 requires 1 to 5 arguments: url, [access_key_id, secret_access_key], name of used format and [compression_method].",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
