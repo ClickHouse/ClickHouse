@@ -489,7 +489,15 @@ void ZooKeeper::receiveHandshake()
 
     read(protocol_version_read);
     if (protocol_version_read != ZOOKEEPER_PROTOCOL_VERSION)
-        throw Exception("Unexpected protocol version: " + DB::toString(protocol_version_read), Error::ZMARSHALLINGERROR);
+    {
+        /// Special way to tell a client that server is not ready to serve it.
+        /// It's better for faster failover than just connection drop.
+        /// Implemented in clickhouse-keeper.
+        if (protocol_version_read == KEEPER_PROTOCOL_VERSION_CONNECTION_REJECT)
+            throw Exception("Keeper server rejected the connection during the handshake. Possibly it's overloaded, doesn't see leader or stale", Error::ZCONNECTIONLOSS);
+        else
+            throw Exception("Unexpected protocol version: " + DB::toString(protocol_version_read), Error::ZMARSHALLINGERROR);
+    }
 
     read(timeout);
     if (timeout != session_timeout.totalMilliseconds())
