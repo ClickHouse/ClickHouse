@@ -145,7 +145,7 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parseOp(const substrait::Rel & rel)
             {
                 if (expr.has_selection())
                 {
-                    const auto * field = actions_dag->getInputs()[expr.selection().direct_reference().struct_field().field() - 1];
+                    const auto * field = actions_dag->getInputs()[expr.selection().direct_reference().struct_field().field()];
                     required_columns.emplace_back(DB::NameWithAlias (field->result_name, field->result_name));
                 }
                 else
@@ -349,7 +349,7 @@ const DB::ActionsDAG::Node * dbms::SerializedPlanParser::parseArgument(DB::Actio
             {
                 throw std::runtime_error("Can only have direct struct references in selections");
             }
-            const auto * field = action_dag->getInputs()[rel.selection().direct_reference().struct_field().field() - 1];
+            const auto * field = action_dag->getInputs()[rel.selection().direct_reference().struct_field().field()];
             return action_dag->tryFindInIndex(field->result_name);
         }
         default:

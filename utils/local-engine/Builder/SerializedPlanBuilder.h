@@ -9,7 +9,7 @@ namespace dbms
 
 enum Function
 {
-    IS_NOT_NULL=1,
+    IS_NOT_NULL=0,
     GREATER_THAN_OR_EQUAL,
     AND,
     LESS_THAN_OR_EQUAL,
