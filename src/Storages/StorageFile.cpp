@@ -852,8 +852,8 @@ SinkToStoragePtr StorageFile::write(
                 else
                     throw Exception(
                         ErrorCodes::CANNOT_APPEND_TO_FILE,
-                        "Cannot append data in format {} to file, because this format contains suffix and "
-                        "data can be written to a file only once. You can allow to create a new file "
+                        "Cannot append data in format {} to file, because this format doesn't support appends."
+                        " You can allow to create a new file "
                         "on each insert by enabling setting engine_file_allow_create_multiple_files",
                         format_name);
             }
