@@ -544,7 +544,7 @@ void registerStorageHDFS(StorageFactory & factory)
     {
         ASTs & engine_args = args.engine_args;
 
-        if (engine_args.size() < 1 || engine_args.size() > 3)
+        if (engine_args.empty() || engine_args.size() > 3)
             throw Exception(
                 "Storage HDFS requires 1, 2 or 3 arguments: url, name of used format (taken from file extension by default) and optional compression method.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
