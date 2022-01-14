@@ -1,5 +1,5 @@
 #include "MeiliSearchConnection.h"
-#include <iostream>
+#include <string_view>
 #include <curl/curl.h>
 #include <Common/Exception.h>
 
@@ -14,29 +14,47 @@ MeiliSearchConnection::MeiliSearchConnection(const MeiliConfig & conf) : config{
 {
 }
 
-MeiliSearchConnection::MeiliSearchConnection(MeiliConfig && conf) : config{std::move(conf)}
-{
-}
-
 static size_t writeCallback(void * contents, size_t size, size_t nmemb, void * userp)
 {
     (static_cast<std::string *>(userp))->append(static_cast<char *>(contents), size * nmemb);
     return size * nmemb;
 }
 
-String MeiliSearchConnection::searchQuery(const std::unordered_map<String, String> & query_params) const
+CURLcode MeiliSearchConnection::execQuery(
+    std::string_view url, 
+    std::string_view post_fields,
+    std::string& response_buffer) const 
 {
     CURLcode ret_code;
-    CURL * hnd;
-    struct curl_slist * slist1;
+    CURL * handle;
+    struct curl_slist * headers_list;
 
-    slist1 = nullptr;
-    slist1 = curl_slist_append(slist1, "Content-Type: application/json");
-    slist1 = curl_slist_append(slist1, config.key.c_str());
+    headers_list = nullptr;
+    headers_list = curl_slist_append(headers_list, "Content-Type: application/json");
+    headers_list = curl_slist_append(headers_list, config.key.c_str());
+
+    handle = curl_easy_init();
+    curl_easy_setopt(handle, CURLOPT_URL, url.data());
+    curl_easy_setopt(handle, CURLOPT_POSTFIELDS, post_fields.data());
+    curl_easy_setopt(handle, CURLOPT_POSTFIELDSIZE_LARGE, post_fields.size());
+    curl_easy_setopt(handle, CURLOPT_HTTPHEADER, headers_list);
+    curl_easy_setopt(handle, CURLOPT_MAXREDIRS, 50L);
+    curl_easy_setopt(handle, CURLOPT_CUSTOMREQUEST, "POST");
+    curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, writeCallback);
+    curl_easy_setopt(handle, CURLOPT_WRITEDATA, &response_buffer);
+
+    ret_code = curl_easy_perform(handle);
+
+    curl_easy_cleanup(handle);
+    curl_slist_free_all(headers_list);
+    return ret_code;
+}
+
+String MeiliSearchConnection::searchQuery(const std::unordered_map<String, String> & query_params) const
+{
     std::string response_buffer;
 
     std::string post_fields = "{";
-
     for (const auto & q_attr : query_params)
         post_fields += q_attr.first + ":" + q_attr.second + ",";
 
@@ -44,25 +62,9 @@ String MeiliSearchConnection::searchQuery(const std::unordered_map<String, Strin
 
     std::string url = config.connection_string + "search";
 
-    hnd = curl_easy_init();
-    curl_easy_setopt(hnd, CURLOPT_BUFFERSIZE, 102400L);
-    curl_easy_setopt(hnd, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(hnd, CURLOPT_NOPROGRESS, 1L);
-    curl_easy_setopt(hnd, CURLOPT_POSTFIELDS, post_fields.c_str());
-    curl_easy_setopt(hnd, CURLOPT_POSTFIELDSIZE_LARGE, post_fields.size());
-    curl_easy_setopt(hnd, CURLOPT_HTTPHEADER, slist1);
-    curl_easy_setopt(hnd, CURLOPT_MAXREDIRS, 50L);
-    curl_easy_setopt(hnd, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2TLS);
-    curl_easy_setopt(hnd, CURLOPT_CUSTOMREQUEST, "POST");
-    curl_easy_setopt(hnd, CURLOPT_WRITEFUNCTION, writeCallback);
-    curl_easy_setopt(hnd, CURLOPT_WRITEDATA, &response_buffer);
+    CURLcode ret_code = execQuery(url, post_fields, response_buffer);
 
-    ret_code = curl_easy_perform(hnd);
-
-    curl_easy_cleanup(hnd);
-    curl_slist_free_all(slist1);
-
-    if (ret_code != 0)
+    if (ret_code != CURLE_OK)
         throw Exception(ErrorCodes::NETWORK_ERROR, curl_easy_strerror(ret_code));
 
     return response_buffer;
@@ -70,36 +72,13 @@ String MeiliSearchConnection::searchQuery(const std::unordered_map<String, Strin
 
 String MeiliSearchConnection::updateQuery(std::string_view data) const
 {
-    CURLcode ret_code;
-    CURL * hnd;
-    struct curl_slist * slist1;
-
-    slist1 = nullptr;
-    slist1 = curl_slist_append(slist1, "Content-Type: application/json");
-    slist1 = curl_slist_append(slist1, config.key.c_str());
     std::string response_buffer;
 
     std::string url = config.connection_string + "documents";
 
-    hnd = curl_easy_init();
-    curl_easy_setopt(hnd, CURLOPT_BUFFERSIZE, 102400L);
-    curl_easy_setopt(hnd, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(hnd, CURLOPT_NOPROGRESS, 1L);
-    curl_easy_setopt(hnd, CURLOPT_POSTFIELDS, data.data());
-    curl_easy_setopt(hnd, CURLOPT_POSTFIELDSIZE_LARGE, data.size());
-    curl_easy_setopt(hnd, CURLOPT_HTTPHEADER, slist1);
-    curl_easy_setopt(hnd, CURLOPT_MAXREDIRS, 50L);
-    curl_easy_setopt(hnd, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2TLS);
-    curl_easy_setopt(hnd, CURLOPT_CUSTOMREQUEST, "POST");
-    curl_easy_setopt(hnd, CURLOPT_WRITEFUNCTION, writeCallback);
-    curl_easy_setopt(hnd, CURLOPT_WRITEDATA, &response_buffer);
+    CURLcode ret_code = execQuery(url, data, response_buffer);
 
-    ret_code = curl_easy_perform(hnd);
-
-    curl_easy_cleanup(hnd);
-    curl_slist_free_all(slist1);
-
-    if (ret_code != 0)
+    if (ret_code != CURLE_OK)
         throw Exception(ErrorCodes::NETWORK_ERROR, curl_easy_strerror(ret_code));
 
     return response_buffer;

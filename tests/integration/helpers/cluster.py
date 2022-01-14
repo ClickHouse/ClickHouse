@@ -21,6 +21,7 @@ from cassandra.policies import RoundRobinPolicy
 import cassandra.cluster
 import psycopg2
 import pymongo
+import meilisearch
 import pymysql
 import requests
 from confluent_kafka.avro.cached_schema_registry_client import \
@@ -266,6 +267,7 @@ class ClickHouseCluster:
         self.with_kerberized_hdfs = False
         self.with_mongo = False
         self.with_mongo_secure = False
+        self.with_meili = False
         self.with_net_trics = False
         self.with_redis = False
         self.with_cassandra = False
@@ -318,6 +320,12 @@ class ClickHouseCluster:
         # available when with_mongo == True
         self.mongo_host = "mongo1"
         self.mongo_port = get_free_port()
+
+        # available when with_meili == True
+        self.meili_host = "meili1"
+        self.meili_port = get_free_port()
+        self.meili_secure_host = "meili_secure"
+        self.meili_secure_port = get_free_port()
 
         # available when with_cassandra == True
         self.cassandra_host = "cassandra1"
@@ -729,6 +737,21 @@ class ClickHouseCluster:
         self.base_mongo_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
                                 '--file', p.join(docker_compose_yml_dir, 'docker_compose_mongo.yml')]
         return self.base_mongo_cmd
+    
+    def setup_meili_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_meili = True
+        env_variables['MEILI_HOST'] = self.meili_host
+        env_variables['MEILI_EXTERNAL_PORT'] = str(self.meili_port)
+        env_variables['MEILI_INTERNAL_PORT'] = "7700"
+
+        env_variables['MEILI_SECURE_HOST'] = self.meili_secure_host
+        env_variables['MEILI_SECURE_EXTERNAL_PORT'] = str(self.meili_secure_port)
+        env_variables['MEILI_SECURE_INTERNAL_PORT'] = "7700"
+
+        self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_meili.yml')])
+        self.base_meili_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
+                                '--file', p.join(docker_compose_yml_dir, 'docker_compose_meili.yml')]
+        return self.base_meili_cmd
 
     def setup_minio_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_minio = True
@@ -772,7 +795,7 @@ class ClickHouseCluster:
                      with_mysql_client=False, with_mysql=False, with_mysql8=False, with_mysql_cluster=False,
                      with_kafka=False, with_kerberized_kafka=False, with_rabbitmq=False, clickhouse_path_dir=None,
                      with_odbc_drivers=False, with_postgres=False, with_postgres_cluster=False, with_hdfs=False,
-                     with_kerberized_hdfs=False, with_mongo=False, with_mongo_secure=False, with_nginx=False,
+                     with_kerberized_hdfs=False, with_mongo=False, with_mongo_secure=False, with_meili=False, with_nginx=False,
                      with_redis=False, with_minio=False, with_cassandra=False, with_jdbc_bridge=False,
                      hostname=None, env_variables=None, image="clickhouse/integration-test", tag=None,
                      stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, external_dirs=None, tmpfs=None,
@@ -827,6 +850,7 @@ class ClickHouseCluster:
             with_nginx=with_nginx,
             with_kerberized_hdfs=with_kerberized_hdfs,
             with_mongo=with_mongo or with_mongo_secure,
+            with_meili=with_meili,
             with_redis=with_redis,
             with_minio=with_minio,
             with_cassandra=with_cassandra,
@@ -921,6 +945,10 @@ class ClickHouseCluster:
                 cmds.append(self.setup_mongo_secure_cmd(instance, env_variables, docker_compose_yml_dir))
             else:
                 cmds.append(self.setup_mongo_cmd(instance, env_variables, docker_compose_yml_dir))
+
+        if with_meili and not self.with_meili:
+            cmds.append(self.setup_meili_cmd(instance, env_variables, docker_compose_yml_dir))
+
 
         if self.with_net_trics:
             for cmd in cmds:
@@ -1341,6 +1369,26 @@ class ClickHouseCluster:
             except Exception as ex:
                 logging.debug("Can't connect to Mongo " + str(ex))
                 time.sleep(1)
+    
+    def wait_meili_to_start(self, timeout=30):
+        connection_str = 'http://{host}:{port}'.format(
+            host='localhost', port=self.meili_port)
+        client = meilisearch.Client(connection_str)
+
+        connection_str_secure = 'http://{host}:{port}'.format(
+            host='localhost', port=self.meili_secure_port)
+        client_secure = meilisearch.Client(connection_str_secure, "password")
+
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                client.get_all_stats()
+                client_secure.get_all_stats()
+                logging.debug(f"Connected to MeiliSearch dbs: {client.get_all_stats()}\n{client_secure.get_all_stats()}")
+                return
+            except Exception as ex:
+                logging.debug("Can't connect to MeiliSearch " + str(ex))
+                time.sleep(1)
 
     def wait_minio_to_start(self, timeout=180, secure=False):
         self.minio_ip = self.get_instance_ip(self.minio_host)
@@ -1602,6 +1650,13 @@ class ClickHouseCluster:
                 self.up_called = True
                 self.wait_mongo_to_start(30, secure=self.with_mongo_secure)
 
+            if self.with_meili and self.base_meili_cmd:
+                logging.debug('Setup MeiliSearch')
+                run_and_check(self.base_meili_cmd + common_opts)
+                self.up_called = True
+                self.wait_meili_to_start()
+
+
             if self.with_redis and self.base_redis_cmd:
                 logging.debug('Setup Redis')
                 subprocess_check_call(self.base_redis_cmd + common_opts)
@@ -1843,7 +1898,7 @@ class ClickHouseInstance:
             self, cluster, base_path, name, base_config_dir, custom_main_configs, custom_user_configs,
             custom_dictionaries,
             macros, with_zookeeper, zookeeper_config_path, with_mysql_client,  with_mysql, with_mysql8, with_mysql_cluster, with_kafka, with_kerberized_kafka,
-            with_rabbitmq, with_nginx, with_kerberized_hdfs, with_mongo, with_redis, with_minio, with_jdbc_bridge,
+            with_rabbitmq, with_nginx, with_kerberized_hdfs, with_mongo, with_meili, with_redis, with_minio, with_jdbc_bridge,
             with_cassandra, server_bin_path, odbc_bridge_bin_path, library_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers, with_postgres, with_postgres_cluster,
             clickhouse_start_command=CLICKHOUSE_START_COMMAND,
             main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True,
@@ -1885,6 +1940,7 @@ class ClickHouseInstance:
         self.with_nginx = with_nginx
         self.with_kerberized_hdfs = with_kerberized_hdfs
         self.with_mongo = with_mongo
+        self.with_meili = with_meili
         self.with_redis = with_redis
         self.with_minio = with_minio
         self.with_cassandra = with_cassandra

@@ -1,4 +1,3 @@
-#include <iostream>
 #include <Parsers/ASTSelectQuery.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/IStorage.h>
@@ -120,20 +119,15 @@ Pipe StorageMeiliSearch::read(
     for (const auto & el : kv_pairs_params)
         LOG_TRACE(log, "Parsed parameter: key = " + el.first + ", value = " + el.second);
 
-    Block sample_block;
-    for (const String & column_name : column_names)
-    {
-        auto column_data = metadata_snapshot->getColumns().getPhysical(column_name);
-        sample_block.insert({column_data.type, column_data.name});
-    }
+    auto sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
 
-    return Pipe(std::make_shared<MeiliSearchSource>(config, sample_block, max_block_size, 0, kv_pairs_params));
+    return Pipe(std::make_shared<MeiliSearchSource>(config, sample_block, max_block_size, kv_pairs_params));
 }
 
 SinkToStoragePtr StorageMeiliSearch::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
     LOG_TRACE(log, "Trying update index: " + config.index);
-    return std::make_shared<SinkMeiliSearch>(config, metadata_snapshot->getSampleBlock(), local_context, 20000);
+    return std::make_shared<SinkMeiliSearch>(config, metadata_snapshot->getSampleBlock(), local_context);
 }
 
 MeiliSearchConfiguration getConfiguration(ASTs engine_args)

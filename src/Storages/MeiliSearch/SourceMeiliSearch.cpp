@@ -20,13 +20,12 @@ MeiliSearchSource::MeiliSearchSource(
     const MeiliSearchConfiguration & config,
     const Block & sample_block,
     UInt64 max_block_size_,
-    UInt64 offset_,
     std::unordered_map<String, String> query_params_)
     : SourceWithProgress(sample_block.cloneEmpty())
     , connection(config)
     , max_block_size{max_block_size_}
     , query_params{query_params_}
-    , offset{offset_}
+    , offset{0}
 {
     description.init(sample_block);
 
@@ -43,24 +42,31 @@ MeiliSearchSource::MeiliSearchSource(
 
 MeiliSearchSource::~MeiliSearchSource() = default;
 
-void insertWithTypeId(MutableColumnPtr & column, JSON kv_pair, int type_id)
+void insertWithTypeId(MutableColumnPtr & column, JSON kv_pair, ExternalResultDescription::ValueType type_id)
 {
-    if (type_id == Field::Types::UInt64)
+    if (type_id == ExternalResultDescription::ValueType::vtUInt64 || 
+        type_id == ExternalResultDescription::ValueType::vtUInt32 || 
+        type_id == ExternalResultDescription::ValueType::vtUInt16 || 
+        type_id == ExternalResultDescription::ValueType::vtUInt8)
     {
         auto value = kv_pair.getValue().get<UInt64>();
         column->insert(value);
     }
-    else if (type_id == Field::Types::Int64)
+    else if (type_id == ExternalResultDescription::ValueType::vtInt64 || 
+             type_id == ExternalResultDescription::ValueType::vtInt32 || 
+             type_id == ExternalResultDescription::ValueType::vtInt16 || 
+             type_id == ExternalResultDescription::ValueType::vtInt8)
     {
         auto value = kv_pair.getValue().get<Int64>();
         column->insert(value);
     }
-    else if (type_id == Field::Types::String)
+    else if (type_id == ExternalResultDescription::ValueType::vtString)
     {
         auto value = kv_pair.getValue().get<String>();
         column->insert(value);
     }
-    else if (type_id == Field::Types::Float64)
+    else if (type_id == ExternalResultDescription::ValueType::vtFloat64 || 
+             type_id == ExternalResultDescription::ValueType::vtFloat32)
     {
         auto value = kv_pair.getValue().get<Float64>();
         column->insert(value);
@@ -72,11 +78,7 @@ Chunk MeiliSearchSource::generate()
     if (all_read)
         return {};
 
-    MutableColumns columns(description.sample_block.columns());
-    const size_t size = columns.size();
-
-    for (const auto i : collections::range(0, size))
-        columns[i] = description.sample_block.getByPosition(i).column->cloneEmpty();
+    MutableColumns columns = description.sample_block.cloneEmptyColumns();
 
     query_params[doubleQuoteString("offset")] = std::to_string(offset);
     auto response = connection.searchQuery(query_params);
@@ -95,8 +97,9 @@ Chunk MeiliSearchSource::generate()
         for (const auto kv_pair : json)
         {
             const auto & name = kv_pair.getName();
-            auto & col = columns[description.sample_block.getPositionByName(name)];
-            Field::Types::Which type_id = description.sample_block.getByName(name).type->getDefault().getType();
+            int pos = description.sample_block.getPositionByName(name);
+            auto & col = columns[pos];
+            ExternalResultDescription::ValueType type_id = description.types[pos].first;
             insertWithTypeId(col, kv_pair, type_id);
         }
     }
