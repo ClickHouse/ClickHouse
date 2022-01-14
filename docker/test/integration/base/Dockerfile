@@ -1,4 +1,4 @@
-# rebuild in #33610
+# rebuild in #24258
 # docker build -t clickhouse/integration-test .
 ARG FROM_TAG=latest
 FROM clickhouse/test-base:$FROM_TAG
