@@ -38,7 +38,7 @@ static ReturnType onError(const std::string & message [[maybe_unused]], int code
 
 template <typename ReturnType>
 static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, const ColumnWithTypeAndName & expected,
-    const char * context_description, bool allow_materialize, int code)
+    std::string_view context_description, bool allow_materialize, int code)
 {
     if (actual.name != expected.name)
         return onError<ReturnType>("Block structure mismatch in " + std::string(context_description) + " stream: different names of columns:\n"
@@ -85,7 +85,7 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
 
 
 template <typename ReturnType>
-static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, const char * context_description, bool allow_materialize)
+static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, std::string_view context_description, bool allow_materialize)
 {
     size_t columns = rhs.columns();
     if (lhs.columns() != columns)
@@ -608,7 +608,7 @@ bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs)
 }
 
 
-void assertBlocksHaveEqualStructure(const Block & lhs, const Block & rhs, const char * context_description)
+void assertBlocksHaveEqualStructure(const Block & lhs, const Block & rhs, std::string_view context_description)
 {
     checkBlockStructure<void>(lhs, rhs, context_description, false);
 }
@@ -620,7 +620,7 @@ bool isCompatibleHeader(const Block & actual, const Block & desired)
 }
 
 
-void assertCompatibleHeader(const Block & actual, const Block & desired, const char * context_description)
+void assertCompatibleHeader(const Block & actual, const Block & desired, std::string_view context_description)
 {
     checkBlockStructure<void>(actual, desired, context_description, true);
 }

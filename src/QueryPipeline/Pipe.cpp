@@ -135,7 +135,7 @@ Pipe::Pipe(ProcessorPtr source, OutputPort * output, OutputPort * totals, Output
             if (!port)
                 return;
 
-            assertBlocksHaveEqualStructure(header, port->getHeader(), name.c_str());
+            assertBlocksHaveEqualStructure(header, port->getHeader(), name);
 
             ++num_specified_ports;
 
