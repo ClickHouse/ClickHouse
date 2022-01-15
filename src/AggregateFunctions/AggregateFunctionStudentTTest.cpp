@@ -28,6 +28,11 @@ struct StudentTTestData : public TTestMoments<Float64>
 {
     static constexpr auto name = "studentTTest";
 
+    bool hasEnoughObservations() const
+    {
+        return nx > 0 && ny > 0 && nx + ny > 2;
+    }
+
     Float64 getDegreesOfFreedom() const
     {
         return nx + ny - 2;

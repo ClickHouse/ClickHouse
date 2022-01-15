@@ -22,6 +22,11 @@ struct WelchTTestData : public TTestMoments<Float64>
 {
     static constexpr auto name = "welchTTest";
 
+    bool hasEnoughObservations() const
+    {
+        return nx > 1 && ny > 1;
+    }
+
     Float64 getDegreesOfFreedom() const
     {
         Float64 mean_x = getMeanX();
