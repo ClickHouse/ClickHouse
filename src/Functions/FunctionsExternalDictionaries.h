@@ -118,6 +118,32 @@ public:
         return getContext()->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, getContext());
     }
 
+    void convertKeyColumnsToDictionaryKeys(const String & dictionary_name, Columns & key_columns, DataTypes & key_types) const
+    {
+        auto dictionary_structure = getDictionaryStructure(dictionary_name);
+        auto key_attributes_types = dictionary_structure.getKeyTypes();
+        size_t key_attributes_types_size = key_attributes_types.size();
+        size_t key_types_size = key_types.size();
+
+        if (key_types_size != key_attributes_types_size)
+            throw Exception(ErrorCodes::TYPE_MISMATCH, "Dictionary key structure does not match, expected {}", dictionary_structure.getKeyDescription());
+
+        for (size_t key_attribute_type_index = 0; key_attribute_type_index < key_attributes_types_size; ++key_attribute_type_index)
+        {
+            const auto & key_attribute_type = key_attributes_types[key_attribute_type_index];
+            auto & key_type = key_types[key_attribute_type_index];
+
+            if (key_attribute_type->equals(*key_type))
+                continue;
+
+            auto & key_column_to_cast = key_columns[key_attribute_type_index];
+            ColumnWithTypeAndName column_to_cast = {key_column_to_cast, key_type, ""};
+            auto casted_column = castColumnAccurate(std::move(column_to_cast), key_attribute_type);
+            key_column_to_cast = std::move(casted_column);
+            key_type = key_attribute_type;
+        }
+    }
+
 private:
     /// Access cannot be not granted, since in this case checkAccess() will throw and access_checked will not be updated.
     std::atomic<bool> access_checked = false;
@@ -145,6 +171,7 @@ public:
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 0; }
+
     bool isVariadic() const override { return true; }
 
     bool isDeterministic() const override { return false; }
@@ -183,7 +210,17 @@ public:
         if (input_rows_count == 0)
             return result_type->createColumn();
 
-        auto dictionary = helper.getDictionary(arguments[0].column);
+        String dictionary_name;
+
+        if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[0].column.get()))
+            dictionary_name = name_col->getValue<String>();
+        else
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of first argument of function {}, expected a const string.",
+                arguments[0].type->getName(),
+                getName());
+
+        auto dictionary = helper.getDictionary(dictionary_name);
         auto dictionary_key_type = dictionary->getKeyType();
         auto dictionary_special_key_type = dictionary->getSpecialKeyType();
 
@@ -216,15 +253,8 @@ public:
 
         if (dictionary_key_type == DictionaryKeyType::Simple)
         {
-            if (!WhichDataType(key_column_type).isUInt64())
-                 throw Exception(
-                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                     "Second argument of function {} must be UInt64 when dictionary is simple. Actual type {}.",
-                     getName(),
-                     key_column_with_type.type->getName());
-
             key_columns = {key_column};
-            key_types = {std::make_shared<DataTypeUInt64>()};
+            key_types = {key_column_with_type.type};
         }
         else if (dictionary_key_type == DictionaryKeyType::Complex)
         {
@@ -256,6 +286,8 @@ public:
                 }
             }
         }
+
+        helper.convertKeyColumnsToDictionaryKeys(dictionary_name, key_columns, key_types);
 
         if (dictionary_special_key_type == DictionarySpecialKeyType::Range)
         {
@@ -460,15 +492,8 @@ public:
 
         if (dictionary_key_type == DictionaryKeyType::Simple)
         {
-            if (!WhichDataType(key_col_with_type.type).isUInt64())
-                 throw Exception(
-                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                     "Third argument of function {} must be UInt64 when dictionary is simple. Actual type {}.",
-                     getName(),
-                     key_col_with_type.type->getName());
-
             key_columns = {key_column};
-            key_types = {std::make_shared<DataTypeUInt64>()};
+            key_types = {key_col_with_type.type};
         }
         else if (dictionary_key_type == DictionaryKeyType::Complex)
         {
@@ -481,7 +506,7 @@ public:
                 key_columns = assert_cast<const ColumnTuple &>(*key_column).getColumnsCopy();
                 key_types = assert_cast<const DataTypeTuple &>(*key_column_type).getElements();
             }
-            else if (!isTuple(key_column_type))
+            else
             {
                 size_t keys_size = dictionary->getStructure().getKeysSize();
 
@@ -501,6 +526,8 @@ public:
                 }
             }
         }
+
+        helper.convertKeyColumnsToDictionaryKeys(dictionary_name, key_columns, key_types);
 
         if (dictionary_special_key_type == DictionarySpecialKeyType::Range)
         {
