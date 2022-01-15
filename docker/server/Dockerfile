@@ -89,7 +89,7 @@ RUN groupadd -r clickhouse --gid=101 \
         chown root:root /bin/su-exec && \
         chmod 0755 /bin/su-exec && \
         rm /su-exec.c && \
-        apt-get purge -y --auto-remove tcc libc-dev \
+        apt-get purge -y --auto-remove tcc libc-dev libc-dev-bin libc6-dev linux-libc-dev \
     && clickhouse-local -q 'SELECT * FROM system.build_options' \
     && rm -rf \
         /var/lib/apt/lists/* \
