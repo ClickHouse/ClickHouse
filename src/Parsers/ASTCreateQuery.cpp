@@ -122,6 +122,8 @@ ASTPtr ASTColumns::clone() const
         res->set(res->columns, columns->clone());
     if (indices)
         res->set(res->indices, indices->clone());
+    if (stats)
+        res->set(res->stats, stats->clone());
     if (constraints)
         res->set(res->constraints, constraints->clone());
     if (projections)

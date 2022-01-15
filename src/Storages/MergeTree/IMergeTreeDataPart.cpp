@@ -16,12 +16,15 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include "Compression/CompressedReadBufferFromFile.h"
+#include "IO/AsynchronousReadBufferFromFile.h"
 #include <base/JSON.h>
 #include <base/logger_useful.h>
 #include <Compression/getCompressionCodecForFile.h>
 #include <Parsers/queryToString.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <Poco/Logger.h>
 
 
 namespace CurrentMetrics
@@ -626,7 +629,6 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     loadIndex();     /// Must be called after loadIndexGranularity as it uses the value of `index_granularity`
     loadRowsCount(); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
     loadPartitionAndMinMaxIndex();
-    loadStats();
     if (!parent_part)
     {
         loadTTLInfos();
@@ -712,21 +714,23 @@ void IMergeTreeDataPart::loadIndex()
 }
 
 MergeTreeStatisticsPtr IMergeTreeDataPart::loadStats() const {
-    /// It can be empty in case of mutations
-    if (!index_granularity.isInitialized())
-        throw Exception("Index granularity is not loaded before index loading", ErrorCodes::LOGICAL_ERROR);
-    // TODO:
     const auto metadata_snapshot = storage.getInMemoryMetadataPtr();
 
-    const String stats_file_path = String(fs::path(getFullRelativePath()) / PART_STATS_FILE_NAME) + PART_STATS_FILE_EXT;
+    const String stats_file_path = String(fs::path(getFullRelativePath()) / PART_STATS_FILE_NAME) + "." + PART_STATS_FILE_EXT;
+    LOG_DEBUG(&Poco::Logger::get("PART"), "partitions stats create " + stats_file_path);
     auto stats = MergeTreeStatisticFactory::instance().get(metadata_snapshot->getStatistics());
+    LOG_DEBUG(&Poco::Logger::get("PART"), "KEK " + stats_file_path);
     if (volume->getDisk()->exists(stats_file_path))
     {
+        LOG_DEBUG(&Poco::Logger::get("PART"), "partitions file exists " + stats_file_path);
         auto stats_file = openForReading(volume->getDisk(), stats_file_path);
+        LOG_DEBUG(&Poco::Logger::get("PART"), "opened " + stats_file_path);
         stats->deserializeBinary(*stats_file);
+        LOG_DEBUG(&Poco::Logger::get("PART"), "deserialized " + stats_file_path);
         if (!stats_file->eof())
                 throw Exception("Stats file " + fullPath(volume->getDisk(), stats_file_path) + " is unexpectedly long", ErrorCodes::EXPECTED_END_OF_FILE);
     }
+    LOG_DEBUG(&Poco::Logger::get("PART"), "finish " + stats_file_path);
     return stats;
 }
 

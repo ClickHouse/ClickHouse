@@ -71,6 +71,7 @@ private:
     {
         ColumnsDescription columns;
         IndicesDescription indices;
+        StatisticsDescriptions stats;
         ConstraintsDescription constraints;
         ProjectionsDescription projections;
     };

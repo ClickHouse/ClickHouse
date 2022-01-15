@@ -1,11 +1,14 @@
 #include <Storages/MergeTree/MergeTreeStatistic.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Storages/MergeTree/MergeTreeStatisticTDigest.h>
 #include <DataTypes/DataTypeString.h>
-#include "Common/Exception.h"
-#include "base/defines.h"
+#include <Common/Exception.h>
+#include <base/defines.h>
+#include <Poco/Logger.h>
 #include <algorithm>
 #include <memory>
 #include <numeric>
+#include <string>
 
 namespace DB
 {
@@ -21,8 +24,37 @@ bool MergeTreeColumnDistributionStatistics::empty() const
     return column_to_stats.empty();
 }
 
-double MergeTreeColumnDistributionStatistics::estimateProbability(const String& column, const Field& lower, const Field& upper) const
+void MergeTreeColumnDistributionStatistics::merge(const MergeTreeColumnDistributionStatistics & other)
 {
+    for (const auto & [column, stat] : other.column_to_stats)
+    {
+        Poco::Logger::get("MergeTreeColumnDistributionStatistics").information(
+            "MERGE" + column + " ");
+        if (column_to_stats.contains(column))
+        {
+            column_to_stats.at(column)->merge(stat);
+            Poco::Logger::get("MergeTreeColumnDistributionStatistics").information(
+            "MERGEd" + column + " ");
+        }
+        else
+        {
+            // TODO: add stat to column_to_stats
+            // TODO: need also some control over stats versions
+            column_to_stats[column]->merge(stat);
+            Poco::Logger::get("MergeTreeColumnDistributionStatistics").information(
+            "created" + column + " ");
+        }
+    }
+}
+
+std::optional<double> MergeTreeColumnDistributionStatistics::estimateProbability(const String& column, const Field& lower, const Field& upper) const
+{
+    Poco::Logger::get("MergeTreeColumnDistributionStatistics").information("estimateProbability");
+    if (!column_to_stats.contains(column)) {
+        Poco::Logger::get("MergeTreeColumnDistributionStatistics").information("no column " + column);
+        return std::nullopt;
+    }
+    Poco::Logger::get("MergeTreeColumnDistributionStatistics").information("column " + column);
     return column_to_stats.at(column)->estimateProbability(lower, upper);
 }
 
@@ -44,17 +76,21 @@ bool MergeTreeStatistics::empty() const
     return column_distributions.empty();
 }
 
-void MergeTreeStatistics::merge(const std::shared_ptr<MergeTreeStatistics>& /*other*/)
+void MergeTreeStatistics::merge(const std::shared_ptr<MergeTreeStatistics>& other)
 {
-    //if (!other)
-    //    return;
-    // Do nothing at current time
+    Poco::Logger::get("MergeTreeStatistics").information(
+            "MERGE start ");
+    if (!other)
+        return;
+    Poco::Logger::get("MergeTreeStatistics").information(
+            "MERGE start column_distributions");
+    column_distributions.merge(other->column_distributions);
 }
 
 // Serialization:
 // <Count:u64>
-// <TYPE:u64><Count:u64><Column/Name:string><DataSizeBytes:u64><data:...><Column/Name:string><DataSizeBytes:u64><data:...>...
-// <TYPE:u64><Count:u64><Column/Name:string><DataSizeBytes:u64><data:...><Column/Name:string><DataSizeBytes:u64><data:...>...
+// <TYPE:u64><TODO:version:u64><Count:u64><Column/Name:string><DataSizeBytes:u64><data:...><Column/Name:string><DataSizeBytes:u64><data:...>...
+// <TYPE:u64><TODO:version:u64><Count:u64><Column/Name:string><DataSizeBytes:u64><data:...><Column/Name:string><DataSizeBytes:u64><data:...>...
 // ...
 void MergeTreeStatistics::serializeBinary(WriteBuffer & ostr) const
 {
@@ -71,9 +107,9 @@ void MergeTreeStatistics::deserializeBinary(ReadBuffer & istr)
     Field field;
     size_serialization->deserializeBinary(field, istr);
     const auto stats_count = field.get<size_t>();
+    Poco::Logger::get("MergeTreeStatistics").information("COUNT " + std::to_string(stats_count));
     if (stats_count != 1)
         throw Exception("Deserialization error: stats count in file not equal to 1", ErrorCodes::LOGICAL_ERROR);
-
     column_distributions.deserializeBinary(istr);
 }
 
@@ -105,30 +141,43 @@ void MergeTreeColumnDistributionStatistics::deserializeBinary(ReadBuffer & istr)
     const auto & str_type = DataTypePtr(std::make_shared<DataTypeString>());
     auto str_serialization = str_type->getDefaultSerialization();
 
+    Poco::Logger::get("MergeTreeColumnDistributionStatistics").information("START");
     Field field;
     size_serialization->deserializeBinary(field, istr);
     if (field.get<size_t>() != static_cast<size_t>(StatisticType::COLUMN_DISRIBUTION))
         throw Exception("Unknown statistic type", ErrorCodes::LOGICAL_ERROR);
+    Poco::Logger::get("MergeTreeColumnDistributionStatistics").information(
+        "TYPE {}" + std::to_string(static_cast<size_t>(StatisticType::COLUMN_DISRIBUTION)));
 
     size_serialization->deserializeBinary(field, istr);
     const auto stats_count = field.get<size_t>();
+    Poco::Logger::get("MergeTreeColumnDistributionStatistics").information(
+        "COLS {}" + std::to_string(column_to_stats.size()));
 
     for (size_t index = 0; index < stats_count; ++index)
     {
+        Poco::Logger::get("MergeTreeColumnDistributionStatistics").information(
+            "RUN {}" + std::to_string(index));
         str_serialization->deserializeBinary(field, istr);
         const auto column = field.get<String>();
+        Poco::Logger::get("MergeTreeColumnDistributionStatistics").information(
+            "CLNM {}" + column);
         auto it = column_to_stats.find(column);
         if (it == std::end(column_to_stats))
         {
+            Poco::Logger::get("MergeTreeColumnDistributionStatistics").information("UNKNOWN CLMN");
             size_serialization->deserializeBinary(field, istr);
             const auto data_count = field.get<size_t>();
+            Poco::Logger::get("MergeTreeColumnDistributionStatistics").information("SKIP " + std::to_string(data_count));
             istr.ignore(data_count);
         }
         else
         {
+            Poco::Logger::get("MergeTreeColumnDistributionStatistics").information("DESERIALIZE CLMN");
             it->second->deserializeBinary(istr);
         }
     }
+    Poco::Logger::get("MergeTreeColumnDistributionStatistics").information("FINISH");
 }
 
 const MergeTreeColumnDistributionStatistics & MergeTreeStatistics::getColumnDistributionStatistics() const
@@ -171,8 +220,11 @@ MergeTreeStatisticsPtr MergeTreeStatisticFactory::get(
     const std::vector<StatisticDescription> & stats) const
 {
     MergeTreeColumnDistributionStatistics column_distribution_stats;
-    for (const auto & stat : stats)
-        column_distribution_stats.add(stat.name, getColumnDistributionStatistic(stat));
+    Poco::Logger::get("MergeTreeStatisticFactory").information("STAT CREATE NEW");
+    for (const auto & stat : stats) {
+        column_distribution_stats.add(stat.column_names.front(), getColumnDistributionStatistic(stat));
+        Poco::Logger::get("MergeTreeStatisticFactory").information("STAT CREATE name = " + stat.column_names.front());
+    }
 
     auto result = std::make_shared<MergeTreeStatistics>();
     result->setColumnDistributionStatistics(std::move(column_distribution_stats));
@@ -206,6 +258,10 @@ IMergeTreeColumnDistributionStatisticCollectors MergeTreeStatisticFactory::getCo
     for (const auto & stat : stats)
         result.emplace_back(getColumnDistributionStatisticCollector(stat));
     return result;
+}
+
+MergeTreeStatisticFactory::MergeTreeStatisticFactory() {
+    registerCreators("tdigest", creatorColumnDistributionStatisticTDigest, creatorColumnDistributionStatisticCollectorTDigest);
 }
 
 MergeTreeStatisticFactory & MergeTreeStatisticFactory::instance()

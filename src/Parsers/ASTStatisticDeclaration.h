@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <Parsers/ASTExpressionList.h>
 
 namespace DB
 {
@@ -14,7 +13,7 @@ class ASTStatisticDeclaration : public IAST
 {
 public:
     String name;
-    ASTExpressionList * columns;
+    IAST * columns;
     ASTFunction * type; // TODO: optional or 'AUTO'
 
     /** Get the text that identifies this element. */

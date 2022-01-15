@@ -50,6 +50,7 @@
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
+#include "Common/Exception.h"
 #include <Common/Increment.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/Stopwatch.h>
@@ -57,6 +58,8 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include "Functions/DateTimeTransforms.h"
+#include "base/logger_useful.h"
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
@@ -66,6 +69,7 @@
 
 #include <base/insertAtEnd.h>
 #include <base/scope_guard_safe.h>
+#include <Poco/Logger.h>
 
 #include <algorithm>
 #include <iomanip>
@@ -332,6 +336,20 @@ MergeTreeData::MergeTreeData(
         else
             background_moves_assignee.trigger();
     };
+
+    stats_merger_task = getContext()->getSchedulePool().createTask("MergeTreeStatisticsMerger", [this] {
+        // TODO: settings time
+        try
+        {
+            updateStatisticsByPartition();
+        }
+        catch (...)
+        {
+            LOG_ERROR(log, "Exception during statistics update: {}", getCurrentExceptionMessage(true));
+        }
+        stats_merger_task->scheduleAfter(10000);
+    });
+    stats_merger_task->activateAndSchedule();
 }
 
 StoragePolicyPtr MergeTreeData::getStoragePolicy() const
@@ -875,9 +893,12 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
 MergeTreeStatisticsPtr MergeTreeData::getStatisticsByPartitionPredicate(
     const SelectQueryInfo & query_info, ContextPtr local_context) const
 {
+    Poco::Logger::get("getStatisticsByPartitionPredicate").information("START");
     auto parts = getDataPartsVector({DataPartState::Active});
+    std::unordered_set<String> partitions;
 
     /// TODO: get rid of copy-paste
+    /// TODO: support table without partitions
     auto metadata_snapshot = getInMemoryMetadataPtr();
     ASTPtr expression_ast;
     Block virtual_columns_block = getBlockWithVirtualPartColumns(parts, true /* one_part */);
@@ -887,33 +908,34 @@ MergeTreeStatisticsPtr MergeTreeData::getStatisticsByPartitionPredicate(
 
     PartitionPruner partition_pruner(metadata_snapshot, query_info, local_context, true /* strict */);
     if (partition_pruner.isUseless() && !valid)
-        return nullptr;
-
-    std::unordered_set<String> part_values;
-    if (valid && expression_ast)
     {
-        virtual_columns_block = getBlockWithVirtualPartColumns(parts, false /* one_part */);
-        VirtualColumnUtils::filterBlockWithQuery(query_info.query, virtual_columns_block, local_context, expression_ast);
-        part_values = VirtualColumnUtils::extractSingleValueFromBlock<String>(virtual_columns_block, "_part");
-        if (part_values.empty())
-            return nullptr;
-    }
-
-    
-    std::unordered_set<String> partitions;
-    for (const auto & part : parts)
-    {
-        if ((part_values.empty() || part_values.find(part->name) != part_values.end()) && !partition_pruner.canBePruned(*part))
+        Poco::Logger::get("getStatisticsByPartitionPredicate").information("pruner");
+        for (const auto & part : parts)
         {
             partitions.emplace(part->info.partition_id);
-        }   
+        }
     }
+    else
+    {
+        // TODO: parts_values???
+        Poco::Logger::get("getStatisticsByPartitionPredicate").information("partitions");
+        for (const auto & part : parts)
+        {
+            if (!partition_pruner.canBePruned(*part))
+            {
+                partitions.emplace(part->info.partition_id);
+            }   
+        }
+    }
+
+    Poco::Logger::get("getStatisticsByPartitionPredicate").information("valid");
 
     std::vector<MergeTreeStatisticsPtr> stats_for_merge;
     {
         std::shared_lock lock(partition_to_stats_mutex);
         for (const auto & partition : partitions)
         {
+            Poco::Logger::get("getStatisticsByPartitionPredicate").information("KEK PARTITION " + partition);
             auto it = partition_to_stats.find(partition);
             if (it != std::end(partition_to_stats))
             {
@@ -925,11 +947,13 @@ MergeTreeStatisticsPtr MergeTreeData::getStatisticsByPartitionPredicate(
     MergeTreeStatisticsPtr res = MergeTreeStatisticFactory::instance().get(metadata_snapshot->getStatistics());
     for (const auto& stat : stats_for_merge)
         res->merge(stat);
+    Poco::Logger::get("getStatisticsByPartitionPredicate").information("RES " + std::to_string(stats_for_merge.size()));
     return res;
 }
 
 void MergeTreeData::updateStatisticsByPartition()
 {
+    LOG_DEBUG(log, "Update stats by partitions");
     std::unordered_map<String, MergeTreeStatisticsPtr> partition_to_stats_new;
 
     auto parts = getDataPartsVector({DataPartState::Active});
@@ -937,11 +961,23 @@ void MergeTreeData::updateStatisticsByPartition()
 
     for (const auto & part : parts)
     {
-        const String & parition_id = part->info.partition_id;
-        if (partition_to_stats_new.contains(parition_id))
-            partition_to_stats_new[parition_id]->merge(part->loadStats());
-        else 
-            partition_to_stats_new[parition_id] = part->loadStats();
+        const String & partition_id = part->info.partition_id;
+        LOG_DEBUG(log, "Update stats by partitions : partition_id={}", partition_id);
+        const auto loaded_stats = part->loadStats();
+        LOG_DEBUG(log, "Update stats by partitions : partition_id={} {} {}",
+            partition_id, partition_to_stats_new.contains(partition_id), loaded_stats == nullptr);
+        if (loaded_stats != nullptr)
+        {
+            if (partition_to_stats_new.contains(partition_id))
+                partition_to_stats_new[partition_id]->merge(loaded_stats);
+            else 
+                partition_to_stats_new[partition_id] = loaded_stats;
+        }
+    }
+
+    for (const auto & [partition, stat] : partition_to_stats_new)
+    {
+        LOG_DEBUG(log, "Update stats by partitions : partition={} emp={}", partition, stat->empty());
     }
 
     std::unique_lock lock(partition_to_stats_mutex);

@@ -77,8 +77,10 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
+#include "base/logger_useful.h"
 #include <base/map.h>
 #include <base/scope_guard_safe.h>
+#include <Poco/Logger.h>
 #include <memory>
 
 
@@ -405,7 +407,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             storage &&
             storage->supportsPrewhere() &&
             query.where() &&
-            !query.prewhere() // && !settings.allow_experimental_stats_for_prewhere_optimization
+            !query.prewhere()
             )
         {
             /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
@@ -413,8 +415,11 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             {
                 /// Extract column compressed sizes.
                 std::unordered_map<std::string, UInt64> column_compressed_sizes;
-                for (const auto & [name, sizes] : column_sizes)
+                for (const auto & [name, sizes] : column_sizes) {
+                    LOG_DEBUG(&Poco::Logger::get(">>>>>"), "name={} size={} size2={}",
+                        name, sizes.data_compressed, sizes.data_uncompressed);
                     column_compressed_sizes[name] = sizes.data_compressed;
+                }
 
                 SelectQueryInfo current_info;
                 current_info.query = query_ptr;
@@ -423,8 +428,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 MergeTreeWhereOptimizer{
                     current_info,
                     context,
+                    settings,
                     std::move(column_compressed_sizes),
                     metadata_snapshot,
+                    storage,
                     syntax_analyzer_result->requiredSourceColumns(),
                     log};
             }

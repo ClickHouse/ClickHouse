@@ -5,6 +5,8 @@
 #include <Storages/SelectQueryInfo.h>
 
 #include <boost/noncopyable.hpp>
+#include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeStatistic.h>
 
 #include <memory>
 #include <set>
@@ -36,8 +38,10 @@ public:
     MergeTreeWhereOptimizer(
         SelectQueryInfo & query_info,
         ContextPtr context,
+        const Settings & settings,
         std::unordered_map<std::string, UInt64> column_sizes_,
         const StorageMetadataPtr & metadata_snapshot,
+        const StoragePtr & storage_,
         const Names & queried_columns_,
         Poco::Logger * log_);
 
@@ -54,11 +58,16 @@ private:
         bool viable = false;
 
         /// Does the condition presumably have good selectivity?
+        /// old algorithm
         bool good = false;
+
+        /// New algorithm
+        double score = 0;
+        double selectivity = 0;
 
         auto tuple() const
         {
-            return std::make_tuple(!viable, !good, columns_size, identifiers.size());
+            return std::make_tuple(!viable, !good, -score, columns_size, identifiers.size());
         }
 
         /// Is condition a better candidate for moving to PREWHERE?
@@ -114,6 +123,8 @@ private:
     const Block block_with_constants;
     Poco::Logger * log;
     std::unordered_map<std::string, UInt64> column_sizes;
+    MergeTreeStatisticsPtr stats;
+    bool use_new_scoring;
     UInt64 total_size_of_queried_columns = 0;
     NameSet array_joined_names;
 };

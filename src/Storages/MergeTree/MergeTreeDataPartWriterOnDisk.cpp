@@ -341,23 +341,31 @@ void MergeTreeDataPartWriterOnDisk::finishStatisticsSerialization(MergeTreeData:
     if (stats_collectors.empty())
         return;
 
-    auto stream = std::make_unique<MergeTreeDataPartWriterOnDisk::Stream>(
-        PART_STATS_FILE_NAME,
-        data_part->volume->getDisk(),
-        part_path + PART_STATS_FILE_NAME, PART_STATS_FILE_EXT,
-        "", "",
-        default_codec, settings.max_compress_block_size,
-        false);
+    const auto filename = String(PART_STATS_FILE_NAME) + "." + PART_STATS_FILE_EXT;
+    auto stats_file_stream = data_part->volume->getDisk()->writeFile(
+        part_path + filename,
+        DBMS_DEFAULT_BUFFER_SIZE,
+        WriteMode::Rewrite);
+    auto stats_stream = std::make_unique<HashingWriteBuffer>(*stats_file_stream);
     
+    MergeTreeColumnDistributionStatistics column_distribution_stats;
     for (auto & stats_collector : stats_collectors)
     {
-        stats_collector->getStatisticAndReset()->serializeBinary(stream->compressed);
+        column_distribution_stats.add(stats_collector->column(), stats_collector->getStatisticAndReset());
     }
 
-    stream->finalize();
-    stream->addToChecksums(checksums);
+    MergeTreeStatistics stats;
+    stats.setColumnDistributionStatistics(std::move(column_distribution_stats));
+    stats.serializeBinary(*stats_stream);
+
+    // TODO: compression
+    stats_stream->next();
+    checksums.files[filename].file_size = stats_stream->count();
+    checksums.files[filename].file_hash = stats_stream->getHash();
+    stats_file_stream->finalize();
+    
     if (sync)
-        stream->sync();
+        stats_file_stream->sync();
 }
 
 Names MergeTreeDataPartWriterOnDisk::getSkipIndicesColumns() const

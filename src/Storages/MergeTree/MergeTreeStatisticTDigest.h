@@ -17,7 +17,9 @@ public:
     const String& name() const override;
 
     bool empty() const override;
-    const Names& getColumnsRequiredForStatisticCalculation() const override;
+    void merge(const std::shared_ptr<IMergeTreeStatistic> & other) override;
+
+    const String& getColumnsRequiredForStatisticCalculation() const override;
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr) override;
@@ -27,7 +29,7 @@ public:
     double estimateProbability(const Field& lower, const Field& upper) const override;
 
 private:
-    const Names column_name;
+    const String column_name;
     mutable QuantileTDigest<Float32> sketch;
     bool is_empty;
 };
@@ -38,6 +40,7 @@ public:
     explicit MergeTreeColumnDistributionStatisticCollectorTDigest(const String & column_name_);
 
     const String & name() const override;
+    const String & column() const override;
     bool empty() const override;
     IMergeTreeColumnDistributionStatisticPtr getStatisticAndReset() override;
 
@@ -48,5 +51,8 @@ private:
     const String column_name;
     std::optional<QuantileTDigest<Float32>> sketch;
 };
+
+IMergeTreeColumnDistributionStatisticPtr creatorColumnDistributionStatisticTDigest(const StatisticDescription & stat);
+IMergeTreeColumnDistributionStatisticCollectorPtr creatorColumnDistributionStatisticCollectorTDigest(const StatisticDescription & stat);
 
 }

@@ -1,5 +1,7 @@
+#include <memory>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -11,8 +13,11 @@
 #include <Parsers/formatAST.h>
 #include <Interpreters/misc.h>
 #include <Common/typeid_cast.h>
+#include "Interpreters/StorageID.h"
+#include "Storages/StorageMerge.h"
 #include <DataTypes/NestedUtils.h>
 #include <base/map.h>
+#include <Poco/Logger.h>
 
 namespace DB
 {
@@ -29,8 +34,10 @@ static constexpr auto threshold = 2;
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     SelectQueryInfo & query_info,
     ContextPtr context,
+    const Settings & settings,
     std::unordered_map<std::string, UInt64> column_sizes_,
     const StorageMetadataPtr & metadata_snapshot,
+    const StoragePtr & storage_,
     const Names & queried_columns_,
     Poco::Logger * log_)
     : table_columns{collections::map<std::unordered_set>(
@@ -41,7 +48,12 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     , block_with_constants{KeyCondition::getBlockWithConstants(query_info.query->clone(), query_info.syntax_analyzer_result, context)}
     , log{log_}
     , column_sizes{std::move(column_sizes_)}
+    , stats(std::dynamic_pointer_cast<StorageMergeTree>(storage_)
+        ? std::dynamic_pointer_cast<StorageMergeTree>(storage_)->getStatisticsByPartitionPredicate(query_info, context)
+        : nullptr) // TODO: looks awful, use IStorage interface
+    , use_new_scoring(settings.allow_experimental_stats_for_prewhere_optimization && stats != nullptr)
 {
+    LOG_DEBUG(&Poco::Logger::get("MergeTreeWhereOptimizer"), "kek = {}", storage_->getName());
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
     if (!primary_key.column_names.empty())
         first_primary_key_column = primary_key.column_names[0];
@@ -110,12 +122,85 @@ static bool isConditionGood(const ASTPtr & condition)
             else if (type == Field::Types::Float64)
             {
                 const auto value = field.get<Float64>();
-                return value < threshold || threshold < value;
+                return value < -threshold || threshold < value;
             }
         }
     }
 
     return false;
+}
+
+static bool isConditionGoodNew(const ASTPtr & condition)
+{
+    const auto * function = condition->as<ASTFunction>();
+    if (!function)
+        return false;
+
+    // TODO: support other
+    if (function->name != "equals")
+        return false;
+
+    auto * left_arg = function->arguments->children.front().get();
+    auto * right_arg = function->arguments->children.back().get();
+
+    /// try to ensure left_arg points to ASTIdentifier
+    if (!left_arg->as<ASTIdentifier>() && right_arg->as<ASTIdentifier>())
+        std::swap(left_arg, right_arg);
+
+    if (left_arg->as<ASTIdentifier>())
+    {
+        /// condition may be "good" if only right_arg is a constant and its value is outside the threshold
+        if (const auto * literal = right_arg->as<ASTLiteral>())
+        {
+            const auto type = literal->value.getType();
+            return type == Field::Types::UInt64 || type == Field::Types::Int64 || type == Field::Types::Float64;
+        }
+    }
+    return false;
+}
+
+static double scoreSelectivity(const MergeTreeStatisticsPtr & stats, const ASTPtr & condition)
+{
+    const auto * function = condition->as<ASTFunction>();
+    if (!function)
+        return false;
+
+    std::unordered_set<String> compare_funcs = {
+        "equals",
+        // TODO: support other
+        //"notEquals",
+        //"less",
+        //"greater",
+        //"greaterOrEquals",
+        //"lessOrEquals",
+    };
+    if (!compare_funcs.contains(function->name))
+        return 1;
+
+    auto * left_arg = function->arguments->children.front().get();
+    auto * right_arg = function->arguments->children.back().get();
+
+    /// try to ensure left_arg points to ASTIdentifier
+    if (!left_arg->as<ASTIdentifier>() && right_arg->as<ASTIdentifier>())
+        std::swap(left_arg, right_arg);
+
+    const auto * ident = left_arg->as<ASTIdentifier>();
+    if (ident)
+    {
+        /// condition may be "good" if only right_arg is a constant
+        if (const auto * literal = right_arg->as<ASTLiteral>())
+        {
+            const auto & field = literal->value;
+
+            // everything is converted to float
+            return stats->getColumnDistributionStatistics().estimateProbability(
+                    ident->getColumnName(),
+                    field,
+                    field).value_or(1);
+        }
+    }
+
+    return 1;
 }
 
 static const ASTFunction * getAsTuple(const ASTPtr & node)
@@ -134,6 +219,7 @@ static bool getAsTupleLiteral(const ASTPtr & node, Tuple & tuple)
 
 bool MergeTreeWhereOptimizer::tryAnalyzeTuple(Conditions & res, const ASTFunction * func, bool is_final) const
 {
+    // TODO: support not only equals
     if (!func || func->name != "equals" || func->arguments->children.size() != 2)
         return false;
 
@@ -201,7 +287,22 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
             && cond.identifiers.size() < queried_columns.size();
 
         if (cond.viable)
-            cond.good = isConditionGood(node);
+        {
+            if (!use_new_scoring)
+            {
+                cond.good = isConditionGood(node);
+                cond.score = 0;
+                LOG_DEBUG(&Poco::Logger::get("TEST COND"), "USED OLD");
+            }
+            else
+            {
+                cond.good = isConditionGoodNew(node);
+                cond.selectivity = scoreSelectivity(stats, node);
+                cond.score = cond.columns_size / cond.selectivity;
+                LOG_DEBUG(&Poco::Logger::get("TEST COND"), "cond={} good={} score={} size={} select={}",
+                    *cond.identifiers.begin(), cond.good, cond.score, cond.columns_size, cond.selectivity);
+            }
+        }
 
         res.emplace_back(std::move(cond));
     }
@@ -265,6 +366,7 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
         }
     };
 
+    /// TODO: try to use branch-and-bound instead
     /// Move conditions unless the ratio of total_size_of_moved_conditions to the total_size_of_queried_columns is less than some threshold.
     while (!where_conditions.empty())
     {
@@ -314,7 +416,7 @@ UInt64 MergeTreeWhereOptimizer::getIdentifiersColumnSize(const NameSet & identif
     UInt64 size = 0;
 
     for (const auto & identifier : identifiers)
-        if (column_sizes.count(identifier))
+        if (column_sizes.contains(identifier))
             size += column_sizes.at(identifier);
 
     return size;

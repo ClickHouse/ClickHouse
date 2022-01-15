@@ -4,6 +4,8 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTStatisticDeclaration.h>
 #include <Storages/StatisticsDescription.h>
+#include <Storages/extractKeyExpressionList.h>
+#include <Poco/Logger.h>
 
 namespace DB
 {
@@ -36,17 +38,24 @@ StatisticDescription StatisticDescription::getStatisticFromAST(const ASTPtr & de
     stat.name = stat_definition->name;
     stat.type = Poco::toLower(stat_definition->type->name);
     
-    for (const auto & ast : stat_definition->columns->children)
+    ASTPtr expr_list = extractKeyExpressionList(stat_definition->columns->clone());
+    for (const auto & ast : expr_list->children)
     {
         ASTIdentifier* ident = ast->as<ASTIdentifier>();
-        if (!ident || columns.hasPhysical(ident->name()))
+        Poco::Logger::get("TEST").information(ident->name() + " " + ident->getColumnName());
+        Poco::Logger::get("TEST").information(std::to_string(columns.hasPhysical("a")) + " " + std::to_string(columns.has("a")));
+        for (const auto& cl : columns) {
+            Poco::Logger::get("TEXT").information(cl.name);
+        }
+        if (!ident || !columns.hasPhysical(ident->getColumnName()))
             throw Exception("Incorrect column", ErrorCodes::INCORRECT_QUERY);
-        const auto & column = columns.get(ident->name());
+        const auto & column = columns.get(ident->getColumnName());
         stat.column_names.push_back(column.name);
         stat.data_types.push_back(column.type);
     }
 
     UNUSED(context);
+    Poco::Logger::get("KEK").information(stat.name + " " + stat.type);
 
     return stat;
 }
@@ -56,6 +65,7 @@ StatisticDescription::StatisticDescription(const StatisticDescription & other)
     , expression_list_ast(other.expression_list_ast ? other.expression_list_ast->clone() : nullptr)
     , name(other.name)
     , type(other.type)
+    , column_names(other.column_names)
 {
 }
 
@@ -76,6 +86,7 @@ StatisticDescription & StatisticDescription::operator=(const StatisticDescriptio
 
     name = other.name;
     type = other.type;
+    column_names = other.column_names;
 
     return *this;
 }

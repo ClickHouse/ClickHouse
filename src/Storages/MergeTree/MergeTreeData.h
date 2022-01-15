@@ -988,6 +988,8 @@ protected:
     std::function<void(bool)> common_assignee_trigger;
     std::function<void(bool)> moves_assignee_trigger;
 
+    BackgroundSchedulePool::TaskHolder stats_merger_task;
+
     using DataPartIteratorByInfo = DataPartsIndexes::index<TagByInfo>::type::iterator;
     using DataPartIteratorByStateAndInfo = DataPartsIndexes::index<TagByStateAndInfo>::type::iterator;
 

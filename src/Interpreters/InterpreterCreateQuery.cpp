@@ -597,6 +597,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             for (const auto & index : create.columns_list->indices->children)
                 properties.indices.push_back(
                     IndexDescription::getIndexFromAST(index->clone(), properties.columns, getContext()));
+        
+        if (create.columns_list->stats)
+            for (const auto & stat : create.columns_list->stats->children)
+                properties.stats.push_back(
+                    StatisticDescription::getStatisticFromAST(stat->clone(), properties.columns, getContext()));
 
         if (create.columns_list->projections)
             for (const auto & projection_ast : create.columns_list->projections->children)

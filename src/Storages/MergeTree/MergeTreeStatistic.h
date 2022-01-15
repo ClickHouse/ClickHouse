@@ -11,7 +11,7 @@
 #include <Storages/StatisticsDescription.h>
 
 constexpr auto PART_STATS_FILE_NAME = "part_stats";
-constexpr auto PART_STATS_FILE_EXT = ".bin_stats";
+constexpr auto PART_STATS_FILE_EXT = "bin_stats";
 
 namespace DB
 {
@@ -23,8 +23,9 @@ public:
     virtual const String& name() const = 0;
 
     virtual bool empty() const = 0;
-    //virtual bool isMergeable() const = 0;
-    virtual const Names& getColumnsRequiredForStatisticCalculation() const = 0;
+    virtual void merge(const std::shared_ptr<IMergeTreeStatistic> & other) = 0;
+
+    virtual const String & getColumnsRequiredForStatisticCalculation() const = 0;
 
     virtual void serializeBinary(WriteBuffer & ostr) const = 0;
     virtual void deserializeBinary(ReadBuffer & istr) = 0;
@@ -33,11 +34,11 @@ public:
 enum class StatisticType
 {
     COLUMN_DISRIBUTION = 1,
-    // https://www.youtube.com/watch?v=XA3SBgcZwtE&t=1753s
-    //COLUMN_MOST_FREQUENT,
-    //COLUMN_DISTINCT_COUNT,
-    //COLUMN_NULL,
-    //COLUMN_KEY_CORRELATION,
+    //COLUMN_MOST_FREQUENT, -- in list => bad selectivity
+    //COLUMN_DISTINCT_COUNT, -- for join/group by
+    //COLUMN_LOW_CARDINALITY_COUNT, -- exact per block stats for low cardinality
+    //COLUMN_COUNT_SKETCH, -- per block count
+    //COLUMN_NULL_COUNT, -- like postgres
     //...
 };
 
@@ -61,6 +62,7 @@ public:
     virtual ~IMergeTreeColumnDistributionStatisticCollector() = default;
 
     virtual const String & name() const = 0;
+    virtual const String & column() const = 0;
     virtual bool empty() const = 0;
     virtual IMergeTreeColumnDistributionStatisticPtr getStatisticAndReset() = 0;
 
@@ -78,10 +80,12 @@ class MergeTreeColumnDistributionStatistics /*: public IMergeTreePerColumnStatis
 public:
     bool empty() const;
 
+    void merge(const MergeTreeColumnDistributionStatistics & other);
+
     void serializeBinary(WriteBuffer & ostr) const;
     void deserializeBinary(ReadBuffer & istr);
 
-    double estimateProbability(const String& column, const Field& lower, const Field& upper) const;
+    std::optional<double> estimateProbability(const String & column, const Field & lower, const Field & upper) const;
     void add(const String & name, const IMergeTreeColumnDistributionStatisticPtr & stat);
     void remove(const String & name);
 
@@ -90,6 +94,7 @@ private:
 };
 
 // Stats stored for each part
+// TODO: all stats, not only merge tree
 class MergeTreeStatistics {
 public:
     bool empty() const;
@@ -127,7 +132,7 @@ public:
     void registerCreators(const std::string & stat_type, StatCreator creator, CollectorCreator collector);
 
 protected:
-    MergeTreeStatisticFactory() = default;
+    MergeTreeStatisticFactory();
 
 private:
     using StatCreators = std::unordered_map<std::string, StatCreator>;

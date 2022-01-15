@@ -18,13 +18,6 @@ struct StatisticDescription
     /// Statistic name
     String name;
 
-    // Only Calcuation Type: per part
-    // Only Statistic Type: Distribution
-
-    // Type: histogram
-    // Type: topk
-    // Type: rmi???
-    // Type: auto???
     String type;
 
     /// Names of statistic columns
@@ -33,7 +26,6 @@ struct StatisticDescription
     /// Data types of statistic  columns
     DataTypes data_types;
 
-    // TODO:
     static StatisticDescription getStatisticFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context);
 
     StatisticDescription() = default;
@@ -51,6 +43,7 @@ struct StatisticsDescriptions : public std::vector<StatisticDescription>
     /// Convert description to string
     String toString() const;
     /// Parse description from string
+    // TODO: replication
     static StatisticsDescriptions parse(const String & str, const ColumnsDescription & columns, ContextPtr context);
 };
 
