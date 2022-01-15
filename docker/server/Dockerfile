@@ -120,4 +120,3 @@ VOLUME /var/lib/clickhouse
 ENV CLICKHOUSE_CONFIG /etc/clickhouse-server/config.xml
 
 ENTRYPOINT ["/entrypoint.sh"]
-
