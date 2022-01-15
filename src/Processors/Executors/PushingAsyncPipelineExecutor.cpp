@@ -4,8 +4,10 @@
 #include <QueryPipeline/QueryPipeline.h>
 #include <iostream>
 
+#include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <base/scope_guard_safe.h>
+#include <Poco/Event.h>
 
 namespace DB
 {

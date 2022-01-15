@@ -1,4 +1,4 @@
--- Tags: no-unbundled, no-fasttest
+-- Tags: no-fasttest
 
 DROP TABLE IF EXISTS h3_indexes;
 

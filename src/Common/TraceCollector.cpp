@@ -153,7 +153,7 @@ void TraceCollector::run()
         Array trace;
         trace.reserve(trace_size);
 
-        for (size_t i = 0; i < trace_size; i++)
+        for (size_t i = 0; i < trace_size; ++i)
         {
             uintptr_t addr = 0;
             readPODBinary(addr, in);

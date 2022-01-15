@@ -51,7 +51,7 @@ private:
     MarkCache * mark_cache;
     bool save_marks_in_cache;
 
-    size_t last_right_offset = 0;
+    std::optional<size_t> last_right_offset;
 
     const MergeTreeIndexGranularityInfo * index_granularity_info;
 

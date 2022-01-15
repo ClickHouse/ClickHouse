@@ -127,11 +127,11 @@ def _check_timeout_and_exception(node, user, query_base, query):
 
     extra_repeats = 1
     # Table function remote() are executed two times.
-    # It tries to get table stucture from remote shards.
-    # On 'node'2 it will firsty try to get structure from 'node1' (which is not available),
-    # so so threre are two extra conection attempts for 'node2' and 'remote'
+    # It tries to get table structure from remote shards.
+    # On 'node2' it will firstly try to get structure from 'node1' (which is not available),
+    # so there are 1 extra connection attempts for 'node2' and 'remote'
     if node.name == 'node2' and query_base == 'remote':
-        extra_repeats = 3
+        extra_repeats = 2
 
     expected_timeout = EXPECTED_BEHAVIOR[user]['timeout'] * repeats * extra_repeats
 

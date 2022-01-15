@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/randomSeed.h>
+#include <boost/algorithm/string/replace.hpp>
 
 
 namespace ProfileEvents
@@ -196,11 +197,6 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 
         updateQuorumIfWeHavePart();
 
-        if (storage_settings->replicated_can_become_leader)
-            storage.enterLeaderElection();
-        else
-            LOG_INFO(log, "Will not enter leader election because replicated_can_become_leader=0");
-
         /// Anything above can throw a KeeperException if something is wrong with ZK.
         /// Anything below should not throw exceptions.
 
@@ -257,7 +253,7 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
     for (const auto & part_name : failed_parts)
     {
         auto part = storage.getPartIfExists(
-            part_name, {MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
+            part_name, {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
 
         if (part)
         {
@@ -378,8 +374,6 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
     storage.replica_is_active_node = nullptr;
 
     LOG_TRACE(log, "Waiting for threads to finish");
-
-    storage.exitLeaderElection();
 
     storage.queue_updating_task->deactivate();
     storage.mutations_updating_task->deactivate();

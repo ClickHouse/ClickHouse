@@ -18,10 +18,7 @@
 
 #include <DataTypes/NestedUtils.h>
 
-#include <Columns/ColumnArray.h>
-
 #include <Interpreters/Context.h>
-#include <Parsers/ASTLiteral.h>
 #include "StorageLogSettings.h"
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceWithProgress.h>
@@ -978,7 +975,7 @@ RestoreDataTasks StorageLog::restoreFromBackup(const BackupPtr & backup, const S
             for (const auto & data_file : data_files)
             {
                 String file_path_in_backup = data_path_in_backup + fileName(data_file.path);
-                auto backup_entry = backup->read(file_path_in_backup);
+                auto backup_entry = backup->readFile(file_path_in_backup);
                 auto in = backup_entry->getReadBuffer();
                 auto out = disk->writeFile(data_file.path, max_compress_block_size, WriteMode::Append);
                 copyData(*in, *out);
@@ -989,7 +986,7 @@ RestoreDataTasks StorageLog::restoreFromBackup(const BackupPtr & backup, const S
                 /// Append marks.
                 size_t num_extra_marks = 0;
                 String file_path_in_backup = data_path_in_backup + fileName(marks_file_path);
-                size_t file_size = backup->getSize(file_path_in_backup);
+                size_t file_size = backup->getFileSize(file_path_in_backup);
                 if (file_size % (num_data_files * sizeof(Mark)) != 0)
                     throw Exception("Size of marks file is inconsistent", ErrorCodes::SIZES_OF_MARKS_FILES_ARE_INCONSISTENT);
 
@@ -1009,7 +1006,7 @@ RestoreDataTasks StorageLog::restoreFromBackup(const BackupPtr & backup, const S
                     old_num_rows[i] = num_marks ? data_files[i].marks[num_marks - 1].rows : 0;
                 }
 
-                auto backup_entry = backup->read(file_path_in_backup);
+                auto backup_entry = backup->readFile(file_path_in_backup);
                 auto marks_rb = backup_entry->getReadBuffer();
 
                 for (size_t i = 0; i != num_extra_marks; ++i)

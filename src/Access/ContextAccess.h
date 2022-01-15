@@ -1,13 +1,14 @@
 #pragma once
 
 #include <Access/AccessRights.h>
-#include <Access/RowPolicy.h>
+#include <Access/Common/RowPolicyDefs.h>
 #include <Interpreters/ClientInfo.h>
 #include <Core/UUID.h>
 #include <base/scope_guard.h>
 #include <base/shared_ptr_helper.h>
 #include <boost/container/flat_set.hpp>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
 
 
@@ -81,7 +82,7 @@ public:
 
     /// Returns the row policy filter for a specified table.
     /// The function returns nullptr if there is no filter to apply.
-    ASTPtr getRowPolicyCondition(const String & database, const String & table_name, RowPolicy::ConditionType index, const ASTPtr & extra_condition = nullptr) const;
+    ASTPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, const ASTPtr & combine_with_expr = nullptr) const;
 
     /// Returns the quota to track resource consumption.
     std::shared_ptr<const EnabledQuota> getQuota() const;

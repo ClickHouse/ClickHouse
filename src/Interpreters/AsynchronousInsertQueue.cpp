@@ -21,6 +21,7 @@
 #include <Common/FieldVisitorHash.h>
 #include <Access/Common/AccessFlags.h>
 #include <Formats/FormatFactory.h>
+#include <base/logger_useful.h>
 
 
 namespace DB

@@ -1,7 +1,6 @@
 #include <Parsers/ParserBackupQuery.h>
 #include <Parsers/ASTBackupQuery.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -148,18 +147,47 @@ namespace
         });
     }
 
-    bool parseSettings(IParser::Pos & pos, Expected & expected, ASTPtr & settings)
+    bool parseBackupName(IParser::Pos & pos, Expected & expected, ASTPtr & backup_name)
+    {
+        return ParserIdentifierWithOptionalParameters{}.parse(pos, backup_name, expected);
+    }
+
+    bool parseBaseBackupSetting(IParser::Pos & pos, Expected & expected, ASTPtr & base_backup_name)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            return ParserKeyword{"base_backup"}.ignore(pos, expected)
+                && ParserToken(TokenType::Equals).ignore(pos, expected)
+                && parseBackupName(pos, expected, base_backup_name);
+        });
+    }
+
+    bool parseSettings(IParser::Pos & pos, Expected & expected, ASTPtr & settings, ASTPtr & base_backup_name)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             if (!ParserKeyword{"SETTINGS"}.ignore(pos, expected))
                 return false;
 
-            ASTPtr result;
-            if (!ParserSetQuery{true}.parse(pos, result, expected))
+            ASTPtr res_settings;
+            ASTPtr res_base_backup_name;
+
+            auto parse_setting = [&]
+            {
+                if (!res_settings && ParserSetQuery{true}.parse(pos, res_settings, expected))
+                    return true;
+
+                if (!res_base_backup_name && parseBaseBackupSetting(pos, expected, res_base_backup_name))
+                    return true;
+
+                return false;
+            };
+
+            if (!ParserList::parseUtil(pos, expected, parse_setting, false))
                 return false;
 
-            settings = std::move(result);
+            settings = std::move(res_settings);
+            base_backup_name = std::move(res_base_backup_name);
             return true;
         });
     }
@@ -182,13 +210,14 @@ bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (!ParserKeyword{(kind == Kind::BACKUP) ? "TO" : "FROM"}.ignore(pos, expected))
         return false;
-    ASTPtr ast;
-    if (!ParserStringLiteral{}.parse(pos, ast, expected))
+
+    ASTPtr backup_name;
+    if (!parseBackupName(pos, expected, backup_name))
         return false;
-    String backup_name = ast->as<ASTLiteral &>().value.safeGet<String>();
 
     ASTPtr settings;
-    parseSettings(pos, expected, settings);
+    ASTPtr base_backup_name;
+    parseSettings(pos, expected, settings, base_backup_name);
 
     auto query = std::make_shared<ASTBackupQuery>();
     node = query;
@@ -196,6 +225,7 @@ bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->kind = kind;
     query->elements = std::move(elements);
     query->backup_name = std::move(backup_name);
+    query->base_backup_name = std::move(base_backup_name);
     query->settings = std::move(settings);
 
     return true;

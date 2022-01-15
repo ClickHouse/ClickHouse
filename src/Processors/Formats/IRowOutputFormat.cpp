@@ -22,14 +22,12 @@ IRowOutputFormat::IRowOutputFormat(const Block & header, WriteBuffer & out_, con
 
 void IRowOutputFormat::consume(DB::Chunk chunk)
 {
-    writePrefixIfNot();
-
     auto num_rows = chunk.getNumRows();
     const auto & columns = chunk.getColumns();
 
     for (size_t row = 0; row < num_rows; ++row)
     {
-        if (!first_row)
+        if (!first_row || getRowsReadBefore() != 0)
             writeRowBetweenDelimiter();
 
         write(columns, row);
@@ -43,9 +41,6 @@ void IRowOutputFormat::consume(DB::Chunk chunk)
 
 void IRowOutputFormat::consumeTotals(DB::Chunk chunk)
 {
-    writePrefixIfNot();
-    writeSuffixIfNot();
-
     auto num_rows = chunk.getNumRows();
     if (num_rows != 1)
         throw Exception("Got " + toString(num_rows) + " in totals chunk, expected 1", ErrorCodes::LOGICAL_ERROR);
@@ -59,9 +54,6 @@ void IRowOutputFormat::consumeTotals(DB::Chunk chunk)
 
 void IRowOutputFormat::consumeExtremes(DB::Chunk chunk)
 {
-    writePrefixIfNot();
-    writeSuffixIfNot();
-
     auto num_rows = chunk.getNumRows();
     const auto & columns = chunk.getColumns();
     if (num_rows != 2)
@@ -72,13 +64,6 @@ void IRowOutputFormat::consumeExtremes(DB::Chunk chunk)
     writeRowBetweenDelimiter();
     writeMaxExtreme(columns, 1);
     writeAfterExtremes();
-}
-
-void IRowOutputFormat::finalize()
-{
-    writePrefixIfNot();
-    writeSuffixIfNot();
-    writeLastSuffix();
 }
 
 void IRowOutputFormat::write(const Columns & columns, size_t row_num)

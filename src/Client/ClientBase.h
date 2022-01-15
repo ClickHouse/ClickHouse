@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Common/NamePrompter.h"
 #include <Common/ProgressIndication.h>
 #include <Common/InterruptListener.h>
 #include <Common/ShellCommand.h>
@@ -37,7 +38,7 @@ void interruptSignalHandler(int signum);
 
 class InternalTextLogs;
 
-class ClientBase : public Poco::Util::Application
+class ClientBase : public Poco::Util::Application, public IHints<2, ClientBase>
 {
 
 public:
@@ -47,6 +48,8 @@ public:
     ~ClientBase() override;
 
     void init(int argc, char ** argv);
+
+    std::vector<String> getAllRegisteredNames() const override { return cmd_options; }
 
 protected:
     void runInteractive();
@@ -59,7 +62,6 @@ protected:
 
     virtual bool executeMultiQuery(const String & all_queries_text) = 0;
     virtual void connect() = 0;
-    virtual void prepareForInteractive() = 0;
     virtual void processError(const String & query) const = 0;
     virtual String getName() const = 0;
 
@@ -78,9 +80,6 @@ protected:
         const char *& this_query_begin, const char *& this_query_end, const char * all_queries_end,
         String & query_to_execute, ASTPtr & parsed_query, const String & all_queries_text,
         std::optional<Exception> & current_exception);
-
-    /// For non-interactive multi-query mode get queries text prefix.
-    virtual String getQueryTextPrefix() { return ""; }
 
     static void clearTerminal();
     void showClientVersion();
@@ -101,9 +100,10 @@ protected:
                                 const std::vector<Arguments> & external_tables_arguments) = 0;
     virtual void processConfig() = 0;
 
-private:
+protected:
     bool processQueryText(const String & text);
 
+private:
     void receiveResult(ASTPtr parsed_query);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled);
     void receiveLogs(ASTPtr parsed_query);
@@ -129,10 +129,7 @@ private:
     void initBlockOutputStream(const Block & block, ASTPtr parsed_query);
     void initLogsOutputStream();
 
-    inline String prompt() const
-    {
-        return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
-    }
+    String prompt() const;
 
     void resetOutput();
     void outputQueryInfo(bool echo_query_);
@@ -151,6 +148,7 @@ protected:
 
     std::vector<String> queries_files; /// If not empty, queries will be read from these files
     std::vector<String> interleave_queries_files; /// If not empty, run queries from these files before processing every file from 'queries_files'.
+    std::vector<String> cmd_options;
 
     bool stdin_is_a_tty = false; /// stdin is a terminal.
     bool stdout_is_a_tty = false; /// stdout is a terminal.

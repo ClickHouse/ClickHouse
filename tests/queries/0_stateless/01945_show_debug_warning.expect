@@ -7,11 +7,11 @@ log_user 0
 set timeout 60
 match_max 100000
 
-# A default timeout action is to do nothing, change it to fail
 expect_after {
-    timeout {
-        exit 1
-    }
+    # Do not ignore eof from expect
+    eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    timeout { exit 1 }
 }
 
 set basedir [file dirname $argv0]
@@ -48,3 +48,10 @@ expect ":) "
 send -- "q\r"
 expect eof
 }
+
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --max_memory_usage_for_all_queries=123"
+expect "Warnings:"
+expect " * Some obsolete setting is changed."
+expect ":) "
+send -- "q\r"
+expect eof

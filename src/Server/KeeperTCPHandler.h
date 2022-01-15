@@ -6,6 +6,7 @@
 #if USE_NURAFT
 
 #include <Poco/Net/TCPServerConnection.h>
+#include <Common/MultiVersion.h>
 #include "IServer.h"
 #include <Common/Stopwatch.h>
 #include <Interpreters/Context.h>
@@ -16,6 +17,8 @@
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <unordered_map>
+#include <Coordination/KeeperConnectionStats.h>
+#include <Poco/Timestamp.h>
 
 namespace DB
 {
@@ -24,14 +27,36 @@ struct SocketInterruptablePollWrapper;
 using SocketInterruptablePollWrapperPtr = std::unique_ptr<SocketInterruptablePollWrapper>;
 
 using ThreadSafeResponseQueue = ConcurrentBoundedQueue<Coordination::ZooKeeperResponsePtr>;
-
 using ThreadSafeResponseQueuePtr = std::unique_ptr<ThreadSafeResponseQueue>;
+
+struct LastOp;
+using LastOpMultiVersion = MultiVersion<LastOp>;
+using LastOpPtr = LastOpMultiVersion::Version;
 
 class KeeperTCPHandler : public Poco::Net::TCPServerConnection
 {
 public:
+    static void registerConnection(KeeperTCPHandler * conn);
+    static void unregisterConnection(KeeperTCPHandler * conn);
+    /// dump all connections statistics
+    static void dumpConnections(WriteBufferFromOwnString & buf, bool brief);
+    static void resetConnsStats();
+
+private:
+    static std::mutex conns_mutex;
+    /// all connections
+    static std::unordered_set<KeeperTCPHandler *> connections;
+
+public:
     KeeperTCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_);
     void run() override;
+
+    KeeperConnectionStats getConnectionStats() const;
+    void dumpStats(WriteBufferFromOwnString & buf, bool brief);
+    void resetStats();
+
+    ~KeeperTCPHandler() override;
+
 private:
     IServer & server;
     Poco::Logger * log;
@@ -54,9 +79,28 @@ private:
     void runImpl();
 
     void sendHandshake(bool has_leader);
-    Poco::Timespan receiveHandshake();
+    Poco::Timespan receiveHandshake(int32_t handshake_length);
+
+    static bool isHandShake(int32_t handshake_length);
+    bool tryExecuteFourLetterWordCmd(int32_t command);
 
     std::pair<Coordination::OpNum, Coordination::XID> receiveRequest();
+
+    void packageSent();
+    void packageReceived();
+
+    void updateStats(Coordination::ZooKeeperResponsePtr & response);
+
+    Poco::Timestamp established;
+
+    using Operations = std::unordered_map<Coordination::XID, Poco::Timestamp>;
+    Operations operations;
+
+    LastOpMultiVersion last_op;
+
+    mutable std::mutex conn_stats_mutex;
+    KeeperConnectionStats conn_stats;
+
 };
 
 }

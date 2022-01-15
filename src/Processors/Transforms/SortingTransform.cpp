@@ -13,15 +13,9 @@
 #include <Formats/NativeWriter.h>
 
 
-namespace ProfileEvents
-{
-    extern const Event ExternalSortWritePart;
-    extern const Event ExternalSortMerge;
-}
-
-
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -36,6 +30,11 @@ MergeSorter::MergeSorter(Chunks chunks_, SortDescription & description_, size_t 
     {
         if (chunk.getNumRows() == 0)
             continue;
+
+        /// Convert to full column, because sparse column has
+        /// access to element in O(log(K)), where K is number of non-default rows,
+        /// which can be inefficient.
+        convertToFullIfSparse(chunk);
 
         cursors.emplace_back(chunk.getColumns(), description);
         has_collation |= cursors.back().has_collation;

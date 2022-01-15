@@ -576,18 +576,17 @@ RestoreDataTasks StorageStripeLog::restoreFromBackup(const BackupPtr & backup, c
             auto old_data_size = file_checker.getFileSize(data_file_path);
             {
                 String file_path_in_backup = data_path_in_backup + fileName(data_file_path);
-                auto backup_entry = backup->read(file_path_in_backup);
+                auto backup_entry = backup->readFile(file_path_in_backup);
                 auto in = backup_entry->getReadBuffer();
                 auto out = disk->writeFile(data_file_path, max_compress_block_size, WriteMode::Append);
                 copyData(*in, *out);
             }
 
             /// Append the index.
-            String index_path_in_backup = data_path_in_backup + fileName(index_file_path);
-            if (backup->exists(index_path_in_backup))
             {
+                String index_path_in_backup = data_path_in_backup + fileName(index_file_path);
                 IndexForNativeFormat extra_indices;
-                auto backup_entry = backup->read(index_path_in_backup);
+                auto backup_entry = backup->readFile(index_path_in_backup);
                 auto index_in = backup_entry->getReadBuffer();
                 CompressedReadBuffer index_compressed_in{*index_in};
                 extra_indices.read(index_compressed_in);

@@ -1,4 +1,4 @@
-option (USE_INTERNAL_CCTZ_LIBRARY "Use internal cctz library" ${NOT_UNBUNDLED})
+option (USE_INTERNAL_CCTZ_LIBRARY "Use internal cctz library" ON)
 
 if (NOT USE_INTERNAL_CCTZ_LIBRARY)
     find_library (LIBRARY_CCTZ cctz)
@@ -82,7 +82,7 @@ if (NOT EXTERNAL_CCTZ_LIBRARY_FOUND OR NOT EXTERNAL_CCTZ_LIBRARY_WORKS)
 
     # each file in that dir (except of tab and localtime) store the info about timezone
     execute_process(COMMAND
-        bash -c "cd ${TZDIR} && find * -type f -and ! -name '*.tab' -and ! -name 'localtime' | sort | paste -sd ';' -"
+        bash -c "cd ${TZDIR} && find * -type f -and ! -name '*.tab' -and ! -name 'localtime' | LC_ALL=C sort | paste -sd ';' -"
         OUTPUT_STRIP_TRAILING_WHITESPACE
         OUTPUT_VARIABLE TIMEZONES)
 

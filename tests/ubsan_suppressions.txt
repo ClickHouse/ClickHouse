@@ -3,3 +3,7 @@
 # Some value is outside the range of representable values of type 'long' on user-provided data inside boost::geometry - ignore.
 src:*/Functions/pointInPolygon.cpp
 src:*/contrib/boost/boost/geometry/*
+
+# We don't want to receive sanitizer alerts from third-party libraries during fuzzing
+src:*/contrib/contrib/protobuf/*
+src:*/contrib/libprotobuf-mutator/*

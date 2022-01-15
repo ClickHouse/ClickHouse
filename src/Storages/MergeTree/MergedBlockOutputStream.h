@@ -19,6 +19,7 @@ public:
         const NamesAndTypesList & columns_list_,
         const MergeTreeIndices & skip_indices,
         CompressionCodecPtr default_codec_,
+        bool reset_columns_ = false,
         bool blocks_are_granules_size = false);
 
     Block getHeader() const { return metadata_snapshot->getSampleBlock(); }
@@ -48,6 +49,7 @@ private:
     void finalizePartOnDisk(
             const MergeTreeData::MutableDataPartPtr & new_part,
             NamesAndTypesList & part_columns,
+            SerializationInfoByName & serialization_infos,
             MergeTreeData::DataPart::Checksums & checksums,
             bool sync);
 

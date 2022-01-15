@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/ASTQueryWithOutput.h>
-#include <Access/IAccessEntity.h>
+#include <Access/Common/AccessEntityType.h>
 
 
 namespace DB
@@ -24,9 +24,7 @@ using Strings = std::vector<String>;
 class ASTShowCreateAccessEntityQuery : public ASTQueryWithOutput
 {
 public:
-    using EntityType = IAccessEntity::Type;
-
-    EntityType type;
+    AccessEntityType type;
     Strings names;
     std::shared_ptr<ASTRowPolicyNames> row_policy_names;
 

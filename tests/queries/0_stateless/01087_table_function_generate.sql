@@ -57,6 +57,14 @@ SELECT
 dt64, dts64, dtms64
 FROM generateRandom('dt64 DateTime64(3, \'Europe/Moscow\'), dts64 DateTime64(6, \'Europe/Moscow\'), dtms64 DateTime64(6 ,\'Europe/Moscow\')', 1, 10, 10)
 LIMIT 10;
+SELECT
+toTypeName(d32)
+FROM generateRandom('d32 Date32')
+LIMIT 1;
+SELECT
+d32
+FROM generateRandom('d32 Date32', 1, 10, 10)
+LIMIT 10;
 SELECT '-';
 SELECT
   toTypeName(f32), toTypeName(f64)

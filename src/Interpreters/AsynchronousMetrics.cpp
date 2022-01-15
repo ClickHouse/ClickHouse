@@ -69,12 +69,10 @@ static std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::stri
 AsynchronousMetrics::AsynchronousMetrics(
     ContextPtr global_context_,
     int update_period_seconds,
-    std::shared_ptr<std::vector<ProtocolServerAdapter>> servers_to_start_before_tables_,
-    std::shared_ptr<std::vector<ProtocolServerAdapter>> servers_)
+    const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
     : WithContext(global_context_)
     , update_period(update_period_seconds)
-    , servers_to_start_before_tables(servers_to_start_before_tables_)
-    , servers(servers_)
+    , protocol_server_metrics_func(protocol_server_metrics_func_)
     , log(&Poco::Logger::get("AsynchronousMetrics"))
 {
 #if defined(OS_LINUX)
@@ -238,7 +236,7 @@ void AsynchronousMetrics::start()
     thread = std::make_unique<ThreadFromGlobalPool>([this] { run(); });
 }
 
-AsynchronousMetrics::~AsynchronousMetrics()
+void AsynchronousMetrics::stop()
 {
     try
     {
@@ -249,12 +247,20 @@ AsynchronousMetrics::~AsynchronousMetrics()
 
         wait_cond.notify_one();
         if (thread)
+        {
             thread->join();
+            thread.reset();
+        }
     }
     catch (...)
     {
         DB::tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+}
+
+AsynchronousMetrics::~AsynchronousMetrics()
+{
+    stop();
 }
 
 
@@ -1222,9 +1228,9 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     {
         auto stat = getStatVFS(getContext()->getPath());
 
-        new_values["FilesystemMainPathTotalBytes"] = stat.f_blocks * stat.f_bsize;
-        new_values["FilesystemMainPathAvailableBytes"] = stat.f_bavail * stat.f_bsize;
-        new_values["FilesystemMainPathUsedBytes"] = (stat.f_blocks - stat.f_bavail) * stat.f_bsize;
+        new_values["FilesystemMainPathTotalBytes"] = stat.f_blocks * stat.f_frsize;
+        new_values["FilesystemMainPathAvailableBytes"] = stat.f_bavail * stat.f_frsize;
+        new_values["FilesystemMainPathUsedBytes"] = (stat.f_blocks - stat.f_bavail) * stat.f_frsize;
         new_values["FilesystemMainPathTotalINodes"] = stat.f_files;
         new_values["FilesystemMainPathAvailableINodes"] = stat.f_favail;
         new_values["FilesystemMainPathUsedINodes"] = stat.f_files - stat.f_favail;
@@ -1234,9 +1240,9 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         /// Current working directory of the server is the directory with logs.
         auto stat = getStatVFS(".");
 
-        new_values["FilesystemLogsPathTotalBytes"] = stat.f_blocks * stat.f_bsize;
-        new_values["FilesystemLogsPathAvailableBytes"] = stat.f_bavail * stat.f_bsize;
-        new_values["FilesystemLogsPathUsedBytes"] = (stat.f_blocks - stat.f_bavail) * stat.f_bsize;
+        new_values["FilesystemLogsPathTotalBytes"] = stat.f_blocks * stat.f_frsize;
+        new_values["FilesystemLogsPathAvailableBytes"] = stat.f_bavail * stat.f_frsize;
+        new_values["FilesystemLogsPathUsedBytes"] = (stat.f_blocks - stat.f_bavail) * stat.f_frsize;
         new_values["FilesystemLogsPathTotalINodes"] = stat.f_files;
         new_values["FilesystemLogsPathAvailableINodes"] = stat.f_favail;
         new_values["FilesystemLogsPathUsedINodes"] = stat.f_files - stat.f_favail;
@@ -1381,22 +1387,11 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
                 return it->second;
         };
 
-        if (servers_to_start_before_tables)
+        const auto server_metrics = protocol_server_metrics_func();
+        for (const auto & server_metric : server_metrics)
         {
-            for (const auto & server : *servers_to_start_before_tables)
-            {
-                if (const auto * name = get_metric_name(server.getPortName()))
-                    new_values[name] = server.currentThreads();
-            }
-        }
-
-        if (servers)
-        {
-            for (const auto & server : *servers)
-            {
-                if (const auto * name = get_metric_name(server.getPortName()))
-                    new_values[name] = server.currentThreads();
-            }
+            if (const auto * name = get_metric_name(server_metric.port_name))
+                new_values[name] = server_metric.current_threads;
         }
     }
 

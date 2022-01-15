@@ -328,6 +328,8 @@ void FlatDictionary::updateData()
         Block block;
         while (executor.pull(block))
         {
+            convertToFullIfSparse(block);
+
             /// We are using this to keep saved data if input stream consists of multiple blocks
             if (!update_field_loaded_block)
                 update_field_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());
@@ -397,9 +399,6 @@ void FlatDictionary::calculateBytesAllocated()
             }
 
             bucket_count = container.capacity();
-
-            if constexpr (std::is_same_v<ValueType, StringRef>)
-                bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
         };
 
         callOnDictionaryAttributeType(attribute.type, type_call);
@@ -412,21 +411,20 @@ void FlatDictionary::calculateBytesAllocated()
 
     if (update_field_loaded_block)
         bytes_allocated += update_field_loaded_block->allocatedBytes();
+
+    bytes_allocated += string_arena.size();
 }
 
 FlatDictionary::Attribute FlatDictionary::createAttribute(const DictionaryAttribute & dictionary_attribute)
 {
     auto is_nullable_set = dictionary_attribute.is_nullable ? std::make_optional<NullableSet>() : std::optional<NullableSet>{};
-    Attribute attribute{dictionary_attribute.underlying_type, std::move(is_nullable_set), {}, {}};
+    Attribute attribute{dictionary_attribute.underlying_type, std::move(is_nullable_set), {}};
 
     auto type_call = [&](const auto & dictionary_attribute_type)
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
         using ValueType = DictionaryValueType<AttributeType>;
-
-        if constexpr (std::is_same_v<ValueType, StringRef>)
-            attribute.string_arena = std::make_unique<Arena>();
 
         attribute.container.emplace<ContainerType<ValueType>>(configuration.initial_array_size, ValueType());
     };
@@ -508,8 +506,8 @@ void FlatDictionary::setAttributeValueImpl(Attribute & attribute, UInt64 key, co
 template <>
 void FlatDictionary::setAttributeValueImpl<String>(Attribute & attribute, UInt64 key, const String & value)
 {
-    const auto * string_in_arena = attribute.string_arena->insert(value.data(), value.size());
-    setAttributeValueImpl(attribute, key, StringRef{string_in_arena, value.size()});
+    auto arena_value = copyStringInArena(string_arena, value);
+    setAttributeValueImpl(attribute, key, arena_value);
 }
 
 void FlatDictionary::setAttributeValue(Attribute & attribute, const UInt64 key, const Field & value)
