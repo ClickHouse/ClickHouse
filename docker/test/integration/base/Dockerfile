@@ -57,7 +57,7 @@ RUN echo $'tickTime=2500 \n\
 tickTime=2500 \n\
 dataDir=/zookeeper \n\
 clientPort=2181 \n\
-maxClientCnxns=81' > /opt/zookeeper/conf/zoo.cfg
+maxClientCnxns=80' > /opt/zookeeper/conf/zoo.cfg
 RUN mkdir /zookeeper && chmod -R 777 /zookeeper
 
 ENV TZ=Europe/Moscow
