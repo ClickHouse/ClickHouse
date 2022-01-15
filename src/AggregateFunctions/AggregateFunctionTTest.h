@@ -191,12 +191,31 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         auto & data = this->data(place);
+        auto & column_tuple = assert_cast<ColumnTuple &>(to);
+
+        if (!data.hasEnoughObservations())
+        {
+            auto & column_stat = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(0));
+            auto & column_value = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(1));
+            column_stat.getData().push_back(std::numeric_limits<Float64>::quiet_NaN());
+            column_value.getData().push_back(std::numeric_limits<Float64>::quiet_NaN());
+
+            if (need_ci)
+            {
+                auto & column_ci_low = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(2));
+                auto & column_ci_high = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(3));
+                column_ci_low.getData().push_back(std::numeric_limits<Float64>::quiet_NaN());
+                column_ci_high.getData().push_back(std::numeric_limits<Float64>::quiet_NaN());
+            }
+
+            return;
+        }
+
         auto [t_statistic, p_value] = data.getResult();
 
         /// Because p-value is a probability.
         p_value = std::min(1.0, std::max(0.0, p_value));
 
-        auto & column_tuple = assert_cast<ColumnTuple &>(to);
         auto & column_stat = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(0));
         auto & column_value = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(1));
 
