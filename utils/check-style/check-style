@@ -256,7 +256,7 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
 # Trailing whitespaces
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE_DIRS |
-    xargs grep -P ' $' | grep -P '.' && echo "^ Trailing whitespaces."
+    xargs grep -n -P ' $' | grep -n -P '.' && echo "^ Trailing whitespaces."
 
 # Forbid stringstream because it's easy to use them incorrectly and hard to debug possible issues
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
