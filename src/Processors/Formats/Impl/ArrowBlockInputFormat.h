@@ -25,6 +25,8 @@ public:
 
     String getName() const override { return "ArrowBlockInputFormat"; }
 
+    const BlockMissingValues & getMissingValues() const override;
+
 private:
     Chunk generate() override;
 
@@ -44,6 +46,9 @@ private:
 
     int record_batch_total = 0;
     int record_batch_current = 0;
+
+    std::vector<size_t> missing_columns;
+    BlockMissingValues block_missing_values;
 
     const FormatSettings format_settings;
 
