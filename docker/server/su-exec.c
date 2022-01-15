@@ -1,6 +1,7 @@
 /*
 
 https://github.com/ncopa/su-exec
+The file is copy-pasted verbatim to avoid supply chain attacks.
 
 The MIT License (MIT)
 
