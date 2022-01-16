@@ -270,12 +270,21 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
 
     Poco::Util::AbstractConfiguration::Keys ldap_server_names;
     config.keys("ldap_servers", ldap_server_names);
-    for (const auto & ldap_server_name : ldap_server_names)
+    ldap_client_params_blueprint.clear();
+    for (auto ldap_server_name : ldap_server_names)
     {
         try
         {
-            ldap_client_params_blueprint.erase(ldap_server_name);
-            parseLDAPServer(ldap_client_params_blueprint.emplace(ldap_server_name, LDAPClient::Params{}).first->second, config, ldap_server_name);
+            const auto bracket_pos = ldap_server_name.find('[');
+            if (bracket_pos != std::string::npos)
+                ldap_server_name.resize(bracket_pos);
+
+            if (ldap_client_params_blueprint.count(ldap_server_name) > 0)
+                throw Exception("Multiple LDAP servers with the same name are not allowed", ErrorCodes::BAD_ARGUMENTS);
+
+            LDAPClient::Params ldap_client_params_tmp;
+            parseLDAPServer(ldap_client_params_tmp, config, ldap_server_name);
+            ldap_client_params_blueprint.emplace(std::move(ldap_server_name), std::move(ldap_client_params_tmp));
         }
         catch (...)
         {
