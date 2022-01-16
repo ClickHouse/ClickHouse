@@ -521,7 +521,7 @@ include (cmake/find/curl.cmake)
 include (cmake/find/s3.cmake)
 include (cmake/find/blob_storage.cmake)
 include (cmake/find/base64.cmake)
-include (cmake/find/parquet.cmake) # uses protobuf
+include (cmake/find/parquet.cmake) # uses protobuf and thrift
 include (cmake/find/simdjson.cmake)
 include (cmake/find/fast_float.cmake)
 include (cmake/find/rapidjson.cmake)
