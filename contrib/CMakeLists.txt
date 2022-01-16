@@ -59,6 +59,7 @@ add_subdirectory (croaring-cmake)
 add_subdirectory (zstd-cmake)
 add_subdirectory (zlib-ng-cmake)
 add_subdirectory (rocksdb-cmake)
+add_subdirectory (bzip2-cmake)
 
 # TODO: refactor the contrib libraries below this comment.
 
@@ -275,10 +276,6 @@ if (USE_NLP)
     add_subdirectory(libstemmer-c-cmake)
     add_subdirectory(wordnet-blast-cmake)
     add_subdirectory(lemmagen-c-cmake)
-endif()
-
-if (USE_BZIP2)
-    add_subdirectory(bzip2-cmake)
 endif()
 
 if (USE_SQLITE)

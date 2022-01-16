@@ -86,7 +86,7 @@ if(NOT USE_INTERNAL_PARQUET_LIBRARY)
             add_library(imported_arrow_deps STATIC ${ARROW_OTHER_OBJS})
 
             set(ARROW_LIBRARY ${ARROW_STATIC_LIB}
-                imported_arrow_deps ${THRIFT_LIBRARY} ${UTF8_PROC_LIBRARY} ${BZIP2_LIBRARIES} ${SNAPPY_LIBRARY})
+                imported_arrow_deps ${THRIFT_LIBRARY} ${UTF8_PROC_LIBRARY} bzip2 ${SNAPPY_LIBRARY})
         else()
             message(WARNING "Using external static Arrow does not always work. "
                     "Could not find arrow_bundled_dependencies.a. If compilation fails, "
@@ -100,7 +100,7 @@ if(NOT USE_INTERNAL_PARQUET_LIBRARY)
         set(PARQUET_LIBRARY ${PARQUET_SHARED_LIB})
     endif()
 
-    if(ARROW_INCLUDE_DIR AND ARROW_LIBRARY AND PARQUET_INCLUDE_DIR AND PARQUET_LIBRARY AND THRIFT_LIBRARY AND UTF8_PROC_LIBRARY AND BZIP2_FOUND)
+    if(ARROW_INCLUDE_DIR AND ARROW_LIBRARY AND PARQUET_INCLUDE_DIR AND PARQUET_LIBRARY AND THRIFT_LIBRARY AND UTF8_PROC_LIBRARY)
         set(USE_PARQUET 1)
         set(EXTERNAL_PARQUET_FOUND 1)
     else()
