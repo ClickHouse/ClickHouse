@@ -283,10 +283,15 @@ void ExternalAuthenticators::setConfiguration(const Poco::Util::AbstractConfigur
         }
     }
 
+    kerberos_params.reset();
     try
     {
         if (kerberos_keys_count > 0)
-            parseKerberosParams(kerberos_params.emplace(), config);
+        {
+            GSSAcceptorContext::Params kerberos_params_tmp;
+            parseKerberosParams(kerberos_params_tmp, config);
+            kerberos_params = std::move(kerberos_params_tmp);
+        }
     }
     catch (...)
     {
