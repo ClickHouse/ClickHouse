@@ -36,16 +36,14 @@ if (NOT USE_INTERNAL_ROCKSDB_LIBRARY)
     endif()
 
     find_package(BZip2)
-    find_library(ZSTD_LIBRARY zstd)
     find_library(LZ4_LIBRARY lz4)
     find_library(GFLAGS_LIBRARY gflags)
 
-    if(SNAPPY_LIBRARY AND ZLIB_LIBRARY AND LZ4_LIBRARY AND BZIP2_FOUND AND ZSTD_LIBRARY AND GFLAGS_LIBRARY)
+    if(SNAPPY_LIBRARY AND ZLIB_LIBRARY AND LZ4_LIBRARY AND BZIP2_FOUND AND GFLAGS_LIBRARY)
         list (APPEND ROCKSDB_LIBRARY ${SNAPPY_LIBRARY})
         list (APPEND ROCKSDB_LIBRARY ${ZLIB_LIBRARY})
         list (APPEND ROCKSDB_LIBRARY ${LZ4_LIBRARY})
         list (APPEND ROCKSDB_LIBRARY ${BZIP2_LIBRARY})
-        list (APPEND ROCKSDB_LIBRARY ${ZSTD_LIBRARY})
         list (APPEND ROCKSDB_LIBRARY ${GFLAGS_LIBRARY})
     else()
         message (${RECONFIGURE_MESSAGE_LEVEL}
@@ -53,7 +51,6 @@ if (NOT USE_INTERNAL_ROCKSDB_LIBRARY)
                  " zlib=${ZLIB_LIBRARY} ;"
                  " lz4=${LZ4_LIBRARY} ;"
                  " bz2=${BZIP2_LIBRARY} ;"
-                 " zstd=${ZSTD_LIBRARY} ;"
                  " gflags=${GFLAGS_LIBRARY} ;")
     endif()
 endif ()

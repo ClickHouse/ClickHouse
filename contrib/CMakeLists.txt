@@ -56,12 +56,9 @@ endif()
 
 add_subdirectory (poco-cmake)
 add_subdirectory (croaring-cmake)
+add_subdirectory (zstd-cmake)
 
 # TODO: refactor the contrib libraries below this comment.
-
-if (USE_INTERNAL_ZSTD_LIBRARY)
-    add_subdirectory (zstd-cmake)
-endif ()
 
 if (USE_INTERNAL_RE2_LIBRARY)
     add_subdirectory (re2-cmake)

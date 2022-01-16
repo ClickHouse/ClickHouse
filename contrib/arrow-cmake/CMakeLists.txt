@@ -311,10 +311,6 @@ if (ZLIB_INCLUDE_DIR AND ZLIB_LIBRARIES)
     set(ARROW_WITH_ZLIB 1)
 endif ()
 
-if (ZSTD_INCLUDE_DIR AND ZSTD_LIBRARY)
-    set(ARROW_WITH_ZSTD 1)
-endif ()
-
 add_definitions(-DARROW_WITH_LZ4)
 SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_lz4.cc" ${ARROW_SRCS})
 
@@ -355,10 +351,7 @@ endif ()
 if (ARROW_WITH_ZLIB)
     target_link_libraries(${ARROW_LIBRARY} PRIVATE ${ZLIB_LIBRARIES})
 endif ()
-if (ARROW_WITH_ZSTD)
-    target_link_libraries(${ARROW_LIBRARY} PRIVATE ${ZSTD_LIBRARY})
-    target_include_directories(${ARROW_LIBRARY} SYSTEM BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
-endif ()
+target_link_libraries(${ARROW_LIBRARY} PRIVATE ch_contrib::zstd)
 
 target_include_directories(${ARROW_LIBRARY} SYSTEM PRIVATE ${ORC_INCLUDE_DIR})
 target_include_directories(${ARROW_LIBRARY} SYSTEM PRIVATE ${ORC_SOURCE_SRC_DIR})
