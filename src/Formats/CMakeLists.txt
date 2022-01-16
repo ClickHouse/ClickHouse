@@ -1,3 +1,6 @@
+if (TARGET ch_contrib::avrocpp)
+    set(USE_AVRO 1)
+endif()
 if (TARGET ch_contrib::parquet)
     set(USE_PARQUET 1)
     set(USE_ARROW 1)

@@ -62,6 +62,7 @@ add_subdirectory (rocksdb-cmake)
 add_subdirectory (bzip2-cmake)
 # parquet/arrow
 add_subdirectory (arrow-cmake)
+add_subdirectory (avro-cmake) # requires: snappy
 
 # TODO: refactor the contrib libraries below this comment.
 
@@ -121,10 +122,6 @@ if(USE_INTERNAL_SNAPPY_LIBRARY)
     add_subdirectory(snappy-cmake)
 
     set (SNAPPY_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/snappy")
-endif()
-
-if (USE_INTERNAL_AVRO_LIBRARY)
-    add_subdirectory(avro-cmake)
 endif()
 
 if(USE_INTERNAL_GTEST_LIBRARY)
