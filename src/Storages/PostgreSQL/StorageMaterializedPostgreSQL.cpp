@@ -87,14 +87,8 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
             *replication_settings,
             /* is_materialized_postgresql_database */false);
 
-    if (!is_attach)
-    {
-        replication_handler->addStorage(remote_table_name, this);
-        /// Start synchronization preliminary setup immediately and throw in case of failure.
-        /// It should be guaranteed that if MaterializedPostgreSQL table was created successfully, then
-        /// its nested table was also created.
-        replication_handler->startSynchronization(/* throw_on_error */ true);
-    }
+    replication_handler->addStorage(remote_table_name, this);
+    replication_handler->startup(/* delayed */is_attach);
 }
 
 
@@ -234,19 +228,6 @@ void StorageMaterializedPostgreSQL::set(StoragePtr nested_storage)
 }
 
 
-void StorageMaterializedPostgreSQL::startup()
-{
-    /// replication_handler != nullptr only in case of single table engine MaterializedPostgreSQL.
-    if (replication_handler && is_attach)
-    {
-        replication_handler->addStorage(remote_table_name, this);
-        /// In case of attach table use background startup in a separate thread. First wait until connection is reachable,
-        /// then check for nested table -- it should already be created.
-        replication_handler->startup();
-    }
-}
-
-
 void StorageMaterializedPostgreSQL::shutdown()
 {
     if (replication_handler)
@@ -365,7 +346,7 @@ ASTPtr StorageMaterializedPostgreSQL::getColumnDeclaration(const DataTypePtr & d
         ast_expression->name = "DateTime64";
         ast_expression->arguments = std::make_shared<ASTExpressionList>();
         ast_expression->arguments->children.emplace_back(std::make_shared<ASTLiteral>(UInt32(6)));
-        return ast_expression;
+        return std::move(ast_expression);
     }
 
     return std::make_shared<ASTIdentifier>(data_type->getName());
@@ -423,7 +404,7 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
                             table_id.database_name, table_id.table_name);
         }
 
-        if (!table_structure->columns && (!table_override || !table_override->columns))
+        if (!table_structure->physical_columns && (!table_override || !table_override->columns))
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No columns returned for table {}.{}",
                             table_id.database_name, table_id.table_name);
@@ -465,7 +446,7 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
             }
             else
             {
-                ordinary_columns_and_types = *table_structure->columns;
+                ordinary_columns_and_types = table_structure->physical_columns->columns;
                 columns_declare_list->set(columns_declare_list->columns, getColumnsExpressionList(ordinary_columns_and_types));
             }
 
@@ -475,7 +456,7 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
         }
         else
         {
-            ordinary_columns_and_types = *table_structure->columns;
+            ordinary_columns_and_types = table_structure->physical_columns->columns;
             columns_declare_list->set(columns_declare_list->columns, getColumnsExpressionList(ordinary_columns_and_types));
         }
 
@@ -485,9 +466,9 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
 
         NamesAndTypesList merging_columns;
         if (table_structure->primary_key_columns)
-            merging_columns = *table_structure->primary_key_columns;
+            merging_columns = table_structure->primary_key_columns->columns;
         else
-            merging_columns = *table_structure->replica_identity_columns;
+            merging_columns = table_structure->replica_identity_columns->columns;
 
         order_by_expression->name = "tuple";
         order_by_expression->arguments = std::make_shared<ASTExpressionList>();
@@ -524,7 +505,7 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(
     storage_metadata.setConstraints(constraints);
     setInMemoryMetadata(storage_metadata);
 
-    return create_table_query;
+    return std::move(create_table_query);
 }
 
 

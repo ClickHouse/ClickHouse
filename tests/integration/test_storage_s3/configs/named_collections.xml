@@ -20,5 +20,10 @@
             <access_key_id>minio</access_key_id>
             <secret_access_key>minio123</secret_access_key>
         </s3_native>
+        <s3_arrow>
+            <url>http://minio1:9001/root/test.arrow</url>
+            <access_key_id>minio</access_key_id>
+            <secret_access_key>minio123</secret_access_key>
+        </s3_arrow>
     </named_collections>
 </clickhouse>
