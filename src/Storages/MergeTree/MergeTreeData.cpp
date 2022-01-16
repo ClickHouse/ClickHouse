@@ -4645,7 +4645,7 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
         keys.insert(desc.name);
         key_name_pos_map.insert({desc.name, pos++});
     }
-    auto actions_settings = ExpressionActionsSettings::fromSettings(settings);
+    auto actions_settings = ExpressionActionsSettings::fromSettings(settings, CompileExpressions::yes);
 
     // All required columns should be provided by either current projection or previous actions
     // Let's traverse backward to finish the check.
@@ -4797,18 +4797,31 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
             }
         }
 
-        if (projection.type == ProjectionDescription::Type::Normal && (analysis_result.hasWhere() || analysis_result.hasPrewhere()))
+        if (projection.type == ProjectionDescription::Type::Normal)
         {
-            const auto & actions
-                = analysis_result.before_aggregation ? analysis_result.before_aggregation : analysis_result.before_order_by;
-            NameSet required_columns;
-            for (const auto & column : actions->getRequiredColumns())
-                required_columns.insert(column.name);
-
-            if (rewrite_before_where(candidate, projection, required_columns, sample_block, {}))
+            if (analysis_result.before_aggregation && analysis_result.optimize_aggregation_in_order)
             {
-                candidate.required_columns = {required_columns.begin(), required_columns.end()};
-                candidates.push_back(std::move(candidate));
+                for (const auto & key : keys)
+                {
+                    auto actions_dag = analysis_result.before_aggregation->clone();
+                    actions_dag->foldActionsByProjection({key}, sample_block_for_keys);
+                    candidate.group_by_elements_actions.emplace_back(std::make_shared<ExpressionActions>(actions_dag, actions_settings));
+                }
+            }
+
+            if (analysis_result.hasWhere() || analysis_result.hasPrewhere())
+            {
+                const auto & actions
+                    = analysis_result.before_aggregation ? analysis_result.before_aggregation : analysis_result.before_order_by;
+                NameSet required_columns;
+                for (const auto & column : actions->getRequiredColumns())
+                    required_columns.insert(column.name);
+
+                if (rewrite_before_where(candidate, projection, required_columns, sample_block, {}))
+                {
+                    candidate.required_columns = {required_columns.begin(), required_columns.end()};
+                    candidates.push_back(std::move(candidate));
+                }
             }
         }
     };
