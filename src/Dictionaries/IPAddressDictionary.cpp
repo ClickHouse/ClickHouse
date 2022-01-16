@@ -209,6 +209,11 @@ IPAddressDictionary::IPAddressDictionary(
     calculateBytesAllocated();
 }
 
+void IPAddressDictionary::convertKeyColumns(Columns &, DataTypes &) const
+{
+    /// Do not perform any implicit keys convertion for IPAddressDictionary
+}
+
 ColumnPtr IPAddressDictionary::getColumn(
     const std::string & attribute_name,
     const DataTypePtr & result_type,

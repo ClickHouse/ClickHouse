@@ -118,32 +118,6 @@ public:
         return getContext()->getExternalDictionariesLoader().getDictionaryStructure(dictionary_name, getContext());
     }
 
-    void convertKeyColumnsToDictionaryKeys(const String & dictionary_name, Columns & key_columns, DataTypes & key_types) const
-    {
-        auto dictionary_structure = getDictionaryStructure(dictionary_name);
-        auto key_attributes_types = dictionary_structure.getKeyTypes();
-        size_t key_attributes_types_size = key_attributes_types.size();
-        size_t key_types_size = key_types.size();
-
-        if (key_types_size != key_attributes_types_size)
-            throw Exception(ErrorCodes::TYPE_MISMATCH, "Dictionary key structure does not match, expected {}", dictionary_structure.getKeyDescription());
-
-        for (size_t key_attribute_type_index = 0; key_attribute_type_index < key_attributes_types_size; ++key_attribute_type_index)
-        {
-            const auto & key_attribute_type = key_attributes_types[key_attribute_type_index];
-            auto & key_type = key_types[key_attribute_type_index];
-
-            if (key_attribute_type->equals(*key_type))
-                continue;
-
-            auto & key_column_to_cast = key_columns[key_attribute_type_index];
-            ColumnWithTypeAndName column_to_cast = {key_column_to_cast, key_type, ""};
-            auto casted_column = castColumnAccurate(std::move(column_to_cast), key_attribute_type);
-            key_column_to_cast = std::move(casted_column);
-            key_type = key_attribute_type;
-        }
-    }
-
 private:
     /// Access cannot be not granted, since in this case checkAccess() will throw and access_checked will not be updated.
     std::atomic<bool> access_checked = false;
@@ -287,7 +261,7 @@ public:
             }
         }
 
-        helper.convertKeyColumnsToDictionaryKeys(dictionary_name, key_columns, key_types);
+        dictionary->convertKeyColumns(key_columns, key_types);
 
         if (dictionary_special_key_type == DictionarySpecialKeyType::Range)
         {
@@ -527,7 +501,7 @@ public:
             }
         }
 
-        helper.convertKeyColumnsToDictionaryKeys(dictionary_name, key_columns, key_types);
+        dictionary->convertKeyColumns(key_columns, key_types);
 
         if (dictionary_special_key_type == DictionarySpecialKeyType::Range)
         {
