@@ -211,7 +211,7 @@ IPAddressDictionary::IPAddressDictionary(
 
 void IPAddressDictionary::convertKeyColumns(Columns &, DataTypes &) const
 {
-    /// Do not perform any implicit keys convertion for IPAddressDictionary
+    /// Do not perform any implicit keys conversion for IPAddressDictionary
 }
 
 ColumnPtr IPAddressDictionary::getColumn(
