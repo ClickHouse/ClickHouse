@@ -604,18 +604,20 @@ struct ImplBLAKE3
     static constexpr auto name = "BLAKE3";
     enum { length = OUT_LEN };
 
+    //static inline Hasher_shim blake3_hasher = new_hasher();
+
     static void apply(const char * begin, const size_t size, unsigned char* out_char_data)
     {
-        Hasher_shim hasher = new_hasher();
-        auto err_msg = update_shim(&hasher, begin, static_cast<uint32_t>(size));
+        auto err_msg = blake3_apply_shim(begin, size, out_char_data);
         if (err_msg != nullptr) {
             throw Exception("Function returned error message: " + std::string(err_msg), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            free_char_pointer(err_msg);
+            blake3_free_char_pointer(err_msg);
         }
-        OutputReader res = finalize_xof_shim(&hasher);
-        free_hasher(hasher.hasher);
-        fill_shim(&res, out_char_data);
     }
+
+    /*~ImplBLAKE3() {
+        blake3_free_hasher(blake3_hasher.hasher);
+    }*/
 };
 #endif
 
