@@ -58,7 +58,7 @@ public:
     std::string getFullName() const
     {
         std::lock_guard lock{name_mutex};
-        return dictionary_id.getFullNameNotQuoted();
+        return dictionary_id.getNameForLogs();
     }
 
     StorageID getDictionaryID() const

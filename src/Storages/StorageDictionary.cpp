@@ -231,10 +231,6 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
 
         configuration->setString("dictionary.database", new_table_id.database_name);
         configuration->setString("dictionary.name", new_table_id.table_name);
-        if (move_to_atomic)
-            configuration->setString("dictionary.uuid", toString(new_table_id.uuid));
-        else if (move_to_ordinary)
-            configuration->remove("dictionary.uuid");
     }
 
     /// Dictionary is moving between databases of different engines or is renaming inside Ordinary database
