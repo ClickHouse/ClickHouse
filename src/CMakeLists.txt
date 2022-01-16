@@ -471,9 +471,8 @@ if (USE_BROTLI)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${BROTLI_INCLUDE_DIR})
 endif()
 
-if (USE_SNAPPY)
-    target_link_libraries (clickhouse_common_io PUBLIC ${SNAPPY_LIBRARY})
-    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${SNAPPY_INCLUDE_DIR})
+if (TARGET ch_contrib::snappy)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::snappy)
 endif()
 
 if (USE_AMQPCPP)

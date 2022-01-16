@@ -13,6 +13,10 @@ set(PORTABLE ON)
 ## always disable jemalloc for rocksdb by default
 ## because it introduces non-standard jemalloc APIs
 option(WITH_JEMALLOC "build with JeMalloc" OFF)
+set(USE_SNAPPY OFF)
+if (TARGET ch_contrib::snappy)
+  set(USE_SNAPPY ON)
+endif()
 option(WITH_SNAPPY "build with SNAPPY" ${USE_SNAPPY})
 ## lz4, zlib, zstd is enabled in ClickHouse by default
 option(WITH_LZ4 "build with lz4" ON)
@@ -53,7 +57,7 @@ else()
 
   if(WITH_SNAPPY)
     add_definitions(-DSNAPPY)
-    list(APPEND THIRDPARTY_LIBS snappy)
+    list(APPEND THIRDPARTY_LIBS ch_contrib::snappy)
   endif()
 
   if(WITH_ZLIB)
