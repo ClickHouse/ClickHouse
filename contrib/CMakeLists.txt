@@ -60,6 +60,8 @@ add_subdirectory (zstd-cmake)
 add_subdirectory (zlib-ng-cmake)
 add_subdirectory (rocksdb-cmake)
 add_subdirectory (bzip2-cmake)
+# parquet/arrow
+add_subdirectory (arrow-cmake)
 
 # TODO: refactor the contrib libraries below this comment.
 
@@ -119,29 +121,6 @@ if(USE_INTERNAL_SNAPPY_LIBRARY)
     add_subdirectory(snappy-cmake)
 
     set (SNAPPY_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/snappy")
-endif()
-
-if (USE_INTERNAL_PARQUET_LIBRARY)
-    # We dont use arrow's cmakefiles because they uses too many depends and download some libs in compile time
-    # But you can update auto-generated parquet files manually:
-    # cd {BUILD_DIR}/contrib/arrow/cpp/src/parquet && mkdir -p build && cd build
-    # cmake .. -DARROW_COMPUTE=ON -DARROW_PARQUET=ON -DARROW_SIMD_LEVEL=NONE -DARROW_VERBOSE_THIRDPARTY_BUILD=ON
-    #          -DARROW_BUILD_SHARED=1 -DARROW_BUILD_UTILITIES=OFF -DARROW_BUILD_INTEGRATION=OFF
-    #          -DBoost_FOUND=1 -DARROW_TEST_LINKAGE="shared"
-    # make -j8
-    # copy {BUILD_DIR}/contrib/arrow/cpp/src/parquet/*.cpp,*.h -> {BUILD_DIR}/contrib/arrow-cmake/cpp/src/parquet/
-
-    # Also useful parquet reader:
-    # cd {BUILD_DIR}/contrib/arrow/cpp && mkdir -p build && cd build
-    # cmake .. -DARROW_PARQUET=1 -DARROW_WITH_SNAPPY=1 -DPARQUET_BUILD_EXECUTABLES=1
-    # make -j8
-    # {BUILD_DIR}/contrib/arrow/cpp/build/release/parquet-reader some_file.parquet
-
-    add_subdirectory(arrow-cmake)
-
-    # The library is large - avoid bloat.
-    target_compile_options (${ARROW_LIBRARY} PRIVATE -g0)
-    target_compile_options (${PARQUET_LIBRARY} PRIVATE -g0)
 endif()
 
 if (USE_INTERNAL_AVRO_LIBRARY)

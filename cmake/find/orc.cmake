@@ -7,12 +7,7 @@ if(NOT ENABLE_ORC)
     return()
 endif()
 
-if (USE_INTERNAL_PARQUET_LIBRARY)
-    option(USE_INTERNAL_ORC_LIBRARY "Set to FALSE to use system ORC instead of bundled (experimental set to OFF on your own risk)"
-        ON)
-elseif(USE_INTERNAL_ORC_LIBRARY)
-       message (${RECONFIGURE_MESSAGE_LEVEL} "Currently internal ORC can be build only with bundled Parquet")
-endif()
+option(USE_INTERNAL_ORC_LIBRARY "Set to FALSE to use system ORC instead of bundled (experimental set to OFF on your own risk)" ON)
 
 include(cmake/find/snappy.cmake)
 
@@ -42,7 +37,7 @@ endif ()
 
 if (ORC_LIBRARY AND ORC_INCLUDE_DIR)
     set(USE_ORC 1)
-elseif(NOT MISSING_INTERNAL_ORC_LIBRARY AND ARROW_LIBRARY AND SNAPPY_LIBRARY) # (LIBGSASL_LIBRARY AND LIBXML2_LIBRARY)
+elseif(NOT MISSING_INTERNAL_ORC_LIBRARY AND SNAPPY_LIBRARY) # (LIBGSASL_LIBRARY AND LIBXML2_LIBRARY)
     set(ORC_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/orc/c++/include")
     set(ORC_LIBRARY orc)
     set(USE_ORC 1)
@@ -50,7 +45,7 @@ elseif(NOT MISSING_INTERNAL_ORC_LIBRARY AND ARROW_LIBRARY AND SNAPPY_LIBRARY) # 
 else()
     message (${RECONFIGURE_MESSAGE_LEVEL}
              "Can't enable ORC support - missing dependencies. Missing internal orc=${MISSING_INTERNAL_ORC_LIBRARY}. "
-             "arrow=${ARROW_LIBRARY} snappy=${SNAPPY_LIBRARY}")
+             "snappy=${SNAPPY_LIBRARY}")
     set(USE_INTERNAL_ORC_LIBRARY 0)
 endif()
 

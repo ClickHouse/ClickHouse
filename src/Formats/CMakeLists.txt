@@ -1,1 +1,5 @@
+if (TARGET ch_contrib::parquet)
+    set(USE_PARQUET 1)
+    set(USE_ARROW 1)
+endif()
 configure_file(config_formats.h.in ${ConfigIncludePath}/config_formats.h)
