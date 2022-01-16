@@ -66,7 +66,7 @@ else()
     include_directories("${ZSTD_INCLUDE_DIR}/dictBuilder")
     include_directories("${ZSTD_INCLUDE_DIR}/deprecated")
 
-    list(APPEND THIRDPARTY_LIBS zstd)
+    list(APPEND THIRDPARTY_LIBS ch_contrib::zstd)
   endif()
 endif()
 
