@@ -607,14 +607,14 @@ void RangeHashedDictionary<dictionary_key_type>::setAttributeValueImpl(Attribute
 }
 
 template <DictionaryKeyType dictionary_key_type>
-void RangeHashedDictionary<dictionary_key_type>::setAttributeValue(Attribute & attribute, KeyType key, const RangeInterval & range, const Field & value)
+void RangeHashedDictionary<dictionary_key_type>::setAttributeValue(Attribute & attribute, KeyType key, const RangeInterval & interval, const Field & value)
 {
     auto type_call = [&](const auto &dictionary_attribute_type)
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
 
-        setAttributeValueImpl<AttributeType>(attribute, key, range, value);
+        setAttributeValueImpl<AttributeType>(attribute, key, interval, value);
     };
 
     callOnDictionaryAttributeType(attribute.type, type_call);
