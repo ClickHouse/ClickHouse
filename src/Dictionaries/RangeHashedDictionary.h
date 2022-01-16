@@ -152,9 +152,9 @@ private:
     void constructAttributeIntervalTrees();
 
     template <typename T>
-    void setAttributeValueImpl(Attribute & attribute, KeyType key, const RangeInterval & range, const Field & value);
+    void setAttributeValueImpl(Attribute & attribute, KeyType key, const RangeInterval & interval, const Field & value);
 
-    void setAttributeValue(Attribute & attribute, KeyType key, const RangeInterval & range, const Field & value);
+    void setAttributeValue(Attribute & attribute, KeyType key, const RangeInterval & interval, const Field & value);
 
     template <typename RangeType>
     void getKeysAndDates(

@@ -3,6 +3,7 @@
 #include <base/defines.h>
 
 #include <vector>
+#include <utility>
 
 
 namespace DB
@@ -15,36 +16,50 @@ struct Interval
     IntervalStorageType left;
     IntervalStorageType right;
 
-    Interval(IntervalStorageType left_, IntervalStorageType right_)
-        : left(left_)
-        , right(right_)
-    {}
+    Interval(IntervalStorageType left_, IntervalStorageType right_) : left(left_), right(right_) { }
 
-    inline bool contains(IntervalStorageType point) const
-    {
-        return left <= point && point <= right;
-    }
+    inline bool contains(IntervalStorageType point) const { return left <= point && point <= right; }
 };
 
-template<typename IntervalStorageType>
+template <typename IntervalStorageType>
 bool operator<(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
 {
     return std::tie(lhs.left, lhs.right) < std::tie(rhs.left, rhs.right);
 }
 
-template<typename IntervalStorageType>
-bool operator==(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
+template <typename IntervalStorageType>
+bool operator<=(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
 {
-    return std::tie(lhs.left, lhs.right) == std::tie(lhs.left, rhs.right);
+    return std::tie(lhs.left, lhs.right) <= std::tie(rhs.left, rhs.right);
 }
 
-template<typename IntervalStorageType>
+template <typename IntervalStorageType>
+bool operator==(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
+{
+    return std::tie(lhs.left, lhs.right) == std::tie(rhs.left, rhs.right);
+}
+
+template <typename IntervalStorageType>
+bool operator!=(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
+{
+    return std::tie(lhs.left, lhs.right) != std::tie(rhs.left, rhs.right);
+}
+
+template <typename IntervalStorageType>
 bool operator>(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
 {
     return std::tie(lhs.left, lhs.right) > std::tie(rhs.left, rhs.right);
 }
 
-struct IntervalTreeVoidValue {};
+template <typename IntervalStorageType>
+bool operator>=(const Interval<IntervalStorageType> & lhs, const Interval<IntervalStorageType> & rhs)
+{
+    return std::tie(lhs.left, lhs.right) >= std::tie(rhs.left, rhs.right);
+}
+
+struct IntervalTreeVoidValue
+{
+};
 
 template <typename Interval, typename Value>
 class IntervalTree
@@ -53,52 +68,66 @@ public:
     using IntervalStorageType = typename Interval::IntervalStorageType;
 
     static constexpr bool is_empty_value = std::is_same_v<Value, IntervalTreeVoidValue>;
-    static constexpr bool is_nonempty_value = !std::is_same_v<Value, IntervalTreeVoidValue>;
+
+    IntervalTree() { nodes.resize(1); }
 
     template <typename TValue = Value, std::enable_if_t<std::is_same_v<TValue, IntervalTreeVoidValue>, bool> = true>
     void emplace(Interval interval)
     {
-        ++intervals_size;
+        assert(!tree_constructed);
         sorted_intervals.emplace_back(interval);
+        increaseIntervalsSize();
     }
 
-    template <typename TValue = Value, std::enable_if_t<!std::is_same_v<TValue, IntervalTreeVoidValue>, bool> = true, typename ...Args>
-    void emplace(Interval interval, Args && ... args)
+    template <typename TValue = Value, std::enable_if_t<!std::is_same_v<TValue, IntervalTreeVoidValue>, bool> = true, typename... Args>
+    void emplace(Interval interval, Args &&... args)
     {
-        ++intervals_size;
-        sorted_intervals.emplace_back(interval, Value(std::forward<Args>(args)...));
+        assert(!tree_constructed);
+        sorted_intervals.emplace_back(
+            std::piecewise_construct, std::forward_as_tuple(interval), std::forward_as_tuple(std::forward<Args>(args)...));
+        increaseIntervalsSize();
     }
 
     template <typename TValue = Value, std::enable_if_t<std::is_same_v<TValue, IntervalTreeVoidValue>, bool> = true>
     void insert(Interval interval)
     {
-        ++intervals_size;
+        assert(!tree_constructed);
         sorted_intervals.emplace_back(interval);
+        increaseIntervalsSize();
     }
 
     template <typename TValue = Value, std::enable_if_t<!std::is_same_v<TValue, IntervalTreeVoidValue>, bool> = true>
     void insert(Interval interval, const Value & value)
     {
-        ++intervals_size;
-        sorted_intervals.emplace_back(interval, value);
+        assert(!tree_constructed);
+        sorted_intervals.emplace_back(std::piecewise_construct, interval, value);
+        increaseIntervalsSize();
     }
 
     template <typename TValue = Value, std::enable_if_t<!std::is_same_v<TValue, IntervalTreeVoidValue>, bool> = true>
     void insert(Interval interval, Value && value)
     {
-        ++intervals_size;
-        sorted_intervals.emplace_back(interval, std::move(value));
+        assert(!tree_constructed);
+        sorted_intervals.emplace_back(std::piecewise_construct, interval, std::move(value));
+        increaseIntervalsSize();
     }
 
     void construct()
     {
         nodes.resize(sorted_intervals.size());
         buildTree();
+        tree_constructed = true;
     }
 
     template <typename IntervalCallback>
     void find(IntervalStorageType point, IntervalCallback && callback) const
     {
+        if (unlikely(!tree_constructed))
+        {
+            findIntervalsNonConstructedImpl(point, callback);
+            return;
+        }
+
         findIntervalsImpl(point, callback);
     }
 
@@ -108,16 +137,14 @@ public:
 
         if constexpr (is_empty_value)
         {
-            find(point, [&](auto &)
-            {
+            find(point, [&](auto &) {
                 has_intervals = true;
                 return false;
             });
         }
         else
         {
-            find(point, [&](auto &, auto &)
-            {
+            find(point, [&](auto &, auto &) {
                 has_intervals = true;
                 return false;
             });
@@ -126,7 +153,43 @@ public:
         return has_intervals;
     }
 
+    class Iterator;
+    using iterator = Iterator;
+    using const_iterator = Iterator;
 
+    iterator begin()
+    {
+        size_t start_index = findFirstIteratorNodeIndex();
+        return Iterator(start_index, 0, this);
+    }
+
+    iterator end()
+    {
+        size_t end_index = findLastIteratorNodeIndex();
+        size_t last_interval_index = nodes[end_index].sorted_intervals_range_size;
+        return Iterator(end_index, last_interval_index, this);
+    }
+
+    const_iterator begin() const
+    {
+        size_t start_index = findFirstIteratorNodeIndex();
+        return Iterator(start_index, 0, this);
+    }
+
+    const_iterator end() const
+    {
+        size_t end_index = findLastIteratorNodeIndex();
+        size_t last_interval_index = nodes[end_index].sorted_intervals_range_size;
+        return Iterator(end_index, last_interval_index, this);
+    }
+
+    const_iterator cbegin() const { return begin(); }
+
+    const_iterator cend() const { return end(); }
+
+    size_t getIntervalsSize() const { return intervals_size; }
+
+private:
     struct Node
     {
         size_t sorted_intervals_range_start_index;
@@ -134,10 +197,7 @@ public:
 
         IntervalStorageType middle_element;
 
-        inline bool hasValue() const
-        {
-            return sorted_intervals_range_size != 0;
-        }
+        inline bool hasValue() const { return sorted_intervals_range_size != 0; }
     };
 
     using IntervalWithEmptyValue = Interval;
@@ -145,71 +205,58 @@ public:
 
     using IntervalWithValue = std::conditional_t<is_empty_value, IntervalWithEmptyValue, IntervalWithNonEmptyValue>;
 
+public:
     class Iterator
     {
     public:
-
         bool operator==(const Iterator & rhs) const
         {
             return node_index == rhs.node_index & tree == rhs.tree && current_interval_index == rhs.current_interval_index;
         }
 
-        bool operator!=(const Iterator & rhs) const
-        {
-            return !(*this == rhs);
-        }
+        bool operator!=(const Iterator & rhs) const { return !(*this == rhs); }
 
-        const IntervalWithValue & operator*()
-        {
-            return getCurrentValue();
-        }
+        const IntervalWithValue & operator*() { return getCurrentValue(); }
 
-        const IntervalWithValue & operator*() const
-        {
-            return getCurrentValue();
-        }
+        const IntervalWithValue & operator*() const { return getCurrentValue(); }
 
-        const IntervalWithValue *operator->()
-        {
-            return &getCurrentValue();
-        }
+        const IntervalWithValue * operator->() { return &getCurrentValue(); }
 
-        const IntervalWithValue *operator->() const
-        {
-            return &getCurrentValue();
-        }
+        const IntervalWithValue * operator->() const { return &getCurrentValue(); }
 
-        Iterator &operator++()
+        Iterator & operator++()
         {
             iterateToNext();
             return *this;
         }
 
-        // Iterator operator++(int) {
-        //     Iterator copy(*this);
-        //     iterateToNext();
-        //     return copy;
-        // }
+        Iterator operator++(int) // NOLINT
+        {
+            Iterator copy(*this);
+            iterateToNext();
+            return copy;
+        }
 
-        // Iterator &operator--() {
-        //     iterateToPrevious();
-        //     return *this;
-        // }
+        Iterator & operator--()
+        {
+            iterateToPrevious();
+            return *this;
+        }
 
-        // Iterator operator--(int) {
-        //     Iterator copy(*this);
-        //     iterateToNext();
-        //     return copy;
-        // }
+        Iterator operator--(int) // NOLINT
+        {
+            Iterator copy(*this);
+            iterateToPrevious();
+            return copy;
+        }
 
     private:
         friend class IntervalTree;
 
         Iterator(size_t node_index_, size_t current_interval_index_, const IntervalTree * tree_)
-            : node_index(node_index_)
-            , current_interval_index(current_interval_index_)
-            , tree(tree_)
-        {}
+            : node_index(node_index_), current_interval_index(current_interval_index_), tree(tree_)
+        {
+        }
 
         size_t node_index;
         size_t current_interval_index;
@@ -268,52 +315,7 @@ public:
         }
     };
 
-    using iterator = Iterator;
-    using const_iterator = Iterator;
-
-    iterator begin()
-    {
-        size_t start_index = findFirstIteratorNodeIndex();
-        return Iterator(start_index, 0, this);
-    }
-
-    iterator end()
-    {
-        size_t end_index = findLastIteratorNodeIndex();
-        size_t last_interval_index = nodes[end_index].sorted_intervals_range_size;
-        return Iterator(end_index, last_interval_index, this);
-    }
-
-    const_iterator begin() const
-    {
-        size_t start_index = findFirstIteratorNodeIndex();
-        return Iterator(start_index, 0, this);
-    }
-
-    const_iterator end() const
-    {
-        size_t end_index = findLastIteratorNodeIndex();
-        size_t last_interval_index = nodes[end_index].sorted_intervals_range_size;
-        return Iterator(end_index, last_interval_index, this);
-    }
-
-    const_iterator cbegin() const
-    {
-        return begin();
-    }
-
-    const_iterator cend() const
-    {
-        return end();
-    }
-
-    size_t getIntervalsSize() const
-    {
-        return intervals_size;
-    }
-
 private:
-
     void buildTree()
     {
         std::vector<IntervalStorageType> temporary_points_storage;
@@ -376,18 +378,16 @@ private:
                 }
             }
 
-            std::sort(intervals_sorted_by_left_asc.begin(), intervals_sorted_by_left_asc.end(), [](auto & lhs, auto & rhs)
-            {
+            std::sort(intervals_sorted_by_left_asc.begin(), intervals_sorted_by_left_asc.end(), [](auto & lhs, auto & rhs) {
                 auto & lhs_interval = getInterval(lhs);
                 auto & rhs_interval = getInterval(rhs);
-                return lhs_interval < rhs_interval;
+                return lhs_interval.left < rhs_interval.left;
             });
 
-            std::sort(intervals_sorted_by_right_desc.begin(), intervals_sorted_by_right_desc.end(), [](auto & lhs, auto & rhs)
-            {
+            std::sort(intervals_sorted_by_right_desc.begin(), intervals_sorted_by_right_desc.end(), [](auto & lhs, auto & rhs) {
                 auto & lhs_interval = getInterval(lhs);
                 auto & rhs_interval = getInterval(rhs);
-                return lhs_interval > rhs_interval;
+                return lhs_interval.right > rhs_interval.right;
             });
 
             size_t sorted_intervals_range_start_index = sorted_intervals.size();
@@ -474,11 +474,20 @@ private:
         }
     }
 
-     size_t findFirstIteratorNodeIndex() const
+    template <typename IntervalCallback>
+    void findIntervalsNonConstructedImpl(IntervalStorageType point, IntervalCallback & callback) const
     {
-        if (nodes.empty())
-            return 0;
+        for (auto & interval_with_value : sorted_intervals)
+        {
+            auto & interval = getInterval(interval_with_value);
 
+            if (interval.contains(point))
+                callCallback(interval_with_value, callback);
+        }
+    }
+
+    inline size_t findFirstIteratorNodeIndex() const
+    {
         size_t nodes_size = nodes.size();
         size_t result_index = 0;
 
@@ -491,11 +500,8 @@ private:
         return result_index;
     }
 
-    size_t findLastIteratorNodeIndex() const
+    inline size_t findLastIteratorNodeIndex() const
     {
-        if (nodes.empty())
-            return 0;
-
         size_t nodes_size = nodes.size();
         int64_t result_index = static_cast<int64_t>(nodes_size - 1);
         for (; result_index >= 0; --result_index)
@@ -508,11 +514,18 @@ private:
         return result;
     }
 
+    inline void increaseIntervalsSize()
+    {
+        ++intervals_size;
+        nodes[0].sorted_intervals_range_size = intervals_size;
+    }
+
     std::vector<Node> nodes;
     std::vector<IntervalWithValue> sorted_intervals;
     size_t intervals_size = 0;
+    bool tree_constructed = false;
 
-    static const Interval & getInterval(const IntervalWithValue & interval_with_value)
+    static inline const Interval & getInterval(const IntervalWithValue & interval_with_value)
     {
         if constexpr (is_empty_value)
             return interval_with_value;
@@ -521,7 +534,7 @@ private:
     }
 
     template <typename IntervalCallback>
-    static bool callCallback(const IntervalWithValue & interval, IntervalCallback && callback)
+    static inline bool callCallback(const IntervalWithValue & interval, IntervalCallback && callback)
     {
         if constexpr (is_empty_value)
             return callback(interval);
@@ -529,7 +542,8 @@ private:
             return callback(interval.first, interval.second);
     }
 
-    static void intervalsToPoints(const std::vector<IntervalWithValue> & intervals, std::vector<IntervalStorageType> & temporary_points_storage)
+    static inline void
+    intervalsToPoints(const std::vector<IntervalWithValue> & intervals, std::vector<IntervalStorageType> & temporary_points_storage)
     {
         for (const auto & interval_with_value : intervals)
         {
@@ -539,23 +553,19 @@ private:
         }
     }
 
-    static IntervalStorageType pointsMedian(std::vector<IntervalStorageType> & points)
+    static inline IntervalStorageType pointsMedian(std::vector<IntervalStorageType> & points)
     {
         size_t size = points.size();
         size_t middle_element_index = size / 2;
 
         std::nth_element(points.begin(), points.begin() + middle_element_index, points.end());
 
-        if (size % 2 == 0)
-        {
-            return (points[middle_element_index] + points[middle_element_index - 1]) / 2;
-        }
-        else
-        {
-            return points[middle_element_index];
-        }
+        /** We should not get median as average of middle_element_index and middle_element_index - 1
+          * because we want point in node to intersect some interval.
+          * Example: Intervals [1, 1], [3, 3]. If we choose 2 as average point, it does not intersect any interval.
+          */
+        return points[middle_element_index];
     }
-
 };
 
 template <typename IntervalType>
