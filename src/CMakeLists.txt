@@ -534,9 +534,8 @@ if (USE_NLP)
     dbms_target_link_libraries (PUBLIC lemmagen)
 endif()
 
-if (USE_BZIP2)
-    target_link_libraries (clickhouse_common_io PRIVATE ${BZIP2_LIBRARY})
-    target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${BZIP2_INCLUDE_DIR})
+if (TARGET ch_contrib::bzip2)
+    target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::bzip2)
 endif()
 
 if(USE_SIMDJSON)
