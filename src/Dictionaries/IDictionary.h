@@ -52,11 +52,14 @@ class IDictionary : public IExternalLoadable
 public:
     explicit IDictionary(const StorageID & dictionary_id_)
     : dictionary_id(dictionary_id_)
-    , full_name(dictionary_id.getInternalDictionaryName())
     {
     }
 
-    const std::string & getFullName() const { return full_name; }
+    std::string getFullName() const
+    {
+        std::lock_guard lock{name_mutex};
+        return dictionary_id.getFullNameNotQuoted();
+    }
 
     StorageID getDictionaryID() const
     {
@@ -69,10 +72,13 @@ public:
         std::lock_guard lock{name_mutex};
         assert(new_name.uuid == dictionary_id.uuid && dictionary_id.uuid != UUIDHelpers::Nil);
         dictionary_id = new_name;
-        full_name = dictionary_id.getInternalDictionaryName();
     }
 
-    const std::string & getLoadableName() const override final { return getFullName(); }
+    std::string getLoadableName() const override final
+    {
+        std::lock_guard lock{name_mutex};
+        return dictionary_id.getInternalDictionaryName();
+    }
 
     /// Specifies that no database is used.
     /// Sometimes we cannot simply use an empty string for that because an empty string is
@@ -235,7 +241,6 @@ private:
     mutable StorageID dictionary_id;
 
 protected:
-    mutable String full_name;
     String dictionary_comment;
 };
 
