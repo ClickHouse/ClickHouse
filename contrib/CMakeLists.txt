@@ -58,6 +58,7 @@ add_subdirectory (poco-cmake)
 add_subdirectory (croaring-cmake)
 add_subdirectory (zstd-cmake)
 add_subdirectory (zlib-ng-cmake)
+add_subdirectory (rocksdb-cmake)
 
 # TODO: refactor the contrib libraries below this comment.
 
@@ -258,9 +259,6 @@ if (USE_KRB5)
     endif()
 endif()
 
-if (USE_INTERNAL_ROCKSDB_LIBRARY)
-    add_subdirectory(rocksdb-cmake)
-endif()
 
 if (USE_LIBPQXX)
     add_subdirectory (libpq-cmake)
