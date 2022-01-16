@@ -23,6 +23,7 @@ set (CONFIG_COMMON "${CMAKE_CURRENT_BINARY_DIR}/Common/config.h")
 
 include (../cmake/version.cmake)
 message (STATUS "Will build ${VERSION_FULL} revision ${VERSION_REVISION} ${VERSION_OFFICIAL}")
+include (configure_config.cmake)
 configure_file (Common/config.h.in ${CONFIG_COMMON})
 configure_file (Common/config_version.h.in ${CONFIG_VERSION})
 configure_file (Core/config_core.h.in "${CMAKE_CURRENT_BINARY_DIR}/Core/include/config_core.h")
@@ -100,7 +101,7 @@ if (USE_LIBPQXX)
     add_headers_and_sources(dbms Storages/PostgreSQL)
 endif()
 
-if (USE_ROCKSDB)
+if (TARGET ch_contrib::rocksdb)
     add_headers_and_sources(dbms Storages/RocksDB)
 endif()
 
@@ -510,9 +511,8 @@ if (USE_ORC)
     dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR} "${CMAKE_BINARY_DIR}/contrib/orc/c++/include")
 endif ()
 
-if (USE_ROCKSDB)
-    dbms_target_link_libraries(PUBLIC ${ROCKSDB_LIBRARY})
-    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ROCKSDB_INCLUDE_DIR})
+if (TARGET ch_contrib::rocksdb)
+    dbms_target_link_libraries(PUBLIC ch_contrib::rocksdb)
 endif()
 
 if (USE_LIBPQXX)

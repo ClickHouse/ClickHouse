@@ -1,3 +1,10 @@
+option (ENABLE_ROCKSDB "Enable rocksdb library" ${ENABLE_LIBRARIES})
+
+if (NOT ENABLE_ROCKSDB)
+  message (STATUS "Not using rocksdb")
+  return()
+endif()
+
 ## this file is extracted from `contrib/rocksdb/CMakeLists.txt`
 set(ROCKSDB_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/rocksdb")
 list(APPEND CMAKE_MODULE_PATH "${ROCKSDB_SOURCE_DIR}/cmake/modules/")
@@ -538,8 +545,8 @@ if(WITH_FOLLY_DISTRIBUTED_MUTEX)
     "${ROCKSDB_SOURCE_DIR}/third-party/folly/folly/synchronization/WaitOptions.cpp")
 endif()
 
-set(ROCKSDB_STATIC_LIB rocksdb)
-
-add_library(${ROCKSDB_STATIC_LIB} STATIC ${SOURCES})
-target_link_libraries(${ROCKSDB_STATIC_LIB} PRIVATE
-  ${THIRDPARTY_LIBS} ${SYSTEM_LIBS})
+add_library(_rocksdb STATIC ${SOURCES})
+add_library(ch_contrib::rocksdb ALIAS _rocksdb)
+target_link_libraries(_rocksdb PRIVATE ${THIRDPARTY_LIBS} ${SYSTEM_LIBS})
+# SYSTEM is required to overcome some issues
+target_include_directories(_rocksdb SYSTEM BEFORE INTERFACE "${ROCKSDB_SOURCE_DIR}/include")
