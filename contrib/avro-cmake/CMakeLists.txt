@@ -56,12 +56,9 @@ target_include_directories(_avrocpp SYSTEM PUBLIC ${AVROCPP_INCLUDE_DIR})
 
 target_link_libraries (_avrocpp PRIVATE boost::headers_only boost::iostreams)
 
-# include(cmake/find/snappy.cmake)
-if (SNAPPY_INCLUDE_DIR AND SNAPPY_LIBRARY)
-    target_compile_definitions (_avrocpp PUBLIC SNAPPY_CODEC_AVAILABLE)
-    target_include_directories (_avrocpp PRIVATE ${SNAPPY_INCLUDE_DIR})
-    target_link_libraries (_avrocpp PRIVATE ${SNAPPY_LIBRARY})
-endif ()
+target_compile_definitions (_avrocpp PUBLIC SNAPPY_CODEC_AVAILABLE)
+target_include_directories (_avrocpp PRIVATE ${SNAPPY_INCLUDE_DIR})
+target_link_libraries (_avrocpp PRIVATE ch_contrib::snappy)
 
 if (COMPILER_GCC)
     set (SUPPRESS_WARNINGS -Wno-non-virtual-dtor)

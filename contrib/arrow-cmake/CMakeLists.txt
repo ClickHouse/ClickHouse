@@ -344,17 +344,11 @@ set(ARROW_SRCS
         ${ORC_SRCS}
         )
 
-if (SNAPPY_INCLUDE_DIR AND SNAPPY_LIBRARY)
-    set(ARROW_WITH_SNAPPY 1)
-endif ()
-
 add_definitions(-DARROW_WITH_LZ4)
 SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_lz4.cc" ${ARROW_SRCS})
 
-if (ARROW_WITH_SNAPPY)
-    add_definitions(-DARROW_WITH_SNAPPY)
-    SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_snappy.cc" ${ARROW_SRCS})
-endif ()
+add_definitions(-DARROW_WITH_SNAPPY)
+SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_snappy.cc" ${ARROW_SRCS})
 
 add_definitions(-DARROW_WITH_ZLIB)
 SET(ARROW_SRCS "${LIBRARY_DIR}/util/compression_zlib.cc" ${ARROW_SRCS})
@@ -380,9 +374,7 @@ target_include_directories(_arrow SYSTEM BEFORE PUBLIC ${ARROW_SRC_DIR})
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/cpp/src")
 target_link_libraries(_arrow PRIVATE ${DOUBLE_CONVERSION_LIBRARIES} ${Protobuf_LIBRARY})
 target_link_libraries(_arrow PRIVATE lz4)
-if (ARROW_WITH_SNAPPY)
-    target_link_libraries(_arrow PRIVATE ${SNAPPY_LIBRARY})
-endif ()
+target_link_libraries(_arrow PRIVATE ch_contrib::snappy)
 target_link_libraries(_arrow PRIVATE ch_contrib::zlib)
 target_link_libraries(_arrow PRIVATE ch_contrib::zstd)
 

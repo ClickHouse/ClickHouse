@@ -58,10 +58,11 @@ add_subdirectory (poco-cmake)
 add_subdirectory (croaring-cmake)
 add_subdirectory (zstd-cmake)
 add_subdirectory (zlib-ng-cmake)
-add_subdirectory (rocksdb-cmake)
 add_subdirectory (bzip2-cmake)
+add_subdirectory (snappy-cmake)
+add_subdirectory (rocksdb-cmake)
 # parquet/arrow/orc
-add_subdirectory (arrow-cmake)
+add_subdirectory (arrow-cmake) # requires: snappy
 add_subdirectory (avro-cmake) # requires: snappy
 
 # TODO: refactor the contrib libraries below this comment.
@@ -115,14 +116,6 @@ endif()
 if (ENABLE_ICU AND USE_INTERNAL_ICU_LIBRARY)
     add_subdirectory (icu-cmake)
 endif ()
-
-if(USE_INTERNAL_SNAPPY_LIBRARY)
-    set(SNAPPY_BUILD_TESTS 0 CACHE INTERNAL "")
-
-    add_subdirectory(snappy-cmake)
-
-    set (SNAPPY_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/snappy")
-endif()
 
 if(USE_INTERNAL_GTEST_LIBRARY)
     add_subdirectory(googletest-cmake)
