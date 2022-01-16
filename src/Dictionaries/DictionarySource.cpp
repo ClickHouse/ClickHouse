@@ -212,6 +212,4 @@ Pipe DictionarySourceCoordinator::read(size_t num_streams)
     return Pipe::unitePipes(std::move(pipes));
 }
 
-
-
 }
