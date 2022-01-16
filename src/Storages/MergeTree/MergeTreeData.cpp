@@ -34,6 +34,7 @@
 #include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
@@ -4581,22 +4582,36 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
     if (!settings.allow_experimental_projection_optimization || query_info.ignore_projections || query_info.is_projection_query)
         return std::nullopt;
 
-    const auto & query_ptr = query_info.original_query;
-
-    if (auto * select = query_ptr->as<ASTSelectQuery>(); select)
-    {
-        // Currently projections don't support final yet.
-        if (select->final())
-            return std::nullopt;
-
-        // Currently projections don't support ARRAY JOIN yet.
-        if (select->arrayJoinExpressionList().first)
-            return std::nullopt;
-    }
-
     // Currently projections don't support sampling yet.
     if (settings.parallel_replicas_count > 1)
         return std::nullopt;
+
+    auto query_ptr = query_info.original_query;
+    auto * select_query = query_ptr->as<ASTSelectQuery>();
+    if (!select_query)
+        return std::nullopt;
+
+    // Currently projections don't support final yet.
+    if (select_query->final())
+        return std::nullopt;
+
+    // Currently projections don't support ARRAY JOIN yet.
+    if (select_query->arrayJoinExpressionList().first)
+        return std::nullopt;
+
+    // In order to properly analyze joins, aliases should be recognized. However, aliases get lost during projection analysis.
+    // Rewrite JOIN clauses to always true when doing projection analysis.
+    if (select_query->join())
+    {
+        query_ptr = query_ptr->clone();
+        auto & new_select_query = query_ptr->as<ASTSelectQuery &>();
+        auto * table_join = new_select_query.join()->table_join->as<ASTTableJoin>();
+        if (table_join)
+        {
+            table_join->using_expression_list = nullptr;
+            table_join->on_expression = nullptr;
+        }
+    }
 
     InterpreterSelectQuery select(
         query_ptr,
