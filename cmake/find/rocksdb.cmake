@@ -31,24 +31,19 @@ if (NOT USE_INTERNAL_ROCKSDB_LIBRARY)
     if (NOT SNAPPY_LIBRARY)
         include(cmake/find/snappy.cmake)
     endif()
-    if (NOT ZLIB_LIBRARY)
-        include(cmake/find/zlib.cmake)
-    endif()
 
     find_package(BZip2)
     find_library(LZ4_LIBRARY lz4)
     find_library(GFLAGS_LIBRARY gflags)
 
-    if(SNAPPY_LIBRARY AND ZLIB_LIBRARY AND LZ4_LIBRARY AND BZIP2_FOUND AND GFLAGS_LIBRARY)
+    if(SNAPPY_LIBRARY AND LZ4_LIBRARY AND BZIP2_FOUND AND GFLAGS_LIBRARY)
         list (APPEND ROCKSDB_LIBRARY ${SNAPPY_LIBRARY})
-        list (APPEND ROCKSDB_LIBRARY ${ZLIB_LIBRARY})
         list (APPEND ROCKSDB_LIBRARY ${LZ4_LIBRARY})
         list (APPEND ROCKSDB_LIBRARY ${BZIP2_LIBRARY})
         list (APPEND ROCKSDB_LIBRARY ${GFLAGS_LIBRARY})
     else()
         message (${RECONFIGURE_MESSAGE_LEVEL}
                  "Can't find system rocksdb: snappy=${SNAPPY_LIBRARY} ;"
-                 " zlib=${ZLIB_LIBRARY} ;"
                  " lz4=${LZ4_LIBRARY} ;"
                  " bz2=${BZIP2_LIBRARY} ;"
                  " gflags=${GFLAGS_LIBRARY} ;")

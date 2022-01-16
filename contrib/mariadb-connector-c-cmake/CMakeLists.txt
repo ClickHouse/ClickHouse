@@ -80,7 +80,7 @@ set(SIZEOF_SIZE_T 8)
 set(SOCKET_SIZE_TYPE socklen_t)
 
 
-set(SYSTEM_LIBS ${SYSTEM_LIBS} zlib)
+set(SYSTEM_LIBS ${SYSTEM_LIBS} ch_contrib::zlib)
 
 if(CMAKE_HAVE_PTHREAD_H)
   set(CMAKE_REQUIRED_INCLUDES pthread.h)
@@ -221,10 +221,6 @@ if(ICONV_INCLUDE_DIR)
    include_directories(BEFORE ${ICONV_INCLUDE_DIR})
 endif()
 add_definitions(-DLIBICONV_PLUG)
-
-if(ZLIB_FOUND AND WITH_EXTERNAL_ZLIB)
-  include_directories(${ZLIB_INCLUDE_DIR})
-endif()
 
 if(WITH_DYNCOL)
   set(LIBMARIADB_SOURCES ${LIBMARIADB_SOURCES} ${CC_SOURCE_DIR}/libmariadb/mariadb_dyncol.c)

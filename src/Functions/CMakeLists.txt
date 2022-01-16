@@ -25,7 +25,7 @@ target_link_libraries(clickhouse_functions
         murmurhash
 
     PRIVATE
-        ${ZLIB_LIBRARIES}
+        ch_contrib::zlib
         boost::filesystem
         divide_impl
 )

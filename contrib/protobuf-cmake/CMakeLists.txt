@@ -8,7 +8,6 @@ add_definitions(-DHAVE_PTHREAD)
 add_definitions(-DHAVE_ZLIB)
 
 include_directories(
-  ${ZLIB_INCLUDE_DIRECTORIES}
   ${protobuf_binary_dir}
   ${protobuf_source_dir}/src)
 
@@ -114,7 +113,7 @@ if (ENABLE_FUZZING)
     target_compile_options(libprotobuf PRIVATE "-fsanitize-recover=all")
 endif()
 target_link_libraries(libprotobuf pthread)
-target_link_libraries(libprotobuf ${ZLIB_LIBRARIES})
+target_link_libraries(libprotobuf ch_contrib::zlib)
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Android")
     target_link_libraries(libprotobuf log)
 endif()

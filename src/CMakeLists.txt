@@ -329,7 +329,7 @@ target_link_libraries(clickhouse_common_io
             boost::program_options
             boost::system
             ${CITYHASH_LIBRARIES}
-            ${ZLIB_LIBRARIES}
+            ch_contrib::zlib
             pcg_random
             Poco::Foundation
 )

@@ -223,7 +223,7 @@ if (USE_INTERNAL_POCO_LIBRARY)
             POCO_OS_FAMILY_UNIX
     )
     target_include_directories (_poco_foundation SYSTEM PUBLIC "${LIBRARY_DIR}/Foundation/include")
-    target_link_libraries (_poco_foundation PRIVATE Poco::Foundation::PCRE ${ZLIB_LIBRARIES} lz4)
+    target_link_libraries (_poco_foundation PRIVATE Poco::Foundation::PCRE ch_contrib::zlib lz4)
 else ()
     add_library (Poco::Foundation UNKNOWN IMPORTED GLOBAL)
 

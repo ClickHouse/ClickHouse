@@ -16,7 +16,7 @@ target_include_directories (mysqlxx PUBLIC .)
 target_link_libraries (mysqlxx
     clickhouse_common_io
     ${MYSQLCLIENT_LIBRARIES}
-    ${ZLIB_LIBRARIES}
+    ch_contrib::zlib
 )
 
 if (ENABLE_TESTS)

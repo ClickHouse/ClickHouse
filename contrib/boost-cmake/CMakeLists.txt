@@ -101,7 +101,7 @@ if (NOT EXTERNAL_BOOST_FOUND)
     add_library (_boost_iostreams ${SRCS_IOSTREAMS})
     add_library (boost::iostreams ALIAS _boost_iostreams)
     target_include_directories (_boost_iostreams PRIVATE ${LIBRARY_DIR})
-    target_link_libraries (_boost_iostreams PRIVATE ${ZLIB_LIBRARIES})
+    target_link_libraries (_boost_iostreams PRIVATE ch_contrib::zlib)
 
     # program_options
 

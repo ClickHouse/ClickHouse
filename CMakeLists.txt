@@ -494,7 +494,6 @@ include (cmake/find/ssl.cmake)
 include (cmake/find/ldap.cmake) # after ssl
 include (cmake/find/icu.cmake)
 include (cmake/find/xz.cmake)
-include (cmake/find/zlib.cmake)
 include (cmake/find/ltdl.cmake) # for odbc
 # openssl, zlib before poco
 include (cmake/find/sparsehash.cmake)

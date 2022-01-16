@@ -117,7 +117,7 @@ target_compile_options(rdkafka PRIVATE -fno-sanitize=undefined)
 target_include_directories(rdkafka SYSTEM PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include") # for "librdkafka/rdkafka.h"
 target_include_directories(rdkafka SYSTEM PUBLIC ${RDKAFKA_SOURCE_DIR})                 # Because weird logic with "include_next" is used.
 target_include_directories(rdkafka SYSTEM PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/auxdir")  # for "../config.h"
-target_link_libraries(rdkafka PRIVATE lz4 ${ZLIB_LIBRARIES} ch_contrib::zstd)
+target_link_libraries(rdkafka PRIVATE lz4 ch_contrib::zlib ch_contrib::zstd)
 if(OPENSSL_SSL_LIBRARY AND OPENSSL_CRYPTO_LIBRARY)
     target_link_libraries(rdkafka PRIVATE ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
 endif()
