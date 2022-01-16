@@ -51,7 +51,7 @@ else()
 
   if(WITH_ZLIB)
     add_definitions(-DZLIB)
-    list(APPEND THIRDPARTY_LIBS zlib)
+    list(APPEND THIRDPARTY_LIBS ch_contrib::zlib)
   endif()
 
   if(WITH_LZ4)

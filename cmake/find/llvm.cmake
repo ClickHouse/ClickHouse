@@ -74,6 +74,6 @@ LLVMDemangle
 #    else()
 #        set (result "LLVM")
 #    endif ()
-#    list (APPEND result ${CMAKE_DL_LIBS} ${ZLIB_LIBRARIES})
+#    list (APPEND result ${CMAKE_DL_LIBS} ch_contrib::zlib)
 #    set (${REQUIRED_LLVM_LIBRARIES} ${result} PARENT_SCOPE)
 #endfunction()

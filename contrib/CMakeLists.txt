@@ -57,6 +57,7 @@ endif()
 add_subdirectory (poco-cmake)
 add_subdirectory (croaring-cmake)
 add_subdirectory (zstd-cmake)
+add_subdirectory (zlib-ng-cmake)
 
 # TODO: refactor the contrib libraries below this comment.
 
@@ -74,14 +75,6 @@ endif ()
 
 if (USE_INTERNAL_FARMHASH_LIBRARY)
     add_subdirectory (libfarmhash)
-endif ()
-
-if (USE_INTERNAL_ZLIB_LIBRARY)
-    if (INTERNAL_ZLIB_NAME STREQUAL "zlib-ng")
-        add_subdirectory (zlib-ng-cmake)
-    else ()
-        add_subdirectory (${INTERNAL_ZLIB_NAME})
-    endif ()
 endif ()
 
 if (USE_INTERNAL_H3_LIBRARY)
@@ -105,7 +98,6 @@ endif ()
 
 if (USE_INTERNAL_RDKAFKA_LIBRARY)
     add_subdirectory (librdkafka-cmake)
-    target_include_directories(rdkafka BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
     if(OPENSSL_INCLUDE_DIR)
         target_include_directories(rdkafka BEFORE PRIVATE ${OPENSSL_INCLUDE_DIR})
     endif()

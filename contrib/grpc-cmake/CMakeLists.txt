@@ -10,12 +10,9 @@ set(_gRPC_RE2_INCLUDE_DIR "${RE2_INCLUDE_DIR}")
 set(_gRPC_RE2_LIBRARIES "${RE2_LIBRARY}")
 
 # Use zlib from ClickHouse contrib, not from gRPC third_party.
-if(NOT ZLIB_INCLUDE_DIRS)
-  message(FATAL_ERROR " grpc: The location of the \"zlib\" library is unknown")
-endif()
 set(gRPC_ZLIB_PROVIDER "clickhouse" CACHE STRING "" FORCE)
-set(_gRPC_ZLIB_INCLUDE_DIR "${ZLIB_INCLUDE_DIRS}")
-set(_gRPC_ZLIB_LIBRARIES "${ZLIB_LIBRARIES}")
+set(_gRPC_ZLIB_INCLUDE_DIR "")
+set(_gRPC_ZLIB_LIBRARIES ch_contrib::zlib)
 
 # Use protobuf from ClickHouse contrib, not from gRPC third_party.
 if(NOT Protobuf_INCLUDE_DIR OR NOT Protobuf_LIBRARY)

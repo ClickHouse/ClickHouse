@@ -50,7 +50,7 @@ add_library(minizip OBJECT
     ${CASS_SRC_DIR}/third_party/minizip/zip.c
     ${CASS_SRC_DIR}/third_party/minizip/unzip.c)
 
-target_link_libraries(minizip zlib)
+target_link_libraries(minizip ch_contrib::zlib)
 target_compile_definitions(minizip PRIVATE "-Dz_crc_t=unsigned long")
 
 list(APPEND INCLUDE_DIRS
@@ -115,7 +115,7 @@ add_library(cassandra
     $<TARGET_OBJECTS:http-parser>
     $<TARGET_OBJECTS:minizip>)
 
-target_link_libraries(cassandra zlib)
+target_link_libraries(cassandra ch_contrib::zlib)
 add_library(cassandra_static ALIAS cassandra)
 target_include_directories(cassandra PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${INCLUDE_DIRS})
 target_compile_definitions(cassandra PRIVATE CASS_BUILDING)
