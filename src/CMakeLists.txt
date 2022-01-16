@@ -415,9 +415,8 @@ if (TARGET ch_contrib::parquet)
     dbms_target_link_libraries (PRIVATE ch_contrib::parquet)
 endif ()
 
-if (USE_AVRO)
-    dbms_target_link_libraries(PRIVATE ${AVROCPP_LIBRARY})
-    dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${AVROCPP_INCLUDE_DIR})
+if (TARGET ch_contrib::avrocpp)
+    dbms_target_link_libraries(PRIVATE ch_contrib::avrocpp)
 endif ()
 
 if (OPENSSL_CRYPTO_LIBRARY)
