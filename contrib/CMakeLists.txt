@@ -60,7 +60,7 @@ add_subdirectory (zstd-cmake)
 add_subdirectory (zlib-ng-cmake)
 add_subdirectory (rocksdb-cmake)
 add_subdirectory (bzip2-cmake)
-# parquet/arrow
+# parquet/arrow/orc
 add_subdirectory (arrow-cmake)
 add_subdirectory (avro-cmake) # requires: snappy
 
