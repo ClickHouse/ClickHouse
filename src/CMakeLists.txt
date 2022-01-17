@@ -87,7 +87,7 @@ if (USE_SQLITE)
     add_headers_and_sources(dbms Databases/SQLite)
 endif()
 
-if(USE_RDKAFKA)
+if (TARGET ch_contrib::rdkafka)
     add_headers_and_sources(dbms Storages/Kafka)
 endif()
 
@@ -339,11 +339,8 @@ target_link_libraries(clickhouse_common_io
 # That way we we can redirect malloc/free functions avoiding circular dependencies
 dbms_target_link_libraries(PUBLIC roaring)
 
-if (USE_RDKAFKA)
-    dbms_target_link_libraries(PRIVATE ${CPPKAFKA_LIBRARY} ${RDKAFKA_LIBRARY})
-    if(NOT USE_INTERNAL_RDKAFKA_LIBRARY)
-        dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${RDKAFKA_INCLUDE_DIR})
-    endif()
+if (TARGET ch_contrib::rdkafka)
+    dbms_target_link_libraries(PRIVATE ch_contrib::rdkafka ch_contrib::cppkafka)
 endif()
 
 if (USE_CYRUS_SASL)

@@ -66,6 +66,8 @@ add_subdirectory (thrift-cmake)
 add_subdirectory (arrow-cmake) # requires: snappy, thrift
 add_subdirectory (avro-cmake) # requires: snappy
 add_subdirectory (hive-metastore-cmake) # requires: thrift/avro/arrow
+add_subdirectory (librdkafka-cmake)
+add_subdirectory (cppkafka-cmake)
 
 # TODO: refactor the contrib libraries below this comment.
 
@@ -103,17 +105,6 @@ endif ()
 if (USE_INTERNAL_MYSQL_LIBRARY)
     add_subdirectory (mariadb-connector-c-cmake)
 endif ()
-
-if (USE_INTERNAL_RDKAFKA_LIBRARY)
-    add_subdirectory (librdkafka-cmake)
-    if(OPENSSL_INCLUDE_DIR)
-        target_include_directories(rdkafka BEFORE PRIVATE ${OPENSSL_INCLUDE_DIR})
-    endif()
-endif ()
-
-if (USE_RDKAFKA)
-    add_subdirectory (cppkafka-cmake)
-endif()
 
 if (ENABLE_ICU AND USE_INTERNAL_ICU_LIBRARY)
     add_subdirectory (icu-cmake)
