@@ -153,4 +153,4 @@ def test_session_timeout(started_cluster):
     assert negotiated_timeout == 8000
 
     negotiated_timeout, _ = handshake(node1.name, session_timeout=20000, session_id=0)
-    assert negotiated_timeout == 10000
+    assert negotiated_timeout == 10000 
