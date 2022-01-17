@@ -114,6 +114,7 @@ void registerInputFormatRowBinary(FormatFactory & factory)
     };
 
     registerWithNamesAndTypes("RowBinary", register_func);
+    factory.registerFileExtension("bin", "RowBinary");
 }
 
 void registerRowBinaryWithNamesAndTypesSchemaReader(FormatFactory & factory)
