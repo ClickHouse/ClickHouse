@@ -247,12 +247,13 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
 
         if (named_collection)
         {
-            host = named_collection->host;
-            user = named_collection->username;
-            password = named_collection->password;
-            db = named_collection->database;
-            table = named_collection->table;
-            port = named_collection->port;
+            const auto & configuration = named_collection->configuration;
+            host = configuration.host;
+            user = configuration.username;
+            password = configuration.password;
+            db = configuration.database;
+            table = configuration.table;
+            port = configuration.port;
         }
 
         ClickHouseDictionarySource::Configuration configuration{
