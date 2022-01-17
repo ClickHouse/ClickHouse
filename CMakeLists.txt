@@ -487,7 +487,6 @@ message (STATUS
 
 include (GNUInstallDirs)
 
-include (cmake/find/ltdl.cmake) # for odbc
 include (cmake/find/krb5.cmake)
 include (cmake/find/libgsasl.cmake)
 include (cmake/find/cyrus-sasl.cmake)
@@ -500,7 +499,6 @@ include (cmake/find/curl.cmake)
 include (cmake/find/s3.cmake)
 include (cmake/find/fast_float.cmake)
 include (cmake/find/fastops.cmake)
-include (cmake/find/odbc.cmake)
 include (cmake/find/libpqxx.cmake)
 include (cmake/find/yaml-cpp.cmake)
 include (cmake/find/nlp.cmake)
