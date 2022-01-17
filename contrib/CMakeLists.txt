@@ -77,9 +77,7 @@ endif()
 
 # TODO: refactor the contrib libraries below this comment.
 
-if (USE_INTERNAL_CITYHASH_LIBRARY)
-    add_subdirectory (cityhash102)
-endif ()
+add_subdirectory (cityhash102)
 
 if (USE_INTERNAL_FARMHASH_LIBRARY)
     add_subdirectory (libfarmhash)

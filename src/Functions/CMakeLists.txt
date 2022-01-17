@@ -13,7 +13,7 @@ add_library(clickhouse_functions ${clickhouse_functions_sources})
 target_link_libraries(clickhouse_functions
     PUBLIC
         ${BASE64_LIBRARY}
-        ${CITYHASH_LIBRARIES}
+        ch_contrib::cityhash
         ${FARMHASH_LIBRARIES}
         ${FASTOPS_LIBRARY}
         clickhouse_dictionaries

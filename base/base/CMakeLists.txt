@@ -52,7 +52,7 @@ endif()
 
 target_link_libraries (common
     PUBLIC
-        ${CITYHASH_LIBRARIES}
+        ch_contrib::cityhash
         boost::headers_only
         boost::system
         Poco::Net
