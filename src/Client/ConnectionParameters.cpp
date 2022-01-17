@@ -23,14 +23,12 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfiguration & config)
+ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfiguration & config,
+                                           std::string connection_host,
+                                           int connection_port) : host(connection_host), port(connection_port)
 {
     bool is_secure = config.getBool("secure", false);
     security = is_secure ? Protocol::Secure::Enable : Protocol::Secure::Disable;
-
-    host = config.getString("host", "localhost");
-    port = config.getInt(
-        "port", config.getInt(is_secure ? "tcp_port_secure" : "tcp_port", is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
 
     default_database = config.getString("database", "");
 
@@ -61,12 +59,21 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
 
     /// By default compression is disabled if address looks like localhost.
     compression = config.getBool("compression", !isLocalAddress(DNSResolver::instance().resolveHost(host)))
-        ? Protocol::Compression::Enable : Protocol::Compression::Disable;
+                  ? Protocol::Compression::Enable : Protocol::Compression::Disable;
 
     timeouts = ConnectionTimeouts(
-        Poco::Timespan(config.getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0),
-        Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0),
-        Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
-        Poco::Timespan(config.getInt("tcp_keep_alive_timeout", 0), 0));
+            Poco::Timespan(config.getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0),
+            Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0),
+            Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
+            Poco::Timespan(config.getInt("tcp_keep_alive_timeout", 0), 0));
+}
+
+ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfiguration & config)
+{
+    bool is_secure = config.getBool("secure", false);
+    std::string connection_host = config.getString("host", "localhost");
+    int connection_port = config.getInt("port",
+        config.getInt(is_secure ? "tcp_port_secure" : "tcp_port", is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
+    ConnectionParameters(config, connection_host, connection_port);
 }
 }

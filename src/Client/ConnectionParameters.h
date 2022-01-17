@@ -24,6 +24,7 @@ struct ConnectionParameters
 
     ConnectionParameters() {}
     ConnectionParameters(const Poco::Util::AbstractConfiguration & config);
+    ConnectionParameters(const Poco::Util::AbstractConfiguration & config, std::string host, int port);
 };
 
 }
