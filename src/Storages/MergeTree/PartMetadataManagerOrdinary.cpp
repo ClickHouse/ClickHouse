@@ -20,7 +20,7 @@ PartMetadataManagerOrdinary::PartMetadataManagerOrdinary(const IMergeTreeDataPar
 
 std::unique_ptr<SeekableReadBuffer> PartMetadataManagerOrdinary::read(const String & file_name) const
 {
-    String file_path = fs::path(part->getFullRelativePath() + "/" + file_name);
+    String file_path = fs::path(part->getFullRelativePath()) / file_name;
     return openForReading(disk, file_path);
 }
 
