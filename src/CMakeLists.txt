@@ -394,9 +394,8 @@ dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${MINISELECT_INCLUDE_DIR})
 dbms_target_link_libraries(PRIVATE ch_contrib::zstd)
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::zstd)
 
-if (XZ_LIBRARY)
-    target_link_libraries (clickhouse_common_io PUBLIC ${XZ_LIBRARY})
-    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${XZ_INCLUDE_DIR})
+if (TARGET ch_contrib::xz)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::xz)
 endif()
 
 if (USE_ICU)
