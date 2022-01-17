@@ -51,7 +51,10 @@ struct FunctionDetectTonalityImpl
 
         /// Calculate average value of tonality.
         /// Convert values -12..6 to -1..1
-        return std::max(weight / count_words / 6, -1.0);
+        if (weight > 0)
+            return weight / count_words / 6;
+        else
+            return weight / count_words / 12;
     }
 
     static void vector(

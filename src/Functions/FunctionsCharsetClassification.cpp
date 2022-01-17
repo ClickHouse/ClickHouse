@@ -27,7 +27,7 @@ struct CharsetClassificationImpl
 
     static ALWAYS_INLINE inline Float64 naiveBayes(
         const FrequencyHolder::EncodingMap & standard,
-        const HashMap<UInt16, Float64> & model,
+        const HashMap<UInt16, UInt64> & model,
         Float64 max_result)
     {
         Float64 res = 0;
@@ -55,7 +55,7 @@ struct CharsetClassificationImpl
     static ALWAYS_INLINE inline void calculateStats(
         const UInt8 * data,
         const size_t size,
-        HashMap<UInt16, Float64> & model)
+        HashMap<UInt16, UInt64> & model)
     {
         UInt16 hash = 0;
         for (size_t i = 0; i < size; ++i)
@@ -92,7 +92,7 @@ struct CharsetClassificationImpl
 
             std::string_view res;
 
-            HashMap<UInt16, Float64> model;
+            HashMap<UInt16, UInt64> model;
             calculateStats(str, str_len, model);
 
             /// Go through the dictionary and find the charset with the highest weight
