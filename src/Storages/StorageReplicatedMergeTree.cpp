@@ -31,6 +31,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/LeaderElection.h>
+#include <Storages/MergeTree/ZeroCopyLock.h>
 
 
 #include <Databases/DatabaseOnDisk.h>
@@ -7307,6 +7308,30 @@ Strings StorageReplicatedMergeTree::getZeroCopyPartPath(const MergeTreeSettings 
     return res;
 }
 
+
+std::optional<ZeroCopyLock> StorageReplicatedMergeTree::tryCreateZeroCopyExclusiveLock(const DataPartPtr & part, const DiskPtr & disk)
+{
+    if (!disk || !disk->supportZeroCopyReplication())
+        return std::nullopt;
+
+    zkutil::ZooKeeperPtr zookeeper = tryGetZooKeeper();
+    if (!zookeeper)
+        return std::nullopt;
+
+    String zc_zookeeper_path = getZeroCopyPartPath(*getSettings(), disk->getType(), getTableSharedID(),
+        part->name, zookeeper_path)[0];
+
+    /// Just recursively create ancestors for lock with retries
+    createZeroCopyLockNode(zookeeper, zc_zookeeper_path);
+
+    String zookeeper_node = fs::path(zc_zookeeper_path);
+    /// Create actual lock
+    ZeroCopyLock lock(zookeeper, zookeeper_node);
+    if (lock.lock->tryLock())
+        return lock;
+    else
+        return std::nullopt;
+}
 
 String StorageReplicatedMergeTree::findReplicaHavingPart(
     const String & part_name, const String & zookeeper_path_, zkutil::ZooKeeper::Ptr zookeeper_ptr)
