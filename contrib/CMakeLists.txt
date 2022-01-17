@@ -72,6 +72,7 @@ add_subdirectory (cppkafka-cmake)
 add_subdirectory (openldap-cmake)
 add_subdirectory (grpc-cmake)
 add_subdirectory (protobuf-cmake)
+add_subdirectory (libhdfs3-cmake) # requires: protobuf
 
 # TODO: refactor the contrib libraries below this comment.
 
@@ -145,10 +146,6 @@ endif ()
 if (USE_INTERNAL_BROTLI_LIBRARY)
     add_subdirectory(brotli-cmake)
     target_compile_definitions(brotli PRIVATE BROTLI_BUILD_PORTABLE=1)
-endif ()
-
-if (USE_INTERNAL_HDFS3_LIBRARY)
-    add_subdirectory(libhdfs3-cmake)
 endif ()
 
 if (USE_INTERNAL_AWS_S3_LIBRARY)
