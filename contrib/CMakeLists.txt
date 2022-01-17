@@ -76,12 +76,9 @@ endif()
 add_subdirectory (cityhash102)
 add_subdirectory (libfarmhash)
 add_subdirectory (icu-cmake)
+add_subdirectory (h3-cmake)
 
 # TODO: refactor the contrib libraries below this comment.
-
-if (USE_INTERNAL_H3_LIBRARY)
-    add_subdirectory(h3-cmake)
-endif ()
 
 if (USE_INTERNAL_MYSQL_LIBRARY)
     add_subdirectory (mariadb-connector-c-cmake)
