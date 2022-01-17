@@ -21,6 +21,8 @@
 #include <Core/Defines.h>
 #include <Common/StringUtils/StringUtils.h>
 
+#include <base/logger_useful.h>
+
 namespace DB
 {
 
@@ -463,21 +465,48 @@ class UniqueShortNames
 {
 public:
     /// We know that long names are unique (do not clashes with others).
-    /// So we could make unique names base on this knolage by adding some unused prefix.
+    /// So we could make unique names base on this knowledge by adding some unused prefix.
     static constexpr const char * pattern = "--";
 
-    String longToShort(const String & long_name)
+    String longToShort(const String & long_name, const String & original_short_name)
     {
         auto it = long_to_short.find(long_name);
         if (it != long_to_short.end())
             return it->second;
+
+        LOG_TRACE(&Poco::Logger::get("JoinToSubquery"), "before ====");
+        // check if the column came from 'using'
+        for (auto * ident : using_identifiers)
+        {
+            LOG_TRACE(&Poco::Logger::get("JoinToSubquery"), "==== using_identifiers: {} vs {}",
+                ident->name(), original_short_name);
+            if (ident->name() == original_short_name)
+            {
+                long_to_short.emplace(long_name, original_short_name);
+                return original_short_name;
+            }
+
+        }
+        LOG_TRACE(&Poco::Logger::get("JoinToSubquery"), "after ====");
+
+
 
         String short_name = generateUniqueName(long_name);
         long_to_short.emplace(long_name, short_name);
         return short_name;
     }
 
+    UniqueShortNames(const std::vector<ASTIdentifier *>& using_identifiers_)
+        : using_identifiers(using_identifiers_),
+          long_to_short()
+    {
+    }
+
+
+
 private:
+    const std::vector<ASTIdentifier *>& using_identifiers;
+
     std::unordered_map<String, String> long_to_short;
 
     static String generateUniqueName(const String & long_name)
@@ -519,6 +548,7 @@ void restoreName(ASTIdentifier & ident, const String & original_name, NameSet & 
 /// 4. If column clashes with another column and it's short - it's 'ambiguous column' error.
 /// 5. If column clashes with alias add short column name to select list. It would be removed later if not needed.
 std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
+    const std::vector<std::shared_ptr<DB::IAST>> & src_tables,
     const std::vector<TableWithColumnNamesAndTypes> & tables,
     const Aliases & aliases,
     const std::vector<ASTIdentifier *> & identifiers,
@@ -535,6 +565,7 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
 
     for (ASTIdentifier * ident : identifiers)
     {
+        LOG_TRACE(&Poco::Logger::get("JoinToSubquery"),  "ident->name() {} isShort {}", ident->name(), ident->isShort());
         bool got_alias = aliases.contains(ident->name());
         bool allow_ambiguous = got_alias; /// allow ambiguous column overridden by an alias
 
@@ -544,6 +575,7 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
             {
                 if (got_alias)
                 {
+                    LOG_TRACE(&Poco::Logger::get("JoinToSubquery"),  "got_alias");
                     auto alias = aliases.find(ident->name())->second;
                     auto alias_ident = alias->clone();
                     alias_ident->as<ASTIdentifier>()->restoreTable();
@@ -557,24 +589,28 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
                     original_long_name = ident->name();
 
                 size_t count = countTablesWithColumn(tables, short_name);
+                LOG_TRACE(&Poco::Logger::get("JoinToSubquery"),  "count {}", count);
 
-                /// isValidIdentifierBegin retuired to be consistent with TableJoin::deduplicateAndQualifyColumnNames
+                /// isValidIdentifierBegin required to be consistent with TableJoin::deduplicateAndQualifyColumnNames
                 if (count > 1 || aliases.contains(short_name) || !isValidIdentifierBegin(short_name.at(0)))
                 {
                     const auto & table = tables[*table_pos];
+                    LOG_TRACE(&Poco::Logger::get("JoinToSubquery"),  "setColumnLongName");
                     IdentifierSemantic::setColumnLongName(*ident, table.table); /// table.column -> table_alias.column
                     const auto & unique_long_name = ident->name();
 
                     /// For tables moved into subselects we need unique short names for clashed names
                     if (*table_pos != last_table_pos)
                     {
-                        String unique_short_name = unique_names.longToShort(unique_long_name);
+                        String unique_short_name = unique_names.longToShort(unique_long_name, short_name);
                         ident->setShortName(unique_short_name);
+                        LOG_TRACE(&Poco::Logger::get("JoinToSubquery"),  "column_clashes.emplace(short_name {}, unique_short_name {})", short_name, unique_short_name);
                         needed_columns[*table_pos].column_clashes.emplace(short_name, unique_short_name);
                     }
                 }
                 else
                 {
+                    LOG_TRACE(&Poco::Logger::get("JoinToSubquery"),  "setShortName");
                     ident->setShortName(short_name); /// table.column -> column
                     needed_columns[*table_pos].no_clashes.emplace(short_name);
                 }
@@ -587,6 +623,30 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
                 needed_columns[*table_pos].no_clashes.emplace(ident->shortName());
         }
     }
+
+    size_t tables_count = src_tables.size();
+    for (size_t table_pos = 0; table_pos < tables_count; ++table_pos)
+    {
+        auto * table = src_tables[table_pos]->as<ASTTablesInSelectQueryElement>();
+        if (table->table_join)
+        {
+            const auto & join = table->table_join->as<ASTTableJoin &>();
+            LOG_TRACE(&Poco::Logger::get("JoinToSubquery"), "table_pos {}", table_pos);
+            if (join.using_expression_list)
+            {
+                LOG_TRACE(&Poco::Logger::get("JoinToSubquery"), "using_expression_list");
+                std::vector<ASTIdentifier *> using_identifiers;
+                CollectColumnIdentifiersVisitor::Data data_using_identifiers(using_identifiers);
+                CollectColumnIdentifiersVisitor(data_using_identifiers).visit(join.using_expression_list);
+                for (auto * ident : using_identifiers)
+                {
+                    LOG_TRACE(&Poco::Logger::get("JoinToSubquery"), "adding {}", ident->name());
+                    needed_columns[table_pos].no_clashes.emplace(ident->name());
+                }
+            }
+        }
+    }
+
 
     return needed_columns;
 }
@@ -635,7 +695,7 @@ void JoinToSubqueryTransformMatcher::visit(ASTPtr & ast, Data & data)
 /// 2. Normalize column names and find name clashes
 /// 3. Rewrite multiple JOINs with subqueries:
 ///    SELECT ... FROM (SELECT `--.s`.*, ... FROM (...) AS `--.s` JOIN tableY ON ...) AS `--.s` JOIN tableZ ON ...'
-/// 4. Push down expressions of aliases used in ON section into expression list of first reletad subquery
+/// 4. Push down expressions of aliases used in ON section into expression list of first related subquery
 void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast, Data & data)
 {
     std::vector<const ASTTableExpression *> table_expressions;
@@ -725,15 +785,30 @@ void JoinToSubqueryTransformMatcher::visit(ASTSelectQuery & select, ASTPtr & ast
     RewriteWithAliasVisitor(on_aliases).visit(ast);
     on_aliases.clear();
 
-    /// We need to know if identifier is public. If so we have too keep its output name.
+    /// We need to know if identifier is public. If so we have to keep its output name.
     std::unordered_set<ASTIdentifier *> public_identifiers;
     for (auto & top_level_child : select.select()->children)
         if (auto * ident = top_level_child->as<ASTIdentifier>())
             public_identifiers.insert(ident);
 
-    UniqueShortNames unique_names;
+#if 0
+    for (size_t table_pos = 0; table_pos < tables_count; ++table_pos)
+    {
+        auto * table = src_tables[table_pos]->as<ASTTablesInSelectQueryElement>();
+        if (table->table_join)
+        {
+            auto & join = table->table_join->as<ASTTableJoin &>();
+            if (join.using_expression_list)
+            {
+                CollectColumnIdentifiersVisitor::Data data_using_identifiers(using_identifiers);
+                CollectColumnIdentifiersVisitor(data_using_identifiers).visit(join.using_expression_list);
+            }
+        }
+    }
+#endif
+    UniqueShortNames unique_names(using_identifiers);
     std::vector<TableNeededColumns> needed_columns =
-        normalizeColumnNamesExtractNeeded(data.tables, data.aliases, identifiers, public_identifiers, unique_names);
+        normalizeColumnNamesExtractNeeded(src_tables, data.tables, data.aliases, identifiers, public_identifiers, unique_names);
 
     /// Rewrite JOINs with subselects
 
