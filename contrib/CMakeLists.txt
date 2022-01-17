@@ -70,6 +70,7 @@ add_subdirectory (hive-metastore-cmake) # requires: thrift/avro/arrow
 add_subdirectory (librdkafka-cmake)
 add_subdirectory (cppkafka-cmake)
 add_subdirectory (openldap-cmake)
+add_subdirectory (grpc-cmake)
 
 # TODO: refactor the contrib libraries below this comment.
 
@@ -151,10 +152,6 @@ endif ()
 
 if (USE_INTERNAL_HDFS3_LIBRARY)
     add_subdirectory(libhdfs3-cmake)
-endif ()
-
-if (USE_INTERNAL_GRPC_LIBRARY)
-    add_subdirectory(grpc-cmake)
 endif ()
 
 if (USE_INTERNAL_AWS_S3_LIBRARY)
