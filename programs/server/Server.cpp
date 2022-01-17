@@ -114,10 +114,6 @@
 #    include <Server/KeeperTCPHandlerFactory.h>
 #endif
 
-#if USE_BASE64
-#   include <turbob64.h>
-#endif
-
 #if USE_JEMALLOC
 #    include <jemalloc/jemalloc.h>
 #endif
