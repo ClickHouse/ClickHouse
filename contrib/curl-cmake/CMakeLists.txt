@@ -153,7 +153,7 @@ target_compile_definitions (curl PRIVATE
     libcurl_EXPORTS
     OS="${CMAKE_SYSTEM_NAME}"
 )
-target_include_directories (curl PUBLIC
+target_include_directories (curl SYSTEM PUBLIC
     "${LIBRARY_DIR}/include"
     "${LIBRARY_DIR}/lib"
     . # curl_config.h
