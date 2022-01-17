@@ -4,7 +4,6 @@
 
 #cmakedefine01 USE_BASE64
 #cmakedefine01 USE_SSL
-#cmakedefine01 USE_INTERNAL_SSL_LIBRARY
 #cmakedefine01 USE_HDFS
 #cmakedefine01 USE_AWS_S3
 #cmakedefine01 USE_AZURE_BLOB_STORAGE

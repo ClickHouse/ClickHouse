@@ -98,9 +98,7 @@
 #endif
 
 #if USE_SSL
-#    if USE_INTERNAL_SSL_LIBRARY
-#        include <Compression/CompressionCodecEncrypted.h>
-#    endif
+#    include <Compression/CompressionCodecEncrypted.h>
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
 #endif
