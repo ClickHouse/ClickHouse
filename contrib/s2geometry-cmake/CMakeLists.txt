@@ -111,8 +111,8 @@ set(S2_SRCS
 add_library(s2 ${S2_SRCS})
 set_property(TARGET s2 PROPERTY CXX_STANDARD 17)
 
-if (OPENSSL_FOUND)
-    target_link_libraries(s2 PRIVATE ${OPENSSL_LIBRARIES})
+if (TARGET OpenSSL::SSL)
+    target_link_libraries(s2 PRIVATE OpenSSL::Crypto OpenSSL::SSL)
 endif()
 
 # Copied from contrib/s2geometry/CMakeLists

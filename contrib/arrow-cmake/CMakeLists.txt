@@ -435,16 +435,14 @@ add_library(ch_contrib::parquet ALIAS _parquet)
 target_include_directories(_parquet SYSTEM BEFORE
     PUBLIC
         "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src"
-        "${CMAKE_CURRENT_SOURCE_DIR}/cpp/src"
-    PRIVATE
-        ${OPENSSL_INCLUDE_DIR})
+        "${CMAKE_CURRENT_SOURCE_DIR}/cpp/src")
 target_link_libraries(_parquet
     PUBLIC _arrow
     PRIVATE
         ch_contrib::thrift
         boost::headers_only
         boost::regex
-        ${OPENSSL_LIBRARIES})
+        OpenSSL::Crypto OpenSSL::SSL)
 
 if (SANITIZE STREQUAL "undefined")
     target_compile_options(_parquet PRIVATE -fno-sanitize=undefined)

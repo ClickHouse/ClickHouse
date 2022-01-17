@@ -95,9 +95,9 @@ target_compile_definitions(aws_s3 PUBLIC "AWS_SDK_VERSION_MINOR=7")
 target_compile_definitions(aws_s3 PUBLIC "AWS_SDK_VERSION_PATCH=231")
 target_include_directories(aws_s3 SYSTEM PUBLIC ${S3_INCLUDES})
 
-if (OPENSSL_FOUND)
+if (TARGET OpenSSL::SSL)
     target_compile_definitions(aws_s3 PUBLIC -DENABLE_OPENSSL_ENCRYPTION)
-    target_link_libraries(aws_s3 PRIVATE ${OPENSSL_LIBRARIES})
+    target_link_libraries(aws_s3 PRIVATE OpenSSL::Crypto OpenSSL::SSL)
 endif()
 
 target_link_libraries(aws_s3 PRIVATE aws_s3_checksums)

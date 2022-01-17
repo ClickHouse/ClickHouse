@@ -30,8 +30,8 @@ target_link_libraries(clickhouse_functions
         divide_impl
 )
 
-if (OPENSSL_CRYPTO_LIBRARY)
-    target_link_libraries(clickhouse_functions PUBLIC ${OPENSSL_CRYPTO_LIBRARY})
+if (TARGET OpenSSL::Crypto)
+    target_link_libraries(clickhouse_functions PUBLIC OpenSSL::Crypto)
 endif()
 
 target_include_directories(clickhouse_functions SYSTEM PRIVATE ${SPARSEHASH_INCLUDE_DIR})

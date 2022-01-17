@@ -416,9 +416,9 @@ if (TARGET ch_contrib::avrocpp)
     dbms_target_link_libraries(PRIVATE ch_contrib::avrocpp)
 endif ()
 
-if (OPENSSL_CRYPTO_LIBRARY)
-    dbms_target_link_libraries (PRIVATE ${OPENSSL_CRYPTO_LIBRARY})
-    target_link_libraries (clickhouse_common_io PRIVATE ${OPENSSL_CRYPTO_LIBRARY})
+if (TARGET OpenSSL::Crypto)
+    dbms_target_link_libraries (PRIVATE OpenSSL::Crypto)
+    target_link_libraries (clickhouse_common_io PRIVATE OpenSSL::Crypto)
 endif ()
 
 if (USE_LDAP)
