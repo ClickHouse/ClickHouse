@@ -139,6 +139,7 @@ add_subdirectory (libpqxx-cmake)
 add_subdirectory (libpq-cmake)
 add_subdirectory (nuraft-cmake)
 add_subdirectory (fast_float-cmake)
+add_subdirectory (datasketches-cpp-cmake)
 
 if (USE_NLP)
     add_subdirectory(libstemmer-c-cmake)
