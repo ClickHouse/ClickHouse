@@ -4,15 +4,16 @@ import argparse
 import logging
 import os
 import re
+from typing import Tuple
 
-from artifactory import ArtifactorySaaSPath
+from artifactory import ArtifactorySaaSPath  # type: ignore
 from build_download_helper import dowload_build_with_progress
 
 
 # Py 3.8 removeprefix and removesuffix
 def removeprefix(string: str, prefix: str):
     if string.startswith(prefix):
-        return string[len(prefix) :]
+        return string[len(prefix) :]  # noqa: ignore E203, false positive
     return string
 
 
@@ -118,7 +119,7 @@ class S3:
 
 
 class Release:
-    def __init__(self, name: str) -> str:
+    def __init__(self, name: str):
         r = re.compile(r"^v\d{2}[.]\d+[.]\d+[.]\d+-(testing|prestable|stable|lts)$")
         # Automatically remove refs/tags/ if full refname passed here
         name = removeprefix(name, "refs/tags/")
@@ -138,7 +139,7 @@ class Release:
         return self._version
 
     @property
-    def version_parts(self) -> str:
+    def version_parts(self) -> Tuple[str, ...]:
         return self._version_parts
 
     @property
@@ -162,7 +163,8 @@ class Artifactory:
             comp = "main"
             arch = packages.arch(package)
             logging.info(
-                "Deploy %s(distribution=%s;component=%s;architecture=%s) to artifactory",
+                "Deploy %s(distribution=%s;component=%s;architecture=%s) "
+                "to artifactory",
                 path,
                 dist,
                 comp,
