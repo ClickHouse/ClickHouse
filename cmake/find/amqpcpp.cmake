@@ -21,7 +21,6 @@ set (AMQPCPP_LIBRARY amqp-cpp OpenSSL::Crypto OpenSSL::SSL)
 
 set (AMQPCPP_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/AMQP-CPP/include")
 list (APPEND AMQPCPP_INCLUDE_DIR
-        "${LIBUV_INCLUDE_DIR}"
         "${ClickHouse_SOURCE_DIR}/contrib/AMQP-CPP")
 
 list (APPEND AMQPCPP_LIBRARY  "${LIBUV_LIBRARY}")
