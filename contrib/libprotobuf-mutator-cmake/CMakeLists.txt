@@ -11,4 +11,4 @@ add_library(protobuf-mutator
 target_include_directories(protobuf-mutator BEFORE PRIVATE "${LIBRARY_DIR}")
 target_include_directories(protobuf-mutator BEFORE PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/protobuf/src")
 
-target_link_libraries(protobuf-mutator ${Protobuf_LIBRARY})
+target_link_libraries(protobuf-mutator ch_contrib::protobuf)

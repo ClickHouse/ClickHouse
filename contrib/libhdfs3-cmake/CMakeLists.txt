@@ -27,7 +27,7 @@ set(PROTO_FILES
     "${HDFS3_SOURCE_DIR}/proto/datatransfer.proto"
     )
 
-PROTOBUF_GENERATE_CPP(PROTO_SOURCES PROTO_HEADERS ${PROTO_FILES})
+PROTOBUF_GENERATE_CPP(PROTO_SOURCES PROTO_HEADERS ${PROTO_FILES} APPEND_PATH)
 
 configure_file("${HDFS3_SOURCE_DIR}/platform.h.in" "${CMAKE_CURRENT_BINARY_DIR}/platform.h")
 
@@ -96,9 +96,7 @@ set_source_files_properties("${HDFS3_SOURCE_DIR}/rpc/RpcClient.cpp" PROPERTIES C
 # target
 add_library(hdfs3 ${SRCS})
 
-if(USE_INTERNAL_PROTOBUF_LIBRARY)
-    add_dependencies(hdfs3 protoc)
-endif()
+add_dependencies(hdfs3 protoc)
 
 target_include_directories(hdfs3 PRIVATE ${HDFS3_SOURCE_DIR})
 target_include_directories(hdfs3 PRIVATE ${HDFS3_COMMON_DIR})
@@ -114,8 +112,7 @@ endif()
 target_link_libraries(hdfs3 PRIVATE ${LIBXML2_LIBRARIES})
 
 # inherit from parent cmake
-target_include_directories(hdfs3 PRIVATE ${Protobuf_INCLUDE_DIR})
-target_link_libraries(hdfs3 PRIVATE ${Protobuf_LIBRARY} boost::headers_only)
+target_link_libraries(hdfs3 PRIVATE ch_contrib::protobuf boost::headers_only)
 if (TARGET OpenSSL::SSL)
     target_link_libraries(hdfs3 PRIVATE OpenSSL::Crypto OpenSSL::SSL)
 endif()

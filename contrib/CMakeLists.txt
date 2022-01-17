@@ -71,6 +71,7 @@ add_subdirectory (librdkafka-cmake)
 add_subdirectory (cppkafka-cmake)
 add_subdirectory (openldap-cmake)
 add_subdirectory (grpc-cmake)
+add_subdirectory (protobuf-cmake)
 
 # TODO: refactor the contrib libraries below this comment.
 
@@ -144,10 +145,6 @@ endif ()
 if (USE_INTERNAL_BROTLI_LIBRARY)
     add_subdirectory(brotli-cmake)
     target_compile_definitions(brotli PRIVATE BROTLI_BUILD_PORTABLE=1)
-endif ()
-
-if (USE_INTERNAL_PROTOBUF_LIBRARY)
-    add_subdirectory(protobuf-cmake)
 endif ()
 
 if (USE_INTERNAL_HDFS3_LIBRARY)

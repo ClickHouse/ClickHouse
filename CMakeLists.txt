@@ -152,7 +152,6 @@ if (ENABLE_FUZZING)
 
     # For codegen_select_fuzzer
     set (ENABLE_PROTOBUF 1)
-    set (USE_INTERNAL_PROTOBUF_LIBRARY 1)
 endif()
 
 # Global libraries
@@ -506,7 +505,6 @@ include (cmake/find/llvm.cmake)
 include (cmake/find/h3.cmake)
 include (cmake/find/libxml2.cmake)
 include (cmake/find/brotli.cmake)
-include (cmake/find/protobuf.cmake)
 include (cmake/find/pdqsort.cmake)
 include (cmake/find/miniselect.cmake)
 include (cmake/find/hdfs3.cmake) # uses protobuf
