@@ -431,7 +431,7 @@ if (USE_PROTOBUF)
     dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${Protobuf_INCLUDE_DIR})
 endif ()
 
-if (USE_GRPC)
+if (TARGET clickhouse_grpc_protos)
     dbms_target_link_libraries (PUBLIC clickhouse_grpc_protos)
 endif()
 
