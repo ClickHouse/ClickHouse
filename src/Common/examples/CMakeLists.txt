@@ -1,5 +1,5 @@
 add_executable (hashes_test hashes_test.cpp)
-target_link_libraries (hashes_test PRIVATE clickhouse_common_io ${CITYHASH_LIBRARIES})
+target_link_libraries (hashes_test PRIVATE clickhouse_common_io ch_contrib::cityhash)
 if (TARGET OpenSSL::Crypto)
     target_link_libraries (hashes_test PRIVATE OpenSSL::Crypto)
 endif()
