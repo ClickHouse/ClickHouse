@@ -9,7 +9,7 @@ namespace DB
 {
 
 /// Very simple wrapper for zookeeper ephemeral lock. It's better to have it
-/// because due to bad abstraction we use in MergeTreeData.
+/// because due to bad abstraction we use it in MergeTreeData.
 struct ZeroCopyLock
 {
     ZeroCopyLock(const zkutil::ZooKeeperPtr & zookeeper, const std::string & lock_path);
