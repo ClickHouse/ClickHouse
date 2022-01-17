@@ -129,17 +129,9 @@ add_subdirectory (fastops-cmake)
 add_subdirectory (libuv-cmake)
 add_subdirectory (amqpcpp-cmake) # requires: libuv
 add_subdirectory (cassandra-cmake) # requires: libuv
-
-# Should go before:
-# - sentry-native
 add_subdirectory (curl-cmake)
-
 add_subdirectory (azure-cmake)
-
-if (USE_SENTRY)
-    add_subdirectory (sentry-native-cmake)
-endif()
-
+add_subdirectory (sentry-native-cmake) # requires: curl
 add_subdirectory (fmtlib-cmake)
 add_subdirectory (krb5-cmake)
 add_subdirectory (cyrus-sasl-cmake) # for krb5

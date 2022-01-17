@@ -1,3 +1,14 @@
+if (NOT OS_FREEBSD AND NOT SPLIT_SHARED_LIBRARIES AND NOT (OS_DARWIN AND COMPILER_CLANG))
+    option (ENABLE_SENTRY "Enable Sentry" ${ENABLE_LIBRARIES})
+else()
+    option (ENABLE_SENTRY "Enable Sentry" OFF)
+endif()
+
+if (NOT ENABLE_SENTRY)
+    message(STATUS "Not using sentry")
+    return()
+endif()
+
 set (SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/sentry-native")
 
 set (SRCS
@@ -50,3 +61,5 @@ endif()
 target_link_libraries(sentry PRIVATE ch_contrib::curl pthread)
 target_include_directories(sentry PUBLIC "${SRC_DIR}/include" PRIVATE "${SRC_DIR}/src")
 target_compile_definitions(sentry PRIVATE SENTRY_WITH_INPROC_BACKEND SIZEOF_LONG=8)
+
+add_library(ch_contrib::sentry ALIAS sentry)
