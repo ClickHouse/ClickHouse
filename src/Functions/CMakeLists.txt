@@ -79,7 +79,7 @@ if(USE_BASE64)
     target_include_directories(clickhouse_functions SYSTEM PRIVATE ${BASE64_INCLUDE_DIR})
 endif()
 
-target_link_libraries(clickhouse_functions PRIVATE lz4)
+target_link_libraries(clickhouse_functions PRIVATE ch_contrib::lz4)
 
 if (USE_H3)
     target_link_libraries(clickhouse_functions PRIVATE ${H3_LIBRARY})
