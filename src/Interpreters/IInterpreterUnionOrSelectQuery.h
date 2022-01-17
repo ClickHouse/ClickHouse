@@ -40,6 +40,8 @@ public:
 
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr &, ContextPtr) const override;
 
+    bool usesViewSource() { return uses_view_source; }
+
 protected:
     ASTPtr query_ptr;
     ContextMutablePtr context;
@@ -48,6 +50,7 @@ protected:
     size_t max_streams = 1;
     bool settings_limit_offset_needed = false;
     bool settings_limit_offset_done = false;
+    bool uses_view_source = false;
 };
 }
 

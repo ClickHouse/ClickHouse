@@ -217,6 +217,8 @@ private:
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
     TemporaryTablesMapping external_tables_mapping;
     Scalars scalars;
+    /// Includes special scalars (_shard_num and _shard_count) but also scalars that aren't cacheable between queries / contexts
+    /// because they use storage views (like in MVs)
     Scalars local_scalars;
 
     /// Used in s3Cluster table function. With this callback, a worker node could ask an initiator

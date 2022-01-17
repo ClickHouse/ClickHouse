@@ -37,6 +37,7 @@ public:
     {
         size_t subquery_depth;
         Scalars & scalars;
+        Scalars & local_scalars;
         bool only_analyze;
     };
 
