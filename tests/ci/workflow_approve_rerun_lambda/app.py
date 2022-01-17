@@ -45,14 +45,16 @@ WorkflowDescription = namedtuple(
     ],
 )
 
-TRUSTED_WORKFLOW_IDS = {
-    14586616,  # Cancel workflows, always trusted
-}
-
+# See https://api.github.com/orgs/{name}
 TRUSTED_ORG_IDS = {
     7409213,  # yandex
     28471076,  # altinity
     54801242,  # clickhouse
+}
+
+# See {API_URL}/actions/workflows
+TRUSTED_WORKFLOW_IDS = {
+    14586616,  # Cancel workflows, always trusted
 }
 
 NEED_RERUN_WORKFLOWS = {
