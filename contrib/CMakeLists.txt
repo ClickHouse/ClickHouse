@@ -1,4 +1,4 @@
-# Third-party libraries may have substandard code.
+#"${folder}/CMakeLists.txt" Third-party libraries may have substandard code.
 
 set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
@@ -161,9 +161,7 @@ endif()
 # - sentry-native
 add_subdirectory (curl-cmake)
 
-if (USE_INTERNAL_AZURE_BLOB_STORAGE_LIBRARY)
-    add_subdirectory(azure-cmake)
-endif()
+add_subdirectory (azure-cmake)
 
 if (USE_SENTRY)
     add_subdirectory (sentry-native-cmake)
