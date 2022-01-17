@@ -69,7 +69,7 @@ namespace
 
     std::recursive_mutex ldap_global_mutex;
 
-    auto escapeForLDAP(const String & src)
+    auto escapeForDN(const String & src)
     {
         String dest;
         dest.reserve(src.size() * 2);
@@ -91,6 +91,39 @@ namespace
                     break;
             }
             dest += ch;
+        }
+
+        return dest;
+    }
+
+    auto escapeForFilter(const String & src)
+    {
+        String dest;
+        dest.reserve(src.size() * 3);
+
+        for (auto ch : src)
+        {
+            switch (ch)
+            {
+                case '*':
+                    dest += "\\2A";
+                    break;
+                case '(':
+                    dest += "\\28";
+                    break;
+                case ')':
+                    dest += "\\29";
+                    break;
+                case '\\':
+                    dest += "\\5C";
+                    break;
+                case '\0':
+                    dest += "\\00";
+                    break;
+                default:
+                    dest += ch;
+                    break;
+            }
         }
 
         return dest;
@@ -294,7 +327,7 @@ void LDAPClient::openConnection()
     if (params.enable_tls == LDAPClient::Params::TLSEnable::YES_STARTTLS)
         diag(ldap_start_tls_s(handle, nullptr, nullptr));
 
-    final_user_name = escapeForLDAP(params.user);
+    final_user_name = escapeForDN(params.user);
     final_bind_dn = replacePlaceholders(params.bind_dn, { {"{user_name}", final_user_name} });
     final_user_dn = final_bind_dn; // The default value... may be updated right after a successful bind.
 
@@ -366,10 +399,10 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
     });
 
     const auto final_search_filter = replacePlaceholders(search_params.search_filter, {
-        {"{user_name}", final_user_name},
-        {"{bind_dn}", final_bind_dn},
-        {"{user_dn}", final_user_dn},
-        {"{base_dn}", final_base_dn}
+        {"{user_name}", escapeForFilter(final_user_name)},
+        {"{bind_dn}", escapeForFilter(final_bind_dn)},
+        {"{user_dn}", escapeForFilter(final_user_dn)},
+        {"{base_dn}", escapeForFilter(final_base_dn)}
     });
 
     char * attrs[] = { const_cast<char *>(search_params.attribute.c_str()), nullptr };
