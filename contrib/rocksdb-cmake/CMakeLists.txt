@@ -67,7 +67,7 @@ else()
 
   if(WITH_LZ4)
     add_definitions(-DLZ4)
-    list(APPEND THIRDPARTY_LIBS lz4)
+    list(APPEND THIRDPARTY_LIBS ch_contrib::lz4)
   endif()
 
   if(WITH_ZSTD)

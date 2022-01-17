@@ -368,7 +368,7 @@ dbms_target_link_libraries (
         clickhouse_common_zookeeper
         clickhouse_dictionaries_embedded
         clickhouse_parsers
-        lz4
+        ch_contrib::lz4
         Poco::JSON
         Poco::MongoDB
         string_utils
@@ -507,7 +507,7 @@ if (USE_DATASKETCHES)
     target_include_directories (clickhouse_aggregate_functions SYSTEM BEFORE PRIVATE ${DATASKETCHES_INCLUDE_DIR})
 endif ()
 
-target_link_libraries (clickhouse_common_io PRIVATE lz4)
+target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::lz4)
 
 dbms_target_link_libraries(PRIVATE _boost_context)
 

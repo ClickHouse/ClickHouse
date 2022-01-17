@@ -122,7 +122,7 @@ target_include_directories(_rdkafka SYSTEM PUBLIC ${RDKAFKA_SOURCE_DIR})        
 target_include_directories(_rdkafka SYSTEM PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/auxdir")  # for "../config.h"
 target_link_libraries(_rdkafka
   PRIVATE
-    lz4
+    ch_contrib::lz4
     ch_contrib::zlib
     ch_contrib::zstd
     OpenSSL::Crypto OpenSSL::SSL
