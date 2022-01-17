@@ -111,10 +111,7 @@ if (USE_EMBEDDED_COMPILER)
 endif ()
 
 add_subdirectory(libgsasl-cmake)
-
-if (USE_INTERNAL_LIBXML2_LIBRARY)
-    add_subdirectory(libxml2-cmake)
-endif ()
+add_subdirectory(libxml2-cmake)
 
 if (USE_INTERNAL_AWS_S3_LIBRARY)
     add_subdirectory(aws-s3-cmake)
