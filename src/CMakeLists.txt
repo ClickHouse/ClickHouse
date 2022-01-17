@@ -315,12 +315,8 @@ set_source_files_properties(
         Columns/ColumnDecimal.cpp
         PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS}")
 
-if(RE2_LIBRARY)
-    target_link_libraries(clickhouse_common_io PUBLIC ${RE2_LIBRARY})
-endif()
-if(RE2_ST_LIBRARY)
-    target_link_libraries(clickhouse_common_io PUBLIC ${RE2_ST_LIBRARY})
-endif()
+target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::re2_st)
+target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::re2)
 
 target_link_libraries(clickhouse_common_io
         PRIVATE
@@ -354,10 +350,6 @@ endif()
 
 if (TARGET ch_contrib::nuraft)
     dbms_target_link_libraries(PUBLIC ch_contrib::nuraft)
-endif()
-
-if(RE2_INCLUDE_DIR)
-    target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
 endif()
 
 dbms_target_link_libraries (

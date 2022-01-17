@@ -492,7 +492,6 @@ include (cmake/find/icu.cmake)
 include (cmake/find/ltdl.cmake) # for odbc
 # openssl, zlib before poco
 include (cmake/find/sparsehash.cmake)
-include (cmake/find/re2.cmake)
 include (cmake/find/krb5.cmake)
 include (cmake/find/libgsasl.cmake)
 include (cmake/find/cyrus-sasl.cmake)
