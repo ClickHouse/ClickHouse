@@ -1,13 +1,14 @@
 #include <Interpreters/PredicateExpressionsOptimizer.h>
 
-#include <Parsers/IAST.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExtractExpressionInfoVisitor.h>
+#include <Interpreters/PredicateRewriteVisitor.h>
+#include <Interpreters/getTableExpressions.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/getTableExpressions.h>
-#include <Interpreters/PredicateRewriteVisitor.h>
-#include <Interpreters/ExtractExpressionInfoVisitor.h>
+#include <Parsers/IAST.h>
 
 
 namespace DB

@@ -1,56 +1,24 @@
 set (CMAKE_CXX_STANDARD 17)
 
-# === thrift
+set(ARROW_VERSION "6.0.1")
+string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" ARROW_BASE_VERSION "${ARROW_VERSION}")
 
-set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp")
-# contrib/thrift/lib/cpp/CMakeLists.txt
-set(thriftcpp_SOURCES
-        "${LIBRARY_DIR}/src/thrift/TApplicationException.cpp"
-        "${LIBRARY_DIR}/src/thrift/TOutput.cpp"
-        "${LIBRARY_DIR}/src/thrift/async/TAsyncChannel.cpp"
-        "${LIBRARY_DIR}/src/thrift/async/TAsyncProtocolProcessor.cpp"
-        "${LIBRARY_DIR}/src/thrift/async/TConcurrentClientSyncInfo.h"
-        "${LIBRARY_DIR}/src/thrift/async/TConcurrentClientSyncInfo.cpp"
-        "${LIBRARY_DIR}/src/thrift/concurrency/ThreadManager.cpp"
-        "${LIBRARY_DIR}/src/thrift/concurrency/TimerManager.cpp"
-        "${LIBRARY_DIR}/src/thrift/concurrency/Util.cpp"
-        "${LIBRARY_DIR}/src/thrift/processor/PeekProcessor.cpp"
-        "${LIBRARY_DIR}/src/thrift/protocol/TBase64Utils.cpp"
-        "${LIBRARY_DIR}/src/thrift/protocol/TDebugProtocol.cpp"
-        "${LIBRARY_DIR}/src/thrift/protocol/TJSONProtocol.cpp"
-        "${LIBRARY_DIR}/src/thrift/protocol/TMultiplexedProtocol.cpp"
-        "${LIBRARY_DIR}/src/thrift/protocol/TProtocol.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/TTransportException.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/TFDTransport.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/TSimpleFileTransport.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/THttpTransport.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/THttpClient.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/THttpServer.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/TSocket.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/TSocketPool.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/TServerSocket.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/TTransportUtils.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/TBufferTransports.cpp"
-        "${LIBRARY_DIR}/src/thrift/server/TConnectedClient.cpp"
-        "${LIBRARY_DIR}/src/thrift/server/TServerFramework.cpp"
-        "${LIBRARY_DIR}/src/thrift/server/TSimpleServer.cpp"
-        "${LIBRARY_DIR}/src/thrift/server/TThreadPoolServer.cpp"
-        "${LIBRARY_DIR}/src/thrift/server/TThreadedServer.cpp"
-        )
-set(thriftcpp_threads_SOURCES
-        "${LIBRARY_DIR}/src/thrift/concurrency/ThreadFactory.cpp"
-        "${LIBRARY_DIR}/src/thrift/concurrency/Thread.cpp"
-        "${LIBRARY_DIR}/src/thrift/concurrency/Monitor.cpp"
-        "${LIBRARY_DIR}/src/thrift/concurrency/Mutex.cpp"
-        )
-add_library(${THRIFT_LIBRARY} ${thriftcpp_SOURCES} ${thriftcpp_threads_SOURCES})
-set_target_properties(${THRIFT_LIBRARY} PROPERTIES CXX_STANDARD 14) # REMOVE after https://github.com/apache/thrift/pull/1641
-target_include_directories(${THRIFT_LIBRARY} SYSTEM PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src")
-target_link_libraries (${THRIFT_LIBRARY} PRIVATE boost::headers_only)
+set(ARROW_VERSION_MAJOR "6")
+set(ARROW_VERSION_MINOR "0")
+set(ARROW_VERSION_PATCH "1")
+
+if(ARROW_VERSION_MAJOR STREQUAL "0")
+    # Arrow 0.x.y => SO version is "x", full SO version is "x.y.0"
+    set(ARROW_SO_VERSION "${ARROW_VERSION_MINOR}")
+    set(ARROW_FULL_SO_VERSION "${ARROW_SO_VERSION}.${ARROW_VERSION_PATCH}.0")
+else()
+    # Arrow 1.x.y => SO version is "10x", full SO version is "10x.y.0"
+    math(EXPR ARROW_SO_VERSION "${ARROW_VERSION_MAJOR} * 100 + ${ARROW_VERSION_MINOR}")
+    set(ARROW_FULL_SO_VERSION "${ARROW_SO_VERSION}.${ARROW_VERSION_PATCH}.0")
+endif()
 
 
 # === orc
-
 set(ORC_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/orc/c++")
 set(ORC_INCLUDE_DIR "${ORC_SOURCE_DIR}/include")
 set(ORC_SOURCE_SRC_DIR "${ORC_SOURCE_DIR}/src")
@@ -93,6 +61,9 @@ add_subdirectory(${FLATBUFFERS_SRC_DIR} "${FLATBUFFERS_BINARY_DIR}")
 
 message(STATUS "FLATBUFFERS_LIBRARY: ${FLATBUFFERS_LIBRARY}")
 
+# ===  hdfs
+set(HDFS_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libhdfs3/include/hdfs/")
+
 # arrow-cmake cmake file calling orc cmake subroutine which detects certain compiler features.
 # Apple Clang compiler failed to compile this code without specifying c++11 standard.
 # As result these compiler features detected as absent. In result it failed to compile orc itself.
@@ -114,6 +85,7 @@ configure_file("${ORC_INCLUDE_DIR}/orc/orc-config.hh.in" "${ORC_BUILD_INCLUDE_DI
 configure_file("${ORC_SOURCE_SRC_DIR}/Adaptor.hh.in" "${ORC_BUILD_INCLUDE_DIR}/Adaptor.hh")
 
 
+# ARROW_ORC + adapters/orc/CMakefiles
 set(ORC_SRCS
         "${ARROW_SRC_DIR}/arrow/adapters/orc/adapter.cc"
         "${ARROW_SRC_DIR}/arrow/adapters/orc/adapter_util.cc"
@@ -150,28 +122,8 @@ set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/arrow")
 
 configure_file("${LIBRARY_DIR}/util/config.h.cmake" "${CMAKE_CURRENT_BINARY_DIR}/cpp/src/arrow/util/config.h")
 
-# arrow/cpp/src/arrow/CMakeLists.txt
+# arrow/cpp/src/arrow/CMakeLists.txt (ARROW_SRCS + ARROW_COMPUTE + ARROW_IPC)
 set(ARROW_SRCS
-        "${LIBRARY_DIR}/buffer.cc"
-        "${LIBRARY_DIR}/builder.cc"
-        "${LIBRARY_DIR}/chunked_array.cc"
-        "${LIBRARY_DIR}/compare.cc"
-        "${LIBRARY_DIR}/datum.cc"
-        "${LIBRARY_DIR}/device.cc"
-        "${LIBRARY_DIR}/extension_type.cc"
-        "${LIBRARY_DIR}/memory_pool.cc"
-        "${LIBRARY_DIR}/pretty_print.cc"
-        "${LIBRARY_DIR}/record_batch.cc"
-        "${LIBRARY_DIR}/result.cc"
-        "${LIBRARY_DIR}/scalar.cc"
-        "${LIBRARY_DIR}/sparse_tensor.cc"
-        "${LIBRARY_DIR}/status.cc"
-        "${LIBRARY_DIR}/table_builder.cc"
-        "${LIBRARY_DIR}/table.cc"
-        "${LIBRARY_DIR}/tensor.cc"
-        "${LIBRARY_DIR}/type.cc"
-        "${LIBRARY_DIR}/visitor.cc"
-
         "${LIBRARY_DIR}/array/array_base.cc"
         "${LIBRARY_DIR}/array/array_binary.cc"
         "${LIBRARY_DIR}/array/array_decimal.cc"
@@ -191,25 +143,112 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/array/diff.cc"
         "${LIBRARY_DIR}/array/util.cc"
         "${LIBRARY_DIR}/array/validate.cc"
+        "${LIBRARY_DIR}/builder.cc"
+        "${LIBRARY_DIR}/buffer.cc"
+        "${LIBRARY_DIR}/chunked_array.cc"
+        "${LIBRARY_DIR}/compare.cc"
+        "${LIBRARY_DIR}/config.cc"
+        "${LIBRARY_DIR}/datum.cc"
+        "${LIBRARY_DIR}/device.cc"
+        "${LIBRARY_DIR}/extension_type.cc"
+        "${LIBRARY_DIR}/memory_pool.cc"
+        "${LIBRARY_DIR}/pretty_print.cc"
+        "${LIBRARY_DIR}/record_batch.cc"
+        "${LIBRARY_DIR}/result.cc"
+        "${LIBRARY_DIR}/scalar.cc"
+        "${LIBRARY_DIR}/sparse_tensor.cc"
+        "${LIBRARY_DIR}/status.cc"
+        "${LIBRARY_DIR}/table.cc"
+        "${LIBRARY_DIR}/table_builder.cc"
+        "${LIBRARY_DIR}/tensor.cc"
+        "${LIBRARY_DIR}/tensor/coo_converter.cc"
+        "${LIBRARY_DIR}/tensor/csf_converter.cc"
+        "${LIBRARY_DIR}/tensor/csx_converter.cc"
+        "${LIBRARY_DIR}/type.cc"
+        "${LIBRARY_DIR}/visitor.cc"
+        "${LIBRARY_DIR}/c/bridge.cc"
+        "${LIBRARY_DIR}/io/buffered.cc"
+        "${LIBRARY_DIR}/io/caching.cc"
+        "${LIBRARY_DIR}/io/compressed.cc"
+        "${LIBRARY_DIR}/io/file.cc"
+        "${LIBRARY_DIR}/io/hdfs.cc"
+        "${LIBRARY_DIR}/io/hdfs_internal.cc"
+        "${LIBRARY_DIR}/io/interfaces.cc"
+        "${LIBRARY_DIR}/io/memory.cc"
+        "${LIBRARY_DIR}/io/slow.cc"
+        "${LIBRARY_DIR}/io/stdio.cc"
+        "${LIBRARY_DIR}/io/transform.cc"
+        "${LIBRARY_DIR}/util/async_util.cc"
+        "${LIBRARY_DIR}/util/basic_decimal.cc"
+        "${LIBRARY_DIR}/util/bit_block_counter.cc"
+        "${LIBRARY_DIR}/util/bit_run_reader.cc"
+        "${LIBRARY_DIR}/util/bit_util.cc"
+        "${LIBRARY_DIR}/util/bitmap.cc"
+        "${LIBRARY_DIR}/util/bitmap_builders.cc"
+        "${LIBRARY_DIR}/util/bitmap_ops.cc"
+        "${LIBRARY_DIR}/util/bpacking.cc"
+        "${LIBRARY_DIR}/util/cancel.cc"
+        "${LIBRARY_DIR}/util/compression.cc"
+        "${LIBRARY_DIR}/util/counting_semaphore.cc"
+        "${LIBRARY_DIR}/util/cpu_info.cc"
+        "${LIBRARY_DIR}/util/decimal.cc"
+        "${LIBRARY_DIR}/util/delimiting.cc"
+        "${LIBRARY_DIR}/util/formatting.cc"
+        "${LIBRARY_DIR}/util/future.cc"
+        "${LIBRARY_DIR}/util/int_util.cc"
+        "${LIBRARY_DIR}/util/io_util.cc"
+        "${LIBRARY_DIR}/util/logging.cc"
+        "${LIBRARY_DIR}/util/key_value_metadata.cc"
+        "${LIBRARY_DIR}/util/memory.cc"
+        "${LIBRARY_DIR}/util/mutex.cc"
+        "${LIBRARY_DIR}/util/string.cc"
+        "${LIBRARY_DIR}/util/string_builder.cc"
+        "${LIBRARY_DIR}/util/task_group.cc"
+        "${LIBRARY_DIR}/util/tdigest.cc"
+        "${LIBRARY_DIR}/util/thread_pool.cc"
+        "${LIBRARY_DIR}/util/time.cc"
+        "${LIBRARY_DIR}/util/trie.cc"
+        "${LIBRARY_DIR}/util/unreachable.cc"
+        "${LIBRARY_DIR}/util/uri.cc"
+        "${LIBRARY_DIR}/util/utf8.cc"
+        "${LIBRARY_DIR}/util/value_parsing.cc"
+        "${LIBRARY_DIR}/vendored/base64.cpp"
+        "${LIBRARY_DIR}/vendored/datetime/tz.cpp"
+
+        "${LIBRARY_DIR}/vendored/musl/strptime.c"
+        "${LIBRARY_DIR}/vendored/uriparser/UriCommon.c"
+        "${LIBRARY_DIR}/vendored/uriparser/UriCompare.c"
+        "${LIBRARY_DIR}/vendored/uriparser/UriEscape.c"
+        "${LIBRARY_DIR}/vendored/uriparser/UriFile.c"
+        "${LIBRARY_DIR}/vendored/uriparser/UriIp4Base.c"
+        "${LIBRARY_DIR}/vendored/uriparser/UriIp4.c"
+        "${LIBRARY_DIR}/vendored/uriparser/UriMemory.c"
+        "${LIBRARY_DIR}/vendored/uriparser/UriNormalizeBase.c"
+        "${LIBRARY_DIR}/vendored/uriparser/UriNormalize.c"
+        "${LIBRARY_DIR}/vendored/uriparser/UriParseBase.c"
+        "${LIBRARY_DIR}/vendored/uriparser/UriParse.c"
+        "${LIBRARY_DIR}/vendored/uriparser/UriQuery.c"
+        "${LIBRARY_DIR}/vendored/uriparser/UriRecompose.c"
+        "${LIBRARY_DIR}/vendored/uriparser/UriResolve.c"
+        "${LIBRARY_DIR}/vendored/uriparser/UriShorten.c"
 
         "${LIBRARY_DIR}/compute/api_aggregate.cc"
         "${LIBRARY_DIR}/compute/api_scalar.cc"
         "${LIBRARY_DIR}/compute/api_vector.cc"
         "${LIBRARY_DIR}/compute/cast.cc"
         "${LIBRARY_DIR}/compute/exec.cc"
+        "${LIBRARY_DIR}/compute/exec/aggregate_node.cc"
+        "${LIBRARY_DIR}/compute/exec/exec_plan.cc"
+        "${LIBRARY_DIR}/compute/exec/expression.cc"
+        "${LIBRARY_DIR}/compute/exec/filter_node.cc"
+        "${LIBRARY_DIR}/compute/exec/project_node.cc"
+        "${LIBRARY_DIR}/compute/exec/source_node.cc"
+        "${LIBRARY_DIR}/compute/exec/sink_node.cc"
+        "${LIBRARY_DIR}/compute/exec/order_by_impl.cc"
         "${LIBRARY_DIR}/compute/function.cc"
         "${LIBRARY_DIR}/compute/function_internal.cc"
         "${LIBRARY_DIR}/compute/kernel.cc"
         "${LIBRARY_DIR}/compute/registry.cc"
-
-        "${LIBRARY_DIR}/compute/exec/exec_plan.cc"
-        "${LIBRARY_DIR}/compute/exec/expression.cc"
-        "${LIBRARY_DIR}/compute/exec/key_compare.cc"
-        "${LIBRARY_DIR}/compute/exec/key_encode.cc"
-        "${LIBRARY_DIR}/compute/exec/key_hash.cc"
-        "${LIBRARY_DIR}/compute/exec/key_map.cc"
-        "${LIBRARY_DIR}/compute/exec/util.cc"
-
         "${LIBRARY_DIR}/compute/kernels/aggregate_basic.cc"
         "${LIBRARY_DIR}/compute/kernels/aggregate_mode.cc"
         "${LIBRARY_DIR}/compute/kernels/aggregate_quantile.cc"
@@ -227,28 +266,31 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/compute/kernels/scalar_cast_string.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_cast_temporal.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_compare.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_fill_null.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_if_else.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_nested.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_set_lookup.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_string.cc"
-        "${LIBRARY_DIR}/compute/kernels/scalar_temporal.cc"
+        "${LIBRARY_DIR}/compute/kernels/scalar_temporal_binary.cc"
+        "${LIBRARY_DIR}/compute/kernels/scalar_temporal_unary.cc"
         "${LIBRARY_DIR}/compute/kernels/scalar_validity.cc"
+        "${LIBRARY_DIR}/compute/kernels/scalar_if_else.cc"
         "${LIBRARY_DIR}/compute/kernels/util_internal.cc"
+        "${LIBRARY_DIR}/compute/kernels/vector_array_sort.cc"
         "${LIBRARY_DIR}/compute/kernels/vector_hash.cc"
         "${LIBRARY_DIR}/compute/kernels/vector_nested.cc"
         "${LIBRARY_DIR}/compute/kernels/vector_replace.cc"
         "${LIBRARY_DIR}/compute/kernels/vector_selection.cc"
         "${LIBRARY_DIR}/compute/kernels/vector_sort.cc"
-
-        "${LIBRARY_DIR}/csv/chunker.cc"
-        "${LIBRARY_DIR}/csv/column_builder.cc"
-        "${LIBRARY_DIR}/csv/column_decoder.cc"
-        "${LIBRARY_DIR}/csv/converter.cc"
-        "${LIBRARY_DIR}/csv/options.cc"
-        "${LIBRARY_DIR}/csv/parser.cc"
-        "${LIBRARY_DIR}/csv/reader.cc"
-        "${LIBRARY_DIR}/csv/writer.cc"
+        "${LIBRARY_DIR}/compute/kernels/row_encoder.cc"
+        "${LIBRARY_DIR}/compute/exec/union_node.cc"
+        "${LIBRARY_DIR}/compute/exec/key_hash.cc"
+        "${LIBRARY_DIR}/compute/exec/key_map.cc"
+        "${LIBRARY_DIR}/compute/exec/key_compare.cc"
+        "${LIBRARY_DIR}/compute/exec/key_encode.cc"
+        "${LIBRARY_DIR}/compute/exec/util.cc"
+        "${LIBRARY_DIR}/compute/exec/hash_join_dict.cc"
+        "${LIBRARY_DIR}/compute/exec/hash_join.cc"
+        "${LIBRARY_DIR}/compute/exec/hash_join_node.cc"
+        "${LIBRARY_DIR}/compute/exec/task_util.cc"
 
         "${LIBRARY_DIR}/ipc/dictionary.cc"
         "${LIBRARY_DIR}/ipc/feather.cc"
@@ -258,52 +300,6 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/ipc/reader.cc"
         "${LIBRARY_DIR}/ipc/writer.cc"
 
-        "${LIBRARY_DIR}/io/buffered.cc"
-        "${LIBRARY_DIR}/io/caching.cc"
-        "${LIBRARY_DIR}/io/compressed.cc"
-        "${LIBRARY_DIR}/io/file.cc"
-        "${LIBRARY_DIR}/io/interfaces.cc"
-        "${LIBRARY_DIR}/io/memory.cc"
-        "${LIBRARY_DIR}/io/slow.cc"
-        "${LIBRARY_DIR}/io/stdio.cc"
-        "${LIBRARY_DIR}/io/transform.cc"
-
-        "${LIBRARY_DIR}/tensor/coo_converter.cc"
-        "${LIBRARY_DIR}/tensor/csf_converter.cc"
-        "${LIBRARY_DIR}/tensor/csx_converter.cc"
-
-        "${LIBRARY_DIR}/util/basic_decimal.cc"
-        "${LIBRARY_DIR}/util/bit_block_counter.cc"
-        "${LIBRARY_DIR}/util/bit_run_reader.cc"
-        "${LIBRARY_DIR}/util/bit_util.cc"
-        "${LIBRARY_DIR}/util/bitmap_builders.cc"
-        "${LIBRARY_DIR}/util/bitmap_ops.cc"
-        "${LIBRARY_DIR}/util/bitmap.cc"
-        "${LIBRARY_DIR}/util/bpacking.cc"
-        "${LIBRARY_DIR}/util/cancel.cc"
-        "${LIBRARY_DIR}/util/compression.cc"
-        "${LIBRARY_DIR}/util/cpu_info.cc"
-        "${LIBRARY_DIR}/util/decimal.cc"
-        "${LIBRARY_DIR}/util/delimiting.cc"
-        "${LIBRARY_DIR}/util/formatting.cc"
-        "${LIBRARY_DIR}/util/future.cc"
-        "${LIBRARY_DIR}/util/int_util.cc"
-        "${LIBRARY_DIR}/util/io_util.cc"
-        "${LIBRARY_DIR}/util/key_value_metadata.cc"
-        "${LIBRARY_DIR}/util/logging.cc"
-        "${LIBRARY_DIR}/util/memory.cc"
-        "${LIBRARY_DIR}/util/mutex.cc"
-        "${LIBRARY_DIR}/util/string_builder.cc"
-        "${LIBRARY_DIR}/util/string.cc"
-        "${LIBRARY_DIR}/util/task_group.cc"
-        "${LIBRARY_DIR}/util/tdigest.cc"
-        "${LIBRARY_DIR}/util/thread_pool.cc"
-        "${LIBRARY_DIR}/util/time.cc"
-        "${LIBRARY_DIR}/util/trie.cc"
-        "${LIBRARY_DIR}/util/utf8.cc"
-        "${LIBRARY_DIR}/util/value_parsing.cc"
-
-        "${LIBRARY_DIR}/vendored/base64.cpp"
         ${ORC_SRCS}
         )
 
@@ -373,6 +369,7 @@ target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_BUILD_INCLUDE_D
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_ADDITION_SOURCE_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ARROW_SRC_DIR})
 target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${FLATBUFFERS_INCLUDE_DIR})
+target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${HDFS_INCLUDE_DIR})
 
 # === parquet
 
@@ -417,7 +414,6 @@ set(PARQUET_SRCS
 #list(TRANSFORM PARQUET_SRCS PREPEND "${LIBRARY_DIR}/") # cmake 3.12
 add_library(${PARQUET_LIBRARY} ${PARQUET_SRCS})
 target_include_directories(${PARQUET_LIBRARY} SYSTEM PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src" "${CMAKE_CURRENT_SOURCE_DIR}/cpp/src" PRIVATE ${OPENSSL_INCLUDE_DIR})
-include("${ClickHouse_SOURCE_DIR}/contrib/thrift/build/cmake/ConfigureChecks.cmake") # makes config.h
 target_link_libraries(${PARQUET_LIBRARY} PUBLIC ${ARROW_LIBRARY} PRIVATE ${THRIFT_LIBRARY} boost::headers_only boost::regex ${OPENSSL_LIBRARIES})
 
 if (SANITIZE STREQUAL "undefined")

@@ -1,8 +1,11 @@
 FROM ubuntu:20.04
 
+# ARG for quick switch to a given ubuntu mirror
+ARG apt_archive="http://archive.ubuntu.com"
+RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
+
 ARG repository="deb https://repo.clickhouse.com/deb/stable/ main/"
-ARG version=21.12.1.*
-ARG gosu_ver=1.10
+ARG version=22.1.1.*
 
 # set non-empty deb_location_url url to create a docker image
 # from debs created by CI build, for example:
@@ -26,7 +29,22 @@ ARG DEBIAN_FRONTEND=noninteractive
 # installed to prevent picking those uid / gid by some unrelated software.
 # The same uid / gid (101) is used both for alpine and ubuntu.
 
-RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
+# To drop privileges, we need 'su' command, that simply changes uid and gid.
+# In fact, the 'su' command from Linux is not so simple, due to inherent vulnerability in Linux:
+# https://ruderich.org/simon/notes/su-sudo-from-root-tty-hijacking
+# It has to mitigate this drawback of Linux, and to do this, 'su' command is creating it's own pseudo-terminal
+# and forwarding commands. Due to some ridiculous curcumstances, it does not work in Docker (or it does)
+# and for these reasons people are using alternatives to the 'su' command in Docker,
+# that don't mess with the terminal, don't care about closing the opened files, etc...
+# but can only be safe to drop privileges inside Docker.
+# The question - what implementation of 'su' command to use.
+# It should be a simple script doing about just two syscalls.
+# Some people tend to use 'gosu' tool that is written in Go.
+# It is not used for several reasons:
+# 1. Dependency on some foreign code in yet another programming language - does not sound alright.
+# 2. Anselmo D. Adams suggested not to use it due to false positive alarms in some undisclosed security scanners.
+
+COPY su-exec.c /su-exec.c
 
 RUN groupadd -r clickhouse --gid=101 \
     && useradd -r -g clickhouse --uid=101 --home-dir=/var/lib/clickhouse --shell=/bin/bash clickhouse \
@@ -66,8 +84,12 @@ RUN groupadd -r clickhouse --gid=101 \
                 clickhouse-client=$version \
                 clickhouse-server=$version ; \
        fi \
-    && wget --progress=bar:force:noscroll "https://github.com/tianon/gosu/releases/download/$gosu_ver/gosu-$(dpkg --print-architecture)" -O /bin/gosu \
-    && chmod +x /bin/gosu \
+    && apt-get install -y --no-install-recommends tcc libc-dev && \
+        tcc /su-exec.c -o /bin/su-exec && \
+        chown root:root /bin/su-exec && \
+        chmod 0755 /bin/su-exec && \
+        rm /su-exec.c && \
+        apt-get purge -y --auto-remove tcc libc-dev libc-dev-bin libc6-dev linux-libc-dev \
     && clickhouse-local -q 'SELECT * FROM system.build_options' \
     && rm -rf \
         /var/lib/apt/lists/* \
@@ -98,4 +120,3 @@ VOLUME /var/lib/clickhouse
 ENV CLICKHOUSE_CONFIG /etc/clickhouse-server/config.xml
 
 ENTRYPOINT ["/entrypoint.sh"]
-

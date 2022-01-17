@@ -2,9 +2,9 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
 #include <Interpreters/Context.h>
+#include <Common/ZooKeeper/KeeperException.h>
 
 #include <random>
-#include <pcg_random.hpp>
 #include <unordered_set>
 
 

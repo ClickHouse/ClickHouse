@@ -55,7 +55,7 @@ namespace
         return "/";
     }
 
-    void writeNode(const KeeperStorage::Node & node, WriteBuffer & out)
+    void writeNode(const KeeperStorage::Node & node, SnapshotVersion version, WriteBuffer & out)
     {
         writeBinary(node.data, out);
 
@@ -76,6 +76,11 @@ namespace
         writeBinary(node.stat.pzxid, out);
 
         writeBinary(node.seq_num, out);
+
+        if (version >= SnapshotVersion::V4)
+        {
+            writeBinary(node.size_bytes, out);
+        }
     }
 
     void readNode(KeeperStorage::Node & node, ReadBuffer & in, SnapshotVersion version, ACLMap & acl_map)
@@ -124,6 +129,11 @@ namespace
         readBinary(node.stat.numChildren, in);
         readBinary(node.stat.pzxid, in);
         readBinary(node.seq_num, in);
+
+        if (version >= SnapshotVersion::V4)
+        {
+            readBinary(node.size_bytes, in);
+        }
     }
 
     void serializeSnapshotMetadata(const SnapshotMetadataPtr & snapshot_meta, WriteBuffer & out)
@@ -176,7 +186,7 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to serialize node with mzxid {}, but last snapshot index {}", node.stat.mzxid, snapshot.snapshot_meta->get_last_log_idx());
 
         writeBinary(path, out);
-        writeNode(node, out);
+        writeNode(node, snapshot.version, out);
 
         /// Last iteration: check and exit here without iterator increment. Otherwise
         /// false positive race condition on list end is possible.

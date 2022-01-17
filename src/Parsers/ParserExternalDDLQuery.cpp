@@ -1,10 +1,11 @@
 #include "config_core.h"
 
 #include <Parsers/ASTExternalDDLQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/ParserExternalDDLQuery.h>
 #include <Parsers/ParserDropQuery.h>
+#include <Parsers/ParserExternalDDLQuery.h>
 #include <Parsers/ParserRenameQuery.h>
 
 #if USE_MYSQL

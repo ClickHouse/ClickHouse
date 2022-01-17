@@ -8,7 +8,6 @@
 #include <Common/SimpleIncrement.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
-#include <Parsers/ASTFunction.h>
 #include <base/logger_useful.h>
 #include <Common/ActionBlocker.h>
 #include <Interpreters/Cluster.h>
@@ -53,6 +52,10 @@ public:
     bool supportsPrewhere() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
     StoragePolicyPtr getStoragePolicy() const override;
+
+    /// Do not apply moving to PREWHERE optimization for distributed tables,
+    /// because we can't be sure that underlying table supports PREWHERE.
+    bool canMoveConditionsToPrewhere() const override { return false; }
 
     bool isRemote() const override { return true; }
 

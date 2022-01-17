@@ -3,6 +3,7 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/CompressionMethod.h>
 #include <IO/WriteBuffer.h>
+#include <IO/WriteBufferDecorator.h>
 
 #include <lz4.h>
 #include <lz4frame.h>
@@ -10,7 +11,7 @@
 namespace DB
 {
 /// Performs compression using lz4 library and writes compressed data to out_ WriteBuffer.
-class Lz4DeflatingWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
+class Lz4DeflatingWriteBuffer : public WriteBufferWithOwnMemoryDecorator
 {
 public:
     Lz4DeflatingWriteBuffer(
@@ -20,17 +21,13 @@ public:
         char * existing_memory = nullptr,
         size_t alignment = 0);
 
-    void finalize() override { finish(); }
-
     ~Lz4DeflatingWriteBuffer() override;
 
 private:
     void nextImpl() override;
 
-    void finish();
-    void finishImpl();
-
-    std::unique_ptr<WriteBuffer> out;
+    void finalizeBefore() override;
+    void finalizeAfter() override;
 
     LZ4F_preferences_t kPrefs;
     LZ4F_compressionContext_t ctx;
@@ -42,6 +39,5 @@ private:
     size_t out_capacity;
 
     bool first_time = true;
-    bool finished = false;
 };
 }

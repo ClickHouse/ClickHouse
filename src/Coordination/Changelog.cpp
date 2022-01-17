@@ -79,7 +79,7 @@ class ChangelogWriter
 public:
     ChangelogWriter(const std::string & filepath_, WriteMode mode, uint64_t start_index_)
         : filepath(filepath_)
-        , file_buf(filepath, DBMS_DEFAULT_BUFFER_SIZE, mode == WriteMode::Rewrite ? -1 : (O_APPEND | O_CREAT | O_WRONLY))
+        , file_buf(std::make_unique<WriteBufferFromFile>(filepath, DBMS_DEFAULT_BUFFER_SIZE, mode == WriteMode::Rewrite ? -1 : (O_APPEND | O_CREAT | O_WRONLY)))
         , start_index(start_index_)
     {
         auto compression_method = chooseCompressionMethod(filepath_, "");
@@ -89,7 +89,7 @@ public:
         }
         else if (compression_method == CompressionMethod::Zstd)
         {
-            compressed_buffer = std::make_unique<ZstdDeflatingAppendableWriteBuffer>(file_buf, /* compression level = */ 3, /* append_to_existing_stream = */ mode == WriteMode::Append);
+            compressed_buffer = std::make_unique<ZstdDeflatingAppendableWriteBuffer>(std::move(file_buf), /* compression level = */ 3, /* append_to_existing_stream = */ mode == WriteMode::Append);
         }
         else
         {
@@ -120,12 +120,14 @@ public:
             compressed_buffer->next();
         }
 
-        /// Flush working buffer to file system
-        file_buf.next();
+        WriteBuffer * working_buf = compressed_buffer ? compressed_buffer->getNestedBuffer() : file_buf.get();
+
+            /// Flush working buffer to file system
+        working_buf->next();
 
         /// Fsync file system if needed
         if (force_fsync)
-            file_buf.sync();
+            working_buf->sync();
     }
 
     uint64_t getStartIndex() const
@@ -138,12 +140,12 @@ private:
     {
         if (compressed_buffer)
             return *compressed_buffer;
-        return file_buf;
+        return *file_buf;
     }
 
     std::string filepath;
-    WriteBufferFromFile file_buf;
-    std::unique_ptr<WriteBuffer> compressed_buffer;
+    std::unique_ptr<WriteBufferFromFile> file_buf;
+    std::unique_ptr<WriteBufferWithOwnMemoryDecorator> compressed_buffer;
     uint64_t start_index;
 };
 
@@ -250,7 +252,7 @@ public:
         catch (const Exception & ex)
         {
             if (ex.code() == ErrorCodes::UNKNOWN_FORMAT_VERSION)
-                throw ex;
+                throw;
 
             result.error = true;
             LOG_WARNING(log, "Cannot completely read changelog on path {}, error: {}", filepath, ex.message());

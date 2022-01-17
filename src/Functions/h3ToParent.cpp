@@ -66,7 +66,7 @@ public:
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
-        for (const auto row : collections::range(0, input_rows_count))
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 hindex = col_hindex->getUInt(row);
             const UInt8 resolution = col_resolution->getUInt(row);

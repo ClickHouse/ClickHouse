@@ -170,7 +170,7 @@ private:
     bool has_new_events = false;
     std::condition_variable cv;
 
-    bool has_dependent_mv = false;
+    std::atomic<bool> mv_attached = false;
 
     std::mutex file_infos_mutex;
 

@@ -1,5 +1,7 @@
 #include <Databases/PostgreSQL/DatabasePostgreSQL.h>
 
+#include <Parsers/ASTIdentifier.h>
+
 #if USE_LIBPQXX
 
 #include <DataTypes/DataTypeNullable.h>
@@ -180,19 +182,19 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr,
             return StoragePtr{};
 
         auto connection_holder = pool->get();
-        auto columns = fetchPostgreSQLTableStructure(connection_holder->get(), table_name, configuration.schema).columns;
+        auto columns_info = fetchPostgreSQLTableStructure(connection_holder->get(), table_name, configuration.schema).physical_columns;
 
-        if (!columns)
+        if (!columns_info)
             return StoragePtr{};
 
         auto storage = StoragePostgreSQL::create(
                 StorageID(database_name, table_name), pool, table_name,
-                ColumnsDescription{*columns}, ConstraintsDescription{}, String{}, configuration.schema, configuration.on_conflict);
+                ColumnsDescription{columns_info->columns}, ConstraintsDescription{}, String{}, configuration.schema, configuration.on_conflict);
 
         if (cache_tables)
             cached_tables[table_name] = storage;
 
-        return storage;
+        return std::move(storage);
     }
 
     if (table_checked || checkPostgresTable(table_name))
@@ -206,7 +208,7 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr,
 }
 
 
-void DatabasePostgreSQL::attachTable(const String & table_name, const StoragePtr & storage, const String &)
+void DatabasePostgreSQL::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & storage, const String &)
 {
     std::lock_guard<std::mutex> lock{mutex};
 
@@ -231,7 +233,7 @@ void DatabasePostgreSQL::attachTable(const String & table_name, const StoragePtr
 }
 
 
-StoragePtr DatabasePostgreSQL::detachTable(const String & table_name)
+StoragePtr DatabasePostgreSQL::detachTable(ContextPtr /* context_ */, const String & table_name)
 {
     std::lock_guard<std::mutex> lock{mutex};
 
@@ -251,14 +253,14 @@ StoragePtr DatabasePostgreSQL::detachTable(const String & table_name)
 }
 
 
-void DatabasePostgreSQL::createTable(ContextPtr, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query)
+void DatabasePostgreSQL::createTable(ContextPtr local_context, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query)
 {
     const auto & create = create_query->as<ASTCreateQuery>();
 
     if (!create->attach)
         throw Exception("PostgreSQL database engine does not support create table", ErrorCodes::NOT_IMPLEMENTED);
 
-    attachTable(table_name, storage, {});
+    attachTable(local_context, table_name, storage, {});
 }
 
 
@@ -412,7 +414,7 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     assert(storage_engine_arguments->children.size() >= 2);
     storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, std::make_shared<ASTLiteral>(table_id.table_name));
 
-    return create_table_query;
+    return std::move(create_table_query);
 }
 
 

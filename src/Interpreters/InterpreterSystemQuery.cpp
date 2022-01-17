@@ -250,6 +250,7 @@ BlockIO InterpreterSystemQuery::execute()
         }
         case Type::SUSPEND:
         {
+            getContext()->checkAccess(AccessType::SYSTEM_SHUTDOWN);
             auto command = fmt::format("kill -STOP {0} && sleep {1} && kill -CONT {0}", getpid(), query.seconds);
             LOG_DEBUG(log, "Will run {}", command);
             auto res = ShellCommand::execute(command);
@@ -453,9 +454,11 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::START_LISTEN_QUERIES:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not supported yet", query.type);
         case Type::STOP_THREAD_FUZZER:
+            getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::stop();
             break;
         case Type::START_THREAD_FUZZER:
+            getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::start();
             break;
         default:
@@ -469,7 +472,7 @@ void InterpreterSystemQuery::restoreReplica()
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESTORE_REPLICA, table_id);
 
-    const zkutil::ZooKeeperPtr& zookeeper = getContext()->getZooKeeper();
+    const zkutil::ZooKeeperPtr & zookeeper = getContext()->getZooKeeper();
 
     if (zookeeper->expired())
         throw Exception(ErrorCodes::NO_ZOOKEEPER,
@@ -523,7 +526,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
         auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
         create_ast = database->getCreateTableQuery(replica.table_name, getContext());
 
-        database->detachTable(replica.table_name);
+        database->detachTable(system_context, replica.table_name);
     }
     table.reset();
 
@@ -544,7 +547,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
         constraints,
         false);
 
-    database->attachTable(replica.table_name, table, data_path);
+    database->attachTable(system_context, replica.table_name, table, data_path);
 
     table->startup();
     return table;

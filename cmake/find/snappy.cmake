@@ -1,4 +1,4 @@
-option(USE_SNAPPY "Enable snappy library" ${ENABLE_LIBRARIES})
+option(USE_SNAPPY "Enable snappy library" ON)
 
 if(NOT USE_SNAPPY)
     if (USE_INTERNAL_SNAPPY_LIBRARY)
@@ -7,7 +7,7 @@ if(NOT USE_SNAPPY)
     return()
 endif()
 
-option (USE_INTERNAL_SNAPPY_LIBRARY "Set to FALSE to use system snappy library instead of bundled" ${NOT_UNBUNDLED})
+option (USE_INTERNAL_SNAPPY_LIBRARY "Set to FALSE to use system snappy library instead of bundled" ON)
 
 if(NOT USE_INTERNAL_SNAPPY_LIBRARY)
     find_library(SNAPPY_LIBRARY snappy)

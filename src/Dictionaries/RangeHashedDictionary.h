@@ -39,7 +39,8 @@ public:
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
-        bool require_nonempty_);
+        bool require_nonempty_,
+        BlockPtr update_field_loaded_block_ = nullptr);
 
     std::string getTypeName() const override { return "RangeHashed"; }
 
@@ -63,10 +64,10 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<RangeHashedDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty);
+        return std::make_shared<RangeHashedDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty, update_field_loaded_block);
     }
 
-    const IDictionarySource * getSource() const override { return source_ptr.get(); }
+    DictionarySourcePtr getSource() const override { return source_ptr; }
 
     const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
@@ -138,7 +139,6 @@ private:
             CollectionType<StringRef>,
             CollectionType<Array>>
             maps;
-        std::unique_ptr<Arena> string_arena;
     };
 
     void createAttributes();
@@ -156,10 +156,14 @@ private:
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
-    template <typename T>
-    static void setAttributeValueImpl(Attribute & attribute, KeyType key, const Range & range, const Field & value);
+    void updateData();
 
-    static void setAttributeValue(Attribute & attribute, KeyType key, const Range & range, const Field & value);
+    void blockToAttributes(const Block & block);
+
+    template <typename T>
+    void setAttributeValueImpl(Attribute & attribute, KeyType key, const Range & range, const Field & value);
+
+    void setAttributeValue(Attribute & attribute, KeyType key, const Range & range, const Field & value);
 
     template <typename RangeType>
     void getKeysAndDates(
@@ -179,14 +183,12 @@ private:
         const PaddedPODArray<RangeType> & block_start_dates,
         const PaddedPODArray<RangeType> & block_end_dates) const;
 
-    StringRef copyKeyInArena(StringRef key);
-
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
     const bool require_nonempty;
+    BlockPtr update_field_loaded_block;
 
-    std::map<std::string, size_t> attribute_index_by_name;
     std::vector<Attribute> attributes;
     Arena complex_key_arena;
 
@@ -195,6 +197,7 @@ private:
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
     mutable std::atomic<size_t> found_count{0};
+    Arena string_arena;
 };
 
 }

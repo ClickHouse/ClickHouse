@@ -4,10 +4,13 @@
 #include <iomanip>
 #include <string_view>
 #include <filesystem>
+#include <map>
+#include <unordered_map>
 
 #include <base/argsToConfig.h>
-#include <base/DateLUT.h>
-#include <base/LocalDate.h>
+#include <Common/DateLUT.h>
+#include <Common/LocalDate.h>
+#include <Common/MemoryTracker.h>
 #include <base/LineReader.h>
 #include <base/scope_guard_safe.h>
 #include "Common/Exception.h"
@@ -40,7 +43,6 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTLiteral.h>
@@ -53,13 +55,21 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
+#include <Interpreters/ProfileEventsExt.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/CompressionMethod.h>
 #include <Client/InternalTextLogs.h>
+#include <boost/algorithm/string/replace.hpp>
+
 
 namespace fs = std::filesystem;
 using namespace std::literals;
 
+
+namespace CurrentMetrics
+{
+    extern const Metric MemoryTracking;
+}
 
 namespace DB
 {
@@ -103,6 +113,99 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+static void incrementProfileEventsBlock(Block & dst, const Block & src)
+{
+    if (!dst)
+    {
+        dst = src;
+        return;
+    }
+
+    assertBlocksHaveEqualStructure(src, dst, "ProfileEvents");
+
+    std::unordered_map<String, size_t> name_pos;
+    for (size_t i = 0; i < dst.columns(); ++i)
+        name_pos[dst.getByPosition(i).name] = i;
+
+    size_t dst_rows = dst.rows();
+    MutableColumns mutable_columns = dst.mutateColumns();
+
+    auto & dst_column_host_name = typeid_cast<ColumnString &>(*mutable_columns[name_pos["host_name"]]);
+    auto & dst_array_current_time = typeid_cast<ColumnUInt32 &>(*mutable_columns[name_pos["current_time"]]).getData();
+    auto & dst_array_thread_id = typeid_cast<ColumnUInt64 &>(*mutable_columns[name_pos["thread_id"]]).getData();
+    auto & dst_array_type = typeid_cast<ColumnInt8 &>(*mutable_columns[name_pos["type"]]).getData();
+    auto & dst_column_name = typeid_cast<ColumnString &>(*mutable_columns[name_pos["name"]]);
+    auto & dst_array_value = typeid_cast<ColumnInt64 &>(*mutable_columns[name_pos["value"]]).getData();
+
+    const auto & src_column_host_name = typeid_cast<const ColumnString &>(*src.getByName("host_name").column);
+    const auto & src_array_current_time = typeid_cast<const ColumnUInt32 &>(*src.getByName("current_time").column).getData();
+    const auto & src_array_thread_id = typeid_cast<const ColumnUInt64 &>(*src.getByName("thread_id").column).getData();
+    const auto & src_column_name = typeid_cast<const ColumnString &>(*src.getByName("name").column);
+    const auto & src_array_value = typeid_cast<const ColumnInt64 &>(*src.getByName("value").column).getData();
+
+    struct Id
+    {
+        StringRef name;
+        StringRef host_name;
+        UInt64 thread_id;
+
+        bool operator<(const Id & rhs) const
+        {
+            return std::tie(name, host_name, thread_id)
+                 < std::tie(rhs.name, rhs.host_name, rhs.thread_id);
+        }
+    };
+    std::map<Id, UInt64> rows_by_name;
+    for (size_t src_row = 0; src_row < src.rows(); ++src_row)
+    {
+        Id id{
+            src_column_name.getDataAt(src_row),
+            src_column_host_name.getDataAt(src_row),
+            src_array_thread_id[src_row],
+        };
+        rows_by_name[id] = src_row;
+    }
+
+    /// Merge src into dst.
+    for (size_t dst_row = 0; dst_row < dst_rows; ++dst_row)
+    {
+        Id id{
+            dst_column_name.getDataAt(dst_row),
+            dst_column_host_name.getDataAt(dst_row),
+            dst_array_thread_id[dst_row],
+        };
+
+        if (auto it = rows_by_name.find(id); it != rows_by_name.end())
+        {
+            size_t src_row = it->second;
+            dst_array_current_time[dst_row] = src_array_current_time[src_row];
+
+            switch (dst_array_type[dst_row])
+            {
+                case ProfileEvents::Type::INCREMENT:
+                    dst_array_value[dst_row] += src_array_value[src_row];
+                    break;
+                case ProfileEvents::Type::GAUGE:
+                    dst_array_value[dst_row] = src_array_value[src_row];
+                    break;
+            }
+
+            rows_by_name.erase(it);
+        }
+    }
+
+    /// Copy rows from src that dst does not contains.
+    for (const auto & [id, pos] : rows_by_name)
+    {
+        for (size_t col = 0; col < src.columns(); ++col)
+        {
+            mutable_columns[col]->insert((*src.getByPosition(col).column)[pos]);
+        }
+    }
+
+    dst.setColumns(std::move(mutable_columns));
+}
 
 
 std::atomic_flag exit_on_signal = ATOMIC_FLAG_INIT;
@@ -360,12 +463,13 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
         /// The query can specify output format or output file.
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
         {
+            String out_file;
             if (query_with_output->out_file)
             {
                 select_into_file = true;
 
                 const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
-                const auto & out_file = out_file_node.value.safeGet<std::string>();
+                out_file = out_file_node.value.safeGet<std::string>();
 
                 std::string compression_method;
                 if (query_with_output->compression)
@@ -391,6 +495,12 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
                 const auto & id = query_with_output->format->as<ASTIdentifier &>();
                 current_format = id.name();
             }
+            else if (query_with_output->out_file)
+            {
+                const auto & format_name = FormatFactory::instance().getFormatFromFileName(out_file);
+                if (!format_name.empty())
+                    current_format = format_name;
+            }
         }
 
         if (has_vertical_output_suffix)
@@ -405,7 +515,7 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
             output_format = global_context->getOutputFormat(
                 current_format, out_file_buf ? *out_file_buf : *out_buf, block);
 
-        output_format->doWritePrefix();
+        output_format->setAutoFlush();
     }
 }
 
@@ -464,7 +574,7 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
 
     try
     {
-        processParsedSingleQuery(full_query, query_to_execute, parsed_query);
+        processParsedSingleQuery(full_query, query_to_execute, parsed_query, echo_queries);
     }
     catch (Exception & e)
     {
@@ -685,7 +795,7 @@ void ClientBase::onEndOfStream()
     progress_indication.clearProgressOutput();
 
     if (output_format)
-        output_format->doWriteSuffix();
+        output_format->finalize();
 
     resetOutput();
 
@@ -703,12 +813,12 @@ void ClientBase::onProfileEvents(Block & block)
     if (rows == 0)
         return;
 
-    if (progress_indication.print_hardware_utilization)
+    if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
     {
         const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
         const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
         const auto & host_names = typeid_cast<const ColumnString &>(*block.getByName("host_name").column);
-        const auto & array_values = typeid_cast<const ColumnUInt64 &>(*block.getByName("value").column).getData();
+        const auto & array_values = typeid_cast<const ColumnInt64 &>(*block.getByName("value").column).getData();
 
         const auto * user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
         const auto * system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
@@ -735,25 +845,26 @@ void ClientBase::onProfileEvents(Block & block)
                 thread_times[host_name][thread_id].memory_usage = value;
             }
         }
-        progress_indication.updateThreadEventData(thread_times);
-    }
+        auto elapsed_time = profile_events.watch.elapsedMicroseconds();
+        progress_indication.updateThreadEventData(thread_times, elapsed_time);
 
-    if (profile_events.print)
-    {
-        if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms)
+        if (profile_events.print)
         {
-            initLogsOutputStream();
-            progress_indication.clearProgressOutput();
-            logs_out_stream->writeProfileEvents(block);
-            logs_out_stream->flush();
+            if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms)
+            {
+                initLogsOutputStream();
+                progress_indication.clearProgressOutput();
+                logs_out_stream->writeProfileEvents(block);
+                logs_out_stream->flush();
 
-            profile_events.watch.restart();
-            profile_events.last_block = {};
+                profile_events.last_block = {};
+            }
+            else
+            {
+                incrementProfileEventsBlock(profile_events.last_block, block);
+            }
         }
-        else
-        {
-            profile_events.last_block = block;
-        }
+        profile_events.watch.restart();
     }
 }
 
@@ -904,11 +1015,15 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             compression_method = compression_method_node.value.safeGet<std::string>();
         }
 
+        String current_format = parsed_insert_query->format;
+        if (current_format.empty())
+            current_format = FormatFactory::instance().getFormatFromFileName(in_file, true);
+
         /// Create temporary storage file, to support globs and parallel reading
         StorageFile::CommonArguments args{
             WithContext(global_context),
             parsed_insert_query->table_id,
-            parsed_insert_query->format,
+            current_format,
             getFormatSettings(global_context),
             compression_method,
             columns_description_for_query,
@@ -1331,6 +1446,12 @@ bool ClientBase::processQueryText(const String & text)
 }
 
 
+String ClientBase::prompt() const
+{
+    return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
+}
+
+
 void ClientBase::runInteractive()
 {
     if (config().has("query_id"))
@@ -1406,18 +1527,12 @@ void ClientBase::runInteractive()
         highlight_callback = highlight;
 
     ReplxxLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters, highlight_callback);
-
-#elif defined(USE_READLINE) && USE_READLINE
-    ReadlineLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters);
 #else
     LineReader lr(history_file, config().has("multiline"), query_extenders, query_delimiters);
 #endif
 
-    /// Enable bracketed-paste-mode only when multiquery is enabled and multiline is
-    ///  disabled, so that we are able to paste and execute multiline queries in a whole
-    ///  instead of erroring out, while be less intrusive.
-    if (config().has("multiquery") && !config().has("multiline"))
-        lr.enableBracketedPaste();
+    /// Enable bracketed-paste-mode so that we are able to paste multiline queries as a whole.
+    lr.enableBracketedPaste();
 
     do
     {
@@ -1489,17 +1604,14 @@ void ClientBase::runNonInteractive()
     {
         auto process_multi_query_from_file = [&](const String & file)
         {
-            auto text = getQueryTextPrefix();
             String queries_from_file;
 
             ReadBufferFromFile in(file);
             readStringUntilEOF(queries_from_file, in);
 
-            text += queries_from_file;
-            return executeMultiQuery(text);
+            return executeMultiQuery(queries_from_file);
         };
 
-        /// Read all queries into `text`.
         for (const auto & queries_file : queries_files)
         {
             for (const auto & interleave_file : interleave_queries_files)
@@ -1514,9 +1626,6 @@ void ClientBase::runNonInteractive()
     }
 
     String text;
-    if (is_multiquery)
-        text = getQueryTextPrefix();
-
     if (config().has("query"))
     {
         text += config().getRawString("query"); /// Poco configuration should not process substitutions in form of ${...} inside query.
@@ -1639,7 +1748,13 @@ void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, 
     /// Check unrecognized options without positional options.
     auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::exclude_positional);
     if (!unrecognized_options.empty())
+    {
+        auto hints = this->getHints(unrecognized_options[0]);
+        if (!hints.empty())
+            throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'. Maybe you meant {}", unrecognized_options[0], toString(hints));
+
         throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[0]);
+    }
 
     /// Check positional options (options after ' -- ', ex: clickhouse-client -- <options>).
     unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
@@ -1714,9 +1829,29 @@ void ClientBase::init(int argc, char ** argv)
 
         ("interactive", "Process queries-file or --query query and start interactive mode")
         ("pager", po::value<std::string>(), "Pipe all output into this command (less or similar)")
+        ("max_memory_usage_in_client", po::value<int>(), "Set memory limit in client/local server")
     ;
 
     addOptions(options_description);
+
+    auto getter = [](const auto & op)
+    {
+        String op_long_name = op->long_name();
+        return "--" + String(op_long_name);
+    };
+
+    if (options_description.main_description)
+    {
+        const auto & main_options = options_description.main_description->options();
+        std::transform(main_options.begin(), main_options.end(), std::back_inserter(cmd_options), getter);
+    }
+
+    if (options_description.external_description)
+    {
+        const auto & external_options = options_description.external_description->options();
+        std::transform(external_options.begin(), external_options.end(), std::back_inserter(cmd_options), getter);
+    }
+
     parseAndCheckOptions(options_description, options, common_arguments);
     po::notify(options);
 
@@ -1792,8 +1927,6 @@ void ClientBase::init(int argc, char ** argv)
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
     if (options.count("server_logs_file"))
         server_logs_file = options["server_logs_file"].as<std::string>();
-    if (options.count("hardware-utilization"))
-        progress_indication.print_hardware_utilization = true;
 
     query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
     profile_events.print = options.count("print-profile-events");
@@ -1802,6 +1935,15 @@ void ClientBase::init(int argc, char ** argv)
     processOptions(options_description, options, external_tables_arguments);
     argsToConfig(common_arguments, config(), 100);
     clearPasswordFromCommandLine(argc, argv);
+
+    /// Limit on total memory usage
+    size_t max_client_memory_usage = config().getInt64("max_memory_usage_in_client", 0 /*default value*/);
+    if (max_client_memory_usage != 0)
+    {
+        total_memory_tracker.setHardLimit(max_client_memory_usage);
+        total_memory_tracker.setDescription("(total)");
+        total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+    }
 }
 
 }

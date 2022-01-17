@@ -748,7 +748,7 @@ SOURCE(REDIS(
 !!! info "Примечание"
     Поля `column_family` или `where` не могут быть использованы вместе с полем `query`. Также обязательно должен быть один из источников данных: `column_family` или `query`.
 
-### PosgreSQL {#dicts-external_dicts_dict_sources-postgresql}
+### PostgreSQL {#dicts-external_dicts_dict_sources-postgresql}
 
 Пример настройки:
 

@@ -1,4 +1,4 @@
-option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++" ${NOT_UNBUNDLED})
+option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++" ON)
 
 if (NOT USE_LIBCXX)
     if (USE_INTERNAL_LIBCXX_LIBRARY)
@@ -10,12 +10,12 @@ if (NOT USE_LIBCXX)
     return()
 endif()
 
-set(USE_INTERNAL_LIBCXX_LIBRARY_DEFAULT ${NOT_UNBUNDLED})
+set(USE_INTERNAL_LIBCXX_LIBRARY_DEFAULT ON)
 
 option (USE_INTERNAL_LIBCXX_LIBRARY "Disable to use system libcxx and libcxxabi libraries instead of bundled"
     ${USE_INTERNAL_LIBCXX_LIBRARY_DEFAULT})
 
-if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libcxx/CMakeLists.txt")
+if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libcxx/src")
     if (USE_INTERNAL_LIBCXX_LIBRARY)
         message(WARNING "submodule contrib/libcxx is missing. to fix try run: \n git submodule update --init")
         message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal libcxx")

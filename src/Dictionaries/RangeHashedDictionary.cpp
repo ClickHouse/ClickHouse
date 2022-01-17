@@ -78,12 +78,14 @@ RangeHashedDictionary<dictionary_key_type>::RangeHashedDictionary(
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
-    bool require_nonempty_)
+    bool require_nonempty_,
+    BlockPtr update_field_loaded_block_)
     : IDictionary(dict_id_)
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
     , require_nonempty(require_nonempty_)
+    , update_field_loaded_block(std::move(update_field_loaded_block_))
 {
     createAttributes();
     loadData();
@@ -295,7 +297,6 @@ void RangeHashedDictionary<dictionary_key_type>::createAttributes()
 
     for (const auto & attribute : dict_struct.attributes)
     {
-        attribute_index_by_name.emplace(attribute.name, attributes.size());
         attributes.push_back(createAttribute(attribute));
 
         if (attribute.hierarchical)
@@ -307,67 +308,20 @@ void RangeHashedDictionary<dictionary_key_type>::createAttributes()
 template <DictionaryKeyType dictionary_key_type>
 void RangeHashedDictionary<dictionary_key_type>::loadData()
 {
-    QueryPipeline pipeline(source_ptr->loadAll());
-
-    PullingPipelineExecutor executor(pipeline);
-    Block block;
-    while (executor.pull(block))
+    if (!source_ptr->hasUpdateField())
     {
-        size_t skip_keys_size_offset = dict_struct.getKeysSize();
+        QueryPipeline pipeline(source_ptr->loadAll());
 
-        Columns key_columns;
-        key_columns.reserve(skip_keys_size_offset);
-
-        /// Split into keys columns and attribute columns
-        for (size_t i = 0; i < skip_keys_size_offset; ++i)
-            key_columns.emplace_back(block.safeGetByPosition(i).column);
-
-        DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
-        DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns, arena_holder.getComplexKeyArena());
-        const size_t keys_size = keys_extractor.getKeysSize();
-
-        element_count += keys_size;
-
-        // Support old behaviour, where invalid date means 'open range'.
-        const bool is_date = isDate(dict_struct.range_min->type);
-
-        const auto & min_range_column = unwrapNullableColumn(*block.safeGetByPosition(skip_keys_size_offset).column);
-        const auto & max_range_column = unwrapNullableColumn(*block.safeGetByPosition(skip_keys_size_offset + 1).column);
-
-        skip_keys_size_offset += 2;
-
-        for (size_t attribute_index = 0; attribute_index < attributes.size(); ++attribute_index)
+        PullingPipelineExecutor executor(pipeline);
+        Block block;
+        while (executor.pull(block))
         {
-            const auto & attribute_column = *block.safeGetByPosition(attribute_index + skip_keys_size_offset).column;
-            auto & attribute = attributes[attribute_index];
-
-            for (size_t key_index = 0; key_index < keys_size; ++key_index)
-            {
-                auto key = keys_extractor.extractCurrentKey();
-
-                RangeStorageType lower_bound;
-                RangeStorageType upper_bound;
-
-                if (is_date)
-                {
-                    lower_bound = getColumnIntValueOrDefault(min_range_column, key_index, is_date, 0);
-                    upper_bound = getColumnIntValueOrDefault(max_range_column, key_index, is_date, DATE_LUT_MAX_DAY_NUM + 1);
-                }
-                else
-                {
-                    lower_bound = getColumnIntValueOrDefault(min_range_column, key_index, is_date, RANGE_MIN_NULL_VALUE);
-                    upper_bound = getColumnIntValueOrDefault(max_range_column, key_index, is_date, RANGE_MAX_NULL_VALUE);
-                }
-
-                if constexpr (std::is_same_v<KeyType, StringRef>)
-                    key = copyKeyInArena(key);
-
-                setAttributeValue(attribute, key, Range{lower_bound, upper_bound}, attribute_column[key_index]);
-                keys_extractor.rollbackCurrentKey();
-            }
-
-            keys_extractor.reset();
+            blockToAttributes(block);
         }
+    }
+    else
+    {
+        updateData();
     }
 
     if (require_nonempty && 0 == element_count)
@@ -391,9 +345,6 @@ void RangeHashedDictionary<dictionary_key_type>::calculateBytesAllocated()
             const auto & collection = std::get<CollectionType<ValueType>>(attribute.maps);
             bytes_allocated += sizeof(CollectionType<ValueType>) + collection.getBufferSizeInBytes();
             bucket_count = collection.getBufferSizeInCells();
-
-            if constexpr (std::is_same_v<ValueType, StringRef>)
-                bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
         };
 
         callOnDictionaryAttributeType(attribute.type, type_call);
@@ -401,21 +352,23 @@ void RangeHashedDictionary<dictionary_key_type>::calculateBytesAllocated()
 
     if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
         bytes_allocated += complex_key_arena.size();
+
+    if (update_field_loaded_block)
+        bytes_allocated += update_field_loaded_block->allocatedBytes();
+
+    bytes_allocated += string_arena.size();
 }
 
 template <DictionaryKeyType dictionary_key_type>
 typename RangeHashedDictionary<dictionary_key_type>::Attribute RangeHashedDictionary<dictionary_key_type>::createAttribute(const DictionaryAttribute & dictionary_attribute)
 {
-    Attribute attribute{dictionary_attribute.underlying_type, dictionary_attribute.is_nullable, {}, {}};
+    Attribute attribute{dictionary_attribute.underlying_type, dictionary_attribute.is_nullable, {}};
 
     auto type_call = [&](const auto &dictionary_attribute_type)
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
         using ValueType = DictionaryValueType<AttributeType>;
-
-        if constexpr (std::is_same_v<AttributeType, String>)
-            attribute.string_arena = std::make_unique<Arena>();
 
         attribute.maps = CollectionType<ValueType>();
     };
@@ -498,6 +451,106 @@ void RangeHashedDictionary<dictionary_key_type>::getItemsImpl(
 }
 
 template <DictionaryKeyType dictionary_key_type>
+void RangeHashedDictionary<dictionary_key_type>::updateData()
+{
+    if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
+    {
+        QueryPipeline pipeline(source_ptr->loadUpdatedAll());
+
+        PullingPipelineExecutor executor(pipeline);
+        Block block;
+        while (executor.pull(block))
+        {
+            /// We are using this to keep saved data if input stream consists of multiple blocks
+            if (!update_field_loaded_block)
+                update_field_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());
+
+            for (size_t attribute_index = 0; attribute_index < block.columns(); ++attribute_index)
+            {
+                const IColumn & update_column = *block.getByPosition(attribute_index).column.get();
+                MutableColumnPtr saved_column = update_field_loaded_block->getByPosition(attribute_index).column->assumeMutable();
+                saved_column->insertRangeFrom(update_column, 0, update_column.size());
+            }
+        }
+    }
+    else
+    {
+        static constexpr size_t range_columns_size = 2;
+
+        auto pipe = source_ptr->loadUpdatedAll();
+        mergeBlockWithPipe<dictionary_key_type>(
+            dict_struct.getKeysSize() + range_columns_size,
+            *update_field_loaded_block,
+            std::move(pipe));
+    }
+
+    if (update_field_loaded_block)
+    {
+        blockToAttributes(*update_field_loaded_block.get());
+    }
+}
+
+template <DictionaryKeyType dictionary_key_type>
+void RangeHashedDictionary<dictionary_key_type>::blockToAttributes(const Block & block [[maybe_unused]])
+{
+    size_t skip_keys_size_offset = dict_struct.getKeysSize();
+
+    Columns key_columns;
+    key_columns.reserve(skip_keys_size_offset);
+
+    /// Split into keys columns and attribute columns
+    for (size_t i = 0; i < skip_keys_size_offset; ++i)
+        key_columns.emplace_back(block.safeGetByPosition(i).column);
+
+    DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
+    DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns, arena_holder.getComplexKeyArena());
+    const size_t keys_size = keys_extractor.getKeysSize();
+
+    element_count += keys_size;
+
+    // Support old behaviour, where invalid date means 'open range'.
+    const bool is_date = isDate(dict_struct.range_min->type);
+
+    const auto & min_range_column = unwrapNullableColumn(*block.safeGetByPosition(skip_keys_size_offset).column);
+    const auto & max_range_column = unwrapNullableColumn(*block.safeGetByPosition(skip_keys_size_offset + 1).column);
+
+    skip_keys_size_offset += 2;
+
+    for (size_t attribute_index = 0; attribute_index < attributes.size(); ++attribute_index)
+    {
+        const auto & attribute_column = *block.safeGetByPosition(attribute_index + skip_keys_size_offset).column;
+        auto & attribute = attributes[attribute_index];
+
+        for (size_t key_index = 0; key_index < keys_size; ++key_index)
+        {
+            auto key = keys_extractor.extractCurrentKey();
+
+            RangeStorageType lower_bound;
+            RangeStorageType upper_bound;
+
+            if (is_date)
+            {
+                lower_bound = getColumnIntValueOrDefault(min_range_column, key_index, is_date, 0);
+                upper_bound = getColumnIntValueOrDefault(max_range_column, key_index, is_date, DATE_LUT_MAX_DAY_NUM + 1);
+            }
+            else
+            {
+                lower_bound = getColumnIntValueOrDefault(min_range_column, key_index, is_date, RANGE_MIN_NULL_VALUE);
+                upper_bound = getColumnIntValueOrDefault(max_range_column, key_index, is_date, RANGE_MAX_NULL_VALUE);
+            }
+
+            if constexpr (std::is_same_v<KeyType, StringRef>)
+                key = copyStringInArena(string_arena, key);
+
+            setAttributeValue(attribute, key, Range{lower_bound, upper_bound}, attribute_column[key_index]);
+            keys_extractor.rollbackCurrentKey();
+        }
+
+        keys_extractor.reset();
+    }
+}
+
+template <DictionaryKeyType dictionary_key_type>
 template <typename T>
 void RangeHashedDictionary<dictionary_key_type>::setAttributeValueImpl(Attribute & attribute, KeyType key, const Range & range, const Field & value)
 {
@@ -515,8 +568,7 @@ void RangeHashedDictionary<dictionary_key_type>::setAttributeValueImpl(Attribute
         if constexpr (std::is_same_v<T, String>)
         {
             const auto & string = value.get<String>();
-            const auto * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
-            const StringRef string_ref{string_in_arena, string.size()};
+            StringRef string_ref = copyStringInArena(string_arena, string);
             value_to_insert = Value<ValueType>{ range, { string_ref }};
         }
         else
@@ -615,16 +667,6 @@ void RangeHashedDictionary<dictionary_key_type>::getKeysAndDates(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-StringRef RangeHashedDictionary<dictionary_key_type>::copyKeyInArena(StringRef key)
-{
-    size_t key_size = key.size;
-    char * place_for_key = complex_key_arena.alloc(key_size);
-    memcpy(reinterpret_cast<void *>(place_for_key), reinterpret_cast<const void *>(key.data), key_size);
-    StringRef updated_key{place_for_key, key_size};
-    return updated_key;
-}
-
-template <DictionaryKeyType dictionary_key_type>
 template <typename RangeType>
 PaddedPODArray<Int64> RangeHashedDictionary<dictionary_key_type>::makeDateKeys(
     const PaddedPODArray<RangeType> & block_start_dates,
@@ -694,17 +736,10 @@ Pipe RangeHashedDictionary<dictionary_key_type>::read(const Names & column_names
     ColumnsWithTypeAndName data_columns = {std::move(range_min_column), std::move(range_max_column)};
 
     std::shared_ptr<const IDictionary> dictionary = shared_from_this();
-    auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns), std::move(data_columns), max_block_size);
+    auto coordinator = DictionarySourceCoordinator::create(dictionary, column_names, std::move(key_columns), std::move(data_columns), max_block_size);
+    auto result = coordinator->read(num_streams);
 
-    Pipes pipes;
-
-    for (size_t i = 0; i < num_streams; ++i)
-    {
-        auto source = std::make_shared<DictionarySource>(coordinator);
-        pipes.emplace_back(Pipe(std::move(source)));
-    }
-
-    return Pipe::unitePipes(std::move(pipes));
+    return result;
 }
 
 

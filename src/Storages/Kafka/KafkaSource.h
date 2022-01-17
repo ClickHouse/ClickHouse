@@ -23,7 +23,7 @@ public:
         const Names & columns,
         Poco::Logger * log_,
         size_t max_block_size_,
-        bool commit_in_suffix = true);
+        bool commit_in_suffix = false);
     ~KafkaSource() override;
 
     String getName() const override { return storage.getName(); }

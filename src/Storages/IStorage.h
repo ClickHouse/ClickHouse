@@ -20,6 +20,7 @@
 
 #include <optional>
 #include <shared_mutex>
+#include <compare>
 
 
 namespace DB
@@ -134,6 +135,9 @@ public:
     /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
 
+    /// Returns true if the storage supports optimization of moving conditions to PREWHERE section.
+    virtual bool canMoveConditionsToPrewhere() const { return supportsPrewhere(); }
+
     /// Returns true if the storage replicates SELECT, INSERT and ALTER commands among replicas.
     virtual bool supportsReplication() const { return false; }
 
@@ -157,6 +161,9 @@ public:
     /// Requires squashing small blocks to large for optimal storage.
     /// This is true for most storages that store data on disk.
     virtual bool prefersLargeBlocks() const { return true; }
+
+    /// Returns true if the storage is for system, which cannot be target of SHOW CREATE TABLE.
+    virtual bool isSystemStorage() const { return false; }
 
 
     /// Optional size information of each physical column.
@@ -507,7 +514,7 @@ public:
     virtual void shutdown() {}
 
     /// Called before shutdown() to flush data to underlying storage
-    /// (for Buffer)
+    /// Data in memory need to be persistent
     virtual void flush() {}
 
     /// Asks table to stop executing some action identified by action_type

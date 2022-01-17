@@ -51,7 +51,7 @@ if (USE_YAML_CPP)
 endif()
 
 if (USE_INTERNAL_XZ_LIBRARY)
-    add_subdirectory (xz)
+    add_subdirectory (xz-cmake)
 endif()
 
 add_subdirectory (poco-cmake)
@@ -64,9 +64,7 @@ if (USE_INTERNAL_ZSTD_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_RE2_LIBRARY)
-    set(RE2_BUILD_TESTING 0 CACHE INTERNAL "")
-    add_subdirectory (re2)
-    add_subdirectory (re2_st)
+    add_subdirectory (re2-cmake)
 endif ()
 
 if (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)
@@ -82,23 +80,10 @@ if (USE_INTERNAL_FARMHASH_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_ZLIB_LIBRARY)
-    set (ZLIB_ENABLE_TESTS 0 CACHE INTERNAL "")
-    set (SKIP_INSTALL_ALL 1 CACHE INTERNAL "")
-    set (ZLIB_COMPAT 1 CACHE INTERNAL "") # also enables WITH_GZFILEOP
-    set (WITH_NATIVE_INSTRUCTIONS ${ARCH_NATIVE} CACHE INTERNAL "")
-    if (OS_FREEBSD OR ARCH_I386)
-        set (WITH_OPTIM 0 CACHE INTERNAL "") # Bug in assembler
-    endif ()
-    if (ARCH_AARCH64)
-        set(WITH_NEON 1 CACHE INTERNAL "")
-        set(WITH_ACLE 1 CACHE INTERNAL "")
-    endif ()
-
-    add_subdirectory (${INTERNAL_ZLIB_NAME})
-    # We should use same defines when including zlib.h as used when zlib compiled
-    target_compile_definitions (zlib PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
-    if (ARCH_AMD64 OR ARCH_AARCH64)
-        target_compile_definitions (zlib PUBLIC X86_64 UNALIGNED_OK)
+    if (INTERNAL_ZLIB_NAME STREQUAL "zlib-ng")
+        add_subdirectory (zlib-ng-cmake)
+    else ()
+        add_subdirectory (${INTERNAL_ZLIB_NAME})
     endif ()
 endif ()
 
@@ -117,28 +102,8 @@ if (USE_INTERNAL_LDAP_LIBRARY)
     add_subdirectory (openldap-cmake)
 endif ()
 
-function(mysql_support)
-    set(CLIENT_PLUGIN_CACHING_SHA2_PASSWORD STATIC)
-    set(CLIENT_PLUGIN_SHA256_PASSWORD STATIC)
-    set(CLIENT_PLUGIN_REMOTE_IO OFF)
-    set(CLIENT_PLUGIN_DIALOG OFF)
-    set(CLIENT_PLUGIN_AUTH_GSSAPI_CLIENT OFF)
-    set(CLIENT_PLUGIN_CLIENT_ED25519 OFF)
-    set(CLIENT_PLUGIN_MYSQL_CLEAR_PASSWORD OFF)
-    set(SKIP_TESTS 1)
-    if (GLIBC_COMPATIBILITY)
-        set(LIBM glibc-compatibility)
-    endif()
-    if (USE_INTERNAL_ZLIB_LIBRARY)
-        set(ZLIB_FOUND ON)
-        set(ZLIB_LIBRARY ${ZLIB_LIBRARIES})
-        set(WITH_EXTERNAL_ZLIB ON)
-    endif()
-    set(WITH_CURL OFF)
-    add_subdirectory (mariadb-connector-c)
-endfunction()
-if (ENABLE_MYSQL AND USE_INTERNAL_MYSQL_LIBRARY)
-    mysql_support()
+if (USE_INTERNAL_MYSQL_LIBRARY)
+    add_subdirectory (mariadb-connector-c-cmake)
 endif ()
 
 if (USE_INTERNAL_RDKAFKA_LIBRARY)
@@ -185,7 +150,6 @@ if (USE_INTERNAL_PARQUET_LIBRARY)
 
     # The library is large - avoid bloat.
     target_compile_options (${ARROW_LIBRARY} PRIVATE -g0)
-    target_compile_options (${THRIFT_LIBRARY} PRIVATE -g0)
     target_compile_options (${PARQUET_LIBRARY} PRIVATE -g0)
 endif()
 
@@ -194,11 +158,7 @@ if (USE_INTERNAL_AVRO_LIBRARY)
 endif()
 
 if(USE_INTERNAL_GTEST_LIBRARY)
-    set(GOOGLETEST_VERSION 1.10.0) # master
-    # Google Test from sources
-    add_subdirectory(${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
-    # avoid problems with <regexp.h>
-    target_compile_definitions (gtest INTERFACE GTEST_HAS_POSIX_RE=0)
+    add_subdirectory(googletest-cmake)
 elseif(GTEST_SRC_DIR)
     add_subdirectory(${GTEST_SRC_DIR}/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
     target_compile_definitions(gtest INTERFACE GTEST_HAS_POSIX_RE=0)
@@ -229,7 +189,7 @@ if (USE_EMBEDDED_COMPILER)
 endif ()
 
 if (USE_INTERNAL_LIBGSASL_LIBRARY)
-    add_subdirectory(libgsasl)
+    add_subdirectory(libgsasl-cmake)
 endif()
 
 if (USE_INTERNAL_LIBXML2_LIBRARY)
@@ -243,6 +203,10 @@ endif ()
 
 if (USE_INTERNAL_PROTOBUF_LIBRARY)
     add_subdirectory(protobuf-cmake)
+endif ()
+
+if (USE_INTERNAL_THRIFT_LIBRARY)
+    add_subdirectory(thrift-cmake)
 endif ()
 
 if (USE_INTERNAL_HDFS3_LIBRARY)
@@ -281,30 +245,22 @@ if (USE_AMQPCPP)
     add_subdirectory (amqpcpp-cmake)
 endif()
 if (USE_CASSANDRA)
-    # Need to use C++17 since the compilation is not possible with C++20 currently.
-    set (CMAKE_CXX_STANDARD_bak ${CMAKE_CXX_STANDARD})
-    set (CMAKE_CXX_STANDARD 17)
-
-    add_subdirectory (cassandra)
-
-    set (CMAKE_CXX_STANDARD ${CMAKE_CXX_STANDARD_bak})
-    unset (CMAKE_CXX_STANDARD_bak)
+    add_subdirectory (cassandra-cmake)
 endif()
 
 # Should go before:
 # - sentry-native
 add_subdirectory (curl-cmake)
 
+if (USE_INTERNAL_AZURE_BLOB_STORAGE_LIBRARY)
+    add_subdirectory(azure-cmake)
+endif()
+
 if (USE_SENTRY)
-    add_subdirectory (sentry-native)
+    add_subdirectory (sentry-native-cmake)
 endif()
 
 add_subdirectory (fmtlib-cmake)
-
-if (USE_STATS)
-    add_subdirectory (stats-cmake)
-    add_subdirectory (gcem)
-endif()
 
 if (USE_KRB5)
     add_subdirectory (krb5-cmake)
@@ -326,7 +282,7 @@ if (USE_NURAFT)
   add_subdirectory(nuraft-cmake)
 endif()
 
-add_subdirectory(fast_float)
+add_subdirectory(fast_float-cmake)
 
 if (USE_NLP)
     add_subdirectory(libstemmer-c-cmake)
@@ -346,15 +302,20 @@ if (USE_S2_GEOMETRY)
     add_subdirectory(s2geometry-cmake)
 endif()
 
+if (USE_HIVE)
+    add_subdirectory (hive-metastore-cmake)
+endif()
+
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear
 # in "contrib/..." as originally planned, so we workaround this by fixing FOLDER properties of all targets manually,
 # instead of controlling it via CMAKE_FOLDER.
 
 function (ensure_target_rooted_in _target _folder)
-    # Skip INTERFACE library targets, since FOLDER property is not available for them.
+    # Skip aliases and INTERFACE library targets, since FOLDER property is not available/writable for them.
+    get_target_property (_target_aliased "${_target}" ALIASED_TARGET)
     get_target_property (_target_type "${_target}" TYPE)
-    if (_target_type STREQUAL "INTERFACE_LIBRARY")
+    if (_target_aliased OR _target_type STREQUAL "INTERFACE_LIBRARY")
         return ()
     endif ()
 

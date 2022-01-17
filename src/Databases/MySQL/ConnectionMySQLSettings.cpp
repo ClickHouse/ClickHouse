@@ -14,7 +14,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-IMPLEMENT_SETTINGS_TRAITS(ConnectionMySQLSettingsTraits, LIST_OF_CONNECTION_MYSQL_SETTINGS)
+IMPLEMENT_SETTINGS_TRAITS(ConnectionMySQLSettingsTraits, LIST_OF_MYSQL_DATABASE_SETTINGS)
 
 void ConnectionMySQLSettings::loadFromQuery(ASTStorage & storage_def)
 {

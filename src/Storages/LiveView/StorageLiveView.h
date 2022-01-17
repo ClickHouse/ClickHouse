@@ -232,8 +232,8 @@ private:
         const StorageID & table_id_,
         ContextPtr context_,
         const ASTCreateQuery & query,
-        const ColumnsDescription & columns
-    );
+        const ColumnsDescription & columns,
+        const String & comment);
 };
 
 }

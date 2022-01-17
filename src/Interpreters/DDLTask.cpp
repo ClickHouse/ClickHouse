@@ -201,7 +201,7 @@ void DDLTask::setClusterInfo(ContextPtr context, Poco::Logger * log)
 
     if (!cluster)
         throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-                        "DDL task {} contains current host {} in cluster {}, but there are no such cluster here.",
+                        "DDL task {} contains current host {} in cluster {}, but there is no such cluster here.",
                         entry_name, host_id.readableString(), cluster_name);
 
     /// Try to find host from task host list in cluster

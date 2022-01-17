@@ -2,7 +2,6 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipeline.h>
-#include <iostream>
 
 
 namespace DB

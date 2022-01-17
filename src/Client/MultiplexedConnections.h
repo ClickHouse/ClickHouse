@@ -38,10 +38,11 @@ public:
         const String & query,
         const String & query_id,
         UInt64 stage,
-        const ClientInfo & client_info,
+        ClientInfo & client_info,
         bool with_pending_data) override;
 
     void sendReadTaskResponse(const String &) override;
+    void sendMergeTreeReadTaskResponse(PartitionReadResponse response) override;
 
     Packet receivePacket() override;
 
@@ -62,6 +63,7 @@ public:
     /// Without locking, because sendCancel() does not change the state of the replicas.
     bool hasActiveConnections() const override { return active_connection_count > 0; }
 
+    void setReplicaInfo(ReplicaInfo value) override { replica_info = value; }
 private:
     Packet receivePacketUnlocked(AsyncCallback async_callback, bool is_draining) override;
 
@@ -101,6 +103,8 @@ private:
 
     bool sent_query = false;
     bool cancelled = false;
+
+    ReplicaInfo replica_info;
 
     /// A mutex for the sendCancel function to execute safely
     /// in separate thread.

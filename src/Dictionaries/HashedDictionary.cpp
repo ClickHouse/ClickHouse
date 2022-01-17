@@ -239,7 +239,7 @@ ColumnPtr HashedDictionary<dictionary_key_type, sparse>::getHierarchy(ColumnPtr 
             if (it != parent_keys_map.end())
                 result = getValueFromCell(it);
 
-            keys_found +=result.has_value();
+            keys_found += result.has_value();
 
             return result;
         };
@@ -354,8 +354,7 @@ void HashedDictionary<dictionary_key_type, sparse>::createAttributes()
             using ValueType = DictionaryValueType<AttributeType>;
 
             auto is_nullable_set = dictionary_attribute.is_nullable ? std::make_optional<NullableSet>() : std::optional<NullableSet>{};
-            std::unique_ptr<Arena> string_arena = std::is_same_v<AttributeType, String> ? std::make_unique<Arena>() : nullptr;
-            Attribute attribute{dictionary_attribute.underlying_type, std::move(is_nullable_set), CollectionType<ValueType>(), std::move(string_arena)};
+            Attribute attribute{dictionary_attribute.underlying_type, std::move(is_nullable_set), CollectionType<ValueType>()};
             attributes.emplace_back(std::move(attribute));
         };
 
@@ -376,6 +375,8 @@ void HashedDictionary<dictionary_key_type, sparse>::updateData()
         Block block;
         while (executor.pull(block))
         {
+            convertToFullIfSparse(block);
+
             /// We are using this to keep saved data if input stream consists of multiple blocks
             if (!update_field_loaded_block)
                 update_field_loaded_block = std::make_shared<DB::Block>(block.cloneEmpty());
@@ -447,7 +448,7 @@ void HashedDictionary<dictionary_key_type, sparse>::blockToAttributes(const Bloc
                 }
 
                 if constexpr (std::is_same_v<KeyType, StringRef>)
-                    key = copyKeyInArena(key);
+                    key = copyStringInArena(string_arena, key);
 
                 attribute_column.get(key_index, column_value_to_insert);
 
@@ -461,12 +462,8 @@ void HashedDictionary<dictionary_key_type, sparse>::blockToAttributes(const Bloc
                 if constexpr (std::is_same_v<AttributeValueType, StringRef>)
                 {
                     String & value_to_insert = column_value_to_insert.get<String>();
-                    size_t value_to_insert_size = value_to_insert.size();
-
-                    const char * string_in_arena = attribute.string_arena->insert(value_to_insert.data(), value_to_insert_size);
-
-                    StringRef string_in_arena_reference = StringRef{string_in_arena, value_to_insert_size};
-                    container.insert({key, string_in_arena_reference});
+                    StringRef arena_value = copyStringInArena(string_arena, value_to_insert);
+                    container.insert({key, arena_value});
                 }
                 else
                 {
@@ -547,16 +544,6 @@ void HashedDictionary<dictionary_key_type, sparse>::getItemsImpl(
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
-StringRef HashedDictionary<dictionary_key_type, sparse>::copyKeyInArena(StringRef key)
-{
-    size_t key_size = key.size;
-    char * place_for_key = complex_key_arena.alloc(key_size);
-    memcpy(reinterpret_cast<void *>(place_for_key), reinterpret_cast<const void *>(key.data), key_size);
-    StringRef updated_key{place_for_key, key_size};
-    return updated_key;
-}
-
-template <DictionaryKeyType dictionary_key_type, bool sparse>
 void HashedDictionary<dictionary_key_type, sparse>::loadData()
 {
     if (!source_ptr->hasUpdateField())
@@ -589,7 +576,9 @@ void HashedDictionary<dictionary_key_type, sparse>::loadData()
         }
     }
     else
+    {
         updateData();
+    }
 
     if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
@@ -627,16 +616,13 @@ void HashedDictionary<dictionary_key_type, sparse>::calculateBytesAllocated()
             }
         });
 
-        if (attributes[i].string_arena)
-            bytes_allocated += attributes[i].string_arena->size();
-
         bytes_allocated += sizeof(attributes[i].is_nullable_set);
 
         if (attributes[i].is_nullable_set.has_value())
             bytes_allocated = attributes[i].is_nullable_set->getBufferSizeInBytes();
     }
 
-    bytes_allocated += complex_key_arena.size();
+    bytes_allocated += string_arena.size();
 
     if (update_field_loaded_block)
         bytes_allocated += update_field_loaded_block->allocatedBytes();
@@ -680,17 +666,10 @@ Pipe HashedDictionary<dictionary_key_type, sparse>::read(const Names & column_na
         key_columns = deserializeColumnsWithTypeAndNameFromKeys(dict_struct, keys, 0, keys.size());
 
     std::shared_ptr<const IDictionary> dictionary = shared_from_this();
-    auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns), max_block_size);
+    auto coordinator = DictionarySourceCoordinator::create(dictionary, column_names, std::move(key_columns), max_block_size);
+    auto result = coordinator->read(num_streams);
 
-    Pipes pipes;
-
-    for (size_t i = 0; i < num_streams; ++i)
-    {
-        auto source = std::make_shared<DictionarySource>(coordinator);
-        pipes.emplace_back(Pipe(std::move(source)));
-    }
-
-    return Pipe::unitePipes(std::move(pipes));
+    return result;
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>

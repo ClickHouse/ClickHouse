@@ -1,4 +1,4 @@
--- Tags: no-unbundled, no-fasttest
+-- Tags: no-fasttest
 
 SELECT arraySort(h3ToChildren(599405990164561919, 3));
 

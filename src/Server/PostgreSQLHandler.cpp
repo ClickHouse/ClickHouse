@@ -6,6 +6,7 @@
 #include <Interpreters/executeQuery.h>
 #include "PostgreSQLHandler.h"
 #include <Parsers/parseQuery.h>
+#include <Server/TCPServer.h>
 #include <Common/setThreadName.h>
 #include <base/scope_guard.h>
 #include <random>
@@ -28,11 +29,13 @@ namespace ErrorCodes
 PostgreSQLHandler::PostgreSQLHandler(
     const Poco::Net::StreamSocket & socket_,
     IServer & server_,
+    TCPServer & tcp_server_,
     bool ssl_enabled_,
     Int32 connection_id_,
     std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
+    , tcp_server(tcp_server_)
     , ssl_enabled(ssl_enabled_)
     , connection_id(connection_id_)
     , authentication_manager(auth_methods_)
@@ -60,11 +63,18 @@ void PostgreSQLHandler::run()
         if (!startup())
             return;
 
-        while (true)
+        while (tcp_server.isOpen())
         {
             message_transport->send(PostgreSQLProtocol::Messaging::ReadyForQuery(), true);
+
+            constexpr size_t connection_check_timeout = 1; // 1 second
+            while (!in->poll(1000000 * connection_check_timeout))
+                if (!tcp_server.isOpen())
+                    return;
             PostgreSQLProtocol::Messaging::FrontMessageType message_type = message_transport->receiveMessageType();
 
+            if (!tcp_server.isOpen())
+                return;
             switch (message_type)
             {
                 case PostgreSQLProtocol::Messaging::FrontMessageType::QUERY:

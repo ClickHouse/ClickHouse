@@ -36,9 +36,14 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
+#include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options/options_description.hpp>
 #include <base/argsToConfig.h>
 #include <filesystem>
+
+#if defined(FUZZING_MODE)
+    #include <Functions/getFuzzerData.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -308,11 +313,11 @@ void LocalServer::cleanup()
 
 std::string LocalServer::getInitialCreateTableQuery()
 {
-    if (!config().has("table-structure"))
+    if (!config().has("table-structure") && !config().has("table-file"))
         return {};
 
     auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
-    auto table_structure = config().getString("table-structure");
+    auto table_structure = config().getString("table-structure", "auto");
     auto data_format = backQuoteIfNeed(config().getString("table-data-format", "TSV"));
 
     String table_file;
@@ -327,7 +332,12 @@ std::string LocalServer::getInitialCreateTableQuery()
         table_file = quoteString(config().getString("table-file"));
     }
 
-    return fmt::format("CREATE TABLE {} ({}) ENGINE = File({}, {});",
+    if (table_structure == "auto")
+        table_structure = "";
+    else
+        table_structure = "(" + table_structure + ")";
+
+    return fmt::format("CREATE TABLE {} {} ENGINE = File({}, {});",
                        table_name, table_structure, data_format, table_file);
 }
 
@@ -383,12 +393,6 @@ void LocalServer::setupUsers()
 }
 
 
-String LocalServer::getQueryTextPrefix()
-{
-    return getInitialCreateTableQuery();
-}
-
-
 void LocalServer::connect()
 {
     connection_parameters = ConnectionParameters(config());
@@ -406,10 +410,25 @@ try
     std::cout << std::fixed << std::setprecision(3);
     std::cerr << std::fixed << std::setprecision(3);
 
+#if defined(FUZZING_MODE)
+    static bool first_time = true;
+    if (first_time)
+    {
+
+    if (queries_files.empty() && !config().has("query"))
+    {
+        std::cerr << "\033[31m" << "ClickHouse compiled in fuzzing mode." << "\033[0m" << std::endl;
+        std::cerr << "\033[31m" << "You have to provide a query with --query or --queries-file option." << "\033[0m" << std::endl;
+        std::cerr << "\033[31m" << "The query have to use function getFuzzerData() inside." << "\033[0m" << std::endl;
+        exit(1);
+    }
+
+    is_interactive = false;
+#else
     is_interactive = stdin_is_a_tty
         && (config().hasOption("interactive")
-            || (!config().has("query") && !config().has("table-structure") && queries_files.empty()));
-
+            || (!config().has("query") && !config().has("table-structure") && queries_files.empty() && !config().has("table-file")));
+#endif
     if (!is_interactive)
     {
         /// We will terminate process on error
@@ -438,6 +457,15 @@ try
 
     connect();
 
+#ifdef FUZZING_MODE
+    first_time = false;
+    }
+#endif
+
+    String initial_query = getInitialCreateTableQuery();
+    if (!initial_query.empty())
+        processQueryText(initial_query);
+
     if (is_interactive && !delayed_interactive)
     {
         runInteractive();
@@ -450,7 +478,9 @@ try
             runInteractive();
     }
 
+#ifndef FUZZING_MODE
     cleanup();
+#endif
     return Application::EXIT_OK;
 }
 catch (const DB::Exception & e)
@@ -622,7 +652,7 @@ void LocalServer::processConfig()
         fs::create_directories(fs::path(path) / "metadata/");
 
         loadMetadataSystem(global_context);
-        attachSystemTablesLocal(*createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
+        attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
         loadMetadata(global_context);
@@ -633,7 +663,7 @@ void LocalServer::processConfig()
     }
     else if (!config().has("no-system-tables"))
     {
-        attachSystemTablesLocal(*createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
+        attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
     }
@@ -652,7 +682,7 @@ void LocalServer::processConfig()
 }
 
 
-static std::string getHelpHeader()
+[[ maybe_unused ]] static std::string getHelpHeader()
 {
     return
         "usage: clickhouse-local [initial table definition] [--query <query>]\n"
@@ -668,7 +698,7 @@ static std::string getHelpHeader()
 }
 
 
-static std::string getHelpFooter()
+[[ maybe_unused ]] static std::string getHelpFooter()
 {
     return
         "Example printing memory used by each Unix user:\n"
@@ -679,18 +709,29 @@ static std::string getHelpFooter()
 }
 
 
-void LocalServer::printHelpMessage(const OptionsDescription & options_description)
+void LocalServer::printHelpMessage([[maybe_unused]] const OptionsDescription & options_description)
 {
+#if defined(FUZZING_MODE)
+    std::cout <<
+        "usage: clickhouse <clickhouse-local arguments> -- <libfuzzer arguments>\n"
+        "Note: It is important not to use only one letter keys with single dash for \n"
+        "for clickhouse-local arguments. It may work incorrectly.\n"
+
+        "ClickHouse is build with coverage guided fuzzer (libfuzzer) inside it.\n"
+        "You have to provide a query which contains getFuzzerData function.\n"
+        "This will take the data from fuzzing engine, pass it to getFuzzerData function and execute a query.\n"
+        "Each time the data will be different, and it will last until some segfault or sanitizer assertion is found. \n";
+#else
     std::cout << getHelpHeader() << "\n";
     std::cout << options_description.main_description.value() << "\n";
     std::cout << getHelpFooter() << "\n";
+#endif
 }
 
 
 void LocalServer::addOptions(OptionsDescription & options_description)
 {
     options_description.main_description->add_options()
-        ("database,d", po::value<std::string>(), "database")
         ("table,N", po::value<std::string>(), "name of the initial table")
 
         /// If structure argument is omitted then initial query is not generated
@@ -756,9 +797,9 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
 
 int mainEntryClickHouseLocal(int argc, char ** argv)
 {
-    DB::LocalServer app;
     try
     {
+        DB::LocalServer app;
         app.init(argc, argv);
         return app.run();
     }
@@ -780,3 +821,51 @@ int mainEntryClickHouseLocal(int argc, char ** argv)
         return code ? code : 1;
     }
 }
+
+#if defined(FUZZING_MODE)
+
+std::optional<DB::LocalServer> fuzz_app;
+
+extern "C" int LLVMFuzzerInitialize(int * pargc, char *** pargv)
+{
+    int & argc = *pargc;
+    char ** argv = *pargv;
+
+    /// As a user you can add flags to clickhouse binary in fuzzing mode as follows
+    /// clickhouse <set of clickhouse-local specific flag> -- <set of libfuzzer flags>
+
+    /// Calculate the position of delimiter "--" that separates arguments
+    /// of clickhouse-local and libfuzzer
+    int pos_delim = argc;
+    for (int i = 0; i < argc; ++i)
+    {
+        if (strcmp(argv[i], "--") == 0)
+        {
+            pos_delim = i;
+            break;
+        }
+    }
+
+    /// Initialize clickhouse-local app
+    fuzz_app.emplace();
+    fuzz_app->init(pos_delim, argv);
+
+    /// We will leave clickhouse-local specific arguments as is, because libfuzzer will ignore
+    /// all keys starting with --
+    return 0;
+}
+
+
+extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
+try
+{
+    auto input = String(reinterpret_cast<const char *>(data), size);
+    DB::FunctionGetFuzzerData::update(input);
+    fuzz_app->run();
+    return 0;
+}
+catch (...)
+{
+    return 1;
+}
+#endif

@@ -8,6 +8,7 @@
 
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/GetObjectRequest.h>
+#include <aws/s3/model/HeadObjectRequest.h>
 
 #include <base/logger_useful.h>
 #include <base/sleep.h>
@@ -20,6 +21,7 @@ namespace ProfileEvents
     extern const Event S3ReadMicroseconds;
     extern const Event S3ReadBytes;
     extern const Event S3ReadRequestsErrors;
+    extern const Event ReadBufferSeekCancelConnection;
 }
 
 namespace DB
@@ -34,9 +36,14 @@ namespace ErrorCodes
 
 
 ReadBufferFromS3::ReadBufferFromS3(
-    std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, const String & key_,
-    UInt64 max_single_read_retries_, const ReadSettings & settings_, bool use_external_buffer_, size_t read_until_position_)
-    : SeekableReadBuffer(nullptr, 0)
+    std::shared_ptr<Aws::S3::S3Client> client_ptr_,
+    const String & bucket_,
+    const String & key_,
+    UInt64 max_single_read_retries_,
+    const ReadSettings & settings_,
+    bool use_external_buffer_,
+    size_t read_until_position_)
+    : SeekableReadBufferWithSize(nullptr, 0)
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
     , key(key_)
@@ -142,9 +149,12 @@ bool ReadBufferFromS3::nextImpl()
     return true;
 }
 
+
 off_t ReadBufferFromS3::seek(off_t offset_, int whence)
 {
-    if (impl)
+    bool restricted_seek = read_type == SeekableReadBufferWithSize::ReadType::DISK_READ;
+
+    if (impl && restricted_seek)
         throw Exception("Seek is allowed only before first read attempt from the buffer.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
     if (whence != SEEK_SET)
@@ -153,9 +163,55 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
     if (offset_ < 0)
         throw Exception("Seek position is out of bounds. Offset: " + std::to_string(offset_), ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
 
-    offset = offset_;
+    if (!restricted_seek)
+    {
+        if (!working_buffer.empty()
+            && size_t(offset_) >= offset - working_buffer.size()
+            && offset_ < offset)
+        {
+            pos = working_buffer.end() - (offset - offset_);
+            assert(pos >= working_buffer.begin());
+            assert(pos <= working_buffer.end());
 
+            return getPosition();
+        }
+
+        auto position = getPosition();
+        if (offset_ > position)
+        {
+            size_t diff = offset_ - position;
+            if (diff < read_settings.remote_read_min_bytes_for_seek)
+            {
+                ignore(diff);
+                return offset_;
+            }
+        }
+
+        pos = working_buffer.end();
+        if (impl)
+        {
+            ProfileEvents::increment(ProfileEvents::ReadBufferSeekCancelConnection);
+            impl.reset();
+        }
+    }
+
+    offset = offset_;
     return offset;
+}
+
+std::optional<size_t> ReadBufferFromS3::getTotalSize()
+{
+    if (file_size)
+        return file_size;
+
+    Aws::S3::Model::HeadObjectRequest request;
+    request.SetBucket(bucket);
+    request.SetKey(key);
+
+    auto outcome = client_ptr->HeadObject(request);
+    auto head_result = outcome.GetResultWithOwnership();
+    file_size = head_result.GetContentLength();
+    return file_size;
 }
 
 off_t ReadBufferFromS3::getPosition()
@@ -179,12 +235,13 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
 
         req.SetRange(fmt::format("bytes={}-{}", offset, read_until_position - 1));
-        LOG_DEBUG(log, "Read S3 object. Bucket: {}, Key: {}, Range: {}-{}", bucket, key, offset, read_until_position - 1);
+        LOG_TEST(log, "Read S3 object. Bucket: {}, Key: {}, Range: {}-{}", bucket, key, offset, read_until_position - 1);
     }
     else
     {
-        req.SetRange(fmt::format("bytes={}-", offset));
-        LOG_DEBUG(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}", bucket, key, offset);
+        if (offset)
+            req.SetRange(fmt::format("bytes={}-", offset));
+        LOG_TEST(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}", bucket, key, offset);
     }
 
     Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
