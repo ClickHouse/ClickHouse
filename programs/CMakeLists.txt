@@ -53,9 +53,9 @@ option (ENABLE_CLICKHOUSE_KEEPER "ClickHouse alternative to ZooKeeper" ${ENABLE_
 
 option (ENABLE_CLICKHOUSE_KEEPER_CONVERTER "Util allows to convert ZooKeeper logs and snapshots into clickhouse-keeper snapshot" ${ENABLE_CLICKHOUSE_ALL})
 
-if (NOT USE_NURAFT)
+if (NOT ENABLE_NURAFT)
     # RECONFIGURE_MESSAGE_LEVEL should not be used here,
-    # since USE_NURAFT is set to OFF for FreeBSD and Darwin.
+    # since ENABLE_NURAFT is set to OFF for FreeBSD and Darwin.
     message (STATUS "clickhouse-keeper and clickhouse-keeper-converter will not be built (lack of NuRaft)")
     set(ENABLE_CLICKHOUSE_KEEPER OFF)
     set(ENABLE_CLICKHOUSE_KEEPER_CONVERTER OFF)

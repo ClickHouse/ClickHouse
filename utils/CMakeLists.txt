@@ -34,7 +34,7 @@ if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
     add_subdirectory (keeper-bench)
     add_subdirectory (graphite-rollup)
 
-    if (USE_NURAFT)
+    if (TARGET ch_contrib::nuraft)
         add_subdirectory (keeper-data-dumper)
     endif ()
 
