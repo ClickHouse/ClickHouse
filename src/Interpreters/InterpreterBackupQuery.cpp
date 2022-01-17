@@ -2,8 +2,10 @@
 #include <Backups/BackupFactory.h>
 #include <Backups/BackupSettings.h>
 #include <Backups/BackupUtils.h>
+#include <Backups/RestoreFromBackupUtils.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupEntry.h>
+#include <Backups/IRestoreFromBackupTask.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Interpreters/Context.h>
 
@@ -45,7 +47,7 @@ namespace
     void executeRestore(const ASTBackupQuery & query, ContextMutablePtr context)
     {
         BackupPtr backup = createBackup(query, context);
-        auto restore_tasks = makeRestoreTasks(query.elements, context, backup);
+        auto restore_tasks = makeRestoreTasks(context, backup, query.elements);
         executeRestoreTasks(std::move(restore_tasks), context->getSettingsRef().max_backup_threads);
     }
 }

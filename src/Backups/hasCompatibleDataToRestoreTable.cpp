@@ -16,6 +16,10 @@ bool hasCompatibleDataToRestoreTable(const ASTCreateQuery & query1, const ASTCre
     q1->uuid = UUIDHelpers::Nil;
     q2->uuid = UUIDHelpers::Nil;
 
+    /// Clear IF NOT EXISTS flag.
+    q1->if_not_exists = false;
+    q2->if_not_exists = false;
+
     return serializeAST(*q1) == serializeAST(*q2);
 }
 

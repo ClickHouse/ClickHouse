@@ -72,7 +72,8 @@ class IBackup;
 using BackupPtr = std::shared_ptr<const IBackup>;
 class IBackupEntry;
 using BackupEntries = std::vector<std::pair<String, std::unique_ptr<IBackupEntry>>>;
-using RestoreDataTasks = std::vector<std::function<void()>>;
+class IRestoreFromBackupTask;
+using RestoreFromBackupTaskPtr = std::unique_ptr<IRestoreFromBackupTask>;
 
 struct ColumnSize
 {
@@ -220,7 +221,7 @@ public:
     virtual BackupEntries backup(const ASTs & partitions, ContextPtr context);
 
     /// Extract data from the backup and put it to the storage.
-    virtual RestoreDataTasks restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context);
+    virtual RestoreFromBackupTaskPtr restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context);
 
     /// Returns whether the column is virtual - by default all columns are real.
     /// Initially reserved virtual column name may be shadowed by real column.
