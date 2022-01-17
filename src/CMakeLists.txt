@@ -478,9 +478,8 @@ if (TARGET ch_contrib::rocksdb)
     dbms_target_link_libraries(PUBLIC ch_contrib::rocksdb)
 endif()
 
-if (USE_LIBPQXX)
-    dbms_target_link_libraries(PUBLIC ${LIBPQXX_LIBRARY})
-    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${LIBPQXX_INCLUDE_DIR})
+if (TARGET ch_contrib::libpqxx)
+    dbms_target_link_libraries(PUBLIC ch_contrib::libpqxx)
 endif()
 
 if (USE_DATASKETCHES)
