@@ -40,5 +40,5 @@ target_sources(snappy
     "${SOURCE_DIR}/snappy-stubs-internal.cc"
     "${SOURCE_DIR}/snappy.cc")
 
-target_include_directories(snappy PUBLIC ${SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories(snappy SYSTEM PUBLIC ${SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
 target_compile_definitions(snappy PRIVATE -DHAVE_CONFIG_H)

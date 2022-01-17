@@ -415,13 +415,14 @@ else ()
 endif ()
 
 if (WERROR)
-    add_warning(error)
+    # Don't pollute CMAKE_CXX_FLAGS with -Werror as it will break some CMake checks.
+    # Instead, adopt modern cmake usage requirement.
+    target_compile_options(global-libs INTERFACE "-Werror")
 endif ()
 
 # Make this extra-checks for correct library dependencies.
 if (OS_LINUX AND NOT SANITIZE)
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-undefined")
-    set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
+    target_link_options(global-libs INTERFACE "-Wl,--no-undefined")
 endif ()
 
 # Increase stack size on Musl. We need big stack for our recursive-descend parser.
