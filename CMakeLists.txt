@@ -488,7 +488,6 @@ message (STATUS
 include (GNUInstallDirs)
 
 include (cmake/find/ltdl.cmake) # for odbc
-# openssl, zlib before poco
 include (cmake/find/krb5.cmake)
 include (cmake/find/libgsasl.cmake)
 include (cmake/find/cyrus-sasl.cmake)
@@ -500,7 +499,6 @@ include (cmake/find/h3.cmake)
 include (cmake/find/libxml2.cmake)
 include (cmake/find/pdqsort.cmake)
 include (cmake/find/miniselect.cmake)
-include (cmake/find/poco.cmake)
 include (cmake/find/curl.cmake)
 include (cmake/find/s3.cmake)
 include (cmake/find/base64.cmake)

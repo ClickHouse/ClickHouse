@@ -14,10 +14,6 @@ endif()
 option(USE_INTERNAL_AWS_S3_LIBRARY "Set to FALSE to use system S3 instead of bundled (experimental set to OFF on your own risk)"
        ON)
 
-if (NOT USE_INTERNAL_POCO_LIBRARY AND USE_INTERNAL_AWS_S3_LIBRARY)
-    message (FATAL_ERROR "Currently S3 support can be built only with internal POCO library")
-endif()
-
 if (NOT USE_INTERNAL_AWS_S3_LIBRARY)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Compilation with external S3 library is not supported yet")
 endif()
