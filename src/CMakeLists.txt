@@ -394,8 +394,8 @@ if (TARGET ch_contrib::icu)
     dbms_target_link_libraries (PRIVATE ch_contrib::icu)
 endif ()
 
-if (USE_CAPNP)
-    dbms_target_link_libraries (PRIVATE ${CAPNP_LIBRARIES})
+if (TARGET ch_contrib::capnp)
+    dbms_target_link_libraries (PRIVATE ch_contrib::capnp)
 endif ()
 
 if (TARGET ch_contrib::parquet)

@@ -38,10 +38,7 @@ add_subdirectory (murmurhash)
 add_subdirectory (replxx-cmake)
 add_subdirectory (unixodbc-cmake)
 add_subdirectory (nanodbc-cmake)
-
-if (USE_INTERNAL_CAPNP_LIBRARY AND NOT MISSING_INTERNAL_CAPNP_LIBRARY)
-    add_subdirectory(capnproto-cmake)
-endif ()
+add_subdirectory (capnproto-cmake)
 
 if (USE_YAML_CPP)
     add_subdirectory (yaml-cpp-cmake)
