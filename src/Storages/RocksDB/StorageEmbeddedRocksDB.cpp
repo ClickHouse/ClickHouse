@@ -176,6 +176,18 @@ static std::pair<FieldVectorPtr, bool> getFilterKeys(
     return std::make_pair(res, !matched_keys);
 }
 
+template <typename K, typename V>
+static void fillColumns(const K & key, const V & value, size_t key_pos, const Block & header, MutableColumns & columns)
+{
+    ReadBufferFromString key_buffer(key);
+    ReadBufferFromString value_buffer(value);
+    size_t idx = 0;
+    for (const auto & elem : header)
+    {
+        elem.type->getDefaultSerialization()->deserializeBinary(*columns[idx], idx == key_pos ? key_buffer : value_buffer);
+        ++idx;
+    }
+}
 
 class EmbeddedRocksDBSource : public ISource
 {
@@ -222,45 +234,10 @@ public:
 
     Chunk generateWithKeys()
     {
-        if (it >= end)
-            return {};
-
-        size_t num_keys = end - begin;
-
-        std::vector<std::string> serialized_keys(num_keys);
-        std::vector<rocksdb::Slice> slices_keys(num_keys);
-
         const auto & sample_block = getPort().getHeader();
-
-        const auto & key_column_type = sample_block.getByName(storage.getPrimaryKey()).type;
-
-        size_t rows_processed = 0;
-        while (it < end && rows_processed < max_block_size)
-        {
-            WriteBufferFromString wb(serialized_keys[rows_processed]);
-            key_column_type->getDefaultSerialization()->serializeBinary(*it, wb);
-            wb.finalize();
-            slices_keys[rows_processed] = serialized_keys[rows_processed];
-
-            ++it;
-            ++rows_processed;
-        }
-
-        MutableColumns columns = sample_block.cloneEmptyColumns();
-        std::vector<String> values;
-        auto statuses = storage.multiGet(slices_keys, values);
-        for (size_t i = 0; i < statuses.size(); ++i)
-        {
-            if (statuses[i].ok())
-            {
-                ReadBufferFromString key_buffer(slices_keys[i]);
-                ReadBufferFromString value_buffer(values[i]);
-                fillColumns(key_buffer, value_buffer, columns);
-            }
-        }
-
-        UInt64 num_rows = columns.at(0)->size();
-        return Chunk(std::move(columns), num_rows);
+        Chunk result;
+        it = storage.getByKeys(it, end, sample_block, result, max_block_size);
+        return result;
     }
 
     Chunk generateFullScan()
@@ -273,9 +250,7 @@ public:
 
         for (size_t rows = 0; iterator->Valid() && rows < max_block_size; ++rows, iterator->Next())
         {
-            ReadBufferFromString key_buffer(iterator->key());
-            ReadBufferFromString value_buffer(iterator->value());
-            fillColumns(key_buffer, value_buffer, columns);
+            fillColumns(iterator->key(), iterator->value(), primary_key_pos, getPort().getHeader(), columns);
         }
 
         if (!iterator->status().ok())
@@ -285,16 +260,6 @@ public:
         }
         Block block = sample_block.cloneWithColumns(std::move(columns));
         return Chunk(block.getColumns(), block.rows());
-    }
-
-    void fillColumns(ReadBufferFromString & key_buffer, ReadBufferFromString & value_buffer, MutableColumns & columns)
-    {
-        size_t idx = 0;
-        for (const auto & elem : getPort().getHeader())
-        {
-            elem.type->getDefaultSerialization()->deserializeBinary(*columns[idx], idx == primary_key_pos ? key_buffer : value_buffer);
-            ++idx;
-        }
     }
 
 private:
@@ -525,6 +490,54 @@ std::vector<rocksdb::Status> StorageEmbeddedRocksDB::multiGet(const std::vector<
     if (!rocksdb_ptr)
         return {};
     return rocksdb_ptr->MultiGet(rocksdb::ReadOptions(), slices_keys, &values);
+}
+
+FieldVector::const_iterator StorageEmbeddedRocksDB::getByKeys(
+    FieldVector::const_iterator begin,
+    FieldVector::const_iterator end,
+    const Block & sample_block,
+    Chunk & result,
+    size_t max_block_size) const
+{
+    if (begin >= end)
+        return {};
+
+    size_t num_keys = end - begin;
+
+    std::vector<std::string> serialized_keys(num_keys);
+    std::vector<rocksdb::Slice> slices_keys(num_keys);
+
+    const auto & key_column_type = sample_block.getByName(getPrimaryKey()).type;
+
+    size_t rows_processed = 0;
+    auto it = begin;
+    while (it < end && (max_block_size == 0 || rows_processed < max_block_size))
+    {
+        WriteBufferFromString wb(serialized_keys[rows_processed]);
+        key_column_type->getDefaultSerialization()->serializeBinary(*it, wb);
+        wb.finalize();
+        slices_keys[rows_processed] = serialized_keys[rows_processed];
+
+        ++it;
+        ++rows_processed;
+    }
+
+    MutableColumns columns = sample_block.cloneEmptyColumns();
+    std::vector<String> values;
+    auto statuses = multiGet(slices_keys, values);
+
+    size_t primary_key_pos = sample_block.getPositionByName(getPrimaryKey());
+
+    for (size_t i = 0; i < statuses.size(); ++i)
+    {
+        if (statuses[i].ok())
+        {
+            fillColumns(slices_keys[i], values[i], primary_key_pos, sample_block, columns);
+        }
+    }
+
+    result = Chunk(std::move(columns), columns.at(0)->size());
+    return it;
 }
 
 void registerStorageEmbeddedRocksDB(StorageFactory & factory)

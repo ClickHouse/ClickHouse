@@ -58,6 +58,21 @@ public:
     std::vector<rocksdb::Status> multiGet(const std::vector<rocksdb::Slice> & slices_keys, std::vector<String> & values) const;
     const String & getPrimaryKey() const { return primary_key; }
 
+    FieldVector::const_iterator getByKeys(
+        FieldVector::const_iterator begin,
+        FieldVector::const_iterator end,
+        const Block & sample_block,
+        Chunk & result,
+        size_t max_block_size) const override;
+
+protected:
+    StorageEmbeddedRocksDB(const StorageID & table_id_,
+        const String & relative_data_path_,
+        const StorageInMemoryMetadata & metadata,
+        bool attach,
+        ContextPtr context_,
+        const String & primary_key_);
+
 private:
     const String primary_key;
     using RocksDBPtr = std::unique_ptr<rocksdb::DB>;
