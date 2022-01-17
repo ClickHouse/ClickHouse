@@ -27,7 +27,7 @@ target_link_libraries(clickhouse-odbc-bridge PRIVATE
     bridge
     clickhouse_parsers
     ch_contrib::nanodbc
-    unixodbc
+    ch_contrib::unixodbc
 )
 
 set_target_properties(clickhouse-odbc-bridge PROPERTIES RUNTIME_OUTPUT_DIRECTORY ..)

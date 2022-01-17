@@ -1,4 +1,13 @@
-if (NOT USE_INTERNAL_ODBC_LIBRARY)
+option (ENABLE_ODBC "Enable ODBC library" ${ENABLE_LIBRARIES})
+if (NOT OS_LINUX)
+    if (ENABLE_ODBC)
+        message(STATUS "ODBC is only supported on Linux")
+    endif()
+    set (ENABLE_ODBC OFF CACHE INTERNAL "")
+endif ()
+
+if (NOT ENABLE_ODBC)
+    message(STATUS "Not using ODBC")
     return()
 endif()
 
@@ -295,3 +304,5 @@ target_compile_options (unixodbc
         -O2
 )
 target_compile_definitions (unixodbc INTERFACE USE_ODBC=1)
+
+add_library (ch_contrib::unixodbc ALIAS unixodbc)
