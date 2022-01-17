@@ -313,7 +313,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     bool got_storage_from_query = false;
     if (!has_input && !storage)
     {
-        storage = joined_tables.getLeftTableStorage();
+        std::tie(uses_view_source, storage) = joined_tables.getLeftTableStorage();
         got_storage_from_query = true;
     }
 
@@ -388,9 +388,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             query.setFinal();
 
         /// Save scalar sub queries's results in the query context
-        /// But discard them if the Storage has been modified
-        /// In an ideal situation we would only discard the scalars affected by the storage change
-        if (!options.only_analyze && context->hasQueryContext() && !context->getViewSource())
+        /// Note that we are only saving scalars and not local_scalars since the latter can't be safely shared across contexts
+        if (!options.only_analyze && context->hasQueryContext())
             for (const auto & it : syntax_analyzer_result->getScalars())
                 context->getQueryContext()->addScalar(it.first, it.second);
 

@@ -138,6 +138,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 
         nested_interpreters.emplace_back(
             buildCurrentChildInterpreter(ast->list_of_selects->children.at(query_num), require_full_header ? Names() : current_required_result_column_names));
+        uses_view_source |= nested_interpreters.back()->usesViewSource();
     }
 
     /// Determine structure of the result.

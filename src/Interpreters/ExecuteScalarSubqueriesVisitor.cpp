@@ -1,9 +1,9 @@
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 
-#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnNullable.h>
-#include <DataTypes/DataTypeTuple.h>
+#include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -18,7 +18,14 @@
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/queryToString.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Common/ProfileEvents.h>
 
+namespace ProfileEvents
+{
+extern const Event ScalarSubqueriesGlobalCacheHit;
+extern const Event ScalarSubqueriesLocalCacheHit;
+extern const Event ScalarSubqueriesCacheMiss;
+}
 
 namespace DB
 {
@@ -77,22 +84,39 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
     auto hash = subquery.getTreeHash();
     auto scalar_query_hash_str = toString(hash.first) + "_" + toString(hash.second);
 
+    bool is_local = false;
     Block scalar;
     if (data.getContext()->hasQueryContext() && data.getContext()->getQueryContext()->hasScalar(scalar_query_hash_str))
     {
         scalar = data.getContext()->getQueryContext()->getScalar(scalar_query_hash_str);
+        ProfileEvents::increment(ProfileEvents::ScalarSubqueriesGlobalCacheHit);
+    }
+    else if (data.local_scalars.count(scalar_query_hash_str))
+    {
+        scalar = data.local_scalars[scalar_query_hash_str];
+        is_local = true;
+        ProfileEvents::increment(ProfileEvents::ScalarSubqueriesLocalCacheHit);
     }
     else if (data.scalars.count(scalar_query_hash_str))
     {
         scalar = data.scalars[scalar_query_hash_str];
+        ProfileEvents::increment(ProfileEvents::ScalarSubqueriesGlobalCacheHit);
     }
     else
     {
+        ProfileEvents::increment(ProfileEvents::ScalarSubqueriesCacheMiss);
         auto subquery_context = Context::createCopy(data.getContext());
         Settings subquery_settings = data.getContext()->getSettings();
         subquery_settings.max_result_rows = 1;
         subquery_settings.extremes = false;
         subquery_context->setSettings(subquery_settings);
+        if (auto context = subquery_context->getQueryContext())
+        {
+            for (const auto & it : data.scalars)
+                context->addScalar(it.first, it.second);
+            for (const auto & it : data.local_scalars)
+                context->addScalar(it.first, it.second);
+        }
 
         ASTPtr subquery_select = subquery.children.at(0);
 
@@ -218,7 +242,10 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         ast = std::move(func);
     }
 
-    data.scalars[scalar_query_hash_str] = std::move(scalar);
+    if (is_local)
+        data.local_scalars[scalar_query_hash_str] = std::move(scalar);
+    else
+        data.scalars[scalar_query_hash_str] = std::move(scalar);
 }
 
 void ExecuteScalarSubqueriesMatcher::visit(const ASTFunction & func, ASTPtr & ast, Data & data)
