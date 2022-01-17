@@ -42,10 +42,6 @@ if (USE_INTERNAL_CAPNP_LIBRARY AND NOT MISSING_INTERNAL_CAPNP_LIBRARY)
     add_subdirectory(capnproto-cmake)
 endif ()
 
-if (ENABLE_FUZZING)
-    add_subdirectory (libprotobuf-mutator-cmake)
-endif()
-
 if (USE_YAML_CPP)
     add_subdirectory (yaml-cpp-cmake)
 endif()
@@ -73,6 +69,10 @@ add_subdirectory (openldap-cmake)
 add_subdirectory (grpc-cmake)
 add_subdirectory (protobuf-cmake)
 add_subdirectory (libhdfs3-cmake) # requires: protobuf
+
+if (ENABLE_FUZZING)
+    add_subdirectory (libprotobuf-mutator-cmake)
+endif()
 
 # TODO: refactor the contrib libraries below this comment.
 
