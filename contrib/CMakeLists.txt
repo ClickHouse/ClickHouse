@@ -141,9 +141,7 @@ if (USE_BASE64)
     add_subdirectory (base64-cmake)
 endif()
 
-if (USE_SIMDJSON)
-    add_subdirectory (simdjson-cmake)
-endif()
+add_subdirectory (simdjson-cmake)
 
 if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
