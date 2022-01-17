@@ -65,7 +65,10 @@ void ColumnFunction::insertFrom(const IColumn & src, size_t n)
 {
     const ColumnFunction & src_func = assert_cast<const ColumnFunction &>(src);
 
-    for (size_t i = 0, size = captured_columns.size(); i < size; ++i)
+    size_t num_captured_columns = captured_columns.size();
+    assert(num_captured_columns == src_func.captured_columns.size());
+
+    for (size_t i = 0; i < num_captured_columns; ++i)
     {
         auto mut_column = IColumn::mutate(std::move(captured_columns[i].column));
         mut_column->insertFrom(*src_func.captured_columns[i].column, n);
@@ -79,7 +82,10 @@ void ColumnFunction::insertRangeFrom(const IColumn & src, size_t start, size_t l
 {
     const ColumnFunction & src_func = assert_cast<const ColumnFunction &>(src);
 
-    for (size_t i = 0, size = captured_columns.size(); i < size; ++i)
+    size_t num_captured_columns = captured_columns.size();
+    assert(num_captured_columns == src_func.captured_columns.size());
+
+    for (size_t i = 0; i < num_captured_columns; ++i)
     {
         auto mut_column = IColumn::mutate(std::move(captured_columns[i].column));
         mut_column->insertRangeFrom(*src_func.captured_columns[i].column, start, length);
