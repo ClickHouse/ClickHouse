@@ -12,31 +12,6 @@
 using namespace DB;
 using Int64Interval = Interval<Int64>;
 
-struct CollectIntervalsCallback
-{
-    explicit CollectIntervalsCallback(std::set<Int64Interval> & result_intervals_)
-        : result_intervals(result_intervals_)
-    {
-    }
-
-    bool operator()(Int64Interval interval)
-    {
-        result_intervals.insert(interval);
-        return true;
-    }
-
-    std::set<Int64Interval> & result_intervals;
-};
-
-void findNecessaryIntervals(const std::vector<Int64Interval> & intervals, Int64 point, std::set<Int64Interval> & result_intervals)
-{
-    for (const auto & interval : intervals)
-    {
-        if (interval.contains(point))
-            result_intervals.insert(interval);
-    }
-}
-
 int main(int, char **)
 {
     {
