@@ -92,6 +92,7 @@ class S3:
         commit: str,
         check_name: str,
         version: str,
+        force_download: bool,
     ):
         self._common = dict(
             bucket_name=bucket_name,
@@ -99,9 +100,12 @@ class S3:
             commit=commit,
             check_name=check_name,
         )
+        self.force_download = force_download
         self.packages = Packages(version)
 
     def download_package(self, package):
+        if not self.force_download and os.path.exists(Packages.path(package)):
+            return
         url = self.template.format_map({**self._common, "package": package})
         dowload_build_with_progress(url, Packages.path(package))
 
@@ -148,11 +152,14 @@ class Release:
 
 
 class Artifactory:
-    def __init__(self, url: str, release: str, deb_repo="deb", rpm_repo="rpm"):
+    def __init__(
+        self, url: str, release: str, deb_repo="deb", rpm_repo="rpm", tgz_repo="tgz"
+    ):
         self._url = url
         self._release = release
         self._deb_url = "/".join((self._url, deb_repo, "pool", self._release)) + "/"
         self._rpm_url = "/".join((self._url, rpm_repo, self._release)) + "/"
+        self._tgz_url = "/".join((self._url, tgz_repo, self._release)) + "/"
         # check the credentials ENVs for early exit
         self.__path_helper("_deb", "")
 
@@ -170,13 +177,19 @@ class Artifactory:
                 comp,
                 arch,
             )
-            self.deb(package).deploy_deb(path, dist, comp, arch)
+            self.deb_path(package).deploy_deb(path, dist, comp, arch)
 
     def deploy_rpm(self, packages: Packages):
         for package in packages.rpm:
             path = packages.path(package)
             logging.info("Deploy %s to artifactory", path)
-            self.rpm(package).deploy_file(path)
+            self.rpm_path(package).deploy_file(path)
+
+    def deploy_tgz(self, packages: Packages):
+        for package in packages.tgz:
+            path = packages.path(package)
+            logging.info("Deploy %s to artifactory", path)
+            self.tgz_path(package).deploy_file(path)
 
     def __path_helper(self, name, package) -> ArtifactorySaaSPath:
         url = "/".join((getattr(self, name + "_url"), package))
@@ -189,11 +202,14 @@ class Artifactory:
             raise KeyError("Neither JFROG_API_KEY nor JFROG_TOKEN env are defined")
         return path
 
-    def deb(self, package) -> ArtifactorySaaSPath:
+    def deb_path(self, package) -> ArtifactorySaaSPath:
         return self.__path_helper("_deb", package)
 
-    def rpm(self, package) -> ArtifactorySaaSPath:
+    def rpm_path(self, package) -> ArtifactorySaaSPath:
         return self.__path_helper("_rpm", package)
+
+    def tgz_path(self, package) -> ArtifactorySaaSPath:
+        return self.__path_helper("_tgz", package)
 
 
 def commit(name):
@@ -265,6 +281,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="do not push packages to artifactory",
     )
+    parser.add_argument(
+        "--no-force-download",
+        action="store_true",
+        help="do not download packages again if they exist already",
+    )
 
     args = parser.parse_args()
     if args.all:
@@ -277,6 +298,24 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+def process_deb(s3: S3, art_client: Artifactory):
+    s3.download_deb()
+    if art_client is not None:
+        art_client.deploy_deb(s3.packages)
+
+
+def process_rpm(s3: S3, art_client: Artifactory):
+    s3.download_rpm()
+    if art_client is not None:
+        art_client.deploy_rpm(s3.packages)
+
+
+def process_tgz(s3: S3, art_client: Artifactory):
+    s3.download_tgz()
+    if art_client is not None:
+        art_client.deploy_tgz(s3.packages)
+
+
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     args = parse_args()
@@ -286,20 +325,18 @@ def main():
         args.commit,
         args.check_name,
         args.release.version,
+        not args.no_force_download,
     )
+    art_client = None
     if not args.no_artifactory:
         art_client = Artifactory(args.artifactory_url, args.release.type)
 
     if args.deb:
-        s3.download_deb()
-        if not args.no_artifactory:
-            art_client.deploy_deb(s3.packages)
+        process_deb(s3, art_client)
     if args.rpm:
-        s3.download_rpm()
-        if not args.no_artifactory:
-            art_client.deploy_rpm(s3.packages)
+        process_rpm(s3, art_client)
     if args.tgz:
-        s3.download_tgz()
+        process_tgz(s3, art_client)
 
 
 if __name__ == "__main__":
