@@ -486,7 +486,6 @@ message (STATUS
 
 include (GNUInstallDirs)
 
-include (cmake/find/cyrus-sasl.cmake)
 include (cmake/find/llvm.cmake)
 include (cmake/find/curl.cmake)
 include (cmake/find/s3.cmake)

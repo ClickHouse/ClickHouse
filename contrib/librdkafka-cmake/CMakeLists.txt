@@ -128,7 +128,7 @@ target_link_libraries(_rdkafka
     OpenSSL::Crypto OpenSSL::SSL
 )
 if(${ENABLE_CYRUS_SASL})
-    target_link_libraries(_rdkafka PRIVATE ${CYRUS_SASL_LIBRARY})
+    target_link_libraries(_rdkafka PRIVATE ch_contrib::sasl2)
 endif()
 
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/auxdir")
