@@ -249,7 +249,7 @@ protected:
             if (delimiter_pos != String::npos)
             {
                 hostPort.host = host_with_port.substr(0, delimiter_pos);
-                hostPort.port = std::stoi(host_with_port.substr(delimiter_pos + 1, host_with_port.length()));
+                hostPort.port = boost::lexical_cast<uint>(host_with_port.substr(delimiter_pos + 1, host_with_port.length()));
             }
             else
                 hostPort.host = host_with_port;

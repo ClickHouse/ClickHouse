@@ -1,17 +1,12 @@
 #include <stdlib.h>
 #include <fcntl.h>
-#include <signal.h>
 #include <map>
 #include <iostream>
-#include <fstream>
 #include <iomanip>
-#include <unordered_set>
-#include <algorithm>
 #include <optional>
 #include <base/scope_guard_safe.h>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
-#include <Poco/String.h>
 #include <filesystem>
 #include <string>
 #include "Client.h"
@@ -24,6 +19,7 @@
 #include <Common/formatReadable.h>
 #include <Common/TerminalSize.h>
 #include <Common/Config/configReadClient.h>
+#include <Common/DNSResolver.h>
 
 #include <Core/QueryProcessingStage.h>
 #include <Client/TestHint.h>
@@ -33,13 +29,13 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/UseSSL.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 
@@ -77,12 +73,6 @@ void Client::processError(const String & query) const
         fmt::print(stderr, "Received exception from server (version {}):\n{}\n",
                 server_version,
                 getExceptionMessage(*server_exception, print_stack_trace, true));
-        bool print_stack_trace = config().getBool("stacktrace", false);
-        fmt::print(
-            stderr,
-            "Received exception from server (version {}):\n{}\n",
-            server_version,
-            getExceptionMessage(*server_exception, print_stack_trace, true));
         if (is_interactive)
         {
             fmt::print(stderr, "\n");
@@ -492,16 +482,22 @@ catch (...)
 
 void Client::connect()
 {
+    for (size_t attempted_address_index = 0; attempted_address_index < hosts_ports.size(); ++attempted_address_index)
+    {
+        DB::DNSResolver::instance().resolveHost(hosts_ports[attempted_address_index].host);
+    }
     bool is_secure = config().getBool("secure", false);
-    connection_parameters = ConnectionParameters(config());
+    String tcp_port_config_key = is_secure ? "tcp_port_secure" : "tcp_port";
+    UInt16 default_port = config().getInt("port",
+        config().getInt(tcp_port_config_key,
+            is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
+    connection_parameters = ConnectionParameters(config(), hosts_ports[0].host,
+        hosts_ports[0].port.value_or(default_port));
 
     String server_name;
     UInt64 server_version_major = 0;
     UInt64 server_version_minor = 0;
     UInt64 server_version_patch = 0;
-
-    String tcp_port_config_key = is_secure ? "tcp_port_secure" : "tcp_port";
-    UInt16 default_port = config().getInt(tcp_port_config_key, is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT);
 
     for (size_t attempted_address_index = 0; attempted_address_index < hosts_ports.size(); ++attempted_address_index)
     {
@@ -527,6 +523,8 @@ void Client::connect()
 
             connection->getServerVersion(
                 connection_parameters.timeouts, server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
+            config().setString("host", connection_parameters.host);
+            config().setInt("port", connection_parameters.port);
             break;
         }
         catch (const Exception & e)
@@ -549,14 +547,16 @@ void Client::connect()
                 if (attempted_address_index == hosts_ports.size() - 1)
                     throw;
 
-                std::cerr << "Connection attempt to database at "
-                          << connection_parameters.host << ":" << connection_parameters.port
-                          << " resulted in failure"
-                          << std::endl
-                          << getExceptionMessage(e, false)
-                          << std::endl
-                          << "Attempting connection to the next provided address"
-                          << std::endl;
+                if (is_interactive) {
+                    std::cerr << "Connection attempt to database at "
+                              << connection_parameters.host << ":" << connection_parameters.port
+                              << " resulted in failure"
+                              << std::endl
+                              << getExceptionMessage(e, false)
+                              << std::endl
+                              << "Attempting connection to the next provided address"
+                              << std::endl;
+                }
             }
         }
     }
@@ -1003,9 +1003,10 @@ void Client::addOptions(OptionsDescription & options_description)
     options_description.main_description->add_options()
         ("config,c", po::value<std::string>(), "config-file path (another shorthand)")
         ("host,h", po::value<std::vector<HostPort>>()->multitoken()->default_value({{"localhost"}}, "localhost"),
-         "list of server hosts with optionally assigned port to connect. Every argument looks like '<host>[:<port>] for example"
-         "'localhost:port'. If port isn't assigned, connection is made by port from '--port' param")
-        ("port", po::value<int>()->default_value(9000), "server port")
+         "list of server hosts with optionally assigned port to connect. List elements are separated by a space."
+         "Every list element looks like '<host>[:<port>]'. If port isn't assigned, connection is made by port from '--port' param"
+         "Example of usage: '-h host1:1 host2, host3:3'")
+        ("port", po::value<int>()->default_value(9000), "server port, which is default port for every host from '--host' param")
         ("secure,s", "Use TLS connection")
         ("user,u", po::value<std::string>()->default_value("default"), "user")
         /** If "--password [value]" is used but the value is omitted, the bad argument exception will be thrown.
@@ -1112,13 +1113,8 @@ void Client::processOptions(const OptionsDescription & options_description,
 
     if (options.count("config"))
         config().setString("config-file", options["config"].as<std::string>());
-    if (options.count("host") && !options["host"].defaulted())
-    {
+    if (options.count("host"))
         hosts_ports = options["host"].as<std::vector<HostPort>>();
-        config().setString("host", hosts_ports[0].host);
-        if (hosts_ports[0].port.has_value())
-            config().setInt("port", hosts_ports[0].port.value());
-    }
     if (options.count("interleave-queries-file"))
         interleave_queries_files = options["interleave-queries-file"].as<std::vector<std::string>>();
     if (options.count("port") && !options["port"].defaulted())
