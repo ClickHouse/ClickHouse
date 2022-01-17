@@ -110,9 +110,7 @@ if (USE_EMBEDDED_COMPILER)
     add_llvm()
 endif ()
 
-if (USE_INTERNAL_LIBGSASL_LIBRARY)
-    add_subdirectory(libgsasl-cmake)
-endif()
+add_subdirectory(libgsasl-cmake)
 
 if (USE_INTERNAL_LIBXML2_LIBRARY)
     add_subdirectory(libxml2-cmake)

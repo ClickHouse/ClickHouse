@@ -113,12 +113,11 @@ target_include_directories(_hdfs3 PRIVATE ${HDFS3_SOURCE_DIR})
 target_include_directories(_hdfs3 PRIVATE ${HDFS3_COMMON_DIR})
 target_include_directories(_hdfs3 PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
-target_include_directories(_hdfs3 PRIVATE ${LIBGSASL_INCLUDE_DIR})
 target_include_directories(_hdfs3 PRIVATE ${LIBXML2_INCLUDE_DIR})
 
 target_include_directories(_hdfs3 SYSTEM BEFORE INTERFACE "${ClickHouse_SOURCE_DIR}/contrib/libhdfs3/include")
 
-target_link_libraries(_hdfs3 PRIVATE ${LIBGSASL_LIBRARY})
+target_link_libraries(_hdfs3 PRIVATE ch_contrib::gsasl)
 if (WITH_KERBEROS)
     target_link_libraries(_hdfs3 PRIVATE ch_contrib::krb5)
 endif()
