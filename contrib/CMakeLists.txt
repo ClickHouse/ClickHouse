@@ -200,10 +200,7 @@ if (USE_LIBPQXX)
     add_subdirectory (libpqxx-cmake)
 endif()
 
-if (USE_NURAFT)
-  add_subdirectory(nuraft-cmake)
-endif()
-
+add_subdirectory (nuraft-cmake)
 add_subdirectory(fast_float-cmake)
 
 if (USE_NLP)

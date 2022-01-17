@@ -241,7 +241,7 @@ add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Alg
 add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
 add_object_library(clickhouse_processors_queryplan_optimizations Processors/QueryPlan/Optimizations)
 
-if (USE_NURAFT)
+if (TARGET ch_contrib::nuraft)
     add_object_library(clickhouse_coordination Coordination)
 endif()
 
@@ -352,8 +352,8 @@ if (USE_KRB5)
     dbms_target_link_libraries(PRIVATE ${KRB5_LIBRARY})
 endif()
 
-if (USE_NURAFT)
-    dbms_target_link_libraries(PUBLIC ${NURAFT_LIBRARY})
+if (TARGET ch_contrib::nuraft)
+    dbms_target_link_libraries(PUBLIC ch_contrib::nuraft)
 endif()
 
 if(RE2_INCLUDE_DIR)
