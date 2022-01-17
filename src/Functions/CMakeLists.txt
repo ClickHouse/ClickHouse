@@ -55,9 +55,8 @@ else()
     message(STATUS "Generating debugger info for ClickHouse functions")
 endif()
 
-if (USE_ICU)
-    target_link_libraries (clickhouse_functions PRIVATE ${ICU_LIBRARIES})
-    target_include_directories(clickhouse_functions SYSTEM PRIVATE ${ICU_INCLUDE_DIRS})
+if (TARGET ch_contrib::icu)
+    target_link_libraries (clickhouse_functions PRIVATE ch_contrib::icu)
 endif ()
 
 if (USE_FASTOPS)

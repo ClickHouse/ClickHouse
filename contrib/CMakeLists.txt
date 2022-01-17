@@ -75,10 +75,11 @@ if (ENABLE_FUZZING)
     add_subdirectory (libprotobuf-mutator-cmake)
 endif()
 
-# TODO: refactor the contrib libraries below this comment.
-
 add_subdirectory (cityhash102)
 add_subdirectory (libfarmhash)
+add_subdirectory (icu-cmake)
+
+# TODO: refactor the contrib libraries below this comment.
 
 if (USE_INTERNAL_H3_LIBRARY)
     add_subdirectory(h3-cmake)
@@ -86,10 +87,6 @@ endif ()
 
 if (USE_INTERNAL_MYSQL_LIBRARY)
     add_subdirectory (mariadb-connector-c-cmake)
-endif ()
-
-if (ENABLE_ICU AND USE_INTERNAL_ICU_LIBRARY)
-    add_subdirectory (icu-cmake)
 endif ()
 
 if(USE_INTERNAL_GTEST_LIBRARY)

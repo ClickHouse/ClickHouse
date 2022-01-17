@@ -487,7 +487,6 @@ message (STATUS
 
 include (GNUInstallDirs)
 
-include (cmake/find/icu.cmake)
 include (cmake/find/ltdl.cmake) # for odbc
 # openssl, zlib before poco
 include (cmake/find/krb5.cmake)
