@@ -77,9 +77,8 @@ endif()
 
 target_link_libraries(clickhouse_functions PRIVATE ch_contrib::lz4)
 
-if (USE_H3)
-    target_link_libraries(clickhouse_functions PRIVATE ${H3_LIBRARY})
-    target_include_directories(clickhouse_functions SYSTEM PRIVATE ${H3_INCLUDE_DIR})
+if (TARGET ch_contrib::h3)
+    target_link_libraries (clickhouse_functions PRIVATE ch_contrib::h3)
 endif()
 
 target_link_libraries(clickhouse_functions PRIVATE hyperscan)
