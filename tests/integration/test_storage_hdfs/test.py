@@ -362,6 +362,13 @@ def test_hdfsCluster(started_cluster):
     fs.delete(dir, recursive=True)
 
 
+def test_format_detection(started_cluster):
+    node1.query(f"create table arrow_table (x UInt64) engine=HDFS('hdfs://hdfs1:9000/data.arrow')")
+    node1.query(f"insert into arrow_table select 1")
+    result = node1.query(f"select * from hdfs('hdfs://hdfs1:9000/data.arrow')")
+    assert(int(result) == 1)
+
+
 if __name__ == '__main__':
     cluster.start()
     input("Cluster created, press any key to destroy...")
