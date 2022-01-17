@@ -504,8 +504,8 @@ if (TARGET ch_contrib::bzip2)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::bzip2)
 endif()
 
-if(USE_SIMDJSON)
-    dbms_target_link_libraries(PRIVATE simdjson)
+if (TARGET ch_contrib::simdjson)
+    dbms_target_link_libraries(PRIVATE ch_contrib::simdjson)
 endif()
 
 if(USE_RAPIDJSON)
