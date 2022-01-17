@@ -89,11 +89,8 @@ if (USE_INTERNAL_MYSQL_LIBRARY)
     add_subdirectory (mariadb-connector-c-cmake)
 endif ()
 
-if(USE_INTERNAL_GTEST_LIBRARY)
-    add_subdirectory(googletest-cmake)
-elseif(GTEST_SRC_DIR)
-    add_subdirectory(${GTEST_SRC_DIR}/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
-    target_compile_definitions(gtest INTERFACE GTEST_HAS_POSIX_RE=0)
+if (ENABLE_TESTS)
+    add_subdirectory (googletest-cmake)
 endif()
 
 function(add_llvm)

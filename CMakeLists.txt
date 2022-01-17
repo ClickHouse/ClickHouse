@@ -513,10 +513,6 @@ include (cmake/find/msgpack.cmake)
 include (cmake/find/sentry.cmake)
 include (cmake/find/datasketches.cmake)
 
-if (ENABLE_TESTS)
-    include (cmake/find/gtest.cmake)
-endif ()
-
 # Need to process before "contrib" dir:
 include (cmake/find/mysqlclient.cmake)
 
