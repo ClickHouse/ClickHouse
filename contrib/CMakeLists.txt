@@ -46,10 +46,7 @@ if (USE_YAML_CPP)
     add_subdirectory (yaml-cpp-cmake)
 endif()
 
-if (USE_INTERNAL_XZ_LIBRARY)
-    add_subdirectory (xz-cmake)
-endif()
-
+add_subdirectory (xz-cmake)
 add_subdirectory (double-conversion-cmake)
 add_subdirectory (boringssl-cmake)
 add_subdirectory (poco-cmake)
