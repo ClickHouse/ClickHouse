@@ -39,11 +39,7 @@ add_subdirectory (replxx-cmake)
 add_subdirectory (unixodbc-cmake)
 add_subdirectory (nanodbc-cmake)
 add_subdirectory (capnproto-cmake)
-
-if (USE_YAML_CPP)
-    add_subdirectory (yaml-cpp-cmake)
-endif()
-
+add_subdirectory (yaml-cpp-cmake)
 add_subdirectory (re2-cmake)
 add_subdirectory (xz-cmake)
 add_subdirectory (brotli-cmake)
