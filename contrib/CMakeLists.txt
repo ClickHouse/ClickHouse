@@ -69,6 +69,7 @@ add_subdirectory (avro-cmake) # requires: snappy
 add_subdirectory (hive-metastore-cmake) # requires: thrift/avro/arrow
 add_subdirectory (librdkafka-cmake)
 add_subdirectory (cppkafka-cmake)
+add_subdirectory (openldap-cmake)
 
 # TODO: refactor the contrib libraries below this comment.
 
@@ -90,10 +91,6 @@ endif ()
 
 if (USE_INTERNAL_H3_LIBRARY)
     add_subdirectory(h3-cmake)
-endif ()
-
-if (USE_INTERNAL_LDAP_LIBRARY)
-    add_subdirectory (openldap-cmake)
 endif ()
 
 if (USE_INTERNAL_MYSQL_LIBRARY)
