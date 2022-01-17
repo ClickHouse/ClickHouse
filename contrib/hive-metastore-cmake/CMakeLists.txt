@@ -13,5 +13,5 @@ set (SRCS
 
 add_library(_hivemetastore ${SRCS})
 add_library(ch_contrib::hivemetastore ALIAS _hivemetastore)
-target_link_libraries(_hivemetastore PUBLIC ${THRIFT_LIBRARY})
+target_link_libraries(_hivemetastore PUBLIC ch_contrib::thrift)
 target_include_directories(_hivemetastore SYSTEM BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/hive-metastore)

@@ -61,8 +61,9 @@ add_subdirectory (zlib-ng-cmake)
 add_subdirectory (bzip2-cmake)
 add_subdirectory (snappy-cmake)
 add_subdirectory (rocksdb-cmake)
+add_subdirectory (thrift-cmake)
 # parquet/arrow/orc
-add_subdirectory (arrow-cmake) # requires: snappy
+add_subdirectory (arrow-cmake) # requires: snappy, thrift
 add_subdirectory (avro-cmake) # requires: snappy
 add_subdirectory (hive-metastore-cmake) # requires: thrift/avro/arrow
 
@@ -164,10 +165,6 @@ endif ()
 
 if (USE_INTERNAL_PROTOBUF_LIBRARY)
     add_subdirectory(protobuf-cmake)
-endif ()
-
-if (USE_INTERNAL_THRIFT_LIBRARY)
-    add_subdirectory(thrift-cmake)
 endif ()
 
 if (USE_INTERNAL_HDFS3_LIBRARY)
