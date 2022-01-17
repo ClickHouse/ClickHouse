@@ -508,8 +508,8 @@ if (TARGET ch_contrib::simdjson)
     dbms_target_link_libraries(PRIVATE ch_contrib::simdjson)
 endif()
 
-if(USE_RAPIDJSON)
-    dbms_target_include_directories(SYSTEM PRIVATE ${RAPIDJSON_INCLUDE_DIR})
+if (TARGET ch_contrib::rapidjson)
+    dbms_target_link_directories(PRIVATE ch_contrib::rapidjson)
 endif()
 
 dbms_target_link_libraries(PUBLIC consistent-hashing)
