@@ -148,9 +148,7 @@ if (USE_FASTOPS)
 endif()
 
 add_subdirectory (libuv-cmake)
-if (USE_AMQPCPP)
-    add_subdirectory (amqpcpp-cmake)
-endif()
+add_subdirectory (amqpcpp-cmake) # requires: libuv
 if (USE_CASSANDRA)
     add_subdirectory (cassandra-cmake)
 endif()

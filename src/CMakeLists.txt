@@ -91,7 +91,7 @@ if (TARGET ch_contrib::rdkafka)
     add_headers_and_sources(dbms Storages/Kafka)
 endif()
 
-if (USE_AMQPCPP)
+if (TARGET ch_contrib::amqp_cpp)
     add_headers_and_sources(dbms Storages/RabbitMQ)
 endif()
 
@@ -455,9 +455,8 @@ if (TARGET ch_contrib::snappy)
     target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::snappy)
 endif()
 
-if (USE_AMQPCPP)
-    dbms_target_link_libraries(PUBLIC ${AMQPCPP_LIBRARY})
-    dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${AMQPCPP_INCLUDE_DIR})
+if (TARGET ch_contrib::amqp_cpp)
+    dbms_target_link_libraries(PUBLIC ch_contrib::amqp_cpp)
 endif()
 
 if (USE_SQLITE)
