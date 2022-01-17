@@ -134,7 +134,7 @@ public:
 
 protected:
     MAYBE_NORETURN void diag(const int rc, String text = "");
-    MAYBE_NORETURN void openConnection();
+    MAYBE_NORETURN bool openConnection();
     void closeConnection() noexcept;
     SearchResults search(const SearchParams & search_params);
 
