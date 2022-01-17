@@ -27,11 +27,17 @@
 
 #### Performance Improvement
 
+* Support moving conditions to `PREWHERE` (setting `optimize_move_to_prewhere`) for tables of `Merge` engine if its all underlying tables supports `PREWHERE`. [#33300](https://github.com/ClickHouse/ClickHouse/pull/33300) ([Anton Popov](https://github.com/CurtizJ)).
+* More efficient handling of globs for URL storage. Now you can easily query million URLs in parallel with retries. Closes [#32866](https://github.com/ClickHouse/ClickHouse/issues/32866). [#32907](https://github.com/ClickHouse/ClickHouse/pull/32907) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * Avoid exponential backtracking in parser. This closes [#20158](https://github.com/ClickHouse/ClickHouse/issues/20158). [#33481](https://github.com/ClickHouse/ClickHouse/pull/33481) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * Abuse of `untuple` function was leading to exponential complexity of query analysis (found by fuzzer). This closes [#33297](https://github.com/ClickHouse/ClickHouse/issues/33297). [#33445](https://github.com/ClickHouse/ClickHouse/pull/33445) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * Reduce allocated memory for dictionaries with string attributes. [#33466](https://github.com/ClickHouse/ClickHouse/pull/33466) ([Maksim Kita](https://github.com/kitaisreal)).
 * Slight performance improvement of `reinterpret` function. [#32587](https://github.com/ClickHouse/ClickHouse/pull/32587) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * Non significant change. In extremely rare cases when data part is lost on every replica, after merging of some data parts, the subsequent queries may skip less amount of partitions during partition pruning. This hardly affects anything. [#32220](https://github.com/ClickHouse/ClickHouse/pull/32220) ([Azat Khuzhin](https://github.com/azat)).
+* Improve `clickhouse-keeper` writing performance by optimization the size calculation logic. [#32366](https://github.com/ClickHouse/ClickHouse/pull/32366) ([zhanglistar](https://github.com/zhanglistar)).
+* Optimize single part projection materialization. This closes [#31669](https://github.com/ClickHouse/ClickHouse/issues/31669). [#31885](https://github.com/ClickHouse/ClickHouse/pull/31885) ([Amos Bird](https://github.com/amosbird)).
+* Improve query performance of system tables. [#33312](https://github.com/ClickHouse/ClickHouse/pull/33312) ([OnePiece](https://github.com/zhongyuankai)).
+* Optimize selecting of MergeTree parts that can be moved between volumes. [#33225](https://github.com/ClickHouse/ClickHouse/pull/33225) ([OnePiece](https://github.com/zhongyuankai)).
 
 
 #### Experimental Feature
@@ -42,54 +48,49 @@
 * Add `EXPLAIN TABLE OVERRIDE` query. [#32836](https://github.com/ClickHouse/ClickHouse/pull/32836) ([Stig Bakken](https://github.com/stigsb)).
 * Support TABLE OVERRIDE clause for MaterializedPostgreSQL. RFC: [#31480](https://github.com/ClickHouse/ClickHouse/issues/31480). [#32749](https://github.com/ClickHouse/ClickHouse/pull/32749) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * Change ZooKeeper path for zero-copy marks for shared data. Note that "zero-copy replication" is non-production feature (in early stages of development) that you shouldn't use anyway. But in case if you have used it, let you keep in mind this change. [#32061](https://github.com/ClickHouse/ClickHouse/pull/32061) ([ianton-ru](https://github.com/ianton-ru)).
+* Events clause support for WINDOW VIEW watch query. [#32607](https://github.com/ClickHouse/ClickHouse/pull/32607) ([vxider](https://github.com/Vxider)).
 
 
 #### Improvement
 
+* Now date time conversion functions that generates time before `1970-01-01 00:00:00` will be saturated to zero instead of overflow. [#29953](https://github.com/ClickHouse/ClickHouse/pull/29953) ([Amos Bird](https://github.com/amosbird)). It also fixes a bug in index analysis if date truncation function would yield result before the Unix epoch. 
+* Always display resource usage (total CPU usage, total RAM usage and max RAM usage per host) in client. [#33271](https://github.com/ClickHouse/ClickHouse/pull/33271) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Improve `Bool` type serialization and deserialization, check the range of values. [#32984](https://github.com/ClickHouse/ClickHouse/pull/32984) ([Kruglov Pavel](https://github.com/Avogar)).
 * If an invalid setting is defined using the `SET` query or using the query parameters in the HTTP request, error message will contain suggestions that are similar to the invalid setting string (if any exists). [#32946](https://github.com/ClickHouse/ClickHouse/pull/32946) ([Antonio Andelic](https://github.com/antonio2368)).
+* Support hints for mistyped setting names for clickhouse-client and clickhouse-local. Closes [#32237](https://github.com/ClickHouse/ClickHouse/issues/32237). [#32841](https://github.com/ClickHouse/ClickHouse/pull/32841) ([凌涛](https://github.com/lingtaolf)).
 * Allow to use virtual columns in Materialized Views. Close [#11210](https://github.com/ClickHouse/ClickHouse/issues/11210). [#33482](https://github.com/ClickHouse/ClickHouse/pull/33482) ([OnePiece](https://github.com/zhongyuankai)).
 * Add config to disable IPv6 in clickhouse-keeper if needed. This close [#33381](https://github.com/ClickHouse/ClickHouse/issues/33381). [#33450](https://github.com/ClickHouse/ClickHouse/pull/33450) ([Wu Xueyang](https://github.com/wuxueyang96)).
 * Add more info to `system.build_options` about current git revision. [#33431](https://github.com/ClickHouse/ClickHouse/pull/33431) ([taiyang-li](https://github.com/taiyang-li)).
-* clickhouse-local: track memory under --max_memory_usage_in_client option. [#33341](https://github.com/ClickHouse/ClickHouse/pull/33341) ([Azat Khuzhin](https://github.com/azat)).
+* `clickhouse-local`: track memory under `--max_memory_usage_in_client` option. [#33341](https://github.com/ClickHouse/ClickHouse/pull/33341) ([Azat Khuzhin](https://github.com/azat)).
 * Allow negative intervals in function `intervalLengthSum`. Their length will be added as well. This closes [#33323](https://github.com/ClickHouse/ClickHouse/issues/33323). [#33335](https://github.com/ClickHouse/ClickHouse/pull/33335) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * `LineAsString` can be used as output format. This closes [#30919](https://github.com/ClickHouse/ClickHouse/issues/30919). [#33331](https://github.com/ClickHouse/ClickHouse/pull/33331) ([Sergei Trifonov](https://github.com/serxa)).
-* support `<secure/>` in cluster configuration. Close [#33270](https://github.com/ClickHouse/ClickHouse/issues/33270). [#33330](https://github.com/ClickHouse/ClickHouse/pull/33330) ([SuperDJY](https://github.com/cmsxbc)).
+* Support `<secure/>` in cluster configuration, as an alternative form of `<secure>1</secure>`. Close [#33270](https://github.com/ClickHouse/ClickHouse/issues/33270). [#33330](https://github.com/ClickHouse/ClickHouse/pull/33330) ([SuperDJY](https://github.com/cmsxbc)).
 * Pressing Ctrl+C twice will terminate `clickhouse-benchmark` immediately without waiting for in-flight queries. This closes [#32586](https://github.com/ClickHouse/ClickHouse/issues/32586). [#33303](https://github.com/ClickHouse/ClickHouse/pull/33303) ([alexey-milovidov](https://github.com/alexey-milovidov)).
-* Support moving conditions to `PREWHERE` (setting `optimize_move_to_prewhere`) for tables of `Merge` engine if its all underlying tables supports `PREWHERE`. [#33300](https://github.com/ClickHouse/ClickHouse/pull/33300) ([Anton Popov](https://github.com/CurtizJ)).
-* parseDateTimeBestEffort support Unix Timestamp with Milliseconds. [#33276](https://github.com/ClickHouse/ClickHouse/pull/33276) ([Ben](https://github.com/benbiti)).
-* Always display resource usage (total CPU usage, total RAM usage and max RAM usage per host) in client. [#33271](https://github.com/ClickHouse/ClickHouse/pull/33271) ([alexey-milovidov](https://github.com/alexey-milovidov)).
-* Allow to cancel formats Arrow / Parquet / ORC which failed to be cancelled it case of big files and setting input_format_allow_seeks as false. Closes [#29678](https://github.com/ClickHouse/ClickHouse/issues/29678). [#33238](https://github.com/ClickHouse/ClickHouse/pull/33238) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* If storage supports SETTINGS allow to pass them as key value or via config. Add this support for mysql. [#33231](https://github.com/ClickHouse/ClickHouse/pull/33231) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* Correctly prevent nullable primary keys if necessary. This is for [#32780](https://github.com/ClickHouse/ClickHouse/issues/32780). [#33218](https://github.com/ClickHouse/ClickHouse/pull/33218) ([Amos Bird](https://github.com/amosbird)).
-* Add retry for Postgres connect in case nothing has been fetched yet. Closes [#33199](https://github.com/ClickHouse/ClickHouse/issues/33199). [#33209](https://github.com/ClickHouse/ClickHouse/pull/33209) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* Validate config keys for external dictionaries. [#33095](https://github.com/ClickHouse/ClickHouse/issues/33095)#issuecomment-1000577517. [#33130](https://github.com/ClickHouse/ClickHouse/pull/33130) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* Inject git information into clickhouse binary file. So we can get source code revision easily from clickhouse binary file. [#33124](https://github.com/ClickHouse/ClickHouse/pull/33124) ([taiyang-li](https://github.com/taiyang-li)).
-* Send profile info in clickhouse-local. Closes [#33093](https://github.com/ClickHouse/ClickHouse/issues/33093). [#33097](https://github.com/ClickHouse/ClickHouse/pull/33097) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* Improve Bool type serialization and deserialization. [#32984](https://github.com/ClickHouse/ClickHouse/pull/32984) ([Kruglov Pavel](https://github.com/Avogar)).
-* Short circuit evaluation function `throwIf` support. Closes [#32969](https://github.com/ClickHouse/ClickHouse/issues/32969). [#32973](https://github.com/ClickHouse/ClickHouse/pull/32973) ([Maksim Kita](https://github.com/kitaisreal)).
-* Dictionaries added `Date32` date type support. Closes [#32913](https://github.com/ClickHouse/ClickHouse/issues/32913). [#32971](https://github.com/ClickHouse/ClickHouse/pull/32971) ([Maksim Kita](https://github.com/kitaisreal)).
-* This only happens in unofficial builds. Fixed segfault when inserting data into compressed Decimal, String, FixedString and Array columns. This closes [#32939](https://github.com/ClickHouse/ClickHouse/issues/32939). [#32940](https://github.com/ClickHouse/ClickHouse/pull/32940) ([N. Kolotov](https://github.com/nkolotov)).
-* More efficient handling of globs for url storage. Closes [#32866](https://github.com/ClickHouse/ClickHouse/issues/32866). [#32907](https://github.com/ClickHouse/ClickHouse/pull/32907) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* - Do not prepend THREADS_COUNT with -j to avoid additional prepending in subprocesses. [#32844](https://github.com/ClickHouse/ClickHouse/pull/32844) ([kreuzerkrieg](https://github.com/kreuzerkrieg)).
-* Support hints for clickhouse-client and clickhouse-local. Closes [#32237](https://github.com/ClickHouse/ClickHouse/issues/32237),. [#32841](https://github.com/ClickHouse/ClickHouse/pull/32841) ([凌涛](https://github.com/lingtaolf)).
+* Support Unix timestamp with milliseconds in `parseDateTimeBestEffort` function. [#33276](https://github.com/ClickHouse/ClickHouse/pull/33276) ([Ben](https://github.com/benbiti)).
+* Allow to cancel query while reading data from external table in the formats: `Arrow` / `Parquet` / `ORC` - it failed to be cancelled it case of big files and setting input_format_allow_seeks as false. Closes [#29678](https://github.com/ClickHouse/ClickHouse/issues/29678). [#33238](https://github.com/ClickHouse/ClickHouse/pull/33238) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* If table engine supports `SETTINGS` clause, allow to pass the settings as key-value or via config. Add this support for MySQL. [#33231](https://github.com/ClickHouse/ClickHouse/pull/33231) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Correctly prevent Nullable primary keys if necessary. This is for [#32780](https://github.com/ClickHouse/ClickHouse/issues/32780). [#33218](https://github.com/ClickHouse/ClickHouse/pull/33218) ([Amos Bird](https://github.com/amosbird)).
+* Add retry for `PostgreSQL` connections in case nothing has been fetched yet. Closes [#33199](https://github.com/ClickHouse/ClickHouse/issues/33199). [#33209](https://github.com/ClickHouse/ClickHouse/pull/33209) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Validate config keys for external dictionaries. [#33095](https://github.com/ClickHouse/ClickHouse/issues/33095#issuecomment-1000577517). [#33130](https://github.com/ClickHouse/ClickHouse/pull/33130) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Send profile info inside `clickhouse-local`. Closes [#33093](https://github.com/ClickHouse/ClickHouse/issues/33093). [#33097](https://github.com/ClickHouse/ClickHouse/pull/33097) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Short circuit evaluation: support for function `throwIf`. Closes [#32969](https://github.com/ClickHouse/ClickHouse/issues/32969). [#32973](https://github.com/ClickHouse/ClickHouse/pull/32973) ([Maksim Kita](https://github.com/kitaisreal)).
+* Added `Date32` date type support in dictionaries. Closes [#32913](https://github.com/ClickHouse/ClickHouse/issues/32913). [#32971](https://github.com/ClickHouse/ClickHouse/pull/32971) ([Maksim Kita](https://github.com/kitaisreal)).
+* (This only happens in unofficial builds). Fixed segfault when inserting data into compressed Decimal, String, FixedString and Array columns. This closes [#32939](https://github.com/ClickHouse/ClickHouse/issues/32939). [#32940](https://github.com/ClickHouse/ClickHouse/pull/32940) ([N. Kolotov](https://github.com/nkolotov)).
 * Added support for specifying subquery as SQL user defined function. Example: `CREATE FUNCTION test AS () -> (SELECT 1)`. Closes [#30755](https://github.com/ClickHouse/ClickHouse/issues/30755). [#32758](https://github.com/ClickHouse/ClickHouse/pull/32758) ([Maksim Kita](https://github.com/kitaisreal)).
 * Improve gRPC compression support for [#28671](https://github.com/ClickHouse/ClickHouse/issues/28671). [#32747](https://github.com/ClickHouse/ClickHouse/pull/32747) ([Vitaly Baranov](https://github.com/vitlibar)).
 * Flush all In-Memory data parts when WAL is not enabled while shutdown server or detaching table. [#32742](https://github.com/ClickHouse/ClickHouse/pull/32742) ([nauta](https://github.com/nautaa)).
-* Allow to control connection timeouts for mysql (previously was supported only for dictionary source). Closes [#16669](https://github.com/ClickHouse/ClickHouse/issues/16669). Previously default connect_timeout was rather small, now it is configurable. [#32734](https://github.com/ClickHouse/ClickHouse/pull/32734) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* Support authSource option for storage MongoDB. Closes [#32594](https://github.com/ClickHouse/ClickHouse/issues/32594). [#32702](https://github.com/ClickHouse/ClickHouse/pull/32702) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* support Date32 for `genarateRandom` engine. [#32643](https://github.com/ClickHouse/ClickHouse/pull/32643) ([nauta](https://github.com/nautaa)).
+* Allow to control connection timeouts for MySQL (previously was supported only for dictionary source). Closes [#16669](https://github.com/ClickHouse/ClickHouse/issues/16669). Previously default connect_timeout was rather small, now it is configurable. [#32734](https://github.com/ClickHouse/ClickHouse/pull/32734) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Support `authSource` option for storage `MongoDB`. Closes [#32594](https://github.com/ClickHouse/ClickHouse/issues/32594). [#32702](https://github.com/ClickHouse/ClickHouse/pull/32702) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Support `Date32` type in `genarateRandom` table function. [#32643](https://github.com/ClickHouse/ClickHouse/pull/32643) ([nauta](https://github.com/nautaa)).
 * Add settings `max_concurrent_select_queries` and `max_concurrent_insert_queries` for control concurrent queries by query kind. Close [#3575](https://github.com/ClickHouse/ClickHouse/issues/3575). [#32609](https://github.com/ClickHouse/ClickHouse/pull/32609) ([SuperDJY](https://github.com/cmsxbc)).
-* Events clause support for window view watch query. [#32607](https://github.com/ClickHouse/ClickHouse/pull/32607) ([vxider](https://github.com/Vxider)).
-* Improve handling nested structures with missing columns while reading protobuf. Follow-up to https://github.com/ClickHouse/ClickHouse/pull/31988. [#32531](https://github.com/ClickHouse/ClickHouse/pull/32531) ([Vitaly Baranov](https://github.com/vitlibar)).
-* Allow empty credentials for mongo engine. Closes [#26267](https://github.com/ClickHouse/ClickHouse/issues/26267). [#32460](https://github.com/ClickHouse/ClickHouse/pull/32460) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* Disable some optimizations for window functions. Closes [#31535](https://github.com/ClickHouse/ClickHouse/issues/31535). Closes [#31620](https://github.com/ClickHouse/ClickHouse/issues/31620). [#32453](https://github.com/ClickHouse/ClickHouse/pull/32453) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* Allows to connect to mongodb 5.0. Closes [#31483](https://github.com/ClickHouse/ClickHouse/issues/31483),. [#32416](https://github.com/ClickHouse/ClickHouse/pull/32416) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* Improve keeper writing performance by optimization the size calculation logic. [#32366](https://github.com/ClickHouse/ClickHouse/pull/32366) ([zhanglistar](https://github.com/zhanglistar)).
-* - Ignore parse failure of opentelemetry's `traceparent` header. [#32116](https://github.com/ClickHouse/ClickHouse/pull/32116) ([Frank Chen](https://github.com/FrankChen021)).
+* Improve handling nested structures with missing columns while reading data in `Protobuf` format. Follow-up to https://github.com/ClickHouse/ClickHouse/pull/31988. [#32531](https://github.com/ClickHouse/ClickHouse/pull/32531) ([Vitaly Baranov](https://github.com/vitlibar)).
+* Allow empty credentials for `MongoDB` engine. Closes [#26267](https://github.com/ClickHouse/ClickHouse/issues/26267). [#32460](https://github.com/ClickHouse/ClickHouse/pull/32460) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Disable some optimizations for window functions that may lead to exceptions. Closes [#31535](https://github.com/ClickHouse/ClickHouse/issues/31535). Closes [#31620](https://github.com/ClickHouse/ClickHouse/issues/31620). [#32453](https://github.com/ClickHouse/ClickHouse/pull/32453) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Allows to connect to MongoDB 5.0. Closes [#31483](https://github.com/ClickHouse/ClickHouse/issues/31483),. [#32416](https://github.com/ClickHouse/ClickHouse/pull/32416) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * Enable comparison between `Decimal` and `Float`. Closes [#22626](https://github.com/ClickHouse/ClickHouse/issues/22626). [#31966](https://github.com/ClickHouse/ClickHouse/pull/31966) ([flynn](https://github.com/ucasFL)).
-* Optimize single part projection materialization. This closes [#31669](https://github.com/ClickHouse/ClickHouse/issues/31669). [#31885](https://github.com/ClickHouse/ClickHouse/pull/31885) ([Amos Bird](https://github.com/amosbird)).
 * Added settings `command_read_timeout`, `command_write_timeout` for `StorageExecutable`, `StorageExecutablePool`, `ExecutableDictionary`, `ExecutablePoolDictionary`, `ExecutableUserDefinedFunctions`. Setting `command_read_timeout` controls timeout for reading data from command stdout in milliseconds. Setting `command_write_timeout` timeout for writing data to command stdin in milliseconds. Added settings `command_termination_timeout` for `ExecutableUserDefinedFunction`, `ExecutableDictionary`, `StorageExecutable`. Added setting `execute_direct` for `ExecutableUserDefinedFunction`, by default true. Added setting `execute_direct` for `ExecutableDictionary`, `ExecutablePoolDictionary`, by default false. [#30957](https://github.com/ClickHouse/ClickHouse/pull/30957) ([Maksim Kita](https://github.com/kitaisreal)).
-* Now date time conversion functions that generates time before 1970-01-01 00:00:00 will be saturated to zero instead of overflow. [#29953](https://github.com/ClickHouse/ClickHouse/pull/29953) ([Amos Bird](https://github.com/amosbird)).
+* Bitmap aggregate functions will give correct result for out of range argument instead of wraparound. [#33127](https://github.com/ClickHouse/ClickHouse/pull/33127) ([DR](https://github.com/freedomDR)).
+
 
 #### Build/Testing/Packaging Improvement
 
@@ -102,6 +103,8 @@
 * Enable hermetic build for shared builds. This is mainly for developers. [#32968](https://github.com/ClickHouse/ClickHouse/pull/32968) ([Amos Bird](https://github.com/amosbird)).
 * Update `libc++` and `libc++abi` to the latest. [#32484](https://github.com/ClickHouse/ClickHouse/pull/32484) ([Raúl Marín](https://github.com/Algunenano)).
 * Added integration test for external .NET client ([ClickHouse.Client](https://github.com/DarkWanderer/ClickHouse.Client)). [#23230](https://github.com/ClickHouse/ClickHouse/pull/23230) ([Oleg V. Kozlyuk](https://github.com/DarkWanderer)).
+* Inject git information into clickhouse binary file. So we can get source code revision easily from clickhouse binary file. [#33124](https://github.com/ClickHouse/ClickHouse/pull/33124) ([taiyang-li](https://github.com/taiyang-li)).
+
 
 #### Bug Fix (user-visible misbehaviour in official stable or prestable release)
 
@@ -177,15 +180,7 @@
 * Fixed CAST from String to IPv4 or IPv6 and back. Fixed error message in case of failed conversion. [#29224](https://github.com/ClickHouse/ClickHouse/pull/29224) ([Dmitry Novik](https://github.com/novikd)).
 * Fix possible crash (or incorrect result) in case of `LowCardinality` arguments of window function. Fixes [#31114](https://github.com/ClickHouse/ClickHouse/issues/31114). [#31888](https://github.com/ClickHouse/ClickHouse/pull/31888) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
 * Fix [#32964](https://github.com/ClickHouse/ClickHouse/issues/32964). [#32965](https://github.com/ClickHouse/ClickHouse/pull/32965) ([save-my-heart](https://github.com/save-my-heart)).
+* Fix hang up with command `DROP TABLE system.query_log sync`. [#33293](https://github.com/ClickHouse/ClickHouse/pull/33293) ([zhanghuajie](https://github.com/zhanghuajieHIT)).
 
-
-#### NO CL ENTRY
-
-* NO CL ENTRY:  'Revert "Ignore parse failure of opentelemetry header"'. [#33594](https://github.com/ClickHouse/ClickHouse/pull/33594) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
-* NO CL ENTRY:  'Improve query performance of system tables'. [#33312](https://github.com/ClickHouse/ClickHouse/pull/33312) ([OnePiece](https://github.com/zhongyuankai)).
-* NO CL ENTRY:  'fix hang up with command 'drop table system.query_log sync''. [#33293](https://github.com/ClickHouse/ClickHouse/pull/33293) ([zhanghuajie](https://github.com/zhanghuajieHIT)).
-* NO CL ENTRY:  'Optimize MergeTreePartsMover'. [#33225](https://github.com/ClickHouse/ClickHouse/pull/33225) ([OnePiece](https://github.com/zhongyuankai)).
-* NO CL ENTRY:  'Fix for example request with settings'. [#33143](https://github.com/ClickHouse/ClickHouse/pull/33143) ([Vitaly Artemyev](https://github.com/VitalyArt)).
-* NO CL ENTRY:  'fix AggregateFunctionGroupBitmapData function rb_contains rb_remove'. [#33127](https://github.com/ClickHouse/ClickHouse/pull/33127) ([DR](https://github.com/freedomDR)).
 
 ## [Changelog for 2021](https://github.com/ClickHouse/ClickHouse/blob/master/docs/en/whats-new/changelog/2021.md)
