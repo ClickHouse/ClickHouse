@@ -486,7 +486,6 @@ message (STATUS
     CCACHE=${CCACHE_FOUND} ${CCACHE_VERSION}")
 
 include (GNUInstallDirs)
-include (cmake/contrib_finder.cmake)
 
 include (cmake/find/icu.cmake)
 include (cmake/find/ltdl.cmake) # for odbc
