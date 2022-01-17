@@ -390,9 +390,8 @@ if (TARGET ch_contrib::xz)
     target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::xz)
 endif()
 
-if (USE_ICU)
-    dbms_target_link_libraries (PRIVATE ${ICU_LIBRARIES})
-    dbms_target_include_directories (SYSTEM PRIVATE ${ICU_INCLUDE_DIRS})
+if (TARGET ch_contrib::icu)
+    dbms_target_link_libraries (PRIVATE ch_contrib::icu)
 endif ()
 
 if (USE_CAPNP)
