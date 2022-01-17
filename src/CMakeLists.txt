@@ -472,8 +472,7 @@ if (TARGET ch_contrib::msgpack)
     target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::msgpack)
 endif()
 
-target_link_libraries (clickhouse_common_io PUBLIC ${FAST_FLOAT_LIBRARY})
-target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${FAST_FLOAT_INCLUDE_DIR})
+target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::fast_float)
 
 if (TARGET ch_contrib::rocksdb)
     dbms_target_link_libraries(PUBLIC ch_contrib::rocksdb)
