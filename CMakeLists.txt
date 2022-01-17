@@ -509,7 +509,6 @@ include (cmake/find/libpqxx.cmake)
 include (cmake/find/yaml-cpp.cmake)
 include (cmake/find/nlp.cmake)
 include (cmake/find/filelog.cmake)
-include (cmake/find/msgpack.cmake)
 include (cmake/find/sentry.cmake)
 include (cmake/find/datasketches.cmake)
 
