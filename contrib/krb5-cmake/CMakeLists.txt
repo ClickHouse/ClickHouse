@@ -1,3 +1,15 @@
+set (ENABLE_KRB5_DEFAULT 1)
+if (NOT CMAKE_SYSTEM_NAME MATCHES "Linux" AND NOT (CMAKE_SYSTEM_NAME MATCHES "Darwin" AND NOT CMAKE_CROSSCOMPILING))
+    message (WARNING "krb5 disabled in non-Linux and non-native-Darwin environments")
+    set (ENABLE_KRB5_DEFAULT 0)
+endif ()
+OPTION(ENABLE_KRB5 "Enable krb5" ${ENABLE_KRB5_DEFAULT})
+
+if (NOT ENABLE_KRB5)
+    message(STATUS "Not using krb5")
+    return()
+endif ()
+
 find_program(AWK_PROGRAM awk)
 if(NOT AWK_PROGRAM)
     message(FATAL_ERROR "You need the awk program to build ClickHouse with krb5 enabled.")
@@ -546,10 +558,10 @@ add_custom_target(
     VERBATIM
 )
 
-add_library(${KRB5_LIBRARY})
+add_library(krb5)
 
 add_dependencies(
-    ${KRB5_LIBRARY}
+    krb5
     ERRMAP_H
     ERROR_MAP_H
     KRB_5_H
@@ -567,7 +579,7 @@ if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
     list(APPEND ALL_SRCS "${CMAKE_CURRENT_BINARY_DIR}/include_private/kcmrpc.c")
 endif()
 
-target_sources(${KRB5_LIBRARY} PRIVATE
+target_sources(krb5 PRIVATE
     ${ALL_SRCS}
 )
 
@@ -639,12 +651,12 @@ add_custom_command(
 
 
 
-target_include_directories(${KRB5_LIBRARY} PUBLIC
+target_include_directories(krb5 SYSTEM BEFORE PUBLIC
     "${KRB5_SOURCE_DIR}/include"
     "${CMAKE_CURRENT_BINARY_DIR}/include"
 )
 
-target_include_directories(${KRB5_LIBRARY} PRIVATE
+target_include_directories(krb5 PRIVATE
     "${CMAKE_CURRENT_BINARY_DIR}/include_private" # For autoconf.h and other generated headers.
     ${KRB5_SOURCE_DIR}
     "${KRB5_SOURCE_DIR}/include"
@@ -666,7 +678,7 @@ target_include_directories(${KRB5_LIBRARY} PRIVATE
     "${KRB5_SOURCE_DIR}/lib/krb5/os"
 )
 
-target_compile_definitions(${KRB5_LIBRARY} PRIVATE
+target_compile_definitions(krb5 PRIVATE
     KRB5_PRIVATE
     _GSS_STATIC_LINK=1
     KRB5_DEPRECATED=1
@@ -676,4 +688,6 @@ target_compile_definitions(${KRB5_LIBRARY} PRIVATE
     LIBDIR="/usr/local/lib"
 )
 
-target_link_libraries(${KRB5_LIBRARY} PRIVATE OpenSSL::Crypto OpenSSL::SSL)
+target_link_libraries(krb5 PRIVATE OpenSSL::Crypto OpenSSL::SSL)
+
+add_library(ch_contrib::krb5 ALIAS krb5)

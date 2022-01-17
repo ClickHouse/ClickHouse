@@ -84,7 +84,7 @@ set(SRCS
     ${SRC_DIR}/login/server.c
 )
 
-if (USE_KRB5)
+if (TARGET ch_contrib::krb5)
     set(SRCS ${SRCS}
         ${SRC_DIR}/gssapi/client.c
         ${SRC_DIR}/gssapi/mechinfo.c
@@ -101,7 +101,7 @@ target_include_directories(gsasl PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/libgs
 
 target_compile_definitions (gsasl PRIVATE HAVE_CONFIG_H=1)
 
-if (USE_KRB5)
-    target_link_libraries(gsasl PUBLIC ${KRB5_LIBRARY})
+if (TARGET ch_contrib::krb5)
+    target_link_libraries(gsasl PUBLIC ch_contrib::krb5)
     target_compile_definitions (gsasl PRIVATE HAVE_GSSAPI_H=1 USE_GSSAPI=1)
 endif()
