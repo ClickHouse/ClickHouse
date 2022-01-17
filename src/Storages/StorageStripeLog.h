@@ -23,6 +23,7 @@ class StorageStripeLog final : public shared_ptr_helper<StorageStripeLog>, publi
 {
     friend class StripeLogSource;
     friend class StripeLogSink;
+    friend class StripeLogRestoreTask;
     friend struct shared_ptr_helper<StorageStripeLog>;
 
 public:
@@ -51,7 +52,7 @@ public:
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder&) override;
 
     BackupEntries backup(const ASTs & partitions, ContextPtr context) override;
-    RestoreDataTasks restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context) override;
+    RestoreFromBackupTaskPtr restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context) override;
 
 protected:
     StorageStripeLog(

@@ -38,6 +38,7 @@
 #include <Backups/BackupEntryFromImmutableFile.h>
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/IBackup.h>
+#include <Backups/IRestoreFromBackupTask.h>
 #include <Disks/TemporaryFileOnDisk.h>
 
 #include <base/insertAtEnd.h>
@@ -553,37 +554,51 @@ BackupEntries StorageStripeLog::backup(const ASTs & partitions, ContextPtr conte
     return backup_entries;
 }
 
-RestoreDataTasks StorageStripeLog::restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context)
+class StripeLogRestoreTask : public IRestoreFromBackupTask
 {
-    if (!partitions.empty())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
+    using WriteLock = StorageStripeLog::WriteLock;
 
-    auto restore_task = [this, backup, data_path_in_backup, context]()
+public:
+    StripeLogRestoreTask(
+        const std::shared_ptr<StorageStripeLog> storage_,
+        const BackupPtr & backup_,
+        const String & data_path_in_backup_,
+        ContextMutablePtr context_)
+        : storage(storage_), backup(backup_), data_path_in_backup(data_path_in_backup_), context(context_)
     {
-        WriteLock lock{rwlock, getLockTimeout(context)};
+    }
+
+    RestoreFromBackupTasks run() override
+    {
+        WriteLock lock{storage->rwlock, getLockTimeout(context)};
         if (!lock)
             throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
+        auto & file_checker = storage->file_checker;
+
         /// Load the indices if not loaded yet. We have to do that now because we're going to update these indices.
-        loadIndices(lock);
+        storage->loadIndices(lock);
 
         /// If there were no files, save zero file sizes to be able to rollback in case of error.
-        saveFileSizes(lock);
+        storage->saveFileSizes(lock);
 
         try
         {
             /// Append the data file.
-            auto old_data_size = file_checker.getFileSize(data_file_path);
+            auto old_data_size = file_checker.getFileSize(storage->data_file_path);
             {
+                const auto & data_file_path = storage->data_file_path;
                 String file_path_in_backup = data_path_in_backup + fileName(data_file_path);
                 auto backup_entry = backup->readFile(file_path_in_backup);
+                const auto & disk = storage->disk;
                 auto in = backup_entry->getReadBuffer();
-                auto out = disk->writeFile(data_file_path, max_compress_block_size, WriteMode::Append);
+                auto out = disk->writeFile(data_file_path, storage->max_compress_block_size, WriteMode::Append);
                 copyData(*in, *out);
             }
 
             /// Append the index.
             {
+                const auto & index_file_path = storage->index_file_path;
                 String index_path_in_backup = data_path_in_backup + fileName(index_file_path);
                 IndexForNativeFormat extra_indices;
                 auto backup_entry = backup->readFile(index_path_in_backup);
@@ -598,23 +613,38 @@ RestoreDataTasks StorageStripeLog::restoreFromBackup(const BackupPtr & backup, c
                         column.location.offset_in_compressed_file += old_data_size;
                 }
 
-                insertAtEnd(indices.blocks, std::move(extra_indices.blocks));
+                insertAtEnd(storage->indices.blocks, std::move(extra_indices.blocks));
             }
 
             /// Finish writing.
-            saveIndices(lock);
-            saveFileSizes(lock);
+            storage->saveIndices(lock);
+            storage->saveFileSizes(lock);
+            return {};
         }
         catch (...)
         {
             /// Rollback partial writes.
             file_checker.repair();
-            removeUnsavedIndices(lock);
+            storage->removeUnsavedIndices(lock);
             throw;
         }
+    }
 
-    };
-    return {restore_task};
+private:
+    std::shared_ptr<StorageStripeLog> storage;
+    BackupPtr backup;
+    String data_path_in_backup;
+    ContextMutablePtr context;
+};
+
+
+RestoreFromBackupTaskPtr StorageStripeLog::restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context)
+{
+    if (!partitions.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
+
+    return std::make_unique<StripeLogRestoreTask>(
+        typeid_cast<std::shared_ptr<StorageStripeLog>>(shared_from_this()), backup, data_path_in_backup, context);
 }
 
 

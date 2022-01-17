@@ -28,6 +28,7 @@
 #include <Backups/BackupEntryFromImmutableFile.h>
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/IBackup.h>
+#include <Backups/IRestoreFromBackupTask.h>
 #include <Disks/TemporaryFileOnDisk.h>
 
 #include <cassert>
@@ -948,43 +949,57 @@ BackupEntries StorageLog::backup(const ASTs & partitions, ContextPtr context)
     return backup_entries;
 }
 
-RestoreDataTasks StorageLog::restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context)
+class LogRestoreTask : public IRestoreFromBackupTask
 {
-    if (!partitions.empty())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
+    using WriteLock = StorageLog::WriteLock;
+    using Mark = StorageLog::Mark;
 
-    auto restore_task = [this, backup, data_path_in_backup, context]()
+public:
+    LogRestoreTask(
+        std::shared_ptr<StorageLog> storage_, const BackupPtr & backup_, const String & data_path_in_backup_, ContextMutablePtr context_)
+        : storage(storage_), backup(backup_), data_path_in_backup(data_path_in_backup_), context(context_)
+    {
+    }
+
+    RestoreFromBackupTasks run() override
     {
         auto lock_timeout = getLockTimeout(context);
-        WriteLock lock{rwlock, lock_timeout};
+        WriteLock lock{storage->rwlock, lock_timeout};
         if (!lock)
             throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
+        const auto num_data_files = storage->num_data_files;
         if (!num_data_files)
-            return;
+            return {};
+
+        auto & file_checker = storage->file_checker;
 
         /// Load the marks if not loaded yet. We have to do that now because we're going to update these marks.
-        loadMarks(lock);
+        storage->loadMarks(lock);
 
         /// If there were no files, save zero file sizes to be able to rollback in case of error.
-        saveFileSizes(lock);
+        storage->saveFileSizes(lock);
 
         try
         {
             /// Append data files.
+            auto & data_files = storage->data_files;
             for (const auto & data_file : data_files)
             {
                 String file_path_in_backup = data_path_in_backup + fileName(data_file.path);
                 auto backup_entry = backup->readFile(file_path_in_backup);
+                const auto & disk = storage->disk;
                 auto in = backup_entry->getReadBuffer();
-                auto out = disk->writeFile(data_file.path, max_compress_block_size, WriteMode::Append);
+                auto out = disk->writeFile(data_file.path, storage->max_compress_block_size, WriteMode::Append);
                 copyData(*in, *out);
             }
 
+            const bool use_marks_file = storage->use_marks_file;
             if (use_marks_file)
             {
                 /// Append marks.
                 size_t num_extra_marks = 0;
+                const auto & marks_file_path = storage->marks_file_path;
                 String file_path_in_backup = data_path_in_backup + fileName(marks_file_path);
                 size_t file_size = backup->getFileSize(file_path_in_backup);
                 if (file_size % (num_data_files * sizeof(Mark)) != 0)
@@ -1023,19 +1038,34 @@ RestoreDataTasks StorageLog::restoreFromBackup(const BackupPtr & backup, const S
             }
 
             /// Finish writing.
-            saveMarks(lock);
-            saveFileSizes(lock);
+            storage->saveMarks(lock);
+            storage->saveFileSizes(lock);
         }
         catch (...)
         {
             /// Rollback partial writes.
             file_checker.repair();
-            removeUnsavedMarks(lock);
+            storage->removeUnsavedMarks(lock);
             throw;
         }
 
-    };
-    return {restore_task};
+        return {};
+    }
+
+private:
+    std::shared_ptr<StorageLog> storage;
+    BackupPtr backup;
+    String data_path_in_backup;
+    ContextMutablePtr context;
+};
+
+RestoreFromBackupTaskPtr StorageLog::restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context)
+{
+    if (!partitions.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
+
+    return std::make_unique<LogRestoreTask>(
+        typeid_cast<std::shared_ptr<StorageLog>>(shared_from_this()), backup, data_path_in_backup, context);
 }
 
 
