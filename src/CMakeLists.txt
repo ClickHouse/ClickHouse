@@ -380,8 +380,8 @@ dbms_target_include_directories(PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include
 
 target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
 dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
-target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${MINISELECT_INCLUDE_DIR})
-dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${MINISELECT_INCLUDE_DIR})
+target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::miniselect)
+dbms_target_link_libraries(PUBLIC ch_contrib::miniselect)
 
 dbms_target_link_libraries(PRIVATE ch_contrib::zstd)
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::zstd)
