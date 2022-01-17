@@ -150,6 +150,20 @@ else ()
         set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
     endif ()
 
+    set (TEST_FLAG "-mavx512bw -mavx512vl")
+    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
+    check_cxx_source_compiles("
+        #include <immintrin.h>
+        int main() {
+            auto mask = _mm_cmp_epi8_mask(__m128i(), __m128i(), 0);
+            (void)mask;
+            return 0;
+        }
+    " HAVE_AVX512_BW_VL)
+    if (HAVE_AVX512_BW_VL AND ENABLE_AVX512)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+    endif ()
+
     set (TEST_FLAG "-mbmi")
     set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
     check_cxx_source_compiles("
@@ -182,6 +196,9 @@ else ()
         endif ()
         if (HAVE_AVX512)
             set (X86_INTRINSICS_FLAGS "${X86_INTRINSICS_FLAGS} -mavx512f -mavx512bw -mprefer-vector-width=256")
+        endif ()
+        if (HAVE_AVX512_BW_VL)
+            set (X86_INTRINSICS_FLAGS "${X86_INTRINSICS_FLAGS} -mavx512bw -mavx512vl")
         endif ()
     endif ()
 endif ()
