@@ -17,7 +17,7 @@ protected:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     String filename;
-    String format;
+    String format = "auto";
     String structure = "auto";
     String compression_method = "auto";
 
