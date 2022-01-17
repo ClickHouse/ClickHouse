@@ -441,7 +441,7 @@ target_include_directories(_parquet SYSTEM BEFORE
 target_link_libraries(_parquet
     PUBLIC _arrow
     PRIVATE
-        ${THRIFT_LIBRARY}
+        ch_contrib::thrift
         boost::headers_only
         boost::regex
         ${OPENSSL_LIBRARIES})
