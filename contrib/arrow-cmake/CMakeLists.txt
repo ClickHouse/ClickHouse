@@ -24,10 +24,6 @@ if (NOT ENABLE_PARQUET)
     return()
 endif()
 
-if (NOT Protobuf_PROTOC_EXECUTABLE)
-    message (FATAL_ERROR "Can't use parquet without protoc executable")
-endif()
-
 # Freebsd: ../contrib/arrow/cpp/src/arrow/util/bit-util.h:27:10: fatal error: endian.h: No such file or directory
 if (OS_FREEBSD)
     message (FATAL_ERROR "Using internal parquet library on FreeBSD is not supported")
@@ -68,11 +64,10 @@ set(ORC_SOURCE_SRC_DIR "${ORC_SOURCE_DIR}/src")
 set(ORC_BUILD_SRC_DIR "${CMAKE_CURRENT_BINARY_DIR}/../orc/c++/src")
 set(ORC_BUILD_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/../orc/c++/include")
 
-set(GOOGLE_PROTOBUF_DIR "${Protobuf_INCLUDE_DIR}/")
 set(ORC_ADDITION_SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR})
 set(ARROW_SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src")
 
-set(PROTOBUF_EXECUTABLE ${Protobuf_PROTOC_EXECUTABLE})
+set(PROTOBUF_EXECUTABLE $<TARGET_FILE:protoc>)
 set(PROTO_DIR "${ORC_SOURCE_DIR}/../proto")
 
 
@@ -366,13 +361,12 @@ add_dependencies(_arrow ${FLATBUFFERS_LIBRARY})
 
 target_link_libraries(_arrow PRIVATE ${FLATBUFFERS_LIBRARY} boost::filesystem)
 
-if (USE_INTERNAL_PROTOBUF_LIBRARY)
-    add_dependencies(_arrow protoc)
-endif ()
+add_dependencies(_arrow protoc)
 
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC ${ARROW_SRC_DIR})
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/cpp/src")
-target_link_libraries(_arrow PRIVATE ${DOUBLE_CONVERSION_LIBRARIES} ${Protobuf_LIBRARY})
+target_link_libraries(_arrow PRIVATE ${DOUBLE_CONVERSION_LIBRARIES})
+target_link_libraries(_arrow PRIVATE ch_contrib::protobuf)
 target_link_libraries(_arrow PRIVATE ch_contrib::lz4)
 target_link_libraries(_arrow PRIVATE ch_contrib::snappy)
 target_link_libraries(_arrow PRIVATE ch_contrib::zlib)
@@ -382,7 +376,6 @@ target_include_directories(_arrow SYSTEM BEFORE PUBLIC  ${ORC_INCLUDE_DIR})
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC  ${ORC_BUILD_INCLUDE_DIR})
 target_include_directories(_arrow SYSTEM PRIVATE ${ORC_SOURCE_SRC_DIR})
 target_include_directories(_arrow SYSTEM PRIVATE ${ORC_SOURCE_WRAP_DIR})
-target_include_directories(_arrow SYSTEM PRIVATE ${GOOGLE_PROTOBUF_DIR})
 target_include_directories(_arrow SYSTEM PRIVATE ${ORC_BUILD_SRC_DIR})
 target_include_directories(_arrow SYSTEM PRIVATE ${ORC_ADDITION_SOURCE_DIR})
 target_include_directories(_arrow SYSTEM PRIVATE ${ARROW_SRC_DIR})

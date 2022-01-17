@@ -426,9 +426,8 @@ if (TARGET ch_contrib::ldap)
 endif ()
 dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${SPARSEHASH_INCLUDE_DIR})
 
-if (USE_PROTOBUF)
-    dbms_target_link_libraries (PRIVATE ${Protobuf_LIBRARY})
-    dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${Protobuf_INCLUDE_DIR})
+if (TARGET ch_contrib::protobuf)
+    dbms_target_link_libraries (PRIVATE ch_contrib::protobuf)
 endif ()
 
 if (TARGET clickhouse_grpc_protos)
