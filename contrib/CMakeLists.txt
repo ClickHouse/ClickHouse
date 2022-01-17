@@ -141,17 +141,12 @@ if (USE_SENTRY)
 endif()
 
 add_subdirectory (fmtlib-cmake)
-
 add_subdirectory (krb5-cmake)
-if (USE_CYRUS_SASL)
-    add_subdirectory (cyrus-sasl-cmake) # for krb5
-endif()
-
+add_subdirectory (cyrus-sasl-cmake) # for krb5
 add_subdirectory (libpqxx-cmake)
 add_subdirectory (libpq-cmake)
-
 add_subdirectory (nuraft-cmake)
-add_subdirectory(fast_float-cmake)
+add_subdirectory (fast_float-cmake)
 
 if (USE_NLP)
     add_subdirectory(libstemmer-c-cmake)
