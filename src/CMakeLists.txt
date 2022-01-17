@@ -120,7 +120,7 @@ if (USE_HDFS)
 endif()
 
 add_headers_and_sources(dbms Storages/Cache)
-if (USE_HIVE)
+if (TARGET ch_contrib::hivemetastore AND TARGET ch_contrib::hdfs)
     add_headers_and_sources(dbms Storages/Hive)
 endif()
 
@@ -444,9 +444,8 @@ if (USE_HDFS)
     dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${HDFS3_INCLUDE_DIR})
 endif()
 
-if (USE_HIVE)
-    dbms_target_link_libraries(PRIVATE hivemetastore)
-    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/hive-metastore)
+if (TARGET ch_contrib::hivemetastore)
+    dbms_target_link_libraries(PRIVATE ch_contrib::hivemetastore)
 endif()
 
 

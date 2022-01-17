@@ -64,6 +64,7 @@ add_subdirectory (rocksdb-cmake)
 # parquet/arrow/orc
 add_subdirectory (arrow-cmake) # requires: snappy
 add_subdirectory (avro-cmake) # requires: snappy
+add_subdirectory (hive-metastore-cmake) # requires: thrift/avro/arrow
 
 # TODO: refactor the contrib libraries below this comment.
 
@@ -253,10 +254,6 @@ endif()
 
 if (USE_S2_GEOMETRY)
     add_subdirectory(s2geometry-cmake)
-endif()
-
-if (USE_HIVE)
-    add_subdirectory (hive-metastore-cmake)
 endif()
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
