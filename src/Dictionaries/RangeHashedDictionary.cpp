@@ -384,9 +384,6 @@ void RangeHashedDictionary<dictionary_key_type>::getItemsImpl(
     DictionaryKeysExtractor<dictionary_key_type> keys_extractor(key_columns_copy, arena_holder.getComplexKeyArena());
     const size_t keys_size = keys_extractor.getKeysSize();
 
-
-    static constexpr auto max_range_value = std::numeric_limits<RangeStorageType>::min();
-
     for (size_t key_index = 0; key_index < keys_size; ++key_index)
     {
         auto key = keys_extractor.extractCurrentKey();
@@ -398,15 +395,19 @@ void RangeHashedDictionary<dictionary_key_type>::getItemsImpl(
             const auto & interval_tree = it->getMapped();
 
             std::optional<AttributeType> min_value;
-            RangeInterval min_range {max_range_value, max_range_value};
+            std::optional<RangeInterval> min_range;
             bool has_interval = false;
 
             interval_tree.find(date, [&](auto & interval, auto & value)
             {
                 has_interval = true;
 
-                if (min_range < interval)
-                    min_value = value;
+                if (min_range && interval < *min_range)
+                    min_range = interval;
+                else
+                    min_range = interval;
+
+                min_value = value;
 
                 return true;
             });
