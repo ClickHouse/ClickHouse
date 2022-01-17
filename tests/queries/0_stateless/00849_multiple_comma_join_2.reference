@@ -185,7 +185,9 @@ CROSS JOIN t3
 SELECT `--t1.a` AS `t1.a`
 FROM
 (
-    SELECT a AS `--t1.a`
+    SELECT
+        a AS `--t1.a`,
+        a
     FROM t1
     ALL INNER JOIN t2 USING (a)
 ) AS `--.s`

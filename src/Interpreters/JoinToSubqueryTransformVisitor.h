@@ -12,7 +12,7 @@ class Context;
 
 /// AST transformer. It replaces multiple joins to (subselect + join) track.
 /// 'select * from t1 join t2 on ... join t3 on ... join t4 on ...' would be rewritten with
-/// 'select * from (select * from t1 join t2 on ...) join t3 on ...) join t4 on ...'
+/// 'select * from (select * from (t1 join t2 on ...) join t3 on ...) join t4 on ...'
 class JoinToSubqueryTransformMatcher
 {
 public:

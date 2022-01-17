@@ -83,7 +83,7 @@ struct JoinedElement
     const ASTTableJoin * tableJoin() const { return join; }
 
     bool canAttachOnExpression() const { return join && !join->on_expression; }
-    bool hasUsing() const { return join && join->using_expression_list; }
+    // bool hasUsing() const { return join && join->using_expression_list; }
 
 private:
     const ASTTablesInSelectQueryElement & element;
@@ -172,7 +172,7 @@ std::vector<JoinedElement> getTables(const ASTSelectQuery & select)
 
     std::vector<JoinedElement> joined_tables;
     joined_tables.reserve(num_tables);
-    bool has_using = false;
+    // bool has_using = false;
 
     for (const auto & child : tables->children)
     {
@@ -186,12 +186,12 @@ std::vector<JoinedElement> getTables(const ASTSelectQuery & select)
         if (t.arrayJoin())
             return {};
 
-        if (t.hasUsing())
-        {
-            if (has_using)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Multuple USING statements are not supported");
-            has_using = true;
-        }
+        // if (t.hasUsing())
+        // {
+        //     if (has_using)
+        //         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Multuple USING statements are not supported");
+        //     has_using = true;
+        // }
 
         if (const auto * join = t.tableJoin(); join && isCrossOrComma(join->kind))
         {
