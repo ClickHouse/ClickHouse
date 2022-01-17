@@ -6,3 +6,4 @@ INSERT INTO table_map SELECT number, map('key3', number, 'key2', number + 1, 'ke
 SELECT mapFilter((k,v)->k like '%3' and v > 102, col) FROM table_map ORDER BY id;
 SELECT col, mapFilter((k, v) -> ((v % 10) > 1), col) FROM table_map ORDER BY id ASC;
 SELECT mapMap((k,v)->(k,v+1), col)  FROM table_map ORDER BY id;
+DROP TABLE table_map;
