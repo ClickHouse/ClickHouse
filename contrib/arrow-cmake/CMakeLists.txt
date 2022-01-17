@@ -365,7 +365,7 @@ add_dependencies(_arrow protoc)
 
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC ${ARROW_SRC_DIR})
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/cpp/src")
-target_link_libraries(_arrow PRIVATE ${DOUBLE_CONVERSION_LIBRARIES})
+target_link_libraries(_arrow PRIVATE ch_contrib::double_conversion)
 target_link_libraries(_arrow PRIVATE ch_contrib::protobuf)
 target_link_libraries(_arrow PRIVATE ch_contrib::lz4)
 target_link_libraries(_arrow PRIVATE ch_contrib::snappy)

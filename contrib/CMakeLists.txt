@@ -50,6 +50,7 @@ if (USE_INTERNAL_XZ_LIBRARY)
     add_subdirectory (xz-cmake)
 endif()
 
+add_subdirectory (double-conversion-cmake)
 add_subdirectory (boringssl-cmake)
 add_subdirectory (poco-cmake)
 add_subdirectory (croaring-cmake)
@@ -60,7 +61,7 @@ add_subdirectory (snappy-cmake)
 add_subdirectory (rocksdb-cmake)
 add_subdirectory (thrift-cmake)
 # parquet/arrow/orc
-add_subdirectory (arrow-cmake) # requires: snappy, thrift
+add_subdirectory (arrow-cmake) # requires: snappy, thrift, double-conversion
 add_subdirectory (avro-cmake) # requires: snappy
 add_subdirectory (hive-metastore-cmake) # requires: thrift/avro/arrow
 add_subdirectory (librdkafka-cmake)
@@ -78,10 +79,6 @@ endif()
 
 if (USE_INTERNAL_RE2_LIBRARY)
     add_subdirectory (re2-cmake)
-endif ()
-
-if (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)
-    add_subdirectory (double-conversion-cmake)
 endif ()
 
 if (USE_INTERNAL_CITYHASH_LIBRARY)
