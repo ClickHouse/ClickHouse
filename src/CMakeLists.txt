@@ -468,8 +468,8 @@ if (USE_CASSANDRA)
     dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${CASS_INCLUDE_DIR})
 endif()
 
-if (USE_MSGPACK)
-    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${MSGPACK_INCLUDE_DIR})
+if (TARGET ch_contrib::msgpack)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::msgpack)
 endif()
 
 target_link_libraries (clickhouse_common_io PUBLIC ${FAST_FLOAT_LIBRARY})

@@ -70,6 +70,7 @@ add_subdirectory (openldap-cmake)
 add_subdirectory (grpc-cmake)
 add_subdirectory (protobuf-cmake)
 add_subdirectory (libhdfs3-cmake) # requires: protobuf
+add_subdirectory (msgpack-c-cmake)
 
 if (ENABLE_FUZZING)
     add_subdirectory (libprotobuf-mutator-cmake)
