@@ -227,9 +227,16 @@ void KeeperTCPHandler::sendHandshake(bool has_leader)
 {
     Coordination::write(Coordination::SERVER_HANDSHAKE_LENGTH, *out);
     if (has_leader)
+    {
         Coordination::write(Coordination::ZOOKEEPER_PROTOCOL_VERSION, *out);
-    else /// Specially ignore connections if we are not leader, client will throw exception
-        Coordination::write(42, *out);
+    }
+    else
+    {
+        /// Ignore connections if we are not leader, client will throw exception
+        /// and reconnect to another replica faster. ClickHouse client provide
+        /// clear message for such protocol version.
+        Coordination::write(Coordination::KEEPER_PROTOCOL_VERSION_CONNECTION_REJECT, *out);
+    }
 
     Coordination::write(static_cast<int32_t>(session_timeout.totalMilliseconds()), *out);
     Coordination::write(session_id, *out);

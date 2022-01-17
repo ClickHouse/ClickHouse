@@ -48,6 +48,7 @@ struct SelectQueryOptions
     bool is_internal = false;
     bool is_subquery = false; // non-subquery can also have subquery_depth > 0, e.g. insert select
     bool with_all_cols = false; /// asterisk include materialized and aliased columns
+    bool settings_limit_offset_done = false;
 
     /// These two fields are used to evaluate shardNum() and shardCount() function when
     /// prefer_localhost_replica == 1 and local instance is selected. They are needed because local
@@ -58,8 +59,10 @@ struct SelectQueryOptions
     SelectQueryOptions(
         QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,
         size_t depth = 0,
-        bool is_subquery_ = false)
-        : to_stage(stage), subquery_depth(depth), is_subquery(is_subquery_)
+        bool is_subquery_ = false,
+        bool settings_limit_offset_done_ = false)
+        : to_stage(stage), subquery_depth(depth), is_subquery(is_subquery_),
+        settings_limit_offset_done(settings_limit_offset_done_)
     {}
 
     SelectQueryOptions copy() const { return *this; }

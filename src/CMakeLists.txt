@@ -115,6 +115,11 @@ if (USE_HDFS)
     add_headers_and_sources(dbms Disks/HDFS)
 endif()
 
+add_headers_and_sources(dbms Storages/Cache)
+if (USE_HIVE)
+    add_headers_and_sources(dbms Storages/Hive)
+endif()
+
 if(USE_FILELOG)
     add_headers_and_sources(dbms Storages/FileLog)
 endif()
@@ -448,6 +453,12 @@ if (USE_HDFS)
     dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${HDFS3_INCLUDE_DIR})
 endif()
 
+if (USE_HIVE)
+    dbms_target_link_libraries(PRIVATE hivemetastore)
+    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/hive-metastore)
+endif()
+
+
 if (USE_AWS_S3)
     target_link_libraries (clickhouse_common_io PUBLIC ${AWS_S3_LIBRARY})
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${AWS_S3_CORE_INCLUDE_DIR})
@@ -467,6 +478,11 @@ endif()
 if (USE_BROTLI)
     target_link_libraries (clickhouse_common_io PRIVATE ${BROTLI_LIBRARY})
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${BROTLI_INCLUDE_DIR})
+endif()
+
+if (USE_SNAPPY)
+    target_link_libraries (clickhouse_common_io PUBLIC ${SNAPPY_LIBRARY})
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${SNAPPY_INCLUDE_DIR})
 endif()
 
 if (USE_AMQPCPP)
@@ -566,7 +582,9 @@ if (ENABLE_TESTS AND USE_GTEST)
         clickhouse_parsers
         clickhouse_storages_system
         dbms
+        clickhouse_common_config
         clickhouse_common_zookeeper
+        clickhouse_common_config
         string_utils)
 
     add_check(unit_tests_dbms)
