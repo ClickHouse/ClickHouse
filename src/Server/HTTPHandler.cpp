@@ -330,7 +330,7 @@ bool HTTPHandler::authenticateUser(
     LOG_DEBUG(log, "X-ClickHouse-X509Authentication=\"{}\"", x509_auth);
 
     bool has_basic_auth = request.hasCredentials() || params.has("user") || params.has("password") || params.has("quota_key");
-    bool has_header_auth = !(user.empty() && password.empty() && quota_key.empty());
+    bool has_header_auth = !user.empty() && !password.empty() && !quota_key.empty();
     bool has_x509_auth = !user.empty() && (x509_auth == "yes"); // header values are case sensitive
 
     if (has_x509_auth)
