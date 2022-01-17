@@ -89,8 +89,8 @@ if (TARGET ch_contrib::simdjson)
     target_link_libraries(clickhouse_functions PRIVATE ch_contrib::simdjson)
 endif()
 
-if(USE_RAPIDJSON)
-    target_include_directories(clickhouse_functions SYSTEM PRIVATE ${RAPIDJSON_INCLUDE_DIR})
+if (TARGET ch_contrib::rapidjson)
+    target_link_libraries(clickhouse_functions PRIVATE ch_contrib::rapidjson)
 endif()
 
 # ClickHouse developers may use platform-dependent code under some macro (e.g. `#ifdef ENABLE_MULTITARGET`).
