@@ -16,8 +16,8 @@ list(APPEND dirs ${dirs1})
 get_property (dirs1 TARGET roaring PROPERTY INCLUDE_DIRECTORIES)
 list(APPEND dirs ${dirs1})
 
-if (TARGET double-conversion)
-    get_property (dirs1 TARGET double-conversion PROPERTY INCLUDE_DIRECTORIES)
+if (TARGET ch_contrib::double_conversion)
+    get_property (dirs1 TARGET ch_contrib::double_conversion PROPERTY INCLUDE_DIRECTORIES)
     list(APPEND dirs ${dirs1})
 endif ()
 

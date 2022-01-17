@@ -303,7 +303,7 @@ target_link_libraries (clickhouse_common_io
             ${LINK_LIBRARIES_ONLY_ON_X86_64}
         PUBLIC
             common
-            ${DOUBLE_CONVERSION_LIBRARIES}
+            ch_contrib::double_conversion
             dragonbox_to_chars
 )
 
@@ -480,8 +480,6 @@ if (USE_CASSANDRA)
     dbms_target_link_libraries(PUBLIC ${CASSANDRA_LIBRARY})
     dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${CASS_INCLUDE_DIR})
 endif()
-
-target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${DOUBLE_CONVERSION_INCLUDE_DIR})
 
 if (USE_MSGPACK)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${MSGPACK_INCLUDE_DIR})
