@@ -24,7 +24,7 @@ def removesuffix(string: str, suffix: str):
 
 
 # Necessary ENV variables
-def getenv(name, default=None):
+def getenv(name: str, default: str = None):
     env = os.getenv(name, default)
     if env is not None:
         return env
@@ -66,8 +66,8 @@ class Packages:
         return removesuffix(deb_pkg, ".deb").split("_")[-1]
 
     @staticmethod
-    def path(package):
-        return os.path.join(TEMP_PATH, package)
+    def path(package_file: str) -> str:
+        return os.path.join(TEMP_PATH, package_file)
 
 
 class S3:
@@ -103,23 +103,23 @@ class S3:
         self.force_download = force_download
         self.packages = Packages(version)
 
-    def download_package(self, package):
-        if not self.force_download and os.path.exists(Packages.path(package)):
+    def download_package(self, package_file: str):
+        if not self.force_download and os.path.exists(Packages.path(package_file)):
             return
-        url = self.template.format_map({**self._common, "package": package})
-        dowload_build_with_progress(url, Packages.path(package))
+        url = self.template.format_map({**self._common, "package": package_file})
+        dowload_build_with_progress(url, Packages.path(package_file))
 
     def download_deb(self):
-        for package in self.packages.deb:
-            self.download_package(package)
+        for package_file in self.packages.deb:
+            self.download_package(package_file)
 
     def download_rpm(self):
-        for package in self.packages.rpm:
-            self.download_package(package)
+        for package_file in self.packages.rpm:
+            self.download_package(package_file)
 
     def download_tgz(self):
-        for package in self.packages.tgz:
-            self.download_package(package)
+        for package_file in self.packages.tgz:
+            self.download_package(package_file)
 
 
 class Release:
@@ -164,11 +164,11 @@ class Artifactory:
         self.__path_helper("_deb", "")
 
     def deploy_deb(self, packages: Packages):
-        for package in packages.deb:
-            path = packages.path(package)
+        for package_file in packages.deb:
+            path = packages.path(package_file)
             dist = self._release
             comp = "main"
-            arch = packages.arch(package)
+            arch = packages.arch(package_file)
             logging.info(
                 "Deploy %s(distribution=%s;component=%s;architecture=%s) "
                 "to artifactory",
@@ -177,22 +177,22 @@ class Artifactory:
                 comp,
                 arch,
             )
-            self.deb_path(package).deploy_deb(path, dist, comp, arch)
+            self.deb_path(package_file).deploy_deb(path, dist, comp, arch)
 
     def deploy_rpm(self, packages: Packages):
-        for package in packages.rpm:
-            path = packages.path(package)
+        for package_file in packages.rpm:
+            path = packages.path(package_file)
             logging.info("Deploy %s to artifactory", path)
-            self.rpm_path(package).deploy_file(path)
+            self.rpm_path(package_file).deploy_file(path)
 
     def deploy_tgz(self, packages: Packages):
-        for package in packages.tgz:
-            path = packages.path(package)
+        for package_file in packages.tgz:
+            path = packages.path(package_file)
             logging.info("Deploy %s to artifactory", path)
-            self.tgz_path(package).deploy_file(path)
+            self.tgz_path(package_file).deploy_file(path)
 
-    def __path_helper(self, name, package) -> ArtifactorySaaSPath:
-        url = "/".join((getattr(self, name + "_url"), package))
+    def __path_helper(self, name: str, package_file: str) -> ArtifactorySaaSPath:
+        url = "/".join((getattr(self, name + "_url"), package_file))
         path = None
         if JFROG_API_KEY:
             path = ArtifactorySaaSPath(url, apikey=JFROG_API_KEY)
@@ -202,17 +202,17 @@ class Artifactory:
             raise KeyError("Neither JFROG_API_KEY nor JFROG_TOKEN env are defined")
         return path
 
-    def deb_path(self, package) -> ArtifactorySaaSPath:
-        return self.__path_helper("_deb", package)
+    def deb_path(self, package_file: str) -> ArtifactorySaaSPath:
+        return self.__path_helper("_deb", package_file)
 
-    def rpm_path(self, package) -> ArtifactorySaaSPath:
-        return self.__path_helper("_rpm", package)
+    def rpm_path(self, package_file: str) -> ArtifactorySaaSPath:
+        return self.__path_helper("_rpm", package_file)
 
-    def tgz_path(self, package) -> ArtifactorySaaSPath:
-        return self.__path_helper("_tgz", package)
+    def tgz_path(self, package_file: str) -> ArtifactorySaaSPath:
+        return self.__path_helper("_tgz", package_file)
 
 
-def commit(name):
+def commit(name: str):
     r = re.compile(r"^([0-9]|[a-f]){40}$")
     if not r.match(name):
         raise argparse.ArgumentTypeError(
