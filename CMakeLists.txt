@@ -489,7 +489,6 @@ include (GNUInstallDirs)
 include (cmake/find/llvm.cmake)
 include (cmake/find/s3.cmake)
 include (cmake/find/nlp.cmake)
-include (cmake/find/datasketches.cmake)
 
 # Need to process before "contrib" dir:
 include (cmake/find/mysqlclient.cmake)
