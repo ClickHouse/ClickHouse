@@ -172,10 +172,7 @@ if (USE_NLP)
 endif()
 
 add_subdirectory (sqlite-cmake)
-
-if (USE_S2_GEOMETRY)
-    add_subdirectory(s2geometry-cmake)
-endif()
+add_subdirectory (s2geometry-cmake)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear
