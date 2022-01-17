@@ -114,7 +114,9 @@ public:
 
     void construct()
     {
-        nodes.resize(sorted_intervals.size());
+        assert(!tree_constructed);
+        nodes.clear();
+        nodes.reserve(sorted_intervals.size());
         buildTree();
         tree_constructed = true;
     }
@@ -166,7 +168,7 @@ public:
     iterator end()
     {
         size_t end_index = findLastIteratorNodeIndex();
-        size_t last_interval_index = nodes[end_index].sorted_intervals_range_size;
+        size_t last_interval_index = end_index < nodes.size() ? nodes[end_index].sorted_intervals_range_size : 0;
         return Iterator(end_index, last_interval_index, this);
     }
 
@@ -179,7 +181,8 @@ public:
     const_iterator end() const
     {
         size_t end_index = findLastIteratorNodeIndex();
-        size_t last_interval_index = nodes[end_index].sorted_intervals_range_size;
+        size_t last_interval_index = end_index < nodes.size() ? nodes[end_index].sorted_intervals_range_size : 0;
+
         return Iterator(end_index, last_interval_index, this);
     }
 
@@ -211,7 +214,7 @@ public:
     public:
         bool operator==(const Iterator & rhs) const
         {
-            return node_index == rhs.node_index & tree == rhs.tree && current_interval_index == rhs.current_interval_index;
+            return node_index == rhs.node_index && current_interval_index == rhs.current_interval_index && tree == rhs.tree;
         }
 
         bool operator!=(const Iterator & rhs) const { return !(*this == rhs); }
@@ -307,7 +310,7 @@ public:
             }
         }
 
-        const IntervalWithValue & getCurrentValue()
+        const IntervalWithValue & getCurrentValue() const
         {
             auto & current_node = tree->nodes[node_index];
             size_t interval_index = current_node.sorted_intervals_range_start_index + current_interval_index;
@@ -475,7 +478,7 @@ private:
     }
 
     template <typename IntervalCallback>
-    void findIntervalsNonConstructedImpl(IntervalStorageType point, IntervalCallback & callback) const
+    void findIntervalsNonConstructedImpl(IntervalStorageType point, IntervalCallback && callback) const
     {
         for (auto & interval_with_value : sorted_intervals)
         {
@@ -497,21 +500,26 @@ private:
                 break;
         }
 
+        if (unlikely(result_index == nodes_size))
+            result_index = 0;
+
         return result_index;
     }
 
     inline size_t findLastIteratorNodeIndex() const
     {
+        if (unlikely(nodes.empty()))
+            return 0;
+
         size_t nodes_size = nodes.size();
-        int64_t result_index = static_cast<int64_t>(nodes_size - 1);
-        for (; result_index >= 0; --result_index)
+        size_t result_index = nodes_size - 1;
+        for (; result_index != 0; --result_index)
         {
             if (nodes[result_index].hasValue())
                 break;
         }
 
-        size_t result = static_cast<size_t>(result_index);
-        return result;
+        return result_index;
     }
 
     inline void increaseIntervalsSize()
