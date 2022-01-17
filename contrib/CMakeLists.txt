@@ -21,6 +21,7 @@ endif()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
 
+add_subdirectory (miniselect-cmake)
 add_subdirectory (sparsehash-c11-cmake)
 add_subdirectory (abseil-cpp-cmake)
 add_subdirectory (magic-enum-cmake)
