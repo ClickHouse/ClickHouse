@@ -180,9 +180,7 @@ if (USE_NLP)
     add_subdirectory(lemmagen-c-cmake)
 endif()
 
-if (USE_SQLITE)
-    add_subdirectory(sqlite-cmake)
-endif()
+add_subdirectory (sqlite-cmake)
 
 if (USE_S2_GEOMETRY)
     add_subdirectory(s2geometry-cmake)

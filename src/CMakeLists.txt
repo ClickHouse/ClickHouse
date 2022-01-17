@@ -83,7 +83,7 @@ add_headers_and_sources(clickhouse_common_io IO/S3)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
 
 add_headers_and_sources(dbms Disks/IO)
-if (USE_SQLITE)
+if (TARGET ch_contrib::sqlite)
     add_headers_and_sources(dbms Databases/SQLite)
 endif()
 
@@ -459,8 +459,8 @@ if (TARGET ch_contrib::amqp_cpp)
     dbms_target_link_libraries(PUBLIC ch_contrib::amqp_cpp)
 endif()
 
-if (USE_SQLITE)
-    dbms_target_link_libraries(PUBLIC sqlite)
+if (TARGET ch_contrib::sqlite)
+    dbms_target_link_libraries(PUBLIC ch_contrib::sqlite)
 endif()
 
 if (USE_CASSANDRA)
