@@ -135,10 +135,7 @@ if (USE_INTERNAL_AWS_S3_LIBRARY)
 
 endif ()
 
-if (USE_BASE64)
-    add_subdirectory (base64-cmake)
-endif()
-
+add_subdirectory (base64-cmake)
 add_subdirectory (simdjson-cmake)
 
 if (USE_FASTOPS)

@@ -12,7 +12,6 @@ add_library(clickhouse_functions ${clickhouse_functions_sources})
 
 target_link_libraries(clickhouse_functions
     PUBLIC
-        ${BASE64_LIBRARY}
         ch_contrib::cityhash
         ch_contrib::farmhash
         ${FASTOPS_LIBRARY}
@@ -72,8 +71,8 @@ if (USE_EMBEDDED_COMPILER)
     target_include_directories(clickhouse_functions SYSTEM BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
 endif ()
 
-if(USE_BASE64)
-    target_include_directories(clickhouse_functions SYSTEM PRIVATE ${BASE64_INCLUDE_DIR})
+if (TARGET ch_contrib::base64)
+    target_link_libraries(clickhouse_functions PRIVATE ch_contrib::base64)
 endif()
 
 target_link_libraries(clickhouse_functions PRIVATE ch_contrib::lz4)
