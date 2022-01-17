@@ -53,8 +53,8 @@ struct FunctionDetectProgrammingLanguageImpl
             const size_t str_len = offsets[i] - offsets[i - 1] - 1;
 
             std::unordered_map<String, Float64> data_freq;
-            String prev_command;
-            String command;
+            StringRef prev_command;
+            StringRef command;
 
             /// Select all commands from the string
             for (size_t ind = 0; ind < str_len; ++ind)
@@ -62,20 +62,19 @@ struct FunctionDetectProgrammingLanguageImpl
                 /// Assume that all commands are split by spaces
                 if (isWhitespaceASCII(str[ind]))
                     continue;
-
+                
+                size_t prev_ind = ind;
                 while (ind < str_len && !isWhitespaceASCII(str[ind]))
-                {
-                    command.push_back(str[ind]);
                     ++ind;
-                }
+
+                command = {str + prev_ind, ind - prev_ind};
 
                 /// We add both unigrams and bigrams to later search for them in the dictionary
-                if (!prev_command.empty())
-                    data_freq[prev_command + command] += 1;
+                if (prev_command.data)
+                    data_freq[prev_command.toString() + command.toString()] += 1;
 
-                data_freq[command] += 1;
-                command.swap(prev_command);
-                command.clear();
+                data_freq[command.toString()] += 1;
+                prev_command = command;
             }
 
             std::string_view res;

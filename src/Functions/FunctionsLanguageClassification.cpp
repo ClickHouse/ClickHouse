@@ -70,7 +70,7 @@ struct FunctionDetectLanguageImpl
         res_data.reserve(offsets.size() * 3);
         res_offsets.resize(offsets.size());
 
-        bool is_reliable = true;
+        bool is_reliable;
         size_t res_offset = 0;
 
         for (size_t i = 0; i < offsets.size(); ++i)
@@ -155,7 +155,7 @@ public:
         values_data->reserve(total_elements);
         offsets->reserve(input_rows_count);
 
-        bool is_reliable = true;
+        bool is_reliable;
         CLD2::Language result_lang_top3[top_N];
         int32_t pc[top_N];
         int bytes[top_N];
