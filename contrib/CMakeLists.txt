@@ -48,6 +48,7 @@ endif()
 
 add_subdirectory (re2-cmake)
 add_subdirectory (xz-cmake)
+add_subdirectory (brotli-cmake)
 add_subdirectory (double-conversion-cmake)
 add_subdirectory (boringssl-cmake)
 add_subdirectory (poco-cmake)
@@ -132,11 +133,6 @@ endif()
 
 if (USE_INTERNAL_LIBXML2_LIBRARY)
     add_subdirectory(libxml2-cmake)
-endif ()
-
-if (USE_INTERNAL_BROTLI_LIBRARY)
-    add_subdirectory(brotli-cmake)
-    target_compile_definitions(brotli PRIVATE BROTLI_BUILD_PORTABLE=1)
 endif ()
 
 if (USE_INTERNAL_AWS_S3_LIBRARY)
