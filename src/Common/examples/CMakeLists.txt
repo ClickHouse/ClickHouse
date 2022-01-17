@@ -42,11 +42,9 @@ add_executable (space_saving space_saving.cpp)
 target_link_libraries (space_saving PRIVATE clickhouse_common_io)
 
 add_executable (integer_hash_tables_and_hashes integer_hash_tables_and_hashes.cpp)
-target_include_directories (integer_hash_tables_and_hashes SYSTEM BEFORE PRIVATE ${SPARSEHASH_INCLUDE_DIR})
 target_link_libraries (integer_hash_tables_and_hashes PRIVATE dbms abseil_swiss_tables)
 
 add_executable (integer_hash_tables_benchmark integer_hash_tables_benchmark.cpp)
-target_include_directories (integer_hash_tables_benchmark SYSTEM BEFORE PRIVATE ${SPARSEHASH_INCLUDE_DIR})
 target_link_libraries (integer_hash_tables_benchmark PRIVATE dbms abseil_swiss_tables)
 
 add_executable (cow_columns cow_columns.cpp)

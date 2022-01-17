@@ -42,5 +42,4 @@ if(USE_CASSANDRA)
 endif()
 
 add_subdirectory(Embedded)
-
-target_include_directories(clickhouse_dictionaries SYSTEM PRIVATE ${SPARSEHASH_INCLUDE_DIR})
+target_link_libraries(clickhouse_dictionaries PRIVATE ch_contrib::sparsehash)
