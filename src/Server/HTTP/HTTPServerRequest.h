@@ -32,8 +32,6 @@ public:
 
     bool isSecure() const { return secure; }
 
-    std::string getPeerCertificateCommonName() const;
-
     /// Returns the client's address.
     const Poco::Net::SocketAddress & clientAddress() const { return client_address; }
 
@@ -57,7 +55,6 @@ private:
 
     std::unique_ptr<ReadBuffer> stream;
     Poco::Net::SocketImpl * socket;
-    Poco::Net::StreamSocket & stream_socket;
     Poco::Net::SocketAddress client_address;
     Poco::Net::SocketAddress server_address;
 
