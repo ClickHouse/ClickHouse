@@ -488,7 +488,6 @@ include (GNUInstallDirs)
 
 include (cmake/find/cyrus-sasl.cmake)
 include (cmake/find/llvm.cmake)
-include (cmake/find/libxml2.cmake)
 include (cmake/find/curl.cmake)
 include (cmake/find/s3.cmake)
 include (cmake/find/nlp.cmake)

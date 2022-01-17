@@ -76,7 +76,7 @@ if (CURL_FOUND)
     target_link_libraries(_azure_sdk PRIVATE ${CURL_LIBRARY})
 endif()
 
-target_link_libraries(_azure_sdk PRIVATE ${LIBXML2_LIBRARIES})
+target_link_libraries(_azure_sdk PRIVATE ch_contrib::libxml2)
 
 target_include_directories(_azure_sdk SYSTEM BEFORE PUBLIC ${AZURE_SDK_INCLUDES})
 
