@@ -1,4 +1,4 @@
-if (NOT USE_INTERNAL_NANODBC_LIBRARY)
+if (NOT ENABLE_ODBC)
     return ()
 endif ()
 
@@ -16,3 +16,4 @@ add_library(nanodbc ${SRCS})
 
 target_link_libraries (nanodbc PUBLIC unixodbc)
 target_include_directories (nanodbc SYSTEM PUBLIC "${LIBRARY_DIR}/")
+add_library(ch_contrib::nanodbc ALIAS nanodbc)
