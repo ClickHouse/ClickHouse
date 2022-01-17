@@ -222,8 +222,8 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
 
     /// It's DDL dictionary, need to update configuration and reload
 
-    [[maybe_unused]] bool move_to_atomic = old_table_id.uuid == UUIDHelpers::Nil && new_table_id.uuid != UUIDHelpers::Nil;
-    [[maybe_unused]] bool move_to_ordinary = old_table_id.uuid != UUIDHelpers::Nil && new_table_id.uuid == UUIDHelpers::Nil;
+    bool move_to_atomic = old_table_id.uuid == UUIDHelpers::Nil && new_table_id.uuid != UUIDHelpers::Nil;
+    bool move_to_ordinary = old_table_id.uuid != UUIDHelpers::Nil && new_table_id.uuid == UUIDHelpers::Nil;
     assert(old_table_id.uuid == new_table_id.uuid || move_to_atomic || move_to_ordinary);
 
     {
@@ -231,6 +231,10 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
 
         configuration->setString("dictionary.database", new_table_id.database_name);
         configuration->setString("dictionary.name", new_table_id.table_name);
+        if (move_to_atomic)
+            configuration->setString("dictionary.uuid", toString(new_table_id.uuid));
+        else if (move_to_ordinary)
+            configuration->remove("dictionary.uuid");
     }
 
     /// Dictionary is moving between databases of different engines or is renaming inside Ordinary database
