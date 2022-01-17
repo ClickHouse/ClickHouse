@@ -2,24 +2,17 @@
 #include <Backups/BackupEntryFromMemory.h>
 #include <Backups/BackupRenamingConfig.h>
 #include <Backups/IBackup.h>
-#include <Backups/hasCompatibleDataToRestoreTable.h>
 #include <Backups/renameInCreateQuery.h>
 #include <Common/escapeForFileName.h>
+#include <Access/Common/AccessFlags.h>
 #include <Databases/IDatabase.h>
-#include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/formatAST.h>
 #include <Storages/IStorage.h>
 #include <base/insertAtEnd.h>
 #include <base/sort.h>
 #include <boost/range/adaptor/reversed.hpp>
-#include <filesystem>
-
-namespace fs = std::filesystem;
 
 
 namespace DB
@@ -29,8 +22,6 @@ namespace ErrorCodes
     extern const int BACKUP_ELEMENT_DUPLICATE;
     extern const int BACKUP_IS_EMPTY;
     extern const int LOGICAL_ERROR;
-    extern const int TABLE_ALREADY_EXISTS;
-    extern const int CANNOT_RESTORE_TABLE;
 }
 
 namespace
@@ -265,28 +256,6 @@ namespace
                 elements[database.index].except_list.emplace(table_name);
         }
 
-        /// Reorder the elements: databases should be before tables and dictionaries they contain.
-        for (auto & [database_name, database] : databases)
-        {
-            if (database.index == static_cast<size_t>(-1))
-                continue;
-            size_t min_index = std::numeric_limits<size_t>::max();
-            auto min_index_it = database.tables.end();
-            for (auto it = database.tables.begin(); it != database.tables.end(); ++it)
-            {
-                if (min_index > it->second)
-                {
-                    min_index = it->second;
-                    min_index_it = it;
-                }
-            }
-            if (database.index > min_index)
-            {
-                std::swap(elements[database.index], elements[min_index]);
-                std::swap(database.index, min_index_it->second);
-            }
-        }
-
         for (auto skip_index : skip_indices | boost::adaptors::reversed)
             elements.erase(elements.begin() + skip_index);
     }
@@ -300,48 +269,6 @@ namespace
         setNewNamesIfNotSet(res);
         deduplicateAndReorderElements(res);
         return res;
-    }
-
-    String getDataPathInBackup(const DatabaseAndTableName & table_name)
-    {
-        if (table_name.first.empty() || table_name.second.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name and table name must not be empty");
-        assert(!table_name.first.empty() && !table_name.second.empty());
-        return String{"data/"} + escapeForFileName(table_name.first) + "/" + escapeForFileName(table_name.second) + "/";
-    }
-
-    String getDataPathInBackup(const IAST & create_query)
-    {
-        const auto & create = create_query.as<const ASTCreateQuery &>();
-        if (!create.table)
-            return {};
-        if (create.temporary)
-            return getDataPathInBackup({DatabaseCatalog::TEMPORARY_DATABASE, create.getTable()});
-        return getDataPathInBackup({create.getDatabase(), create.getTable()});
-    }
-
-    String getMetadataPathInBackup(const DatabaseAndTableName & table_name)
-    {
-        if (table_name.first.empty() || table_name.second.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name and table name must not be empty");
-        return String{"metadata/"} + escapeForFileName(table_name.first) + "/" + escapeForFileName(table_name.second) + ".sql";
-    }
-
-    String getMetadataPathInBackup(const String & database_name)
-    {
-        if (database_name.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name must not be empty");
-        return String{"metadata/"} + escapeForFileName(database_name) + ".sql";
-    }
-
-    String getMetadataPathInBackup(const IAST & create_query)
-    {
-        const auto & create = create_query.as<const ASTCreateQuery &>();
-        if (!create.table)
-            return getMetadataPathInBackup(create.getDatabase());
-        if (create.temporary)
-            return getMetadataPathInBackup({DatabaseCatalog::TEMPORARY_DATABASE, create.getTable()});
-        return getMetadataPathInBackup({create.getDatabase(), create.getTable()});
     }
 
     void backupCreateQuery(const IAST & create_query, BackupEntries & backup_entries)
@@ -411,179 +338,6 @@ namespace
                 continue;
             backupDatabase(database, {}, context, renaming_config, backup_entries);
         }
-    }
-
-    void makeDatabaseIfNotExists(const String & database_name, ContextMutablePtr context)
-    {
-        if (DatabaseCatalog::instance().isDatabaseExist(database_name))
-            return;
-
-        /// We create and execute `create` query for the database name.
-        auto create_query = std::make_shared<ASTCreateQuery>();
-        create_query->setDatabase(database_name);
-        create_query->if_not_exists = true;
-        InterpreterCreateQuery create_interpreter{create_query, context};
-        create_interpreter.execute();
-    }
-
-    ASTPtr readCreateQueryFromBackup(const DatabaseAndTableName & table_name, const BackupPtr & backup)
-    {
-        String create_query_path = getMetadataPathInBackup(table_name);
-        auto read_buffer = backup->readFile(create_query_path)->getReadBuffer();
-        String create_query_str;
-        readStringUntilEOF(create_query_str, *read_buffer);
-        read_buffer.reset();
-        ParserCreateQuery create_parser;
-        return parseQuery(create_parser, create_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-    }
-
-    ASTPtr readCreateQueryFromBackup(const String & database_name, const BackupPtr & backup)
-    {
-        String create_query_path = getMetadataPathInBackup(database_name);
-        auto read_buffer = backup->readFile(create_query_path)->getReadBuffer();
-        String create_query_str;
-        readStringUntilEOF(create_query_str, *read_buffer);
-        read_buffer.reset();
-        ParserCreateQuery create_parser;
-        return parseQuery(create_parser, create_query_str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-    }
-
-    void restoreTable(
-        const DatabaseAndTableName & table_name,
-        const ASTs & partitions,
-        ContextMutablePtr context,
-        const BackupPtr & backup,
-        const BackupRenamingConfigPtr & renaming_config,
-        RestoreObjectsTasks & restore_tasks)
-    {
-        ASTPtr create_query = readCreateQueryFromBackup(table_name, backup);
-        auto new_create_query = typeid_cast<std::shared_ptr<ASTCreateQuery>>(renameInCreateQuery(create_query, renaming_config, context));
-
-        restore_tasks.emplace_back([table_name, new_create_query, partitions, context, backup]() -> RestoreDataTasks
-        {
-            DatabaseAndTableName new_table_name{new_create_query->getDatabase(), new_create_query->getTable()};
-            if (new_create_query->temporary)
-                new_table_name.first = DatabaseCatalog::TEMPORARY_DATABASE;
-
-            context->checkAccess(AccessType::INSERT, new_table_name.first, new_table_name.second);
-
-            StoragePtr storage;
-            for (size_t try_index = 0; try_index != 10; ++try_index)
-            {
-                if (DatabaseCatalog::instance().isTableExist({new_table_name.first, new_table_name.second}, context))
-                {
-                    DatabasePtr existing_database;
-                    StoragePtr existing_storage;
-                    std::tie(existing_database, existing_storage) = DatabaseCatalog::instance().tryGetDatabaseAndTable({new_table_name.first, new_table_name.second}, context);
-                    if (existing_storage)
-                    {
-                        if (auto existing_table_create_query = existing_database->tryGetCreateTableQuery(new_table_name.second, context))
-                        {
-                            if (hasCompatibleDataToRestoreTable(*new_create_query, existing_table_create_query->as<ASTCreateQuery &>()))
-                            {
-                                storage = existing_storage;
-                                break;
-                            }
-                            else
-                            {
-                                String error_message = (new_table_name.first == DatabaseCatalog::TEMPORARY_DATABASE)
-                                    ? ("Temporary table " + backQuoteIfNeed(new_table_name.second) + " already exists")
-                                    : ("Table " + backQuoteIfNeed(new_table_name.first) + "." + backQuoteIfNeed(new_table_name.second)
-                                       + " already exists");
-                                throw Exception(error_message, ErrorCodes::CANNOT_RESTORE_TABLE);
-                            }
-                        }
-                    }
-                }
-
-                makeDatabaseIfNotExists(new_table_name.first, context);
-
-                try
-                {
-                    InterpreterCreateQuery create_interpreter{new_create_query, context};
-                    create_interpreter.execute();
-                }
-                catch (Exception & e)
-                {
-                    if (e.code() != ErrorCodes::TABLE_ALREADY_EXISTS)
-                        throw;
-                }
-            }
-
-            if (!storage)
-            {
-                String error_message = (new_table_name.first == DatabaseCatalog::TEMPORARY_DATABASE)
-                    ? ("Could not create temporary table " + backQuoteIfNeed(new_table_name.second) + " for restoring")
-                    : ("Could not create table " + backQuoteIfNeed(new_table_name.first) + "." + backQuoteIfNeed(new_table_name.second)
-                       + " for restoring");
-                throw Exception(error_message, ErrorCodes::CANNOT_RESTORE_TABLE);
-            }
-
-            String data_path_in_backup = getDataPathInBackup(table_name);
-            RestoreDataTasks restore_data_tasks = storage->restoreFromBackup(backup, data_path_in_backup, partitions, context);
-
-            /// Keep `storage` alive while we're executing `restore_data_tasks`.
-            for (auto & restore_data_task : restore_data_tasks)
-                restore_data_task = [restore_data_task, storage]() { restore_data_task(); };
-
-            return restore_data_tasks;
-        });
-    }
-
-    void restoreDatabase(const String & database_name, const std::set<String> & except_list, ContextMutablePtr context, const BackupPtr & backup, const BackupRenamingConfigPtr & renaming_config, RestoreObjectsTasks & restore_tasks)
-    {
-        ASTPtr create_query = readCreateQueryFromBackup(database_name, backup);
-        auto new_create_query = typeid_cast<std::shared_ptr<ASTCreateQuery>>(renameInCreateQuery(create_query, renaming_config, context));
-
-        restore_tasks.emplace_back([database_name, new_create_query, except_list, context, backup, renaming_config]() -> RestoreDataTasks
-        {
-            const String & new_database_name = new_create_query->getDatabase();
-            context->checkAccess(AccessType::SHOW_TABLES, new_database_name);
-
-            if (!DatabaseCatalog::instance().isDatabaseExist(new_database_name))
-            {
-                /// We create and execute `create` query for the database name.
-                new_create_query->if_not_exists = true;
-                InterpreterCreateQuery create_interpreter{new_create_query, context};
-                create_interpreter.execute();
-            }
-
-            RestoreObjectsTasks restore_objects_tasks;
-            Strings table_metadata_filenames = backup->listFiles("metadata/" + escapeForFileName(database_name) + "/", "/");
-            for (const String & table_metadata_filename : table_metadata_filenames)
-            {
-                String table_name = unescapeForFileName(fs::path{table_metadata_filename}.stem());
-                if (except_list.contains(table_name))
-                    continue;
-                restoreTable({database_name, table_name}, {}, context, backup, renaming_config, restore_objects_tasks);
-            }
-
-            RestoreDataTasks restore_data_tasks;
-            for (auto & restore_object_task : restore_objects_tasks)
-                insertAtEnd(restore_data_tasks, std::move(restore_object_task)());
-            return restore_data_tasks;
-        });
-    }
-
-    void restoreAllDatabases(const std::set<String> & except_list, ContextMutablePtr context, const BackupPtr & backup, const BackupRenamingConfigPtr & renaming_config, RestoreObjectsTasks & restore_tasks)
-    {
-        restore_tasks.emplace_back([except_list, context, backup, renaming_config]() -> RestoreDataTasks
-        {
-            RestoreObjectsTasks restore_objects_tasks;
-            Strings database_metadata_filenames = backup->listFiles("metadata/", "/");
-            for (const String & database_metadata_filename : database_metadata_filenames)
-            {
-                String database_name = unescapeForFileName(fs::path{database_metadata_filename}.stem());
-                if (except_list.contains(database_name))
-                    continue;
-                restoreDatabase(database_name, {}, context, backup, renaming_config, restore_objects_tasks);
-            }
-
-            RestoreDataTasks restore_data_tasks;
-            for (auto & restore_object_task : restore_objects_tasks)
-                insertAtEnd(restore_data_tasks, std::move(restore_object_task)());
-            return restore_data_tasks;
-        });
     }
 }
 
@@ -728,106 +482,46 @@ void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries
     backup->finalizeWriting();
 }
 
-
-RestoreObjectsTasks makeRestoreTasks(const Elements & elements, ContextMutablePtr context, const BackupPtr & backup)
+String getDataPathInBackup(const DatabaseAndTableName & table_name)
 {
-    RestoreObjectsTasks restore_tasks;
-
-    auto elements2 = adjustElements(elements, context->getCurrentDatabase());
-    auto renaming_config = std::make_shared<BackupRenamingConfig>();
-    renaming_config->setFromBackupQueryElements(elements2);
-
-    for (const auto & element : elements2)
-    {
-        switch (element.type)
-        {
-            case ElementType::TABLE:
-            {
-                const String & database_name = element.name.first;
-                const String & table_name = element.name.second;
-                restoreTable({database_name, table_name}, element.partitions, context, backup, renaming_config, restore_tasks);
-                break;
-            }
-
-            case ElementType::DATABASE:
-            {
-                const String & database_name = element.name.first;
-                restoreDatabase(database_name, element.except_list, context, backup, renaming_config, restore_tasks);
-                break;
-            }
-
-            case ElementType::ALL_DATABASES:
-            {
-                restoreAllDatabases(element.except_list, context, backup, renaming_config, restore_tasks);
-                break;
-            }
-
-            default:
-                throw Exception("Unexpected element type", ErrorCodes::LOGICAL_ERROR); /// other element types have been removed in deduplicateElements()
-        }
-    }
-
-    return restore_tasks;
+    if (table_name.first.empty() || table_name.second.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name and table name must not be empty");
+    assert(!table_name.first.empty() && !table_name.second.empty());
+    return String{"data/"} + escapeForFileName(table_name.first) + "/" + escapeForFileName(table_name.second) + "/";
 }
 
-
-void executeRestoreTasks(RestoreObjectsTasks && restore_tasks, size_t num_threads)
+String getDataPathInBackup(const IAST & create_query)
 {
-    if (!num_threads)
-        num_threads = 1;
+    const auto & create = create_query.as<const ASTCreateQuery &>();
+    if (!create.table)
+        return {};
+    if (create.temporary)
+        return getDataPathInBackup({DatabaseCatalog::TEMPORARY_DATABASE, create.getTable()});
+    return getDataPathInBackup({create.getDatabase(), create.getTable()});
+}
 
-    RestoreDataTasks restore_data_tasks;
-    for (auto & restore_object_task : restore_tasks)
-        insertAtEnd(restore_data_tasks, std::move(restore_object_task)());
-    restore_tasks.clear();
+String getMetadataPathInBackup(const DatabaseAndTableName & table_name)
+{
+    if (table_name.first.empty() || table_name.second.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name and table name must not be empty");
+    return String{"metadata/"} + escapeForFileName(table_name.first) + "/" + escapeForFileName(table_name.second) + ".sql";
+}
 
-    std::vector<ThreadFromGlobalPool> threads;
-    size_t num_active_threads = 0;
-    std::mutex mutex;
-    std::condition_variable cond;
-    std::exception_ptr exception;
+String getMetadataPathInBackup(const String & database_name)
+{
+    if (database_name.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name must not be empty");
+    return String{"metadata/"} + escapeForFileName(database_name) + ".sql";
+}
 
-    for (auto & restore_data_task : restore_data_tasks)
-    {
-        {
-            std::unique_lock lock{mutex};
-            if (exception)
-                break;
-            cond.wait(lock, [&] { return num_active_threads < num_threads; });
-            if (exception)
-                break;
-            ++num_active_threads;
-        }
-
-        threads.emplace_back([&restore_data_task, &mutex, &cond, &num_active_threads, &exception]() mutable
-        {
-            try
-            {
-                restore_data_task();
-                restore_data_task = {};
-            }
-            catch (...)
-            {
-                std::lock_guard lock{mutex};
-                if (!exception)
-                    exception = std::current_exception();
-            }
-
-            {
-                std::lock_guard lock{mutex};
-                --num_active_threads;
-                cond.notify_all();
-            }
-        });
-    }
-
-    for (auto & thread : threads)
-        thread.join();
-
-    restore_data_tasks.clear();
-
-    if (exception)
-        std::rethrow_exception(exception);
+String getMetadataPathInBackup(const IAST & create_query)
+{
+    const auto & create = create_query.as<const ASTCreateQuery &>();
+    if (!create.table)
+        return getMetadataPathInBackup(create.getDatabase());
+    if (create.temporary)
+        return getMetadataPathInBackup({DatabaseCatalog::TEMPORARY_DATABASE, create.getTable()});
+    return getMetadataPathInBackup({create.getDatabase(), create.getTable()});
 }
 
 }

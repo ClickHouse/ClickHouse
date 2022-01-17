@@ -23,6 +23,7 @@ class StorageLog final : public shared_ptr_helper<StorageLog>, public IStorage
 {
     friend class LogSource;
     friend class LogSink;
+    friend class LogRestoreTask;
     friend struct shared_ptr_helper<StorageLog>;
 
 public:
@@ -52,7 +53,7 @@ public:
     ColumnSizeByName getColumnSizes() const override;
 
     BackupEntries backup(const ASTs & partitions, ContextPtr context) override;
-    RestoreDataTasks restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context) override;
+    RestoreFromBackupTaskPtr restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context) override;
 
 protected:
     /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
