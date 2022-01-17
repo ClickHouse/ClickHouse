@@ -78,7 +78,7 @@ void RewriteFunctionToSubcolumnData::visit(ASTFunction & function, ASTPtr & ast)
     const auto & columns = metadata_snapshot->getColumns();
     const auto & name_in_storage = identifier->name();
 
-    if (!columns.has(name_in_storage))
+    if (!columns.has(name_in_storage) || forbidden_identifiers.contains(name_in_storage))
         return;
 
     const auto & column_type = columns.get(name_in_storage).type;

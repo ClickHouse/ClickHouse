@@ -661,9 +661,30 @@ void transformIfStringsIntoEnum(ASTPtr & query)
     ConvertStringsToEnumVisitor(convert_data).visit(query);
 }
 
-void optimizeFunctionsToSubcolumns(ASTPtr & query, const StorageMetadataPtr & metadata_snapshot)
+void optimizeFunctionsToSubcolumns(ASTPtr & query, const TreeRewriterResult & result)
 {
-    RewriteFunctionToSubcolumnVisitor::Data data{metadata_snapshot};
+    if (!result.storage || !result.storage->supportsSubcolumns() || !result.metadata_snapshot)
+        return;
+
+    IdentifierNameSet forbidden_identifiers;
+    const auto & select_query = assert_cast<const ASTSelectQuery &>(*query);
+
+    if (select_query.groupBy())
+        select_query.groupBy()->collectIdentifierNames(forbidden_identifiers);
+
+    const auto & primary_key_columns = result.metadata_snapshot->getColumnsRequiredForPrimaryKey();
+    forbidden_identifiers.insert(primary_key_columns.begin(), primary_key_columns.end());
+
+    const auto & partition_key_columns = result.metadata_snapshot->getColumnsRequiredForPartitionKey();
+    forbidden_identifiers.insert(partition_key_columns.begin(), partition_key_columns.end());
+
+    for (const auto & index : result.metadata_snapshot->getSecondaryIndices())
+    {
+        const auto & index_columns = index.expression->getRequiredColumns();
+        forbidden_identifiers.insert(index_columns.begin(), index_columns.end());
+    }
+
+    RewriteFunctionToSubcolumnVisitor::Data data{result.metadata_snapshot, forbidden_identifiers};
     RewriteFunctionToSubcolumnVisitor(data).visit(query);
 }
 
@@ -740,9 +761,8 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (!select_query)
         throw Exception("Select analyze for not select asts.", ErrorCodes::LOGICAL_ERROR);
 
-    if (settings.optimize_functions_to_subcolumns && result.storage
-        && result.storage->supportsSubcolumns() && result.metadata_snapshot)
-        optimizeFunctionsToSubcolumns(query, result.metadata_snapshot);
+    if (settings.optimize_functions_to_subcolumns)
+        optimizeFunctionsToSubcolumns(query, result);
 
     /// Move arithmetic operations out of aggregation functions
     if (settings.optimize_arithmetic_operations_in_aggregate_functions)
