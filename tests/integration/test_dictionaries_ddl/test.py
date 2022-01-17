@@ -82,7 +82,7 @@ def test_create_and_select_mysql(started_cluster, clickhouse, name, layout):
         key_field1 Int32,
         key_field2 Int64,
         value1 String DEFAULT 'xxx',
-        value2 Float32 DEFAULT 'yyy'
+        value2 Float32 DEFAULT '42.42'
     )
     PRIMARY KEY key_field1, key_field2
     SOURCE(MYSQL(

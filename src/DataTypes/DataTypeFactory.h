@@ -85,6 +85,7 @@ void registerDataTypeNested(DataTypeFactory & factory);
 void registerDataTypeInterval(DataTypeFactory & factory);
 void registerDataTypeLowCardinality(DataTypeFactory & factory);
 void registerDataTypeDomainIPv4AndIPv6(DataTypeFactory & factory);
+void registerDataTypeDomainBool(DataTypeFactory & factory);
 void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory);
 void registerDataTypeDomainGeo(DataTypeFactory & factory);
 

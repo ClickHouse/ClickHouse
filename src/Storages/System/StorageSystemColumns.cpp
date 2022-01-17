@@ -9,7 +9,6 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/queryToString.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/NullSource.h>

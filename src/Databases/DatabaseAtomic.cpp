@@ -43,6 +43,7 @@ DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, UUID uuid, c
     , db_uuid(uuid)
 {
     assert(db_uuid != UUIDHelpers::Nil);
+    fs::create_directories(fs::path(getContext()->getPath()) / "metadata");
     fs::create_directories(path_to_table_symlinks);
     tryCreateMetadataSymlink();
 }
@@ -84,7 +85,7 @@ void DatabaseAtomic::drop(ContextPtr)
     fs::remove_all(getMetadataPath());
 }
 
-void DatabaseAtomic::attachTable(const String & name, const StoragePtr & table, const String & relative_table_path)
+void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name, const StoragePtr & table, const String & relative_table_path)
 {
     assert(relative_table_path != data_path && !relative_table_path.empty());
     DetachedTables not_in_use;
@@ -96,7 +97,7 @@ void DatabaseAtomic::attachTable(const String & name, const StoragePtr & table, 
     table_name_to_path.emplace(std::make_pair(name, relative_table_path));
 }
 
-StoragePtr DatabaseAtomic::detachTable(const String & name)
+StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & name)
 {
     DetachedTables not_in_use;
     std::unique_lock lock(mutex);
@@ -229,15 +230,8 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
 
     StoragePtr table = getTableUnlocked(table_name, db_lock);
 
-    if (table->isDictionary() && !dictionary)
-    {
-        if (exchange)
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Use EXCHANGE DICTIONARIES for dictionaries and EXCHANGE TABLES for tables.");
-        else
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Use RENAME DICTIONARY for dictionaries and RENAME TABLE for tables.");
-    }
+    if (dictionary && !table->isDictionary())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
 
     table->checkTableCanBeRenamed();
     assert_can_move_mat_view(table);
@@ -245,6 +239,8 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     if (exchange)
     {
         other_table = other_db.getTableUnlocked(to_table_name, other_db_lock);
+        if (dictionary && !other_table->isDictionary())
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
         other_table->checkTableCanBeRenamed();
         assert_can_move_mat_view(other_table);
     }

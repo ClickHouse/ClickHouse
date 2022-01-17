@@ -6,6 +6,7 @@
 #include <Core/Block.h>
 #include <Formats/CapnProtoUtils.h>
 #include <Processors/Formats/IRowInputFormat.h>
+#include <Processors/Formats/ISchemaReader.h>
 
 namespace DB
 {
@@ -26,9 +27,9 @@ public:
 
     String getName() const override { return "CapnProtoRowInputFormat"; }
 
+private:
     bool readRow(MutableColumns & columns, RowReadExtension &) override;
 
-private:
     kj::Array<capnp::word> readMessage();
 
     std::shared_ptr<CapnProtoSchemaParser> parser;
@@ -36,6 +37,17 @@ private:
     const FormatSettings format_settings;
     DataTypes column_types;
     Names column_names;
+};
+
+class CapnProtoSchemaReader : public IExternalSchemaReader
+{
+public:
+    explicit CapnProtoSchemaReader(const FormatSettings & format_settings_);
+
+    NamesAndTypesList readSchema() override;
+
+private:
+    const FormatSettings format_settings;
 };
 
 }

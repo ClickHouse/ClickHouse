@@ -34,7 +34,7 @@ public:
         queue.clearAndFinish();
     }
 
-    void finalize() override
+    void finalizeImpl() override
     {
         queue.finish();
     }

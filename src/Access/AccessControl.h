@@ -71,6 +71,7 @@ public:
 
     void reloadUsersConfigs();
     void startPeriodicReloadingUsersConfigs();
+    void stopPeriodicReloadingUsersConfigs();
 
     /// Loads access entities from the directory on the local disk.
     /// Use that directory to keep created users/roles/etc.
@@ -112,7 +113,7 @@ public:
     bool isSettingNameAllowed(const std::string_view & name) const;
     void checkSettingNameIsAllowed(const std::string_view & name) const;
 
-    UUID login(const Credentials & credentials, const Poco::Net::IPAddress & address) const;
+    UUID authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address) const;
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
 
     std::shared_ptr<const ContextAccess> getContextAccess(

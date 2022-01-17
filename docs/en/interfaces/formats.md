@@ -24,6 +24,8 @@ The supported formats are:
 | [CSVWithNames](#csvwithnames)                                                           | ✔     | ✔      |
 | [CSVWithNamesAndTypes](#csvwithnamesandtypes)                                                           | ✔     | ✔      |
 | [CustomSeparated](#format-customseparated)                                              | ✔     | ✔      |
+| [CustomSeparatedWithNames](#customseparatedwithnames)                                   | ✔     | ✔      |
+| [CustomSeparatedWithNamesAndTypes](#customseparatedwithnamesandtypes)                   | ✔     | ✔      |
 | [Values](#data-format-values)                                                           | ✔     | ✔      |
 | [Vertical](#vertical)                                                                   | ✗     | ✔      |
 | [JSON](#json)                                                                           | ✗     | ✔      |
@@ -61,7 +63,7 @@ The supported formats are:
 | [Native](#native)                                                                       | ✔     | ✔      |
 | [Null](#null)                                                                           | ✗     | ✔      |
 | [XML](#xml)                                                                             | ✗     | ✔      |
-| [CapnProto](#capnproto)                                                                 | ✔     | ✗      |
+| [CapnProto](#capnproto)                                                                 | ✔     | ✔      |
 | [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
 | [Regexp](#data-format-regexp)                                                           | ✔     | ✗      |
 | [RawBLOB](#rawblob)                                                                     | ✔     | ✔      |
@@ -177,6 +179,9 @@ This format is also available under the name `TSVRaw`.
 ## TabSeparatedWithNames {#tabseparatedwithnames}
 
 Differs from the `TabSeparated` format in that the column names are written in the first row.
+
+During parsing, the first row is expected to contain the column names. You can use column names to determine their position and to check their correctness.
+
 If setting [input_format_with_names_use_header](../operations/settings/settings.md#settings-input_format_with_names_use_header) is set to 1,
 the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#settings-input_format_skip_unknown_fields) is set to 1.
 Otherwise, the first row will be skipped.
@@ -199,7 +204,7 @@ When parsing with this format, tabs or linefeeds are not allowed in each field.
 
 This format is also available under the name `TSVRawWithNames`.
 
-## TabSeparatedWithNamesAndTypes {#tabseparatedrawwithnamesandtypes}
+## TabSeparatedRawWithNamesAndTypes {#tabseparatedrawwithnamesandtypes}
 
 Differs from `TabSeparatedWithNamesAndTypes` format in that the rows are written without escaping.
 When parsing with this format, tabs or linefeeds are not allowed in each field.
@@ -426,8 +431,17 @@ Also prints two header rows with column names and types, similar to [TabSeparate
 
 ## CustomSeparated {#format-customseparated}
 
-Similar to [Template](#format-template), but it prints or reads all columns and uses escaping rule from setting `format_custom_escaping_rule` and delimiters from settings `format_custom_field_delimiter`, `format_custom_row_before_delimiter`, `format_custom_row_after_delimiter`, `format_custom_row_between_delimiter`, `format_custom_result_before_delimiter` and `format_custom_result_after_delimiter`, not from format strings.
-There is also `CustomSeparatedIgnoreSpaces` format, which is similar to `TemplateIgnoreSpaces`.
+Similar to [Template](#format-template), but it prints or reads all names and types of columns and uses escaping rule from [format_custom_escaping_rule](../operations/settings/settings.md#format-custom-escaping-rule) setting and delimiters from [format_custom_field_delimiter](../operations/settings/settings.md#format-custom-field-delimiter), [format_custom_row_before_delimiter](../operations/settings/settings.md#format-custom-row-before-delimiter), [format_custom_row_after_delimiter](../operations/settings/settings.md#format-custom-row-after-delimiter), [format_custom_row_between_delimiter](../operations/settings/settings.md#format-custom-row-between-delimiter), [format_custom_result_before_delimiter](../operations/settings/settings.md#format-custom-result-before-delimiter) and [format_custom_result_after_delimiter](../operations/settings/settings.md#format-custom-result-after-delimiter) settings, not from format strings.
+
+There is also `CustomSeparatedIgnoreSpaces` format, which is similar to [TemplateIgnoreSpaces](#templateignorespaces).
+
+## CustomSeparatedWithNames {#customseparatedwithnames}
+
+Also prints the header row with column names, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
+
+## CustomSeparatedWithNamesAndTypes {#customseparatedwithnamesandtypes}
+
+Also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
 
 ## JSON {#json}
 
@@ -1092,12 +1106,44 @@ Arrays are output as `<array><elem>Hello</elem><elem>World</elem>...</array>`,an
 
 ## CapnProto {#capnproto}
 
-Cap’n Proto is a binary message format similar to Protocol Buffers and Thrift, but not like JSON or MessagePack.
+CapnProto is a binary message format similar to [Protocol Buffers](https://developers.google.com/protocol-buffers/) and [Thrift](https://en.wikipedia.org/wiki/Apache_Thrift), but not like [JSON](#json) or [MessagePack](https://msgpack.org/).
 
-Cap’n Proto messages are strictly typed and not self-describing, meaning they need an external schema description. The schema is applied on the fly and cached for each query.
+CapnProto messages are strictly typed and not self-describing, meaning they need an external schema description. The schema is applied on the fly and cached for each query.
+
+See also [Format Schema](#formatschema).
+
+### Data Types Matching {#data_types-matching-capnproto}
+
+The table below shows supported data types and how they match ClickHouse [data types](../sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
+
+| CapnProto data type (`INSERT`) | ClickHouse data type                                      | CapnProto data type (`SELECT`) |
+|--------------------------------|-----------------------------------------------------------|--------------------------------|
+| `UINT8`, `BOOL`                | [UInt8](../sql-reference/data-types/int-uint.md)          | `UINT8`                        |
+| `INT8`                         | [Int8](../sql-reference/data-types/int-uint.md)           | `INT8`                         |
+| `UINT16`                       | [UInt16](../sql-reference/data-types/int-uint.md), [Date](../sql-reference/data-types/date.md)         | `UINT16`                       |
+| `INT16`                        | [Int16](../sql-reference/data-types/int-uint.md)          | `INT16`                        |
+| `UINT32`                       | [UInt32](../sql-reference/data-types/int-uint.md), [DateTime](../sql-reference/data-types/datetime.md)         | `UINT32`                       |
+| `INT32`                        | [Int32](../sql-reference/data-types/int-uint.md)          | `INT32`                        |
+| `UINT64`                       | [UInt64](../sql-reference/data-types/int-uint.md)         | `UINT64`                       |
+| `INT64`                        | [Int64](../sql-reference/data-types/int-uint.md), [DateTime64](../sql-reference/data-types/datetime.md)          | `INT64`                        |
+| `FLOAT32`                      | [Float32](../sql-reference/data-types/float.md)           | `FLOAT32`                      |
+| `FLOAT64`                      | [Float64](../sql-reference/data-types/float.md)           | `FLOAT64`                      |
+| `TEXT, DATA`                   | [String](../sql-reference/data-types/string.md), [FixedString](../sql-reference/data-types/fixedstring.md)               | `TEXT, DATA`                       |
+| `union(T, Void), union(Void, T)`          | [Nullable(T)](../sql-reference/data-types/date.md)       | `union(T, Void), union(Void, T)`                       |
+| `ENUM`                         | [Enum(8\|16)](../sql-reference/data-types/enum.md)        | `ENUM`                         |
+| `LIST`                         | [Array](../sql-reference/data-types/array.md)             | `LIST`                         |
+| `STRUCT`                       | [Tuple](../sql-reference/data-types/tuple.md)             | `STRUCT`                       |
+
+For working with `Enum` in CapnProto format use the [format_capn_proto_enum_comparising_mode](../operations/settings/settings.md#format-capn-proto-enum-comparising-mode) setting.
+
+Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` type also can be nested.
+
+### Inserting and Selecting Data {#inserting-and-selecting-data-capnproto}
+
+You can insert CapnProto data from a file into ClickHouse table by the following command:
 
 ``` bash
-$ cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits FORMAT CapnProto SETTINGS format_schema='schema:Message'"
+$ cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits FORMAT CapnProto SETTINGS format_schema = 'schema:Message'"
 ```
 
 Where `schema.capnp` looks like this:
@@ -1109,9 +1155,11 @@ struct Message {
 }
 ```
 
-Deserialization is effective and usually does not increase the system load.
+You can select data from a ClickHouse table and save them into some file in the CapnProto format by the following command:
 
-See also [Format Schema](#formatschema).
+``` bash
+$ clickhouse-client --query = "SELECT * FROM test.hits FORMAT CapnProto SETTINGS format_schema = 'schema:Message'"
+```
 
 ## Protobuf {#protobuf}
 
@@ -1499,14 +1547,17 @@ Each line of imported data is parsed according to the regular expression.
 
 When working with the `Regexp` format, you can use the following settings:
 
-- `format_regexp` — [String](../sql-reference/data-types/string.md). Contains regular expression in the [re2](https://github.com/google/re2/wiki/Syntax) format.
-- `format_regexp_escaping_rule` — [String](../sql-reference/data-types/string.md). The following escaping rules are supported:
-    - CSV (similarly to [CSV](#csv))
-    - JSON (similarly to [JSONEachRow](#jsoneachrow))
-    - Escaped (similarly to [TSV](#tabseparated))
-    - Quoted (similarly to [Values](#data-format-values))
-    - Raw (extracts subpatterns as a whole, no escaping rules)
-- `format_regexp_skip_unmatched` — [UInt8](../sql-reference/data-types/int-uint.md). Defines the need to throw an exeption in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`.
+-   `format_regexp` — [String](../sql-reference/data-types/string.md). Contains regular expression in the [re2](https://github.com/google/re2/wiki/Syntax) format.
+
+-   `format_regexp_escaping_rule` — [String](../sql-reference/data-types/string.md). The following escaping rules are supported:
+
+    -   CSV (similarly to [CSV](#csv))
+    -   JSON (similarly to [JSONEachRow](#jsoneachrow))
+    -   Escaped (similarly to [TSV](#tabseparated))
+    -   Quoted (similarly to [Values](#data-format-values))
+    -   Raw (extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](#tabseparatedraw))
+	
+-   `format_regexp_skip_unmatched` — [UInt8](../sql-reference/data-types/int-uint.md). Defines the need to throw an exeption in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`.
 
 **Usage**
 

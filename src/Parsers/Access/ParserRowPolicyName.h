@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Parsers/IParserBase.h>
-#include <Access/RowPolicy.h>
 
 
 namespace DB

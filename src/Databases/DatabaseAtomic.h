@@ -37,8 +37,8 @@ public:
 
     void dropTable(ContextPtr context, const String & table_name, bool no_delay) override;
 
-    void attachTable(const String & name, const StoragePtr & table, const String & relative_table_path) override;
-    StoragePtr detachTable(const String & name) override;
+    void attachTable(ContextPtr context, const String & name, const StoragePtr & table, const String & relative_table_path) override;
+    StoragePtr detachTable(ContextPtr context, const String & name) override;
 
     String getTableDataPath(const String & table_name) const override;
     String getTableDataPath(const ASTCreateQuery & query) const override;

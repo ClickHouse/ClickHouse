@@ -8,6 +8,7 @@
 #include <Common/setThreadName.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Chain.h>
@@ -45,7 +46,7 @@ void ClusterCopier::init()
     reloadTaskDescription();
 
     task_cluster->loadTasks(*task_cluster_current_config);
-    getContext()->setClustersConfig(task_cluster_current_config, task_cluster->clusters_prefix);
+    getContext()->setClustersConfig(task_cluster_current_config, false, task_cluster->clusters_prefix);
 
     /// Set up shards and their priority
     task_cluster->random_engine.seed(task_cluster->random_device());

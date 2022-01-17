@@ -1,16 +1,17 @@
 #include <Databases/DDLDependencyVisitor.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Poco/String.h>
 
 namespace DB
 {
 
-TableNamesSet getDependenciesSetFromCreateQuery(ContextPtr global_context, const ASTPtr & ast)
+TableNamesSet getDependenciesSetFromCreateQuery(ContextPtr global_context, const QualifiedTableName & table, const ASTPtr & ast)
 {
     assert(global_context == global_context->getGlobalContext());
     TableLoadingDependenciesVisitor::Data data;
@@ -19,6 +20,7 @@ TableNamesSet getDependenciesSetFromCreateQuery(ContextPtr global_context, const
     data.global_context = global_context;
     TableLoadingDependenciesVisitor visitor{data};
     visitor.visit(ast);
+    data.dependencies.erase(table);
     return data.dependencies;
 }
 
@@ -131,7 +133,10 @@ void DDLDependencyVisitor::extractTableNameFromArgument(const ASTFunction & func
     }
 
     if (qualified_name.database.empty())
+    {
+        /// It can be table/dictionary from default database or XML dictionary, but we cannot distinguish it here.
         qualified_name.database = data.default_database;
+    }
     data.dependencies.emplace(std::move(qualified_name));
 }
 

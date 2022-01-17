@@ -1,6 +1,5 @@
 #include <Parsers/ParserCheckQuery.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ParserPartition.h>

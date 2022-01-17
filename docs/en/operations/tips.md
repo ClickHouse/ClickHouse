@@ -34,7 +34,7 @@ Use `perf top` to watch the time spent in the kernel for memory management.
 Permanent huge pages also do not need to be allocated.
 
 !!! warning "Attention"
-    If your system has less than 16 GB of RAM you may experience various memory exceptions because default settings does not match this amount of RAM. Recommended amount of RAM is 32 GB or more. You can use ClickHouse in system with small amount of RAM, even with 2 GB of RAM, but it requires an additional tuning and able to process small ingestion rate.
+    If your system has less than 16 GB of RAM, you may experience various memory exceptions because default settings do not match this amount of memory. The recommended amount of RAM is 32 GB or more. You can use ClickHouse in a system with a small amount of RAM, even with 2 GB of RAM, but it requires additional tuning and can ingest at a low rate.
 
 ## Storage Subsystem {#storage-subsystem}
 

@@ -32,11 +32,11 @@ select '(0, 2)';
 with (select currentDatabase()) as id_no select *, ignore(id_no) from dist_01756 where dummy in (0, 2);
 system flush logs;
 select query from system.query_log where
-    event_date = today() and
+    event_date >= yesterday() and
     event_time > now() - interval 1 hour and
     not is_initial_query and
-    query not like '%system.query_log%' and
-    query like concat('WITH%', currentDatabase(), '%AS id_no %') and
+    query not like '%system%query_log%' and
+    query like concat('WITH%', currentDatabase(), '%AS `id_no` %') and
     type = 'QueryFinish'
 order by query;
 
@@ -51,11 +51,11 @@ select 'optimize_skip_unused_shards_rewrite_in(0, 2)';
 with (select currentDatabase()) as id_02 select *, ignore(id_02) from dist_01756 where dummy in (0, 2);
 system flush logs;
 select query from system.query_log where
-    event_date = today() and
+    event_date >= yesterday() and
     event_time > now() - interval 1 hour and
     not is_initial_query and
-    query not like '%system.query_log%' and
-    query like concat('WITH%', currentDatabase(), '%AS id_02 %') and
+    query not like '%system%query_log%' and
+    query like concat('WITH%', currentDatabase(), '%AS `id_02` %') and
     type = 'QueryFinish'
 order by query;
 
@@ -63,11 +63,11 @@ select 'optimize_skip_unused_shards_rewrite_in(2,)';
 with (select currentDatabase()) as id_2 select *, ignore(id_2) from dist_01756 where dummy in (2,);
 system flush logs;
 select query from system.query_log where
-    event_date = today() and
+    event_date >= yesterday() and
     event_time > now() - interval 1 hour and
     not is_initial_query and
-    query not like '%system.query_log%' and
-    query like concat('WITH%', currentDatabase(), '%AS id_2 %') and
+    query not like '%system%query_log%' and
+    query like concat('WITH%', currentDatabase(), '%AS `id_2` %') and
     type = 'QueryFinish'
 order by query;
 
@@ -75,17 +75,18 @@ select 'optimize_skip_unused_shards_rewrite_in(0,)';
 with (select currentDatabase()) as id_0 select *, ignore(id_0) from dist_01756 where dummy in (0,);
 system flush logs;
 select query from system.query_log where
-    event_date = today() and
+    event_date >= yesterday() and
     event_time > now() - interval 1 hour and
     not is_initial_query and
-    query not like '%system.query_log%' and
-    query like concat('WITH%', currentDatabase(), '%AS id_0 %') and
+    query not like '%system%query_log%' and
+    query like concat('WITH%', currentDatabase(), '%AS `id_0` %') and
     type = 'QueryFinish'
 order by query;
 
 -- not tuple
 select * from dist_01756 where dummy in (0);
 select * from dist_01756 where dummy in ('0');
+
 
 --
 -- errors

@@ -15,12 +15,12 @@
             <server>
                 <id>1</id>
                 <hostname>node1</hostname>
-                <port>44444</port>
+                <port>9234</port>
             </server>
             <server>
                 <id>2</id>
                 <hostname>node2</hostname>
-                <port>44444</port>
+                <port>9234</port>
             </server>
         </raft_configuration>
     </keeper_server>

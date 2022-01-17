@@ -10,14 +10,11 @@ namespace DB
 {
 namespace
 {
-    using EntityType = IAccessEntity::Type;
-    using EntityTypeInfo = IAccessEntity::TypeInfo;
-
-    bool parseEntityType(IParserBase::Pos & pos, Expected & expected, EntityType & type)
+    bool parseEntityType(IParserBase::Pos & pos, Expected & expected, AccessEntityType & type)
     {
-        for (auto i : collections::range(EntityType::MAX))
+        for (auto i : collections::range(AccessEntityType::MAX))
         {
-            const auto & type_info = EntityTypeInfo::get(i);
+            const auto & type_info = AccessEntityTypeInfo::get(i);
             if (ParserKeyword{type_info.plural_name.c_str()}.ignore(pos, expected)
                 || (!type_info.plural_alias.empty() && ParserKeyword{type_info.plural_alias.c_str()}.ignore(pos, expected)))
             {
@@ -44,7 +41,7 @@ bool ParserShowAccessEntitiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
     if (!ParserKeyword{"SHOW"}.ignore(pos, expected))
         return false;
 
-    EntityType type;
+    AccessEntityType type;
     bool all = false;
     bool current_quota = false;
     bool current_roles = false;
@@ -56,17 +53,17 @@ bool ParserShowAccessEntitiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
     }
     else if (ParserKeyword{"CURRENT ROLES"}.ignore(pos, expected))
     {
-        type = EntityType::ROLE;
+        type = AccessEntityType::ROLE;
         current_roles = true;
     }
     else if (ParserKeyword{"ENABLED ROLES"}.ignore(pos, expected))
     {
-        type = EntityType::ROLE;
+        type = AccessEntityType::ROLE;
         enabled_roles = true;
     }
     else if (ParserKeyword{"CURRENT QUOTA"}.ignore(pos, expected) || ParserKeyword{"QUOTA"}.ignore(pos, expected))
     {
-        type = EntityType::QUOTA;
+        type = AccessEntityType::QUOTA;
         current_quota = true;
     }
     else
@@ -74,7 +71,7 @@ bool ParserShowAccessEntitiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected
 
     String short_name;
     std::optional<std::pair<String, String>> database_and_table_name;
-    if (type == EntityType::ROW_POLICY)
+    if (type == AccessEntityType::ROW_POLICY)
     {
         String database, table_name;
         bool any_database, any_table;

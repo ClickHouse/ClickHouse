@@ -1,4 +1,3 @@
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTDropQuery.h>
 
 #include <Parsers/CommonParsers.h>

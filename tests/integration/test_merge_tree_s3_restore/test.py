@@ -7,6 +7,7 @@ import time
 import pytest
 from helpers.cluster import ClickHouseCluster, get_instances_dir
 
+
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 NOT_RESTORABLE_CONFIG_PATH = os.path.join(SCRIPT_DIR, './{}/node_not_restorable/configs/config.d/storage_conf_not_restorable.xml'.format(get_instances_dir()))
 COMMON_CONFIGS = ["configs/config.d/bg_processing_pool_conf.xml", "configs/config.d/clusters.xml"]

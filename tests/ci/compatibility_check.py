@@ -3,11 +3,12 @@
 from distutils.version import StrictVersion
 import logging
 import os
-import json
 import subprocess
+import sys
 
 from github import Github
 
+from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
@@ -15,6 +16,9 @@ from build_download_helper import download_builds_filter
 from upload_result_helper import upload_results
 from docker_pull_helper import get_images_with_versions
 from commit_status_helper import post_commit_status
+from clickhouse_helper import ClickHouseHelper, mark_flaky_tests, prepare_tests_results_for_clickhouse
+from stopwatch import Stopwatch
+from rerun_helper import RerunHelper
 
 IMAGE_UBUNTU = "clickhouse/test-old-ubuntu"
 IMAGE_CENTOS = "clickhouse/test-old-centos"
@@ -97,16 +101,21 @@ def get_run_commands(build_path, result_folder, server_log_folder, image_centos,
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
-    repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
-    reports_path = os.getenv("REPORTS_PATH", "./reports")
 
-    with open(os.getenv('GITHUB_EVENT_PATH'), 'r', encoding='utf-8') as event_file:
-        event = json.load(event_file)
+    stopwatch = Stopwatch()
 
-    pr_info = PRInfo(event)
+    temp_path = TEMP_PATH
+    repo_path = REPO_COPY
+    reports_path = REPORTS_PATH
+
+    pr_info = PRInfo()
 
     gh = Github(get_best_robot_token())
+
+    rerun_helper = RerunHelper(gh, pr_info, CHECK_NAME)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
 
     docker_images = get_images_with_versions(reports_path, [IMAGE_CENTOS, IMAGE_UBUNTU])
 
@@ -147,6 +156,13 @@ if __name__ == "__main__":
 
     s3_helper = S3Helper('https://s3.amazonaws.com')
     state, description, test_results, additional_logs = process_result(result_path, server_log_path)
+
+    ch_helper = ClickHouseHelper()
+    mark_flaky_tests(ch_helper, CHECK_NAME, test_results)
+
     report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, additional_logs, CHECK_NAME)
     print(f"::notice ::Report url: {report_url}")
     post_commit_status(gh, pr_info.sha, CHECK_NAME, description, state, report_url)
+
+    prepared_events = prepare_tests_results_for_clickhouse(pr_info, test_results, state, stopwatch.duration_seconds, stopwatch.start_time_str, report_url, CHECK_NAME)
+    ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)

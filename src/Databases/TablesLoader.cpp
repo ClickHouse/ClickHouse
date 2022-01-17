@@ -36,8 +36,19 @@ void mergeDependenciesGraphs(DependenciesInfos & main_dependencies_info, const D
             if (maybe_existing_info.dependencies.empty())
                 maybe_existing_info.dependencies = dependencies;
             else if (maybe_existing_info.dependencies != dependencies)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Have different dependencies for {}: {} and {}, it's a bug",
-                                table, fmt::join(maybe_existing_info.dependencies, ", "), fmt::join(dependencies, ", "));
+            {
+                /// Can happen on DatabaseReplicated recovery
+                LOG_WARNING(&Poco::Logger::get("TablesLoader"), "Replacing outdated dependencies ({}) of {} with: {}",
+                            fmt::join(maybe_existing_info.dependencies, ", "),
+                            table,
+                            fmt::join(dependencies, ", "));
+                for (const auto & old_dependency : maybe_existing_info.dependencies)
+                {
+                    [[maybe_unused]] bool removed = main_dependencies_info[old_dependency].dependent_database_objects.erase(table);
+                    assert(removed);
+                }
+                maybe_existing_info.dependencies = dependencies;
+            }
         }
     }
 }
@@ -122,10 +133,14 @@ void TablesLoader::removeUnresolvableDependencies(bool remove_loaded)
         /// Table exists and it's already loaded
         if (DatabaseCatalog::instance().isTableExist(StorageID(dependency_name.database, dependency_name.table), global_context))
             return remove_loaded;
-        /// It's XML dictionary. It was loaded before tables and DDL dictionaries.
+        /// It's XML dictionary.
         if (dependency_name.database == metadata.default_database &&
             global_context->getExternalDictionariesLoader().has(dependency_name.table))
-            return remove_loaded;
+        {
+            LOG_WARNING(log, "Tables {} depend on XML dictionary {}, but XML dictionaries are loaded independently."
+                        "Consider converting it to DDL dictionary.", fmt::join(info.dependent_database_objects, ", "), dependency_name);
+            return true;
+        }
 
         /// Some tables depends on table "dependency_name", but there is no such table in DatabaseCatalog and we don't have its metadata.
         /// We will ignore it and try to load dependent tables without "dependency_name"

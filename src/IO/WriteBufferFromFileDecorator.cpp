@@ -11,22 +11,17 @@ WriteBufferFromFileDecorator::WriteBufferFromFileDecorator(std::unique_ptr<Write
     swap(*impl);
 }
 
-void WriteBufferFromFileDecorator::finalize()
+void WriteBufferFromFileDecorator::finalizeImpl()
 {
-    if (finalized)
-        return;
-
     next();
     impl->finalize();
-
-    finalized = true;
 }
 
 WriteBufferFromFileDecorator::~WriteBufferFromFileDecorator()
 {
     try
     {
-        WriteBufferFromFileDecorator::finalize();
+        finalize();
     }
     catch (...)
     {

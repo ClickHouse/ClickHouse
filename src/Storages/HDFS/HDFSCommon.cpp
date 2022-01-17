@@ -22,7 +22,7 @@ namespace ErrorCodes
 }
 
 const String HDFSBuilderWrapper::CONFIG_PREFIX = "hdfs";
-const String HDFS_URL_REGEXP = "^hdfs://[^:/]*:[0-9]*/.*";
+const String HDFS_URL_REGEXP = "^hdfs://[^/]*/.*";
 
 void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration & config,
     const String & config_path, bool isUser)
@@ -197,6 +197,21 @@ HDFSFSPtr createHDFSFS(hdfsBuilder * builder)
             ErrorCodes::NETWORK_ERROR);
 
     return fs;
+}
+
+String getNameNodeUrl(const String & hdfs_url)
+{
+    const size_t pos = hdfs_url.find('/', hdfs_url.find("//") + 2);
+    String namenode_url = hdfs_url.substr(0, pos) + "/";
+    return namenode_url;
+}
+
+String getNameNodeCluster(const String &hdfs_url)
+{
+    auto pos1 = hdfs_url.find("//") + 2;
+    auto pos2 = hdfs_url.find('/', pos1);
+
+    return hdfs_url.substr(pos1, pos2 - pos1);
 }
 
 void checkHDFSURL(const String & url)

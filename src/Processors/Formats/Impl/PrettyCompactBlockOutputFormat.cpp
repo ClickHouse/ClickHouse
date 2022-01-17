@@ -54,7 +54,7 @@ PrettyCompactBlockOutputFormat::PrettyCompactBlockOutputFormat(WriteBuffer & out
 {
 }
 
-void PrettyCompactBlockOutputFormat::writeSuffixIfNot()
+void PrettyCompactBlockOutputFormat::writeSuffix()
 {
     if (mono_chunk)
     {
@@ -62,7 +62,7 @@ void PrettyCompactBlockOutputFormat::writeSuffixIfNot()
         mono_chunk.clear();
     }
 
-    PrettyBlockOutputFormat::writeSuffixIfNot();
+    PrettyBlockOutputFormat::writeSuffix();
 }
 
 void PrettyCompactBlockOutputFormat::writeHeader(
@@ -218,7 +218,7 @@ void PrettyCompactBlockOutputFormat::write(const Chunk & chunk, PortKind port_ki
         }
         else
         {
-            /// Should be written from writeSuffixIfNot()
+            /// Should be written from writeSuffix()
             assert(!mono_chunk);
         }
     }
@@ -269,6 +269,8 @@ void registerOutputFormatPrettyCompact(FormatFactory & factory)
         });
     }
 
+    factory.markOutputFormatSupportsParallelFormatting("PrettyCompact");
+
     factory.registerOutputFormat("PrettyCompactNoEscapes", [](
         WriteBuffer & buf,
         const Block & sample,
@@ -279,6 +281,7 @@ void registerOutputFormatPrettyCompact(FormatFactory & factory)
         changed_settings.pretty.color = false;
         return std::make_shared<PrettyCompactBlockOutputFormat>(buf, sample, changed_settings, false /* mono_block */);
     });
+    factory.markOutputFormatSupportsParallelFormatting("PrettyCompactNoEscapes");
 }
 
 }
