@@ -147,13 +147,10 @@ endif()
 
 add_subdirectory (fmtlib-cmake)
 
-if (USE_KRB5)
-    add_subdirectory (krb5-cmake)
-    if (USE_CYRUS_SASL)
-        add_subdirectory (cyrus-sasl-cmake)
-    endif()
+add_subdirectory (krb5-cmake)
+if (USE_CYRUS_SASL)
+    add_subdirectory (cyrus-sasl-cmake) # for krb5
 endif()
-
 
 add_subdirectory (libpqxx-cmake)
 add_subdirectory (libpq-cmake)

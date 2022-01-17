@@ -486,7 +486,6 @@ message (STATUS
 
 include (GNUInstallDirs)
 
-include (cmake/find/krb5.cmake)
 include (cmake/find/libgsasl.cmake)
 include (cmake/find/cyrus-sasl.cmake)
 include (cmake/find/llvm.cmake)

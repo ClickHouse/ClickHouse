@@ -345,9 +345,8 @@ if (USE_CYRUS_SASL)
     dbms_target_link_libraries(PRIVATE ${CYRUS_SASL_LIBRARY})
 endif()
 
-if (USE_KRB5)
-    dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${KRB5_INCLUDE_DIR})
-    dbms_target_link_libraries(PRIVATE ${KRB5_LIBRARY})
+if (TARGET ch_contrib::krb5)
+    dbms_target_link_libraries(PRIVATE ch_contrib::krb5)
 endif()
 
 if (TARGET ch_contrib::nuraft)

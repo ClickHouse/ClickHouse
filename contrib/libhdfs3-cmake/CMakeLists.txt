@@ -120,7 +120,7 @@ target_include_directories(_hdfs3 SYSTEM BEFORE INTERFACE "${ClickHouse_SOURCE_D
 
 target_link_libraries(_hdfs3 PRIVATE ${LIBGSASL_LIBRARY})
 if (WITH_KERBEROS)
-    target_link_libraries(_hdfs3 PRIVATE ${KRB5_LIBRARY})
+    target_link_libraries(_hdfs3 PRIVATE ch_contrib::krb5)
 endif()
 target_link_libraries(_hdfs3 PRIVATE ${LIBXML2_LIBRARIES})
 
