@@ -486,6 +486,7 @@ void registerInputFormatMsgPack(FormatFactory & factory)
     {
         return std::make_shared<MsgPackRowInputFormat>(sample, buf, params);
     });
+    factory.registerFileExtension("messagepack", "MsgPack");
 }
 
 void registerMsgPackSchemaReader(FormatFactory & factory)
