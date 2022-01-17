@@ -23,8 +23,7 @@ add_executable (compact_array compact_array.cpp)
 target_link_libraries (compact_array PRIVATE clickhouse_common_io)
 
 add_executable (radix_sort radix_sort.cpp)
-target_link_libraries (radix_sort PRIVATE clickhouse_common_io)
-target_include_directories(radix_sort SYSTEM PRIVATE ${PDQSORT_INCLUDE_DIR})
+target_link_libraries (radix_sort PRIVATE clickhouse_common_io ch_contrib::pdqsort)
 
 add_executable (arena_with_free_lists arena_with_free_lists.cpp)
 target_link_libraries (arena_with_free_lists PRIVATE dbms)
