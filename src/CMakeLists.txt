@@ -514,7 +514,7 @@ dbms_target_link_libraries(PUBLIC consistent-hashing)
 
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
 
-if (ENABLE_TESTS AND USE_GTEST)
+if (ENABLE_TESTS)
     macro (grep_gtest_sources BASE_DIR DST_VAR)
         # Cold match files that are not in tests/ directories
         file(GLOB_RECURSE "${DST_VAR}" RELATIVE "${BASE_DIR}" "gtest*.cpp")
@@ -536,7 +536,7 @@ if (ENABLE_TESTS AND USE_GTEST)
     )
 
     target_link_libraries(unit_tests_dbms PRIVATE
-        ${GTEST_BOTH_LIBRARIES}
+        ch_contrib::gtest_all
         clickhouse_functions
         clickhouse_aggregate_functions
         clickhouse_parsers
