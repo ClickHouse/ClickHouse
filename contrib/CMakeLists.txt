@@ -78,10 +78,7 @@ endif()
 # TODO: refactor the contrib libraries below this comment.
 
 add_subdirectory (cityhash102)
-
-if (USE_INTERNAL_FARMHASH_LIBRARY)
-    add_subdirectory (libfarmhash)
-endif ()
+add_subdirectory (libfarmhash)
 
 if (USE_INTERNAL_H3_LIBRARY)
     add_subdirectory(h3-cmake)

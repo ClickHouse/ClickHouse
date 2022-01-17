@@ -14,7 +14,7 @@ target_link_libraries(clickhouse_functions
     PUBLIC
         ${BASE64_LIBRARY}
         ch_contrib::cityhash
-        ${FARMHASH_LIBRARIES}
+        ch_contrib::farmhash
         ${FASTOPS_LIBRARY}
         clickhouse_dictionaries
         clickhouse_dictionaries_embedded

@@ -523,8 +523,6 @@ include (cmake/find/cassandra.cmake)
 include (cmake/find/sentry.cmake)
 include (cmake/find/datasketches.cmake)
 
-find_contrib_lib(farmhash)
-
 if (ENABLE_TESTS)
     include (cmake/find/gtest.cmake)
 endif ()
