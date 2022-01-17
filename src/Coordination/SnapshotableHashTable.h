@@ -16,7 +16,8 @@ struct ListNode
 {
     StringRef key;
     V value;
-    bool active_in_map;
+
+    bool active_in_map{true};
     bool free_key{false};
 };
 
@@ -202,8 +203,8 @@ public:
         else
         {
             map.erase(it->getKey());
-            list.erase(list_itr);
             arena.free(const_cast<char *>(list_itr->key.data), list_itr->key.size);
+            list.erase(list_itr);
         }
 
         updateDataSize(ERASE, key.size(), 0, old_data_size);
@@ -285,8 +286,10 @@ public:
 
     void clear()
     {
-        list.clear();
         map.clear();
+        for (auto itr = list.begin(); itr != list.end(); ++itr)
+            arena.free(const_cast<char *>(itr->key.data), itr->key.size);
+        list.clear();
         updateDataSize(CLEAR, 0, 0, 0);
     }
 
