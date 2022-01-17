@@ -507,7 +507,6 @@ include (cmake/find/libxml2.cmake)
 include (cmake/find/brotli.cmake)
 include (cmake/find/pdqsort.cmake)
 include (cmake/find/miniselect.cmake)
-include (cmake/find/hdfs3.cmake) # uses protobuf
 include (cmake/find/poco.cmake)
 include (cmake/find/curl.cmake)
 include (cmake/find/s3.cmake)
