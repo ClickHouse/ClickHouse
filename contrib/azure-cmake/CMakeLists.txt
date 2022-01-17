@@ -72,8 +72,8 @@ if (TARGET OpenSSL::SSL)
 endif()
 
 # Originally, on Windows azure-core is built with winhttp by default
-if (CURL_FOUND)
-    target_link_libraries(_azure_sdk PRIVATE ${CURL_LIBRARY})
+if (TARGET ch_contrib::curl)
+    target_link_libraries(_azure_sdk PRIVATE ch_contrib::curl)
 endif()
 
 target_link_libraries(_azure_sdk PRIVATE ch_contrib::libxml2)

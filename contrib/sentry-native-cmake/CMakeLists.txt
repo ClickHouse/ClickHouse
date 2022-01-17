@@ -47,6 +47,6 @@ else()
     target_compile_definitions(sentry PUBLIC SENTRY_BUILD_STATIC)
 endif()
 
-target_link_libraries(sentry PRIVATE curl pthread)
+target_link_libraries(sentry PRIVATE ch_contrib::curl pthread)
 target_include_directories(sentry PUBLIC "${SRC_DIR}/include" PRIVATE "${SRC_DIR}/src")
 target_compile_definitions(sentry PRIVATE SENTRY_WITH_INPROC_BACKEND SIZEOF_LONG=8)

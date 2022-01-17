@@ -487,7 +487,6 @@ message (STATUS
 include (GNUInstallDirs)
 
 include (cmake/find/llvm.cmake)
-include (cmake/find/curl.cmake)
 include (cmake/find/s3.cmake)
 include (cmake/find/nlp.cmake)
 include (cmake/find/sentry.cmake)
