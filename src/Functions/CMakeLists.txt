@@ -1,3 +1,4 @@
+include(configure_config.cmake)
 configure_file(config_functions.h.in ${ConfigIncludePath}/config_functions.h)
 
 add_subdirectory(divide)
@@ -14,7 +15,6 @@ target_link_libraries(clickhouse_functions
     PUBLIC
         ch_contrib::cityhash
         ch_contrib::farmhash
-        ${FASTOPS_LIBRARY}
         clickhouse_dictionaries
         clickhouse_dictionaries_embedded
         clickhouse_parsers
@@ -58,8 +58,8 @@ if (TARGET ch_contrib::icu)
     target_link_libraries (clickhouse_functions PRIVATE ch_contrib::icu)
 endif ()
 
-if (USE_FASTOPS)
-    target_include_directories (clickhouse_functions SYSTEM PRIVATE ${FASTOPS_INCLUDE_DIR})
+if (TARGET ch_contrib::fastops)
+    target_link_libraries (clickhouse_functions PRIVATE ch_contrib::fastops)
 endif ()
 
 if (ENABLE_EXAMPLES)
