@@ -507,7 +507,7 @@ if (TARGET ch_contrib::simdjson)
 endif()
 
 if (TARGET ch_contrib::rapidjson)
-    dbms_target_link_directories(PRIVATE ch_contrib::rapidjson)
+    dbms_target_link_libraries(PRIVATE ch_contrib::rapidjson)
 endif()
 
 dbms_target_link_libraries(PUBLIC consistent-hashing)

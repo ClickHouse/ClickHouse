@@ -134,6 +134,7 @@ endif ()
 
 add_subdirectory (base64-cmake)
 add_subdirectory (simdjson-cmake)
+add_subdirectory (rapidjson-cmake)
 add_subdirectory (fastops-cmake)
 add_subdirectory (libuv-cmake)
 add_subdirectory (amqpcpp-cmake) # requires: libuv
