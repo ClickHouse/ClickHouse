@@ -457,9 +457,8 @@ if (USE_AZURE_BLOB_STORAGE)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${AZURE_SDK_INCLUDES})
 endif()
 
-if (USE_S2_GEOMETRY)
-    dbms_target_link_libraries (PUBLIC ${S2_GEOMETRY_LIBRARY})
-    dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${S2_GEOMETRY_INCLUDE_DIR})
+if (TARGET ch_contrib::s2)
+    dbms_target_link_libraries (PUBLIC ch_contrib::s2)
 endif()
 
 if (USE_BROTLI)
