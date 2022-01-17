@@ -494,7 +494,6 @@ include (cmake/find/libxml2.cmake)
 include (cmake/find/curl.cmake)
 include (cmake/find/s3.cmake)
 include (cmake/find/nlp.cmake)
-include (cmake/find/filelog.cmake)
 include (cmake/find/sentry.cmake)
 include (cmake/find/datasketches.cmake)
 
