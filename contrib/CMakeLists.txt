@@ -46,6 +46,7 @@ if (USE_YAML_CPP)
     add_subdirectory (yaml-cpp-cmake)
 endif()
 
+add_subdirectory (re2-cmake)
 add_subdirectory (xz-cmake)
 add_subdirectory (double-conversion-cmake)
 add_subdirectory (boringssl-cmake)
@@ -73,10 +74,6 @@ if (ENABLE_FUZZING)
 endif()
 
 # TODO: refactor the contrib libraries below this comment.
-
-if (USE_INTERNAL_RE2_LIBRARY)
-    add_subdirectory (re2-cmake)
-endif ()
 
 if (USE_INTERNAL_CITYHASH_LIBRARY)
     add_subdirectory (cityhash102)

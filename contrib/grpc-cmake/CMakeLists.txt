@@ -15,12 +15,9 @@ set(_gRPC_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/grpc")
 set(_gRPC_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/grpc")
 
 # Use re2 from ClickHouse contrib, not from gRPC third_party.
-if(NOT RE2_INCLUDE_DIR)
-  message(FATAL_ERROR " grpc: The location of the \"re2\" library is unknown")
-endif()
 set(gRPC_RE2_PROVIDER "clickhouse" CACHE STRING "" FORCE)
-set(_gRPC_RE2_INCLUDE_DIR "${RE2_INCLUDE_DIR}")
-set(_gRPC_RE2_LIBRARIES "${RE2_LIBRARY}")
+set(_gRPC_RE2_INCLUDE_DIR "")
+set(_gRPC_RE2_LIBRARIES ch_contrib::re2)
 
 # Use zlib from ClickHouse contrib, not from gRPC third_party.
 set(gRPC_ZLIB_PROVIDER "clickhouse" CACHE STRING "" FORCE)
