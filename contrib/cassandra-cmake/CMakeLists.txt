@@ -1,3 +1,14 @@
+option(ENABLE_CASSANDRA "Enable Cassandra" ${ENABLE_LIBRARIES})
+
+if (NOT ENABLE_CASSANDRA)
+    message(STATUS "Not using cassandra")
+    return()
+endif()
+
+if (APPLE)
+    set(CMAKE_MACOSX_RPATH ON)
+endif()
+
 # Need to use C++17 since the compilation is not possible with C++20 currently.
 set (CMAKE_CXX_STANDARD 17)
 
@@ -108,20 +119,22 @@ configure_file(
   ${CMAKE_CURRENT_BINARY_DIR}/driver_config.hpp)
 
 
-add_library(cassandra
+add_library(_cassandra
     ${SOURCES}
     $<TARGET_OBJECTS:curl_hostcheck>
     $<TARGET_OBJECTS:hdr_histogram>
     $<TARGET_OBJECTS:http-parser>
     $<TARGET_OBJECTS:minizip>)
 
-target_link_libraries(cassandra ch_contrib::zlib)
-add_library(cassandra_static ALIAS cassandra)
-target_include_directories(cassandra PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${INCLUDE_DIRS})
-target_compile_definitions(cassandra PRIVATE CASS_BUILDING)
+target_link_libraries(_cassandra ch_contrib::zlib)
+target_include_directories(_cassandra PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${INCLUDE_DIRS})
+target_include_directories(_cassandra SYSTEM BEFORE PUBLIC ${CASS_INCLUDE_DIR})
+target_compile_definitions(_cassandra PRIVATE CASS_BUILDING)
 
-target_link_libraries(cassandra uv)
+target_link_libraries(_cassandra ch_contrib::uv)
 
 if(CASS_USE_OPENSSL)
-    target_link_libraries(cassandra ssl)
+    target_link_libraries(_cassandra OpenSSL::SSL)
 endif()
+
+add_library(ch_contrib::cassandra ALIAS _cassandra)

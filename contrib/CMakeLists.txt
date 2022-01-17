@@ -149,9 +149,7 @@ endif()
 
 add_subdirectory (libuv-cmake)
 add_subdirectory (amqpcpp-cmake) # requires: libuv
-if (USE_CASSANDRA)
-    add_subdirectory (cassandra-cmake)
-endif()
+add_subdirectory (cassandra-cmake) # requires: libuv
 
 # Should go before:
 # - sentry-native
