@@ -490,7 +490,6 @@ include (GNUInstallDirs)
 include (cmake/contrib_finder.cmake)
 
 find_contrib_lib(double-conversion) # Must be before parquet
-include (cmake/find/ssl.cmake)
 include (cmake/find/ldap.cmake) # after ssl
 include (cmake/find/icu.cmake)
 include (cmake/find/xz.cmake)

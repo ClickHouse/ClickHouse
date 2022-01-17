@@ -1,3 +1,13 @@
+# Needed for:
+# - securely connecting to an external server, e.g. clickhouse-client --host ... --secure
+# - lots of thirdparty libraries
+option(ENABLE_SSL "Enable ssl" ${ENABLE_LIBRARIES})
+
+if(NOT ENABLE_SSL)
+  message(STATUS "Not using openssl")
+  return()
+endif()
+
 # Copyright (c) 2019 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -677,3 +687,6 @@ target_include_directories(crypto SYSTEM PUBLIC "${BORINGSSL_SOURCE_DIR}/include
 target_include_directories(ssl SYSTEM PUBLIC "${BORINGSSL_SOURCE_DIR}/include")
 
 target_compile_options(crypto PRIVATE -Wno-gnu-anonymous-struct)
+
+add_library(OpenSSL::Crypto ALIAS crypto)
+add_library(OpenSSL::SSL ALIAS ssl)

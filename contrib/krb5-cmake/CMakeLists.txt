@@ -664,7 +664,6 @@ target_include_directories(${KRB5_LIBRARY} PRIVATE
     "${KRB5_SOURCE_DIR}/lib/krb5/rcache"
     "${KRB5_SOURCE_DIR}/lib/krb5/unicode"
     "${KRB5_SOURCE_DIR}/lib/krb5/os"
-    # ${OPENSSL_INCLUDE_DIR}
 )
 
 target_compile_definitions(${KRB5_LIBRARY} PRIVATE
@@ -677,6 +676,4 @@ target_compile_definitions(${KRB5_LIBRARY} PRIVATE
     LIBDIR="/usr/local/lib"
 )
 
-target_link_libraries(${KRB5_LIBRARY}
-    PRIVATE ${OPENSSL_CRYPTO_LIBRARY}
-)
+target_link_libraries(${KRB5_LIBRARY} PRIVATE OpenSSL::Crypto OpenSSL::SSL)

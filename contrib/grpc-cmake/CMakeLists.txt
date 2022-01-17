@@ -31,8 +31,8 @@ set(_gRPC_PROTOBUF_PROTOC_LIBRARIES "${Protobuf_PROTOC_LIBRARY}")
 
 # Use OpenSSL from ClickHouse contrib, not from gRPC third_party.
 set(gRPC_SSL_PROVIDER "clickhouse" CACHE STRING "" FORCE)
-set(_gRPC_SSL_INCLUDE_DIR ${OPENSSL_INCLUDE_DIR})
-set(_gRPC_SSL_LIBRARIES ${OPENSSL_LIBRARIES})
+set(_gRPC_SSL_INCLUDE_DIR "")
+set(_gRPC_SSL_LIBRARIES OpenSSL::Crypto OpenSSL::SSL)
 
 # Use abseil-cpp from ClickHouse contrib, not from gRPC third_party.
 set(gRPC_ABSL_PROVIDER "clickhouse" CACHE STRING "" FORCE)

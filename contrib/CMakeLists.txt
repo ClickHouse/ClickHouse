@@ -54,6 +54,7 @@ if (USE_INTERNAL_XZ_LIBRARY)
     add_subdirectory (xz-cmake)
 endif()
 
+add_subdirectory (boringssl-cmake)
 add_subdirectory (poco-cmake)
 add_subdirectory (croaring-cmake)
 add_subdirectory (zstd-cmake)
@@ -89,13 +90,6 @@ endif ()
 
 if (USE_INTERNAL_H3_LIBRARY)
     add_subdirectory(h3-cmake)
-endif ()
-
-if (USE_INTERNAL_SSL_LIBRARY)
-    add_subdirectory (boringssl-cmake)
-
-    add_library(OpenSSL::Crypto ALIAS crypto)
-    add_library(OpenSSL::SSL ALIAS ssl)
 endif ()
 
 if (USE_INTERNAL_LDAP_LIBRARY)
