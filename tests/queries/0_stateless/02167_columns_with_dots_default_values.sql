@@ -9,7 +9,7 @@ CREATE TABLE test_nested_default
 ENGINE = MergeTree()
 ORDER BY id;
 
-INSERT INTO test_nested_default(`id`, `with_dot.array.string`) VALUES('id', ['str1', 'str2']);
+INSERT INTO test_nested_default(`id`, `with_dot.array`) VALUES('id', ['str1', 'str2']);
 SELECT * FROM test_nested_default;
 
 DROP TABLE test_nested_default;
