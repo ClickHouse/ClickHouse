@@ -5,7 +5,6 @@
 #include <rocksdb/table.h>
 #include <rocksdb/db.h>
 #include <Interpreters/Context.h>
-#include <Common/tests/gtest_global_context.h>
 #include <Storages/MergeTree/MergeTreeMetadataCache.h>
 
 using namespace DB;
