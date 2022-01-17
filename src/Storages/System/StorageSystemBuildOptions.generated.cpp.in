@@ -30,7 +30,6 @@ const char * auto_config_build[]
     "USE_ICU", "@USE_ICU@",
     "USE_H3", "@USE_H3@",
     "USE_MYSQL", "@USE_MYSQL@",
-    "USE_LIBGSASL", "@USE_LIBGSASL@",
     "USE_RDKAFKA", "@USE_RDKAFKA@",
     "USE_CAPNP", "@USE_CAPNP@",
     "USE_BASE64", "@USE_BASE64@",
