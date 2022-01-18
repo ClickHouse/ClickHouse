@@ -100,4 +100,3 @@ optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 0
 		"rows_read": 100,
 optimize_move_to_prewhere = 1, allow_experimental_projection_optimization = 1
 		"rows_read": 100,
-50

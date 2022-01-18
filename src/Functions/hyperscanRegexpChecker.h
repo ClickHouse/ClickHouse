@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/StringRef.h>
+#include <common/StringRef.h>
 
 namespace DB
 {

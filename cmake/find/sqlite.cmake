@@ -5,7 +5,7 @@ if (NOT ENABLE_SQLITE)
 endif()
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/sqlite-amalgamation/sqlite3.c")
-    message (WARNING "submodule contrib/sqlite3-amalgamation is missing. to fix try run: \n git submodule update --init")
+    message (WARNING "submodule contrib/sqlite3-amalgamation is missing. to fix try run: \n git submodule update --init --recursive")
     message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal sqlite library")
     set (USE_SQLITE 0)
     return()

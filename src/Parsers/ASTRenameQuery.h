@@ -25,7 +25,6 @@ public:
     {
         Table from;
         Table to;
-        bool if_exists{false};   /// If this directive is used, one will not get an error if the table/database/dictionary to be renamed/exchanged doesn't exist.
     };
 
     using Elements = std::vector<Element>;
@@ -73,10 +72,6 @@ protected:
         if (database)
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << "RENAME DATABASE " << (settings.hilite ? hilite_none : "");
-
-            if (elements.at(0).if_exists)
-                settings.ostr << (settings.hilite ? hilite_keyword : "") << "IF EXISTS " << (settings.hilite ? hilite_none : "");
-
             settings.ostr << backQuoteIfNeed(elements.at(0).from.database);
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "");
             settings.ostr << backQuoteIfNeed(elements.at(0).to.database);
@@ -101,8 +96,6 @@ protected:
             if (it != elements.cbegin())
                 settings.ostr << ", ";
 
-            if (it->if_exists)
-                settings.ostr << (settings.hilite ? hilite_keyword : "") << "IF EXISTS " << (settings.hilite ? hilite_none : "");
             settings.ostr << (!it->from.database.empty() ? backQuoteIfNeed(it->from.database) + "." : "") << backQuoteIfNeed(it->from.table)
                 << (settings.hilite ? hilite_keyword : "") << (exchange ? " AND " : " TO ") << (settings.hilite ? hilite_none : "")
                 << (!it->to.database.empty() ? backQuoteIfNeed(it->to.database) + "." : "") << backQuoteIfNeed(it->to.table);

@@ -103,4 +103,4 @@ Result:
 └─────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────┘
 ```
 
-[Original article](https://clickhouse.com/docs/en/data-types/geo/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/data-types/geo/) <!--hide-->

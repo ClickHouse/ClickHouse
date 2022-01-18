@@ -1,4 +1,6 @@
+#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
+#endif
 
 #if USE_SSL
 #include <gtest/gtest.h>

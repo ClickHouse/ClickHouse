@@ -652,7 +652,7 @@ SELECT formatDateTime(toDate('2010-01-04'), '%g')
 └────────────────────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.com/docs/en/query_language/functions/date_time_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/date_time_functions/) <!--hide-->
 
 ## FROM_UNIXTIME
 

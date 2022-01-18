@@ -1,5 +1,3 @@
--- Tags: shard, no-parallel
-
 DROP DATABASE IF EXISTS test_01383;
 CREATE DATABASE test_01383;
 

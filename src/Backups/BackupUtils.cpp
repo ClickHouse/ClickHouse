@@ -14,11 +14,9 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/formatAST.h>
 #include <Storages/IStorage.h>
-#include <base/insertAtEnd.h>
+#include <common/insertAtEnd.h>
 #include <boost/range/adaptor/reversed.hpp>
 #include <filesystem>
-
-namespace fs = std::filesystem;
 
 
 namespace DB
@@ -85,8 +83,9 @@ namespace
     /// Replaces elements of types TEMPORARY_TABLE or ALL_TEMPORARY_TABLES with elements of type TABLE or DATABASE.
     void replaceTemporaryTablesWithTemporaryDatabase(Elements & elements)
     {
-        for (auto & element : elements)
+        for (size_t i = 0; i != elements.size(); ++i)
         {
+            auto & element = elements[i];
             switch (element.type)
             {
                 case ElementType::TEMPORARY_TABLE:
@@ -312,11 +311,11 @@ namespace
     String getDataPathInBackup(const IAST & create_query)
     {
         const auto & create = create_query.as<const ASTCreateQuery &>();
-        if (!create.table)
+        if (create.table.empty())
             return {};
         if (create.temporary)
-            return getDataPathInBackup({DatabaseCatalog::TEMPORARY_DATABASE, create.getTable()});
-        return getDataPathInBackup({create.getDatabase(), create.getTable()});
+            return getDataPathInBackup({DatabaseCatalog::TEMPORARY_DATABASE, create.table});
+        return getDataPathInBackup({create.database, create.table});
     }
 
     String getMetadataPathInBackup(const DatabaseAndTableName & table_name)
@@ -336,11 +335,11 @@ namespace
     String getMetadataPathInBackup(const IAST & create_query)
     {
         const auto & create = create_query.as<const ASTCreateQuery &>();
-        if (!create.table)
-            return getMetadataPathInBackup(create.getDatabase());
+        if (create.table.empty())
+            return getMetadataPathInBackup(create.database);
         if (create.temporary)
-            return getMetadataPathInBackup({DatabaseCatalog::TEMPORARY_DATABASE, create.getTable()});
-        return getMetadataPathInBackup({create.getDatabase(), create.getTable()});
+            return getMetadataPathInBackup({DatabaseCatalog::TEMPORARY_DATABASE, create.table});
+        return getMetadataPathInBackup({create.database, create.table});
     }
 
     void backupCreateQuery(const IAST & create_query, BackupEntries & backup_entries)
@@ -419,7 +418,7 @@ namespace
 
         /// We create and execute `create` query for the database name.
         auto create_query = std::make_shared<ASTCreateQuery>();
-        create_query->setDatabase(database_name);
+        create_query->database = database_name;
         create_query->if_not_exists = true;
         InterpreterCreateQuery create_interpreter{create_query, context};
         create_interpreter.execute();
@@ -428,7 +427,7 @@ namespace
     ASTPtr readCreateQueryFromBackup(const DatabaseAndTableName & table_name, const BackupPtr & backup)
     {
         String create_query_path = getMetadataPathInBackup(table_name);
-        auto read_buffer = backup->readFile(create_query_path)->getReadBuffer();
+        auto read_buffer = backup->read(create_query_path)->getReadBuffer();
         String create_query_str;
         readStringUntilEOF(create_query_str, *read_buffer);
         read_buffer.reset();
@@ -439,7 +438,7 @@ namespace
     ASTPtr readCreateQueryFromBackup(const String & database_name, const BackupPtr & backup)
     {
         String create_query_path = getMetadataPathInBackup(database_name);
-        auto read_buffer = backup->readFile(create_query_path)->getReadBuffer();
+        auto read_buffer = backup->read(create_query_path)->getReadBuffer();
         String create_query_str;
         readStringUntilEOF(create_query_str, *read_buffer);
         read_buffer.reset();
@@ -460,7 +459,7 @@ namespace
 
         restore_tasks.emplace_back([table_name, new_create_query, partitions, context, backup]() -> RestoreDataTasks
         {
-            DatabaseAndTableName new_table_name{new_create_query->getDatabase(), new_create_query->getTable()};
+            DatabaseAndTableName new_table_name{new_create_query->database, new_create_query->table};
             if (new_create_query->temporary)
                 new_table_name.first = DatabaseCatalog::TEMPORARY_DATABASE;
 
@@ -536,7 +535,7 @@ namespace
 
         restore_tasks.emplace_back([database_name, new_create_query, except_list, context, backup, renaming_config]() -> RestoreDataTasks
         {
-            const String & new_database_name = new_create_query->getDatabase();
+            const String & new_database_name = new_create_query->database;
             context->checkAccess(AccessType::SHOW_TABLES, new_database_name);
 
             if (!DatabaseCatalog::instance().isDatabaseExist(new_database_name))
@@ -548,10 +547,9 @@ namespace
             }
 
             RestoreObjectsTasks restore_objects_tasks;
-            Strings table_metadata_filenames = backup->listFiles("metadata/" + escapeForFileName(database_name) + "/", "/");
-            for (const String & table_metadata_filename : table_metadata_filenames)
+            Strings table_names = backup->list("metadata/" + escapeForFileName(database_name) + "/", "/");
+            for (const String & table_name : table_names)
             {
-                String table_name = unescapeForFileName(fs::path{table_metadata_filename}.stem());
                 if (except_list.contains(table_name))
                     continue;
                 restoreTable({database_name, table_name}, {}, context, backup, renaming_config, restore_objects_tasks);
@@ -568,11 +566,10 @@ namespace
     {
         restore_tasks.emplace_back([except_list, context, backup, renaming_config]() -> RestoreDataTasks
         {
+            Strings database_names = backup->list("metadata/", "/");
             RestoreObjectsTasks restore_objects_tasks;
-            Strings database_metadata_filenames = backup->listFiles("metadata/", "/");
-            for (const String & database_metadata_filename : database_metadata_filenames)
+            for (const String & database_name : database_names)
             {
-                String database_name = unescapeForFileName(fs::path{database_metadata_filename}.stem());
                 if (except_list.contains(database_name))
                     continue;
                 restoreDatabase(database_name, {}, context, backup, renaming_config, restore_objects_tasks);
@@ -654,10 +651,10 @@ UInt64 estimateBackupSize(const BackupEntries & backup_entries, const BackupPtr 
         UInt64 data_size = entry->getSize();
         if (base_backup)
         {
-            if (base_backup->fileExists(name) && (data_size == base_backup->getFileSize(name)))
+            if (base_backup->exists(name) && (data_size == base_backup->getSize(name)))
             {
                 auto checksum = entry->getChecksum();
-                if (checksum && (*checksum == base_backup->getFileChecksum(name)))
+                if (checksum && (*checksum == base_backup->getChecksum(name)))
                     continue;
             }
         }
@@ -668,7 +665,7 @@ UInt64 estimateBackupSize(const BackupEntries & backup_entries, const BackupPtr 
 
 void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, size_t num_threads)
 {
-    if (!num_threads || !backup->supportsWritingInMultipleThreads())
+    if (!num_threads)
         num_threads = 1;
     std::vector<ThreadFromGlobalPool> threads;
     size_t num_active_threads = 0;
@@ -695,7 +692,7 @@ void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries
         {
             try
             {
-                backup->addFile(name, std::move(entry));
+                backup->write(name, std::move(entry));
             }
             catch (...)
             {
@@ -751,6 +748,7 @@ RestoreObjectsTasks makeRestoreTasks(const Elements & elements, ContextMutablePt
             case ElementType::DATABASE:
             {
                 const String & database_name = element.name.first;
+                auto database = DatabaseCatalog::instance().getDatabase(database_name, context);
                 restoreDatabase(database_name, element.except_list, context, backup, renaming_config, restore_tasks);
                 break;
             }

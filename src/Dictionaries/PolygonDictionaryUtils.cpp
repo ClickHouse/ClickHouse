@@ -2,7 +2,7 @@
 
 #include <Common/ThreadPool.h>
 
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 #include <algorithm>
 #include <thread>
@@ -151,7 +151,7 @@ void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
         }
     }
 
-    for (size_t i = 0; i != all_edges.size(); ++i)
+    for (size_t i = 0; i != all_edges.size(); i++)
     {
         size_t l = edge_left[i];
         size_t r = edge_right[i];

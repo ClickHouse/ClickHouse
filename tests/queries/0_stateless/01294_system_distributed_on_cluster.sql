@@ -1,5 +1,3 @@
--- Tags: distributed, no-parallel
-
 -- just a smoke test
 
 -- quirk for ON CLUSTER does not uses currentDatabase()

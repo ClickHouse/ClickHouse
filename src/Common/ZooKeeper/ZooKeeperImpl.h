@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool.h>
@@ -121,7 +121,7 @@ public:
 
 
     /// If expired, you can only destroy the object. All other methods will throw exception.
-    bool isExpired() const override { return requests_queue.isFinished(); }
+    bool isExpired() const override { return requests_queue.isClosed(); }
 
     /// Useful to check owner of ephemeral node.
     int64_t getSessionID() const override { return session_id; }
@@ -187,7 +187,7 @@ public:
     /// it will do read in another session, that read may not see the
     /// already performed write.
 
-    void finalize(const String & reason)  override { finalize(false, false, reason); }
+    void finalize()  override { finalize(false, false); }
 
     void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
@@ -240,8 +240,6 @@ private:
     ThreadFromGlobalPool send_thread;
     ThreadFromGlobalPool receive_thread;
 
-    Poco::Logger * log;
-
     void connect(
         const Nodes & node,
         Poco::Timespan connection_timeout);
@@ -259,7 +257,7 @@ private:
     void close();
 
     /// Call all remaining callbacks and watches, passing errors to them.
-    void finalize(bool error_send, bool error_receive, const String & reason);
+    void finalize(bool error_send, bool error_receive);
 
     template <typename T>
     void write(const T &);

@@ -17,7 +17,6 @@ ClickHouse server works as MySQL replica. It reads binlog and performs DDL and D
 ``` sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
 ENGINE = MaterializedMySQL('host:port', ['database' | database], 'user', 'password') [SETTINGS ...]
-[TABLE OVERRIDE table1 (...), TABLE OVERRIDE table2 (...)]
 ```
 
 **Engine Parameters**
@@ -83,7 +82,6 @@ When working with the `MaterializedMySQL` database engine, [ReplacingMergeTree](
 | VARCHAR, VAR_STRING     | [String](../../sql-reference/data-types/string.md)           |
 | BLOB                    | [String](../../sql-reference/data-types/string.md)           |
 | BINARY                  | [FixedString](../../sql-reference/data-types/fixedstring.md) |
-| BIT                     | [UInt64](../../sql-reference/data-types/int-uint.md)         |
 
 [Nullable](../../sql-reference/data-types/nullable.md) is supported.
 
@@ -111,19 +109,15 @@ MySQL DDL queries are converted into the corresponding ClickHouse DDL queries ([
 
 - MySQL `DELETE` query is converted into `INSERT` with `_sign=-1`.
 
-- MySQL `UPDATE` query is converted into `INSERT` with `_sign=-1` and `INSERT` with `_sign=1` if the primary key has been changed, or
-  `INSERT` with `_sign=1` if not.
+- MySQL `UPDATE` query is converted into `INSERT` with `_sign=-1` and `INSERT` with `_sign=1`.
 
 ### Selecting from MaterializedMySQL Tables {#select}
 
 `SELECT` query from `MaterializedMySQL` tables has some specifics:
 
-- If `_version` is not specified in the `SELECT` query, the
-  [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier is used, so only rows with
-  `MAX(_version)` are returned for each primary key value.
+- If `_version` is not specified in the `SELECT` query, [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier is used. So only rows with `MAX(_version)` are selected.
 
-- If `_sign` is not specified in the `SELECT` query, `WHERE _sign=1` is used by default. So the deleted rows are not
-  included into the result set.
+- If `_sign` is not specified in the `SELECT` query, `WHERE _sign=1` is used by default. So the deleted rows are not included into the result set.
 
 - The result includes columns comments in case they exist in MySQL database tables.
 
@@ -131,77 +125,15 @@ MySQL DDL queries are converted into the corresponding ClickHouse DDL queries ([
 
 MySQL `PRIMARY KEY` and `INDEX` clauses are converted into `ORDER BY` tuples in ClickHouse tables.
 
-ClickHouse has only one physical order, which is determined by `ORDER BY` clause. To create a new physical order, use
-[materialized views](../../sql-reference/statements/create/view.md#materialized).
+ClickHouse has only one physical order, which is determined by `ORDER BY` clause. To create a new physical order, use [materialized views](../../sql-reference/statements/create/view.md#materialized).
 
 **Notes**
 
 - Rows with `_sign=-1` are not deleted physically from the tables.
-- Cascade `UPDATE/DELETE` queries are not supported by the `MaterializedMySQL` engine, as they are not visible in the
-  MySQL binlog.
+- Cascade `UPDATE/DELETE` queries are not supported by the `MaterializedMySQL` engine.
 - Replication can be easily broken.
 - Manual operations on database and tables are forbidden.
-- `MaterializedMySQL` is affected by the [optimize_on_insert](../../operations/settings/settings.md#optimize-on-insert)
-  setting. Data is merged in the corresponding table in the `MaterializedMySQL` database when a table in the MySQL
-  server changes.
-
-### Table Overrides {#table-overrides}
-
-Table overrides can be used to customize the ClickHouse DDL queries, allowing you to make schema optimizations for your
-application. This is especially useful for controlling partitioning, which is important for the overall performance of
-MaterializedMySQL.
-
-```sql
-CREATE DATABASE db_name ENGINE = MaterializedMySQL(...)
-[SETTINGS ...]
-[TABLE OVERRIDE table_name (
-    [COLUMNS (
-        [name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1], ...]
-        [INDEX index_name1 expr1 TYPE type1(...) GRANULARITY value1, ...]
-        [PROJECTION projection_name_1 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]), ...]
-	)]
-	[ORDER BY expr]
-	[PRIMARY KEY expr]
-	[PARTITION BY expr]
-	[SAMPLE BY expr]
-	[TTL expr]
-), ...]
-```
-
-Example:
-
-```sql
-CREATE DATABASE db_name ENGINE = MaterializedMySQL(...)
-TABLE OVERRIDE table1 (
-    COLUMNS (
-	    userid UUID,
-	    category LowCardinality(String),
-		timestamp DateTime CODEC(Delta, Default)
-    )
-    PARTITION BY toYear(timestamp)
-),
-TABLE OVERRIDE table2 (
-    COLUMNS (
-	    ip_hash UInt32 MATERIALIZED xxHash32(client_ip),
-		client_ip String TTL created + INTERVAL 72 HOUR
-	)
-	SAMPLE BY ip_hash
-)
-```
-
-The `COLUMNS` list is sparse; it contains only modified or extra (MATERIALIZED or ALIAS) columns. Modified columns with
-a different type must be assignable from the original type. There is currently no validation of this or similar issues
-when the `CREATE DATABASE` query executes, so extra care needs to be taken.
-
-You may specify overrides for tables that do not exist yet.
-
-!!! note "Warning"
-    It is easy to break replication with TABLE OVERRIDEs if not used with care. For example:
-    
-    * If a column is added with a table override, but then later added to the source MySQL table, the converted ALTER TABLE
-      query in ClickHouse will fail because the column already exists.
-    * It is currently possible to add overrides that reference nullable columns where not-nullable are required, such as in
-      `ORDER BY` or `PARTITION BY`.
+- `MaterializedMySQL` is influenced by [optimize_on_insert](../../operations/settings/settings.md#optimize-on-insert) setting. The data is merged in the corresponding table in the `MaterializedMySQL` database when a table in the MySQL server changes.
 
 ## Examples of Use {#examples-of-use}
 
@@ -265,4 +197,4 @@ SELECT * FROM mysql.test;
 └───┴─────┴──────┘
 ```
 
-[Original article](https://clickhouse.com/docs/en/engines/database-engines/materialized-mysql/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/engines/database-engines/materialized-mysql/) <!--hide-->

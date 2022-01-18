@@ -1,5 +1,3 @@
--- Tags: long, zookeeper
-
 -- Check that settings are correctly passed through Distributed table
 DROP TABLE IF EXISTS simple;
 CREATE TABLE simple (d Int8) ENGINE = ReplicatedMergeTree('/clickhouse/{database}/test_00563/tables/simple', '1') ORDER BY d;

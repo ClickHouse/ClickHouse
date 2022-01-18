@@ -1,5 +1,3 @@
--- Tags: zookeeper
-
 DROP TABLE IF EXISTS sample_table;
 
 CREATE TABLE sample_table (

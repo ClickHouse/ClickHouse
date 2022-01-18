@@ -1,7 +1,7 @@
 #include "CacheDictionary.h"
 
 #include <memory>
-#include <base/chrono_io.h>
+#include <common/chrono_io.h>
 
 #include <Core/Defines.h>
 #include <Common/CurrentMetrics.h>
@@ -14,7 +14,7 @@
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 
 namespace ProfileEvents
 {
@@ -110,12 +110,12 @@ std::exception_ptr CacheDictionary<dictionary_key_type>::getLastException() cons
 }
 
 template <DictionaryKeyType dictionary_key_type>
-DictionarySourcePtr CacheDictionary<dictionary_key_type>::getSource() const
+const IDictionarySource * CacheDictionary<dictionary_key_type>::getSource() const
 {
     /// Mutex required here because of the getSourceAndUpdateIfNeeded() function
     /// which is used from another thread.
     std::lock_guard lock(source_mutex);
-    return source_ptr;
+    return source_ptr.get();
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -484,37 +484,24 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-Pipe CacheDictionary<dictionary_key_type>::read(const Names & column_names, size_t max_block_size, size_t num_streams) const
+Pipe CacheDictionary<dictionary_key_type>::read(const Names & column_names, size_t max_block_size) const
 {
-    ColumnsWithTypeAndName key_columns;
-
+    Pipe pipe;
+    std::optional<DictionarySourceData> data;
     {
         /// Write lock on storage
         const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
+
         if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-        {
-            auto keys = cache_storage_ptr->getCachedSimpleKeys();
-            key_columns = {ColumnWithTypeAndName(getColumnFromPODArray(keys), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
-        }
+            data.emplace(shared_from_this(), cache_storage_ptr->getCachedSimpleKeys(), column_names);
         else
         {
             auto keys = cache_storage_ptr->getCachedComplexKeys();
-            key_columns = deserializeColumnsWithTypeAndNameFromKeys(dict_struct, keys, 0, keys.size());
+            data.emplace(shared_from_this(), keys, column_names);
         }
     }
 
-    std::shared_ptr<const IDictionary> dictionary = shared_from_this();
-    auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns), max_block_size);
-
-    Pipes pipes;
-
-    for (size_t i = 0; i < num_streams; ++i)
-    {
-        auto source = std::make_shared<DictionarySource>(coordinator);
-        pipes.emplace_back(Pipe(std::move(source)));
-    }
-
-    return Pipe::unitePipes(std::move(pipes));
+    return Pipe(std::make_shared<DictionarySource>(std::move(*data), max_block_size));
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -586,9 +573,9 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
             QueryPipeline pipeline;
 
             if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-                pipeline = QueryPipeline(current_source_ptr->loadIds(requested_keys_vector));
+                pipeline.init(current_source_ptr->loadIds(requested_keys_vector));
             else
-                pipeline = QueryPipeline(current_source_ptr->loadKeys(update_unit_ptr->key_columns, requested_complex_key_rows));
+                pipeline.init(current_source_ptr->loadKeys(update_unit_ptr->key_columns, requested_complex_key_rows));
 
             size_t skip_keys_size_offset = dict_struct.getKeysSize();
             PaddedPODArray<KeyType> found_keys_in_source;
@@ -602,7 +589,6 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
                 Columns key_columns;
                 key_columns.reserve(skip_keys_size_offset);
 
-                convertToFullIfSparse(block);
                 auto block_columns = block.getColumns();
 
                 /// Split into keys columns and attribute columns

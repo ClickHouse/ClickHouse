@@ -1,5 +1,3 @@
--- Tags: long, zookeeper
-
 DROP TABLE IF EXISTS no_prop_table;
 
 CREATE TABLE no_prop_table

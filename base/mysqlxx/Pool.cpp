@@ -7,7 +7,7 @@
 #endif
 
 #include <mysqlxx/Pool.h>
-#include <base/sleep.h>
+#include <common/sleep.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <ctime>
 

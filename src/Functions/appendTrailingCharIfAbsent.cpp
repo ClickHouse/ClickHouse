@@ -4,7 +4,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <base/range.h>
+#include <common/range.h>
 
 
 namespace DB

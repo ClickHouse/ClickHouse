@@ -46,14 +46,14 @@ def started_cluster():
         cluster.shutdown()
 
 
-config = '''<clickhouse>
+config = '''<yandex>
     <profiles>
         <default>
             <sleep_in_send_tables_status_ms>{sleep_in_send_tables_status_ms}</sleep_in_send_tables_status_ms>
             <sleep_in_send_data_ms>{sleep_in_send_data_ms}</sleep_in_send_data_ms>
         </default>
     </profiles>
-</clickhouse>'''
+</yandex>'''
 
 
 def check_query(expected_replica, receive_timeout=300):

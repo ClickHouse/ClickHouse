@@ -1,6 +1,3 @@
--- Tags: long, replica, no-replicated-database
--- Tag no-replicated-database: Fails due to additional replicas or shards
-
 DROP TABLE IF EXISTS r1 SYNC;
 DROP TABLE IF EXISTS r2 SYNC;
 

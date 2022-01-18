@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 -- Create dictionary, since dictGet*() uses DB::Context in executeImpl()
 -- (To cover scope of the Context in DB::PushingToViewsBlockOutputStream::process)
 

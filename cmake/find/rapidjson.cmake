@@ -6,11 +6,11 @@ if(NOT ENABLE_RAPIDJSON)
     return()
 endif()
 
-option(USE_INTERNAL_RAPIDJSON_LIBRARY "Set to FALSE to use system rapidjson library instead of bundled" ON)
+option(USE_INTERNAL_RAPIDJSON_LIBRARY "Set to FALSE to use system rapidjson library instead of bundled" ${NOT_UNBUNDLED})
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/rapidjson/include/rapidjson/rapidjson.h")
     if(USE_INTERNAL_RAPIDJSON_LIBRARY)
-       message(WARNING "submodule contrib/rapidjson is missing. to fix try run: \n git submodule update --init")
+       message(WARNING "submodule contrib/rapidjson is missing. to fix try run: \n git submodule update --init --recursive")
        message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal rapidjson library")
        set(USE_INTERNAL_RAPIDJSON_LIBRARY 0)
     endif()

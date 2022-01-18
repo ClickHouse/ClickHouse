@@ -3,14 +3,13 @@
 #include <Common/setThreadName.h>
 #include <mutex>
 #include <functional>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <sstream>
 #include <iomanip>
 #include <Poco/SHA1Engine.h>
 #include <Poco/Base64Encoder.h>
 #include <boost/algorithm/string.hpp>
-#include <Common/hex.h>
 
 namespace DB
 {
@@ -339,7 +338,6 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         {
 
             parent.children.insert(child_path);
-            parent.size_bytes += child_path.size();
             prev_parent_cversion = parent.stat.cversion;
             prev_parent_zxid = parent.stat.pzxid;
 
@@ -377,7 +375,6 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
                 undo_parent.stat.cversion = prev_parent_cversion;
                 undo_parent.stat.pzxid = prev_parent_zxid;
                 undo_parent.children.erase(child_path);
-                undo_parent.size_bytes -= child_path.size();
             });
         };
 
@@ -511,7 +508,6 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
                 --parent.stat.numChildren;
                 ++parent.stat.cversion;
                 parent.children.erase(child_basename);
-                parent.size_bytes -= child_basename.size();
             });
 
             response.error = Coordination::Error::ZOK;
@@ -531,7 +527,6 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
                     ++parent.stat.numChildren;
                     --parent.stat.cversion;
                     parent.children.insert(child_basename);
-                    parent.size_bytes += child_basename.size();
                 });
             };
         }
@@ -610,11 +605,11 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
 
             auto itr = container.updateValue(request.path, [zxid, request] (KeeperStorage::Node & value)
             {
+                value.data = request.data;
                 value.stat.version++;
                 value.stat.mzxid = zxid;
                 value.stat.mtime = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
                 value.stat.dataLength = request.data.length();
-                value.size_bytes = value.size_bytes + request.data.size() - value.data.size();
                 value.data = request.data;
             });
 
@@ -1099,7 +1094,6 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
                     --parent.stat.numChildren;
                     ++parent.stat.cversion;
                     parent.children.erase(getBaseName(ephemeral_path));
-                    parent.size_bytes -= getBaseName(ephemeral_path).size();
                 });
 
                 auto responses = processWatchesImpl(ephemeral_path, watches, list_watches, Coordination::Event::DELETED);
@@ -1225,97 +1219,5 @@ void KeeperStorage::clearDeadWatches(int64_t session_id)
         sessions_and_watchers.erase(watches_it);
     }
 }
-
-void KeeperStorage::dumpWatches(WriteBufferFromOwnString & buf) const
-{
-    for (const auto & [session_id, watches_paths] : sessions_and_watchers)
-    {
-        buf << "0x" << getHexUIntLowercase(session_id) << "\n";
-        for (const String & path : watches_paths)
-            buf << "\t" << path << "\n";
-    }
-}
-
-void KeeperStorage::dumpWatchesByPath(WriteBufferFromOwnString & buf) const
-{
-    auto write_int_vec = [&buf](const std::vector<int64_t> & session_ids)
-    {
-        for (int64_t session_id : session_ids)
-        {
-            buf << "\t0x" << getHexUIntLowercase(session_id) << "\n";
-        }
-    };
-
-    for (const auto & [watch_path, sessions] : watches)
-    {
-        buf << watch_path << "\n";
-        write_int_vec(sessions);
-    }
-
-    for (const auto & [watch_path, sessions] : list_watches)
-    {
-        buf << watch_path << "\n";
-        write_int_vec(sessions);
-    }
-}
-
-void KeeperStorage::dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const
-{
-    auto write_str_set = [&buf](const std::unordered_set<String> & ephemeral_paths)
-    {
-        for (const String & path : ephemeral_paths)
-        {
-            buf << "\t" << path << "\n";
-        }
-    };
-
-    buf << "Sessions dump (" << session_and_timeout.size() << "):\n";
-
-    for (const auto & [session_id, _] : session_and_timeout)
-    {
-        buf << "0x" << getHexUIntLowercase(session_id) << "\n";
-    }
-
-    buf << "Sessions with Ephemerals (" << getSessionWithEphemeralNodesCount() << "):\n";
-    for (const auto & [session_id, ephemeral_paths] : ephemerals)
-    {
-        buf << "0x" << getHexUIntLowercase(session_id) << "\n";
-        write_str_set(ephemeral_paths);
-    }
-}
-
-uint64_t KeeperStorage::getTotalWatchesCount() const
-{
-    uint64_t ret = 0;
-    for (const auto & [path, subscribed_sessions] : watches)
-        ret += subscribed_sessions.size();
-
-    for (const auto & [path, subscribed_sessions] : list_watches)
-        ret += subscribed_sessions.size();
-
-    return ret;
-}
-
-uint64_t KeeperStorage::getSessionsWithWatchesCount() const
-{
-    std::unordered_set<int64_t> counter;
-    for (const auto & [path, subscribed_sessions] : watches)
-        counter.insert(subscribed_sessions.begin(), subscribed_sessions.end());
-
-    for (const auto & [path, subscribed_sessions] : list_watches)
-        counter.insert(subscribed_sessions.begin(), subscribed_sessions.end());
-
-    return counter.size();
-}
-
-uint64_t KeeperStorage::getTotalEphemeralNodesCount() const
-{
-    uint64_t ret = 0;
-    for (const auto & [session_id, nodes] : ephemerals)
-        ret += nodes.size();
-
-    return ret;
-}
-
 
 }

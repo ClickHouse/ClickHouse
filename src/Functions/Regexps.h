@@ -12,9 +12,11 @@
 #include <Common/ObjectPool.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/ProfileEvents.h>
-#include <base/StringRef.h>
+#include <common/StringRef.h>
 
-#include "config_functions.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
 
 #if USE_HYPERSCAN
 #    include <hs.h>

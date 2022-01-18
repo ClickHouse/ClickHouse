@@ -52,7 +52,7 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr 
             " - name of source database and regexp for table names.",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    auto [is_regexp, database_ast] = StorageMerge::evaluateDatabaseName(args[0], context);
+    auto [is_regexp, database_ast] = evaluateDatabaseNameForMergeEngine(args[0], context);
 
     database_is_regexp = is_regexp;
 
@@ -65,7 +65,7 @@ void TableFunctionMerge::parseArguments(const ASTPtr & ast_function, ContextPtr 
 }
 
 
-const TableFunctionMerge::DBToTableSetMap & TableFunctionMerge::getSourceDatabasesAndTables(ContextPtr context) const
+const TableFunctionMerge::DbToTableSetMap & TableFunctionMerge::getSourceDatabasesAndTables(ContextPtr context) const
 {
     if (source_databases_and_tables)
         return *source_databases_and_tables;
@@ -88,10 +88,17 @@ const TableFunctionMerge::DBToTableSetMap & TableFunctionMerge::getSourceDatabas
         auto databases = DatabaseCatalog::instance().getDatabases();
 
         for (const auto & db : databases)
+        {
             if (database_re.match(db.first))
-                (*source_databases_and_tables)[db.first] = getMatchedTablesWithAccess(db.first, source_table_regexp, context);
+            {
+                auto source_tables = getMatchedTablesWithAccess(db.first, source_table_regexp, context);
 
-        if (source_databases_and_tables->empty())
+                if (!source_tables.empty())
+                    (*source_databases_and_tables)[db.first] = source_tables;
+            }
+        }
+
+        if ((*source_databases_and_tables).empty())
             throwNoTablesMatchRegexp(source_database_name_or_regexp, source_table_regexp);
     }
 

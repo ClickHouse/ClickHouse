@@ -1,6 +1,3 @@
--- Tags: long, replica, no-replicated-database
--- Tag no-replicated-database: Old syntax is not allowed
-
 DROP TABLE IF EXISTS replicated_alter1;
 DROP TABLE IF EXISTS replicated_alter2;
 

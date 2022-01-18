@@ -2,6 +2,6 @@ user_directories:
   users_xml:
     path: users.xml
   local_directory:
-    path: /var/lib/clickhouse/access/
+    path: access/
   "@replace": replace
 

@@ -4,7 +4,8 @@
 #include <memory>
 #include <variant>
 #include <optional>
-#include <sparsehash/sparse_hash_map>
+
+#include <Common/SparseHashMap.h>
 
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
@@ -78,7 +79,7 @@ public:
         return std::make_shared<HashedDictionary<dictionary_key_type, sparse>>(getDictionaryID(), dict_struct, source_ptr->clone(), configuration, update_field_loaded_block);
     }
 
-    DictionarySourcePtr getSource() const override { return source_ptr; }
+    const IDictionarySource * getSource() const override { return source_ptr.get(); }
 
     const DictionaryLifetime & getLifetime() const override { return configuration.lifetime; }
 
@@ -114,7 +115,7 @@ public:
         const DataTypePtr & key_type,
         size_t level) const override;
 
-    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
+    Pipe read(const Names & column_names, size_t max_block_size) const override;
 
 private:
     template <typename Value>
@@ -123,22 +124,11 @@ private:
         HashMap<UInt64, Value>,
         HashMapWithSavedHash<StringRef, Value, DefaultHash<StringRef>>>;
 
-    /// Here we use sparse_hash_map with DefaultHash<> for the following reasons:
-    ///
-    /// - DefaultHash<> is used for HashMap
-    /// - DefaultHash<> (from HashTable/Hash.h> works better then std::hash<>
-    ///   in case of sequential set of keys, but with random access to this set, i.e.
-    ///
-    ///       SELECT number FROM numbers(3000000) ORDER BY rand()
-    ///
-    ///   And even though std::hash<> works better in some other cases,
-    ///   DefaultHash<> is preferred since the difference for this particular
-    ///   case is significant, i.e. it can be 10x+.
     template <typename Value>
     using CollectionTypeSparse = std::conditional_t<
         dictionary_key_type == DictionaryKeyType::Simple,
-        google::sparse_hash_map<UInt64, Value, DefaultHash<KeyType>>,
-        google::sparse_hash_map<StringRef, Value, DefaultHash<KeyType>>>;
+        SparseHashMap<UInt64, Value>,
+        SparseHashMap<StringRef, Value>>;
 
     template <typename Value>
     using CollectionType = std::conditional_t<sparse, CollectionTypeSparse<Value>, CollectionTypeNonSparse<Value>>;

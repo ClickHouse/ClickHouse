@@ -1,36 +1,36 @@
 #include "Keeper.h"
 
+#include <sys/stat.h>
+#include <pwd.h>
 #include <Common/ClickHouseRevision.h>
-#include <Common/getMultipleKeysFromConfig.h>
+#include <Server/ProtocolServerAdapter.h>
 #include <Common/DNSResolver.h>
 #include <Interpreters/DNSCacheUpdater.h>
-#include <Coordination/Defines.h>
-#include <Common/Config/ConfigReloader.h>
-#include <filesystem>
-#include <IO/UseSSL.h>
-#include <Core/ServerUUID.h>
-#include <base/logger_useful.h>
-#include <base/ErrorHandlers.h>
-#include <base/scope_guard.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/TCPServerParams.h>
 #include <Poco/Net/TCPServer.h>
+#include <common/defines.h>
+#include <common/logger_useful.h>
+#include <common/ErrorHandlers.h>
+#include <common/scope_guard.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Version.h>
 #include <Poco/Environment.h>
-#include <sys/stat.h>
-#include <pwd.h>
-#include <Coordination/FourLetterCommand.h>
+#include <Common/getMultipleKeysFromConfig.h>
+#include <Core/ServerUUID.h>
+#include <filesystem>
+#include <IO/UseSSL.h>
 
-#include "config_core.h"
-#include "Common/config_version.h"
+#if !defined(ARCADIA_BUILD)
+#   include "config_core.h"
+#   include "Common/config_version.h"
+#endif
 
 #if USE_SSL
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
 #endif
 
-#include <Server/ProtocolServerAdapter.h>
 #include <Server/KeeperTCPHandlerFactory.h>
 
 #if defined(OS_LINUX)
@@ -331,13 +331,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 
     const Settings & settings = global_context->getSettingsRef();
 
-    std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
-
-    GlobalThreadPool::initialize(
-        config().getUInt("max_thread_pool_size", 100),
-        config().getUInt("max_thread_pool_free_size", 1000),
-        config().getUInt("thread_pool_queue_size", 10000)
-    );
+    GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 100));
 
     static ServerErrorHandler error_handler;
     Poco::ErrorHandler::set(&error_handler);
@@ -364,10 +358,8 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 
     auto servers = std::make_shared<std::vector<ProtocolServerAdapter>>();
 
-    /// Initialize keeper RAFT. Do nothing if no keeper_server in config.
-    global_context->initializeKeeperDispatcher(/* start_async = */false);
-    FourLetterCommandFactory::registerCommands(*global_context->getKeeperDispatcher());
-
+    /// Initialize test keeper RAFT. Do nothing if no nu_keeper_server in config.
+    global_context->initializeKeeperDispatcher();
     for (const auto & listen_host : listen_hosts)
     {
         /// TCP Keeper
@@ -410,27 +402,8 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     for (auto & server : *servers)
         server.start();
 
-    zkutil::EventPtr unused_event = std::make_shared<Poco::Event>();
-    zkutil::ZooKeeperNodeCache unused_cache([] { return nullptr; });
-    /// ConfigReloader have to strict parameters which are redundant in our case
-    auto main_config_reloader = std::make_unique<ConfigReloader>(
-        config_path,
-        include_from_path,
-        config().getString("path", ""),
-        std::move(unused_cache),
-        unused_event,
-        [&](ConfigurationPtr config, bool /* initial_loading */)
-        {
-            if (config->has("keeper_server"))
-                global_context->updateKeeperConfiguration(*config);
-        },
-        /* already_loaded = */ false);  /// Reload it right now (initial loading)
-
     SCOPE_EXIT({
         LOG_INFO(log, "Shutting down.");
-        /// Stop reloading of the main config. This must be done before `global_context->shutdown()` because
-        /// otherwise the reloading may pass a changed config to some destroyed parts of ContextSharedPart.
-        main_config_reloader.reset();
 
         global_context->shutdown();
 
@@ -477,7 +450,6 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 
 
     buildLoggers(config(), logger());
-    main_config_reloader->start();
 
     LOG_INFO(log, "Ready for connections.");
 

@@ -2,20 +2,15 @@
 
 #include <Storages/IStorage.h>
 #include <Poco/URI.h>
-#include <base/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Formats/FormatSettings.h>
 #include <IO/CompressionMethod.h>
-#include <IO/ReadWriteBufferFromHTTP.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 
 
 namespace DB
 {
-
-class IOutputFormat;
-using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
 struct ConnectionTimeouts;
 
@@ -39,11 +34,9 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
-    bool supportsPartitionBy() const override { return true; }
-
 protected:
     IStorageURLBase(
-        const String & uri_,
+        const Poco::URI & uri_,
         ContextPtr context_,
         const StorageID & id_,
         const String & format_name_,
@@ -51,12 +44,9 @@ protected:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
-        const String & compression_method_,
-        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_ = {},
-        const String & method_ = "",
-        ASTPtr partition_by = nullptr);
+        const String & compression_method_);
 
-    String uri;
+    Poco::URI uri;
     String compression_method;
     String format_name;
     // For URL engine, we use format settings from server context + `SETTINGS`
@@ -64,9 +54,6 @@ protected:
     // For `url` table function, we use settings from current query context.
     // In this case, format_settings is not set.
     std::optional<FormatSettings> format_settings;
-    ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
-    String http_method; /// For insert can choose Put instead of default Post.
-    ASTPtr partition_by;
 
     virtual std::string getReadMethod() const;
 
@@ -94,14 +81,13 @@ class StorageURLSink : public SinkToStorage
 {
 public:
     StorageURLSink(
-        const String & uri,
+        const Poco::URI & uri,
         const String & format,
         const std::optional<FormatSettings> & format_settings,
         const Block & sample_block,
         ContextPtr context,
         const ConnectionTimeouts & timeouts,
-        CompressionMethod compression_method,
-        const String & method = Poco::Net::HTTPRequest::HTTP_POST);
+        CompressionMethod compression_method);
 
     std::string getName() const override { return "StorageURLSink"; }
     void consume(Chunk chunk) override;
@@ -109,7 +95,9 @@ public:
 
 private:
     std::unique_ptr<WriteBuffer> write_buf;
-    OutputFormatPtr writer;
+    BlockOutputStreamPtr writer;
+
+    bool is_first_chunk = true;
 };
 
 class StorageURL : public shared_ptr_helper<StorageURL>, public IStorageURLBase
@@ -117,7 +105,7 @@ class StorageURL : public shared_ptr_helper<StorageURL>, public IStorageURLBase
     friend struct shared_ptr_helper<StorageURL>;
 public:
     StorageURL(
-        const String & uri_,
+        const Poco::URI & uri_,
         const StorageID & table_id_,
         const String & format_name_,
         const std::optional<FormatSettings> & format_settings_,
@@ -125,10 +113,7 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         ContextPtr context_,
-        const String & compression_method_,
-        const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_ = {},
-        const String & method_ = "",
-        ASTPtr partition_by_ = nullptr);
+        const String & compression_method_);
 
     String getName() const override
     {
@@ -141,8 +126,6 @@ public:
     }
 
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
-
-    static URLBasedDataSourceConfiguration getConfiguration(ASTs & args, ContextPtr context);
 };
 
 
@@ -169,14 +152,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    struct Configuration
-    {
-        String url;
-        String compression_method = "auto";
-        std::vector<std::pair<String, String>> headers;
-    };
-
 private:
-    std::vector<String> uri_options;
+    std::vector<Poco::URI> uri_options;
 };
 }

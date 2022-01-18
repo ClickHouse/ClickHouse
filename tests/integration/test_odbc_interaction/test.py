@@ -554,7 +554,7 @@ def test_concurrent_queries(started_cluster):
     busy_pool = Pool(5)
     p = busy_pool.map_async(node_insert, range(5))
     p.wait()
-    assert_eq_with_retry(node1, "SELECT count() FROM test_pg_table", str(5*5*1000), retry_count=100)
+    assert_eq_with_retry(node1, "SELECT count() FROM test_pg_table", str(5*5*1000))
 
     def node_insert_select(_):
         for i in range(5):
@@ -564,7 +564,7 @@ def test_concurrent_queries(started_cluster):
     busy_pool = Pool(5)
     p = busy_pool.map_async(node_insert_select, range(5))
     p.wait()
-    assert_eq_with_retry(node1, "SELECT count() FROM test_pg_table", str(5*5*1000*2), retry_count=100)
+    assert_eq_with_retry(node1, "SELECT count() FROM test_pg_table", str(5*5*1000*2))
 
     node1.query('DROP TABLE test_pg_table;')
     cursor.execute('DROP TABLE clickhouse.test_pg_table;')
@@ -627,3 +627,4 @@ def test_odbc_long_text(started_cluster):
     cursor.execute("""insert into clickhouse.test_long_text (flen, field1) values (400000, '{}')""".format(long_text));
     result = node1.query("select field1 from test_long_text where flen=400000;")
     assert(result.strip() == long_text)
+

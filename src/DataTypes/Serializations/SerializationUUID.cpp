@@ -15,19 +15,16 @@ void SerializationUUID::serializeText(const IColumn & column, size_t row_num, Wr
     writeText(assert_cast<const ColumnUUID &>(column).getData()[row_num], ostr);
 }
 
-void SerializationUUID::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
+void SerializationUUID::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     UUID x;
     readText(x, istr);
     assert_cast<ColumnUUID &>(column).getData().push_back(x);
-
-    if (whole && !istr.eof())
-        throwUnexpectedDataAfterParsedValue(column, istr, settings, "UUID");
 }
 
 void SerializationUUID::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    deserializeText(column, istr, settings, false);
+    deserializeText(column, istr, settings);
 }
 
 void SerializationUUID::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

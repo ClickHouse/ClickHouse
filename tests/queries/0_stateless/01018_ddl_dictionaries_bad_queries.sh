@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-parallel, no-fasttest
-# Tag no-replicated-database: grep -c
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

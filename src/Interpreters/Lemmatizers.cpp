@@ -1,10 +1,13 @@
-#include "config_core.h"
+
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 #if USE_NLP
 
 #include <Common/Exception.h>
-#include <Interpreters/Lemmatizers.h>
-#include <RdrLemmatizer.h>
+#include <Interpreters/Lemmatizers.h> // Y_IGNORE
+#include <RdrLemmatizer.h>  // Y_IGNORE
 
 #include <vector>
 #include <filesystem>

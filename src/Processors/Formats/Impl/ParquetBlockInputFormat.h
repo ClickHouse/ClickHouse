@@ -1,4 +1,5 @@
 #pragma once
+
 #include "config_formats.h"
 #if USE_PARQUET
 
@@ -23,11 +24,13 @@ public:
 
     String getName() const override { return "ParquetBlockInputFormat"; }
 
-private:
+protected:
     Chunk generate() override;
 
+private:
     void prepareReader();
 
+private:
     std::unique_ptr<parquet::arrow::FileReader> file_reader;
     int row_group_total = 0;
     // indices of columns to read from Parquet file

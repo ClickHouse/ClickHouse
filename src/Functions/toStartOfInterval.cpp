@@ -1,4 +1,4 @@
-#include <base/DateLUTImpl.h>
+#include <common/DateLUTImpl.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
@@ -261,10 +261,10 @@ public:
                         + ". This argument is optional and must be a constant string with timezone name",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             if (first_argument_is_date && result_type_is_date)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "The timezone argument of function {} with interval type {} is allowed only when the 1st argument "
-                    "has the type DateTime",
-                        getName(), interval_type->getKind().toString());
+                throw Exception(
+                    "The timezone argument of function " + getName() + " with interval type " + interval_type->getKind().toString()
+                        + " is allowed only when the 1st argument has the type DateTime",
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         };
 
         if (arguments.size() == 2)
@@ -311,7 +311,7 @@ public:
 
     Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
     {
-        return { .is_monotonic = true, .is_always_monotonic = true };
+        return { true, true, true };
     }
 
 private:

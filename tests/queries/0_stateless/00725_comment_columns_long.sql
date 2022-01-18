@@ -1,5 +1,3 @@
--- Tags: long
-
 DROP TABLE IF EXISTS check_query_comment_column;
 
 -- Check COMMENT COLUMN and MODIFY COLUMN statements with simple engine

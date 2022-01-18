@@ -1,13 +1,13 @@
 #include <Access/LDAPAccessStorage.h>
-#include <Access/AccessControl.h>
+#include <Access/AccessControlManager.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Access/User.h>
 #include <Access/Role.h>
 #include <Access/Credentials.h>
 #include <Access/LDAPClient.h>
 #include <Common/Exception.h>
-#include <base/logger_useful.h>
-#include <base/scope_guard.h>
+#include <common/logger_useful.h>
+#include <common/scope_guard.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
@@ -27,10 +27,10 @@ namespace ErrorCodes
 }
 
 
-LDAPAccessStorage::LDAPAccessStorage(const String & storage_name_, AccessControl * access_control_, const Poco::Util::AbstractConfiguration & config, const String & prefix)
+LDAPAccessStorage::LDAPAccessStorage(const String & storage_name_, AccessControlManager * access_control_manager_, const Poco::Util::AbstractConfiguration & config, const String & prefix)
     : IAccessStorage(storage_name_)
 {
-    setConfiguration(access_control_, config, prefix);
+    setConfiguration(access_control_manager_, config, prefix);
 }
 
 
@@ -40,7 +40,7 @@ String LDAPAccessStorage::getLDAPServerName() const
 }
 
 
-void LDAPAccessStorage::setConfiguration(AccessControl * access_control_, const Poco::Util::AbstractConfiguration & config, const String & prefix)
+void LDAPAccessStorage::setConfiguration(AccessControlManager * access_control_manager_, const Poco::Util::AbstractConfiguration & config, const String & prefix)
 {
     std::scoped_lock lock(mutex);
 
@@ -80,7 +80,7 @@ void LDAPAccessStorage::setConfiguration(AccessControl * access_control_, const 
         }
     }
 
-    access_control = access_control_;
+    access_control_manager = access_control_manager_;
     ldap_server_name = ldap_server_name_cfg;
     role_search_params.swap(role_search_params_cfg);
     common_role_names.swap(common_roles_cfg);
@@ -91,7 +91,7 @@ void LDAPAccessStorage::setConfiguration(AccessControl * access_control_, const 
     granted_role_names.clear();
     granted_role_ids.clear();
 
-    role_change_subscription = access_control->subscribeForChanges<Role>(
+    role_change_subscription = access_control_manager->subscribeForChanges<Role>(
         [this] (const UUID & id, const AccessEntityPtr & entity)
         {
             return this->processRoleChange(id, entity);
@@ -215,7 +215,7 @@ void LDAPAccessStorage::assignRolesNoLock(User & user, const LDAPClient::SearchR
         auto it = granted_role_ids.find(role_name);
         if (it == granted_role_ids.end())
         {
-            if (const auto role_id = access_control->find<Role>(role_name))
+            if (const auto role_id = access_control_manager->find<Role>(role_name))
             {
                 granted_role_names.insert_or_assign(*role_id, role_name);
                 it = granted_role_ids.insert_or_assign(role_name, *role_id).first;
@@ -412,14 +412,14 @@ String LDAPAccessStorage::getStorageParamsJSON() const
 }
 
 
-std::optional<UUID> LDAPAccessStorage::findImpl(AccessEntityType type, const String & name) const
+std::optional<UUID> LDAPAccessStorage::findImpl(EntityType type, const String & name) const
 {
     std::scoped_lock lock(mutex);
     return memory_storage.find(type, name);
 }
 
 
-std::vector<UUID> LDAPAccessStorage::findAllImpl(AccessEntityType type) const
+std::vector<UUID> LDAPAccessStorage::findAllImpl(EntityType type) const
 {
     std::scoped_lock lock(mutex);
     return memory_storage.findAll(type);
@@ -482,7 +482,7 @@ scope_guard LDAPAccessStorage::subscribeForChangesImpl(const UUID & id, const On
 }
 
 
-scope_guard LDAPAccessStorage::subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const
+scope_guard LDAPAccessStorage::subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const
 {
     std::scoped_lock lock(mutex);
     return memory_storage.subscribeForChanges(type, handler);
@@ -496,7 +496,7 @@ bool LDAPAccessStorage::hasSubscriptionImpl(const UUID & id) const
 }
 
 
-bool LDAPAccessStorage::hasSubscriptionImpl(AccessEntityType type) const
+bool LDAPAccessStorage::hasSubscriptionImpl(EntityType type) const
 {
     std::scoped_lock lock(mutex);
     return memory_storage.hasSubscription(type);
@@ -527,8 +527,8 @@ UUID LDAPAccessStorage::loginImpl(const Credentials & credentials, const Poco::N
         // User does not exist, so we create one, and will add it if authentication is successful.
         auto user = std::make_shared<User>();
         user->setName(credentials.getUserName());
-        user->auth_data = AuthenticationData(AuthenticationType::LDAP);
-        user->auth_data.setLDAPServerName(ldap_server_name);
+        user->authentication = Authentication(Authentication::Type::LDAP);
+        user->authentication.setLDAPServerName(ldap_server_name);
 
         if (!isAddressAllowedImpl(*user, address))
             throwAddressNotAllowed(address);
@@ -555,8 +555,8 @@ UUID LDAPAccessStorage::getIDOfLoggedUserImpl(const String & user_name) const
         // User does not exist, so we create one, and add it pretending that the authentication is successful.
         auto user = std::make_shared<User>();
         user->setName(user_name);
-        user->auth_data = AuthenticationData(AuthenticationType::LDAP);
-        user->auth_data.setLDAPServerName(ldap_server_name);
+        user->authentication = Authentication(Authentication::Type::LDAP);
+        user->authentication.setLDAPServerName(ldap_server_name);
 
         LDAPClient::SearchResultsList external_roles;
 

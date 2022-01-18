@@ -2,14 +2,14 @@
 
 #include <Access/EnabledSettings.h>
 #include <Poco/LRUCache.h>
-#include <base/scope_guard.h>
+#include <common/scope_guard.h>
 #include <map>
 #include <unordered_map>
 
 
 namespace DB
 {
-class AccessControl;
+class AccessControlManager;
 struct SettingsProfile;
 using SettingsProfilePtr = std::shared_ptr<const SettingsProfile>;
 struct SettingsProfilesInfo;
@@ -18,7 +18,7 @@ struct SettingsProfilesInfo;
 class SettingsProfilesCache
 {
 public:
-    SettingsProfilesCache(const AccessControl & access_control_);
+    SettingsProfilesCache(const AccessControlManager & manager_);
     ~SettingsProfilesCache();
 
     void setDefaultProfileName(const String & default_profile_name);
@@ -39,7 +39,7 @@ private:
     void mergeSettingsAndConstraintsFor(EnabledSettings & enabled) const;
     void substituteProfiles(SettingsProfileElements & elements, std::vector<UUID> & substituted_profiles, std::unordered_map<UUID, String> & names_of_substituted_profiles) const;
 
-    const AccessControl & access_control;
+    const AccessControlManager & manager;
     std::unordered_map<UUID, SettingsProfilePtr> all_profiles;
     std::unordered_map<String, UUID> profiles_by_name;
     bool all_profiles_read = false;

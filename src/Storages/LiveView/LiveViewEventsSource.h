@@ -56,7 +56,7 @@ public:
 
     void onCancel() override
     {
-        if (storage->shutdown_called)
+        if (isCancelled() || storage->shutdown_called)
             return;
 
         std::lock_guard lock(storage->mutex);

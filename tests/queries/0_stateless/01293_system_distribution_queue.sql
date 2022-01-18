@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 drop table if exists null_01293;
 drop table if exists dist_01293;
 

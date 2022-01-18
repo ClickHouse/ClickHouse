@@ -7,178 +7,155 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
-bool DictionarySourceCoordinator::getKeyColumnsNextRangeToRead(ColumnsWithTypeAndName & key_columns, ColumnsWithTypeAndName & data_columns)
+DictionarySourceData::DictionarySourceData(
+    std::shared_ptr<const IDictionary> dictionary_, PaddedPODArray<UInt64> && ids_, const Names & column_names_)
+    : num_rows(ids_.size())
+    , dictionary(dictionary_)
+    , column_names(column_names_.begin(), column_names_.end())
+    , ids(std::move(ids_))
+    , key_type(DictionaryInputStreamKeyType::Id)
 {
-    size_t read_block_index = parallel_read_block_index++;
-
-    size_t start = read_block_index * max_block_size;
-    size_t end = (read_block_index + 1) * max_block_size;
-
-    size_t keys_size = key_columns_with_type[0].column->size();
-
-    if (start >= keys_size)
-        return false;
-
-    end = std::min(end, keys_size);
-    size_t length = end - start;
-
-    key_columns = cutColumns(key_columns_with_type, start, length);
-    data_columns = cutColumns(data_columns_with_type, start, length);
-
-    return true;
 }
 
-void DictionarySourceCoordinator::initialize(const Names & column_names)
+DictionarySourceData::DictionarySourceData(
+    std::shared_ptr<const IDictionary> dictionary_,
+    const PaddedPODArray<StringRef> & keys,
+    const Names & column_names_)
+    : num_rows(keys.size())
+    , dictionary(dictionary_)
+    , column_names(column_names_.begin(), column_names_.end())
+    , key_type(DictionaryInputStreamKeyType::ComplexKey)
 {
-    ColumnsWithTypeAndName columns_with_type;
+    const DictionaryStructure & dictionary_structure = dictionary->getStructure();
+    key_columns = deserializeColumnsWithTypeAndNameFromKeys(dictionary_structure, keys, 0, keys.size());
+}
 
-    const auto & dictionary_structure = dictionary->getStructure();
+DictionarySourceData::DictionarySourceData(
+    std::shared_ptr<const IDictionary> dictionary_,
+    const Columns & data_columns_,
+    const Names & column_names_,
+    GetColumnsFunction && get_key_columns_function_,
+    GetColumnsFunction && get_view_columns_function_)
+    : num_rows(data_columns_.front()->size())
+    , dictionary(dictionary_)
+    , column_names(column_names_.begin(), column_names_.end())
+    , data_columns(data_columns_)
+    , get_key_columns_function(std::move(get_key_columns_function_))
+    , get_view_columns_function(std::move(get_view_columns_function_))
+    , key_type(DictionaryInputStreamKeyType::Callback)
+{
+}
 
-    for (const auto & column_name : column_names)
+Block DictionarySourceData::getBlock(size_t start, size_t length) const
+{
+    /// TODO: Rewrite
+    switch (key_type)
     {
-        ColumnWithTypeAndName column_with_type;
-        column_with_type.name = column_name;
-
-        auto it = dictionary_structure.attribute_name_to_index.find(column_name);
-        if (it == dictionary_structure.attribute_name_to_index.end())
+        case DictionaryInputStreamKeyType::ComplexKey:
         {
-            if (dictionary_structure.id.has_value() && column_name == dictionary_structure.id->name)
+            Columns columns;
+            ColumnsWithTypeAndName view_columns;
+            columns.reserve(key_columns.size());
+            for (const auto & key_column : key_columns)
             {
-                column_with_type.type = std::make_shared<DataTypeUInt64>();
+                ColumnPtr column = key_column.column->cut(start, length);
+                columns.emplace_back(column);
+                view_columns.emplace_back(column, key_column.type, key_column.name);
             }
-            else if (dictionary_structure.range_min.has_value() && column_name == dictionary_structure.range_min->name)
-            {
-                column_with_type.type = dictionary_structure.range_min->type;
-            }
-            else if (dictionary_structure.range_max.has_value() && column_name == dictionary_structure.range_max->name)
-            {
-                column_with_type.type = dictionary_structure.range_max->type;
-            }
-            else if (dictionary_structure.key.has_value())
-            {
-                const auto & dictionary_key_attributes = *dictionary_structure.key;
-                for (const auto & attribute : dictionary_key_attributes)
-                {
-                    if (column_name == attribute.name)
-                    {
-                        column_with_type.type = attribute.type;
-                        break;
-                    }
-                }
-            }
-        }
-        else
-        {
-            const auto & attribute = dictionary_structure.attributes[it->second];
-            attributes_names_to_read.emplace_back(attribute.name);
-            attributes_types_to_read.emplace_back(attribute.type);
-            attributes_default_values_columns.emplace_back(nullptr);
-
-            column_with_type.type = attribute.type;
+            return fillBlock({}, columns, {}, std::move(view_columns));
         }
 
-        if (!column_with_type.type)
-            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "No such column name {} in dictionary {}",
-                column_name,
-                dictionary->getDictionaryID().getNameForLogs());
+        case DictionaryInputStreamKeyType::Id:
+        {
+            PaddedPODArray<UInt64> ids_to_fill(ids.begin() + start, ids.begin() + start + length);
+            return fillBlock(ids_to_fill, {}, {}, {});
+        }
 
-        column_with_type.column = column_with_type.type->createColumn();
-        columns_with_type.emplace_back(std::move(column_with_type));
+        case DictionaryInputStreamKeyType::Callback:
+        {
+            Columns columns;
+            columns.reserve(data_columns.size());
+            for (const auto & data_column : data_columns)
+                columns.push_back(data_column->cut(start, length));
+            const DictionaryStructure & dictionaty_structure = dictionary->getStructure();
+            const auto & attributes = *dictionaty_structure.key;
+            ColumnsWithTypeAndName keys_with_type_and_name = get_key_columns_function(columns, attributes);
+            ColumnsWithTypeAndName view_with_type_and_name = get_view_columns_function(columns, attributes);
+            DataTypes types;
+            columns.clear();
+            for (const auto & key_column : keys_with_type_and_name)
+            {
+                columns.push_back(key_column.column);
+                types.push_back(key_column.type);
+            }
+            return fillBlock({}, columns, types, std::move(view_with_type_and_name));
+        }
     }
 
-    header = Block(std::move(columns_with_type));
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected DictionaryInputStreamKeyType.");
 }
 
-ColumnsWithTypeAndName
-DictionarySourceCoordinator::cutColumns(const ColumnsWithTypeAndName & columns_with_type, size_t start, size_t length)
+Block DictionarySourceData::fillBlock(
+    const PaddedPODArray<UInt64> & ids_to_fill,
+    const Columns & keys,
+    const DataTypes & types,
+    ColumnsWithTypeAndName && view) const
 {
-    ColumnsWithTypeAndName result;
-    result.reserve(columns_with_type.size());
+    DataTypes data_types = types;
+    ColumnsWithTypeAndName block_columns;
 
-    for (const auto & column_with_type : columns_with_type)
+    data_types.reserve(keys.size());
+    const DictionaryStructure & dictionary_structure = dictionary->getStructure();
+    if (data_types.empty() && dictionary_structure.key)
+        for (const auto & key : *dictionary_structure.key)
+            data_types.push_back(key.type);
+
+    for (const auto & column : view)
+        if (column_names.find(column.name) != column_names.end())
+            block_columns.push_back(column);
+
+    const DictionaryStructure & structure = dictionary->getStructure();
+    ColumnPtr ids_column = getColumnFromPODArray(ids_to_fill);
+
+    if (structure.id && column_names.find(structure.id->name) != column_names.end())
     {
-        ColumnWithTypeAndName result_column_with_type;
-
-        result_column_with_type.column = column_with_type.column->cut(start, length);
-        result_column_with_type.type = column_with_type.type;
-        result_column_with_type.name = column_with_type.name;
-
-        result.emplace_back(std::move(result_column_with_type));
+        block_columns.emplace_back(ids_column, std::make_shared<DataTypeUInt64>(), structure.id->name);
     }
 
-    return result;
-}
+    auto dictionary_key_type = dictionary->getKeyType();
 
-
-Chunk DictionarySource::generate()
-{
-    ColumnsWithTypeAndName key_columns_to_read;
-    ColumnsWithTypeAndName data_columns;
-
-    if (!coordinator->getKeyColumnsNextRangeToRead(key_columns_to_read, data_columns))
-        return {};
-
-    const auto & header = coordinator->getHeader();
-
-    std::vector<ColumnPtr> key_columns;
-    std::vector<DataTypePtr> key_types;
-
-    key_columns.reserve(key_columns_to_read.size());
-    key_types.reserve(key_columns_to_read.size());
-
-    std::unordered_map<std::string_view, ColumnPtr> name_to_column;
-
-    for (const auto & key_column_to_read : key_columns_to_read)
+    for (const auto & attribute : structure.attributes)
     {
-        key_columns.emplace_back(key_column_to_read.column);
-        key_types.emplace_back(key_column_to_read.type);
+        if (column_names.find(attribute.name) != column_names.end())
+        {
+            ColumnPtr column;
 
-        if (header.has(key_column_to_read.name))
-            name_to_column.emplace(key_column_to_read.name, key_column_to_read.column);
+            if (dictionary_key_type == DictionaryKeyType::Simple)
+            {
+                column = dictionary->getColumn(
+                    attribute.name,
+                    attribute.type,
+                    {ids_column},
+                    {std::make_shared<DataTypeUInt64>()},
+                    nullptr /* default_values_column */);
+            }
+            else
+            {
+                column = dictionary->getColumn(
+                    attribute.name,
+                    attribute.type,
+                    keys,
+                    data_types,
+                    nullptr /* default_values_column*/);
+            }
+
+            block_columns.emplace_back(column, attribute.type, attribute.name);
+        }
     }
 
-    for (const auto & data_column : data_columns)
-    {
-        if (header.has(data_column.name))
-            name_to_column.emplace(data_column.name, data_column.column);
-    }
-
-    const auto & attributes_names_to_read = coordinator->getAttributesNamesToRead();
-    const auto & attributes_types_to_read = coordinator->getAttributesTypesToRead();
-    const auto & attributes_default_values_columns = coordinator->getAttributesDefaultValuesColumns();
-
-    const auto & dictionary = coordinator->getDictionary();
-    auto attributes_columns = dictionary->getColumns(
-        attributes_names_to_read,
-        attributes_types_to_read,
-        key_columns,
-        key_types,
-        attributes_default_values_columns);
-
-    for (size_t i = 0; i < attributes_names_to_read.size(); ++i)
-    {
-        const auto & attribute_name = attributes_names_to_read[i];
-        name_to_column.emplace(attribute_name, attributes_columns[i]);
-    }
-
-    std::vector<ColumnPtr> result_columns;
-    result_columns.reserve(header.columns());
-
-    for (const auto & column_with_type : header)
-    {
-        const auto & header_name = column_with_type.name;
-        auto it = name_to_column.find(header_name);
-        if (it == name_to_column.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column name {} not found in result columns", header_name);
-
-        result_columns.emplace_back(it->second);
-    }
-
-    size_t rows_size = result_columns[0]->size();
-    return Chunk(result_columns, rows_size);
+    return Block(block_columns);
 }
 
 }

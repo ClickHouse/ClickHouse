@@ -4,7 +4,7 @@
 #include "Common/TraceCollector.h"
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
 
@@ -15,7 +15,7 @@
 
 
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
-thread_local bool memory_tracker_always_throw_logical_error_on_allocation = false;
+thread_local bool _memory_tracker_always_throw_logical_error_on_allocation = false;
 #endif
 
 namespace
@@ -173,9 +173,9 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded)
     }
 
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
-    if (unlikely(memory_tracker_always_throw_logical_error_on_allocation))
+    if (unlikely(_memory_tracker_always_throw_logical_error_on_allocation))
     {
-        memory_tracker_always_throw_logical_error_on_allocation = false;
+        _memory_tracker_always_throw_logical_error_on_allocation = false;
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Memory tracker: allocations not allowed.");
     }
 #endif
@@ -200,13 +200,11 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded)
     }
 
 
-    bool allocation_traced = false;
     if (unlikely(current_profiler_limit && will_be > current_profiler_limit))
     {
         BlockerInThread untrack_lock(VariableContext::Global);
         DB::TraceCollector::collect(DB::TraceType::Memory, StackTrace(), size);
         setOrRaiseProfilerLimit((will_be + profiler_step - 1) / profiler_step * profiler_step);
-        allocation_traced = true;
     }
 
     std::bernoulli_distribution sample(sample_probability);
@@ -214,7 +212,6 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded)
     {
         BlockerInThread untrack_lock(VariableContext::Global);
         DB::TraceCollector::collect(DB::TraceType::MemorySample, StackTrace(), size);
-        allocation_traced = true;
     }
 
     if (unlikely(current_hard_limit && will_be > current_hard_limit) && memoryTrackerCanThrow(level, false) && throw_if_memory_exceeded)
@@ -233,24 +230,17 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded)
             formatReadableSizeWithBinarySuffix(current_hard_limit));
     }
 
-    bool peak_updated;
     if (throw_if_memory_exceeded)
     {
         /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
         BlockerInThread untrack_lock(VariableContext::Global);
         bool log_memory_usage = true;
-        peak_updated = updatePeak(will_be, log_memory_usage);
+        updatePeak(will_be, log_memory_usage);
     }
     else
     {
         bool log_memory_usage = false;
-        peak_updated = updatePeak(will_be, log_memory_usage);
-    }
-
-    if (peak_updated && allocation_traced)
-    {
-        BlockerInThread untrack_lock(VariableContext::Global);
-        DB::TraceCollector::collect(DB::TraceType::MemoryPeak, StackTrace(), will_be);
+        updatePeak(will_be, log_memory_usage);
     }
 
     if (auto * loaded_next = parent.load(std::memory_order_relaxed))
@@ -269,7 +259,7 @@ void MemoryTracker::allocNoThrow(Int64 size)
     allocImpl(size, throw_if_memory_exceeded);
 }
 
-bool MemoryTracker::updatePeak(Int64 will_be, bool log_memory_usage)
+void MemoryTracker::updatePeak(Int64 will_be, bool log_memory_usage)
 {
     auto peak_old = peak.load(std::memory_order_relaxed);
     if (will_be > peak_old)        /// Races doesn't matter. Could rewrite with CAS, but not worth.
@@ -279,10 +269,7 @@ bool MemoryTracker::updatePeak(Int64 will_be, bool log_memory_usage)
         if (log_memory_usage && (level == VariableContext::Process || level == VariableContext::Global)
             && will_be / log_peak_memory_usage_every > peak_old / log_peak_memory_usage_every)
             logMemoryUsage(will_be);
-
-        return true;
     }
-    return false;
 }
 
 

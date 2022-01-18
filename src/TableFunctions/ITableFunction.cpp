@@ -2,7 +2,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageTableFunction.h>
-#include <Access/Common/AccessFlags.h>
+#include <Access/AccessFlags.h>
 #include <Common/ProfileEvents.h>
 
 

@@ -358,4 +358,4 @@ SELECT aes_decrypt_mysql('aes-256-cfb128', unhex('24E9E4966469'), '1234567891012
 │ Secret    │
 └───────────┘
 ```
-[Original article](https://clickhouse.com/docs/ru/sql-reference/functions/encryption_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/ru/sql-reference/functions/encryption_functions/) <!--hide-->

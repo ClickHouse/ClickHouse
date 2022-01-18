@@ -1,12 +1,14 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
 #include "config_core.h"
+#endif
 
 #if USE_LIBPQXX
 
-#include <pqxx/pqxx>
+#include <pqxx/pqxx> // Y_IGNORE
 #include <Core/Types.h>
-#include <base/BorrowedObjectPool.h>
+#include <common/BorrowedObjectPool.h>
 
 
 namespace postgres

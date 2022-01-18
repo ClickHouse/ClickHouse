@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
@@ -13,9 +13,9 @@
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <shared_mutex>
+
 
 namespace zkutil
 {
@@ -56,8 +56,6 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using NameToNumber = std::unordered_map<std::string, size_t>;
 
-    using IndexSizeByName = std::unordered_map<std::string, ColumnSize>;
-
     using Type = MergeTreeDataPartType;
 
 
@@ -71,7 +69,7 @@ public:
         const IMergeTreeDataPart * parent_part_);
 
     IMergeTreeDataPart(
-        const MergeTreeData & storage_,
+        MergeTreeData & storage_,
         const String & name_,
         const VolumePtr & volume,
         const std::optional<String> & relative_path,
@@ -98,23 +96,14 @@ public:
 
     virtual bool isStoredOnDisk() const = 0;
 
-    virtual bool isStoredOnRemoteDisk() const = 0;
-
     virtual bool supportsVerticalMerge() const { return false; }
 
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// Otherwise return information about column size on disk.
-    ColumnSize getColumnSize(const String & column_name) const;
-
-    /// NOTE: Returns zeros if secondary indexes are not found in checksums.
-    /// Otherwise return information about secondary index size on disk.
-    IndexSize getSecondaryIndexSize(const String & secondary_index_name) const;
+    ColumnSize getColumnSize(const String & column_name, const IDataType & /* type */) const;
 
     /// Return information about column size on disk for all columns in part
     ColumnSize getTotalColumnsSize() const { return total_columns_size; }
-
-    /// Return information about secondary indexes size on disk for all indexes in part
-    IndexSize getTotalSeconaryIndicesSize() const { return total_secondary_indices_size; }
 
     virtual String getFileNameForColumn(const NameAndTypePair & column) const = 0;
 
@@ -128,12 +117,9 @@ public:
 
     String getTypeName() const { return getType().toString(); }
 
-    void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos = {});
+    void setColumns(const NamesAndTypesList & new_columns);
 
     const NamesAndTypesList & getColumns() const { return columns; }
-    const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
-    SerializationInfoByName & getSerializationInfos() { return serialization_infos; }
-    SerializationPtr getSerialization(const NameAndTypePair & column) const;
 
     /// Throws an exception if part is not stored in on-disk format.
     void assertOnDisk() const;
@@ -190,11 +176,11 @@ public:
 
     /// A directory path (relative to storage's path) where part data is actually stored
     /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
-    /// NOTE: Cannot have trailing slash.
     mutable String relative_path;
     MergeTreeIndexGranularityInfo index_granularity_info;
 
     size_t rows_count = 0;
+
 
     time_t modification_time = 0;
     /// When the part is removed from the working set. Changes once.
@@ -236,6 +222,12 @@ public:
         DeleteOnDestroy, /// part was moved to another disk and should be deleted in own destructor
     };
 
+    static constexpr auto all_part_states =
+    {
+        State::Temporary, State::PreCommitted, State::Committed, State::Outdated, State::Deleting,
+        State::DeleteOnDestroy
+    };
+
     using TTLInfo = MergeTreeDataPartTTLInfo;
     using TTLInfos = MergeTreeDataPartTTLInfos;
 
@@ -245,10 +237,14 @@ public:
     void setState(State new_state) const;
     State getState() const;
 
-    static constexpr std::string_view stateString(State state) { return magic_enum::enum_name(state); }
-    constexpr std::string_view stateString() const { return stateString(state); }
+    /// Returns name of state
+    static String stateToString(State state);
+    String stateString() const;
 
-    String getNameWithState() const { return fmt::format("{} (state {})", name, stateString()); }
+    String getNameWithState() const
+    {
+        return name + " (state " + stateString() + ")";
+    }
 
     /// Returns true if state of part is one of affordable_states
     bool checkState(const std::initializer_list<State> & affordable_states) const
@@ -304,9 +300,7 @@ public:
         void merge(const MinMaxIndex & other);
     };
 
-    using MinMaxIndexPtr = std::shared_ptr<MinMaxIndex>;
-
-    MinMaxIndexPtr minmax_idx;
+    MinMaxIndex minmax_idx;
 
     Checksums checksums;
 
@@ -357,9 +351,7 @@ public:
 
     /// Calculate the total size of the entire directory with all the files
     static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from);
-
-    /// Calculate column and secondary indices sizes on disk.
-    void calculateColumnsAndSecondaryIndicesSizesOnDisk();
+    void calculateColumnsSizesOnDisk();
 
     String getRelativePathForPrefix(const String & prefix, bool detached = false) const;
 
@@ -394,15 +386,13 @@ public:
 
     static inline constexpr auto UUID_FILE_NAME = "uuid.txt";
 
-    /// File that contains information about kinds of serialization of columns
-    /// and information that helps to choose kind of serialization later during merging
-    /// (number of rows, number of rows with default values, etc).
-    static inline constexpr auto SERIALIZATION_FILE_NAME = "serialization.json";
-
     /// Checks that all TTLs (table min/max, column ttls, so on) for part
     /// calculated. Part without calculated TTL may exist if TTL was added after
     /// part creation (using alter query with materialize_ttl setting).
     bool checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const;
+
+    /// Returns serialization for column according to files in which column is written in part.
+    SerializationPtr getSerializationForColumn(const NameAndTypePair & column) const;
 
     /// Return some uniq string for file
     /// Required for distinguish different copies of the same part on S3
@@ -416,17 +406,12 @@ protected:
     /// Size for each column, calculated once in calcuateColumnSizesOnDisk
     ColumnSizeByName columns_sizes;
 
-    ColumnSize total_secondary_indices_size;
-
-    IndexSizeByName secondary_index_sizes;
-
     /// Total size on disk, not only columns. May not contain size of
     /// checksums.txt and columns.txt. 0 - if not counted;
     UInt64 bytes_on_disk{0};
 
     /// Columns description. Cannot be changed, after part initialization.
     NamesAndTypesList columns;
-
     const Type part_type;
 
     /// Not null when it's a projection part.
@@ -451,9 +436,6 @@ private:
     /// In compact parts order of columns is necessary
     NameToNumber column_name_to_position;
 
-    /// Map from name of column to its serialization info.
-    SerializationInfoByName serialization_infos;
-
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
 
@@ -477,10 +459,6 @@ private:
     void loadTTLInfos();
 
     void loadPartitionAndMinMaxIndex();
-
-    void calculateColumnsSizesOnDisk();
-
-    void calculateSecondaryIndicesSizesOnDisk();
 
     /// Load default compression codec from file default_compression_codec.txt
     /// if it not exists tries to deduce codec from compressed column without

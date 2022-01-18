@@ -1,4 +1,4 @@
-option (USE_INTERNAL_BOOST_LIBRARY "Use internal Boost library" ON)
+option (USE_INTERNAL_BOOST_LIBRARY "Use internal Boost library" ${NOT_UNBUNDLED})
 
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
     # 1.70 like in contrib/boost
@@ -16,7 +16,7 @@ if (NOT USE_INTERNAL_BOOST_LIBRARY)
         graph
     )
 
-    if(Boost_INCLUDE_DIR AND Boost_FILESYSTEM_LIBRARY AND
+    if(Boost_INCLUDE_DIR AND Boost_FILESYSTEM_LIBRARY AND Boost_FILESYSTEM_LIBRARY AND
         Boost_PROGRAM_OPTIONS_LIBRARY AND Boost_REGEX_LIBRARY AND Boost_SYSTEM_LIBRARY AND Boost_CONTEXT_LIBRARY AND
         Boost_COROUTINE_LIBRARY AND Boost_GRAPH_LIBRARY)
 
@@ -196,12 +196,6 @@ if (NOT EXTERNAL_BOOST_FOUND)
             "${LIBRARY_DIR}/libs/context/src/asm/make_ppc64_sysv_elf_gas.S"
             "${LIBRARY_DIR}/libs/context/src/asm/ontop_ppc64_sysv_elf_gas.S"
         )
-    elseif (ARCH_RISCV64)
-        set (SRCS_CONTEXT ${SRCS_CONTEXT}
-            "${LIBRARY_DIR}/libs/context/src/asm/jump_riscv64_sysv_elf_gas.S"
-            "${LIBRARY_DIR}/libs/context/src/asm/make_riscv64_sysv_elf_gas.S"
-            "${LIBRARY_DIR}/libs/context/src/asm/ontop_riscv64_sysv_elf_gas.S"
-        )
     elseif(OS_DARWIN)
         set (SRCS_CONTEXT ${SRCS_CONTEXT}
             "${LIBRARY_DIR}/libs/context/src/asm/jump_x86_64_sysv_macho_gas.S"
@@ -243,15 +237,5 @@ if (NOT EXTERNAL_BOOST_FOUND)
     add_library (boost::graph ALIAS _boost_graph)
     target_include_directories (_boost_graph PRIVATE ${LIBRARY_DIR})
     target_link_libraries(_boost_graph PRIVATE _boost_regex)
-
-    # circular buffer
-    add_library(_boost_circular_buffer INTERFACE)
-    add_library(boost::circular_buffer ALIAS _boost_circular_buffer)
-    target_include_directories(_boost_circular_buffer SYSTEM BEFORE INTERFACE ${LIBRARY_DIR})
-
-    # heap
-    add_library(_boost_heap INTERFACE)
-    add_library(boost::heap ALIAS _boost_heap)
-    target_include_directories(_boost_heap SYSTEM BEFORE INTERFACE ${LIBRARY_DIR})
 
 endif ()

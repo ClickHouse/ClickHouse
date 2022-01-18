@@ -3,6 +3,16 @@
 #include <IO/HTTPCommon.h>
 #include <IO/Progress.h>
 #include <IO/WriteBufferFromString.h>
+#include <Common/Exception.h>
+#include <Common/NetException.h>
+#include <Common/Stopwatch.h>
+#include <Common/MemoryTracker.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
+
+#include <Poco/Version.h>
 
 
 namespace DB
@@ -77,13 +87,8 @@ void WriteBufferFromHTTPServerResponse::finishSendHeaders()
 
 void WriteBufferFromHTTPServerResponse::nextImpl()
 {
-    if (!initialized)
     {
         std::lock_guard lock(mutex);
-
-        /// Initialize as early as possible since if the code throws,
-        /// next() should not be called anymore.
-        initialized = true;
 
         startSendHeaders();
 
@@ -160,12 +165,8 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
     }
 }
 
-WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
-{
-    finalize();
-}
 
-void WriteBufferFromHTTPServerResponse::finalizeImpl()
+void WriteBufferFromHTTPServerResponse::finalize()
 {
     try
     {
@@ -173,8 +174,6 @@ void WriteBufferFromHTTPServerResponse::finalizeImpl()
         if (out)
             out->finalize();
         out.reset();
-        /// Catch write-after-finalize bugs.
-        set(nullptr, 0);
     }
     catch (...)
     {
@@ -193,5 +192,12 @@ void WriteBufferFromHTTPServerResponse::finalizeImpl()
     }
 }
 
+
+WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
+{
+    /// FIXME move final flush into the caller
+    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
+    finalize();
+}
 
 }

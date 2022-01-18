@@ -407,24 +407,24 @@ def test_php_client(started_cluster, php_container):
     code, (stdout, stderr) = php_container.exec_run(
         'php -f test.php {host} {port} default 123'.format(host=started_cluster.get_instance_ip('node'), port=server_port), demux=True)
     assert code == 0
-    assert stdout.decode() == 'tables\ntables\n'
+    assert stdout.decode() == 'tables\n'
 
     code, (stdout, stderr) = php_container.exec_run(
         'php -f test_ssl.php {host} {port} default 123'.format(host=started_cluster.get_instance_ip('node'), port=server_port), demux=True)
     assert code == 0
-    assert stdout.decode() == 'tables\ntables\n'
+    assert stdout.decode() == 'tables\n'
 
     code, (stdout, stderr) = php_container.exec_run(
         'php -f test.php {host} {port} user_with_double_sha1 abacaba'.format(host=started_cluster.get_instance_ip('node'), port=server_port),
         demux=True)
     assert code == 0
-    assert stdout.decode() == 'tables\ntables\n'
+    assert stdout.decode() == 'tables\n'
 
     code, (stdout, stderr) = php_container.exec_run(
         'php -f test_ssl.php {host} {port} user_with_double_sha1 abacaba'.format(host=started_cluster.get_instance_ip('node'), port=server_port),
         demux=True)
     assert code == 0
-    assert stdout.decode() == 'tables\ntables\n'
+    assert stdout.decode() == 'tables\n'
 
 
 def test_mysqljs_client(started_cluster, nodejs_container):

@@ -67,29 +67,6 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
     task->schedule();
 }
 
-void ReplicatedMergeTreePartCheckThread::cancelRemovedPartsCheck(const MergeTreePartInfo & drop_range_info)
-{
-    /// Wait for running tasks to finish and temporarily stop checking
-    stop();
-    SCOPE_EXIT({ start(); });
-    {
-        std::lock_guard lock(parts_mutex);
-        for (auto it = parts_queue.begin(); it != parts_queue.end();)
-        {
-            if (drop_range_info.contains(MergeTreePartInfo::fromPartName(it->first, storage.format_version)))
-            {
-                /// Remove part from the queue to avoid part resurrection
-                /// if we will check it and enqueue fetch after DROP/REPLACE execution.
-                parts_set.erase(it->first);
-                it = parts_queue.erase(it);
-            }
-            else
-            {
-                ++it;
-            }
-        }
-    }
-}
 
 size_t ReplicatedMergeTreePartCheckThread::size() const
 {

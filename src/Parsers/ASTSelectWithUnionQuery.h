@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/ASTQueryWithOutput.h>
-#include <Parsers/SelectUnionMode.h>
+
 
 namespace DB
 {
@@ -19,15 +19,27 @@ public:
 
     const char * getQueryKindString() const override { return "Select"; }
 
-    SelectUnionMode union_mode;
+    enum class Mode
+    {
+        Unspecified,
+        ALL,
+        DISTINCT,
+        EXCEPT,
+        INTERSECT
+    };
 
-    SelectUnionModes list_of_modes;
+    using UnionModes = std::vector<Mode>;
+    using UnionModesSet = std::unordered_set<Mode>;
+
+    Mode union_mode;
+
+    UnionModes list_of_modes;
 
     bool is_normalized = false;
 
     ASTPtr list_of_selects;
 
-    SelectUnionModesSet set_of_modes;
+    UnionModesSet set_of_modes;
 
     /// Consider any mode other than ALL as non-default.
     bool hasNonDefaultUnionMode() const;

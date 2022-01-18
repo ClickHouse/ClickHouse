@@ -50,9 +50,6 @@ void registerAggregateFunctionWelchTTest(AggregateFunctionFactory &);
 void registerAggregateFunctionStudentTTest(AggregateFunctionFactory &);
 void registerAggregateFunctionSingleValueOrNull(AggregateFunctionFactory &);
 void registerAggregateFunctionSequenceNextNode(AggregateFunctionFactory &);
-void registerAggregateFunctionExponentialMovingAverage(AggregateFunctionFactory &);
-void registerAggregateFunctionSparkbar(AggregateFunctionFactory &);
-void registerAggregateFunctionIntervalLengthSum(AggregateFunctionFactory &);
 
 class AggregateFunctionCombinatorFactory;
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
@@ -65,9 +62,10 @@ void registerAggregateFunctionCombinatorNull(AggregateFunctionCombinatorFactory 
 void registerAggregateFunctionCombinatorOrFill(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorResample(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorDistinct(AggregateFunctionCombinatorFactory &);
-void registerAggregateFunctionCombinatorMap(AggregateFunctionCombinatorFactory & factory);
 
 void registerWindowFunctions(AggregateFunctionFactory & factory);
+
+void registerAggregateFunctionIntervalLengthSum(AggregateFunctionFactory &);
 
 void registerAggregateFunctions()
 {
@@ -99,7 +97,9 @@ void registerAggregateFunctions()
         registerAggregateFunctionUniqUpTo(factory);
         registerAggregateFunctionTopK(factory);
         registerAggregateFunctionsBitwise(factory);
+#if !defined(ARCADIA_BUILD)
         registerAggregateFunctionsBitmap(factory);
+#endif
         registerAggregateFunctionsMaxIntersections(factory);
         registerAggregateFunctionHistogram(factory);
         registerAggregateFunctionRetention(factory);
@@ -115,11 +115,10 @@ void registerAggregateFunctions()
         registerAggregateFunctionWelchTTest(factory);
         registerAggregateFunctionStudentTTest(factory);
         registerAggregateFunctionSingleValueOrNull(factory);
-        registerAggregateFunctionIntervalLengthSum(factory);
-        registerAggregateFunctionExponentialMovingAverage(factory);
-        registerAggregateFunctionSparkbar(factory);
 
         registerWindowFunctions(factory);
+
+        registerAggregateFunctionIntervalLengthSum(factory);
     }
 
     {
@@ -135,7 +134,6 @@ void registerAggregateFunctions()
         registerAggregateFunctionCombinatorOrFill(factory);
         registerAggregateFunctionCombinatorResample(factory);
         registerAggregateFunctionCombinatorDistinct(factory);
-        registerAggregateFunctionCombinatorMap(factory);
     }
 }
 

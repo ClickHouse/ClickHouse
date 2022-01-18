@@ -5,6 +5,8 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
+#include <arrow/adapters/orc/adapter.h>
+#include <arrow/io/memory.h>
 #include "ArrowBufferedStreams.h"
 #include "ArrowColumnToCHColumn.h"
 #include <DataTypes/NestedUtils.h>
@@ -37,23 +39,23 @@ Chunk ORCBlockInputFormat::generate()
     if (!file_reader)
         prepareReader();
 
-    std::shared_ptr<arrow::RecordBatchReader> batch_reader;
-    arrow::Status reader_status = file_reader->NextStripeReader(format_settings.orc.row_batch_size, include_indices, &batch_reader);
-    if (!reader_status.ok())
-        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to create batch reader: {}", reader_status.ToString());
-    if (!batch_reader)
+    if (stripe_current >= stripe_total)
         return res;
 
-    std::shared_ptr<arrow::Table> table;
-    arrow::Status table_status = batch_reader->ReadAll(&table);
-    if (!table_status.ok())
-        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Error while reading batch of ORC data: {}", table_status.ToString());
+    std::shared_ptr<arrow::RecordBatch> batch_result;
+    arrow::Status batch_status = file_reader->ReadStripe(stripe_current, include_indices, &batch_result);
+    if (!batch_status.ok())
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA,
+                               "Error while reading batch of ORC data: {}", batch_status.ToString());
 
-    if (!table || !table->num_rows())
-        return res;
+    auto table_result = arrow::Table::FromRecordBatches({batch_result});
+    if (!table_result.ok())
+        throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA,
+                               "Error while reading batch of ORC data: {}", table_result.status().ToString());
 
-    arrow_column_to_ch_column->arrowTableToCHChunk(res, table);
+    ++stripe_current;
 
+    arrow_column_to_ch_column->arrowTableToCHChunk(res, *table_result);
     return res;
 }
 
@@ -63,6 +65,7 @@ void ORCBlockInputFormat::resetParser()
 
     file_reader.reset();
     include_indices.clear();
+    stripe_current = 0;
 }
 
 static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
@@ -90,7 +93,9 @@ static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
 
 void ORCBlockInputFormat::prepareReader()
 {
-    THROW_ARROW_NOT_OK(arrow::adapters::orc::ORCFileReader::Open(asArrowFile(*in, format_settings), arrow::default_memory_pool(), &file_reader));
+    THROW_ARROW_NOT_OK(arrow::adapters::orc::ORCFileReader::Open(asArrowFile(in), arrow::default_memory_pool(), &file_reader));
+    stripe_total = file_reader->NumberOfStripes();
+    stripe_current = 0;
 
     std::shared_ptr<arrow::Schema> schema;
     THROW_ARROW_NOT_OK(file_reader->ReadSchema(&schema));
@@ -112,7 +117,6 @@ void ORCBlockInputFormat::prepareReader()
         const auto & name = schema->field(i)->name();
         if (getPort().getHeader().has(name) || nested_table_names.contains(name))
         {
-            column_names.push_back(name);
             for (int j = 0; j != indexes_count; ++j)
                 include_indices.push_back(index + j);
         }
@@ -120,9 +124,9 @@ void ORCBlockInputFormat::prepareReader()
     }
 }
 
-void registerInputFormatORC(FormatFactory &factory)
+void registerInputFormatProcessorORC(FormatFactory &factory)
 {
-    factory.registerInputFormat(
+    factory.registerInputFormatProcessor(
             "ORC",
             [](ReadBuffer &buf,
                 const Block &sample,
@@ -140,7 +144,7 @@ void registerInputFormatORC(FormatFactory &factory)
 namespace DB
 {
     class FormatFactory;
-    void registerInputFormatORC(FormatFactory &)
+    void registerInputFormatProcessorORC(FormatFactory &)
     {
     }
 }

@@ -53,7 +53,7 @@ void CompressionCodecFactory::validateCodec(
 
 
 ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
-    const ASTPtr & ast, const DataTypePtr & column_type, bool sanity_check, bool allow_experimental_codecs) const
+    const ASTPtr & ast, const IDataType * column_type, bool sanity_check, bool allow_experimental_codecs) const
 {
     if (const auto * func = ast->as<ASTFunction>())
     {
@@ -62,7 +62,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
         bool is_compression = false;
         bool has_none = false;
         std::optional<size_t> generic_compression_codec_pos;
-        std::set<size_t> encryption_codecs;
+        std::set<size_t> post_processing_codecs;
 
         bool can_substitute_codec_arguments = true;
         for (size_t i = 0, size = func->arguments->children.size(); i < size; ++i)
@@ -100,13 +100,12 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                 if (column_type)
                 {
                     CompressionCodecPtr prev_codec;
-                    ISerialization::StreamCallback callback = [&](const auto & substream_path)
+                    IDataType::StreamCallbackWithType callback = [&](
+                        const ISerialization::SubstreamPath & substream_path, const IDataType & substream_type)
                     {
-                        assert(!substream_path.empty());
                         if (ISerialization::isSpecialCompressionAllowed(substream_path))
                         {
-                            const auto & last_type = substream_path.back().data.type;
-                            result_codec = getImpl(codec_family_name, codec_arguments, last_type.get());
+                            result_codec = getImpl(codec_family_name, codec_arguments, &substream_type);
 
                             /// Case for column Tuple, which compressed with codec which depends on data type, like Delta.
                             /// We cannot substitute parameters for such codecs.
@@ -116,8 +115,8 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                         }
                     };
 
-                    ISerialization::SubstreamPath path;
-                    column_type->getDefaultSerialization()->enumerateStreams(path, callback, column_type);
+                    ISerialization::SubstreamPath stream_path;
+                    column_type->enumerateStreams(column_type->getDefaultSerialization(), callback, stream_path);
 
                     if (!result_codec)
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find any substream with data type for type {}. It's a bug", column_type->getName());
@@ -142,8 +141,8 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
             if (!generic_compression_codec_pos && result_codec->isGenericCompression())
                 generic_compression_codec_pos = i;
 
-            if (result_codec->isEncryption())
-                encryption_codecs.insert(i);
+            if (result_codec->isPostProcessing())
+                post_processing_codecs.insert(i);
         }
 
         String codec_description = queryToString(codecs_descriptions);
@@ -158,8 +157,8 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
 
             /// Allow to explicitly specify single NONE codec if user don't want any compression.
             /// But applying other transformations solely without compression (e.g. Delta) does not make sense.
-            /// It's okay to apply encryption codecs solely without anything else.
-            if (!is_compression && !has_none && encryption_codecs.size() != codecs_descriptions->children.size())
+            /// It's okay to apply post-processing codecs solely without anything else.
+            if (!is_compression && !has_none && post_processing_codecs.size() != codecs_descriptions->children.size())
                 throw Exception(
                     "Compression codec " + codec_description
                         + " does not compress anything."
@@ -169,10 +168,10 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                           " (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).",
                     ErrorCodes::BAD_ARGUMENTS);
 
-            /// It does not make sense to apply any non-encryption codecs
-            /// after encryption one.
-            if (!encryption_codecs.empty() &&
-                *encryption_codecs.begin() != codecs_descriptions->children.size() - encryption_codecs.size())
+            /// It does not make sense to apply any non-post-processing codecs
+            /// after post-processing one.
+            if (!post_processing_codecs.empty() &&
+                *post_processing_codecs.begin() != codecs_descriptions->children.size() - post_processing_codecs.size())
                 throw Exception("The combination of compression codecs " + codec_description + " is meaningless,"
                                 " because it does not make sense to apply any non-post-processing codecs after"
                                 " post-processing ones. (Note: you can enable setting 'allow_suspicious_codecs'"
@@ -181,7 +180,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
             /// It does not make sense to apply any transformations after generic compression algorithm
             /// So, generic compression can be only one and only at the end.
             if (generic_compression_codec_pos &&
-                *generic_compression_codec_pos != codecs_descriptions->children.size() - 1 - encryption_codecs.size())
+                *generic_compression_codec_pos != codecs_descriptions->children.size() - 1 - post_processing_codecs.size())
                 throw Exception("The combination of compression codecs " + codec_description + " is meaningless,"
                     " because it does not make sense to apply any transformations after generic compression algorithm."
                     " (Note: you can enable setting 'allow_suspicious_codecs' to skip this check).", ErrorCodes::BAD_ARGUMENTS);

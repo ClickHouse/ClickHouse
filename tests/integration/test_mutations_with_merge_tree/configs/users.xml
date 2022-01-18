@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<clickhouse>
+<yandex>
     <profiles>
         <default>
             <max_expanded_ast_elements>500</max_expanded_ast_elements>
@@ -7,4 +7,4 @@
             <force_primary_key>1</force_primary_key>
         </default>
     </profiles>
-</clickhouse>
+</yandex>

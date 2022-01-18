@@ -4,7 +4,8 @@
 #include <Databases/DatabaseReplicatedSettings.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <QueryPipeline/BlockIO.h>
+#include <DataStreams/BlockIO.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <Interpreters/Context.h>
 
 
@@ -46,12 +47,8 @@ public:
     /// then it will be executed on all replicas.
     BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context);
 
-    bool hasReplicationThread() const override { return true; }
+    void stopReplication();
 
-    void stopReplication() override;
-
-    String getShardName() const { return shard_name; }
-    String getReplicaName() const { return replica_name; }
     String getFullReplicaName() const;
     static std::pair<String, String> parseFullReplicaName(const String & name);
 
@@ -60,12 +57,7 @@ public:
 
     void drop(ContextPtr /*context*/) override;
 
-    void loadStoredObjects(ContextMutablePtr context, bool force_restore, bool force_attach, bool skip_startup_tables) override;
-
-    void beforeLoadingMetadata(ContextMutablePtr context, bool force_restore, bool force_attach) override;
-
-    void startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach) override;
-
+    void loadStoredObjects(ContextMutablePtr context, bool has_force_restore_data_flag, bool force_attach, bool skip_startup_tables) override;
     void shutdown() override;
 
     friend struct DatabaseReplicatedTask;

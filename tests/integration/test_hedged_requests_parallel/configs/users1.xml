@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
-<clickhouse>
+<yandex>
     <profiles>
         <default>
         </default>
     </profiles>
-</clickhouse>
+</yandex>

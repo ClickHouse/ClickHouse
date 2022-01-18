@@ -22,9 +22,9 @@ void RawBLOBRowOutputFormat::writeField(const IColumn & column, const ISerializa
 }
 
 
-void registerOutputFormatRawBLOB(FormatFactory & factory)
+void registerOutputFormatProcessorRawBLOB(FormatFactory & factory)
 {
-    factory.registerOutputFormat("RawBLOB", [](
+    factory.registerOutputFormatProcessor("RawBLOB", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,

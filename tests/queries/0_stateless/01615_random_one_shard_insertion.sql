@@ -1,5 +1,3 @@
--- Tags: shard, no-parallel
-
 create database if not exists shard_0;
 create database if not exists shard_1;
 drop table if exists shard_0.tbl;
@@ -15,11 +13,11 @@ set insert_distributed_one_random_shard = 1;
 set max_block_size = 1;
 set max_insert_block_size = 1;
 set min_insert_block_size_rows = 1;
-insert into distr select number from numbers(100);
+insert into distr select number from numbers(20);
 
 select count() != 0 from shard_0.tbl;
 select count() != 0 from shard_1.tbl;
-select * from distr order by number LIMIT 20;
+select * from distr order by number;
 
 drop table if exists shard_0.tbl;
 drop table if exists shard_1.tbl;

@@ -29,7 +29,7 @@ Returns the round number with largest absolute value that has an absolute value 
 
 Rounds a value to a specified number of decimal places.
 
-The function returns the nearest number of the specified order. In case when given number has equal distance to surrounding numbers, the function uses banker’s rounding for float number types and rounds away from zero for the other number types (Decimal).
+The function returns the nearest number of the specified order. In case when given number has equal distance to surrounding numbers, the function uses banker’s rounding for float number types and rounds away from zero for the other number types.
 
 ``` sql
 round(expression [, decimal_places])
@@ -49,7 +49,7 @@ The rounded number of the same type as the input number.
 
 ### Examples {#examples}
 
-**Example of use with Float**
+**Example of use**
 
 ``` sql
 SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3
@@ -61,20 +61,6 @@ SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3
 │ 0.5 │                        0 │
 │   1 │                        1 │
 └─────┴──────────────────────────┘
-```
-
-**Example of use with Decimal**
-
-``` sql
-SELECT cast(number / 2 AS  Decimal(10,4)) AS x, round(x) FROM system.numbers LIMIT 3
-```
-
-``` text
-┌──────x─┬─round(CAST(divide(number, 2), 'Decimal(10, 4)'))─┐
-│ 0.0000 │                                           0.0000 │
-│ 0.5000 │                                           1.0000 │
-│ 1.0000 │                                           1.0000 │
-└────────┴──────────────────────────────────────────────────┘
 ```
 
 **Examples of rounding**
@@ -176,7 +162,7 @@ roundBankers(4.5) = 4
 roundBankers(3.55, 1) = 3.6
 roundBankers(3.65, 1) = 3.6
 roundBankers(10.35, 1) = 10.4
-roundBankers(10.755, 2) = 10.76
+roundBankers(10.755, 2) = 11,76
 ```
 
 **See Also**

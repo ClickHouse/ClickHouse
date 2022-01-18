@@ -5,13 +5,11 @@ import logging
 import os
 import sys
 from github import Github
-
-from env_helper import REPORTS_PATH, TEMP_PATH, GITHUB_REPOSITORY, GITHUB_SERVER_URL, GITHUB_RUN_ID
 from report import create_build_html_report
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
-from pr_info import PRInfo
-from commit_status_helper import get_commit
+from pr_info import PRInfo, get_event
+from commit_status_helper import  get_commit
 from ci_config import CI_CONFIG
 from rerun_helper import RerunHelper
 
@@ -27,7 +25,7 @@ class BuildResult():
         self.with_coverage = with_coverage
 
 def group_by_artifacts(build_urls):
-    groups = {'deb': [], 'binary': [], 'tgz': [], 'rpm': [], 'performance': []}
+    groups = {'deb': [], 'binary': [], 'tgz': [], 'rpm': [], 'preformance': []}
     for url in build_urls:
         if url.endswith('performance.tgz'):
             groups['performance'].append(url)
@@ -77,8 +75,8 @@ def get_build_name_from_file_name(file_name):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    reports_path = REPORTS_PATH
-    temp_path = TEMP_PATH
+    reports_path = os.getenv("REPORTS_PATH", "./reports")
+    temp_path = os.path.join(os.getenv("TEMP_PATH", "."))
     logging.info("Reports path %s", reports_path)
 
     if not os.path.exists(temp_path):
@@ -87,7 +85,7 @@ if __name__ == "__main__":
     build_check_name = sys.argv[1]
 
     gh = Github(get_best_robot_token())
-    pr_info = PRInfo()
+    pr_info = PRInfo(get_event())
     rerun_helper = RerunHelper(gh, pr_info, build_check_name)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
@@ -129,15 +127,15 @@ if __name__ == "__main__":
 
     s3_helper = S3Helper('https://s3.amazonaws.com')
 
-    pr_info = PRInfo()
+    pr_info = PRInfo(get_event())
 
-    branch_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/commits/master"
+    branch_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/commits/master"
     branch_name = "master"
     if pr_info.number != 0:
         branch_name = "PR #{}".format(pr_info.number)
-        branch_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/pull/{pr_info.number}"
-    commit_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/commit/{pr_info.sha}"
-    task_url = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID or '0'}"
+        branch_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/pull/{pr_info.number}"
+    commit_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/commit/{pr_info.sha}"
+    task_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/actions/runs/{os.getenv('GITHUB_RUN_ID', '0')}"
     report = create_build_html_report(
         build_check_name,
         build_results,

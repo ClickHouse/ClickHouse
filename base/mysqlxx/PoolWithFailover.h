@@ -6,7 +6,6 @@
 #define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS 1
 #define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS 16
 #define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES 3
-#define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_CONNECTION_WAIT_TIMEOUT 5 /// in seconds
 
 
 namespace mysqlxx
@@ -122,9 +121,7 @@ namespace mysqlxx
             unsigned default_connections_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS,
             unsigned max_connections_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS,
             size_t max_tries_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
-            uint64_t wait_timeout_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_CONNECTION_WAIT_TIMEOUT,
-            size_t connect_timeout = MYSQLXX_DEFAULT_TIMEOUT,
-            size_t rw_timeout = MYSQLXX_DEFAULT_RW_TIMEOUT);
+            uint64_t wait_timeout_ = UINT64_MAX);
 
         PoolWithFailover(const PoolWithFailover & other);
 

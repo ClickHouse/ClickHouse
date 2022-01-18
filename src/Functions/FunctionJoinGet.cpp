@@ -48,11 +48,22 @@ getJoin(const ColumnsWithTypeAndName & arguments, ContextPtr context)
             "Illegal type " + arguments[0].type->getName() + " of first argument of function joinGet, expected a const string.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    auto qualified_name = QualifiedTableName::parseFromString(join_name);
-    if (qualified_name.database.empty())
-        qualified_name.database = context->getCurrentDatabase();
-
-    auto table = DatabaseCatalog::instance().getTable({qualified_name.database, qualified_name.table}, std::const_pointer_cast<Context>(context));
+    size_t dot = join_name.find('.');
+    String database_name;
+    if (dot == String::npos)
+    {
+        database_name = context->getCurrentDatabase();
+        dot = 0;
+    }
+    else
+    {
+        database_name = join_name.substr(0, dot);
+        ++dot;
+    }
+    String table_name = join_name.substr(dot);
+    if (table_name.empty())
+        throw Exception("joinGet does not allow empty table name", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    auto table = DatabaseCatalog::instance().getTable({database_name, table_name}, std::const_pointer_cast<Context>(context));
     auto storage_join = std::dynamic_pointer_cast<StorageJoin>(table);
     if (!storage_join)
         throw Exception("Table " + join_name + " should have engine StorageJoin", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

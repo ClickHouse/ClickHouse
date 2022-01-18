@@ -36,7 +36,7 @@ void SerializationIPv4::serializeText(const IColumn & column, size_t row_num, Wr
     ostr.write(buffer, strlen(buffer));
 }
 
-void SerializationIPv4::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
+void SerializationIPv4::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     ColumnUInt32 * col = typeid_cast<ColumnUInt32 *>(&column);
     if (!col)
@@ -53,9 +53,6 @@ void SerializationIPv4::deserializeText(IColumn & column, ReadBuffer & istr, con
     }
 
     col->insert(ipv4_value);
-
-    if (whole && !istr.eof())
-        throwUnexpectedDataAfterParsedValue(column, istr, settings, "IPv4");
 }
 
 SerializationIPv6::SerializationIPv6(const SerializationPtr & nested_)
@@ -77,7 +74,7 @@ void SerializationIPv6::serializeText(const IColumn & column, size_t row_num, Wr
     ostr.write(buffer, strlen(buffer));
 }
 
-void SerializationIPv6::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
+void SerializationIPv6::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     ColumnFixedString * col = typeid_cast<ColumnFixedString *>(&column);
     if (!col)
@@ -95,9 +92,6 @@ void SerializationIPv6::deserializeText(IColumn & column, ReadBuffer & istr, con
     }
 
     col->insertString(ipv6_value);
-
-    if (whole && !istr.eof())
-        throwUnexpectedDataAfterParsedValue(column, istr, settings, "IPv6");
 }
 
 }

@@ -5,7 +5,7 @@
 #include <Poco/Timespan.h>
 #include <boost/noncopyable.hpp>
 
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Common/Exception.h>
 
 
@@ -163,3 +163,4 @@ protected:
     /** Creates a new object to put into the pool. */
     virtual ObjectPtr allocObject() = 0;
 };
+

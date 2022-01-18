@@ -8,12 +8,10 @@ toc_title: SHOW
 ## SHOW CREATE TABLE {#show-create-table}
 
 ``` sql
-SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY|VIEW] [db.]table|view [INTO OUTFILE filename] [FORMAT format]
+SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY] [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
 Returns a single `String`-type ‘statement’ column, which contains a single value – the `CREATE` query used for creating the specified object.
-
-Note that if you use this statement to get `CREATE` query of system tables, you will get a *fake* query, which only declares table structure, but cannot be used to create table.
 
 ## SHOW DATABASES {#show-databases}
 
@@ -93,7 +91,7 @@ Result:
 
 ### See Also {#see-also}
 
--   [CREATE DATABASE](https://clickhouse.com/docs/en/sql-reference/statements/create/database/#query-language-create-database)
+-   [CREATE DATABASE](https://clickhouse.tech/docs/en/sql-reference/statements/create/database/#query-language-create-database)
 
 ## SHOW PROCESSLIST {#show-processlist}
 
@@ -192,8 +190,8 @@ Result:
 
 ### See Also {#see-also}
 
--   [Create Tables](https://clickhouse.com/docs/en/getting-started/tutorial/#create-tables)
--   [SHOW CREATE TABLE](https://clickhouse.com/docs/en/sql-reference/statements/show/#show-create-table)
+-   [Create Tables](https://clickhouse.tech/docs/en/getting-started/tutorial/#create-tables)
+-   [SHOW CREATE TABLE](https://clickhouse.tech/docs/en/sql-reference/statements/show/#show-create-table)
 
 ## SHOW DICTIONARIES {#show-dictionaries}
 
@@ -495,4 +493,4 @@ Result:
 
 -   [system.settings](../../operations/system-tables/settings.md) table
 
-[Original article](https://clickhouse.com/docs/en/sql-reference/statements/show/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/show/) <!--hide-->

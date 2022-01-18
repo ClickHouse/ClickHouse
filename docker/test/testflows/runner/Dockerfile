@@ -1,9 +1,7 @@
 # docker build -t clickhouse/testflows-runner .
 FROM ubuntu:20.04
 
-# ARG for quick switch to a given ubuntu mirror
-ARG apt_archive="http://archive.ubuntu.com"
-RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
+RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
@@ -21,6 +19,7 @@ RUN apt-get update \
     cgroupfs-mount \
     python3-pip \
     tzdata \
+    libreadline-dev \
     libicu-dev \
     bsdutils \
     curl \

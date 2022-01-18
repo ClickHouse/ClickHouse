@@ -1,5 +1,5 @@
-<clickhouse>
+<yandex>
     <merge_tree>
         <replicated_can_become_leader>0</replicated_can_become_leader>
     </merge_tree>
-</clickhouse>
+</yandex>

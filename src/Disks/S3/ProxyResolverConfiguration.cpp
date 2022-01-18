@@ -7,7 +7,7 @@
 #include "Poco/StreamCopier.h"
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 namespace DB::ErrorCodes
 {

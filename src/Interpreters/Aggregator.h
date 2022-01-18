@@ -4,9 +4,9 @@
 #include <memory>
 #include <functional>
 
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
-#include <base/StringRef.h>
+#include <common/StringRef.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/HashMap.h>
@@ -19,7 +19,8 @@
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
 
-#include <QueryPipeline/SizeLimits.h>
+#include <DataStreams/IBlockStream_fwd.h>
+#include <DataStreams/SizeLimits.h>
 
 #include <Disks/SingleDiskVolume.h>
 
@@ -42,6 +43,8 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
 }
+
+class IBlockOutputStream;
 
 /** Different data structures that can be used for aggregation
   * For efficiency, the aggregation data itself is put into the pool.
@@ -850,7 +853,6 @@ using ManyAggregatedDataVariants = std::vector<AggregatedDataVariantsPtr>;
 using ManyAggregatedDataVariantsPtr = std::shared_ptr<ManyAggregatedDataVariants>;
 
 class CompiledAggregateFunctionsHolder;
-class NativeWriter;
 
 /** How are "total" values calculated with WITH TOTALS?
   * (For more details, see TotalsHavingTransform.)
@@ -878,10 +880,9 @@ public:
         Block intermediate_header;
 
         /// What to count.
-        ColumnNumbers keys;
-        const ColumnNumbersList keys_vector;
+        const ColumnNumbers keys;
         const AggregateDescriptions aggregates;
-        size_t keys_size;
+        const size_t keys_size;
         const size_t aggregates_size;
 
         /// The settings of approximate calculation of GROUP BY.
@@ -938,46 +939,6 @@ public:
             min_count_to_compile_aggregate_expression(min_count_to_compile_aggregate_expression_)
         {
         }
-
-        /// two dimensional vector of aggregating keys in params
-        Params(
-            const Block & src_header_,
-            const ColumnNumbers & keys_,
-            const ColumnNumbersList & keys_vector_,
-            const AggregateDescriptions & aggregates_,
-            bool overflow_row_,
-            size_t max_rows_to_group_by_,
-            OverflowMode group_by_overflow_mode_,
-            size_t group_by_two_level_threshold_,
-            size_t group_by_two_level_threshold_bytes_,
-            size_t max_bytes_before_external_group_by_,
-            bool empty_result_for_aggregation_by_empty_set_,
-            VolumePtr tmp_volume_,
-            size_t max_threads_,
-            size_t min_free_disk_space_,
-            bool compile_aggregate_expressions_,
-            size_t min_count_to_compile_aggregate_expression_,
-            const Block & intermediate_header_ = {})
-            : src_header(src_header_)
-            , intermediate_header(intermediate_header_)
-            , keys(keys_)
-            , keys_vector(keys_vector_)
-            , aggregates(aggregates_)
-            , keys_size(keys.size())
-            , aggregates_size(aggregates.size())
-            , overflow_row(overflow_row_)
-            , max_rows_to_group_by(max_rows_to_group_by_)
-            , group_by_overflow_mode(group_by_overflow_mode_)
-            , group_by_two_level_threshold(group_by_two_level_threshold_)
-            , group_by_two_level_threshold_bytes(group_by_two_level_threshold_bytes_)
-            , max_bytes_before_external_group_by(max_bytes_before_external_group_by_)
-            , empty_result_for_aggregation_by_empty_set(empty_result_for_aggregation_by_empty_set_)
-            , tmp_volume(tmp_volume_)
-            , max_threads(max_threads_)
-            , min_free_disk_space(min_free_disk_space_)
-            , compile_aggregate_expressions(compile_aggregate_expressions_)
-            , min_count_to_compile_aggregate_expression(min_count_to_compile_aggregate_expression_)
-        {}
 
         /// Only parameters that matter during merge.
         Params(const Block & intermediate_header_,
@@ -1103,7 +1064,6 @@ private:
         const IAggregateFunction * batch_that{};
         const IColumn ** batch_arguments{};
         const UInt64 * offsets{};
-        bool has_sparse_arguments = false;
     };
 
     using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
@@ -1190,7 +1150,7 @@ private:
     void writeToTemporaryFileImpl(
         AggregatedDataVariants & data_variants,
         Method & method,
-        NativeWriter & out) const;
+        IBlockOutputStream & out) const;
 
     /// Merge NULL key data from hash table `src` into `dst`.
     template <typename Method, typename Table>
@@ -1359,8 +1319,6 @@ private:
         AggregatedDataVariants & data_variants,
         Columns & key_columns, size_t key_row,
         MutableColumns & final_key_columns) const;
-
-    static bool hasSparseArguments(AggregateFunctionInstruction * aggregate_instructions);
 };
 
 

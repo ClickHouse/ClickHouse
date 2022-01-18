@@ -4,6 +4,7 @@ import time
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.cluster import ClickHouseKiller
+from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)
 
@@ -34,7 +35,7 @@ def started_cluster():
 @pytest.mark.parametrize("dictionary_name,dictionary_type", [
     ("flat_update_field_dictionary", "FLAT"),
     ("simple_key_hashed_update_field_dictionary", "HASHED"),
-    ("complex_key_hashed_update_field_dictionary", "COMPLEX_KEY_HASHED")
+    ("complex_key_hashed_update_field_dictionary", "HASHED")
 ])
 def test_update_field(started_cluster, dictionary_name, dictionary_type):
     create_dictionary_query = """

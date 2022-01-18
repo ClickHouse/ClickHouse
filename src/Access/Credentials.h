@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 #include <memory>
 
 
@@ -52,28 +52,6 @@ public:
 
 private:
     String password;
-};
-
-class CredentialsWithScramble : public Credentials
-{
-public:
-    explicit CredentialsWithScramble(const String & user_name_, const String & scramble_, const String & scrambled_password_)
-        : Credentials(user_name_), scramble(scramble_), scrambled_password(scrambled_password_)
-    {
-        is_ready = true;
-    }
-
-    const String & getScramble() const { return scramble; }
-    const String & getScrambledPassword() const { return scrambled_password; }
-
-private:
-    String scramble;
-    String scrambled_password;
-};
-
-class MySQLNative41Credentials : public CredentialsWithScramble
-{
-    using CredentialsWithScramble::CredentialsWithScramble;
 };
 
 }

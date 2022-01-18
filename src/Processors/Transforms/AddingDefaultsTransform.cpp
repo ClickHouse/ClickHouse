@@ -64,7 +64,7 @@ static void mixNumberColumns(
         if constexpr (!std::is_same_v<DataType, DataTypeString> && !std::is_same_v<DataType, DataTypeFixedString>)
         {
             using FieldType = typename DataType::FieldType;
-            using ColVecType = ColumnVectorOrDecimal<FieldType>;
+            using ColVecType = std::conditional_t<IsDecimalNumber<FieldType>, ColumnDecimal<FieldType>, ColumnVector<FieldType>>;
 
             auto col_read = typeid_cast<ColVecType *>(column_mixed.get());
             if (!col_read)

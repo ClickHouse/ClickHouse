@@ -1,4 +1,6 @@
-#include "config_functions.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
 
 #if USE_H3
 
@@ -8,7 +10,7 @@
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
-#include <base/range.h>
+#include <common/range.h>
 
 #include <constants.h>
 #include <h3api.h>
@@ -63,7 +65,7 @@ public:
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
-        for (size_t row = 0; row < input_rows_count; ++row)
+        for (const auto row : collections::range(0, input_rows_count))
         {
             const UInt64 resolution = col_hindex->getUInt(row);
             if (resolution > MAX_H3_RES)

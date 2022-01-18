@@ -41,9 +41,6 @@ struct SelectQueryOptions
     /// It is needed because lazy normal projections require special planning in FetchColumns stage, such as adding WHERE transform.
     /// It is also used to avoid adding aggregating step when aggregate projection is chosen.
     bool is_projection_query = false;
-    /// This flag is needed for projection description.
-    /// Otherwise, keys for GROUP BY may be removed as constants.
-    bool ignore_ast_optimizations = false;
     bool ignore_alias = false;
     bool is_internal = false;
     bool is_subquery = false; // non-subquery can also have subquery_depth > 0, e.g. insert select
@@ -120,12 +117,6 @@ struct SelectQueryOptions
     SelectQueryOptions & ignoreAlias(bool value = true)
     {
         ignore_alias = value;
-        return *this;
-    }
-
-    SelectQueryOptions & ignoreASTOptimizationsAlias(bool value = true)
-    {
-        ignore_ast_optimizations = value;
         return *this;
     }
 

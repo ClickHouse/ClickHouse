@@ -69,8 +69,7 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
         {
             Stopwatch watch;
             CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
-            auto result = prefetch_future.get();
-            size = result.size;
+            size = prefetch_future.get();
             ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
         }
 
@@ -91,7 +90,7 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     {
         /// No pending request. Do synchronous read.
 
-        auto [size, _] = readInto(memory.data(), memory.size()).get();
+        auto size = readInto(memory.data(), memory.size()).get();
         file_offset_of_buffer_end += size;
 
         if (size)
@@ -202,3 +201,4 @@ void AsynchronousReadBufferFromFileDescriptor::rewind()
 }
 
 }
+

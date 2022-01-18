@@ -14,8 +14,9 @@ limitations under the License. */
 #include <Parsers/ASTWatchQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/Context.h>
-#include <Access/Common/AccessFlags.h>
-#include <QueryPipeline/StreamLocalLimits.h>
+#include <Access/AccessFlags.h>
+#include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/StreamLocalLimits.h>
 
 
 namespace DB
@@ -31,13 +32,10 @@ namespace ErrorCodes
 
 BlockIO InterpreterWatchQuery::execute()
 {
-    BlockIO res;
-    res.pipeline = QueryPipelineBuilder::getPipeline(buildQueryPipeline());
-    return res;
-}
+    if (!getContext()->getSettingsRef().allow_experimental_live_view)
+        throw Exception("Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')", ErrorCodes::SUPPORT_IS_DISABLED);
 
-QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
-{
+    BlockIO res;
     const ASTWatchQuery & query = typeid_cast<const ASTWatchQuery &>(*query_ptr);
     auto table_id = getContext()->resolveStorageID(query, Context::ResolveOrdinary);
 
@@ -47,16 +45,6 @@ QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
     if (!storage)
         throw Exception("Table " + table_id.getNameForLogs() + " doesn't exist.",
         ErrorCodes::UNKNOWN_TABLE);
-
-    auto storage_name = storage->getName();
-    if (storage_name == "LiveView"
-        && !getContext()->getSettingsRef().allow_experimental_live_view)
-        throw Exception("Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')",
-                        ErrorCodes::SUPPORT_IS_DISABLED);
-    else if (storage_name == "WindowView"
-        && !getContext()->getSettingsRef().allow_experimental_window_view)
-        throw Exception("Experimental WINDOW VIEW feature is not enabled (the setting 'allow_experimental_window_view')",
-                        ErrorCodes::SUPPORT_IS_DISABLED);
 
     /// List of columns to read to execute the query.
     Names required_columns = storage->getInMemoryMetadataPtr()->getColumns().getNamesOfPhysical();
@@ -97,9 +85,10 @@ QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
         pipe.setQuota(getContext()->getQuota());
     }
 
-    QueryPipelineBuilder pipeline;
-    pipeline.init(std::move(pipe));
-    return pipeline;
+    res.pipeline.init(std::move(pipe));
+
+    return res;
 }
+
 
 }

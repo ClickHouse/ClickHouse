@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-ubsan
-# Tag no-ubsan: Limits RLIMIT_NOFILE, see comment in the test
-
 # shellcheck disable=SC2086
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

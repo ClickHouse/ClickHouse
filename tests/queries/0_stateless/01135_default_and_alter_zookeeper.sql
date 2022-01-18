@@ -1,5 +1,3 @@
--- Tags: zookeeper
-
 DROP TABLE IF EXISTS default_table;
 
 CREATE TABLE default_table

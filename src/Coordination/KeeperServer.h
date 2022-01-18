@@ -1,12 +1,13 @@
 #pragma once
 
-#include <libnuraft/nuraft.hxx>
+#include <libnuraft/nuraft.hxx> // Y_IGNORE
 #include <Coordination/InMemoryLogStore.h>
 #include <Coordination/KeeperStateManager.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStorage.h>
 #include <Coordination/CoordinationSettings.h>
-#include <base/logger_useful.h>
+#include <unordered_map>
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -51,10 +52,12 @@ private:
 
 public:
     KeeperServer(
-        const KeeperConfigurationAndSettingsPtr & settings_,
-        const Poco::Util::AbstractConfiguration & config_,
+        int server_id_,
+        const CoordinationSettingsPtr & coordination_settings_,
+        const Poco::Util::AbstractConfiguration & config,
         ResponsesQueue & responses_queue_,
-        SnapshotsQueue & snapshots_queue_);
+        SnapshotsQueue & snapshots_queue_,
+        bool standalone_keeper);
 
     /// Load state machine from the latest snapshot and load log storage. Start NuRaft with required settings.
     void startup();
@@ -70,49 +73,16 @@ public:
     /// Return set of the non-active sessions
     std::vector<int64_t> getDeadSessions();
 
-    nuraft::ptr<KeeperStateMachine> getKeeperStateMachine() const
-    {
-        return state_machine;
-    }
-
     bool isLeader() const;
 
-    bool isFollower() const;
-
-    bool isObserver() const;
-
     bool isLeaderAlive() const;
-
-    /// @return follower count if node is not leader return 0
-    uint64_t getFollowerCount() const;
-
-    /// @return synced follower count if node is not leader return 0
-    uint64_t getSyncedFollowerCount() const;
 
     /// Wait server initialization (see callbackFunc)
     void waitInit();
 
-    /// Return true if KeeperServer initialized
-    bool checkInit() const
-    {
-        return initialized_flag;
-    }
-
     void shutdown();
 
     int getServerID() const { return server_id; }
-
-    /// Get configuration diff between current configuration in RAFT and in XML file
-    ConfigUpdateActions getConfigurationDiff(const Poco::Util::AbstractConfiguration & config);
-
-    /// Apply action for configuration update. Actually call raft_instance->remove_srv or raft_instance->add_srv.
-    /// Synchronously check for update results with retries.
-    void applyConfigurationUpdate(const ConfigUpdateAction & task);
-
-
-    /// Wait configuration update for action. Used by followers.
-    /// Return true if update was successfully received.
-    bool waitConfigurationUpdate(const ConfigUpdateAction & task);
 };
 
 }

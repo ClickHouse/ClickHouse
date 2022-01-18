@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
 
 CLICKHOUSE_PORT_TCP=50111
 CLICKHOUSE_DATABASE=default
@@ -12,7 +11,7 @@ echo "Starting clickhouse-server"
 
 $PORT
 
-$CLICKHOUSE_BINARY server -- --tcp_port "$CLICKHOUSE_PORT_TCP" --path /tmp/ > server.log 2>&1 &
+$CLICKHOUSE_BINARY-server -- --tcp_port "$CLICKHOUSE_PORT_TCP" > server.log 2>&1 &
 PID=$!
 
 function finish {

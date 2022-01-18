@@ -12,11 +12,9 @@ function wait_for_query_to_start()
 }
 
 
-MAX_TIMEOUT=30
-
 # TCP CLIENT
 
-$CLICKHOUSE_CLIENT --max_execution_time $MAX_TIMEOUT --query_id "test_01948_tcp_$CLICKHOUSE_DATABASE" -q \
+$CLICKHOUSE_CLIENT --max_execution_time 10 --query_id "test_01948_tcp_$CLICKHOUSE_DATABASE" -q \
     "SELECT * FROM
     (
         SELECT a.name as n
@@ -32,12 +30,12 @@ $CLICKHOUSE_CLIENT --max_execution_time $MAX_TIMEOUT --query_id "test_01948_tcp_
     LIMIT 20
     FORMAT Null" > /dev/null 2>&1 &
 wait_for_query_to_start "test_01948_tcp_$CLICKHOUSE_DATABASE"
-$CLICKHOUSE_CLIENT --max_execution_time $MAX_TIMEOUT -q "KILL QUERY WHERE query_id = 'test_01948_tcp_$CLICKHOUSE_DATABASE' SYNC"
+$CLICKHOUSE_CLIENT --max_execution_time 10 -q "KILL QUERY WHERE query_id = 'test_01948_tcp_$CLICKHOUSE_DATABASE' SYNC"
 
 
 # HTTP CLIENT
 
-${CLICKHOUSE_CURL_COMMAND} -q --max-time $MAX_TIMEOUT -sS "$CLICKHOUSE_URL&query_id=test_01948_http_$CLICKHOUSE_DATABASE" -d \
+${CLICKHOUSE_CURL_COMMAND} -q --max-time 10 -sS "$CLICKHOUSE_URL&query_id=test_01948_http_$CLICKHOUSE_DATABASE" -d \
     "SELECT * FROM
     (
         SELECT a.name as n
@@ -53,4 +51,4 @@ ${CLICKHOUSE_CURL_COMMAND} -q --max-time $MAX_TIMEOUT -sS "$CLICKHOUSE_URL&query
     LIMIT 20
     FORMAT Null" > /dev/null 2>&1 &
 wait_for_query_to_start "test_01948_http_$CLICKHOUSE_DATABASE"
-$CLICKHOUSE_CURL --max-time $MAX_TIMEOUT -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = 'test_01948_http_$CLICKHOUSE_DATABASE' SYNC"
+$CLICKHOUSE_CURL --max-time 10 -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = 'test_01948_http_$CLICKHOUSE_DATABASE' SYNC"

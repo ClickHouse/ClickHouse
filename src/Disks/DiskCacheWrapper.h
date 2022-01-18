@@ -1,7 +1,7 @@
 #pragma once
 
 #include <unordered_map>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include "DiskDecorator.h"
 #include "DiskLocal.h"
 
@@ -37,7 +37,7 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> size) const override;
+        size_t estimated_size) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, WriteMode mode) override;
 

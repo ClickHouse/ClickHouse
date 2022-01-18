@@ -106,6 +106,18 @@ if(NOT MSVC)
   set(CMAKE_REQUIRED_FLAGS "-msse4.2 -mpclmul")
 endif()
 
+CHECK_CXX_SOURCE_COMPILES("
+#include <cstdint>
+#include <nmmintrin.h>
+#include <wmmintrin.h>
+int main() {
+  volatile uint32_t x = _mm_crc32_u32(0, 0);
+  const auto a = _mm_set_epi64x(0, 0);
+  const auto b = _mm_set_epi64x(0, 0);
+  const auto c = _mm_clmulepi64_si128(a, b, 0x00);
+  auto d = _mm_cvtsi128_si64(c);
+}
+" HAVE_SSE42)
 unset(CMAKE_REQUIRED_FLAGS)
 if(HAVE_SSE42)
   add_definitions(-DHAVE_SSE42)
@@ -114,7 +126,14 @@ elseif(FORCE_SSE42)
   message(FATAL_ERROR "FORCE_SSE42=ON but unable to compile with SSE4.2 enabled")
 endif()
 
-set (HAVE_THREAD_LOCAL 1)
+CHECK_CXX_SOURCE_COMPILES("
+#if defined(_MSC_VER) && !defined(__thread)
+#define __thread __declspec(thread)
+#endif
+int main() {
+  static __thread int tls;
+}
+" HAVE_THREAD_LOCAL)
 if(HAVE_THREAD_LOCAL)
   add_definitions(-DROCKSDB_SUPPORT_THREAD_LOCAL)
 endif()
@@ -155,7 +174,7 @@ endif()
 
 option(WITH_FALLOCATE "build with fallocate" ON)
 if(WITH_FALLOCATE)
-  CHECK_C_SOURCE_COMPILES("
+  CHECK_CXX_SOURCE_COMPILES("
 #include <fcntl.h>
 #include <linux/falloc.h>
 int main() {
@@ -168,7 +187,7 @@ int main() {
   endif()
 endif()
 
-CHECK_C_SOURCE_COMPILES("
+CHECK_CXX_SOURCE_COMPILES("
 #include <fcntl.h>
 int main() {
   int fd = open(\"/dev/null\", 0);
@@ -179,7 +198,7 @@ if(HAVE_SYNC_FILE_RANGE_WRITE)
   add_definitions(-DROCKSDB_RANGESYNC_PRESENT)
 endif()
 
-CHECK_C_SOURCE_COMPILES("
+CHECK_CXX_SOURCE_COMPILES("
 #include <pthread.h>
 int main() {
   (void) PTHREAD_MUTEX_ADAPTIVE_NP;
@@ -190,7 +209,7 @@ if(HAVE_PTHREAD_MUTEX_ADAPTIVE_NP)
 endif()
 
 include(CheckCXXSymbolExists)
-if (OS_FREEBSD)
+if(CMAKE_SYSTEM_NAME MATCHES "^FreeBSD")
   check_cxx_symbol_exists(malloc_usable_size "${ROCKSDB_SOURCE_DIR}/malloc_np.h" HAVE_MALLOC_USABLE_SIZE)
 else()
   check_cxx_symbol_exists(malloc_usable_size "${ROCKSDB_SOURCE_DIR}/malloc.h" HAVE_MALLOC_USABLE_SIZE)
@@ -199,14 +218,15 @@ if(HAVE_MALLOC_USABLE_SIZE)
   add_definitions(-DROCKSDB_MALLOC_USABLE_SIZE)
 endif()
 
-if (OS_LINUX)
+check_cxx_symbol_exists(sched_getcpu sched.h HAVE_SCHED_GETCPU)
+if(HAVE_SCHED_GETCPU)
   add_definitions(-DROCKSDB_SCHED_GETCPU_PRESENT)
-  add_definitions(-DROCKSDB_AUXV_SYSAUXV_PRESENT)
-  add_definitions(-DROCKSDB_AUXV_GETAUXVAL_PRESENT)
-elseif (OS_FREEBSD)
-  add_definitions(-DROCKSDB_AUXV_SYSAUXV_PRESENT)
 endif()
 
+check_cxx_symbol_exists(getauxval auvx.h HAVE_AUXV_GETAUXVAL)
+if(HAVE_AUXV_GETAUXVAL)
+  add_definitions(-DROCKSDB_AUXV_GETAUXVAL_PRESENT)
+endif()
 
 include_directories(${ROCKSDB_SOURCE_DIR})
 include_directories("${ROCKSDB_SOURCE_DIR}/include")

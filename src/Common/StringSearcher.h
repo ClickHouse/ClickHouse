@@ -1,11 +1,11 @@
 #pragma once
 
-#include <base/getPageSize.h>
+#include <common/getPageSize.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <Core/Defines.h>
-#include <base/range.h>
+#include <common/range.h>
 #include <Poco/Unicode.h>
 #include <stdint.h>
 #include <string.h>

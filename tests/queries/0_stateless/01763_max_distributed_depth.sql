@@ -1,5 +1,3 @@
--- Tags: distributed
-
 DROP TABLE IF EXISTS tt6;
 
 CREATE TABLE tt6

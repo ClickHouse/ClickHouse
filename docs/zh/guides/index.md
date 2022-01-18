@@ -13,4 +13,4 @@ toc_title: "\u6982\u8FF0"
 -   [关于简单集群设置的教程](../getting-started/tutorial.md)
 -   [在ClickHouse中应用CatBoost模型](apply-catboost-model.md)
 
-[原始文章](https://clickhouse.com/docs/en/guides/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/guides/) <!--hide-->

@@ -1,5 +1,4 @@
 #include <IO/createReadBufferFromFileBase.h>
-#include <IO/ReadBufferFromEmptyFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/MMapReadBufferFromFileWithCache.h>
 #include <IO/AsynchronousReadBufferFromFile.h>
@@ -29,17 +28,13 @@ namespace ErrorCodes
 std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     const std::string & filename,
     const ReadSettings & settings,
-    std::optional<size_t> size,
+    size_t estimated_size,
     int flags,
     char * existing_memory,
     size_t alignment)
 {
-    if (size.has_value() && !*size)
-        return std::make_unique<ReadBufferFromEmptyFile>();
-    size_t estimated_size = size.has_value() ? *size : 0;
-
     if (!existing_memory
-        && settings.local_fs_method == LocalFSReadMethod::mmap
+        && settings.local_fs_method == ReadMethod::mmap
         && settings.mmap_threshold
         && settings.mmap_cache
         && estimated_size >= settings.mmap_threshold)
@@ -61,21 +56,21 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     {
         std::unique_ptr<ReadBufferFromFileBase> res;
 
-        if (settings.local_fs_method == LocalFSReadMethod::read)
+        if (settings.local_fs_method == ReadMethod::read)
         {
             res = std::make_unique<ReadBufferFromFile>(filename, buffer_size, actual_flags, existing_memory, alignment);
         }
-        else if (settings.local_fs_method == LocalFSReadMethod::pread || settings.local_fs_method == LocalFSReadMethod::mmap)
+        else if (settings.local_fs_method == ReadMethod::pread || settings.local_fs_method == ReadMethod::mmap)
         {
             res = std::make_unique<ReadBufferFromFilePReadWithDescriptorsCache>(filename, buffer_size, actual_flags, existing_memory, alignment);
         }
-        else if (settings.local_fs_method == LocalFSReadMethod::pread_fake_async)
+        else if (settings.local_fs_method == ReadMethod::pread_fake_async)
         {
             static AsynchronousReaderPtr reader = std::make_shared<SynchronousReader>();
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
                 reader, settings.priority, filename, buffer_size, actual_flags, existing_memory, alignment);
         }
-        else if (settings.local_fs_method == LocalFSReadMethod::pread_threadpool)
+        else if (settings.local_fs_method == ReadMethod::pread_threadpool)
         {
             static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolReader>(16, 1000000);
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(

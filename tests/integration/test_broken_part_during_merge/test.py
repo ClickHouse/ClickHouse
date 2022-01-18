@@ -15,6 +15,12 @@ node1 = cluster.add_instance('node1', with_zookeeper=True)
 def started_cluster():
     try:
         cluster.start()
+
+        node1.query('''
+            CREATE TABLE replicated_mt(date Date, id UInt32, value Int32)
+            ENGINE = ReplicatedMergeTree('/clickhouse/tables/replicated_mt', '{replica}') ORDER BY id;
+                '''.format(replica=node1.name))
+
         yield cluster
 
     finally:
@@ -22,12 +28,6 @@ def started_cluster():
 
 
 def test_merge_and_part_corruption(started_cluster):
-    node1.query('''
-        CREATE TABLE replicated_mt(date Date, id UInt32, value Int32)
-        ENGINE = ReplicatedMergeTree('/clickhouse/tables/replicated_mt', '{replica}') ORDER BY id;
-            '''.format(replica=node1.name))
-
-
     node1.query("SYSTEM STOP REPLICATION QUEUES replicated_mt")
     for i in range(4):
         node1.query("INSERT INTO replicated_mt SELECT toDate('2019-10-01'), number, number * number FROM numbers ({f}, 100000)".format(f=i*100000))
@@ -53,5 +53,3 @@ def test_merge_and_part_corruption(started_cluster):
         # will hung if checked bug not fixed
         node1.query("ALTER TABLE replicated_mt UPDATE value = 7 WHERE 1", settings={"mutations_sync": 2}, timeout=30)
         assert node1.query("SELECT sum(value) FROM replicated_mt") == "2100000\n"
-
-    node1.query('DROP TABLE replicated_mt SYNC')

@@ -1,4 +1,6 @@
-#include "config_functions.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
 
 #if USE_S2_GEOMETRY
 
@@ -9,7 +11,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
-#include <base/range.h>
+#include <common/range.h>
 
 #include "s2_fwd.h"
 
@@ -95,7 +97,7 @@ public:
         auto & vec_res_radius = col_res_radius->getData();
         vec_res_radius.reserve(input_rows_count);
 
-        for (size_t row = 0; row < input_rows_count; ++row)
+        for (const auto row : collections::range(0, input_rows_count))
         {
             const UInt64 first_center = col_center1->getUInt(row);
             const Float64 first_radius = col_radius1->getFloat64(row);

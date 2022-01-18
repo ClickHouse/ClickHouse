@@ -1,10 +1,10 @@
 #include "ExecutablePoolDictionarySource.h"
 
-#include <base/logger_useful.h>
-#include <base/LocalDateTime.h>
+#include <common/logger_useful.h>
+#include <common/LocalDateTime.h>
 #include <Common/ShellCommand.h>
 
-#include <Formats/formatBlock.h>
+#include <DataStreams/formatBlock.h>
 
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
@@ -112,22 +112,15 @@ Pipe ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
     ShellCommandSource::SendDataTask task = [process_in, block, this]() mutable
     {
         auto & out = *process_in;
-
-        if (configuration.send_chunk_header)
-        {
-            writeText(block.rows(), out);
-            writeChar('\n', out);
-        }
-
-        auto output_format = context->getOutputFormat(configuration.format, out, block.cloneEmpty());
-        formatBlock(output_format, block);
+        auto output_stream = context->getOutputStream(configuration.format, out, block.cloneEmpty());
+        formatBlock(output_stream, block);
     };
     std::vector<ShellCommandSource::SendDataTask> tasks = {std::move(task)};
 
     ShellCommandSourceConfiguration command_configuration;
     command_configuration.read_fixed_number_of_rows = true;
     command_configuration.number_of_rows_to_read = rows_to_read;
-    Pipe pipe(std::make_unique<ShellCommandSource>(context, configuration.format, sample_block, std::move(process), std::move(tasks), command_configuration, process_pool));
+    Pipe pipe(std::make_unique<ShellCommandSource>(context, configuration.format, sample_block, std::move(process), log, std::move(tasks), command_configuration, process_pool));
 
     if (configuration.implicit_key)
         pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(block, pipe.getHeader()));
@@ -152,7 +145,7 @@ bool ExecutablePoolDictionarySource::hasUpdateField() const
 
 DictionarySourcePtr ExecutablePoolDictionarySource::clone() const
 {
-    return std::make_shared<ExecutablePoolDictionarySource>(*this);
+    return std::make_unique<ExecutablePoolDictionarySource>(*this);
 }
 
 std::string ExecutablePoolDictionarySource::toString() const
@@ -197,7 +190,6 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
             .command_termination_timeout = config.getUInt64(settings_config_prefix + ".command_termination_timeout", 10),
             .max_command_execution_time = max_command_execution_time,
             .implicit_key = config.getBool(settings_config_prefix + ".implicit_key", false),
-            .send_chunk_header = config.getBool(settings_config_prefix + ".send_chunk_header", false)
         };
 
         return std::make_unique<ExecutablePoolDictionarySource>(dict_struct, configuration, sample_block, context);

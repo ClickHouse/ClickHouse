@@ -3,7 +3,7 @@
 #include <Server/KeeperTCPHandler.h>
 #include <Poco/Net/TCPServerConnectionFactory.h>
 #include <Poco/Net/NetException.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Server/IServer.h>
 #include <string>
 
@@ -21,7 +21,6 @@ private:
         using Poco::Net::TCPServerConnection::TCPServerConnection;
         void run() override {}
     };
-
 public:
     KeeperTCPHandlerFactory(IServer & server_, bool secure)
         : server(server_)
@@ -42,7 +41,6 @@ public:
             return new DummyTCPHandler(socket);
         }
     }
-
 };
 
 }

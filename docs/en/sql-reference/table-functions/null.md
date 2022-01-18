@@ -40,4 +40,4 @@ See also:
 
 -   [Null table engine](../../engines/table-engines/special/null.md)
 
-[Original article](https://clickhouse.com/docs/en/sql-reference/table-functions/null/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/sql-reference/table-functions/null/) <!--hide-->

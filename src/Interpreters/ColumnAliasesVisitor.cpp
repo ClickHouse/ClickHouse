@@ -3,6 +3,7 @@
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTAlterQuery.h>
@@ -13,11 +14,8 @@
 namespace DB
 {
 
-bool ColumnAliasesMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &, const Data & data)
+bool ColumnAliasesMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &)
 {
-    if (data.excluded_nodes.contains(node.get()))
-        return false;
-
     if (const auto * f = node->as<ASTFunction>())
     {
         /// "lambda" visits children itself.

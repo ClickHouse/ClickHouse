@@ -6,7 +6,7 @@
 #include <mutex>
 #include <string_view>
 #include <vector>
-#include <base/types.h>
+#include <common/types.h>
 
 /** Allows to count number of simultaneously happening error codes.
   * See also Exception.cpp for incrementing part.

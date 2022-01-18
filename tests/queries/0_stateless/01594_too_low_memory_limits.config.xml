@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<clickhouse>
+<yandex>
     <logger>
         <level>trace</level>
         <console>true</console>
@@ -32,4 +32,4 @@
     <quotas>
         <default />
     </quotas>
-</clickhouse>
+</yandex>

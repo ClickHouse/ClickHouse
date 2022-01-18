@@ -1,2 +1,0 @@
-CREATE TABLE test_1164_memory.r1\n(\n    `n` Int32,\n    `m` Int32\n)\nENGINE = ReplicatedMergeTree(\'/test/01164/test_1164_memory/t\', \'1\')\nORDER BY n\nSETTINGS index_granularity = 8192
-CREATE TABLE test_1164_memory.r1\n(\n    `n` Int32,\n    `m` Int32\n)\nENGINE = ReplicatedMergeTree(\'/test/01164/test_1164_memory/t\', \'1\')\nORDER BY n\nSETTINGS index_granularity = 8192

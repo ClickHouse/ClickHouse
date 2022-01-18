@@ -1,5 +1,3 @@
--- Tags: long
-
 DROP TABLE IF EXISTS topk;
 
 CREATE TABLE topk (val1 String, val2 UInt32) ENGINE = MergeTree ORDER BY val1;

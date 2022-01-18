@@ -155,7 +155,7 @@ ALTER TABLE visits CLEAR COLUMN hour in PARTITION 201902
 ## FREEZE PARTITION {#alter_freeze-partition}
 
 ``` sql
-ALTER TABLE table_name FREEZE [PARTITION partition_expr] [WITH NAME 'backup_name']
+ALTER TABLE table_name FREEZE [PARTITION partition_expr]
 ```
 
 This query creates a local backup of a specified partition. If the `PARTITION` clause is omitted, the query creates the backup of all partitions at once.
@@ -169,7 +169,6 @@ At the time of execution, for a data snapshot, the query creates hardlinks to a 
 
 -   `/var/lib/clickhouse/` is the working ClickHouse directory specified in the config.
 -   `N` is the incremental number of the backup.
--   if the `WITH NAME` parameter is specified, then the value of the `'backup_name'` parameter is used instead of the incremental number. 
 
 !!! note "Note"
     If you use [a set of disks for data storage in a table](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes), the `shadow/N` directory appears on every disk, storing data parts that matched by the `PARTITION` expression.

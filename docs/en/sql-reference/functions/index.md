@@ -59,69 +59,6 @@ A lambda function that accepts multiple arguments can also be passed to a higher
 
 For some functions the first argument (the lambda function) can be omitted. In this case, identical mapping is assumed.
 
-## SQL User Defined Functions {#user-defined-functions}
-
-Custom functions from lambda expressions can be created using the [CREATE FUNCTION](../statements/create/function.md) statement. To delete these functions use the [DROP FUNCTION](../statements/drop.md#drop-function) statement.
-
-## Executable User Defined Functions {#executable-user-defined-functions}
-ClickHouse can call any external executable program or script to process data. Describe such functions in a [configuration file](../../operations/configuration-files.md) and add the path of that file to the main configuration in `user_defined_executable_functions_config` setting. If a wildcard symbol `*` is used in the path, then all files matching the pattern are loaded. Example:
-``` xml
-<user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
-```
-User defined function configurations are searched relative to the path specified in the `user_files_path` setting.
-
-A function configuration contains the following settings:
-
--   `name` - a function name.
--   `command` - a command or a script to execute.
--   `argument` - argument description with the `type` of an argument. Each argument is described in a separate setting.
--   `format` - a [format](../../interfaces/formats.md) in which arguments are passed to the command.
--   `return_type` - the type of a returned value.
--   `type` - an executable type. If `type` is set to `executable` then single command is started. If it is set to `executable_pool` then a pool of commands is created.
--   `max_command_execution_time` - maximum execution time in seconds for processing block of data. This setting is valid for `executable_pool` commands only. Optional. Default value is `10`.
--   `command_termination_timeout` - time in seconds during which a command should finish after its pipe is closed. After that time `SIGTERM` is sent to the process executing the command. This setting is valid for `executable_pool` commands only. Optional. Default value is `10`.
--   `pool_size` - the size of a command pool. Optional. Default value is `16`.
--   `lifetime` - the reload interval of a function in seconds. If it is set to `0` then the function is not reloaded.
--   `send_chunk_header` - controls whether to send row count before sending a chunk of data to process. Optional. Default value is `false`.
-
-The command must read arguments from `STDIN` and must output the result to `STDOUT`. The command must process arguments iteratively. That is after processing a chunk of arguments it must wait for the next chunk.
-
-**Example**
-Creating `test_function` using XML configuration:
-```
-<functions>
-    <function>
-        <type>executable</type>
-        <name>test_function</name>
-        <return_type>UInt64</return_type>
-        <argument>
-            <type>UInt64</type>
-        </argument>
-        <argument>
-            <type>UInt64</type>
-        </argument>
-        <format>TabSeparated</format>
-        <command>cd /; clickhouse-local --input-format TabSeparated --output-format TabSeparated --structure 'x UInt64, y UInt64' --query "SELECT x + y FROM table"</command>
-        <lifetime>0</lifetime>
-    </function>
-</functions>
-```
-
-Query:
-
-``` sql
-SELECT test_function(toUInt64(2), toUInt64(2));
-```
-
-Result:
-
-``` text
-┌─test_function(toUInt64(2), toUInt64(2))─┐
-│                                       4 │
-└─────────────────────────────────────────┘
-```
-
-
 ## Error Handling {#error-handling}
 
 Some functions might throw an exception if the data is invalid. In this case, the query is canceled and an error text is returned to the client. For distributed processing, when an exception occurs on one of the servers, the other servers also attempt to abort the query.

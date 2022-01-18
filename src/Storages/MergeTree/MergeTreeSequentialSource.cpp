@@ -36,8 +36,6 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
                 data_part->getMarksCount(), data_part->name, data_part->rows_count);
     }
 
-    /// Note, that we don't check setting collaborate_with_coordinator presence, because this source
-    /// is only used in background merges.
     addTotalRowsApprox(data_part->rows_count);
 
     /// Add columns because we don't want to read empty blocks
@@ -80,8 +78,7 @@ try
 
         const auto & sample = reader->getColumns();
         Columns columns(sample.size());
-        /// TODO: pass stream size instead of zero?
-        size_t rows_read = reader->readRows(current_mark, 0, continue_reading, rows_to_read, columns);
+        size_t rows_read = reader->readRows(current_mark, continue_reading, rows_to_read, columns);
 
         if (rows_read)
         {

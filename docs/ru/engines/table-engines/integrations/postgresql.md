@@ -148,4 +148,4 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 -   [Табличная функция `postgresql`](../../../sql-reference/table-functions/postgresql.md)
 -   [Использование PostgreSQL в качестве источника для внешнего словаря](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
 
-[Оригинальная статья](https://clickhouse.com/docs/ru/engines/table-engines/integrations/postgresql/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/engines/table-engines/integrations/postgresql/) <!--hide-->

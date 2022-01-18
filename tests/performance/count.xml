@@ -4,8 +4,6 @@
     <fill_query>INSERT INTO data SELECT number, 1 from numbers(10000000)</fill_query>
 
     <query tag='count_10M' short='1'>SELECT count() FROM data</query>
-    <query>SELECT count(k) FROM (SELECT k FROM data, numbers(20) _a)</query>
-    <query>SELECT count(k) FROM (SELECT toNullable(k) as k FROM data, numbers(20) _a)</query>
 
     <drop_query>DROP TABLE IF EXISTS data</drop_query>
 </test>

@@ -1,8 +1,8 @@
-option (USE_INTERNAL_XZ_LIBRARY "Set to OFF to use system xz (lzma) library instead of bundled" ON)
+option (USE_INTERNAL_XZ_LIBRARY "Set to OFF to use system xz (lzma) library instead of bundled" ${NOT_UNBUNDLED})
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/xz/src/liblzma/api/lzma.h")
     if(USE_INTERNAL_XZ_LIBRARY)
-        message(WARNING "submodule contrib/xz is missing. to fix try run: \n git submodule update --init")
+        message(WARNING "submodule contrib/xz is missing. to fix try run: \n git submodule update --init --recursive")
         message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal xz (lzma) library")
         set(USE_INTERNAL_XZ_LIBRARY 0)
     endif()

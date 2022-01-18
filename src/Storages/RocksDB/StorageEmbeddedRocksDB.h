@@ -1,10 +1,8 @@
 #pragma once
 
 #include <memory>
-#include <shared_mutex>
-#include <base/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
-#include <rocksdb/status.h>
 
 
 namespace rocksdb
@@ -22,7 +20,9 @@ class Context;
 class StorageEmbeddedRocksDB final : public shared_ptr_helper<StorageEmbeddedRocksDB>, public IStorage, WithContext
 {
     friend struct shared_ptr_helper<StorageEmbeddedRocksDB>;
+    friend class EmbeddedRocksDBSource;
     friend class EmbeddedRocksDBSink;
+    friend class EmbeddedRocksDBBlockInputStream;
 public:
     std::string getName() const override { return "EmbeddedRocksDB"; }
 
@@ -50,8 +50,6 @@ public:
     Strings getDataPaths() const override { return {rocksdb_dir}; }
 
     std::shared_ptr<rocksdb::Statistics> getRocksDBStatistics() const;
-    std::vector<rocksdb::Status> multiGet(const std::vector<rocksdb::Slice> & slices_keys, std::vector<String> & values) const;
-    const String & getPrimaryKey() const { return primary_key; }
 
 protected:
     StorageEmbeddedRocksDB(const StorageID & table_id_,
@@ -65,9 +63,8 @@ private:
     const String primary_key;
     using RocksDBPtr = std::unique_ptr<rocksdb::DB>;
     RocksDBPtr rocksdb_ptr;
-    mutable std::shared_mutex rocksdb_ptr_mx;
     String rocksdb_dir;
 
-    void initDB();
+    void initDb();
 };
 }

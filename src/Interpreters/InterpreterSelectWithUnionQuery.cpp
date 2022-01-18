@@ -224,14 +224,6 @@ InterpreterSelectWithUnionQuery::~InterpreterSelectWithUnionQuery() = default;
 
 Block InterpreterSelectWithUnionQuery::getSampleBlock(const ASTPtr & query_ptr_, ContextPtr context_, bool is_subquery)
 {
-    if (!context_->hasQueryContext())
-    {
-        if (is_subquery)
-            return InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().subquery().analyze()).getSampleBlock();
-        else
-            return InterpreterSelectWithUnionQuery(query_ptr_, context_, SelectQueryOptions().analyze()).getSampleBlock();
-    }
-
     auto & cache = context_->getSampleBlockCache();
     /// Using query string because query_ptr changes for every internal SELECT
     auto key = queryToString(query_ptr_);
@@ -293,7 +285,7 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
         query_plan.unitePlans(std::move(union_step), std::move(plans));
 
         const auto & query = query_ptr->as<ASTSelectWithUnionQuery &>();
-        if (query.union_mode == SelectUnionMode::DISTINCT)
+        if (query.union_mode == ASTSelectWithUnionQuery::Mode::DISTINCT)
         {
             /// Add distinct transform
             SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
@@ -330,13 +322,13 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
     QueryPlan query_plan;
     buildQueryPlan(query_plan);
 
-    auto pipeline_builder = query_plan.buildQueryPipeline(
+    auto pipeline = query_plan.buildQueryPipeline(
         QueryPlanOptimizationSettings::fromContext(context),
         BuildQueryPipelineSettings::fromContext(context));
 
-    pipeline_builder->addInterpreterContext(context);
+    res.pipeline = std::move(*pipeline);
+    res.pipeline.addInterpreterContext(context);
 
-    res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*pipeline_builder));
     return res;
 }
 

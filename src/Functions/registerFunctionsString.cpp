@@ -1,5 +1,7 @@
-#include "config_functions.h"
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#    include "config_core.h"
+#endif
 
 namespace DB
 {
@@ -50,10 +52,6 @@ void registerFunctionSynonyms(FunctionFactory &);
 void registerFunctionLemmatize(FunctionFactory &);
 #endif
 
-#if USE_ICU
-void registerFunctionNormalizeUTF8(FunctionFactory &);
-#endif
-
 void registerFunctionsString(FunctionFactory & factory)
 {
     registerFunctionRepeat(factory);
@@ -98,10 +96,6 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionStem(factory);
     registerFunctionSynonyms(factory);
     registerFunctionLemmatize(factory);
-#endif
-
-#if USE_ICU
-    registerFunctionNormalizeUTF8(factory);
 #endif
 }
 

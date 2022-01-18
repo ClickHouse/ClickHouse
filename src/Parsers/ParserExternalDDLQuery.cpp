@@ -1,11 +1,12 @@
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 #include <Parsers/ASTExternalDDLQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserExternalDDLQuery.h>
+#include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserRenameQuery.h>
 
 #if USE_MYSQL

@@ -1,75 +1,73 @@
-<div class="section bg-white pb-0 pb-lg-10" style="overflow: hidden;">
-    <div class="section-bg quickstart-bg"></div>
-    <div class="container">
+<div>
+    <div class="container lead">
+    <h2 id="quick-start" class="display-4 mt-5">Quick start</h2>
 
-        <h2 id="quick-start" class="display-2 mb-5 mb-md-8 mb-lg-10 text-center">Quick Start</h2>
+    <ul class="nav nav-tabs mt-1 small" id="install-tab" role="tablist">
+        <li class="nav-item">
+            <a class="nav-link active" id="deb-tab" data-toggle="tab" href="#deb" role="tab" aria-controls="deb" aria-selected="true" title="deb packages">Ubuntu or Debian</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" id="rpm-tab" data-toggle="tab" href="#rpm" role="tab" aria-controls="rpm" aria-selected="false" title="rpm packages">CentOS or RedHat</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" id="tgz-tab" data-toggle="tab" href="#tgz" role="tab" aria-controls="tgz" aria-selected="false" title="tgz packages">Other Linux (x86)</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" id="arm-tab" data-toggle="tab" href="#arm" role="tab" aria-controls="arm" aria-selected="false" title="ARM packages">Linux (ARM)</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" id="mac-x86-tab" data-toggle="tab" href="#mac-x86" role="tab" aria-controls="mac-x86" aria-selected="false" title="Mac x86 packages">Mac (x86)</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" id="mac-arm-tab" data-toggle="tab" href="#mac-arm" role="tab" aria-controls="mac-arm" aria-selected="false" title="Mac ARM packages">Mac (ARM)</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" id="freebsd-tab" data-toggle="tab" href="#freebsd" role="tab" aria-controls="freebsd" aria-selected="false" title="FreeBSD packages">FreeBSD</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" href="/docs/en/commercial/cloud/" role="tab" aria-controls="cloud" aria-selected="false" title="Cloud Service Providers"><strong>Cloud</strong></a>
+        </li>
+    </ul>
 
-        <div class="tabs">
-
-            <ul class="nav nav-tabs" id="install-tab" role="tablist">
-                <li class="nav-item">
-                    <a class="nav-link active" id="deb-tab" data-toggle="tab" href="#deb" role="tab" aria-controls="deb" aria-selected="true" title="deb packages">Ubuntu or Debian</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" id="rpm-tab" data-toggle="tab" href="#rpm" role="tab" aria-controls="rpm" aria-selected="false" title="rpm packages">CentOS or RedHat</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" id="tgz-tab" data-toggle="tab" href="#tgz" role="tab" aria-controls="tgz" aria-selected="false" title="tgz packages">Other Linux (x86)</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" id="arm-tab" data-toggle="tab" href="#arm" role="tab" aria-controls="arm" aria-selected="false" title="ARM packages">Linux (ARM)</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" id="mac-x86-tab" data-toggle="tab" href="#mac-x86" role="tab" aria-controls="mac-x86" aria-selected="false" title="macOS x86_64 packages">macOS (Intel)</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" id="mac-arm-tab" data-toggle="tab" href="#mac-arm" role="tab" aria-controls="mac-arm" aria-selected="false" title="macOS arm64 packages">macOS (Apple silicon)</a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" id="freebsd-tab" data-toggle="tab" href="#freebsd" role="tab" aria-controls="freebsd" aria-selected="false" title="FreeBSD packages">FreeBSD (x86_64)</a>
-                </li>
-            </ul>
-
-            <div class="tabs-body">
-
-                <div class="tab-content mb-5" id="install-tab-content">
-                    <div class="tab-pane show active syntax" id="deb" role="tabpanel" aria-labelledby="deb-tab">
-                        <pre>{% include "install/deb.sh" %}</pre>
-                    </div>
-                    <div class="tab-pane syntax" id="rpm" role="tabpanel" aria-labelledby="rpm-tab">
-                        <pre>{% include "install/rpm.sh" %}</pre>
-                    </div>
-                    <div class="tab-pane syntax" id="tgz" role="tabpanel" aria-labelledby="tgz-tab">
-                        <pre>{% include "install/tgz.sh" %}</pre>
-                    </div>
-                    <div class="tab-pane syntax" id="arm" role="tabpanel" aria-labelledby="arm-tab">
-                        <pre>{% include "install/arm.sh" %}</pre>
-                    </div>
-                    <div class="tab-pane syntax" id="mac-x86" role="tabpanel" aria-labelledby="mac-x86-tab">
-                        <pre>{% include "install/mac-x86.sh" %}</pre>
-                    </div>
-                    <div class="tab-pane syntax" id="mac-arm" role="tabpanel" aria-labelledby="mac-arm-tab">
-                        <pre>{% include "install/mac-arm.sh" %}</pre>
-                    </div>
-                    <div class="tab-pane syntax" id="freebsd" role="tabpanel" aria-labelledby="freebsd-tab">
-                        <pre>{% include "install/freebsd.sh" %}</pre>
-                    </div>
-                </div>
-
-                <p class="font-lg text-dark">
-                    There's a number of <a href="/docs/en/getting-started/">alternative options</a> to get started, most notably the
-                    <a href="https://hub.docker.com/r/clickhouse/clickhouse-server/" rel="external nofollow noreferrer" target="_blank">official Docker images of ClickHouse</a>. To learn more about our future cloud offerings, <a href="/company/#contact">contact us</a>.
-                </p>
-
-                <p class="font-lg text-dark mb-5">After you got connected to your ClickHouse server, you can proceed to:</p>
-
-                <div class="btns justify-content-start">
-                    <a href="/docs/en/getting-started/tutorial/" class="btn btn-secondary" role="button">Tutorial</a>
-                    <a href="/docs/en/" class="btn btn-outline-secondary" role="button">Documentation</a>
-                </div>
-
-            </div>
-
+    <div class="tab-content" id="install-tab-content">
+        <div class="tab-pane show active syntax p-3 my-3" id="deb" role="tabpanel" aria-labelledby="deb-tab">
+            <pre>{% include "install/deb.sh" %}</pre>
         </div>
+        <div class="tab-pane syntax p-3 my-3" id="rpm" role="tabpanel" aria-labelledby="rpm-tab">
+            <pre>{% include "install/rpm.sh" %}</pre>
+        </div>
+        <div class="tab-pane syntax p-3 my-3" id="tgz" role="tabpanel" aria-labelledby="tgz-tab">
+            <pre>{% include "install/tgz.sh" %}</pre>
+        </div>
+        <div class="tab-pane syntax p-3 my-3" id="arm" role="tabpanel" aria-labelledby="arm-tab">
+            <pre>{% include "install/arm.sh" %}</pre>
+        </div>
+        <div class="tab-pane syntax p-3 my-3" id="mac-x86" role="tabpanel" aria-labelledby="mac-x86-tab">
+            <pre>{% include "install/mac-x86.sh" %}</pre>
+        </div>
+        <div class="tab-pane syntax p-3 my-3" id="mac-arm" role="tabpanel" aria-labelledby="mac-arm-tab">
+            <pre>{% include "install/mac-arm.sh" %}</pre>
+        </div>
+        <div class="tab-pane syntax p-3 my-3" id="freebsd" role="tabpanel" aria-labelledby="freebsd-tab">
+            <pre>{% include "install/freebsd.sh" %}</pre>
+        </div>
+    </div>
+
+    <p>For other operating systems the easiest way to get started is using
+        <a href="https://hub.docker.com/r/yandex/clickhouse-server/" rel="external nofollow noreferrer"
+           target="_blank">
+            official Docker images of ClickHouse</a>, this is not the only <a href="https://clickhouse.tech/docs/en/getting-started/">option</a> though.
+        Alternatively, you can easily get a running ClickHouse instance or cluster at
+        <a href="https://cloud.yandex.com/services/managed-clickhouse?utm_source=referrals&amp;utm_medium=clickhouseofficialsite&amp;utm_campaign=link1" rel="external nofollow noreferrer" target="_blank">
+            Yandex Managed Service for ClickHouse</a>.
+    </p>
+
+    <p>After you got connected to your ClickHouse server, you can proceed to:</p>
+        <p>
+            <a href="/docs/en/getting-started/tutorial/" class="btn btn-lg btn-outline-orange" role="button">
+                &nbsp;&nbsp;&nbsp;Tutorial&nbsp;&nbsp;&nbsp;
+            </a>&nbsp;&nbsp;
+            <a href="/docs/en/" class="btn btn-lg btn-outline-orange" role="button">Documentation</a>
+        </p>
     </div>
 </div>

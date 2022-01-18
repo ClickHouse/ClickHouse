@@ -1,5 +1,3 @@
--- Tags: long, zookeeper
-
 SELECT '===Ordinary case===';
 
 SET replication_alter_partitions_sync = 2;

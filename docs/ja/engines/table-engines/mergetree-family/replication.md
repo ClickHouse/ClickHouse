@@ -215,4 +215,4 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 ZooKeeperのデータが紛失または破損している場合は、上記のように再生されていないテーブルに移動することでデータを保存できます。
 
-[元の記事](https://clickhouse.com/docs/en/operations/table_engines/replication/) <!--hide-->
+[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/replication/) <!--hide-->

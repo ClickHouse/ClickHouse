@@ -1,5 +1,5 @@
 #!/bin/bash
-# shellcheck disable=SC2086,SC2001,SC2046,SC2030,SC2031
+# shellcheck disable=SC2086,SC2001
 
 set -eux
 set -o pipefail
@@ -12,49 +12,25 @@ stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 echo "$script_dir"
 repo_dir=ch
-BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-13_debug_none_bundled_unsplitted_disable_False_binary"}
-BINARY_URL_TO_DOWNLOAD=${BINARY_URL_TO_DOWNLOAD:="https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/$BINARY_TO_DOWNLOAD/clickhouse"}
+BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-11_debug_none_bundled_unsplitted_disable_False_binary"}
 
 function clone
 {
-    # For local runs, start directly from the "fuzz" stage.
-    rm -rf "$repo_dir" ||:
-    mkdir "$repo_dir" ||:
-
-    git clone --depth 1 https://github.com/ClickHouse/ClickHouse.git -- "$repo_dir" 2>&1 | ts '%Y-%m-%d %H:%M:%S'
-    (
-        cd "$repo_dir"
-        if [ "$PR_TO_TEST" != "0" ]; then
-            if git fetch --depth 1 origin "+refs/pull/$PR_TO_TEST/merge"; then
-                git checkout FETCH_HEAD
-                echo "Checked out pull/$PR_TO_TEST/merge ($(git rev-parse FETCH_HEAD))"
-            else
-                git fetch --depth 1 origin "+refs/pull/$PR_TO_TEST/head"
-                git checkout "$SHA_TO_TEST"
-                echo "Checked out nominal SHA $SHA_TO_TEST for PR $PR_TO_TEST"
-            fi
-            git diff --name-only master HEAD | tee ci-changed-files.txt
-        else
-            if [ -v SHA_TO_TEST ]; then
-                git fetch --depth 2 origin "$SHA_TO_TEST"
-                git checkout "$SHA_TO_TEST"
-                echo "Checked out nominal SHA $SHA_TO_TEST for master"
-            else
-                git fetch --depth 2 origin
-                echo "Using default repository head $(git rev-parse HEAD)"
-            fi
-            git diff --name-only HEAD~1 HEAD | tee ci-changed-files.txt
-        fi
-        cd -
-    )
-
+    # The download() function is dependent on CI binaries anyway, so we can take
+    # the repo from the CI as well. For local runs, start directly from the "fuzz"
+    # stage.
+    rm -rf ch ||:
+    mkdir ch ||:
+    wget -nv -nd -c "https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/repo/clickhouse_no_subs.tar.gz"
+    tar -C ch --strip-components=1 -xf clickhouse_no_subs.tar.gz
     ls -lath ||:
-
 }
 
 function download
 {
-    wget -nv -nd -c "$BINARY_URL_TO_DOWNLOAD"
+    wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/$BINARY_TO_DOWNLOAD/clickhouse" &
+    wget -nv -nd -c "https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/repo/ci-changed-files.txt" &
+    wait
 
     chmod +x clickhouse
     ln -s ./clickhouse ./clickhouse-server
@@ -77,7 +53,7 @@ function configure
 
 function watchdog
 {
-    sleep 1800
+    sleep 3600
 
     echo "Fuzzing run has timed out"
     for _ in {1..10}
@@ -110,34 +86,13 @@ function filter_exists_and_template
     done
 }
 
-function stop_server
-{
-    clickhouse-client --query "select elapsed, query from system.processes" ||:
-    killall clickhouse-server ||:
-    for _ in {1..10}
-    do
-        if ! pgrep -f clickhouse-server
-        then
-            break
-        fi
-        sleep 1
-    done
-    killall -9 clickhouse-server ||:
-
-    # Debug.
-    date
-    sleep 10
-    jobs
-    pstree -aspgT
-}
-
 function fuzz
 {
     /generate-test-j2.py --path ch/tests/queries/0_stateless
 
     # Obtain the list of newly added tests. They will be fuzzed in more extreme way than other tests.
     # Don't overwrite the NEW_TESTS_OPT so that it can be set from the environment.
-    NEW_TESTS="$(sed -n 's!\(^tests/queries/0_stateless/.*\.sql\(\.j2\)\?\)$!ch/\1!p' $repo_dir/ci-changed-files.txt | sort -R)"
+    NEW_TESTS="$(sed -n 's!\(^tests/queries/0_stateless/.*\.sql\(\.j2\)\?\)$!ch/\1!p' ci-changed-files.txt | sort -R)"
     # ci-changed-files.txt contains also files that has been deleted/renamed, filter them out.
     NEW_TESTS="$(filter_exists_and_template $NEW_TESTS)"
     if [[ -n "$NEW_TESTS" ]]
@@ -147,51 +102,22 @@ function fuzz
         NEW_TESTS_OPT="${NEW_TESTS_OPT:-}"
     fi
 
-    # interferes with gdb
-    export CLICKHOUSE_WATCHDOG_ENABLE=0
-    # NOTE: we use process substitution here to preserve keep $! as a pid of clickhouse-server
-    clickhouse-server --config-file db/config.xml -- --path db > >(tail -100000 > server.log) 2>&1 &
+    export CLICKHOUSE_WATCHDOG_ENABLE=0 # interferes with gdb
+    clickhouse-server --config-file db/config.xml -- --path db 2>&1 | tail -100000 > server.log &
     server_pid=$!
-
     kill -0 $server_pid
 
-    # Set follow-fork-mode to parent, because we attach to clickhouse-server, not to watchdog
-    # and clickhouse-server can do fork-exec, for example, to run some bridge.
-    # Do not set nostop noprint for all signals, because some it may cause gdb to hang,
-    # explicitly ignore non-fatal signals that are used by server.
-    # Number of SIGRTMIN can be determined only in runtime.
-    RTMIN=$(kill -l SIGRTMIN)
     echo "
-set follow-fork-mode parent
-handle SIGHUP nostop noprint pass
-handle SIGINT nostop noprint pass
-handle SIGQUIT nostop noprint pass
-handle SIGPIPE nostop noprint pass
-handle SIGTERM nostop noprint pass
-handle SIGUSR1 nostop noprint pass
-handle SIGUSR2 nostop noprint pass
-handle SIG$RTMIN nostop noprint pass
-info signals
+set follow-fork-mode child
+handle all noprint
+handle SIGSEGV stop print
+handle SIGBUS stop print
 continue
-backtrace full
-info locals
-info registers
-disassemble /s
-up
-info locals
-disassemble /s
-up
-info locals
-disassemble /s
-p \"done\"
-detach
-quit
+thread apply all backtrace
+continue
 " > script.gdb
 
-    gdb -batch -command script.gdb -p $server_pid  &
-    sleep 5
-    # gdb will send SIGSTOP, spend some time loading debug info and then send SIGCONT, wait for it (up to send_timeout, 300s)
-    time clickhouse-client --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
+    gdb -batch -command script.gdb -p $server_pid &
 
     # Check connectivity after we attach gdb, because it might cause the server
     # to freeze and the fuzzer will fail.
@@ -213,7 +139,6 @@ quit
     clickhouse-client \
         --receive_timeout=10 \
         --receive_data_timeout_ms=10000 \
-        --stacktrace \
         --query-fuzzer-runs=1000 \
         --testmode \
         --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) \
@@ -256,10 +181,25 @@ quit
         server_died=1
     fi
 
-    # wait in background to call wait in foreground and ensure that the
-    # process is alive, since w/o job control this is the only way to obtain
-    # the exit code
-    stop_server &
+    # Stop the server.
+    clickhouse-client --query "select elapsed, query from system.processes" ||:
+    killall clickhouse-server ||:
+    for _ in {1..10}
+    do
+        if ! pgrep -f clickhouse-server
+        then
+            break
+        fi
+        sleep 1
+    done
+    killall -9 clickhouse-server ||:
+
+    # Debug.
+    date
+    sleep 10
+    jobs
+    pstree -aspgT
+
     server_exit_code=0
     wait $server_pid || server_exit_code=$?
     echo "Server exit code is $server_exit_code"
@@ -283,12 +223,6 @@ quit
         task_exit_code=0
         echo "success" > status.txt
         echo "OK" > description.txt
-    elif [ "$fuzzer_exit_code" == "137" ]
-    then
-        # Killed.
-        task_exit_code=$fuzzer_exit_code
-        echo "failure" > status.txt
-        echo "Killed" > description.txt
     else
         # The server was alive, but the fuzzer returned some error. This might
         # be some client-side error detected by fuzzing, or a problem in the

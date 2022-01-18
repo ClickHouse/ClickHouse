@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataStreams/IBlockStream_fwd.h>
 #include <TableFunctions/ITableFunction.h>
 
 namespace DB

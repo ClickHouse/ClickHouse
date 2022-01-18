@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/SettingsFields.h>
-#include <QueryPipeline/SizeLimits.h>
+#include <DataStreams/SizeLimits.h>
 #include <Formats/FormatSettings.h>
 
 
@@ -167,9 +167,5 @@ enum class ShortCircuitFunctionEvaluation
 };
 
 DECLARE_SETTING_ENUM(ShortCircuitFunctionEvaluation)
-
-DECLARE_SETTING_ENUM_WITH_RENAME(EnumComparingMode, FormatSettings::EnumComparingMode)
-
-DECLARE_SETTING_ENUM_WITH_RENAME(EscapingRule, FormatSettings::EscapingRule)
 
 }

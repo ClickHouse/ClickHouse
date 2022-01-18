@@ -1,4 +1,6 @@
-#include "config_functions.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
 
 #if USE_S2_GEOMETRY
 
@@ -7,7 +9,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
-#include <base/range.h>
+#include <common/range.h>
 
 #include "s2_fwd.h"
 
@@ -73,7 +75,7 @@ public:
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
-        for (size_t row = 0; row < input_rows_count; ++row)
+        for (const auto row : collections::range(0, input_rows_count))
         {
             const Float64 lon = col_lon->getFloat64(row);
             const Float64 lat = col_lat->getFloat64(row);

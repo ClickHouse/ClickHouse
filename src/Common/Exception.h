@@ -184,8 +184,6 @@ struct ExecutionStatus
 
     static ExecutionStatus fromCurrentException(const std::string & start_of_message = "");
 
-    static ExecutionStatus fromText(const std::string & data);
-
     std::string serializeText() const;
 
     void deserializeText(const std::string & data);

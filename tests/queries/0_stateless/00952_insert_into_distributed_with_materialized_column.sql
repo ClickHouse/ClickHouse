@@ -1,5 +1,3 @@
--- Tags: distributed
-
 DROP TABLE IF EXISTS local_00952;
 DROP TABLE IF EXISTS distributed_00952;
 

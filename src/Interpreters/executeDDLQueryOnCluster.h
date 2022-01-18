@@ -1,9 +1,10 @@
 #pragma once
 
-#include <QueryPipeline/BlockIO.h>
+#include <DataStreams/BlockIO.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
+#include <DataStreams/IBlockInputStream.h>
 
 
 namespace zkutil

@@ -6,8 +6,8 @@
 #include <time.h>
 #include <csignal>
 
-#include <base/logger_useful.h>
-#include <base/errnoToString.h>
+#include <common/logger_useful.h>
+#include <common/errnoToString.h>
 #include <Common/Exception.h>
 #include <Common/ShellCommand.h>
 #include <Common/PipeFDs.h>

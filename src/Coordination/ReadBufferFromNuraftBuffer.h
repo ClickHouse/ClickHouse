@@ -1,7 +1,7 @@
 #pragma once
 #include <IO/ReadBufferFromMemory.h>
 
-#include <libnuraft/nuraft.hxx>
+#include <libnuraft/nuraft.hxx> // Y_IGNORE
 
 namespace DB
 {

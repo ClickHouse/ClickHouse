@@ -277,9 +277,8 @@ private:
             info.type = std::make_shared<DataTypeMap>(nested_types);
         }
         else
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Unexpected literal type {}",
-                info.literal->value.getTypeName());
+            throw Exception(String("Unexpected literal type ") + info.literal->value.getTypeName() + ". It's a bug",
+                            ErrorCodes::LOGICAL_ERROR);
 
         /// Allow literal to be NULL, if result column has nullable type or if function never returns NULL
         if (info.force_nullable && info.type->canBeInsideNullable())

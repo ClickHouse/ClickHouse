@@ -27,8 +27,8 @@ public:
     bool isReadOnly() const { return readonly; }
 
 private:
-    std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
-    std::vector<UUID> findAllImpl(AccessEntityType type) const override;
+    std::optional<UUID> findImpl(EntityType type, const String & name) const override;
+    std::vector<UUID> findAllImpl(EntityType type) const override;
     bool existsImpl(const UUID & id) const override;
     AccessEntityPtr readImpl(const UUID & id) const override;
     String readNameImpl(const UUID & id) const override;
@@ -37,14 +37,14 @@ private:
     void removeImpl(const UUID & id) override;
     void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
     scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
-    scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const override;
+    scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const override;
     bool hasSubscriptionImpl(const UUID & id) const override;
-    bool hasSubscriptionImpl(AccessEntityType type) const override;
+    bool hasSubscriptionImpl(EntityType type) const override;
 
     void clear();
     bool readLists();
     bool writeLists();
-    void scheduleWriteLists(AccessEntityType type);
+    void scheduleWriteLists(EntityType type);
     bool rebuildLists();
 
     void listsWritingThreadFunc();
@@ -63,7 +63,7 @@ private:
     {
         UUID id;
         String name;
-        AccessEntityType type;
+        EntityType type;
         mutable AccessEntityPtr entity; /// may be nullptr, if the entity hasn't been loaded yet.
         mutable std::list<OnChangedHandler> handlers_by_id;
     };
@@ -73,13 +73,13 @@ private:
     String directory_path;
     std::atomic<bool> readonly;
     std::unordered_map<UUID, Entry> entries_by_id;
-    std::unordered_map<std::string_view, Entry *> entries_by_name_and_type[static_cast<size_t>(AccessEntityType::MAX)];
-    boost::container::flat_set<AccessEntityType> types_of_lists_to_write;
+    std::unordered_map<std::string_view, Entry *> entries_by_name_and_type[static_cast<size_t>(EntityType::MAX)];
+    boost::container::flat_set<EntityType> types_of_lists_to_write;
     bool failed_to_write_lists = false;                          /// Whether writing of the list files has been failed since the recent restart of the server.
     ThreadFromGlobalPool lists_writing_thread;                   /// List files are written in a separate thread.
     std::condition_variable lists_writing_thread_should_exit;    /// Signals `lists_writing_thread` to exit.
     bool lists_writing_thread_is_waiting = false;
-    mutable std::list<OnChangedHandler> handlers_by_type[static_cast<size_t>(AccessEntityType::MAX)];
+    mutable std::list<OnChangedHandler> handlers_by_type[static_cast<size_t>(EntityType::MAX)];
     mutable std::mutex mutex;
 };
 }

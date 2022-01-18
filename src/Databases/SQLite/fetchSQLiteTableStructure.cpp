@@ -13,10 +13,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Poco/String.h>
 
-#include <string_view>
-
-
-using namespace std::literals;
 
 namespace DB
 {
@@ -62,15 +58,15 @@ std::shared_ptr<NamesAndTypesList> fetchSQLiteTableStructure(sqlite3 * connectio
 
         for (int i = 0; i < col_num; ++i)
         {
-            if (col_names[i] == "name"sv)
+            if (strcmp(col_names[i], "name") == 0)
             {
                 name_and_type.name = data_by_col[i];
             }
-            else if (col_names[i] == "type"sv)
+            else if (strcmp(col_names[i], "type") == 0)
             {
                 name_and_type.type = convertSQLiteDataType(data_by_col[i]);
             }
-            else if (col_names[i] == "notnull"sv)
+            else if (strcmp(col_names[i], "notnull") == 0)
             {
                 is_nullable = (data_by_col[i][0] == '0');
             }

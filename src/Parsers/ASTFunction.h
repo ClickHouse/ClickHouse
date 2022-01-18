@@ -1,14 +1,14 @@
 #pragma once
 
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTWithAlias.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 
 
 namespace DB
 {
 
-class ASTSelectWithUnionQuery;
+class ASTIdentifier;
 
 /** AST for function application or operator.
   */

@@ -85,7 +85,7 @@ public:
         */
 
         String host_name;
-        UInt16 port{0};
+        UInt16 port;
         String user;
         String password;
 
@@ -184,8 +184,6 @@ public:
         bool isLocal() const { return !local_addresses.empty(); }
         bool hasRemoteConnections() const { return local_addresses.size() != per_replica_pools.size(); }
         size_t getLocalNodeCount() const { return local_addresses.size(); }
-        size_t getRemoteNodeCount() const { return per_replica_pools.size() - local_addresses.size(); }
-        size_t getAllNodeCount() const { return per_replica_pools.size(); }
         bool hasInternalReplication() const { return has_internal_replication; }
         /// Name of directory for asynchronous write to StorageDistributed if has_internal_replication
         const std::string & insertPathForInternalReplication(bool prefer_localhost_replica, bool use_compact_format) const;

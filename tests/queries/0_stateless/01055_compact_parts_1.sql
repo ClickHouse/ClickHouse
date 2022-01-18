@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 drop table if exists mt_compact;
 drop table if exists mt_compact_2;
 

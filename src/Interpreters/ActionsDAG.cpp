@@ -30,15 +30,34 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+const char * ActionsDAG::typeToString(ActionsDAG::ActionType type)
+{
+    switch (type)
+    {
+        case ActionType::INPUT:
+            return "Input";
+        case ActionType::COLUMN:
+            return "Column";
+        case ActionType::ALIAS:
+            return "Alias";
+        case ActionType::ARRAY_JOIN:
+            return "ArrayJoin";
+        case ActionType::FUNCTION:
+            return "Function";
+    }
+
+    __builtin_unreachable();
+}
+
 void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
 {
-    map.add("Node Type", magic_enum::enum_name(type));
+    map.add("Node Type", ActionsDAG::typeToString(type));
 
     if (result_type)
         map.add("Result Type", result_type->getName());
 
     if (!result_name.empty())
-        map.add("Result Type", magic_enum::enum_name(type));
+        map.add("Result Type", ActionsDAG::typeToString(type));
 
     if (column)
         map.add("Column", column->getName());

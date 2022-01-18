@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 #include <Common/ThreadPool.h>
 #include <Poco/Logger.h>
 

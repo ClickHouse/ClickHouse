@@ -28,8 +28,6 @@ private:
 
     ColumnArray(const ColumnArray &) = default;
 
-    template <bool positive> struct Cmp;
-
 public:
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
@@ -60,7 +58,6 @@ public:
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
     StringRef getDataAt(size_t n) const override;
-    bool isDefaultAt(size_t n) const override;
     void insertData(const char * pos, size_t length) override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
@@ -144,10 +141,6 @@ public:
         return false;
     }
 
-    double getRatioOfDefaultRows(double sample_ratio) const override;
-
-    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override;
-
     bool isCollationSupported() const override { return getData().isCollationSupported(); }
 
 private:
@@ -192,6 +185,9 @@ private:
 
     template <typename Comparator>
     void getPermutationImpl(size_t limit, Permutation & res, Comparator cmp) const;
+
+    template <typename Comparator>
+    void updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_range, Comparator cmp) const;
 };
 
 

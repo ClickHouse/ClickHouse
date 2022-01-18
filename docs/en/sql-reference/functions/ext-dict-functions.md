@@ -53,7 +53,7 @@ The first column is `id`, the second column is `c1`.
 Configure the external dictionary:
 
 ``` xml
-<clickhouse>
+<yandex>
     <dictionary>
         <name>ext-dict-test</name>
         <source>
@@ -77,7 +77,7 @@ Configure the external dictionary:
         </structure>
         <lifetime>0</lifetime>
     </dictionary>
-</clickhouse>
+</yandex>
 ```
 
 Perform the query:
@@ -113,7 +113,7 @@ The first column is `id`, the second is `c1`, the third is `c2`.
 Configure the external dictionary:
 
 ``` xml
-<clickhouse>
+<yandex>
     <dictionary>
         <name>ext-dict-mult</name>
         <source>
@@ -142,7 +142,7 @@ Configure the external dictionary:
         </structure>
         <lifetime>0</lifetime>
     </dictionary>
-</clickhouse>
+</yandex>
 ```
 
 Perform the query:

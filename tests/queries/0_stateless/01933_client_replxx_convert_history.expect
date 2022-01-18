@@ -1,6 +1,4 @@
 #!/usr/bin/expect -f
-# Tags: no-parallel
-# Tag no-parallel: Uses non unique history file
 
 log_user 0
 set timeout 60

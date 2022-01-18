@@ -14,7 +14,7 @@
 
 #include <IO/WriteHelpers.h>
 
-#include <base/find_symbols.h>
+#include <common/find_symbols.h>
 
 #include <type_traits>
 

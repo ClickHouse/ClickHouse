@@ -9,7 +9,6 @@
 #include <Common/assert_cast.h>
 
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnSparse.h>
 
 #include <iterator>
 
@@ -38,7 +37,7 @@ static ReturnType onError(const std::string & message [[maybe_unused]], int code
 
 template <typename ReturnType>
 static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, const ColumnWithTypeAndName & expected,
-    const std::string & context_description, bool allow_materialize, int code)
+    const std::string & context_description, bool allow_remove_constants, int code)
 {
     if (actual.name != expected.name)
         return onError<ReturnType>("Block structure mismatch in " + context_description + " stream: different names of columns:\n"
@@ -53,16 +52,11 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
 
     const IColumn * actual_column = actual.column.get();
 
-    /// If we allow to materialize, and expected column is not const or sparse, then unwrap actual column.
-    if (allow_materialize)
+    /// If we allow to remove constants, and expected column is not const, then unwrap actual constant column.
+    if (allow_remove_constants && !isColumnConst(*expected.column))
     {
-        if (!isColumnConst(*expected.column))
-            if (const auto * column_const = typeid_cast<const ColumnConst *>(actual_column))
-                actual_column = &column_const->getDataColumn();
-
-        if (!expected.column->isSparse())
-            if (const auto * column_sparse = typeid_cast<const ColumnSparse *>(actual_column))
-                actual_column = &column_sparse->getValuesColumn();
+        if (const auto * column_const = typeid_cast<const ColumnConst *>(actual_column))
+            actual_column = &column_const->getDataColumn();
     }
 
     if (actual_column->getName() != expected.column->getName())
@@ -85,7 +79,7 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
 
 
 template <typename ReturnType>
-static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, const std::string & context_description, bool allow_materialize)
+static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, const std::string & context_description, bool allow_remove_constants)
 {
     size_t columns = rhs.columns();
     if (lhs.columns() != columns)
@@ -99,11 +93,11 @@ static ReturnType checkBlockStructure(const Block & lhs, const Block & rhs, cons
 
         if constexpr (std::is_same_v<ReturnType, bool>)
         {
-            if (!checkColumnStructure<ReturnType>(actual, expected, context_description, allow_materialize, ErrorCodes::LOGICAL_ERROR))
+            if (!checkColumnStructure<ReturnType>(actual, expected, context_description, allow_remove_constants, ErrorCodes::LOGICAL_ERROR))
                 return false;
         }
         else
-            checkColumnStructure<ReturnType>(actual, expected, context_description, allow_materialize, ErrorCodes::LOGICAL_ERROR);
+            checkColumnStructure<ReturnType>(actual, expected, context_description, allow_remove_constants, ErrorCodes::LOGICAL_ERROR);
     }
 
     return ReturnType(true);
@@ -209,7 +203,7 @@ void Block::eraseImpl(size_t position)
     for (auto it = index_by_name.begin(); it != index_by_name.end();)
     {
         if (it->second == position)
-            it = index_by_name.erase(it);
+            index_by_name.erase(it++);
         else
         {
             if (it->second > position)
@@ -588,17 +582,6 @@ DataTypes Block::getDataTypes() const
     return res;
 }
 
-Names Block::getDataTypeNames() const
-{
-    Names res;
-    res.reserve(columns());
-
-    for (const auto & elem : data)
-        res.push_back(elem.type->getName());
-
-    return res;
-}
-
 
 bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs)
 {
@@ -710,46 +693,6 @@ void Block::updateHash(SipHash & hash) const
     for (size_t row_no = 0, num_rows = rows(); row_no < num_rows; ++row_no)
         for (const auto & col : data)
             col.column->updateHashWithValue(row_no, hash);
-}
-
-void convertToFullIfSparse(Block & block)
-{
-    for (auto & column : block)
-        column.column = recursiveRemoveSparse(column.column);
-}
-
-ColumnPtr getColumnFromBlock(const Block & block, const NameAndTypePair & column)
-{
-    auto current_column = block.getByName(column.getNameInStorage()).column;
-    current_column = current_column->decompress();
-
-    if (column.isSubcolumn())
-        return column.getTypeInStorage()->getSubcolumn(column.getSubcolumnName(), current_column);
-
-    return current_column;
-}
-
-
-Block materializeBlock(const Block & block)
-{
-    if (!block)
-        return block;
-
-    Block res = block;
-    size_t columns = res.columns();
-    for (size_t i = 0; i < columns; ++i)
-    {
-        auto & element = res.getByPosition(i);
-        element.column = recursiveRemoveSparse(element.column->convertToFullColumnIfConst());
-    }
-
-    return res;
-}
-
-void materializeBlockInplace(Block & block)
-{
-    for (size_t i = 0; i < block.columns(); ++i)
-        block.getByPosition(i).column = recursiveRemoveSparse(block.getByPosition(i).column->convertToFullColumnIfConst());
 }
 
 }

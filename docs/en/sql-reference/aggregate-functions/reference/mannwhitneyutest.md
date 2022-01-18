@@ -71,4 +71,4 @@ Result:
 -   [Mann–Whitney U test](https://en.wikipedia.org/wiki/Mann%E2%80%93Whitney_U_test)
 -   [Stochastic ordering](https://en.wikipedia.org/wiki/Stochastic_ordering)
 
-[Original article](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/mannwhitneyutest/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/mannwhitneyutest/) <!--hide-->

@@ -1,12 +1,14 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
+#endif
 
 #if USE_AWS_S3
 
 #include <atomic>
 #include <optional>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include "Disks/DiskFactory.h"
 #include "Disks/Executor.h"
 
@@ -68,15 +70,14 @@ public:
         String name_,
         String bucket_,
         String s3_root_path_,
-        DiskPtr metadata_disk_,
-        ContextPtr context_,
+        String metadata_path_,
         SettingsPtr settings_,
         GetDiskSettings settings_getter_);
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> size) const override;
+        size_t estimated_size) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -168,7 +169,7 @@ private:
     inline static const String RESTORE_FILE_NAME = "restore";
 
     /// Key has format: ../../r{revision}-{operation}
-    const re2::RE2 key_regexp {".*/r(\\d+)-(\\w+)$"};
+    const re2::RE2 key_regexp {".*/r(\\d+)-(\\w+).*"};
 
     /// Object contains information about schema version.
     inline static const String SCHEMA_VERSION_OBJECT = ".SCHEMA_VERSION";
@@ -176,8 +177,6 @@ private:
     static constexpr int RESTORABLE_SCHEMA_VERSION = 1;
     /// Directories with data.
     const std::vector<String> data_roots {"data", "store"};
-
-    ContextPtr context;
 };
 
 }

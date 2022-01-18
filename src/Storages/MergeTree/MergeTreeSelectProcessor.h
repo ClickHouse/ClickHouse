@@ -28,19 +28,21 @@ public:
         bool use_uncompressed_cache,
         const PrewhereInfoPtr & prewhere_info,
         ExpressionActionsSettings actions_settings,
+        bool check_columns_,
         const MergeTreeReaderSettings & reader_settings,
         const Names & virt_column_names = {},
         size_t part_index_in_query_ = 0,
-        bool has_limit_below_one_block_ = false,
-        std::optional<ParallelReadingExtension> extension_ = {});
+        bool has_limit_below_one_block_ = false);
 
     ~MergeTreeSelectProcessor() override;
 
+    /// Closes readers and unlock part locks
+    void finish();
+
 protected:
     /// Defer initialization from constructor, because it may be heavy
-    /// and it's better to do it lazily in `getNewTaskImpl`, which is executing in parallel.
+    /// and it's better to do it lazily in `getNewTask`, which is executing in parallel.
     void initializeReaders();
-    void finish() override final;
 
     /// Used by Task
     Names required_columns;
@@ -64,6 +66,7 @@ protected:
     /// It reduces amount of read data for queries with small LIMIT.
     bool has_limit_below_one_block = false;
 
+    bool check_columns;
     size_t total_rows = 0;
 };
 

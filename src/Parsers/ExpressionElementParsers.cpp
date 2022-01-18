@@ -18,6 +18,7 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTQueryParameter.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTTLElement.h>
@@ -1522,42 +1523,6 @@ bool ParserNull::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 }
 
 
-bool ParserBool::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    if (ParserKeyword("true").parse(pos, node, expected))
-    {
-        node = std::make_shared<ASTLiteral>(true);
-        return true;
-    }
-    else if (ParserKeyword("false").parse(pos, node, expected))
-    {
-        node = std::make_shared<ASTLiteral>(false);
-        return true;
-    }
-    else
-        return false;
-}
-
-static bool parseNumber(char * buffer, size_t size, bool negative, int base, Field & res)
-{
-    errno = 0;    /// Functions strto* don't clear errno.
-
-    char * pos_integer = buffer;
-    UInt64 uint_value = std::strtoull(buffer, &pos_integer, base);
-
-    if (pos_integer == buffer + size && errno != ERANGE && (!negative || uint_value <= (1ULL << 63)))
-    {
-        if (negative)
-            res = static_cast<Int64>(-uint_value);
-        else
-            res = uint_value;
-
-        return true;
-    }
-
-    return false;
-}
-
 bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     Pos literal_begin = pos;
@@ -1597,22 +1562,6 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     Float64 float_value = std::strtod(buf, &pos_double);
     if (pos_double != buf + pos->size() || errno == ERANGE)
     {
-        /// Try to parse number as binary literal representation. Example: 0b0001.
-        if (pos->size() > 2 && buf[0] == '0' && buf[1] == 'b')
-        {
-            char * buf_skip_prefix = buf + 2;
-
-            if (parseNumber(buf_skip_prefix, pos->size() - 2, negative, 2, res))
-            {
-                auto literal = std::make_shared<ASTLiteral>(res);
-                literal->begin = literal_begin;
-                literal->end = ++pos;
-                node = literal;
-
-                return true;
-            }
-        }
-
         expected.add(pos, "number");
         return false;
     }
@@ -1627,13 +1576,22 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     /// try to use more exact type: UInt64
 
-    parseNumber(buf, pos->size(), negative, 0, res);
+    char * pos_integer = buf;
+
+    errno = 0;
+    UInt64 uint_value = std::strtoull(buf, &pos_integer, 0);
+    if (pos_integer == pos_double && errno != ERANGE && (!negative || uint_value <= (1ULL << 63)))
+    {
+        if (negative)
+            res = static_cast<Int64>(-uint_value);
+        else
+            res = uint_value;
+    }
 
     auto literal = std::make_shared<ASTLiteral>(res);
     literal->begin = literal_begin;
     literal->end = ++pos;
     node = literal;
-
     return true;
 }
 
@@ -1769,16 +1727,12 @@ bool ParserLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserNull null_p;
     ParserNumber num_p;
-    ParserBool bool_p;
     ParserStringLiteral str_p;
 
     if (null_p.parse(pos, node, expected))
         return true;
 
     if (num_p.parse(pos, node, expected))
-        return true;
-
-    if (bool_p.parse(pos, node, expected))
         return true;
 
     if (str_p.parse(pos, node, expected))
@@ -2246,16 +2200,6 @@ bool ParserMySQLGlobalVariable::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     return true;
 }
 
-bool ParserExistsExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    if (ParserKeyword("EXISTS").ignore(pos, expected) && ParserSubquery().parse(pos, node, expected))
-    {
-        node = makeASTFunction("exists", node);
-        return true;
-    }
-    return false;
-}
-
 
 bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -2279,7 +2223,6 @@ bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         || ParserFunction().parse(pos, node, expected)
         || ParserQualifiedAsterisk().parse(pos, node, expected)
         || ParserAsterisk().parse(pos, node, expected)
-        || ParserExistsExpression().parse(pos, node, expected)
         || ParserCompoundIdentifier(false, true).parse(pos, node, expected)
         || ParserSubstitution().parse(pos, node, expected)
         || ParserMySQLGlobalVariable().parse(pos, node, expected);

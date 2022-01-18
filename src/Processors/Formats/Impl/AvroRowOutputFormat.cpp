@@ -93,7 +93,7 @@ public:
     virtual void backup(size_t len) override { out.position() -= len; }
 
     virtual uint64_t byteCount() const override { return out.count(); }
-    virtual void flush() override { }
+    virtual void flush() override { out.next(); }
 
 private:
     WriteBuffer & out;
@@ -386,6 +386,11 @@ AvroRowOutputFormat::AvroRowOutputFormat(
     : IRowOutputFormat(header_, out_, params_)
     , settings(settings_)
     , serializer(header_.getColumnsWithTypeAndName(), std::make_unique<AvroSerializerTraits>(settings))
+    , file_writer(
+        std::make_unique<OutputStreamWriteBufferAdapter>(out_),
+        serializer.getSchema(),
+        settings.avro.output_sync_interval,
+        getCodec(settings.avro.output_codec))
 {
 }
 
@@ -393,78 +398,24 @@ AvroRowOutputFormat::~AvroRowOutputFormat() = default;
 
 void AvroRowOutputFormat::writePrefix()
 {
-    // we have to recreate avro::DataFileWriterBase object due to its interface limitations
-    file_writer_ptr = std::make_unique<avro::DataFileWriterBase>(
-        std::make_unique<OutputStreamWriteBufferAdapter>(out),
-        serializer.getSchema(),
-        settings.avro.output_sync_interval,
-        getCodec(settings.avro.output_codec));
-
-    file_writer_ptr->syncIfNeeded();
+    file_writer.syncIfNeeded();
 }
 
 void AvroRowOutputFormat::write(const Columns & columns, size_t row_num)
 {
-    file_writer_ptr->syncIfNeeded();
-    serializer.serializeRow(columns, row_num, file_writer_ptr->encoder());
-    file_writer_ptr->incr();
+    file_writer.syncIfNeeded();
+    serializer.serializeRow(columns, row_num, file_writer.encoder());
+    file_writer.incr();
 }
 
 void AvroRowOutputFormat::writeSuffix()
 {
-    file_writer_ptr.reset();
+    file_writer.close();
 }
 
-void AvroRowOutputFormat::consume(DB::Chunk chunk)
+void registerOutputFormatProcessorAvro(FormatFactory & factory)
 {
-    if (params.callback)
-        consumeImplWithCallback(std::move(chunk));
-    else
-        consumeImpl(std::move(chunk));
-}
-
-void AvroRowOutputFormat::consumeImpl(DB::Chunk chunk)
-{
-    auto num_rows = chunk.getNumRows();
-    const auto & columns = chunk.getColumns();
-
-    for (size_t row = 0; row < num_rows; ++row)
-    {
-        write(columns, row);
-    }
-
-}
-
-void AvroRowOutputFormat::consumeImplWithCallback(DB::Chunk chunk)
-{
-    auto num_rows = chunk.getNumRows();
-    const auto & columns = chunk.getColumns();
-
-    for (size_t row = 0; row < num_rows;)
-    {
-        size_t current_row = row;
-        /// used by WriteBufferToKafkaProducer to obtain auxiliary data
-        ///   from the starting row of a file
-
-        writePrefixIfNot();
-        for (size_t row_in_file = 0;
-             row_in_file < settings.avro.output_rows_in_file && row < num_rows;
-             ++row, ++row_in_file)
-        {
-            write(columns, row);
-        }
-
-        file_writer_ptr->flush();
-        writeSuffix();
-        need_write_prefix = true;
-
-        params.callback(columns, current_row);
-    }
-}
-
-void registerOutputFormatAvro(FormatFactory & factory)
-{
-    factory.registerOutputFormat("Avro", [](
+    factory.registerOutputFormatProcessor("Avro", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,
@@ -481,7 +432,7 @@ void registerOutputFormatAvro(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerOutputFormatAvro(FormatFactory &)
+void registerOutputFormatProcessorAvro(FormatFactory &)
 {
 }
 }

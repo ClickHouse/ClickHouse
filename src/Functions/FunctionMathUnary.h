@@ -8,7 +8,9 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 
-#include "config_functions.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
 
 /** FastOps is a fast vector math library from Mikhail Parakhin (former Yandex CTO),
   * Enabled by default.
@@ -94,7 +96,7 @@ private:
                 Impl::execute(src_remaining, dst_remaining);
 
                 if constexpr (is_big_int_v<T> || std::is_same_v<T, Decimal256>)
-                    for (size_t i = 0; i < rows_remaining; ++i)
+                    for (size_t i = 0; i < rows_remaining; i++)
                         dst_data[rows_size + i] = dst_remaining[i];
                 else
                     memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(ReturnType));
@@ -148,7 +150,7 @@ private:
             using Types = std::decay_t<decltype(types)>;
             using Type = typename Types::RightType;
             using ReturnType = std::conditional_t<Impl::always_returns_float64 || !std::is_floating_point_v<Type>, Float64, Type>;
-            using ColVecType = ColumnVectorOrDecimal<Type>;
+            using ColVecType = std::conditional_t<IsDecimalNumber<Type>, ColumnDecimal<Type>, ColumnVector<Type>>;
 
             const auto col_vec = checkAndGetColumn<ColVecType>(col.column.get());
             return (res = execute<Type, ReturnType>(col_vec)) != nullptr;

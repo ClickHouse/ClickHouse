@@ -128,9 +128,10 @@ private:
             dst_data[i] = outOfDigits<T>(src_data[i], precision);
     }
 
-    template <is_decimal T>
+    template <typename T>
     static bool outOfDigits(T dec, UInt32 precision)
     {
+        static_assert(IsDecimalNumber<T>);
         using NativeT = typename T::NativeType;
 
         if (precision > DecimalUtils::max_precision<T>)

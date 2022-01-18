@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 
 
 namespace DB
@@ -25,14 +25,10 @@ struct FormatSettings
 
     bool skip_unknown_fields = false;
     bool with_names_use_header = false;
-    bool with_types_use_header = false;
     bool write_statistics = true;
     bool import_nested_json = false;
     bool null_as_default = true;
     bool decimal_trailing_zeros = false;
-    bool defaults_for_omitted_fields = true;
-
-    bool seekable_read = true;
 
     enum class DateTimeInputFormat
     {
@@ -47,17 +43,6 @@ struct FormatSettings
         Simple,
         ISO,
         UnixTimestamp
-    };
-
-    enum class EscapingRule
-    {
-        None,
-        Escaped,
-        Quoted,
-        CSV,
-        JSON,
-        XML,
-        Raw
     };
 
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
@@ -79,22 +64,18 @@ struct FormatSettings
         UInt64 output_sync_interval = 16 * 1024;
         bool allow_missing_fields = false;
         String string_column_pattern;
-        UInt64 output_rows_in_file = 1;
     } avro;
-
-    String bool_true_representation = "true";
-    String bool_false_representation = "false";
 
     struct CSV
     {
         char delimiter = ',';
         bool allow_single_quotes = true;
         bool allow_double_quotes = true;
+        bool unquoted_null_literal_as_null = false;
         bool empty_as_default = false;
         bool crlf_end_of_line = false;
         bool input_format_enum_as_number = false;
         bool input_format_arrays_as_nested_csv = false;
-        String null_representation = "\\N";
     } csv;
 
     struct Custom
@@ -105,7 +86,7 @@ struct FormatSettings
         std::string row_after_delimiter;
         std::string row_between_delimiter;
         std::string field_delimiter;
-        EscapingRule escaping_rule = EscapingRule::Escaped;
+        std::string escaping_rule;
     } custom;
 
     struct
@@ -164,7 +145,7 @@ struct FormatSettings
     struct
     {
         std::string regexp;
-        EscapingRule escaping_rule = EscapingRule::Raw;
+        std::string escaping_rule;
         bool skip_unmatched = false;
     } regexp;
 
@@ -200,22 +181,7 @@ struct FormatSettings
     struct
     {
         bool import_nested = false;
-        int64_t row_batch_size = 100'000;
     } orc;
-
-    /// For capnProto format we should determine how to
-    /// compare ClickHouse Enum and Enum from schema.
-    enum class EnumComparingMode
-    {
-        BY_NAMES, // Names in enums should be the same, values can be different.
-        BY_NAMES_CASE_INSENSITIVE, // Case-insensitive name comparison.
-        BY_VALUES, // Values should be the same, names can be different.
-    };
-
-    struct
-    {
-        EnumComparingMode enum_comparing_mode = EnumComparingMode::BY_VALUES;
-    } capn_proto;
 };
 
 }

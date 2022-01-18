@@ -1,19 +1,16 @@
 #pragma once
 
+#include <Access/IAccessStorage.h>
+#include <Common/ThreadPool.h>
+#include <Common/ZooKeeper/Common.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <common/scope_guard.h>
+#include <Coordination/ThreadSafeQueue.h>
 #include <atomic>
 #include <list>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
-
-#include <base/scope_guard.h>
-
-#include <Common/ThreadPool.h>
-#include <Common/ZooKeeper/Common.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ConcurrentBoundedQueue.h>
-
-#include <Access/IAccessStorage.h>
 
 
 namespace DB
@@ -39,7 +36,7 @@ private:
     std::atomic<bool> initialized = false;
     std::atomic<bool> stop_flag = false;
     ThreadFromGlobalPool worker_thread;
-    ConcurrentBoundedQueue<UUID> refresh_queue;
+    ThreadSafeQueue<UUID> refresh_queue;
 
     UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) override;
     void removeImpl(const UUID & id) override;
@@ -69,8 +66,8 @@ private:
         mutable std::list<OnChangedHandler> handlers_by_id;
     };
 
-    std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
-    std::vector<UUID> findAllImpl(AccessEntityType type) const override;
+    std::optional<UUID> findImpl(EntityType type, const String & name) const override;
+    std::vector<UUID> findAllImpl(EntityType type) const override;
     bool existsImpl(const UUID & id) const override;
     AccessEntityPtr readImpl(const UUID & id) const override;
     String readNameImpl(const UUID & id) const override;
@@ -78,13 +75,13 @@ private:
 
     void prepareNotifications(const Entry & entry, bool remove, Notifications & notifications) const;
     scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
-    scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const override;
+    scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const override;
     bool hasSubscriptionImpl(const UUID & id) const override;
-    bool hasSubscriptionImpl(AccessEntityType type) const override;
+    bool hasSubscriptionImpl(EntityType type) const override;
 
     mutable std::mutex mutex;
     std::unordered_map<UUID, Entry> entries_by_id;
-    std::unordered_map<String, Entry *> entries_by_name_and_type[static_cast<size_t>(AccessEntityType::MAX)];
-    mutable std::list<OnChangedHandler> handlers_by_type[static_cast<size_t>(AccessEntityType::MAX)];
+    std::unordered_map<String, Entry *> entries_by_name_and_type[static_cast<size_t>(EntityType::MAX)];
+    mutable std::list<OnChangedHandler> handlers_by_type[static_cast<size_t>(EntityType::MAX)];
 };
 }

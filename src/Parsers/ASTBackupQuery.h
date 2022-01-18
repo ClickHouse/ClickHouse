@@ -16,9 +16,8 @@ using DatabaseAndTableName = std::pair<String, String>;
   *          TEMPORARY TABLE table_name [AS table_name_in_backup]
   *          ALL TEMPORARY TABLES |
   *          EVERYTHING } [,...]
-  *        TO { File('path/') |
-  *             Disk('disk_name', 'path/')
-  *        [SETTINGS base_backup = {File(...) | Disk(...)}]
+  *        TO 'backup_name'
+  *        SETTINGS base_backup='base_backup_name'
   *
   * RESTORE { TABLE [db.]table_name_in_backup [INTO [db.]table_name] [PARTITION[S] partition_expr [,...]] |
   *           DICTIONARY [db.]dictionary_name_in_backup [INTO [db.]dictionary_name] |
@@ -27,7 +26,7 @@ using DatabaseAndTableName = std::pair<String, String>;
   *           TEMPORARY TABLE table_name_in_backup [INTO table_name] |
   *           ALL TEMPORARY TABLES |
   *           EVERYTHING } [,...]
-  *         FROM {File(...) | Disk(...)}
+  *         FROM 'backup_name'
   *
   * Notes:
   * RESTORE doesn't drop any data, it either creates a table or appends an existing table with restored data.
@@ -77,11 +76,7 @@ public:
     using Elements = std::vector<Element>;
     Elements elements;
 
-    ASTPtr backup_name;
-
-    /// Base backup. Only differences made after the base backup will be included in a newly created backup,
-    /// so this setting allows to make an incremental backup.
-    ASTPtr base_backup_name;
+    String backup_name;
 
     ASTPtr settings;
 

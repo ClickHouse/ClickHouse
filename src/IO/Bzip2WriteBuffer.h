@@ -2,12 +2,11 @@
 
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
-#include <IO/WriteBufferDecorator.h>
 
 namespace DB
 {
 
-class Bzip2WriteBuffer : public WriteBufferWithOwnMemoryDecorator
+class Bzip2WriteBuffer : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
     Bzip2WriteBuffer(
@@ -19,13 +18,20 @@ public:
 
     ~Bzip2WriteBuffer() override;
 
+    void finalize() override { finish(); }
+
 private:
     void nextImpl() override;
 
-    void finalizeBefore() override;
+    void finish();
+    void finishImpl();
 
     class Bzip2StateWrapper;
     std::unique_ptr<Bzip2StateWrapper> bz;
+
+    std::unique_ptr<WriteBuffer> out;
+
+    bool finished = false;
 };
 
 }

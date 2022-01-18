@@ -1,7 +1,3 @@
--- Tags: long, replica, no-replicated-database, no-parallel
--- Tag no-replicated-database: Fails due to additional replicas or shards
--- Tag no-parallel: static zk path
-
 DROP TABLE IF EXISTS execute_on_single_replica_r1 NO DELAY;
 DROP TABLE IF EXISTS execute_on_single_replica_r2 NO DELAY;
 

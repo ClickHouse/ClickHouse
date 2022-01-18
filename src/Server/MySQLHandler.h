@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Poco/Net/TCPServerConnection.h>
-#include <base/getFQDNOrHostName.h>
+#include <common/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
 #include <Core/MySQL/Authentication.h>
 #include <Core/MySQL/PacketsGeneric.h>
@@ -9,7 +9,9 @@
 #include <Core/MySQL/PacketsProtocolText.h>
 #include "IServer.h"
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 #if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>

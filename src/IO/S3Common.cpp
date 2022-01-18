@@ -30,7 +30,7 @@
 #    include <Poco/URI.h>
 #    include <re2/re2.h>
 #    include <boost/algorithm/string/case_conv.hpp>
-#    include <base/logger_useful.h>
+#    include <common/logger_useful.h>
 
 #    include <fstream>
 
@@ -51,8 +51,8 @@ const std::pair<DB::LogsLevel, Poco::Message::Priority> & convertLogLevel(Aws::U
         {Aws::Utils::Logging::LogLevel::Error, {DB::LogsLevel::error, Poco::Message::PRIO_ERROR}},
         {Aws::Utils::Logging::LogLevel::Warn, {DB::LogsLevel::warning, Poco::Message::PRIO_WARNING}},
         {Aws::Utils::Logging::LogLevel::Info, {DB::LogsLevel::information, Poco::Message::PRIO_INFORMATION}},
-        {Aws::Utils::Logging::LogLevel::Debug, {DB::LogsLevel::debug, Poco::Message::PRIO_TEST}},
-        {Aws::Utils::Logging::LogLevel::Trace, {DB::LogsLevel::trace, Poco::Message::PRIO_TEST}},
+        {Aws::Utils::Logging::LogLevel::Debug, {DB::LogsLevel::trace, Poco::Message::PRIO_TRACE}},
+        {Aws::Utils::Logging::LogLevel::Trace, {DB::LogsLevel::trace, Poco::Message::PRIO_TRACE}},
     };
     return mapping.at(log_level);
 }
@@ -284,7 +284,7 @@ protected:
 
         auto credentials_view = credentials_doc.View();
         access_key = credentials_view.GetString("AccessKeyId");
-        LOG_TRACE(logger, "Successfully pulled credentials from EC2MetadataService with access key {}.", access_key);
+        LOG_ERROR(logger, "Successfully pulled credentials from EC2MetadataService with access key {}.", access_key);
 
         secret_key = credentials_view.GetString("SecretAccessKey");
         token = credentials_view.GetString("Token");
@@ -760,7 +760,7 @@ namespace S3
         /// Case when bucket name represented in domain name of S3 URL.
         /// E.g. (https://bucket-name.s3.Region.amazonaws.com/key)
         /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#virtual-hosted-style-access
-        static const RE2 virtual_hosted_style_pattern(R"((.+)\.(s3|cos|obs|oss)([.\-][a-z0-9\-.:]+))");
+        static const RE2 virtual_hosted_style_pattern(R"((.+)\.(s3|cos)([.\-][a-z0-9\-.:]+))");
 
         /// Case when bucket name and key represented in path of S3 URL.
         /// E.g. (https://s3.Region.amazonaws.com/bucket-name/key)
@@ -770,9 +770,6 @@ namespace S3
         static constexpr auto S3 = "S3";
         static constexpr auto COSN = "COSN";
         static constexpr auto COS = "COS";
-        static constexpr auto OBS = "OBS";
-        static constexpr auto OSS = "OSS";
-
 
         uri = uri_;
         storage_name = S3;
@@ -796,21 +793,13 @@ namespace S3
             }
 
             boost::to_upper(name);
-            if (name != S3 && name != COS && name != OBS && name != OSS)
+            if (name != S3 && name != COS)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Object storage system name is unrecognized in virtual hosted style S3 URI: {}", quoteString(name));
             }
             if (name == S3)
             {
                 storage_name = name;
-            }
-            else if (name == OBS)
-            {
-                storage_name = OBS;
-            }
-            else if (name == OSS)
-            {
-                storage_name = OSS;
             }
             else
             {

@@ -58,10 +58,6 @@ SELECT quantileBFloat16(0.75)(a), quantileBFloat16(0.75)(b) FROM example_table;
 ```
 Обратите внимание, что все числа с плавающей точкой в примере были округлены до 1.0 при преобразовании к `bfloat16`.
 
-# quantileBFloat16Weighted {#quantilebfloat16weighted}
-
-Версия функции `quantileBFloat16`, которая учитывает вес каждого элемента последовательности.
-
 **См. также**
 
 -   [median](../../../sql-reference/aggregate-functions/reference/median.md#median)

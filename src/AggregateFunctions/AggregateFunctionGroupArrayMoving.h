@@ -87,10 +87,18 @@ class MovingImpl final
 public:
     using ResultT = typename Data::Accumulator;
 
-    using ColumnSource = ColumnVectorOrDecimal<T>;
+    using ColumnSource = std::conditional_t<IsDecimalNumber<T>,
+        ColumnDecimal<T>,
+        ColumnVector<T>>;
 
     /// Probably for overflow function in the future.
-    using ColumnResult = ColumnVectorOrDecimal<ResultT>;
+    using ColumnResult = std::conditional_t<IsDecimalNumber<ResultT>,
+        ColumnDecimal<ResultT>,
+        ColumnVector<ResultT>>;
+
+    using DataTypeResult = std::conditional_t<IsDecimalNumber<ResultT>,
+        DataTypeDecimal<ResultT>,
+        DataTypeNumber<ResultT>>;
 
     explicit MovingImpl(const DataTypePtr & data_type_, UInt64 window_size_ = std::numeric_limits<UInt64>::max())
         : IAggregateFunctionDataHelper<Data, MovingImpl<T, Tlimit_num_elems, Data>>({data_type_}, {})
@@ -98,7 +106,14 @@ public:
 
     String getName() const override { return Data::name; }
 
-    DataTypePtr getReturnType() const override { return std::make_shared<DataTypeArray>(getReturnTypeElement()); }
+    DataTypePtr getReturnType() const override
+    {
+        if constexpr (IsDecimalNumber<ResultT>)
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeResult>(
+                DataTypeResult::maxPrecision(), getDecimalScale(*this->argument_types.at(0))));
+        else
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeResult>());
+    }
 
     void NO_SANITIZE_UNDEFINED add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
@@ -124,7 +139,7 @@ public:
         cur_elems.sum += rhs_elems.sum;
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         const auto & value = this->data(place).value;
         size_t size = value.size();
@@ -132,7 +147,7 @@ public:
         buf.write(reinterpret_cast<const char *>(value.data()), size * sizeof(value[0]));
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
     {
         size_t size = 0;
         readVarUInt(size, buf);
@@ -180,18 +195,6 @@ public:
     bool allocatesMemoryInArena() const override
     {
         return true;
-    }
-
-private:
-    auto getReturnTypeElement() const
-    {
-        if constexpr (!is_decimal<ResultT>)
-            return std::make_shared<DataTypeNumber<ResultT>>();
-        else
-        {
-            using Res = DataTypeDecimal<ResultT>;
-            return std::make_shared<Res>(Res::maxPrecision(), getDecimalScale(*this->argument_types.at(0)));
-        }
     }
 };
 

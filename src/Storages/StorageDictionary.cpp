@@ -8,7 +8,8 @@
 #include <Interpreters/ExternalLoaderDictionaryStorageConfigRepository.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/quoteString.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Pipe.h>
 #include <IO/Operators.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 
@@ -164,11 +165,11 @@ Pipe StorageDictionary::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
-    const unsigned threads)
+    const unsigned /*threads*/)
 {
     auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
     auto dictionary = getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, local_context);
-    return dictionary->read(column_names, max_block_size, threads);
+    return dictionary->read(column_names, max_block_size);
 }
 
 void StorageDictionary::shutdown()
@@ -192,6 +193,10 @@ void StorageDictionary::startup()
 
 void StorageDictionary::removeDictionaryConfigurationFromRepository()
 {
+    if (remove_repository_callback_executed)
+        return;
+
+    remove_repository_callback_executed = true;
     remove_repository_callback.reset();
 }
 

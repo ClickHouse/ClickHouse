@@ -16,17 +16,15 @@ limitations under the License. */
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Processors/Sources/BlocksSource.h>
-#include <Processors/Sinks/EmptySink.h>
 #include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <base/logger_useful.h>
+#include <DataStreams/copyData.h>
+#include <common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/SipHash.h>
 #include <Common/hex.h>
-#include "QueryPipeline/printPipeline.h"
 
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/LiveView/LiveViewSource.h>
@@ -43,7 +41,7 @@ limitations under the License. */
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <Access/Common/AccessFlags.h>
+#include <Access/AccessFlags.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
 
@@ -113,16 +111,15 @@ MergeableBlocksPtr StorageLiveView::collectMergeableBlocks(ContextPtr local_cont
 
     InterpreterSelectQuery interpreter(mergeable_query->clone(), local_context, SelectQueryOptions(QueryProcessingStage::WithMergeableState), Names());
 
-    auto builder = interpreter.buildQueryPipeline();
-    builder.addSimpleTransform([&](const Block & cur_header)
+    auto io = interpreter.execute();
+    io.pipeline.addSimpleTransform([&](const Block & cur_header)
     {
         return std::make_shared<MaterializingTransform>(cur_header);
     });
 
-    new_mergeable_blocks->sample_block = builder.getHeader();
+    new_mergeable_blocks->sample_block = io.pipeline.getHeader();
 
-    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
-    PullingAsyncPipelineExecutor executor(pipeline);
+    PullingPipelineExecutor executor(io.pipeline);
     Block this_block;
 
     while (executor.pull(this_block))
@@ -139,13 +136,13 @@ Pipes StorageLiveView::blocksToPipes(BlocksPtrs blocks, Block & sample_block)
 {
     Pipes pipes;
     for (auto & blocks_for_source : *blocks)
-        pipes.emplace_back(std::make_shared<BlocksSource>(blocks_for_source, sample_block));
+        pipes.emplace_back(std::make_shared<BlocksSource>(std::make_shared<BlocksPtr>(blocks_for_source), sample_block));
 
     return pipes;
 }
 
 /// Complete query using input streams from mergeable blocks
-QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
+QueryPipeline StorageLiveView::completeQuery(Pipes pipes)
 {
     //FIXME it's dangerous to create Context on stack
     auto block_context = Context::createCopy(getContext());
@@ -160,8 +157,8 @@ QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
     };
     block_context->addExternalTable(getBlocksTableName(), TemporaryTableHolder(getContext(), creator));
     InterpreterSelectQuery select(getInnerBlocksQuery(), block_context, StoragePtr(), nullptr, SelectQueryOptions(QueryProcessingStage::Complete));
-    auto builder = select.buildQueryPipeline();
-    builder.addSimpleTransform([&](const Block & cur_header)
+    auto io = select.execute();
+    io.pipeline.addSimpleTransform([&](const Block & cur_header)
     {
         return std::make_shared<MaterializingTransform>(cur_header);
     });
@@ -169,7 +166,7 @@ QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
     /// Squashing is needed here because the view query can generate a lot of blocks
     /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
     /// and two-level aggregation is triggered).
-    builder.addSimpleTransform([&](const Block & cur_header)
+    io.pipeline.addSimpleTransform([&](const Block & cur_header)
     {
         return std::make_shared<SquashingChunksTransform>(
             cur_header,
@@ -177,7 +174,7 @@ QueryPipelineBuilder StorageLiveView::completeQuery(Pipes pipes)
             getContext()->getSettingsRef().min_insert_block_size_bytes);
     });
 
-    return builder;
+    return std::move(io.pipeline);
 }
 
 void StorageLiveView::writeIntoLiveView(
@@ -225,7 +222,7 @@ void StorageLiveView::writeIntoLiveView(
             mergeable_query = live_view.getInnerSubQuery();
 
         Pipes pipes;
-        pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(block));
+        pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), Chunk(block.getColumns(), block.rows())));
 
         auto creator = [&](const StorageID & blocks_id_global)
         {
@@ -239,14 +236,13 @@ void StorageLiveView::writeIntoLiveView(
         InterpreterSelectQuery select_block(mergeable_query, local_context, blocks_storage.getTable(), blocks_storage.getTable()->getInMemoryMetadataPtr(),
             QueryProcessingStage::WithMergeableState);
 
-        auto builder = select_block.buildQueryPipeline();
-        builder.addSimpleTransform([&](const Block & cur_header)
+        auto io = select_block.execute();
+        io.pipeline.addSimpleTransform([&](const Block & cur_header)
         {
             return std::make_shared<MaterializingTransform>(cur_header);
         });
 
-        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
-        PullingAsyncPipelineExecutor executor(pipeline);
+        PullingPipelineExecutor executor(io.pipeline);
         Block this_block;
 
         while (executor.pull(this_block))
@@ -265,10 +261,10 @@ void StorageLiveView::writeIntoLiveView(
     }
 
     auto pipeline = live_view.completeQuery(std::move(from));
-    pipeline.addChain(Chain(std::move(output)));
-    pipeline.setSinks([&](const Block & cur_header, Pipe::StreamType)
+    pipeline.resize(1);
+    pipeline.setSinks([&](const Block &, Pipe::StreamType)
     {
-        return std::make_shared<EmptySink>(cur_header);
+        return std::move(output);
     });
 
     auto executor = pipeline.execute();
@@ -280,8 +276,7 @@ StorageLiveView::StorageLiveView(
     const StorageID & table_id_,
     ContextPtr context_,
     const ASTCreateQuery & query,
-    const ColumnsDescription & columns_,
-    const String & comment)
+    const ColumnsDescription & columns_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
 {
@@ -292,9 +287,6 @@ StorageLiveView::StorageLiveView(
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
-    if (!comment.empty())
-        storage_metadata.setComment(comment);
-
     setInMemoryMetadata(storage_metadata);
 
     if (!query.select)
@@ -388,16 +380,12 @@ bool StorageLiveView::getNewBlocks()
     /// inserted data to be duplicated
     auto new_mergeable_blocks = collectMergeableBlocks(live_view_context);
     Pipes from = blocksToPipes(new_mergeable_blocks->blocks, new_mergeable_blocks->sample_block);
-    auto builder = completeQuery(std::move(from));
-    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+    auto pipeline = completeQuery(std::move(from));
 
-    PullingAsyncPipelineExecutor executor(pipeline);
+    PullingPipelineExecutor executor(pipeline);
     Block block;
     while (executor.pull(block))
     {
-        if (block.rows() == 0)
-            continue;
-
         /// calculate hash before virtual column is added
         block.updateHash(hash);
         /// add result version meta column
@@ -561,7 +549,7 @@ Pipe StorageLiveView::read(
             refresh(false);
     }
 
-    return Pipe(std::make_shared<BlocksSource>(*blocks_ptr, getHeader()));
+    return Pipe(std::make_shared<BlocksSource>(blocks_ptr, getHeader()));
 }
 
 Pipe StorageLiveView::watch(
@@ -625,7 +613,7 @@ void registerStorageLiveView(StorageFactory & factory)
                 "Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')",
                 ErrorCodes::SUPPORT_IS_DISABLED);
 
-        return StorageLiveView::create(args.table_id, args.getLocalContext(), args.query, args.columns, args.comment);
+        return StorageLiveView::create(args.table_id, args.getLocalContext(), args.query, args.columns);
     });
 }
 

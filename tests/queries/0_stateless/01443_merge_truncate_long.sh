@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: long
 
 set -e
 

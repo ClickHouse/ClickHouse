@@ -6,7 +6,9 @@
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 #if USE_MYSQL
 #   include <mysqlxx/PoolFactory.h>
@@ -161,7 +163,6 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
 
     return toString(table->getStorageID().uuid);
 }
-
 DictionaryStructure
 ExternalDictionariesLoader::getDictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & key_in_config)
 {

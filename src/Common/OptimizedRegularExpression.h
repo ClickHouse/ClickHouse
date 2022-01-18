@@ -7,7 +7,9 @@
 #include <Common/StringSearcher.h>
 #include <re2/re2.h>
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 #if USE_RE2_ST
 #    include <re2_st/re2.h>

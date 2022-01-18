@@ -1,6 +1,3 @@
--- Tags: zookeeper, no-replicated-database
--- Tag no-replicated-database: Old syntax is not allowed
-
 DROP TABLE IF EXISTS deduplication_by_partition;
 CREATE TABLE deduplication_by_partition(d Date, x UInt32) ENGINE =
     ReplicatedMergeTree('/clickhouse/tables/{database}/test_00516/deduplication_by_partition', 'r1', d, x, 8192);

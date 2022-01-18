@@ -7,7 +7,6 @@
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/InterpreterSelectQuery.h>

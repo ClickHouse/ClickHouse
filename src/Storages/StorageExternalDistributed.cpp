@@ -6,16 +6,16 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
+#include <Formats/FormatFactory.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/parseAddress.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Pipe.h>
 #include <Common/parseRemoteDescription.h>
 #include <Storages/StorageMySQL.h>
 #include <Storages/MySQL/MySQLSettings.h>
 #include <Storages/StoragePostgreSQL.h>
 #include <Storages/StorageURL.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -31,7 +31,10 @@ StorageExternalDistributed::StorageExternalDistributed(
     const StorageID & table_id_,
     ExternalStorageEngine table_engine,
     const String & cluster_description,
-    const ExternalDataSourceConfiguration & configuration,
+    const String & remote_database,
+    const String & remote_table,
+    const String & username,
+    const String & password,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment,
@@ -63,16 +66,15 @@ StorageExternalDistributed::StorageExternalDistributed(
                 addresses = parseRemoteDescriptionForExternalDatabase(shard_description, max_addresses, 3306);
 
                 mysqlxx::PoolWithFailover pool(
-                    configuration.database,
+                    remote_database,
                     addresses,
-                    configuration.username,
-                    configuration.password);
+                    username, password);
 
                 shard = StorageMySQL::create(
                     table_id_,
                     std::move(pool),
-                    configuration.database,
-                    configuration.table,
+                    remote_database,
+                    remote_table,
                     /* replace_query = */ false,
                     /* on_duplicate_clause = */ "",
                     columns_,
@@ -88,16 +90,15 @@ StorageExternalDistributed::StorageExternalDistributed(
             case ExternalStorageEngine::PostgreSQL:
             {
                 addresses = parseRemoteDescriptionForExternalDatabase(shard_description, max_addresses, 5432);
-                StoragePostgreSQLConfiguration postgres_conf;
-                postgres_conf.set(configuration);
-                postgres_conf.addresses = addresses;
 
                 auto pool = std::make_shared<postgres::PoolWithFailover>(
-                    postgres_conf,
+                    remote_database,
+                    addresses,
+                    username, password,
                     context->getSettingsRef().postgresql_connection_pool_size,
                     context->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
-                shard = StoragePostgreSQL::create(table_id_, std::move(pool), configuration.table, columns_, constraints_, String{});
+                shard = StoragePostgreSQL::create(table_id_, std::move(pool), remote_table, columns_, constraints_, String{});
                 break;
             }
 #endif
@@ -112,10 +113,13 @@ StorageExternalDistributed::StorageExternalDistributed(
     }
 
 #else
-    (void)configuration;
-    (void)cluster_description;
-    (void)addresses;
     (void)table_engine;
+    (void)remote_database;
+    (void)remote_table;
+    (void)username;
+    (void)password;
+    (void)shards_descriptions;
+    (void)addresses;
 #endif
 }
 
@@ -159,8 +163,9 @@ StorageExternalDistributed::StorageExternalDistributed(
         }
         else
         {
+            Poco::URI uri(url_description);
             shard = std::make_shared<StorageURL>(
-                url_description, table_id, format_name, format_settings, columns, constraints, String{}, context, compression_method);
+                uri, table_id, format_name, format_settings, columns, constraints, String{}, context, compression_method);
 
             LOG_DEBUG(&Poco::Logger::get("StorageURLDistributed"), "Adding URL: {}", url_description);
         }
@@ -202,113 +207,64 @@ void registerStorageExternalDistributed(StorageFactory & factory)
     factory.registerStorage("ExternalDistributed", [](const StorageFactory::Arguments & args)
     {
         ASTs & engine_args = args.engine_args;
-        if (engine_args.size() < 2)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine ExternalDistributed must have at least 2 arguments: engine_name, named_collection and/or description");
 
-        auto engine_name = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        if (engine_args.size() != 6)
+            throw Exception(
+                "Storage MySQLiDistributed requires 5 parameters: ExternalDistributed('engine_name', 'cluster_description', database, table, 'user', 'password').",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        for (auto & engine_arg : engine_args)
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
+
+        const String & engine_name = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        const String & addresses_description = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+
         StorageExternalDistributed::ExternalStorageEngine table_engine;
         if (engine_name == "URL")
-            table_engine = StorageExternalDistributed::ExternalStorageEngine::URL;
-        else if (engine_name == "MySQL")
-            table_engine = StorageExternalDistributed::ExternalStorageEngine::MySQL;
-        else if (engine_name == "PostgreSQL")
-            table_engine = StorageExternalDistributed::ExternalStorageEngine::PostgreSQL;
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "External storage engine {} is not supported for StorageExternalDistributed. Supported engines are: MySQL, PostgreSQL, URL",
-                engine_name);
-
-        ASTs inner_engine_args(engine_args.begin() + 1, engine_args.end());
-        String cluster_description;
-
-        if (engine_name == "URL")
         {
-            URLBasedDataSourceConfiguration configuration;
-            if (auto named_collection = getURLBasedDataSourceConfiguration(inner_engine_args, args.getLocalContext()))
-            {
-                auto [common_configuration, storage_specific_args] = named_collection.value();
-                configuration.set(common_configuration);
+            table_engine = StorageExternalDistributed::ExternalStorageEngine::URL;
 
-                for (const auto & [name, value] : storage_specific_args)
-                {
-                    if (name == "description")
-                        cluster_description = value->as<ASTLiteral>()->value.safeGet<String>();
-                    else
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                        "Unknown key-value argument {} for table engine URL", name);
-                }
-
-                if (cluster_description.empty())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Engine ExternalDistribued must have `description` key-value argument or named collection parameter");
-            }
-            else
-            {
-                for (auto & engine_arg : engine_args)
-                    engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
-
-                cluster_description = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
-                configuration.format = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
-                configuration.compression_method = "auto";
-                if (engine_args.size() == 4)
-                    configuration.compression_method = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
-            }
-
+            const String & format_name = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+            String compression_method = "auto";
+            if (engine_args.size() == 4)
+                compression_method = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
 
             auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
 
             return StorageExternalDistributed::create(
-                cluster_description,
+                addresses_description,
                 args.table_id,
-                configuration.format,
+                format_name,
                 format_settings,
-                configuration.compression_method,
+                compression_method,
                 args.columns,
                 args.constraints,
                 args.getContext());
         }
         else
         {
-            ExternalDataSourceConfiguration configuration;
-            if (auto named_collection = getExternalDataSourceConfiguration(inner_engine_args, args.getLocalContext()))
-            {
-                auto [common_configuration, storage_specific_args] = named_collection.value();
-                configuration.set(common_configuration);
-
-                for (const auto & [name, value] : storage_specific_args)
-                {
-                    if (name == "description")
-                        cluster_description = value->as<ASTLiteral>()->value.safeGet<String>();
-                    else
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                        "Unknown key-value argument {} for table function URL", name);
-                }
-
-                if (cluster_description.empty())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Engine ExternalDistribued must have `description` key-value argument or named collection parameter");
-            }
+            if (engine_name == "MySQL")
+                table_engine = StorageExternalDistributed::ExternalStorageEngine::MySQL;
+            else if (engine_name == "PostgreSQL")
+                table_engine = StorageExternalDistributed::ExternalStorageEngine::PostgreSQL;
             else
-            {
-                if (engine_args.size() != 6)
-                    throw Exception(
-                        "Storage ExternalDistributed requires 5 parameters: "
-                        "ExternalDistributed('engine_name', 'cluster_description', 'database', 'table', 'user', 'password').",
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "External storage engine {} is not supported for StorageExternalDistributed. Supported engines are: MySQL, PostgreSQL, URL",
+                    engine_name);
 
-                cluster_description = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
-                configuration.database = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
-                configuration.table = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
-                configuration.username = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
-                configuration.password = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
-            }
-
+            const String & remote_database = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+            const String & remote_table = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
+            const String & username = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
+            const String & password = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
 
             return StorageExternalDistributed::create(
                 args.table_id,
                 table_engine,
-                cluster_description,
-                configuration,
+                addresses_description,
+                remote_database,
+                remote_table,
+                username,
+                password,
                 args.columns,
                 args.constraints,
                 args.comment,

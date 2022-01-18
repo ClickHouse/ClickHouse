@@ -2,7 +2,7 @@
 
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <base/types.h>
+#include <common/types.h>
 
 
 namespace Poco { class Logger; }
@@ -44,12 +44,8 @@ public:
     void writeExistingPart(MergeTreeData::MutableDataPartPtr & part);
 
     /// For proper deduplication in MaterializedViews
-    bool lastBlockIsDuplicate() const override
+    bool lastBlockIsDuplicate() const
     {
-        /// If MV is responsible for deduplication, block is not considered duplicating.
-        if (context->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views)
-            return false;
-
         return last_block_is_duplicate;
     }
 

@@ -8,9 +8,8 @@
 
 #include <IO/WriteHelpers.h>
 #include <Processors/Sources/SourceWithProgress.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Pipe.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
 
 
 namespace DB
@@ -66,7 +65,15 @@ protected:
 
         /// Add only required columns to `res`.
         for (const auto & elem : column_names_and_types)
-            columns.emplace_back(getColumnFromBlock(src, elem));
+        {
+            auto current_column = src.getByName(elem.getNameInStorage()).column;
+            current_column = current_column->decompress();
+
+            if (elem.isSubcolumn())
+                columns.emplace_back(elem.getTypeInStorage()->getSubcolumn(elem.getSubcolumnName(), *current_column));
+            else
+                columns.emplace_back(std::move(current_column));
+        }
 
         return Chunk(std::move(columns), src.rows());
     }
@@ -108,7 +115,7 @@ public:
 
     void consume(Chunk chunk) override
     {
-        auto block = getHeader().cloneWithColumns(chunk.getColumns());
+        auto block = getPort().getHeader().cloneWithColumns(chunk.getColumns());
         metadata_snapshot->check(block, true);
 
         if (storage.compress)
@@ -264,12 +271,11 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
     new_context->setSetting("max_threads", 1);
 
     auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, new_context, true);
-    auto pipeline = interpreter->execute();
-    PullingPipelineExecutor executor(pipeline);
+    auto in = interpreter->execute();
 
+    in->readPrefix();
     Blocks out;
-    Block block;
-    while (executor.pull(block))
+    while (Block block = in->read())
     {
         if (compress)
             for (auto & elem : block)
@@ -277,6 +283,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
 
         out.push_back(block);
     }
+    in->readSuffix();
 
     std::unique_ptr<Blocks> new_data;
 

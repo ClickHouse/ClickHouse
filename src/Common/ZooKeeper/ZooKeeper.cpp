@@ -7,8 +7,8 @@
 #include <filesystem>
 #include <pcg-random/pcg_random.hpp>
 
-#include <base/logger_useful.h>
-#include <base/find_symbols.h>
+#include <common/logger_useful.h>
+#include <common/find_symbols.h>
 #include <Common/randomSeed.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
@@ -269,7 +269,7 @@ Coordination::Error ZooKeeper::getChildrenImpl(const std::string & path, Strings
 
     if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
     {
-        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::List), path));
+        impl->finalize();
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
     else
@@ -330,7 +330,7 @@ Coordination::Error ZooKeeper::createImpl(const std::string & path, const std::s
 
     if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
     {
-        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::Create), path));
+        impl->finalize();
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
     else
@@ -400,7 +400,7 @@ Coordination::Error ZooKeeper::removeImpl(const std::string & path, int32_t vers
 
     if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
     {
-        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::Remove), path));
+        impl->finalize();
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
     else
@@ -432,7 +432,7 @@ Coordination::Error ZooKeeper::existsImpl(const std::string & path, Coordination
 
     if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
     {
-        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::Exists), path));
+        impl->finalize();
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
     else
@@ -466,7 +466,7 @@ Coordination::Error ZooKeeper::getImpl(const std::string & path, std::string & r
 
     if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
     {
-        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::Get), path));
+        impl->finalize();
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
     else
@@ -539,7 +539,7 @@ Coordination::Error ZooKeeper::setImpl(const std::string & path, const std::stri
 
     if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
     {
-        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::Set), path));
+        impl->finalize();
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
     else
@@ -591,7 +591,7 @@ Coordination::Error ZooKeeper::multiImpl(const Coordination::Requests & requests
 
     if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
     {
-        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::Multi), requests[0]->getPath()));
+        impl->finalize();
         return Coordination::Error::ZOPERATIONTIMEOUT;
     }
     else
@@ -730,10 +730,7 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
         }
     };
 
-    /// do-while control structure to allow using this function in non-blocking
-    /// fashion with a wait condition which returns false by the time this
-    /// method is called.
-    do
+    while (!condition || !condition())
     {
         /// Use getData insteand of exists to avoid watch leak.
         impl->get(path, callback, watch);
@@ -749,8 +746,7 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
 
         if (state->event_type == Coordination::DELETED)
             return true;
-    } while (!condition || !condition());
-
+    }
     return false;
 }
 
@@ -1042,9 +1038,9 @@ Coordination::Error ZooKeeper::tryMultiNoThrow(const Coordination::Requests & re
     }
 }
 
-void ZooKeeper::finalize(const String & reason)
+void ZooKeeper::finalize()
 {
-    impl->finalize(reason);
+    impl->finalize();
 }
 
 void ZooKeeper::setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_)

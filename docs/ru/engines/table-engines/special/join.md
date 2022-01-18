@@ -5,7 +5,7 @@ toc_title: Join
 
 # Join {#join}
 
-Подготовленная структура данных для использования в операциях [JOIN](../../../sql-reference/statements/select/join.md#select-join).
+Подготовленная структура данных для использования в операциях [JOIN](../../../engines/table-engines/special/join.md#select-join).
 
 ## Создание таблицы {#creating-a-table}
 
@@ -21,8 +21,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **Параметры движка**
 
--   `join_strictness` – [строгость JOIN](../../../sql-reference/statements/select/join.md#select-join-types).
--   `join_type` – [тип JOIN](../../../sql-reference/statements/select/join.md#select-join-types).
+-   `join_strictness` – [строгость JOIN](../../../engines/table-engines/special/join.md#select-join-types).
+-   `join_type` – [тип JOIN](../../../engines/table-engines/special/join.md#select-join-types).
 -   `k1[, k2, ...]` – ключевые столбцы секции `USING` с которыми выполняется операция `JOIN`.
 
 Вводите параметры `join_strictness` и `join_type` без кавычек, например, `Join(ANY, LEFT, col1)`. Они должны быть такими же как и в той операции `JOIN`, в которой таблица будет использоваться. Если параметры не совпадают, ClickHouse не генерирует исключение и может возвращать неверные данные.
@@ -42,7 +42,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 Основные применения `Join` таблиц:
 
 -   Использование в правой части секции `JOIN`.
--   Извлечение данных из таблицы таким же образом как из словаря с помощью функции [joinGet](../../../sql-reference/functions/other-functions.md#joinget).
+-   Извлечение данных из таблицы таким же образом как из словаря с помощью функции [joinGet](../../../engines/table-engines/special/join.md#joinget).
 
 ### Удаление данных {#deleting-data}
 

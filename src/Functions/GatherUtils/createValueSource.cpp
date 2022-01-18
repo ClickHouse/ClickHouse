@@ -1,7 +1,7 @@
 #include "GatherUtils.h"
 #include "Sinks.h"
 #include "Sources.h"
-#include <base/TypeLists.h>
+#include <Core/TypeListNumber.h>
 
 namespace DB::GatherUtils
 {
@@ -18,7 +18,7 @@ struct ValueSourceCreator<Type, Types...>
 {
     static std::unique_ptr<IValueSource> create(const IColumn & col, const NullMap * null_map, bool is_const, size_t total_rows)
     {
-        using ColVecType = ColumnVectorOrDecimal<Type>;
+        using ColVecType = std::conditional_t<IsDecimalNumber<Type>, ColumnDecimal<Type>, ColumnVector<Type>>;
 
         if (auto column_vector = typeid_cast<const ColVecType *>(&col))
         {
@@ -58,7 +58,7 @@ struct ValueSourceCreator<>
 
 std::unique_ptr<IValueSource> createValueSource(const IColumn & col, bool is_const, size_t total_rows)
 {
-    using Creator = TypeListChangeRoot<ValueSourceCreator, TypeListNumberWithUUID>;
+    using Creator = typename ApplyTypeListForClass<ValueSourceCreator, TypeListNumbersAndUUID>::Type;
     if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(&col))
     {
         return Creator::create(column_nullable->getNestedColumn(), &column_nullable->getNullMapData(), is_const, total_rows);

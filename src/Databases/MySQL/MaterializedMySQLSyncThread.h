@@ -1,12 +1,14 @@
 #pragma once
 
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 #if USE_MYSQL
 
 #    include <mutex>
 #    include <Core/MySQL/MySQLClient.h>
-#    include <QueryPipeline/BlockIO.h>
+#    include <DataStreams/BlockIO.h>
 #    include <DataTypes/DataTypeString.h>
 #    include <DataTypes/DataTypesNumber.h>
 #    include <Databases/DatabaseOrdinary.h>
@@ -52,6 +54,8 @@ public:
     void startSynchronization();
 
     void assertMySQLAvailable();
+
+    static bool isMySQLSyncThread();
 
 private:
     Poco::Logger * log;

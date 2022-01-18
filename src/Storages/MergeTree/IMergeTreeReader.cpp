@@ -42,10 +42,8 @@ IMergeTreeReader::IMergeTreeReader(
     , all_mark_ranges(all_mark_ranges_)
     , alter_conversions(storage.getAlterConversionsForPart(data_part))
 {
-    if (isWidePart(data_part))
+    if (settings.convert_nested_to_subcolumns)
     {
-        /// For wide parts convert plain arrays of Nested to subcolumns
-        /// to allow to use shared offset column from cache.
         columns = Nested::convertToSubcolumns(columns);
         part_columns = Nested::collect(part_columns);
     }
@@ -297,7 +295,7 @@ IMergeTreeReader::ColumnPosition IMergeTreeReader::findColumnForOffsets(const St
     {
         if (typeid_cast<const DataTypeArray *>(part_column.type.get()))
         {
-            auto position = data_part->getColumnPosition(part_column.getNameInStorage());
+            auto position = data_part->getColumnPosition(part_column.name);
             if (position && Nested::extractTableName(part_column.name) == table_name)
                 return position;
         }

@@ -76,7 +76,7 @@ namespace ErrorCodes
 
         bool hasUpdateField() const override { return false; }
 
-        DictionarySourcePtr clone() const override { return std::make_shared<RedisDictionarySource>(*this); }
+        DictionarySourcePtr clone() const override { return std::make_unique<RedisDictionarySource>(*this); }
 
         std::string toString() const override;
 

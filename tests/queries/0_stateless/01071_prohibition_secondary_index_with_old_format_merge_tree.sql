@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 CREATE TABLE old_syntax_01071_test (date Date, id UInt8) ENGINE = MergeTree(date, id, 8192);
 ALTER TABLE old_syntax_01071_test ADD INDEX  id_minmax id TYPE minmax GRANULARITY 1; -- { serverError 36 }
 CREATE TABLE new_syntax_01071_test (date Date, id UInt8) ENGINE = MergeTree() ORDER BY id;

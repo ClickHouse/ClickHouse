@@ -635,4 +635,4 @@ SELECT fromUnixTimestamp64Milli(i64, 'UTC')
 └──────────────────────────────────────┘
 ```
 
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->

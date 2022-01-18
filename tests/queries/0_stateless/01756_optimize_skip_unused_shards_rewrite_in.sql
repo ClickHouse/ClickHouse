@@ -1,5 +1,3 @@
--- Tags: shard
-
 -- NOTE: this test cannot use 'current_database = currentDatabase()',
 -- because it does not propagated via remote queries,
 -- hence it uses 'with (select currentDatabase()) as X'
@@ -35,8 +33,8 @@ select query from system.query_log where
     event_date = today() and
     event_time > now() - interval 1 hour and
     not is_initial_query and
-    query not like '%system%query_log%' and
-    query like concat('WITH%', currentDatabase(), '%AS `id_no` %') and
+    query not like '%system.query_log%' and
+    query like concat('WITH%', currentDatabase(), '%AS id_no %') and
     type = 'QueryFinish'
 order by query;
 
@@ -54,8 +52,8 @@ select query from system.query_log where
     event_date = today() and
     event_time > now() - interval 1 hour and
     not is_initial_query and
-    query not like '%system%query_log%' and
-    query like concat('WITH%', currentDatabase(), '%AS `id_02` %') and
+    query not like '%system.query_log%' and
+    query like concat('WITH%', currentDatabase(), '%AS id_02 %') and
     type = 'QueryFinish'
 order by query;
 
@@ -66,8 +64,8 @@ select query from system.query_log where
     event_date = today() and
     event_time > now() - interval 1 hour and
     not is_initial_query and
-    query not like '%system%query_log%' and
-    query like concat('WITH%', currentDatabase(), '%AS `id_2` %') and
+    query not like '%system.query_log%' and
+    query like concat('WITH%', currentDatabase(), '%AS id_2 %') and
     type = 'QueryFinish'
 order by query;
 
@@ -78,15 +76,14 @@ select query from system.query_log where
     event_date = today() and
     event_time > now() - interval 1 hour and
     not is_initial_query and
-    query not like '%system%query_log%' and
-    query like concat('WITH%', currentDatabase(), '%AS `id_0` %') and
+    query not like '%system.query_log%' and
+    query like concat('WITH%', currentDatabase(), '%AS id_0 %') and
     type = 'QueryFinish'
 order by query;
 
 -- not tuple
 select * from dist_01756 where dummy in (0);
 select * from dist_01756 where dummy in ('0');
-
 
 --
 -- errors

@@ -282,7 +282,7 @@ void StorageSystemProjectionParts::processNextStorage(
         /// _state column should be the latest.
         /// Do not use part->getState*, it can be changed from different thread
         if (has_state_column)
-            columns[res_index++]->insert(IMergeTreeDataPart::stateString(part_state));
+            columns[res_index++]->insert(IMergeTreeDataPart::stateToString(part_state));
     }
 }
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest
 
 #
 # Load all possible .parquet files found in submodules.

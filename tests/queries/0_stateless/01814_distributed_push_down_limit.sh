@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: distributed
-
 # shellcheck disable=SC2206
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

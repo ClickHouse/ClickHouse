@@ -1,7 +1,3 @@
--- Tags: long, zookeeper, no-replicated-database, no-parallel
--- Tag no-replicated-database: Old syntax is not allowed
--- Tag no-parallel: leftovers
-
 SET optimize_on_insert = 0;
 
 DROP TABLE IF EXISTS merge_tree;

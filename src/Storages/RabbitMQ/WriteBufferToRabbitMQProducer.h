@@ -6,7 +6,8 @@
 #include <mutex>
 #include <atomic>
 #include <amqpcpp.h>
-#include <Storages/RabbitMQ/RabbitMQConnection.h>
+#include <Storages/RabbitMQ/RabbitMQHandler.h>
+#include <Storages/RabbitMQ/UVLoop.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Names.h>
@@ -18,14 +19,16 @@ class WriteBufferToRabbitMQProducer : public WriteBuffer
 {
 public:
     WriteBufferToRabbitMQProducer(
-            const RabbitMQConfiguration & configuration_,
+            std::pair<String, UInt16> & parsed_address_,
             ContextPtr global_context,
+            const std::pair<String, String> & login_password_,
+            const String & vhost_,
             const Names & routing_keys_,
             const String & exchange_name_,
             const AMQP::ExchangeType exchange_type_,
-            const size_t channel_id_base_,
+            const size_t channel_id_,
             const bool persistent_,
-            std::atomic<bool> & shutdown_called_,
+            std::atomic<bool> & wait_confirm_,
             Poco::Logger * log_,
             std::optional<char> delimiter,
             size_t rows_per_message,
@@ -45,12 +48,14 @@ private:
 
     void iterateEventLoop();
     void writingFunc();
+    bool setupConnection(bool reconnecting);
     void setupChannel();
     void removeRecord(UInt64 received_delivery_tag, bool multiple, bool republish);
     void publish(ConcurrentBoundedQueue<std::pair<UInt64, String>> & message, bool republishing);
 
-    RabbitMQConnection connection;
-
+    std::pair<String, UInt16> parsed_address;
+    const std::pair<String, String> login_password;
+    const String vhost;
     const Names routing_keys;
     const String exchange_name;
     AMQP::ExchangeType exchange_type;
@@ -60,11 +65,14 @@ private:
     /* false: when shutdown is called; needed because table might be dropped before all acks are received
      * true: in all other cases
      */
-    std::atomic<bool> & shutdown_called;
+    std::atomic<bool> & wait_confirm;
 
     AMQP::Table key_arguments;
     BackgroundSchedulePool::TaskHolder writing_task;
 
+    UVLoop loop;
+    std::unique_ptr<RabbitMQHandler> event_handler;
+    std::unique_ptr<AMQP::TcpConnection> connection;
     std::unique_ptr<AMQP::TcpChannel> producer_channel;
     bool producer_ready = false;
 

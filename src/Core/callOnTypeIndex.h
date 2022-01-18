@@ -164,7 +164,7 @@ class DataTypeDateTime;
 class DataTypeDateTime64;
 template <typename T> class DataTypeEnum;
 template <typename T> class DataTypeNumber;
-template <is_decimal T> class DataTypeDecimal;
+template <typename T> class DataTypeDecimal;
 
 
 template <typename T, typename F, typename... ExtraArgs>

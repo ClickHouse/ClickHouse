@@ -65,9 +65,9 @@ void LimitsCheckingTransform::checkQuota(Chunk & chunk)
         {
             UInt64 total_elapsed = info.total_stopwatch.elapsedNanoseconds();
             quota->used(
-                {QuotaType::RESULT_ROWS, chunk.getNumRows()},
-                {QuotaType::RESULT_BYTES, chunk.bytes()},
-                {QuotaType::EXECUTION_TIME, total_elapsed - prev_elapsed});
+                {Quota::RESULT_ROWS, chunk.getNumRows()},
+                {Quota::RESULT_BYTES, chunk.bytes()},
+                {Quota::EXECUTION_TIME, total_elapsed - prev_elapsed});
             prev_elapsed = total_elapsed;
             break;
         }

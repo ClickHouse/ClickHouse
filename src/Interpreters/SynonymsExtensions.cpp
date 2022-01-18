@@ -1,4 +1,6 @@
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 #if USE_NLP
 
@@ -9,7 +11,7 @@
 #include <list>
 
 #include <boost/algorithm/string.hpp>
-#include <wnb/core/wordnet.hh>
+#include <wnb/core/wordnet.hh> // Y_IGNORE
 
 namespace DB
 {

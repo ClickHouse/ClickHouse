@@ -6,10 +6,8 @@ import csv
 import sys
 
 from github import Github
-
-from env_helper import RUNNER_TEMP, GITHUB_WORKSPACE
 from s3_helper import S3Helper
-from pr_info import PRInfo
+from pr_info import PRInfo, get_event
 from get_robot_token import get_best_robot_token
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
@@ -59,10 +57,10 @@ if __name__ == "__main__":
 
     stopwatch = Stopwatch()
 
-    repo_path = GITHUB_WORKSPACE
-    temp_path = os.path.join(RUNNER_TEMP, 'style_check')
+    repo_path = os.path.join(os.getenv("GITHUB_WORKSPACE", os.path.abspath("../../")))
+    temp_path = os.path.join(os.getenv("RUNNER_TEMP", os.path.abspath("./temp")), 'style_check')
 
-    pr_info = PRInfo()
+    pr_info = PRInfo(get_event())
 
     gh = Github(get_best_robot_token())
 

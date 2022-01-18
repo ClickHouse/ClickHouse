@@ -6,10 +6,10 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <Core/Defines.h>
 
-#include <base/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 
 namespace DB

@@ -4,6 +4,7 @@
 #include <Core/Field.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST.h>
+#include <Parsers/IParser.h>
 
 #include <memory>
 #include <optional>
@@ -52,4 +53,6 @@ ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, ContextPtr
   */
 std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & node, const ExpressionActionsPtr & target_expr, size_t & limit);
 
+// Evaluate database name or regexp for StorageMerge and TableFunction merge
+std::tuple<bool, ASTPtr> evaluateDatabaseNameForMergeEngine(const ASTPtr & node, ContextPtr context);
 }

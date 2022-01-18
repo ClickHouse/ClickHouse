@@ -1,13 +1,16 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
 
+#include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/readDecimalText.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/IAST.h>
 
 #include <type_traits>
 
@@ -22,14 +25,14 @@ namespace ErrorCodes
 }
 
 
-template <is_decimal T>
+template <typename T>
 std::string DataTypeDecimal<T>::doGetName() const
 {
     return fmt::format("Decimal({}, {})", this->precision, this->scale);
 }
 
 
-template <is_decimal T>
+template <typename T>
 bool DataTypeDecimal<T>::equals(const IDataType & rhs) const
 {
     if (auto * ptype = typeid_cast<const DataTypeDecimal<T> *>(&rhs))
@@ -37,14 +40,14 @@ bool DataTypeDecimal<T>::equals(const IDataType & rhs) const
     return false;
 }
 
-template <is_decimal T>
+template <typename T>
 DataTypePtr DataTypeDecimal<T>::promoteNumericType() const
 {
     using PromotedType = DataTypeDecimal<Decimal128>;
     return std::make_shared<PromotedType>(PromotedType::maxPrecision(), this->scale);
 }
 
-template <is_decimal T>
+template <typename T>
 T DataTypeDecimal<T>::parseFromString(const String & str) const
 {
     ReadBufferFromMemory buf(str.data(), str.size());
@@ -58,7 +61,7 @@ T DataTypeDecimal<T>::parseFromString(const String & str) const
     return x;
 }
 
-template <is_decimal T>
+template <typename T>
 SerializationPtr DataTypeDecimal<T>::doGetDefaultSerialization() const
 {
     return std::make_shared<SerializationDecimal<T>>(this->precision, this->scale);

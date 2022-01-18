@@ -1,23 +1,16 @@
-#include <string_view>
-
 #include <Parsers/ExpressionListParsers.h>
 
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/ParserUnionQueryElement.h>
 #include <Parsers/parseIntervalKind.h>
+#include <Parsers/ParserUnionQueryElement.h>
 #include <Common/StringUtils/StringUtils.h>
-
-using namespace std::literals;
 
 
 namespace DB
@@ -145,28 +138,28 @@ bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             // SELECT ... UNION ALL SELECT ...
             if (s_all_parser.check(pos, expected))
             {
-                union_modes.push_back(SelectUnionMode::ALL);
+                union_modes.push_back(ASTSelectWithUnionQuery::Mode::ALL);
             }
             // SELECT ... UNION DISTINCT SELECT ...
             else if (s_distinct_parser.check(pos, expected))
             {
-                union_modes.push_back(SelectUnionMode::DISTINCT);
+                union_modes.push_back(ASTSelectWithUnionQuery::Mode::DISTINCT);
             }
             // SELECT ... UNION SELECT ...
             else
             {
-                union_modes.push_back(SelectUnionMode::Unspecified);
+                union_modes.push_back(ASTSelectWithUnionQuery::Mode::Unspecified);
             }
             return true;
         }
         else if (s_except_parser.check(pos, expected))
         {
-            union_modes.push_back(SelectUnionMode::EXCEPT);
+            union_modes.push_back(ASTSelectWithUnionQuery::Mode::EXCEPT);
             return true;
         }
         else if (s_intersect_parser.check(pos, expected))
         {
-            union_modes.push_back(SelectUnionMode::INTERSECT);
+            union_modes.push_back(ASTSelectWithUnionQuery::Mode::INTERSECT);
             return true;
         }
         return false;
@@ -352,7 +345,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
             /** special exception for the access operator to the element of the array `x[y]`, which
               * contains the infix part '[' and the suffix ''] '(specified as' [')
               */
-            if (it[0] == "["sv)
+            if (0 == strcmp(it[0], "["))
             {
                 if (pos->type != TokenType::ClosingSquareBracket)
                     return false;
@@ -402,7 +395,7 @@ bool ParserVariableArityOperatorList::parseImpl(Pos & pos, ASTPtr & node, Expect
 bool ParserBetweenExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// For the expression (subject [NOT] BETWEEN left AND right)
-    /// create an AST the same as for (subject >= left AND subject <= right).
+    ///  create an AST the same as for (subject> = left AND subject <= right).
 
     ParserKeyword s_not("NOT");
     ParserKeyword s_between("BETWEEN");
@@ -749,61 +742,13 @@ bool ParserNotEmptyExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected 
     return nested_parser.parse(pos, node, expected) && !node->children.empty();
 }
 
+
 bool ParserOrderByExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserList(std::make_unique<ParserOrderByElement>(), std::make_unique<ParserToken>(TokenType::Comma), false)
         .parse(pos, node, expected);
 }
 
-bool ParserGroupingSetsExpressionListElements::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    auto command_list = std::make_shared<ASTExpressionList>();
-    node = command_list;
-
-    ParserToken s_comma(TokenType::Comma);
-    ParserToken s_open(TokenType::OpeningRoundBracket);
-    ParserToken s_close(TokenType::ClosingRoundBracket);
-    ParserExpressionWithOptionalAlias p_expression(false);
-    ParserList p_command(std::make_unique<ParserExpressionWithOptionalAlias>(false),
-                          std::make_unique<ParserToken>(TokenType::Comma), true);
-
-    do
-    {
-        Pos begin = pos;
-        ASTPtr command;
-        if (!s_open.ignore(pos, expected))
-        {
-            pos = begin;
-            if (!p_expression.parse(pos, command, expected))
-            {
-                return false;
-            }
-            auto list = std::make_shared<ASTExpressionList>(',');
-            list->children.push_back(command);
-            command = std::move(list);
-        }
-        else
-        {
-            if (!p_command.parse(pos, command, expected))
-                return false;
-
-            if (!s_close.ignore(pos, expected))
-                break;
-        }
-
-        command_list->children.push_back(command);
-    }
-    while (s_comma.ignore(pos, expected));
-
-    return true;
-}
-
-bool ParserGroupingSetsExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    ParserGroupingSetsExpressionListElements grouping_sets_elements;
-    return grouping_sets_elements.parse(pos, node, expected);
-
-}
 
 bool ParserTTLExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {

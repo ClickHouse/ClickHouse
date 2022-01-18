@@ -1,7 +1,8 @@
 #include "LibraryDictionarySource.h"
 
+#include <DataStreams/OneBlockInputStream.h>
 #include <Interpreters/Context.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Common/filesystemHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -129,7 +130,7 @@ Pipe LibraryDictionarySource::loadKeys(const Columns & key_columns, const std::v
 
 DictionarySourcePtr LibraryDictionarySource::clone() const
 {
-    return std::make_shared<LibraryDictionarySource>(*this);
+    return std::make_unique<LibraryDictionarySource>(*this);
 }
 
 

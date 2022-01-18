@@ -1,4 +1,6 @@
-#include "config_functions.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
 
 namespace DB
 {
@@ -21,13 +23,12 @@ void registerFunctionGeohashEncode(FunctionFactory & factory);
 void registerFunctionGeohashDecode(FunctionFactory & factory);
 void registerFunctionGeohashesInBox(FunctionFactory & factory);
 void registerFunctionWkt(FunctionFactory & factory);
-void registerFunctionReadWKT(FunctionFactory & factory);
+void registerFunctionReadWkt(FunctionFactory & factory);
 void registerFunctionSvg(FunctionFactory & factory);
 
 #if USE_H3
 void registerFunctionGeoToH3(FunctionFactory &);
 void registerFunctionH3ToGeo(FunctionFactory &);
-void registerFunctionH3ToGeoBoundary(FunctionFactory &);
 void registerFunctionH3EdgeAngle(FunctionFactory &);
 void registerFunctionH3EdgeLengthM(FunctionFactory &);
 void registerFunctionH3GetResolution(FunctionFactory &);
@@ -40,9 +41,6 @@ void registerFunctionH3IndexesAreNeighbors(FunctionFactory &);
 void registerFunctionStringToH3(FunctionFactory &);
 void registerFunctionH3ToString(FunctionFactory &);
 void registerFunctionH3HexAreaM2(FunctionFactory &);
-void registerFunctionH3IsResClassIII(FunctionFactory &);
-void registerFunctionH3IsPentagon(FunctionFactory &);
-void registerFunctionH3GetFaces(FunctionFactory &);
 #endif
 
 #if USE_S2_GEOMETRY
@@ -77,13 +75,12 @@ void registerFunctionsGeo(FunctionFactory & factory)
     registerFunctionGeohashDecode(factory);
     registerFunctionGeohashesInBox(factory);
     registerFunctionWkt(factory);
-    registerFunctionReadWKT(factory);
+    registerFunctionReadWkt(factory);
     registerFunctionSvg(factory);
 
 #if USE_H3
     registerFunctionGeoToH3(factory);
     registerFunctionH3ToGeo(factory);
-    registerFunctionH3ToGeoBoundary(factory);
     registerFunctionH3EdgeAngle(factory);
     registerFunctionH3EdgeLengthM(factory);
     registerFunctionH3GetResolution(factory);
@@ -96,9 +93,6 @@ void registerFunctionsGeo(FunctionFactory & factory)
     registerFunctionStringToH3(factory);
     registerFunctionH3ToString(factory);
     registerFunctionH3HexAreaM2(factory);
-    registerFunctionH3IsResClassIII(factory);
-    registerFunctionH3IsPentagon(factory);
-    registerFunctionH3GetFaces(factory);
 #endif
 
 #if USE_S2_GEOMETRY

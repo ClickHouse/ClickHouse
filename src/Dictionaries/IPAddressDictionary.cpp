@@ -10,9 +10,9 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <Poco/ByteOrder.h>
 #include <Common/formatIPv6.h>
-#include <base/itoa.h>
-#include <base/map.h>
-#include <base/range.h>
+#include <common/itoa.h>
+#include <common/map.h>
+#include <common/range.h>
 #include <Dictionaries/DictionarySource.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -352,7 +352,8 @@ void IPAddressDictionary::createAttributes()
 
 void IPAddressDictionary::loadData()
 {
-    QueryPipeline pipeline(source_ptr->loadAll());
+    QueryPipeline pipeline;
+    pipeline.init(source_ptr->loadAll());
 
     std::vector<IPRecord> ip_records;
 
@@ -807,14 +808,13 @@ Columns IPAddressDictionary::getKeyColumns() const
         key_ip_column->insertData(data, IPV6_BINARY_LENGTH);
         key_mask_column->insertValue(mask_column[row]);
     }
-
     return {std::move(key_ip_column), std::move(key_mask_column)};
 }
 
 template <typename KeyColumnType, bool IsIPv4>
 static auto keyViewGetter()
 {
-    return [](const Columns & columns, const std::vector<DictionaryAttribute> & dictonary_key_attributes)
+    return [](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
     {
         auto column = ColumnString::create();
         const auto & key_ip_column = assert_cast<const KeyColumnType &>(*columns.front());
@@ -831,52 +831,41 @@ static auto keyViewGetter()
             column->insertData(buffer, str_len);
         }
         return ColumnsWithTypeAndName{
-            ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), dictonary_key_attributes.front().name)};
+            ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), dict_attributes.front().name)};
     };
 }
 
-Pipe IPAddressDictionary::read(const Names & column_names, size_t max_block_size, size_t num_streams) const
+Pipe IPAddressDictionary::read(const Names & column_names, size_t max_block_size) const
 {
     const bool is_ipv4 = std::get_if<IPv4Container>(&ip_column) != nullptr;
 
-    auto key_columns = getKeyColumns();
+    auto get_keys = [is_ipv4](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
+    {
+        const auto & attr = dict_attributes.front();
+        std::shared_ptr<const IDataType> key_typ;
+        if (is_ipv4)
+            key_typ = std::make_shared<DataTypeUInt32>();
+        else
+            key_typ = std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH);
 
-    std::shared_ptr<const IDataType> key_type;
-    if (is_ipv4)
-        key_type = std::make_shared<DataTypeUInt32>();
-    else
-        key_type = std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH);
-
-    ColumnsWithTypeAndName key_columns_with_type = {
-        ColumnWithTypeAndName(key_columns.front(), key_type, ""),
-        ColumnWithTypeAndName(key_columns.back(), std::make_shared<DataTypeUInt8>(), "")
+        return ColumnsWithTypeAndName({
+            ColumnWithTypeAndName(columns.front(), key_typ, attr.name),
+            ColumnWithTypeAndName(columns.back(), std::make_shared<DataTypeUInt8>(), attr.name + ".mask")
+        });
     };
-
-    ColumnsWithTypeAndName view_columns;
 
     if (is_ipv4)
     {
         auto get_view = keyViewGetter<ColumnVector<UInt32>, true>();
-        view_columns = get_view(key_columns, *dict_struct.key);
-    }
-    else
-    {
-        auto get_view = keyViewGetter<ColumnFixedString, false>();
-        view_columns = get_view(key_columns, *dict_struct.key);
+        return Pipe(std::make_shared<DictionarySource>(
+            DictionarySourceData(shared_from_this(), getKeyColumns(), column_names, std::move(get_keys), std::move(get_view)),
+            max_block_size));
     }
 
-    std::shared_ptr<const IDictionary> dictionary = shared_from_this();
-    auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns_with_type), std::move(view_columns), max_block_size);
-
-    Pipes pipes;
-
-    for (size_t i = 0; i < num_streams; ++i)
-    {
-        auto source = std::make_shared<DictionarySource>(coordinator);
-        pipes.emplace_back(Pipe(std::move(source)));
-    }
-
-    return Pipe::unitePipes(std::move(pipes));
+    auto get_view = keyViewGetter<ColumnFixedString, false>();
+    return Pipe(std::make_shared<DictionarySource>(
+        DictionarySourceData(shared_from_this(), getKeyColumns(), column_names, std::move(get_keys), std::move(get_view)),
+        max_block_size));
 }
 
 IPAddressDictionary::RowIdxConstIter IPAddressDictionary::ipNotFound() const

@@ -65,7 +65,7 @@ It generally means that the SSH keys for connecting to GitHub are missing. These
 
 You can also clone the repository via https protocol:
 
-    git clone --recursive https://github.com/ClickHouse/ClickHouse.git
+    git clone https://github.com/ClickHouse/ClickHouse.git
 
 This, however, will not let you send your changes to the server. You can still use it temporarily and add the SSH keys later replacing the remote address of the repository with `git remote` command.
 
@@ -79,7 +79,7 @@ After successfully running this command you will be able to pull updates from th
 
 Working with submodules in git could be painful. Next commands will help to manage it:
 
-    # ! each command accepts
+    # ! each command accepts --recursive
     # Update remote URLs for submodules. Barely rare case
     git submodule sync
     # Add new submodules
@@ -92,16 +92,16 @@ Working with submodules in git could be painful. Next commands will help to mana
 The next commands would help you to reset all submodules to the initial state (!WARNING! - any changes inside will be deleted):
 
     # Synchronizes submodules' remote URL with .gitmodules
-    git submodule sync
+    git submodule sync --recursive
     # Update the registered submodules with initialize not yet initialized
-    git submodule update --init
+    git submodule update --init --recursive
     # Reset all changes done after HEAD
     git submodule foreach git reset --hard
     # Clean files from .gitignore
     git submodule foreach git clean -xfd
     # Repeat last 4 commands for all submodule
-    git submodule foreach git submodule sync
-    git submodule foreach git submodule update --init
+    git submodule foreach git submodule sync --recursive
+    git submodule foreach git submodule update --init --recursive
     git submodule foreach git submodule foreach git reset --hard
     git submodule foreach git submodule foreach git clean -xfd
 
@@ -233,15 +233,15 @@ Just in case, it is worth mentioning that CLion creates `build` path on its own,
 
 ## Writing Code {#writing-code}
 
-The description of ClickHouse architecture can be found here: https://clickhouse.com/docs/en/development/architecture/
+The description of ClickHouse architecture can be found here: https://clickhouse.tech/docs/en/development/architecture/
 
-The Code Style Guide: https://clickhouse.com/docs/en/development/style/
+The Code Style Guide: https://clickhouse.tech/docs/en/development/style/
 
-Adding third-party libraries: https://clickhouse.com/docs/en/development/contrib/#adding-third-party-libraries
+Adding third-party libraries: https://clickhouse.tech/docs/en/development/contrib/#adding-third-party-libraries
 
-Writing tests: https://clickhouse.com/docs/en/development/tests/
+Writing tests: https://clickhouse.tech/docs/en/development/tests/
 
-List of tasks: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3Ahacktoberfest
+List of tasks: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 
 ## Test Data {#test-data}
 
@@ -249,8 +249,8 @@ Developing ClickHouse often requires loading realistic datasets. It is particula
 
     sudo apt install wget xz-utils
 
-    wget https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz
-    wget https://datasets.clickhouse.com/visits/tsv/visits_v1.tsv.xz
+    wget https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz
+    wget https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz
 
     xz -v -d hits_v1.tsv.xz
     xz -v -d visits_v1.tsv.xz

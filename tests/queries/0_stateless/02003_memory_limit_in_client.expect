@@ -1,5 +1,4 @@
 #!/usr/bin/expect -f
-# Tags: no-parallel
 
 # This is a test for system.warnings. Testing in interactive mode is necessary,
 # as we want to see certain warnings from client

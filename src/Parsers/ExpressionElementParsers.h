@@ -294,14 +294,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/** Bool literal.
-  */
-class ParserBool : public IParserBase
-{
-protected:
-    const char * getName() const override { return "Bool"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
 
 /** Numeric literal.
   */
@@ -329,17 +321,6 @@ class ParserStringLiteral : public IParserBase
 {
 protected:
     const char * getName() const override { return "string literal"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-};
-
-
-/**
-  * Parse query with EXISTS expression.
-  */
-class ParserExistsExpression : public IParserBase
-{
-protected:
-    const char * getName() const override { return "exists expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

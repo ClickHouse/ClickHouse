@@ -2,7 +2,6 @@
 
 #include <DataTypes/IDataType.h>
 #include <Common/PODArray_fwd.h>
-#include <Common/Exception.h>
 
 #define MAX_FIXEDSTRING_SIZE 0xFFFFFF
 

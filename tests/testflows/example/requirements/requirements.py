@@ -239,10 +239,10 @@ SELECT 1
 
 ## References
 
-* **ClickHouse:** https://clickhouse.com
+* **ClickHouse:** https://clickhouse.tech
 
 [SRS]: #SRS
 [Some term that you will use]: #Sometermthatyouwilluse
-[ClickHouse]: https://clickhouse.com
+[ClickHouse]: https://clickhouse.tech
 [Git]: https://git-scm.com/
 ''')

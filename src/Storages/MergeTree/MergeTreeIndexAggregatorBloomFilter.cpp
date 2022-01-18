@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexAggregatorBloomFilter.h>
 
-#include <base/bit_cast.h>
+#include <common/bit_cast.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnFixedString.h>

@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Interpreters/Context.h>
-#include <base/EnumReflection.h>
 
 
 namespace DB
@@ -69,7 +68,7 @@ Pipe StorageSystemStoragePolicies::read(
             for (const auto & disk_ptr : volumes[i]->getDisks())
                 disks.push_back(disk_ptr->getName());
             col_disks->insert(disks);
-            col_volume_type->insert(magic_enum::enum_name(volumes[i]->getType()));
+            col_volume_type->insert(volumeTypeToString(volumes[i]->getType()));
             col_max_part_size->insert(volumes[i]->max_data_part_size);
             col_move_factor->insert(policy_ptr->getMoveFactor());
             col_prefer_not_to_merge->insert(volumes[i]->areMergesAvoided() ? 1 : 0);

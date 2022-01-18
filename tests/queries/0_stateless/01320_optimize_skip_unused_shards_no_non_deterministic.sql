@@ -1,5 +1,3 @@
--- Tags: shard
-
 drop table if exists data_01320;
 drop table if exists dist_01320;
 

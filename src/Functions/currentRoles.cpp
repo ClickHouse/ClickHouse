@@ -1,7 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
-#include <Access/AccessControl.h>
+#include <Access/AccessControlManager.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/User.h>
 #include <Columns/ColumnArray.h>
@@ -47,7 +47,7 @@ namespace
             else
             {
                 static_assert(kind == Kind::DEFAULT_ROLES);
-                const auto & manager = context->getAccessControl();
+                const auto & manager = context->getAccessControlManager();
                 if (auto user = context->getUser())
                     role_names = manager.tryReadNames(user->granted_roles.findGranted(user->default_roles));
             }

@@ -50,16 +50,6 @@ public:
         return nested_func->getReturnType();
     }
 
-    bool isVersioned() const override
-    {
-        return nested_func->isVersioned();
-    }
-
-    size_t getDefaultVersion() const override
-    {
-        return nested_func->getDefaultVersion();
-    }
-
     DataTypePtr getStateType() const override
     {
         return nested_func->getStateType();
@@ -100,14 +90,14 @@ public:
         nested_func->merge(place, rhs, arena);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
-        nested_func->serialize(place, buf, version);
+        nested_func->serialize(place, buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
     {
-        nested_func->deserialize(place, buf, version, arena);
+        nested_func->deserialize(place, buf, arena);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override

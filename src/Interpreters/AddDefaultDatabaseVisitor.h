@@ -13,7 +13,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/DumpASTNode.h>
-#include <Parsers/ASTAlterQuery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
@@ -43,8 +42,7 @@ public:
     {
         visitDDLChildren(ast);
 
-        if (!tryVisitDynamicCast<ASTAlterQuery>(ast) &&
-            !tryVisitDynamicCast<ASTQueryWithTableAndOutput>(ast) &&
+        if (!tryVisitDynamicCast<ASTQueryWithTableAndOutput>(ast) &&
             !tryVisitDynamicCast<ASTRenameQuery>(ast) &&
             !tryVisitDynamicCast<ASTFunction>(ast))
         {}
@@ -139,12 +137,7 @@ private:
     void visit(const ASTTableIdentifier & identifier, ASTPtr & ast) const
     {
         if (!identifier.compound())
-        {
-            auto qualified_identifier = std::make_shared<ASTTableIdentifier>(database_name, identifier.name());
-            if (!identifier.alias.empty())
-                qualified_identifier->setAlias(identifier.alias);
-            ast = qualified_identifier;
-        }
+            ast = std::make_shared<ASTTableIdentifier>(database_name, identifier.name());
     }
 
     void visit(ASTSubquery & subquery, ASTPtr &) const
@@ -239,8 +232,8 @@ private:
         if (only_replace_current_database_function)
             return;
 
-        if (!node.database)
-            node.setDatabase(database_name);
+        if (node.database.empty())
+            node.database = database_name;
     }
 
     void visitDDL(ASTRenameQuery & node, ASTPtr &) const
@@ -254,24 +247,6 @@ private:
                 elem.from.database = database_name;
             if (elem.to.database.empty())
                 elem.to.database = database_name;
-        }
-    }
-
-    void visitDDL(ASTAlterQuery & node, ASTPtr &) const
-    {
-        if (only_replace_current_database_function)
-            return;
-
-        if (!node.database)
-            node.setDatabase(database_name);
-
-        for (const auto & child : node.command_list->children)
-        {
-            auto * command_ast = child->as<ASTAlterCommand>();
-            if (command_ast->from_database.empty())
-                command_ast->from_database = database_name;
-            if (command_ast->to_database.empty())
-                command_ast->to_database = database_name;
         }
     }
 

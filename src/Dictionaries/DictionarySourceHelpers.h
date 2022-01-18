@@ -2,7 +2,7 @@
 
 #include <vector>
 
-#include <base/types.h>
+#include <common/types.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Processors/ISimpleTransform.h>
 #include <Columns/IColumn.h>

@@ -1,5 +1,4 @@
 #!/usr/bin/expect -f
-# Tags: long
 
 log_user 0
 set timeout 60

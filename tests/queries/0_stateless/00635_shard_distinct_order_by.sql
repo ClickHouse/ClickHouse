@@ -1,5 +1,3 @@
--- Tags: shard
-
 DROP TABLE IF EXISTS data;
 CREATE TABLE data (s String, x Int8, y Int8) ENGINE = MergeTree ORDER BY tuple();
 

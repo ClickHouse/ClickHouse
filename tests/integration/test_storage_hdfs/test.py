@@ -2,7 +2,6 @@ import os
 
 import pytest
 from helpers.cluster import ClickHouseCluster
-from pyhdfs import HdfsClient
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', with_hdfs=True)
@@ -239,21 +238,11 @@ def test_virtual_columns(started_cluster):
 def test_read_files_with_spaces(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
-    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
-    dir = '/test_spaces'
-    exists = fs.exists(dir)
-    if exists:
-        fs.delete(dir, recursive=True)
-    fs.mkdirs(dir)
-
-    hdfs_api.write_data(f"{dir}/test test test 1.txt", "1\n")
-    hdfs_api.write_data(f"{dir}/test test test 2.txt", "2\n")
-    hdfs_api.write_data(f"{dir}/test test test 3.txt", "3\n")
-
-    node1.query(f"create table test (id UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{dir}/test*', 'TSV')")
+    hdfs_api.write_data("/test test test 1.txt", "1\n")
+    hdfs_api.write_data("/test test test 2.txt", "2\n")
+    hdfs_api.write_data("/test test test 3.txt", "3\n")
+    node1.query("create table test (id UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/test*', 'TSV')")
     assert node1.query("select * from test order by id") == "1\n2\n3\n"
-    fs.delete(dir, recursive=True)
-
 
 
 def test_truncate_table(started_cluster):
@@ -266,61 +255,6 @@ def test_truncate_table(started_cluster):
     node1.query("truncate table test_truncate")
     assert node1.query("select * from test_truncate") == ""
     node1.query("drop table test_truncate")
-
-
-def test_partition_by(started_cluster):
-    hdfs_api = started_cluster.hdfs_api
-
-    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
-    file_name = "test_{_partition_id}"
-    partition_by = "column3"
-    values = "(1, 2, 3), (3, 2, 1), (1, 3, 2)"
-    table_function = f"hdfs('hdfs://hdfs1:9000/{file_name}', 'TSV', '{table_format}')"
-
-    node1.query(f"insert into table function {table_function} PARTITION BY {partition_by} values {values}")
-    result = node1.query(f"select * from hdfs('hdfs://hdfs1:9000/test_1', 'TSV', '{table_format}')")
-    assert(result.strip() == "3\t2\t1")
-    result = node1.query(f"select * from hdfs('hdfs://hdfs1:9000/test_2', 'TSV', '{table_format}')")
-    assert(result.strip() == "1\t3\t2")
-    result = node1.query(f"select * from hdfs('hdfs://hdfs1:9000/test_3', 'TSV', '{table_format}')")
-    assert(result.strip() == "1\t2\t3")
-
-    file_name = "test2_{_partition_id}"
-    node1.query(f"create table p(column1 UInt32, column2 UInt32, column3 UInt32) engine = HDFS('hdfs://hdfs1:9000/{file_name}', 'TSV') partition by column3")
-    node1.query(f"insert into p values {values}")
-    result = node1.query(f"select * from hdfs('hdfs://hdfs1:9000/test2_1', 'TSV', '{table_format}')")
-    assert(result.strip() == "3\t2\t1")
-    result = node1.query(f"select * from hdfs('hdfs://hdfs1:9000/test2_2', 'TSV', '{table_format}')")
-    assert(result.strip() == "1\t3\t2")
-    result = node1.query(f"select * from hdfs('hdfs://hdfs1:9000/test2_3', 'TSV', '{table_format}')")
-    assert(result.strip() == "1\t2\t3")
-
-
-def test_seekable_formats(started_cluster):
-    hdfs_api = started_cluster.hdfs_api
-
-    table_function = f"hdfs('hdfs://hdfs1:9000/parquet', 'Parquet', 'a Int32, b String')"
-    node1.query(f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(5000000)")
-
-    result = node1.query(f"SELECT count() FROM {table_function}")
-    assert(int(result) == 5000000)
-
-    table_function = f"hdfs('hdfs://hdfs1:9000/orc', 'ORC', 'a Int32, b String')"
-    node1.query(f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(5000000)")
-    result = node1.query(f"SELECT count() FROM {table_function}")
-    assert(int(result) == 5000000)
-
-def test_read_table_with_default(started_cluster):
-    hdfs_api = started_cluster.hdfs_api
-
-    data = "n\n100\n"
-    hdfs_api.write_data("/simple_table_function", data)
-    assert hdfs_api.read_data("/simple_table_function") == data
-
-    output = "n\tm\n100\t200\n"
-    assert node1.query(
-        "select * from hdfs('hdfs://hdfs1:9000/simple_table_function', 'TSVWithNames', 'n UInt32, m UInt32 DEFAULT n * 2') FORMAT TSVWithNames") == output
-
 
 
 if __name__ == '__main__':

@@ -1,12 +1,9 @@
 #pragma once
 
-#include <base/types.h>
-#include <memory>
+#include <Access/IAccessEntity.h>
 
 namespace DB
 {
-struct IAccessEntity;
-using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
 
 String serializeAccessEntity(const IAccessEntity & entity);
 

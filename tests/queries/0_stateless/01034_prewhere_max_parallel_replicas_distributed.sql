@@ -1,5 +1,3 @@
--- Tags: replica, distributed
-
 drop table if exists test_max_parallel_replicas_lr;
 
 -- If you wonder why the table is named with "_lr" suffix in this test.

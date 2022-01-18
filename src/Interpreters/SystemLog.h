@@ -7,9 +7,9 @@
 
 #include <condition_variable>
 #include <boost/noncopyable.hpp>
-#include <base/logger_useful.h>
-#include <base/scope_guard.h>
-#include <base/types.h>
+#include <common/logger_useful.h>
+#include <common/scope_guard.h>
+#include <common/types.h>
 #include <Core/Defines.h>
 #include <Storages/IStorage.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -19,7 +19,6 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -61,7 +60,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TIMEOUT_EXCEEDED;
-    extern const int LOGICAL_ERROR;
 }
 
 #define DBMS_SYSTEM_LOG_QUEUE_SIZE 1048576
@@ -77,25 +75,19 @@ class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class QueryViewsLog;
 class ZooKeeperLog;
-class SessionLog;
 
 
 class ISystemLog
 {
 public:
     virtual String getName() = 0;
+    virtual ASTPtr getCreateTableQuery() = 0;
     //// force -- force table creation (used for SYSTEM FLUSH LOGS)
     virtual void flush(bool force = false) = 0;
     virtual void prepareTable() = 0;
     virtual void startup() = 0;
     virtual void shutdown() = 0;
     virtual ~ISystemLog() = default;
-
-    /// returns CREATE TABLE query, but with removed:
-    /// - UUID
-    /// - SETTINGS (for MergeTree)
-    /// That way it can be used to compare with the SystemLog::getCreateTableQuery()
-    static ASTPtr getCreateTableQueryClean(const StorageID & table_id, ContextPtr context);
 };
 
 
@@ -123,8 +115,6 @@ struct SystemLogs
     std::shared_ptr<QueryViewsLog> query_views_log;
     /// Used to log all actions of ZooKeeper client
     std::shared_ptr<ZooKeeperLog> zookeeper_log;
-    /// Login, LogOut and Login failure events
-    std::shared_ptr<SessionLog> session_log;
 
     std::vector<ISystemLog *> logs;
 };
@@ -177,7 +167,7 @@ public:
         return LogElement::name();
     }
 
-    ASTPtr getCreateTableQuery();
+    ASTPtr getCreateTableQuery() override;
 
 protected:
     Poco::Logger * log;
@@ -187,8 +177,6 @@ private:
     const StorageID table_id;
     const String storage_def;
     StoragePtr table;
-    String create_query;
-    String old_create_query;
     bool is_prepared = false;
     const size_t flush_interval_milliseconds;
     ThreadFromGlobalPool saving_thread;
@@ -236,7 +224,6 @@ SystemLog<LogElement>::SystemLog(
     : WithContext(context_)
     , table_id(database_name_, table_name_)
     , storage_def(storage_def_)
-    , create_query(serializeAST(*getCreateTableQuery()))
     , flush_interval_milliseconds(flush_interval_milliseconds_)
 {
     assert(database_name_ == DatabaseCatalog::SYSTEM_DATABASE);
@@ -498,11 +485,9 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
         InterpreterInsertQuery interpreter(query_ptr, insert_context);
         BlockIO io = interpreter.execute();
 
-        PushingPipelineExecutor executor(io.pipeline);
-
-        executor.start();
-        executor.push(block);
-        executor.finish();
+        io.out->writePrefix();
+        io.out->write(block);
+        io.out->writeSuffix();
     }
     catch (...)
     {
@@ -529,14 +514,14 @@ void SystemLog<LogElement>::prepareTable()
 
     if (table)
     {
-        if (old_create_query.empty())
-        {
-            old_create_query = serializeAST(*getCreateTableQueryClean(table_id, getContext()));
-            if (old_create_query.empty())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty CREATE QUERY for {}", backQuoteIfNeed(table_id.table_name));
-        }
+        auto metadata_columns = table->getInMemoryMetadataPtr()->getColumns();
+        auto old_query = InterpreterCreateQuery::formatColumns(metadata_columns);
 
-        if (old_create_query != create_query)
+        auto ordinary_columns = LogElement::getNamesAndTypes();
+        auto alias_columns = LogElement::getNamesAndAliases();
+        auto current_query = InterpreterCreateQuery::formatColumns(ordinary_columns, alias_columns);
+
+        if (serializeAST(*old_query) != serializeAST(*current_query))
         {
             /// Rename the existing table.
             int suffix = 0;
@@ -562,11 +547,9 @@ void SystemLog<LogElement>::prepareTable()
 
             LOG_DEBUG(
                 log,
-                "Existing table {} for system log has obsolete or different structure. Renaming it to {}.\nOld: {}\nNew: {}\n.",
+                "Existing table {} for system log has obsolete or different structure. Renaming it to {}",
                 description,
-                backQuoteIfNeed(to.table),
-                old_create_query,
-                create_query);
+                backQuoteIfNeed(to.table));
 
             auto query_context = Context::createCopy(context);
             query_context->makeQueryContext();
@@ -584,17 +567,17 @@ void SystemLog<LogElement>::prepareTable()
         /// Create the table.
         LOG_DEBUG(log, "Creating new table {} for {}", description, LogElement::name());
 
+        auto create = getCreateTableQuery();
+
+
         auto query_context = Context::createCopy(context);
         query_context->makeQueryContext();
 
-        auto create_query_ast = getCreateTableQuery();
-        InterpreterCreateQuery interpreter(create_query_ast, query_context);
+        InterpreterCreateQuery interpreter(create, query_context);
         interpreter.setInternal(true);
         interpreter.execute();
 
         table = DatabaseCatalog::instance().getTable(table_id, getContext());
-
-        old_create_query.clear();
     }
 
     is_prepared = true;
@@ -606,8 +589,8 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
 {
     auto create = std::make_shared<ASTCreateQuery>();
 
-    create->setDatabase(table_id.database_name);
-    create->setTable(table_id.table_name);
+    create->database = table_id.database_name;
+    create->table = table_id.table_name;
 
     auto ordinary_columns = LogElement::getNamesAndTypes();
     auto alias_columns = LogElement::getNamesAndAliases();

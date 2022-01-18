@@ -2,7 +2,7 @@
 #include <Common/Elf.h>
 #include <Common/Dwarf.h>
 #include <Core/Defines.h>
-#include <base/demangle.h>
+#include <common/demangle.h>
 #include <iostream>
 #include <dlfcn.h>
 

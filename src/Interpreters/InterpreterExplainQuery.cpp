@@ -1,7 +1,7 @@
 #include <Interpreters/InterpreterExplainQuery.h>
 
-#include <QueryPipeline/BlockIO.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <DataStreams/BlockIO.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -12,13 +12,12 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 
 #include <Storages/StorageView.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <QueryPipeline/printPipeline.h>
+#include <Processors/printPipeline.h>
 
 #include <Common/JSONBuilder.h>
 
@@ -74,7 +73,7 @@ namespace
 BlockIO InterpreterExplainQuery::execute()
 {
     BlockIO res;
-    res.pipeline = executeImpl();
+    res.in = executeImpl();
     return res;
 }
 
@@ -224,9 +223,8 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
                             "Supported settings: " + settings.getSettingsList(), ErrorCodes::UNKNOWN_SETTING);
 
         if (change.value.getType() != Field::Types::UInt64)
-            throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-                "Invalid type {} for setting \"{}\" only boolean settings are supported",
-                change.value.getTypeName(), change.name);
+            throw Exception("Invalid type " + std::string(change.value.getTypeName()) + " for setting \"" + change.name +
+                            "\" only boolean settings are supported", ErrorCodes::INVALID_SETTING_VALUE);
 
         auto value = change.value.get<UInt64>();
         if (value > 1)
@@ -241,7 +239,7 @@ ExplainSettings<Settings> checkAndGetSettings(const ASTPtr & ast_settings)
 
 }
 
-QueryPipeline InterpreterExplainQuery::executeImpl()
+BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
 {
     const auto & ast = query->as<const ASTExplainQuery &>();
 
@@ -305,41 +303,33 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     }
     else if (ast.getKind() == ASTExplainQuery::QueryPipeline)
     {
-        if (dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
+        if (!dynamic_cast<const ASTSelectWithUnionQuery *>(ast.getExplainedQuery().get()))
+            throw Exception("Only SELECT is supported for EXPLAIN query", ErrorCodes::INCORRECT_QUERY);
+
+        auto settings = checkAndGetSettings<QueryPipelineSettings>(ast.getSettings());
+        QueryPlan plan;
+
+        InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
+        interpreter.buildQueryPlan(plan);
+        auto pipeline = plan.buildQueryPipeline(
+            QueryPlanOptimizationSettings::fromContext(getContext()),
+            BuildQueryPipelineSettings::fromContext(getContext()));
+
+        if (settings.graph)
         {
-            auto settings = checkAndGetSettings<QueryPipelineSettings>(ast.getSettings());
-            QueryPlan plan;
+            /// Pipe holds QueryPlan, should not go out-of-scope
+            auto pipe = QueryPipeline::getPipe(std::move(*pipeline));
+            const auto & processors = pipe.getProcessors();
 
-            InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
-            interpreter.buildQueryPlan(plan);
-            auto pipeline = plan.buildQueryPipeline(
-                QueryPlanOptimizationSettings::fromContext(getContext()),
-                BuildQueryPipelineSettings::fromContext(getContext()));
-
-            if (settings.graph)
-            {
-                /// Pipe holds QueryPlan, should not go out-of-scope
-                auto pipe = QueryPipelineBuilder::getPipe(std::move(*pipeline));
-                const auto & processors = pipe.getProcessors();
-
-                if (settings.compact)
-                    printPipelineCompact(processors, buf, settings.query_pipeline_options.header);
-                else
-                    printPipeline(processors, buf);
-            }
+            if (settings.compact)
+                printPipelineCompact(processors, buf, settings.query_pipeline_options.header);
             else
-            {
-                plan.explainPipeline(buf, settings.query_pipeline_options);
-            }
-        }
-        else if (dynamic_cast<const ASTInsertQuery *>(ast.getExplainedQuery().get()))
-        {
-            InterpreterInsertQuery insert(ast.getExplainedQuery(), getContext());
-            auto io = insert.execute();
-            printPipeline(io.pipeline.getProcessors(), buf);
+                printPipeline(processors, buf);
         }
         else
-            throw Exception("Only SELECT and INSERT is supported for EXPLAIN PIPELINE query", ErrorCodes::INCORRECT_QUERY);
+        {
+            plan.explainPipeline(buf, settings.query_pipeline_options);
+        }
     }
     else if (ast.getKind() == ASTExplainQuery::QueryEstimates)
     {
@@ -368,7 +358,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             fillColumn(*res_columns[0], buf.str());
     }
 
-    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(sample_block.cloneWithColumns(std::move(res_columns))));
+    return std::make_shared<OneBlockInputStream>(sample_block.cloneWithColumns(std::move(res_columns)));
 }
 
 }

@@ -1,5 +1,5 @@
-<clickhouse>
+<yandex>
     <logger>
         <level>test</level>
     </logger>
-</clickhouse>
+</yandex>

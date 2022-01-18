@@ -7,10 +7,9 @@
 #include <memory>
 #include <mutex>
 #include <string>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <unistd.h>
@@ -274,11 +273,9 @@ public:
     /// * The node doesn't exist
     FutureGet asyncTryGet(const std::string & path);
 
-    void finalize(const String & reason);
+    void finalize();
 
     void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
-
-    UInt32 getSessionUptime() const { return session_uptime.elapsedSeconds(); }
 
 private:
     friend class EphemeralNodeHolder;
@@ -310,8 +307,6 @@ private:
 
     Poco::Logger * log = nullptr;
     std::shared_ptr<DB::ZooKeeperLog> zk_log;
-
-    AtomicStopwatch session_uptime;
 };
 
 

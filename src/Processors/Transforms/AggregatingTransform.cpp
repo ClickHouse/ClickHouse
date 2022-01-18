@@ -1,10 +1,10 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 
-#include <Formats/NativeReader.h>
+#include <DataStreams/NativeBlockInputStream.h>
 #include <Processors/ISource.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Pipe.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
-#include <Core/ProtocolDefines.h>
+#include <DataStreams/materializeBlock.h>
 
 namespace ProfileEvents
 {
@@ -55,8 +55,9 @@ namespace
     public:
         SourceFromNativeStream(const Block & header, const std::string & path)
                 : ISource(header), file_in(path), compressed_in(file_in),
-                  block_in(std::make_unique<NativeReader>(compressed_in, DBMS_TCP_PROTOCOL_VERSION))
+                  block_in(std::make_shared<NativeBlockInputStream>(compressed_in, DBMS_TCP_PROTOCOL_VERSION))
         {
+            block_in->readPrefix();
         }
 
         String getName() const override { return "SourceFromNativeStream"; }
@@ -69,6 +70,7 @@ namespace
             auto block = block_in->read();
             if (!block)
             {
+                block_in->readSuffix();
                 block_in.reset();
                 return {};
             }
@@ -79,7 +81,7 @@ namespace
     private:
         ReadBufferFromFile file_in;
         CompressedReadBuffer compressed_in;
-        std::unique_ptr<NativeReader> block_in;
+        BlockInputStreamPtr block_in;
     };
 }
 
@@ -329,7 +331,7 @@ private:
         if (num_threads > first->aggregates_pools.size())
         {
             Arenas & first_pool = first->aggregates_pools;
-            for (size_t j = first_pool.size(); j < num_threads; ++j)
+            for (size_t j = first_pool.size(); j < num_threads; j++)
                 first_pool.emplace_back(std::make_shared<Arena>());
         }
 
