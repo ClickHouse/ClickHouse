@@ -127,11 +127,10 @@ add_subdirectory (nuraft-cmake)
 add_subdirectory (fast_float-cmake)
 add_subdirectory (datasketches-cpp-cmake)
 
-if (USE_NLP)
-    add_subdirectory(libstemmer-c-cmake)
-    add_subdirectory(wordnet-blast-cmake)
-    add_subdirectory(lemmagen-c-cmake)
-endif()
+option(ENABLE_NLP "Enable NLP functions support" ${ENABLE_LIBRARIES})
+add_subdirectory(libstemmer-c-cmake) # ENABLE_NLP
+add_subdirectory(wordnet-blast-cmake) # ENABLE_NLP
+add_subdirectory(lemmagen-c-cmake) # ENABLE_NLP
 
 add_subdirectory (sqlite-cmake)
 add_subdirectory (s2geometry-cmake)

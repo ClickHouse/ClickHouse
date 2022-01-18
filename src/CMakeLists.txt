@@ -494,10 +494,10 @@ target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::lz4)
 
 dbms_target_link_libraries(PRIVATE _boost_context)
 
-if (USE_NLP)
-    dbms_target_link_libraries (PUBLIC stemmer)
-    dbms_target_link_libraries (PUBLIC wnb)
-    dbms_target_link_libraries (PUBLIC lemmagen)
+if (ENABLE_NLP)
+    dbms_target_link_libraries (PUBLIC ch_contrib::stemmer)
+    dbms_target_link_libraries (PUBLIC ch_contrib::wnb)
+    dbms_target_link_libraries (PUBLIC ch_contrib::lemmagen)
 endif()
 
 if (TARGET ch_contrib::bzip2)

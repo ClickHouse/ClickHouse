@@ -7,7 +7,6 @@ set(SRCS
 )
 
 add_library(wnb ${SRCS})
-
 target_link_libraries(wnb PRIVATE boost::headers_only boost::graph)
-
 target_include_directories(wnb SYSTEM PUBLIC "${LIBRARY_DIR}")
+add_library(ch_contrib::wnb ALIAS wnb)
