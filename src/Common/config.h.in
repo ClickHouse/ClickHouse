@@ -21,3 +21,4 @@
 #cmakedefine01 USE_HIVE
 #cmakedefine01 USE_ODBC
 #cmakedefine01 USE_REPLXX
+#cmakedefine01 USE_JEMALLOC
