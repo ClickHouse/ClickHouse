@@ -222,7 +222,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
         }
 
         auto process_it = processes.emplace(processes.end(),
-            query_context, query_, client_info, priorities.insert(settings.priority), std::move(thread_group));
+            query_context, query_, client_info, priorities.insert(settings.priority), std::move(thread_group), query_kind);
 
         increaseQueryKindAmount(query_kind);
 
