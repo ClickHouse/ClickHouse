@@ -217,6 +217,9 @@ public:
 
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;
 
+    /// Returns true if the backup is hollow, which means it doesn't contain any data.
+    virtual bool hasHollowBackup() const { return false; }
+
     /// Prepares entries to backup data of the storage.
     virtual BackupEntries backup(const ASTs & partitions, ContextPtr context);
 
