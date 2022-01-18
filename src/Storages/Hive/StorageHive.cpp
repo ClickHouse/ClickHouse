@@ -211,7 +211,12 @@ public:
                 {
                     auto column = types[i]->createColumnConst(num_rows, source_info->hive_files[current_idx]->getPartitionValues()[i]);
                     auto previous_idx = sample_block.getPositionByName(source_info->partition_name_types.getNames()[i]);
-                    columns.insert(columns.begin() + previous_idx, column->convertToFullColumnIfConst());
+                    /* The original implemetation is :
+                     *     columns.insert(columns.begin() + previous_idx, column->convertToFullColumnIfConst());
+                     * On profiling, We found that the cost of convertToFullColumnIfConst is too high. If we have confirmed that
+                     * this column is const, there is no need to call this
+                     */
+                    columns.insert(columns.begin() + previous_idx, column);
                 }
 
                 /// Enrich with virtual columns.
