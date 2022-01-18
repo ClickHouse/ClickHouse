@@ -11,6 +11,7 @@
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/FieldVisitors.h>
 
@@ -503,7 +504,7 @@ DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTyp
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    auto result_type = std::make_shared<DataTypeUInt8>();
+    auto result_type = DataTypeFactory::instance().get("Bool");
     return has_nullable_arguments
             ? makeNullable(result_type)
             : result_type;
@@ -711,7 +712,7 @@ DataTypePtr FunctionUnaryLogical<Impl, Name>::getReturnTypeImpl(const DataTypes 
             + ") of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    return std::make_shared<DataTypeUInt8>();
+    return DataTypeFactory::instance().get("Bool");
 }
 
 template <template <typename> class Impl, typename T>
