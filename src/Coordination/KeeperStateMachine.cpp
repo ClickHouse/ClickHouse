@@ -215,6 +215,7 @@ void KeeperStateMachine::create_snapshot(
                 }
                 //latest_snapshot_buf = snapshot_buf;
                 latest_snapshot_meta = snapshot->snapshot_meta;
+                latest_snapshot_path = result.first;
 
                 LOG_DEBUG(log, "Created persistent snapshot {} with path {}", latest_snapshot_meta->get_last_log_idx(), result.first);
             }
