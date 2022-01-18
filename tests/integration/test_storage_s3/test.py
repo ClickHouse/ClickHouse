@@ -136,7 +136,7 @@ def test_put(started_cluster, maybe_auth, positive, compression):
     values_csv = "1,2,3\n3,2,1\n78,43,45\n"
     filename = "test.csv"
     put_query = f"""insert into table function s3('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{filename}',
-                    {maybe_auth}'CSV', '{table_format}', {compression}) values {values}"""
+                    {maybe_auth}'CSV', '{table_format}', {compression}) values settings s3_truncate_on_insert=1 {values}"""
 
     try:
         run_query(instance, put_query)
@@ -298,7 +298,7 @@ def test_put_csv(started_cluster, maybe_auth, positive):
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
     filename = "test.csv"
-    put_query = "insert into table function s3('http://{}:{}/{}/{}', {}'CSV', '{}') format CSV".format(
+    put_query = "insert into table function s3('http://{}:{}/{}/{}', {}'CSV', '{}') format CSV settings s3_truncate_on_insert=1".format(
         started_cluster.minio_ip, MINIO_INTERNAL_PORT, bucket, filename, maybe_auth, table_format)
     csv_data = "8,9,16\n11,18,13\n22,14,2\n"
 
@@ -322,7 +322,7 @@ def test_put_get_with_redirect(started_cluster):
     values = "(1, 1, 1), (1, 1, 1), (11, 11, 11)"
     values_csv = "1,1,1\n1,1,1\n11,11,11\n"
     filename = "test.csv"
-    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
+    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values settings s3_truncate_on_insert=1 {}".format(
         started_cluster.minio_redirect_host, started_cluster.minio_redirect_port, bucket, filename, table_format, values)
     run_query(instance, query)
 
@@ -350,12 +350,12 @@ def test_put_with_zero_redirect(started_cluster):
     filename = "test.csv"
 
     # Should work without redirect
-    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
+    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values settings s3_truncate_on_insert=1 {}".format(
         started_cluster.minio_ip, MINIO_INTERNAL_PORT, bucket, filename, table_format, values)
     run_query(instance, query)
 
     # Should not work with redirect
-    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values {}".format(
+    query = "insert into table function s3('http://{}:{}/{}/{}', 'CSV', '{}') values settings s3_truncate_on_insert=1 {}".format(
         started_cluster.minio_redirect_host, started_cluster.minio_redirect_port, bucket, filename, table_format, values)
     exception_raised = False
     try:
@@ -805,13 +805,13 @@ def test_seekable_formats(started_cluster):
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
 
     table_function = f"s3(s3_parquet, structure='a Int32, b String', format='Parquet')"
-    instance.query(f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(5000000)")
+    instance.query(f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(5000000) settings s3_truncate_on_insert=1")
 
     result = instance.query(f"SELECT count() FROM {table_function}")
     assert(int(result) == 5000000)
 
     table_function = f"s3(s3_orc, structure='a Int32, b String', format='ORC')"
-    exec_query_with_retry(instance, f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(5000000)")
+    exec_query_with_retry(instance, f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(5000000) settings s3_truncate_on_insert=1")
 
     result = instance.query(f"SELECT count() FROM {table_function}")
     assert(int(result) == 5000000)
@@ -827,14 +827,14 @@ def test_seekable_formats_url(started_cluster):
     instance = started_cluster.instances["dummy"]
 
     table_function = f"s3(s3_parquet, structure='a Int32, b String', format='Parquet')"
-    instance.query(f"insert into table function {table_function} select number, randomString(100) from numbers(5000000)")
+    instance.query(f"insert into table function {table_function} select number, randomString(100) from numbers(5000000) settings s3_truncate_on_insert=1")
 
     table_function = f"url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_parquet', 'Parquet', 'a Int32, b String')"
     result = instance.query(f"SELECT count() FROM {table_function}")
     assert(int(result) == 5000000)
 
     table_function = f"s3(s3_orc, structure='a Int32, b String', format='ORC')"
-    exec_query_with_retry(instance, f"insert into table function {table_function} select number, randomString(100) from numbers(5000000)")
+    exec_query_with_retry(instance, f"insert into table function {table_function} select number, randomString(100) from numbers(5000000) settings s3_truncate_on_insert=1")
 
     table_function = f"url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_orc', 'ORC', 'a Int32, b String')"
     result = instance.query(f"SELECT count() FROM {table_function}")
@@ -939,7 +939,7 @@ def test_create_new_files_on_insert(started_cluster):
     table_function = f"s3(s3_parquet, structure='a Int32, b String', format='Parquet')"
     instance.query(f"create table test_multiple_inserts as {table_function}")
     instance.query(f"truncate table test_multiple_inserts")
-    instance.query(f"insert into test_multiple_inserts select number, randomString(100) from numbers(10)")
+    instance.query(f"insert into test_multiple_inserts select number, randomString(100) from numbers(10) settings s3_truncate_on_insert=1")
     instance.query(f"insert into test_multiple_inserts select number, randomString(100) from numbers(20) settings s3_create_new_file_on_insert=1")
     instance.query(f"insert into test_multiple_inserts select number, randomString(100) from numbers(30) settings s3_create_new_file_on_insert=1")
     
@@ -951,7 +951,7 @@ def test_create_new_files_on_insert(started_cluster):
     table_function = f"s3(s3_parquet_gz, structure='a Int32, b String', format='Parquet')"
     instance.query(f"create table test_multiple_inserts as {table_function}")
     instance.query(f"truncate table test_multiple_inserts")
-    instance.query(f"insert into test_multiple_inserts select number, randomString(100) from numbers(10)")
+    instance.query(f"insert into test_multiple_inserts select number, randomString(100) from numbers(10) settings s3_truncate_on_insert=1")
     instance.query(f"insert into test_multiple_inserts select number, randomString(100) from numbers(20) settings s3_create_new_file_on_insert=1")
     instance.query(f"insert into test_multiple_inserts select number, randomString(100) from numbers(30) settings s3_create_new_file_on_insert=1")
     
