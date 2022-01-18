@@ -390,10 +390,7 @@ dbms_target_link_libraries(PUBLIC
 
 dbms_target_link_libraries(PRIVATE ch_contrib::zstd)
 target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::zstd)
-
-if (TARGET ch_contrib::xz)
-    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::xz)
-endif()
+target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::xz)
 
 if (TARGET ch_contrib::icu)
     dbms_target_link_libraries (PRIVATE ch_contrib::icu)
