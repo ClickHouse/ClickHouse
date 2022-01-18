@@ -81,30 +81,7 @@ if (ENABLE_TESTS)
     add_subdirectory (googletest-cmake)
 endif()
 
-function(add_llvm)
-    # ld: unknown option: --color-diagnostics
-    if (APPLE)
-        set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")
-    endif ()
-
-    # Do not adjust RPATH in llvm, since then it will not be able to find libcxx/libcxxabi/libunwind
-    set (CMAKE_INSTALL_RPATH "ON")
-    set (LLVM_COMPILER_CHECKED 1 CACHE INTERNAL "")
-    set (LLVM_ENABLE_EH 1 CACHE INTERNAL "")
-    set (LLVM_ENABLE_RTTI 1 CACHE INTERNAL "")
-    set (LLVM_ENABLE_PIC 0 CACHE INTERNAL "")
-    set (LLVM_TARGETS_TO_BUILD "X86;AArch64" CACHE STRING "")
-
-    # Need to use C++17 since the compilation is not possible with C++20 currently, due to ambiguous operator != etc.
-    # LLVM project will set its default value for the -std=... but our global setting from CMake will override it.
-    set (CMAKE_CXX_STANDARD 17)
-
-    add_subdirectory (llvm/llvm)
-endfunction()
-if (USE_EMBEDDED_COMPILER)
-    add_llvm()
-endif ()
-
+add_subdirectory (llvm-cmake)
 add_subdirectory (libgsasl-cmake)
 add_subdirectory (libxml2-cmake)
 add_subdirectory (aws-s3-cmake)

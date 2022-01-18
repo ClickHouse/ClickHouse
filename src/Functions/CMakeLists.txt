@@ -66,9 +66,8 @@ if (ENABLE_EXAMPLES)
     add_subdirectory(examples)
 endif ()
 
-if (USE_EMBEDDED_COMPILER)
-    target_link_libraries(clickhouse_functions PRIVATE ${REQUIRED_LLVM_LIBRARIES})
-    target_include_directories(clickhouse_functions SYSTEM BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
+if (TARGET ch_contrib::llvm)
+    target_link_libraries(clickhouse_functions PRIVATE ch_contrib::llvm)
 endif ()
 
 if (TARGET ch_contrib::base64)
