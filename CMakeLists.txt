@@ -486,8 +486,6 @@ message (STATUS
 
 include (GNUInstallDirs)
 
-include (cmake/find/llvm.cmake)
-
 # When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.
 
 if (TARGET global-group)
