@@ -28,23 +28,6 @@ namespace
     using Elements = ASTBackupQuery::Elements;
     using ElementType = ASTBackupQuery::ElementType;
 
-
-    /// Replaces an empty database with the current database.
-    void replaceEmptyDatabaseWithCurrentDatabase(Elements & elements, const String & current_database)
-    {
-        for (auto & element : elements)
-        {
-            if (element.type == ElementType::TABLE)
-            {
-                if (element.name.first.empty() && !element.name.second.empty())
-                    element.name.first = current_database;
-                if (element.new_name.first.empty() && !element.new_name.second.empty())
-                    element.new_name.first = current_database;
-            }
-        }
-    }
-
-
     /// Makes backup entries to backup databases and tables according to the elements of ASTBackupQuery.
     /// Keep this class consistent with RestoreTasksBuilder.
     class BackupEntriesBuilder
@@ -55,30 +38,21 @@ namespace
         /// Prepares internal structures for making backup entries.
         void prepare(const ASTBackupQuery::Elements & elements)
         {
-            auto elements2 = elements;
-            replaceEmptyDatabaseWithCurrentDatabase(elements2, context->getCurrentDatabase());
-
             auto new_renaming_config = std::make_shared<BackupRenamingConfig>();
-            new_renaming_config->setFromBackupQueryElements(elements2);
+            String current_database = context->getCurrentDatabase();
+            new_renaming_config->setFromBackupQueryElements(elements, current_database);
             renaming_config = new_renaming_config;
 
-            for (const auto & element : elements2)
+            for (const auto & element : elements)
             {
                 switch (element.type)
                 {
-                    case ElementType::TABLE: [[fallthrough]];
-                    case ElementType::DICTIONARY:
+                    case ElementType::TABLE:
                     {
-                        const String & database_name = element.name.first;
                         const String & table_name = element.name.second;
-                        prepareToBackupTable(DatabaseAndTableName{database_name, table_name}, element.partitions);
-                        break;
-                    }
-
-                    case ElementType::TEMPORARY_TABLE:
-                    {
-                        String database_name = DatabaseCatalog::TEMPORARY_DATABASE;
-                        const String & table_name = element.name.second;
+                        String database_name = element.name.first;
+                        if (database_name.empty())
+                            database_name = current_database;
                         prepareToBackupTable(DatabaseAndTableName{database_name, table_name}, element.partitions);
                         break;
                     }
@@ -90,22 +64,9 @@ namespace
                         break;
                     }
 
-                    case ElementType::ALL_TEMPORARY_TABLES:
-                    {
-                        prepareToBackupDatabase(DatabaseCatalog::TEMPORARY_DATABASE, element.except_list);
-                        break;
-                    }
-
                     case ElementType::ALL_DATABASES:
                     {
                         prepareToBackupAllDatabases(element.except_list);
-                        break;
-                    }
-
-                    case ElementType::EVERYTHING:
-                    {
-                        prepareToBackupAllDatabases({});
-                        prepareToBackupDatabase(DatabaseCatalog::TEMPORARY_DATABASE, {});
                         break;
                     }
                 }
