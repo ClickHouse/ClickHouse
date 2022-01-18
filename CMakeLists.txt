@@ -489,9 +489,6 @@ include (GNUInstallDirs)
 include (cmake/find/llvm.cmake)
 include (cmake/find/nlp.cmake)
 
-# Need to process before "contrib" dir:
-include (cmake/find/mysqlclient.cmake)
-
 # When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.
 
 if (TARGET global-group)

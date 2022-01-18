@@ -75,12 +75,7 @@ add_subdirectory (cityhash102)
 add_subdirectory (libfarmhash)
 add_subdirectory (icu-cmake)
 add_subdirectory (h3-cmake)
-
-# TODO: refactor the contrib libraries below this comment.
-
-if (USE_INTERNAL_MYSQL_LIBRARY)
-    add_subdirectory (mariadb-connector-c-cmake)
-endif ()
+add_subdirectory (mariadb-connector-c-cmake)
 
 if (ENABLE_TESTS)
     add_subdirectory (googletest-cmake)
