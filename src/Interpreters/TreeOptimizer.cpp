@@ -669,9 +669,18 @@ void optimizeFunctionsToSubcolumns(ASTPtr & query, const TreeRewriterResult & re
     IdentifierNameSet forbidden_identifiers;
     const auto & select_query = assert_cast<const ASTSelectQuery &>(*query);
 
+    /// For queries with FINAL converting function to subcolumn may alter
+    /// special merging algorithms and produce wrong result of query.
+    if (select_query.final())
+        return;
+
+    /// Do not optimize GROUP BY keys, because otherwise it may be produced column,
+    /// which is not under aggregate function and not in GROUP BY.
     if (select_query.groupBy())
         select_query.groupBy()->collectIdentifierNames(forbidden_identifiers);
 
+    /// Do not optimize index columns (primary, min-max, secondary),
+    /// because otherwise analysis of indexes may be broken.
     const auto & primary_key_columns = result.metadata_snapshot->getColumnsRequiredForPrimaryKey();
     forbidden_identifiers.insert(primary_key_columns.begin(), primary_key_columns.end());
 

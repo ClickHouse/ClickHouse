@@ -83,6 +83,7 @@ void RewriteFunctionToSubcolumnData::visit(ASTFunction & function, ASTPtr & ast)
 
     const auto & column_type = columns.get(name_in_storage).type;
     TypeIndex column_type_id = column_type->getTypeId();
+    ASTPtr transformed_ast;
 
     if (arguments.size() == 1)
     {
@@ -91,7 +92,7 @@ void RewriteFunctionToSubcolumnData::visit(ASTFunction & function, ASTPtr & ast)
         {
             const auto & [type_id, subcolumn_name, transformer] = it->second;
             if (column_type_id == type_id)
-                ast = transformer(name_in_storage, subcolumn_name);
+                transformed_ast = transformer(name_in_storage, subcolumn_name);
         }
     }
     else
@@ -104,18 +105,17 @@ void RewriteFunctionToSubcolumnData::visit(ASTFunction & function, ASTPtr & ast)
 
             String subcolumn_name;
             auto value_type = literal->value.getType();
+
             if (value_type == Field::Types::UInt64)
             {
                 const auto & type_tuple = assert_cast<const DataTypeTuple &>(*column_type);
                 auto index = get<UInt64>(literal->value);
-                subcolumn_name = type_tuple.getNameByPosition(index);
+                transformed_ast = transformToSubcolumn(name_in_storage, type_tuple.getNameByPosition(index));
             }
             else if (value_type == Field::Types::String)
-                subcolumn_name = get<const String &>(literal->value);
-            else
-                return;
-
-            ast = transformToSubcolumn(name_in_storage, subcolumn_name);
+            {
+                transformed_ast = transformToSubcolumn(name_in_storage, get<const String &>(literal->value));
+            }
         }
         else
         {
@@ -124,9 +124,15 @@ void RewriteFunctionToSubcolumnData::visit(ASTFunction & function, ASTPtr & ast)
             {
                 const auto & [type_id, subcolumn_name, transformer] = it->second;
                 if (column_type_id == type_id)
-                    ast = transformer(name_in_storage, subcolumn_name, arguments[1]);
+                    transformed_ast = transformer(name_in_storage, subcolumn_name, arguments[1]);
             }
         }
+    }
+
+    if (transformed_ast)
+    {
+        transformed_ast->setAlias(ast->tryGetAlias());
+        ast = transformed_ast;
     }
 }
 
