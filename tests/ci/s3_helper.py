@@ -7,7 +7,7 @@ import shutil
 import time
 from multiprocessing.dummy import Pool
 
-import boto3
+import boto3  # type: ignore
 
 from env_helper import S3_TEST_REPORTS_BUCKET, S3_BUILDS_BUCKET, RUNNER_TEMP, CI
 from compress_files import compress_file_fast

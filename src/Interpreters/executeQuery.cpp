@@ -57,6 +57,8 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
 
+#include <base/EnumReflection.h>
+
 #include <random>
 
 
@@ -271,7 +273,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
     // Try log query_kind if ast is valid
     if (ast)
     {
-        elem.query_kind = ast->getQueryKindString();
+        elem.query_kind = magic_enum::enum_name(ast->getQueryKind());
         if (settings.log_formatted_queries)
             elem.formatted_query = queryToString(ast);
     }
@@ -841,8 +843,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 else /// will be used only for ordinary INSERT queries
                 {
                     auto progress_out = process_list_elem->getProgressOut();
-                    elem.result_rows = progress_out.read_rows;
-                    elem.result_bytes = progress_out.read_bytes;
+                    elem.result_rows = progress_out.written_rows;
+                    elem.result_bytes = progress_out.written_rows;
                 }
 
                 if (elem.read_rows != 0)

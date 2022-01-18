@@ -6,6 +6,7 @@
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
+#include <Parsers/IAST.h>
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Common/typeid_cast.h>
@@ -76,6 +77,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
     {
         std::unique_lock lock(mutex);
+        IAST::QueryKind query_kind = ast->getQueryKind();
 
         const auto queue_max_wait_ms = settings.queue_max_wait_ms.totalMilliseconds();
         if (!is_unlimited_query && max_size && processes.size() >= max_size)
@@ -84,6 +86,19 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
                 LOG_WARNING(&Poco::Logger::get("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
             if (!queue_max_wait_ms || !have_space.wait_for(lock, std::chrono::milliseconds(queue_max_wait_ms), [&]{ return processes.size() < max_size; }))
                 throw Exception("Too many simultaneous queries. Maximum: " + toString(max_size), ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES);
+        }
+
+        if (!is_unlimited_query)
+        {
+            QueryAmount amount = getQueryKindAmount(query_kind);
+            if (max_insert_queries_amount && query_kind == IAST::QueryKind::Insert && amount >= max_insert_queries_amount)
+                throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                                "Too many simultaneous insert queries. Maximum: {}, current: {}",
+                                max_insert_queries_amount, amount);
+            if (max_select_queries_amount && query_kind == IAST::QueryKind::Select && amount >= max_select_queries_amount)
+                throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
+                                "Too many simultaneous select queries. Maximum: {}, current: {}",
+                                max_select_queries_amount, amount);
         }
 
         {
@@ -209,6 +224,8 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
         auto process_it = processes.emplace(processes.end(),
             query_context, query_, client_info, priorities.insert(settings.priority), std::move(thread_group));
 
+        increaseQueryKindAmount(query_kind);
+
         res = std::make_shared<Entry>(*this, process_it);
 
         process_it->setUserProcessList(&user_process_list);
@@ -248,6 +265,7 @@ ProcessListEntry::~ProcessListEntry()
 
     String user = it->getClientInfo().current_user;
     String query_id = it->getClientInfo().current_query_id;
+    IAST::QueryKind query_kind = it->query_kind;
 
     const QueryStatus * process_list_element_ptr = &*it;
 
@@ -280,6 +298,9 @@ ProcessListEntry::~ProcessListEntry()
         LOG_ERROR(&Poco::Logger::get("ProcessList"), "Logical error: cannot find query by query_id and pointer to ProcessListElement in ProcessListForUser");
         std::terminate();
     }
+
+    parent.decreaseQueryKindAmount(query_kind);
+
     parent.have_space.notify_all();
 
     /// If there are no more queries for the user, then we will reset memory tracker and network throttler.
@@ -297,12 +318,14 @@ QueryStatus::QueryStatus(
     const String & query_,
     const ClientInfo & client_info_,
     QueryPriorities::Handle && priority_handle_,
-    ThreadGroupStatusPtr && thread_group_)
+    ThreadGroupStatusPtr && thread_group_,
+    IAST::QueryKind query_kind_)
     : WithContext(context_)
     , query(query_)
     , client_info(client_info_)
     , thread_group(std::move(thread_group_))
     , priority_handle(std::move(priority_handle_))
+    , query_kind(query_kind_)
 {
     auto settings = getContext()->getSettings();
     limits.max_execution_time = settings.max_execution_time;
@@ -431,9 +454,8 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
     res.read_bytes        = progress_in.read_bytes;
     res.total_rows        = progress_in.total_rows_to_read;
 
-    /// TODO: Use written_rows and written_bytes when real time progress is implemented
-    res.written_rows      = progress_out.read_rows;
-    res.written_bytes     = progress_out.read_bytes;
+    res.written_rows      = progress_out.written_rows;
+    res.written_bytes     = progress_out.written_bytes;
 
     if (thread_group)
     {
@@ -507,6 +529,35 @@ ProcessList::UserInfo ProcessList::getUserInfo(bool get_profile_events) const
         per_user_infos.emplace(user, user_queries.getInfo(get_profile_events));
 
     return per_user_infos;
+}
+
+void ProcessList::increaseQueryKindAmount(const IAST::QueryKind & query_kind)
+{
+    auto found = query_kind_amounts.find(query_kind);
+    if (found == query_kind_amounts.end())
+        query_kind_amounts[query_kind] = 1;
+    else
+        found->second += 1;
+}
+
+void ProcessList::decreaseQueryKindAmount(const IAST::QueryKind & query_kind)
+{
+    auto found = query_kind_amounts.find(query_kind);
+    /// TODO: we could just rebuild the map, as we have saved all query_kind.
+    if (found == query_kind_amounts.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong query kind amount: decrease before increase on '{}'", query_kind);
+    else if (found->second == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong query kind amount: decrease to negative on '{}'", query_kind, found->second);
+    else
+        found->second -= 1;
+}
+
+ProcessList::QueryAmount ProcessList::getQueryKindAmount(const IAST::QueryKind & query_kind) const
+{
+    auto found = query_kind_amounts.find(query_kind);
+    if (found == query_kind_amounts.end())
+        return 0;
+    return found->second;
 }
 
 }

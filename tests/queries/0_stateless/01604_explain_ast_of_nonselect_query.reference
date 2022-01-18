@@ -1,6 +1,6 @@
 AlterQuery  t1 (children 2)
  ExpressionList (children 1)
-  AlterCommand 33 (children 1)
+  AlterCommand DELETE (children 1)
    Function equals (children 1)
     ExpressionList (children 2)
      Identifier date
