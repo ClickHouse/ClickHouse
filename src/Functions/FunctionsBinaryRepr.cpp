@@ -519,9 +519,10 @@ public:
                 char * begin = reinterpret_cast<char *>(&out_vec[pos]);
                 char * end = begin;
 
-                // index 1 stores the higher 64 bit
-                Impl::executeOneUInt(uuid[i].toUnderType().items[1], end, false, false);
-                Impl::executeOneUInt(uuid[i].toUnderType().items[0], end, false, true);
+                // use executeOnUInt instead of using executeOneString 
+                // because the latter one outputs the string in the memory order
+                Impl::executeOneUInt(uuid[i].toUnderType().items[0], end, false, false);
+                Impl::executeOneUInt(uuid[i].toUnderType().items[1], end, false, true);
 
                 pos += end - begin;
                 out_offsets[i] = pos;
