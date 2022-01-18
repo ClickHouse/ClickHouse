@@ -72,8 +72,10 @@ namespace
 
         HDFSFileInfo ls;
         ls.file_info = hdfsListDirectory(fs.get(), prefix_without_globs.data(), &ls.length);
-        if (ls.file_info == nullptr) {
-            throw Exception(ErrorCodes::ACCESS_DENIED, "Cannot list directory {}: {}", prefix_without_globs, String(hdfsGetLastError()));
+        if (ls.file_info == nullptr && errno != ENOENT) {
+            // ignore file not found exception, keep throw other exception
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED, "Cannot list directory {}: {}", prefix_without_globs, String(hdfsGetLastError()));
         }
         Strings result;
         for (int i = 0; i < ls.length; ++i)
