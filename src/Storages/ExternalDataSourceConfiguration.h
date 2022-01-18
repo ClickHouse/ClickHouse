@@ -7,6 +7,11 @@
 namespace DB
 {
 
+#define EMPTY_SETTINGS(M)
+DECLARE_SETTINGS_TRAITS(EmptySettingsTraits, EMPTY_SETTINGS)
+
+struct EmptySettings : public BaseSettings<EmptySettingsTraits> {};
+
 struct ExternalDataSourceConfiguration
 {
     String host;
@@ -46,10 +51,11 @@ struct StorageMongoDBConfiguration : ExternalDataSourceConfiguration
 
 using StorageSpecificArgs = std::vector<std::pair<String, ASTPtr>>;
 
-struct ExternalDataSourceConfig
+struct ExternalDataSourceInfo
 {
     ExternalDataSourceConfiguration configuration;
     StorageSpecificArgs specific_args;
+    SettingsChanges settings_changes;
 };
 
 /* If there is a storage engine's configuration specified in the named_collections,
@@ -62,10 +68,16 @@ struct ExternalDataSourceConfig
  * Any key-value engine argument except common (`host`, `port`, `username`, `password`, `database`)
  * is returned in EngineArgs struct.
  */
-std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const ASTs & args, ContextPtr context, bool is_database_engine = false, bool throw_on_no_collection = true);
+template <typename T = EmptySettingsTraits>
+std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
+    const ASTs & args, ContextPtr context, bool is_database_engine = false, bool throw_on_no_collection = true, const BaseSettings<T> & storage_settings = {});
 
-std::optional<ExternalDataSourceConfiguration> getExternalDataSourceConfiguration(
-    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context);
+using HasConfigKeyFunc = std::function<bool(const String &)>;
+
+template <typename T = EmptySettingsTraits>
+std::optional<ExternalDataSourceInfo> getExternalDataSourceConfiguration(
+    const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix,
+    ContextPtr context, HasConfigKeyFunc has_config_key, const BaseSettings<T> & settings = {});
 
 
 /// Highest priority is 0, the bigger the number in map, the less the priority.
@@ -80,13 +92,13 @@ struct ExternalDataSourcesByPriority
 };
 
 ExternalDataSourcesByPriority
-getExternalDataSourceConfigurationByPriority(const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context);
+getExternalDataSourceConfigurationByPriority(const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context, HasConfigKeyFunc has_config_key);
 
 
 struct URLBasedDataSourceConfiguration
 {
     String url;
-    String format;
+    String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
 

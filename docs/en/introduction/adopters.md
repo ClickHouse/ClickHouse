@@ -153,6 +153,7 @@ toc_title: Adopters
 | <a href="https://www.spotify.com" class="favicon">Spotify</a> | Music | Experimentation | — | — | [Slides, July 2018](https://www.slideshare.net/glebus/using-clickhouse-for-experimentation-104247173) |
 | <a href="https://www.staffcop.ru/" class="favicon">Staffcop</a> | Information Security | Main Product | — | — | [Official website, Documentation](https://www.staffcop.ru/sce43) |
 | <a href="https://www.suning.com/" class="favicon">Suning</a> | E-Commerce | User behaviour analytics | — | — | [Blog article](https://www.sohu.com/a/434152235_411876) |
+| <a href="https://superwall.me/" class="favicon">Superwall</a> | Monetization Tooling | Main product | — | — | [Word of mouth, Jan 2022](https://github.com/ClickHouse/ClickHouse/pull/33573) |
 | <a href="https://www.teralytics.net/" class="favicon">Teralytics</a> | Mobility | Analytics | — | — | [Tech blog](https://www.teralytics.net/knowledge-hub/visualizing-mobility-data-the-scalability-challenge) |
 | <a href="https://www.tencent.com" class="favicon">Tencent</a> | Big Data | Data processing | — | — | [Slides in Chinese, October 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup19/5.%20ClickHouse大数据集群应用_李俊飞腾讯网媒事业部.pdf) |
 | <a href="https://www.tencent.com" class="favicon">Tencent</a> | Messaging | Logging | — | — | [Talk in Chinese, November 2019](https://youtu.be/T-iVQRuw-QY?t=5050) |
@@ -178,7 +179,7 @@ toc_title: Adopters
 | <a href="https://cloud.yandex.ru/services/managed-clickhouse" class="favicon">Yandex Cloud</a> | Public Cloud | Main product | — | — | [Talk in Russian, December 2019](https://www.youtube.com/watch?v=pgnak9e_E0o) |
 | <a href="https://cloud.yandex.ru/services/datalens" class="favicon">Yandex DataLens</a> | Business Intelligence | Main product | — | — | [Slides in Russian, December 2019](https://presentations.clickhouse.com/meetup38/datalens.pdf) |
 | <a href="https://market.yandex.ru/" class="favicon">Yandex Market</a> | e-Commerce | Metrics, Logging | — | — | [Talk in Russian, January 2019](https://youtu.be/_l1qP0DyBcA?t=478) |
-| <a href="https://metrica.yandex.com" class="favicon">Yandex Metrica</a> | Web analytics | Macin product | 630 servers in one cluster, 360 servers in another cluster, 1862 servers in one department | 133 PiB / 8.31 PiB / 120 trillion records | [Slides, February 2020](https://presentations.clickhouse.com/meetup40/introduction/#13) |
+| <a href="https://metrica.yandex.com" class="favicon">Yandex Metrica</a> | Web analytics | Main product | 630 servers in one cluster, 360 servers in another cluster, 1862 servers in one department | 133 PiB / 8.31 PiB / 120 trillion records | [Slides, February 2020](https://presentations.clickhouse.com/meetup40/introduction/#13) |
 | <a href="https://www.yellowfinbi.com" class="favicon"><COMPANYNAME></a> | Analytics | Main product | - | - | [Integration](https://www.yellowfinbi.com/campaign/yellowfin-9-whats-new#el-30219e0e) |
 | <a href="https://www.yotascale.com/" class="favicon">Yotascale</a> | Cloud | Data pipeline | — | 2 bn records/day | [LinkedIn (Accomplishments)](https://www.linkedin.com/in/adilsaleem/) |
 | <a href="https://www.your-analytics.org/" class="favicon">Your Analytics</a> | Product Analytics | Main Product | — | - | [Tweet, November 2021](https://twitter.com/mikenikles/status/1459737241165565953) |

@@ -9,6 +9,8 @@ The HTTP interface lets you use ClickHouse on any platform from any programming 
 
 By default, `clickhouse-server` listens for HTTP on port 8123 (this can be changed in the config).
 
+Sometimes, `curl` command is not available on user operating systems. On Ubuntu or Debian, run `sudo apt install curl`. Please refer this [documentation](https://curl.se/download.html) to install it before running the examples.
+
 If you make a `GET /` request without parameters, it returns 200 response code and the string which defined in [http_server_default_response](../operations/server-configuration-parameters/settings.md#server_configuration_parameters-http_server_default_response) default value “Ok.” (with a line feed at the end)
 
 ``` bash

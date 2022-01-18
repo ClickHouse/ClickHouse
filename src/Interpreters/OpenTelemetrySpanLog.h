@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Interpreters/SystemLog.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/NamesAndAliases.h>
 
 namespace DB
 {
