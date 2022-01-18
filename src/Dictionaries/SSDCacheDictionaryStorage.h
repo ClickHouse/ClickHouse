@@ -16,6 +16,7 @@
 #include <Common/Arena.h>
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/MemorySanitizer.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/HashTable/HashMap.h>
 #include <IO/AIO.h>
 #include <IO/BufferWithOwnMemory.h>
