@@ -103,6 +103,10 @@
         "name": "clickhouse/mysql-golang-client",
         "dependent": []
     },
+    "docker/test/integration/dotnet_client": {
+        "name": "clickhouse/dotnet-client",
+        "dependent": []
+    },
     "docker/test/integration/mysql_java_client": {
         "name": "clickhouse/mysql-java-client",
         "dependent": []
