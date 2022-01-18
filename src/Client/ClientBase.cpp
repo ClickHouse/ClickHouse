@@ -570,7 +570,7 @@ void ClientBase::updateSuggest(const ASTCreateQuery & ast_create)
         }
     }
 
-    suggest->addWords(new_words);
+    suggest->addWords(std::move(new_words));
 }
 
 void ClientBase::processTextAsSingleQuery(const String & full_query)
@@ -593,7 +593,7 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
     {
         /// Do not update suggest, until suggestion will be ready
         /// (this will avoid extra complexity)
-        if (suggest && suggest->ready)
+        if (suggest)
             updateSuggest(*create);
     }
 

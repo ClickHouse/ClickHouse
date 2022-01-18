@@ -36,11 +36,8 @@ bool hasInputData()
 
 }
 
-std::optional<LineReader::Suggest::WordsRange> LineReader::Suggest::getCompletions(const String & prefix, size_t prefix_length) const
+LineReader::Suggest::Words LineReader::Suggest::getCompletions(const String & prefix, size_t prefix_length)
 {
-    if (!ready)
-        return std::nullopt;
-
     std::string_view last_word;
 
     auto last_word_pos = prefix.find_last_of(word_break_characters);
@@ -48,32 +45,48 @@ std::optional<LineReader::Suggest::WordsRange> LineReader::Suggest::getCompletio
         last_word = prefix;
     else
         last_word = std::string_view(prefix).substr(last_word_pos + 1, std::string::npos);
-
     /// last_word can be empty.
+
+    std::pair<Words::const_iterator, Words::const_iterator> range;
+
+    std::lock_guard lock(mutex);
 
     /// Only perform case sensitive completion when the prefix string contains any uppercase characters
     if (std::none_of(prefix.begin(), prefix.end(), [&](auto c) { return c >= 'A' && c <= 'Z'; }))
-        return std::equal_range(
+        range = std::equal_range(
             words_no_case.begin(), words_no_case.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
             {
                 return strncasecmp(s.data(), prefix_searched.data(), prefix_length) < 0;
             });
     else
-        return std::equal_range(words.begin(), words.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
+        range = std::equal_range(words.begin(), words.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
         {
             return strncmp(s.data(), prefix_searched.data(), prefix_length) < 0;
         });
+
+    return Words(range.first, range.second);
 }
 
-void LineReader::Suggest::addWords(const std::vector<std::string> & new_words)
+void LineReader::Suggest::addWords(Words && new_words)
 {
-    for (const auto & new_word : new_words)
-    {
-        if (std::binary_search(words.begin(), words.end(), new_word))
-            continue;
+    std::lock_guard lock(mutex);
 
-        words.push_back(new_word);
-        words_no_case.push_back(new_word);
+    /// Optimization for initial load.
+    if (words.empty())
+    {
+        words.swap(new_words);
+        words_no_case = words;
+    }
+    else
+    {
+        for (const auto & new_word : new_words)
+        {
+            if (std::binary_search(words.begin(), words.end(), new_word))
+                continue;
+
+            words.push_back(new_word);
+            words_no_case.push_back(new_word);
+        }
     }
 
     std::sort(words.begin(), words.end());
