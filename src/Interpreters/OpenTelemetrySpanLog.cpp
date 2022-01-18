@@ -148,24 +148,6 @@ OpenTelemetrySpanHolder::~OpenTelemetrySpanHolder()
     }
 }
 
-
-template <typename T>
-static T readHex(const char * data)
-{
-    T x{};
-
-    const char * end = data + sizeof(T) * 2;
-    while (data < end)
-    {
-        x *= 16;
-        x += unhex(*data);
-        ++data;
-    }
-
-    return x;
-}
-
-
 bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & traceparent,
     std::string & error)
 {
@@ -183,7 +165,7 @@ bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & trace
 
     const char * data = traceparent.data();
 
-    uint8_t version = readHex<uint8_t>(data);
+    uint8_t version = unhex2(data);
     data += 2;
 
     if (version != 0)
@@ -199,9 +181,14 @@ bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & trace
     }
 
     ++data;
-    UInt128 trace_id_128 = readHex<UInt128>(data);
-    trace_id = trace_id_128;
+    UInt64 trace_id_higher_64 = unhexUInt<UInt64>(data);
+    UInt64 trace_id_lower_64 = unhexUInt<UInt64>(data + 16);
     data += 32;
+
+    // store the 128-bit trace id in big-endian order
+    trace_id.toUnderType().items[0] = trace_id_higher_64;
+    trace_id.toUnderType().items[1] = trace_id_lower_64;
+    
 
     if (*data != '-')
     {
@@ -210,7 +197,7 @@ bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & trace
     }
 
     ++data;
-    span_id = readHex<UInt64>(data);
+    span_id = unhexUInt<UInt64>(data);
     data += 16;
 
     if (*data != '-')
@@ -218,9 +205,10 @@ bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & trace
         error = fmt::format("Malformed traceparant header: {}", traceparent);
         return false;
     }
+    
 
     ++data;
-    trace_flags = readHex<UInt8>(data);
+    trace_flags = unhex2(data);
     return true;
 }
 
