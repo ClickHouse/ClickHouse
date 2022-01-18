@@ -366,6 +366,13 @@ def testHdfsDirectoryNotExist(started_cluster):
     node1.query(ddl)
     assert "Cannot list directory" in node1.query_and_get_error("select * from HDFSStorageWithNotExistDir")
 
+def test_format_detection(started_cluster):
+    node1.query(f"create table arrow_table (x UInt64) engine=HDFS('hdfs://hdfs1:9000/data.arrow')")
+    node1.query(f"insert into arrow_table select 1")
+    result = node1.query(f"select * from hdfs('hdfs://hdfs1:9000/data.arrow')")
+    assert(int(result) == 1)
+
+
 if __name__ == '__main__':
     cluster.start()
     input("Cluster created, press any key to destroy...")

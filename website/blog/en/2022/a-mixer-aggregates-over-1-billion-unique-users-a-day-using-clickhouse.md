@@ -1,6 +1,6 @@
 ---
 title: 'Admixer Aggregates Over 1 Billion Unique Users a Day using ClickHouse'
-image: 'https://blog-images.clickhouse.com/en/2022/admixer-case-study/featured.jpg'
+image: 'https://blog-images.clickhouse.com/en/2022/a-mixer-case-study/featured.jpg'
 date: '2022-01-11'
 author: 'Vladimir Zakrevsky'
 tags: ['company']
@@ -44,7 +44,7 @@ Thus we needed to:
 * Be able to scale the data warehouse as the number of requests grew;
 * Have full control over our costs.
 
-![Profile Report](https://blog-images.clickhouse.com/en/2022/admixer-case-study/profile-report.png)
+![Profile Report](https://blog-images.clickhouse.com/en/2022/a-mixer-case-study/profile-report.png)
 
 This image shows the Profile Report. Any Ad Campaign in Admixer is split by Line Items (Profiles). It is possible to overview detailed reports by each Profile including Date-Time Statistics, Geo, Domans, SSPs. This report is also updated in real time.
 
@@ -69,11 +69,11 @@ ClickHouse helps to cope with the challenges above and provides the following be
 
 Our architecture changed from 2016 to 2020. There are two diagrams below: the state we started and the state we came to.
 
-![Architecture 2016](https://blog-images.clickhouse.com/en/2022/admixer-case-study/architecture-2016.png)
+![Architecture 2016](https://blog-images.clickhouse.com/en/2022/a-mixer-case-study/architecture-2016.png)
 
 _Architecture 2016_
 
-![Architecture 2020](https://blog-images.clickhouse.com/en/2022/admixer-case-study/architecture-2020.png)
+![Architecture 2020](https://blog-images.clickhouse.com/en/2022/a-mixer-case-study/architecture-2020.png)
 
 _Architecture 2020_
 
@@ -131,5 +131,3 @@ Today, the company has over 100 supply and demand partners, 3,000+ customers, an
 
 For more information please visit:
 [https://admixer.com/](https://admixer.com/)
-
-
