@@ -1,8 +1,7 @@
 #include <Backups/BackupUtils.h>
 #include <Backups/BackupEntryFromMemory.h>
-#include <Backups/BackupRenamingConfig.h>
+#include <Backups/DDLRenamingVisitor.h>
 #include <Backups/IBackup.h>
-#include <Backups/renameInCreateQuery.h>
 #include <Common/escapeForFileName.h>
 #include <Access/Common/AccessFlags.h>
 #include <Databases/IDatabase.h>
@@ -38,10 +37,8 @@ namespace
         /// Prepares internal structures for making backup entries.
         void prepare(const ASTBackupQuery::Elements & elements)
         {
-            auto new_renaming_config = std::make_shared<BackupRenamingConfig>();
             String current_database = context->getCurrentDatabase();
-            new_renaming_config->setFromBackupQueryElements(elements, current_database);
-            renaming_config = new_renaming_config;
+            renaming_settings.setFromBackupQuery(elements, current_database);
 
             for (const auto & element : elements)
             {
@@ -134,7 +131,7 @@ namespace
                     database->getEngineName());
 
             /// Check that we are not trying to backup the same table again.
-            DatabaseAndTableName new_table_name = renaming_config->getNewTableName(table_name_);
+            DatabaseAndTableName new_table_name = renaming_settings.getNewTableName(table_name_);
             if (tables.contains(new_table_name))
             {
                 String message;
@@ -203,7 +200,7 @@ namespace
             context->checkAccess(AccessType::SHOW_DATABASES, database_name_);
 
             /// Check that we are not trying to restore the same database again.
-            String new_database_name = renaming_config->getNewDatabaseName(database_name_);
+            String new_database_name = renaming_settings.getNewDatabaseName(database_name_);
             if (databases.contains(new_database_name) && databases[new_database_name].is_explicit)
                 throw Exception(ErrorCodes::CANNOT_BACKUP_DATABASE, "Couldn't backup database {} twice", backQuoteIfNeed(new_database_name));
 
@@ -248,7 +245,7 @@ namespace
         /// Do renaming in the create query according to the renaming config.
         std::shared_ptr<ASTCreateQuery> renameInCreateQuery(const ASTPtr & ast) const
         {
-            return typeid_cast<std::shared_ptr<ASTCreateQuery>>(::DB::renameInCreateQuery(ast, renaming_config, context));
+            return typeid_cast<std::shared_ptr<ASTCreateQuery>>(::DB::renameInCreateQuery(ast, context, renaming_settings));
         }
 
         static bool isSystemOrTemporaryDatabase(const String & database_name)
@@ -292,7 +289,7 @@ namespace
 
         ContextPtr context;
         BackupMutablePtr backup;
-        BackupRenamingConfigPtr renaming_config;
+        DDLRenamingSettings renaming_settings;
         std::map<String, CreateDatabaseInfo> databases;
         std::map<DatabaseAndTableName, CreateTableInfo> tables;
     };
