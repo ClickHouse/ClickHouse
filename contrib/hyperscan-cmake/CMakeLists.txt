@@ -6,9 +6,6 @@ elseif(ENABLE_HYPERSCAN)
 endif ()
 
 if (NOT ENABLE_HYPERSCAN)
-    add_library (hyperscan INTERFACE)
-    target_compile_definitions (hyperscan INTERFACE USE_HYPERSCAN=0)
-
     message (STATUS "Not using hyperscan")
     return()
 endif()
@@ -222,7 +219,6 @@ set (SRCS
 
 add_library (hyperscan ${SRCS})
 
-target_compile_definitions (hyperscan PUBLIC USE_HYPERSCAN=1)
 target_compile_options (hyperscan
     PRIVATE -g0 # Library has too much debug information
     -mno-avx -mno-avx2 # The library is using dynamic dispatch and is confused if AVX is enabled globally
@@ -239,3 +235,5 @@ if (ARCH_AMD64)
     target_include_directories (hyperscan PRIVATE x86_64)
 endif ()
 target_link_libraries (hyperscan PRIVATE boost::headers_only)
+
+add_library (ch_contrib::hyperscan ALIAS hyperscan)

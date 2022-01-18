@@ -80,7 +80,9 @@ if (TARGET ch_contrib::h3)
     target_link_libraries (clickhouse_functions PRIVATE ch_contrib::h3)
 endif()
 
-target_link_libraries(clickhouse_functions PRIVATE hyperscan)
+if (TARGET ch_contrib::hyperscan)
+    target_link_libraries(clickhouse_functions PRIVATE ch_contrib::hyperscan)
+endif()
 
 if (TARGET ch_contrib::simdjson)
     target_link_libraries(clickhouse_functions PRIVATE ch_contrib::simdjson)
