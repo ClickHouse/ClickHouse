@@ -110,7 +110,7 @@ if (USE_AWS_S3)
     add_headers_and_sources(dbms Disks/S3)
 endif()
 
-if (USE_AZURE_BLOB_STORAGE)
+if (TARGET ch_contrib::azure_sdk)
     add_headers_and_sources(dbms Disks/AzureBlobStorage)
 endif()
 
