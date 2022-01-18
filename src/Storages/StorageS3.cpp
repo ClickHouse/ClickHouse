@@ -82,8 +82,6 @@ public:
     Impl(Aws::S3::S3Client & client_, const S3::URI & globbed_uri_)
         : client(client_), globbed_uri(globbed_uri_)
     {
-        std::lock_guard lock(mutex);
-
         if (globbed_uri.bucket.find_first_of("*?{") != globbed_uri.bucket.npos)
             throw Exception("Expression can not have wildcards inside bucket name", ErrorCodes::UNEXPECTED_EXPRESSION);
 
@@ -179,20 +177,24 @@ String StorageS3Source::DisclosedGlobIterator::next()
 class StorageS3Source::KeysIterator::Impl
 {
 public:
-    explicit Impl(const std::vector<String> & keys_) : keys(keys_), index(0)
+    explicit Impl(const std::vector<String> & keys_) : keys(keys_), keys_iter(keys.begin())
     {
     }
 
     String next()
     {
-        if (index == keys.size())
+        std::lock_guard lock(mutex);
+        if (keys_iter == keys.end())
             return "";
-        return keys[index++];
+        auto key = *keys_iter;
+        ++keys_iter;
+        return key;
     }
 
 private:
-    const std::vector<String> & keys;
-    size_t index;
+    std::mutex mutex;
+    Strings keys;
+    Strings::iterator keys_iter;
 };
 
 StorageS3Source::KeysIterator::KeysIterator(const std::vector<String> & keys_) : pimpl(std::make_shared<StorageS3Source::KeysIterator::Impl>(keys_))
@@ -849,9 +851,10 @@ ColumnsDescription StorageS3::getTableStructureFromDataImpl(
     const std::optional<FormatSettings> & format_settings,
     ContextPtr ctx)
 {
+    std::vector<String> keys = {client_auth.uri.key};
     auto read_buffer_creator = [&]()
     {
-        auto file_iterator = createFileIterator(client_auth, {client_auth.uri.key}, is_key_with_globs, distributed_processing, ctx);
+        auto file_iterator = createFileIterator(client_auth, keys, is_key_with_globs, distributed_processing, ctx);
         String current_key = (*file_iterator)();
         if (current_key.empty())
             throw Exception(

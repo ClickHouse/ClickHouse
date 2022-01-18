@@ -366,12 +366,12 @@ def test_overwrite(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
     table_function = f"hdfs('hdfs://hdfs1:9000/data', 'Parquet', 'a Int32, b String')"
-    node1.query(f"create table test as {table_function}")
-    node1.query(f"insert into test select number, randomString(100) from numbers(5)")
-    node1.query_and_get_error(f"insert into test select number, randomString(100) FROM numbers(10)")
-    node1.query(f"insert into test select number, randomString(100) from numbers(10) settings hdfs_truncate_on_insert=1")
+    node1.query(f"create table test_overwrite as {table_function}")
+    node1.query(f"insert into test_overwrite select number, randomString(100) from numbers(5)")
+    node1.query_and_get_error(f"insert into test_overwrite select number, randomString(100) FROM numbers(10)")
+    node1.query(f"insert into test_overwrite select number, randomString(100) from numbers(10) settings hdfs_truncate_on_insert=1")
 
-    result = node1.query(f"select count() from test")
+    result = node1.query(f"select count() from test_overwrite")
     assert(int(result) == 10)
 
 

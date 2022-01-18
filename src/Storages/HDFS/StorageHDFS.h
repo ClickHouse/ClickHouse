@@ -99,7 +99,7 @@ public:
     class URISIterator
     {
         public:
-            URISIterator(const std::vector<const String> & uris_);
+            URISIterator(const std::vector<const String> & uris_, ContextPtr context);
             String next();
         private:
             class Impl;

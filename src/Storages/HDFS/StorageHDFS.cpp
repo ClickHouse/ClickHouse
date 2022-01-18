@@ -214,20 +214,34 @@ private:
 class HDFSSource::URISIterator::Impl
 {
 public:
-    Impl(const std::vector<const String> & uris_) : uris(uris_), index(0)
+    explicit Impl(const std::vector<const String> & uris_, ContextPtr context)
     {
+        auto path_and_uri = getPathFromUriAndUriWithoutPath(uris_[0]);
+        HDFSBuilderWrapper builder = createHDFSBuilder(path_and_uri.second + "/", context->getGlobalContext()->getConfigRef());
+        HDFSFSPtr fs = createHDFSFS(builder.get());
+        for (const auto & uri : uris_)
+        {
+            path_and_uri = getPathFromUriAndUriWithoutPath(uri);
+            if (!hdfsExists(fs.get(), path_and_uri.first.c_str()))
+                uris.push_back(uri);
+        }
+        uris_iter = uris.begin();
     }
 
     String next()
     {
-        if (index == uris.size())
+        std::lock_guard lock(mutex);
+        if (uris_iter == uris.end())
             return "";
-        return uris[index++];
+        auto key = *uris_iter;
+        ++uris_iter;
+        return key;
     }
 
 private:
-    const std::vector<const String> & uris;
-    size_t index;
+    std::mutex mutex;
+    Strings uris;
+    Strings::iterator uris_iter;
 };
 
 Block HDFSSource::getHeader(const StorageMetadataPtr & metadata_snapshot, bool need_path_column, bool need_file_column)
@@ -263,8 +277,8 @@ String HDFSSource::DisclosedGlobIterator::next()
     return pimpl->next();
 }
 
-HDFSSource::URISIterator::URISIterator(const std::vector<const String> & uris_)
-    : pimpl(std::make_shared<HDFSSource::URISIterator::Impl>(uris_))
+HDFSSource::URISIterator::URISIterator(const std::vector<const String> & uris_, ContextPtr context)
+    : pimpl(std::make_shared<HDFSSource::URISIterator::Impl>(uris_, context))
 {
 }
 
@@ -501,7 +515,7 @@ Pipe StorageHDFS::read(
     }
     else
     {
-        auto uris_iterator = std::make_shared<HDFSSource::URISIterator>(uris);
+        auto uris_iterator = std::make_shared<HDFSSource::URISIterator>(uris, context_);
         iterator_wrapper = std::make_shared<HDFSSource::IteratorWrapper>([uris_iterator]()
         {
             return uris_iterator->next();
