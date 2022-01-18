@@ -79,3 +79,6 @@ endif()
 if (TARGET ch_contrib::mariadbclient) # ch::mysqlxx
     set(USE_MYSQL 1)
 endif()
+if (ENABLE_NLP)
+    set(USE_NLP 1)
+endif()
