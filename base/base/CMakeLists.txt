@@ -57,7 +57,7 @@ target_link_libraries (common
         Poco::Foundation
         ch_contrib::replxx
         ch_contrib::cctz
-        fmt
+        ch_contrib::fmt
         ch_contrib::magic_enum
 )
 
