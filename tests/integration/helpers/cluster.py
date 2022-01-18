@@ -321,6 +321,8 @@ class ClickHouseCluster:
         # available when with_mongo == True
         self.mongo_host = "mongo1"
         self.mongo_port = get_free_port()
+        self.mongo_no_cred_host = "mongo2"
+        self.mongo_no_cred_port = get_free_port()
 
         # available when with_cassandra == True
         self.cassandra_host = "cassandra1"
@@ -728,8 +730,8 @@ class ClickHouseCluster:
         env_variables['MONGO_HOST'] = self.mongo_host
         env_variables['MONGO_EXTERNAL_PORT'] = str(self.mongo_port)
         env_variables['MONGO_INTERNAL_PORT'] = "27017"
-        env_variables['MONGO_EXTERNAL_PORT_2'] = "27018"
-        env_variables['MONGO_INTERNAL_PORT_2'] = "27017"
+        env_variables['MONGO_NO_CRED_EXTERNAL_PORT'] = str(self.mongo_no_cred_port)
+        env_variables['MONGO_NO_CRED_INTERNAL_PORT'] = "27017"
         self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mongo.yml')])
         self.base_mongo_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
                                 '--file', p.join(docker_compose_yml_dir, 'docker_compose_mongo.yml')]
