@@ -47,7 +47,7 @@ ASCII_CHARS = string.ascii_lowercase +  string.ascii_uppercase + string.digits
 def randomword(length, chars=ASCII_CHARS):
     return ''.join(random.choice(chars) for i in range(length))
 
-def restart(node=None, safe=False, timeout=300):
+def restart(node=None, safe=False, timeout=60):
     """Restart ClickHouse server and wait for config to be reloaded.
     """
     with When("I restart ClickHouse server node"):
@@ -78,7 +78,7 @@ def restart(node=None, safe=False, timeout=300):
                     f"ConfigReloader: Loaded config '/etc/clickhouse-server/config.xml', performed update on configuration",
                     timeout=timeout)
 
-def add_config(config, timeout=300, restart=False, modify=False):
+def add_config(config, timeout=60, restart=False, modify=False):
     """Add dynamic configuration file to ClickHouse.
 
     :param node: node
@@ -86,7 +86,6 @@ def add_config(config, timeout=300, restart=False, modify=False):
     :param timeout: timeout, default: 20 sec
     """
     node = current().context.node
-    cluster = current().context.cluster
 
     def check_preprocessed_config_is_updated(after_removal=False):
         """Check that preprocessed config is updated.
@@ -124,7 +123,7 @@ def add_config(config, timeout=300, restart=False, modify=False):
 
             with And("I get the current log size"):
                 cmd = node.cluster.command(None,
-                    f"stat --format=%s {cluster.environ['CLICKHOUSE_TESTS_DIR']}/_instances/{node.name}/logs/clickhouse-server.log")
+                    f"stat --format=%s {os.environ['CLICKHOUSE_TESTS_DIR']}/_instances/{node.name}/logs/clickhouse-server.log")
                 logsize = cmd.output.split(" ")[0].strip()
 
             with And("I start ClickHouse back up"):
@@ -153,10 +152,7 @@ def add_config(config, timeout=300, restart=False, modify=False):
 
             with node.cluster.shell(node.name) as bash:
                 bash.expect(bash.prompt)
-                bash.send("tail -v -n 0 -f /var/log/clickhouse-server/clickhouse-server.log")
-                # make sure tail process is launched and started to follow the file
-                bash.expect("<==")
-                bash.expect("\n")
+                bash.send("tail -n 0 -f /var/log/clickhouse-server/clickhouse-server.log")
 
                 with When("I add the config", description=config.path):
                     command = f"cat <<HEREDOC > {config.path}\n{config.content}\nHEREDOC"
@@ -173,10 +169,7 @@ def add_config(config, timeout=300, restart=False, modify=False):
             with Finally(f"I remove {config.name}"):
                 with node.cluster.shell(node.name) as bash:
                     bash.expect(bash.prompt)
-                    bash.send("tail -v -n 0 -f /var/log/clickhouse-server/clickhouse-server.log")
-                    # make sure tail process is launched and started to follow the file
-                    bash.expect("<==")
-                    bash.expect("\n")
+                    bash.send("tail -n 0 -f /var/log/clickhouse-server/clickhouse-server.log")
 
                     with By("removing the config file", description=config.path):
                         node.command(f"rm -rf {config.path}", exitcode=0)
@@ -194,7 +187,7 @@ def create_ldap_servers_config_content(servers, config_d_dir="/etc/clickhouse-se
     path = os.path.join(config_d_dir, config_file)
     name = config_file
 
-    root = xmltree.fromstring("<clickhouse><ldap_servers></ldap_servers></clickhouse>")
+    root = xmltree.fromstring("<yandex><ldap_servers></ldap_servers></yandex>")
     xml_servers = root.find("ldap_servers")
     xml_servers.append(xmltree.Comment(text=f"LDAP servers {uid}"))
 
@@ -217,7 +210,7 @@ def modify_config(config, restart=False):
 
 @contextmanager
 def ldap_servers(servers, config_d_dir="/etc/clickhouse-server/config.d", config_file="ldap_servers.xml",
-        timeout=300, restart=False, config=None):
+        timeout=60, restart=False, config=None):
     """Add LDAP servers configuration.
     """
     if config is None:
@@ -231,7 +224,7 @@ def create_ldap_users_config_content(*users, config_d_dir="/etc/clickhouse-serve
     path = os.path.join(config_d_dir, config_file)
     name = config_file
 
-    root = xmltree.fromstring("<clickhouse><users></users></clickhouse>")
+    root = xmltree.fromstring("<yandex><users></users></yandex>")
     xml_users = root.find("users")
     xml_users.append(xmltree.Comment(text=f"LDAP users {uid}"))
 
@@ -255,7 +248,7 @@ def add_users_identified_with_ldap(*users):
     try:
         with Given("I create users"):
             for user in users:
-                node.query(f"CREATE USER '{user['username']}' IDENTIFIED WITH LDAP SERVER '{user['server']}'")
+                node.query(f"CREATE USER '{user['username']}' IDENTIFIED WITH ldap_server BY '{user['server']}'")
         yield
     finally:
         with Finally("I remove users"):
@@ -265,7 +258,7 @@ def add_users_identified_with_ldap(*users):
 
 @contextmanager
 def ldap_authenticated_users(*users, config_d_dir="/etc/clickhouse-server/users.d",
-        config_file=None, timeout=300, restart=True, config=None, rbac=False):
+        config_file=None, timeout=60, restart=True, config=None, rbac=False):
     """Add LDAP authenticated users.
     """
     if rbac:
@@ -275,9 +268,9 @@ def ldap_authenticated_users(*users, config_d_dir="/etc/clickhouse-server/users.
             config_file = f"ldap_users_{getuid()}.xml"
         if config is None:
             config = create_ldap_users_config_content(*users, config_d_dir=config_d_dir, config_file=config_file)
-        return add_config(config, timeout=timeout, restart=restart)
+        return add_config(config, restart=restart)
 
-def invalid_server_config(servers, message=None, tail=30, timeout=300):
+def invalid_server_config(servers, message=None, tail=30, timeout=60):
     """Check that ClickHouse errors when trying to load invalid LDAP servers configuration file.
     """
     node = current().context.node
@@ -306,7 +299,7 @@ def invalid_server_config(servers, message=None, tail=30, timeout=300):
             with By("removing the config file", description=config.path):
                 node.command(f"rm -rf {config.path}", exitcode=0)
 
-def invalid_user_config(servers, config, message=None, tail=30, timeout=300):
+def invalid_user_config(servers, config, message=None, tail=30, timeout=60):
     """Check that ClickHouse errors when trying to load invalid LDAP users configuration file.
     """
     node = current().context.node

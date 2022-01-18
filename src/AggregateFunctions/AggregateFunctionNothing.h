@@ -8,7 +8,6 @@
 
 namespace DB
 {
-struct Settings;
 
 
 /** Aggregate function that takes arbitrary number of arbitrary arguments and does nothing.
@@ -28,8 +27,6 @@ public:
     {
         return argument_types.front();
     }
-
-    bool allocatesMemoryInArena() const override { return false; }
 
     void create(AggregateDataPtr) const override
     {
@@ -62,11 +59,11 @@ public:
     {
     }
 
-    void serialize(ConstAggregateDataPtr __restrict, WriteBuffer &, std::optional<size_t>) const override
+    void serialize(ConstAggregateDataPtr, WriteBuffer &) const override
     {
     }
 
-    void deserialize(AggregateDataPtr, ReadBuffer &, std::optional<size_t>, Arena *) const override
+    void deserialize(AggregateDataPtr, ReadBuffer &, Arena *) const override
     {
     }
 

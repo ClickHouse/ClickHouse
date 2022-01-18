@@ -15,7 +15,7 @@ WITH toDate('2000-01-01') as a, toDateTime('2000-01-01', 'Europe/Moscow') as b
 SELECT if(value, b, a) as result, toTypeName(result)
 FROM predicate_table;
 
-WITH toDateTime('2000-01-01', 'Europe/Moscow') as a, toDateTime64('2000-01-01', 5, 'Europe/Moscow') as b
+WITH toDateTime('2000-01-01') as a, toDateTime64('2000-01-01', 5, 'Europe/Moscow') as b
 SELECT if(value, b, a) as result, toTypeName(result)
 FROM predicate_table;
 

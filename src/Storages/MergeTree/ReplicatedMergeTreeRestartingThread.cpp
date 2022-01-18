@@ -6,7 +6,6 @@
 #include <Interpreters/Context.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/randomSeed.h>
-#include <boost/algorithm/string/replace.hpp>
 
 
 namespace ProfileEvents
@@ -26,8 +25,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int REPLICA_IS_ALREADY_ACTIVE;
-    extern const int REPLICA_STATUS_CHANGED;
-
 }
 
 namespace
@@ -50,7 +47,7 @@ ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(Storage
     const auto storage_settings = storage.getSettings();
     check_period_ms = storage_settings->zookeeper_session_expiration_check_period.totalSeconds() * 1000;
 
-    task = storage.getContext()->getSchedulePool().createTask(log_name, [this]{ run(); });
+    task = storage.global_context.getSchedulePool().createTask(log_name, [this]{ run(); });
 }
 
 void ReplicatedMergeTreeRestartingThread::run()
@@ -58,7 +55,6 @@ void ReplicatedMergeTreeRestartingThread::run()
     if (need_stop)
         return;
 
-    bool reschedule_now = false;
     try
     {
         if (first_time || readonly_mode_was_set || storage.getZooKeeper()->expired())
@@ -94,8 +90,6 @@ void ReplicatedMergeTreeRestartingThread::run()
                     /// The exception when you try to zookeeper_init usually happens if DNS does not work. We will try to do it again.
                     tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
-                    /// Here we're almost sure the table is already readonly, but it doesn't hurt to enforce it.
-                    setReadonly();
                     if (first_time)
                         storage.startup_event.set();
                     task->scheduleAfter(retry_period_ms);
@@ -135,29 +129,15 @@ void ReplicatedMergeTreeRestartingThread::run()
             first_time = false;
         }
     }
-    catch (const Exception & e)
+    catch (...)
     {
         /// We couldn't activate table let's set it into readonly mode
         setReadonly();
-        partialShutdown();
-        storage.startup_event.set();
-        tryLogCurrentException(log, __PRETTY_FUNCTION__);
-
-        if (e.code() == ErrorCodes::REPLICA_STATUS_CHANGED)
-            reschedule_now = true;
-    }
-    catch (...)
-    {
-        setReadonly();
-        partialShutdown();
         storage.startup_event.set();
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
 
-    if (reschedule_now)
-        task->schedule();
-    else
-        task->scheduleAfter(check_period_ms);
+    task->scheduleAfter(check_period_ms);
 }
 
 
@@ -173,29 +153,20 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 
         storage.cloneReplicaIfNeeded(zookeeper);
 
-        try
-        {
-            storage.queue.initialize(zookeeper);
+        storage.queue.load(zookeeper);
 
-            storage.queue.load(zookeeper);
-
-            storage.queue.createLogEntriesToFetchBrokenParts();
-
-            /// pullLogsToQueue() after we mark replica 'is_active' (and after we repair if it was lost);
-            /// because cleanup_thread doesn't delete log_pointer of active replicas.
-            storage.queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::LOAD);
-        }
-        catch (...)
-        {
-            std::unique_lock lock(storage.last_queue_update_exception_lock);
-            storage.last_queue_update_exception = getCurrentExceptionMessage(false);
-            throw;
-        }
-
+        /// pullLogsToQueue() after we mark replica 'is_active' (and after we repair if it was lost);
+        /// because cleanup_thread doesn't delete log_pointer of active replicas.
+        storage.queue.pullLogsToQueue(zookeeper);
         storage.queue.removeCurrentPartsFromMutations();
         storage.last_queue_update_finish_time.store(time(nullptr));
 
         updateQuorumIfWeHavePart();
+
+        if (storage_settings->replicated_can_become_leader)
+            storage.enterLeaderElection();
+        else
+            LOG_INFO(log, "Will not enter leader election because replicated_can_become_leader=0");
 
         /// Anything above can throw a KeeperException if something is wrong with ZK.
         /// Anything below should not throw exceptions.
@@ -204,7 +175,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         storage.partial_shutdown_event.reset();
 
         /// Start queue processing
-        storage.background_operations_assignee.start();
+        storage.background_executor.start();
 
         storage.queue_updating_task->activateAndSchedule();
         storage.mutations_updating_task->activateAndSchedule();
@@ -270,7 +241,7 @@ void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
     auto zookeeper = storage.getZooKeeper();
 
     String quorum_str;
-    if (zookeeper->tryGet(fs::path(storage.zookeeper_path) / "quorum" / "status", quorum_str))
+    if (zookeeper->tryGet(storage.zookeeper_path + "/quorum/status", quorum_str))
     {
         ReplicatedMergeTreeQuorumEntry quorum_entry(quorum_str);
 
@@ -283,12 +254,12 @@ void ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart()
     }
 
     Strings part_names;
-    String parallel_quorum_parts_path = fs::path(storage.zookeeper_path) / "quorum" / "parallel";
+    String parallel_quorum_parts_path = storage.zookeeper_path + "/quorum/parallel";
     if (zookeeper->tryGetChildren(parallel_quorum_parts_path, part_names) == Coordination::Error::ZOK)
     {
         for (auto & part_name : part_names)
         {
-            if (zookeeper->tryGet(fs::path(parallel_quorum_parts_path) / part_name, quorum_str))
+            if (zookeeper->tryGet(parallel_quorum_parts_path + "/" + part_name, quorum_str))
             {
                 ReplicatedMergeTreeQuorumEntry quorum_entry(quorum_str);
                 if (!quorum_entry.replicas.count(storage.replica_name)
@@ -310,7 +281,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     /// How other replicas can access this one.
     ReplicatedMergeTreeAddress address = storage.getReplicatedMergeTreeAddress();
 
-    String is_active_path = fs::path(storage.replica_path) / "is_active";
+    String is_active_path = storage.replica_path + "/is_active";
 
     /** If the node is marked as active, but the mark is made in the same instance, delete it.
       * This is possible only when session in ZooKeeper expires.
@@ -334,7 +305,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     /// Simultaneously declare that this replica is active, and update the host.
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCreateRequest(is_active_path, active_node_identifier, zkutil::CreateMode::Ephemeral));
-    ops.emplace_back(zkutil::makeSetRequest(fs::path(storage.replica_path) / "host", address.toString(), -1));
+    ops.emplace_back(zkutil::makeSetRequest(storage.replica_path + "/host", address.toString(), -1));
 
     try
     {
@@ -343,7 +314,7 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     catch (const Coordination::Exception & e)
     {
         String existing_replica_host;
-        zookeeper->tryGet(fs::path(storage.replica_path) / "host", existing_replica_host);
+        zookeeper->tryGet(storage.replica_path + "/host", existing_replica_host);
 
         if (existing_replica_host.empty())
             existing_replica_host = "without host node";
@@ -375,6 +346,8 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 
     LOG_TRACE(log, "Waiting for threads to finish");
 
+    storage.exitLeaderElection();
+
     storage.queue_updating_task->deactivate();
     storage.mutations_updating_task->deactivate();
     storage.mutations_finalizing_task->deactivate();
@@ -387,7 +360,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
         auto fetch_lock = storage.fetcher.blocker.cancel();
         auto merge_lock = storage.merger_mutator.merges_blocker.cancel();
         auto move_lock = storage.parts_mover.moves_blocker.cancel();
-        storage.background_operations_assignee.finish();
+        storage.background_executor.finish();
     }
 
     LOG_TRACE(log, "Threads finished");

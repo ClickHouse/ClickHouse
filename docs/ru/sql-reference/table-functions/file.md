@@ -126,3 +126,4 @@ SELECT count(*) FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String,
 
 -   [Виртуальные столбцы](index.md#table_engines-virtual_columns)
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/table-functions/file/) <!--hide-->

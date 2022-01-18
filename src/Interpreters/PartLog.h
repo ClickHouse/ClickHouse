@@ -52,8 +52,7 @@ struct PartLogElement
 
     static std::string name() { return "PartLog"; }
 
-    static NamesAndTypesList getNamesAndTypes();
-    static NamesAndAliases getNamesAndAliases() { return {}; }
+    static Block createBlock();
     void appendToBlock(MutableColumns & columns) const;
 };
 
@@ -70,9 +69,9 @@ class PartLog : public SystemLog<PartLogElement>
 
 public:
     /// Add a record about creation of new part.
-    static bool addNewPart(ContextPtr context, const MutableDataPartPtr & part, UInt64 elapsed_ns,
+    static bool addNewPart(Context & context, const MutableDataPartPtr & part, UInt64 elapsed_ns,
                            const ExecutionStatus & execution_status = {});
-    static bool addNewParts(ContextPtr context, const MutableDataPartsVector & parts, UInt64 elapsed_ns,
+    static bool addNewParts(Context & context, const MutableDataPartsVector & parts, UInt64 elapsed_ns,
                             const ExecutionStatus & execution_status = {});
 };
 

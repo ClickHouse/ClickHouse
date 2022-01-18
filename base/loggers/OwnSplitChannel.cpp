@@ -1,18 +1,15 @@
 #include "OwnSplitChannel.h"
-#include "OwnFormattingChannel.h"
 
 #include <iostream>
 #include <Core/Block.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/TextLog.h>
-#include <IO/WriteBufferFromFileDescriptor.h>
 #include <sys/time.h>
 #include <Poco/Message.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
-#include <base/getThreadId.h>
+#include <common/getThreadId.h>
 #include <Common/SensitiveDataMasker.h>
-#include <Common/IO.h>
 
 namespace DB
 {
@@ -29,54 +26,22 @@ void OwnSplitChannel::log(const Poco::Message & msg)
         auto matches = masker->wipeSensitiveData(message_text);
         if (matches > 0)
         {
-            tryLogSplit({msg, message_text}); // we will continue with the copy of original message with text modified
+            logSplit({msg, message_text}); // we will continue with the copy of original message with text modified
             return;
         }
 
     }
 
-    tryLogSplit(msg);
+    logSplit(msg);
 }
 
-
-void OwnSplitChannel::tryLogSplit(const Poco::Message & msg)
-{
-    try
-    {
-        logSplit(msg);
-    }
-    /// It is better to catch the errors here in order to avoid
-    /// breaking some functionality because of unexpected "File not
-    /// found" (or similar) error.
-    ///
-    /// For example StorageDistributedDirectoryMonitor will mark batch
-    /// as broken, some MergeTree code can also be affected.
-    ///
-    /// Also note, that we cannot log the exception here, since this
-    /// will lead to recursion, using regular tryLogCurrentException().
-    /// but let's log it into the stderr at least.
-    catch (...)
-    {
-        MemoryTracker::LockExceptionInThread lock_memory_tracker(VariableContext::Global);
-
-        const std::string & exception_message = getCurrentExceptionMessage(true);
-        const std::string & message = msg.getText();
-
-        /// NOTE: errors are ignored, since nothing can be done.
-        writeRetry(STDERR_FILENO, "Cannot add message to the log: ");
-        writeRetry(STDERR_FILENO, message.data(), message.size());
-        writeRetry(STDERR_FILENO, "\n");
-        writeRetry(STDERR_FILENO, exception_message.data(), exception_message.size());
-        writeRetry(STDERR_FILENO, "\n");
-    }
-}
 
 void OwnSplitChannel::logSplit(const Poco::Message & msg)
 {
     ExtendedLogMessage msg_ext = ExtendedLogMessage::getFrom(msg);
 
     /// Log data to child channels
-    for (auto & [name, channel] : channels)
+    for (auto & channel : channels)
     {
         if (channel.second)
             channel.second->logExtended(msg_ext); // extended child
@@ -101,7 +66,7 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
         columns[i++]->insert(msg.getSource());
         columns[i++]->insert(msg.getText());
 
-        [[maybe_unused]] bool push_result = logs_queue->emplace(std::move(columns));
+        logs_queue->emplace(std::move(columns));
     }
 
     /// Also log to system.text_log table, if message is not too noisy
@@ -138,9 +103,9 @@ void OwnSplitChannel::logSplit(const Poco::Message & msg)
 }
 
 
-void OwnSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel, const std::string & name)
+void OwnSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel)
 {
-    channels.emplace(name, ExtendedChannelPtrPair(std::move(channel), dynamic_cast<ExtendedLogChannel *>(channel.get())));
+    channels.emplace_back(std::move(channel), dynamic_cast<ExtendedLogChannel *>(channel.get()));
 }
 
 void OwnSplitChannel::addTextLog(std::shared_ptr<DB::TextLog> log, int max_priority)
@@ -148,16 +113,6 @@ void OwnSplitChannel::addTextLog(std::shared_ptr<DB::TextLog> log, int max_prior
     std::lock_guard<std::mutex> lock(text_log_mutex);
     text_log = log;
     text_log_max_priority.store(max_priority, std::memory_order_relaxed);
-}
-
-void OwnSplitChannel::setLevel(const std::string & name, int level)
-{
-     auto it = channels.find(name);
-     if (it != channels.end())
-     {
-         if (auto * channel = dynamic_cast<DB::OwnFormattingChannel *>(it->second.first.get()))
-            channel->setLevel(level);
-     }
 }
 
 }

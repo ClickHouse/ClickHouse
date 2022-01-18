@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Access/IAccessEntity.h>
-#include <Core/Types.h>
+#include <common/types.h>
 #include <Core/UUID.h>
-#include <base/scope_guard.h>
+#include <ext/scope_guard.h>
 #include <functional>
 #include <optional>
 #include <vector>
@@ -16,7 +16,6 @@ namespace Poco::Net { class IPAddress; }
 namespace DB
 {
 struct User;
-class Credentials;
 class ExternalAuthenticators;
 
 /// Contains entities, i.e. instances of classes derived from IAccessEntity.
@@ -34,30 +33,33 @@ public:
     /// Returns a JSON with the parameters of the storage. It's up to the storage type to fill the JSON.
     virtual String getStorageParamsJSON() const { return "{}"; }
 
+    using EntityType = IAccessEntity::Type;
+    using EntityTypeInfo = IAccessEntity::TypeInfo;
+
     /// Returns the identifiers of all the entities of a specified type contained in the storage.
-    std::vector<UUID> findAll(AccessEntityType type) const;
+    std::vector<UUID> findAll(EntityType type) const;
 
     template <typename EntityClassT>
     std::vector<UUID> findAll() const { return findAll(EntityClassT::TYPE); }
 
     /// Searches for an entity with specified type and name. Returns std::nullopt if not found.
-    std::optional<UUID> find(AccessEntityType type, const String & name) const;
+    std::optional<UUID> find(EntityType type, const String & name) const;
 
     template <typename EntityClassT>
     std::optional<UUID> find(const String & name) const { return find(EntityClassT::TYPE, name); }
 
-    std::vector<UUID> find(AccessEntityType type, const Strings & names) const;
+    std::vector<UUID> find(EntityType type, const Strings & names) const;
 
     template <typename EntityClassT>
     std::vector<UUID> find(const Strings & names) const { return find(EntityClassT::TYPE, names); }
 
     /// Searches for an entity with specified name and type. Throws an exception if not found.
-    UUID getID(AccessEntityType type, const String & name) const;
+    UUID getID(EntityType type, const String & name) const;
 
     template <typename EntityClassT>
     UUID getID(const String & name) const { return getID(EntityClassT::TYPE, name); }
 
-    std::vector<UUID> getIDs(AccessEntityType type, const Strings & names) const;
+    std::vector<UUID> getIDs(EntityType type, const Strings & names) const;
 
     template <typename EntityClassT>
     std::vector<UUID> getIDs(const Strings & names) const { return getIDs(EntityClassT::TYPE, names); }
@@ -81,9 +83,7 @@ public:
 
     /// Reads only name of an entity.
     String readName(const UUID & id) const;
-    Strings readNames(const std::vector<UUID> & ids) const;
     std::optional<String> tryReadName(const UUID & id) const;
-    Strings tryReadNames(const std::vector<UUID> & ids) const;
 
     /// Returns true if a specified entity can be inserted into this storage.
     /// This function doesn't check whether there are no entities with such name in the storage.
@@ -129,30 +129,30 @@ public:
 
     /// Subscribes for all changes.
     /// Can return nullptr if cannot subscribe (identifier not found) or if it doesn't make sense (the storage is read-only).
-    scope_guard subscribeForChanges(AccessEntityType type, const OnChangedHandler & handler) const;
+    ext::scope_guard subscribeForChanges(EntityType type, const OnChangedHandler & handler) const;
 
     template <typename EntityClassT>
-    scope_guard subscribeForChanges(OnChangedHandler handler) const { return subscribeForChanges(EntityClassT::TYPE, handler); }
+    ext::scope_guard subscribeForChanges(OnChangedHandler handler) const { return subscribeForChanges(EntityClassT::TYPE, handler); }
 
     /// Subscribes for changes of a specific entry.
     /// Can return nullptr if cannot subscribe (identifier not found) or if it doesn't make sense (the storage is read-only).
-    scope_guard subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const;
-    scope_guard subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const;
+    ext::scope_guard subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const;
+    ext::scope_guard subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const;
 
-    bool hasSubscription(AccessEntityType type) const;
+    bool hasSubscription(EntityType type) const;
     bool hasSubscription(const UUID & id) const;
 
-    /// Finds a user, check the provided credentials and returns the ID of the user if they are valid.
-    /// Throws an exception if no such user or credentials are invalid.
-    UUID login(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool replace_exception_with_cannot_authenticate = true) const;
+    /// Finds an user, check its password and returns the ID of the user.
+    /// Throws an exception if no such user or password is incorrect.
+    UUID login(const String & user_name, const String & password, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool replace_exception_with_cannot_authenticate = true) const;
 
-    /// Returns the ID of a user who has logged in (maybe on another node).
+    /// Returns the ID of an user who has logged in (maybe on another node).
     /// The function assumes that the password has been already checked somehow, so we can skip checking it now.
     UUID getIDOfLoggedUser(const String & user_name) const;
 
 protected:
-    virtual std::optional<UUID> findImpl(AccessEntityType type, const String & name) const = 0;
-    virtual std::vector<UUID> findAllImpl(AccessEntityType type) const = 0;
+    virtual std::optional<UUID> findImpl(EntityType type, const String & name) const = 0;
+    virtual std::vector<UUID> findAllImpl(EntityType type) const = 0;
     virtual bool existsImpl(const UUID & id) const = 0;
     virtual AccessEntityPtr readImpl(const UUID & id) const = 0;
     virtual String readNameImpl(const UUID & id) const = 0;
@@ -160,30 +160,30 @@ protected:
     virtual UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) = 0;
     virtual void removeImpl(const UUID & id) = 0;
     virtual void updateImpl(const UUID & id, const UpdateFunc & update_func) = 0;
-    virtual scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const = 0;
-    virtual scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const = 0;
+    virtual ext::scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const = 0;
+    virtual ext::scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const = 0;
     virtual bool hasSubscriptionImpl(const UUID & id) const = 0;
-    virtual bool hasSubscriptionImpl(AccessEntityType type) const = 0;
-    virtual UUID loginImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const;
-    virtual bool areCredentialsValidImpl(const User & user, const Credentials & credentials, const ExternalAuthenticators & external_authenticators) const;
+    virtual bool hasSubscriptionImpl(EntityType type) const = 0;
+    virtual UUID loginImpl(const String & user_name, const String & password, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const;
+    virtual bool isPasswordCorrectImpl(const User & user, const String & password, const ExternalAuthenticators & external_authenticators) const;
     virtual bool isAddressAllowedImpl(const User & user, const Poco::Net::IPAddress & address) const;
     virtual UUID getIDOfLoggedUserImpl(const String & user_name) const;
 
     static UUID generateRandomID();
     Poco::Logger * getLogger() const;
-    static String formatEntityTypeWithName(AccessEntityType type, const String & name) { return AccessEntityTypeInfo::get(type).formatEntityNameWithType(name); }
+    static String outputEntityTypeAndName(EntityType type, const String & name) { return EntityTypeInfo::get(type).outputWithEntityName(name); }
     [[noreturn]] void throwNotFound(const UUID & id) const;
-    [[noreturn]] void throwNotFound(AccessEntityType type, const String & name) const;
-    [[noreturn]] static void throwBadCast(const UUID & id, AccessEntityType type, const String & name, AccessEntityType required_type);
+    [[noreturn]] void throwNotFound(EntityType type, const String & name) const;
+    [[noreturn]] static void throwBadCast(const UUID & id, EntityType type, const String & name, EntityType required_type);
     [[noreturn]] void throwIDCollisionCannotInsert(
-        const UUID & id, AccessEntityType type, const String & name, AccessEntityType existing_type, const String & existing_name) const;
-    [[noreturn]] void throwNameCollisionCannotInsert(AccessEntityType type, const String & name) const;
-    [[noreturn]] void throwNameCollisionCannotRename(AccessEntityType type, const String & old_name, const String & new_name) const;
-    [[noreturn]] void throwReadonlyCannotInsert(AccessEntityType type, const String & name) const;
-    [[noreturn]] void throwReadonlyCannotUpdate(AccessEntityType type, const String & name) const;
-    [[noreturn]] void throwReadonlyCannotRemove(AccessEntityType type, const String & name) const;
+        const UUID & id, EntityType type, const String & name, EntityType existing_type, const String & existing_name) const;
+    [[noreturn]] void throwNameCollisionCannotInsert(EntityType type, const String & name) const;
+    [[noreturn]] void throwNameCollisionCannotRename(EntityType type, const String & old_name, const String & new_name) const;
+    [[noreturn]] void throwReadonlyCannotInsert(EntityType type, const String & name) const;
+    [[noreturn]] void throwReadonlyCannotUpdate(EntityType type, const String & name) const;
+    [[noreturn]] void throwReadonlyCannotRemove(EntityType type, const String & name) const;
     [[noreturn]] static void throwAddressNotAllowed(const Poco::Net::IPAddress & address);
-    [[noreturn]] static void throwInvalidCredentials();
+    [[noreturn]] static void throwInvalidPassword();
     [[noreturn]] static void throwCannotAuthenticate(const String & user_name);
 
     using Notification = std::tuple<OnChangedHandler, UUID, AccessEntityPtr>;

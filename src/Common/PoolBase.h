@@ -5,7 +5,7 @@
 #include <Poco/Timespan.h>
 #include <boost/noncopyable.hpp>
 
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Common/Exception.h>
 
 
@@ -51,7 +51,7 @@ private:
       */
     struct PoolEntryHelper
     {
-        explicit PoolEntryHelper(PooledObject & data_) : data(data_) { data.in_use = true; }
+        PoolEntryHelper(PooledObject & data_) : data(data_) { data.in_use = true; }
         ~PoolEntryHelper()
         {
             std::unique_lock lock(data.pool.mutex);
@@ -69,7 +69,7 @@ public:
     public:
         friend class PoolBase<Object>;
 
-        Entry() = default;    /// For deferred initialization.
+        Entry() {}    /// For deferred initialization.
 
         /** The `Entry` object protects the resource from being used by another thread.
           * The following methods are forbidden for `rvalue`, so you can not write a similar to
@@ -99,10 +99,10 @@ public:
     private:
         std::shared_ptr<PoolEntryHelper> data;
 
-        explicit Entry(PooledObject & object) : data(std::make_shared<PoolEntryHelper>(object)) {}
+        Entry(PooledObject & object) : data(std::make_shared<PoolEntryHelper>(object)) {}
     };
 
-    virtual ~PoolBase() = default;
+    virtual ~PoolBase() {}
 
     /** Allocates the object. Wait for free object in pool for 'timeout'. With 'timeout' < 0, the timeout is infinite. */
     Entry get(Poco::Timespan::TimeDiff timeout)
@@ -163,3 +163,4 @@ protected:
     /** Creates a new object to put into the pool. */
     virtual ObjectPtr allocObject() = 0;
 };
+

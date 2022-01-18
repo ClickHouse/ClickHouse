@@ -31,3 +31,4 @@ SELECT * FROM system.events LIMIT 5
 -   [system.metric_log](#system_tables-metric_log) — таблица фиксирующая историю значений метрик из `system.metrics` и `system.events`.
 -   [Мониторинг](../../operations/monitoring.md) — основы мониторинга в ClickHouse.
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/system_tables/events) <!--hide-->

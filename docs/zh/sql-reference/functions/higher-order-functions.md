@@ -135,4 +135,4 @@ SELECT arrayReverseSort([1, nan, 2, NULL, 3, nan, 4, NULL])
     │ [4,3,2,1,nan,nan,NULL,NULL]                          │
     └──────────────────────────────────────────────────────┘
 
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/higher_order_functions/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/query_language/functions/higher_order_functions/) <!--hide-->

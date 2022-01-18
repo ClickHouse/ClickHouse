@@ -54,7 +54,7 @@ PrettyCompactBlockOutputFormat::PrettyCompactBlockOutputFormat(WriteBuffer & out
 {
 }
 
-void PrettyCompactBlockOutputFormat::writeSuffix()
+void PrettyCompactBlockOutputFormat::writeSuffixIfNot()
 {
     if (mono_chunk)
     {
@@ -62,7 +62,7 @@ void PrettyCompactBlockOutputFormat::writeSuffix()
         mono_chunk.clear();
     }
 
-    PrettyBlockOutputFormat::writeSuffix();
+    PrettyBlockOutputFormat::writeSuffixIfNot();
 }
 
 void PrettyCompactBlockOutputFormat::writeHeader(
@@ -149,7 +149,6 @@ void PrettyCompactBlockOutputFormat::writeBottom(const Widths & max_widths)
 void PrettyCompactBlockOutputFormat::writeRow(
     size_t row_num,
     const Block & header,
-    const Serializations & serializations,
     const Columns & columns,
     const WidthsPerColumn & widths,
     const Widths & max_widths)
@@ -180,7 +179,7 @@ void PrettyCompactBlockOutputFormat::writeRow(
 
         const auto & type = *header.getByPosition(j).type;
         const auto & cur_widths = widths[j].empty() ? max_widths[j] : widths[j][row_num];
-        writeValueWithPadding(*columns[j], *serializations[j], row_num, cur_widths, max_widths[j], type.shouldAlignRightInPrettyFormats());
+        writeValueWithPadding(*columns[j], type, row_num, cur_widths, max_widths[j]);
     }
 
     writeCString(grid_symbols.bar, out);
@@ -218,7 +217,7 @@ void PrettyCompactBlockOutputFormat::write(const Chunk & chunk, PortKind port_ki
         }
         else
         {
-            /// Should be written from writeSuffix()
+            /// Should be written from writeSuffixIfNot()
             assert(!mono_chunk);
         }
     }
@@ -241,13 +240,8 @@ void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind po
 
     writeHeader(header, max_widths, name_widths);
 
-    size_t num_columns = header.columns();
-    Serializations serializations(num_columns);
-    for (size_t i = 0; i < num_columns; ++i)
-        serializations[i] = header.getByPosition(i).type->getDefaultSerialization();
-
     for (size_t i = 0; i < num_rows && total_rows + i < max_rows; ++i)
-        writeRow(i, header, serializations, columns, widths, max_widths);
+        writeRow(i, header, columns, widths, max_widths);
 
     writeBottom(max_widths);
 
@@ -255,11 +249,11 @@ void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind po
 }
 
 
-void registerOutputFormatPrettyCompact(FormatFactory & factory)
+void registerOutputFormatProcessorPrettyCompact(FormatFactory & factory)
 {
     for (const auto & [name, mono_block] : {std::make_pair("PrettyCompact", false), std::make_pair("PrettyCompactMonoBlock", true)})
     {
-        factory.registerOutputFormat(name, [mono_block = mono_block](
+        factory.registerOutputFormatProcessor(name, [mono_block = mono_block](
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams &,
@@ -269,9 +263,7 @@ void registerOutputFormatPrettyCompact(FormatFactory & factory)
         });
     }
 
-    factory.markOutputFormatSupportsParallelFormatting("PrettyCompact");
-
-    factory.registerOutputFormat("PrettyCompactNoEscapes", [](
+    factory.registerOutputFormatProcessor("PrettyCompactNoEscapes", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams &,
@@ -281,7 +273,6 @@ void registerOutputFormatPrettyCompact(FormatFactory & factory)
         changed_settings.pretty.color = false;
         return std::make_shared<PrettyCompactBlockOutputFormat>(buf, sample, changed_settings, false /* mono_block */);
     });
-    factory.markOutputFormatSupportsParallelFormatting("PrettyCompactNoEscapes");
 }
 
 }

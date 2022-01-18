@@ -53,7 +53,7 @@ All other MySQL data types are converted into [String](../../sql-reference/data-
 
 ## Global Variables Support {#global-variables-support}
 
-For better compatibility you may address global variables in MySQL style, as `@@identifier`.
+For better compatibility you may address global variables in MySQL style, as `@@identifier`. 
 
 These variables are supported:
 - `version`
@@ -147,4 +147,4 @@ SELECT * FROM mysql_db.mysql_table
 └────────┴───────┘
 ```
 
-[Original article](https://clickhouse.com/docs/en/database_engines/mysql/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/database_engines/mysql/) <!--hide-->

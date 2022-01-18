@@ -1,137 +1,149 @@
 #pragma once
 
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Columns/ColumnsNumber.h>
 
-#include <base/arithmeticOverflow.h>
-
+#include <common/arithmeticOverflow.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int DECIMAL_OVERFLOW;
 }
 
-/// Cast DateTime64 to Int64 representation narrowed down (or scaled up) to any scale value defined in Impl.
-class FunctionToUnixTimestamp64 : public IFunction
+/** Casts DateTim64 to or from Int64 representation narrowed down (or scaled up) to any scale value defined in Impl.
+ */
+template <typename Impl>
+class FunctionUnixTimestamp64 : public IFunction
 {
-private:
-    size_t target_scale;
-    const char * name;
 public:
-    FunctionToUnixTimestamp64(size_t target_scale_, const char * name_)
-        : target_scale(target_scale_), name(name_)
+    static constexpr auto name = Impl::name;
+    static constexpr auto target_scale = Impl::target_scale;
+
+    using SourceDataType = typename Impl::SourceDataType;
+    using ResultDataType = typename Impl::ResultDataType;
+
+    static constexpr bool is_result_datetime64 = std::is_same_v<ResultDataType, DataTypeDateTime64>;
+
+    static_assert(std::is_same_v<SourceDataType, DataTypeDateTime64> || std::is_same_v<ResultDataType, DataTypeDateTime64>);
+
+    static auto create(const Context &)
     {
+        return std::make_shared<FunctionUnixTimestamp64<Impl>>();
     }
 
     String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 1; }
-    bool isVariadic() const override { return false; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    size_t getNumberOfArguments() const override { return is_result_datetime64 ? 2 : 1; }
+    bool isVariadic() const override { return is_result_datetime64; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (!isDateTime64(arguments[0].type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The only argument for function {} must be DateTime64", name);
-
-        return std::make_shared<DataTypeInt64>();
+        if constexpr (is_result_datetime64)
+        {
+            validateFunctionArgumentTypes(*this, arguments,
+                    FunctionArgumentDescriptors{{"value", isDataType<SourceDataType>, nullptr, std::string(SourceDataType::family_name).c_str()}},
+                    // optional
+                    FunctionArgumentDescriptors{
+    //                    {"precision", isDataType<DataTypeUInt8>, isColumnConst, ("Precision of the result, default is " + std::to_string(target_scale)).c_str()},
+                        {"timezone", isStringOrFixedString, isColumnConst, "Timezone of the result"},
+                    });
+            const auto timezone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
+            return std::make_shared<DataTypeDateTime64>(target_scale, timezone);
+        }
+        else
+        {
+            validateFunctionArgumentTypes(*this, arguments,
+                    FunctionArgumentDescriptors{{"value", isDataType<SourceDataType>, nullptr, std::string(SourceDataType::family_name).c_str()}});
+            return std::make_shared<DataTypeInt64>();
+        }
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        using SourceColumnType = typename SourceDataType::ColumnType;
+        using ResultColumnType = typename ResultDataType::ColumnType;
+
         const auto & src = arguments[0];
         const auto & col = *src.column;
 
-        auto res_column = ColumnInt64::create(input_rows_count);
-        auto & result_data = res_column->getData();
+        const SourceColumnType * source_col_typed = checkAndGetColumn<SourceColumnType>(col);
+        if (!source_col_typed && !(source_col_typed = checkAndGetColumnConstData<SourceColumnType>(&col)))
+            throw Exception("Invalid column type" + col.getName() + " expected "
+                    + std::string(SourceDataType::family_name),
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        const auto & source_data = typeid_cast<const ColumnDecimal<DateTime64> &>(col).getData();
+        auto res_column = result_type->createColumn();
 
-        Int32 scale_diff = typeid_cast<const DataTypeDateTime64 &>(*src.type).getScale() - target_scale;
+        if (input_rows_count == 0)
+            return res_column;
+
+        auto & result_data = assert_cast<ResultColumnType &>(res_column->assumeMutableRef()).getData();
+        result_data.reserve(source_col_typed->size());
+        const auto & source_data = source_col_typed->getData();
+
+        const auto scale_diff = getScaleDiff(*checkAndGetDataType<SourceDataType>(src.type.get()), *checkAndGetDataType<ResultDataType>(result_type.get()));
         if (scale_diff == 0)
         {
-            for (size_t i = 0; i < input_rows_count; ++i)
-                result_data[i] = source_data[i];
+            static_assert(sizeof(typename SourceColumnType::Container::value_type) == sizeof(typename ResultColumnType::Container::value_type));
+            // no conversion necessary
+            result_data.push_back_raw_many(source_data.size(), source_data.data());
         }
         else if (scale_diff < 0)
         {
-            const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(-scale_diff);
-            for (size_t i = 0; i < input_rows_count; ++i)
+            const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(std::abs(scale_diff));
+            for (const auto & v : source_data)
             {
-                Int64 result_value = source_data[i];
+                Int64 result_value = toDestValue(v);
                 if (common::mulOverflow(result_value, scale_multiplier, result_value))
                     throw Exception("Decimal overflow in " + getName(), ErrorCodes::DECIMAL_OVERFLOW);
 
-                result_data[i] = result_value;
+                result_data.push_back(result_value);
             }
         }
         else
         {
             const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<Int64>(scale_diff);
-            for (size_t i = 0; i < input_rows_count; ++i)
-                result_data[i] = Int64(source_data[i]) / scale_multiplier;
+            for (const auto & v : source_data)
+                result_data.push_back(static_cast<Int64>(toDestValue(v) / scale_multiplier));
         }
 
         return res_column;
     }
-};
 
-
-class FunctionFromUnixTimestamp64 : public IFunction
-{
 private:
-    size_t target_scale;
-    const char * name;
-public:
-    FunctionFromUnixTimestamp64(size_t target_scale_, const char * name_)
-        : target_scale(target_scale_), name(name_)
+    static Int64 getScaleDiff(const SourceDataType & src, const ResultDataType & dst)
     {
+        Int64 src_scale = target_scale;
+        if constexpr (std::is_same_v<SourceDataType, DataTypeDateTime64>)
+        {
+            src_scale = src.getScale();
+        }
+
+        Int64 dst_scale = target_scale;
+        if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime64>)
+        {
+            dst_scale = dst.getScale();
+        }
+
+        return src_scale - dst_scale;
     }
 
-    String getName() const override { return name; }
-    size_t getNumberOfArguments() const override { return 0; }
-    bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-    bool useDefaultImplementationForConstants() const override { return true; }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    static auto toDestValue(const DateTime64 & v)
     {
-        if (arguments.size() < 1 || arguments.size() > 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} takes one or two arguments", name);
-
-        if (!typeid_cast<const DataTypeInt64 *>(arguments[0].type.get()))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "The first argument for function {} must be Int64", name);
-
-        std::string timezone;
-        if (arguments.size() == 2)
-            timezone = extractTimeZoneNameFromFunctionArguments(arguments, 1, 0);
-
-        return std::make_shared<DataTypeDateTime64>(target_scale, timezone);
+        return Int64{v.value};
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
+    template <typename T>
+    static auto toDestValue(const T & v)
     {
-        const auto & src = arguments[0];
-        const auto & col = *src.column;
-
-        auto res_column = ColumnDecimal<DateTime64>::create(input_rows_count, target_scale);
-        auto & result_data = res_column->getData();
-
-        const auto & source_data = typeid_cast<const ColumnInt64 &>(col).getData();
-
-        for (size_t i = 0; i < input_rows_count; ++i)
-            result_data[i] = source_data[i];
-
-        return res_column;
+        return Int64{v};
     }
 };
 

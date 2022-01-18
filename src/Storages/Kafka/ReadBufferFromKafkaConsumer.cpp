@@ -1,6 +1,6 @@
 #include <Storages/Kafka/ReadBufferFromKafkaConsumer.h>
 
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 #include <cppkafka/cppkafka.h>
 #include <boost/algorithm/string/join.hpp>
@@ -42,15 +42,7 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
     // called (synchronously, during poll) when we enter the consumer group
     consumer->set_assignment_callback([this](const cppkafka::TopicPartitionList & topic_partitions)
     {
-        if (topic_partitions.empty())
-        {
-            LOG_INFO(log, "Got empty assignment: Not enough partitions in the topic for all consumers?");
-        }
-        else
-        {
-            LOG_TRACE(log, "Topics/partitions assigned: {}", topic_partitions);
-        }
-
+        LOG_TRACE(log, "Topics/partitions assigned: {}", topic_partitions);
         assignment = topic_partitions;
     });
 
@@ -71,7 +63,7 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
         cleanUnprocessed();
 
         stalled_status = REBALANCE_HAPPENED;
-        assignment.reset();
+        assignment.clear();
         waited_for_assignment = 0;
 
         // for now we use slower (but reliable) sync commit in main loop, so no need to repeat
@@ -240,16 +232,7 @@ void ReadBufferFromKafkaConsumer::commit()
 void ReadBufferFromKafkaConsumer::subscribe()
 {
     LOG_TRACE(log, "Already subscribed to topics: [{}]", boost::algorithm::join(consumer->get_subscription(), ", "));
-
-    if (assignment.has_value())
-    {
-        LOG_TRACE(log, "Already assigned to: {}", assignment.value());
-    }
-    else
-    {
-        LOG_TRACE(log, "No assignment");
-    }
-
+    LOG_TRACE(log, "Already assigned to: {}", assignment);
 
     size_t max_retries = 5;
 
@@ -312,7 +295,7 @@ void ReadBufferFromKafkaConsumer::unsubscribe()
 
 void ReadBufferFromKafkaConsumer::resetToLastCommitted(const char * msg)
 {
-    if (!assignment.has_value() || assignment->empty())
+    if (assignment.empty())
     {
         LOG_TRACE(log, "Not assignned. Can't reset to last committed position.");
         return;
@@ -377,7 +360,7 @@ bool ReadBufferFromKafkaConsumer::poll()
         {
             // While we wait for an assignment after subscription, we'll poll zero messages anyway.
             // If we're doing a manual select then it's better to get something after a wait, then immediate nothing.
-            if (!assignment.has_value())
+            if (assignment.empty())
             {
                 waited_for_assignment += poll_timeout; // slightly innaccurate, but rough calculation is ok.
                 if (waited_for_assignment < MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS)
@@ -386,15 +369,11 @@ bool ReadBufferFromKafkaConsumer::poll()
                 }
                 else
                 {
-                    LOG_WARNING(log, "Can't get assignment. Will keep trying.");
+                    LOG_WARNING(log, "Can't get assignment. It can be caused by some issue with consumer group (not enough partitions?). Will keep trying.");
                     stalled_status = NO_ASSIGNMENT;
                     return false;
                 }
-            }
-            else if (assignment->empty())
-            {
-                LOG_TRACE(log, "Empty assignment.");
-                return false;
+
             }
             else
             {

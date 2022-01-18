@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
+#include <ext/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
@@ -8,7 +8,8 @@
 #include <Common/SimpleIncrement.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
-#include <base/logger_useful.h>
+#include <Parsers/ASTFunction.h>
+#include <common/logger_useful.h>
 #include <Common/ActionBlocker.h>
 #include <Interpreters/Cluster.h>
 
@@ -35,10 +36,10 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
   * You can pass one address, not several.
   * In this case, the table can be considered remote, rather than distributed.
   */
-class StorageDistributed final : public shared_ptr_helper<StorageDistributed>, public IStorage, WithContext
+class StorageDistributed final : public ext::shared_ptr_helper<StorageDistributed>, public IStorage
 {
-    friend struct shared_ptr_helper<StorageDistributed>;
-    friend class DistributedSink;
+    friend struct ext::shared_ptr_helper<StorageDistributed>;
+    friend class DistributedBlockOutputStream;
     friend class StorageDistributedDirectoryMonitor;
     friend class StorageSystemDistributionQueue;
 
@@ -55,14 +56,13 @@ public:
 
     bool isRemote() const override { return true; }
 
-    QueryProcessingStage::Enum
-    getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageMetadataPtr &, SelectQueryInfo &) const override;
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, SelectQueryInfo &) const override;
 
     Pipe read(
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
-        ContextPtr context,
+        const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
@@ -72,7 +72,7 @@ public:
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         SelectQueryInfo & query_info,
-        ContextPtr context,
+        const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t /*max_block_size*/,
         unsigned /*num_streams*/) override;
@@ -80,27 +80,24 @@ public:
     bool supportsParallelInsert() const override { return true; }
     std::optional<UInt64> totalBytes(const Settings &) const override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
-
-    QueryPipelineBuilderPtr distributedWrite(const ASTInsertQuery & query, ContextPtr context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
     /// Removes temporary data in local filesystem.
-    void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
-    void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
+    void checkAlterIsPossible(const AlterCommands & commands, const Context & context) const override;
 
     /// in the sub-tables, you need to manually add and delete columns
     /// the structure of the sub-table is not checked
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, const Context & context, TableLockHolder & table_lock_holder) override;
 
     void startup() override;
     void shutdown() override;
-    void flush() override;
     void drop() override;
 
-    bool storesDataOnDisk() const override { return data_volume != nullptr; }
+    bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override;
 
     ActionLock getActionLock(StorageActionBlockType type) override;
@@ -115,7 +112,7 @@ public:
     ClusterPtr getCluster() const;
 
     /// Used by InterpreterSystemQuery
-    void flushClusterNodesAllData(ContextPtr context);
+    void flushClusterNodesAllData(const Context & context);
 
     /// Used by ClusterCopier
     size_t getShardCount() const;
@@ -125,18 +122,16 @@ private:
         const StorageID & id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const String & comment,
         const String & remote_database_,
         const String & remote_table_,
         const String & cluster_name_,
-        ContextPtr context_,
+        const Context & context_,
         const ASTPtr & sharding_key_,
         const String & storage_policy_name_,
         const String & relative_data_path_,
         const DistributedSettings & distributed_settings_,
         bool attach_,
-        ClusterPtr owned_cluster_ = {},
-        ASTPtr remote_table_function_ptr_ = {});
+        ClusterPtr owned_cluster_ = {});
 
     StorageDistributed(
         const StorageID & id_,
@@ -144,7 +139,7 @@ private:
         const ConstraintsDescription & constraints_,
         ASTPtr remote_table_function_ptr_,
         const String & cluster_name_,
-        ContextPtr context_,
+        const Context & context_,
         const ASTPtr & sharding_key_,
         const String & storage_policy_name_,
         const String & relative_data_path_,
@@ -161,7 +156,7 @@ private:
     /// create directory monitors for each existing subdirectory
     void createDirectoryMonitors(const DiskPtr & disk);
     /// ensure directory monitor thread and connectoin pool creation by disk and subdirectory name
-    StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const DiskPtr & disk, const std::string & name, bool startup);
+    StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const DiskPtr & disk, const std::string & name);
 
     /// Return list of metrics for all created monitors
     /// (note that monitors are created lazily, i.e. until at least one INSERT executed)
@@ -169,32 +164,12 @@ private:
     /// Used by StorageSystemDistributionQueue
     std::vector<StorageDistributedDirectoryMonitor::Status> getDirectoryMonitorsStatuses() const;
 
-    static IColumn::Selector createSelector(ClusterPtr cluster, const ColumnWithTypeAndName & result);
+    static IColumn::Selector createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result);
     /// Apply the following settings:
     /// - optimize_skip_unused_shards
     /// - force_optimize_skip_unused_shards
-    ClusterPtr getOptimizedCluster(ContextPtr, const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query_ptr) const;
-
-    ClusterPtr skipUnusedShards(
-        ClusterPtr cluster, const ASTPtr & query_ptr, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) const;
-
-    /// This method returns optimal query processing stage.
-    ///
-    /// Here is the list of stages (from the less optimal to more optimal):
-    /// - WithMergeableState
-    /// - WithMergeableStateAfterAggregation
-    /// - WithMergeableStateAfterAggregationAndLimit
-    /// - Complete
-    ///
-    /// Some simple queries w/o GROUP BY/DISTINCT can use more optimal stage.
-    ///
-    /// Also in case of optimize_distributed_group_by_sharding_key=1 the queries
-    /// with GROUP BY/DISTINCT sharding_key can also use more optimal stage.
-    /// (see also optimize_skip_unused_shards/allow_nondeterministic_optimize_skip_unused_shards)
-    ///
-    /// @return QueryProcessingStage or empty std::optoinal
-    /// (in this case regular WithMergeableState should be used)
-    std::optional<QueryProcessingStage::Enum> getOptimizedQueryProcessingStage(const SelectQueryInfo & query_info, const Settings & settings) const;
+    ClusterPtr getOptimizedCluster(const Context &, const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query_ptr) const;
+    ClusterPtr skipUnusedShards(ClusterPtr cluster, const ASTPtr & query_ptr, const StorageMetadataPtr & metadata_snapshot, const Context & context) const;
 
     size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
 
@@ -202,10 +177,12 @@ private:
 
     void delayInsertOrThrowIfNeeded() const;
 
+private:
     String remote_database;
     String remote_table;
     ASTPtr remote_table_function_ptr;
 
+    const Context & global_context;
     Poco::Logger * log;
 
     /// Used to implement TableFunctionRemote.

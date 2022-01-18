@@ -13,9 +13,8 @@ public:
 
     String getName() const override { return "Filling"; }
 
-    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+    void transformPipeline(QueryPipeline & pipeline) override;
 
-    void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
     const SortDescription & getSortDescription() const { return sort_description; }

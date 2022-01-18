@@ -45,8 +45,6 @@ public:
         return removeOnCluster<ASTDropQuery>(clone(), new_database);
     }
 
-    const char * getQueryKindString() const override { return "Drop"; }
-
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };

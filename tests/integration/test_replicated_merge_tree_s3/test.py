@@ -5,6 +5,9 @@ import string
 import pytest
 from helpers.cluster import ClickHouseCluster
 
+logging.getLogger().setLevel(logging.INFO)
+logging.getLogger().addHandler(logging.StreamHandler())
+
 
 @pytest.fixture(scope="module")
 def cluster():

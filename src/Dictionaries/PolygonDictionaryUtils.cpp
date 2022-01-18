@@ -2,7 +2,7 @@
 
 #include <Common/ThreadPool.h>
 
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 #include <algorithm>
 #include <thread>
@@ -90,6 +90,7 @@ std::vector<Coord> SlabsPolygonIndex::uniqueX(const std::vector<Polygon> & polyg
     std::sort(all_x.begin(), all_x.end());
     all_x.erase(std::unique(all_x.begin(), all_x.end()), all_x.end());
 
+    LOG_TRACE(log, "Found {} unique x coordinates", all_x.size());
     return all_x;
 }
 
@@ -110,6 +111,8 @@ void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
 
     /** Total number of edges */
     size_t m = all_edges.size();
+
+    LOG_TRACE(log, "Just sorted {} edges from all {} polygons", all_edges.size(), polygons.size());
 
     /** Using custom comparator for fetching edges in right_point order, like in scanline */
     auto cmp = [](const Edge & a, const Edge & b)
@@ -151,7 +154,7 @@ void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
         }
     }
 
-    for (size_t i = 0; i != all_edges.size(); ++i)
+    for (size_t i = 0; i != all_edges.size(); i++)
     {
         size_t l = edge_left[i];
         size_t r = edge_right[i];
@@ -177,6 +180,8 @@ void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
             }
         }
     }
+
+    LOG_TRACE(log, "Polygon index is built, total_index_edges = {}", total_index_edges);
 }
 
 void SlabsPolygonIndex::indexAddRing(const Ring & ring, size_t polygon_id)

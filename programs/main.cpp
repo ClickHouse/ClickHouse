@@ -13,14 +13,15 @@
 #include <tuple>
 #include <utility> /// pair
 
-#include "config_tools.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_tools.h"
+#endif
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
-#include <Common/IO.h>
 
-#include <base/phdr_cache.h>
-#include <base/scope_guard.h>
+#include <common/phdr_cache.h>
+#include <ext/scope_guard.h>
 
 
 /// Universal executable for various clickhouse applications
@@ -54,15 +55,6 @@ int mainEntryClickHouseObfuscator(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_GIT_IMPORT
 int mainEntryClickHouseGitImport(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_KEEPER
-int mainEntryClickHouseKeeper(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_KEEPER
-int mainEntryClickHouseKeeperConverter(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
-int mainEntryClickHouseStaticFilesDiskUploader(int argc, char ** argv);
-#endif
 #if ENABLE_CLICKHOUSE_INSTALL
 int mainEntryClickHouseInstall(int argc, char ** argv);
 int mainEntryClickHouseStart(int argc, char ** argv);
@@ -86,7 +78,6 @@ namespace
 
 using MainFunc = int (*)(int, char**);
 
-#if !defined(FUZZING_MODE)
 
 /// Add an item here to register new application
 std::pair<const char *, MainFunc> clickhouse_applications[] =
@@ -121,12 +112,6 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 #if ENABLE_CLICKHOUSE_GIT_IMPORT
     {"git-import", mainEntryClickHouseGitImport},
 #endif
-#if ENABLE_CLICKHOUSE_KEEPER
-    {"keeper", mainEntryClickHouseKeeper},
-#endif
-#if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
-    {"keeper-converter", mainEntryClickHouseKeeperConverter},
-#endif
 #if ENABLE_CLICKHOUSE_INSTALL
     {"install", mainEntryClickHouseInstall},
     {"start", mainEntryClickHouseStart},
@@ -134,11 +119,9 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
     {"status", mainEntryClickHouseStatus},
     {"restart", mainEntryClickHouseRestart},
 #endif
-#if ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER
-    {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
-#endif
     {"hash-binary", mainEntryClickHouseHashBinary},
 };
+
 
 int printHelp(int, char **)
 {
@@ -147,6 +130,7 @@ int printHelp(int, char **)
         std::cerr << "clickhouse " << application.first << " [args] " << std::endl;
     return -1;
 }
+
 
 bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
 {
@@ -167,7 +151,6 @@ bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
     std::string app_name = "clickhouse-" + app_suffix;
     return !argv.empty() && (app_name == argv[0] || endsWith(argv[0], "/" + app_name));
 }
-#endif
 
 
 enum class InstructionFail
@@ -183,11 +166,11 @@ enum class InstructionFail
     AVX512 = 8
 };
 
-auto instructionFailToString(InstructionFail fail)
+std::pair<const char *, size_t> instructionFailToString(InstructionFail fail)
 {
     switch (fail)
     {
-#define ret(x) return std::make_tuple(STDERR_FILENO, x, ARRAY_SIZE(x) - 1)
+#define ret(x) return std::make_pair(x, ARRAY_SIZE(x) - 1)
         case InstructionFail::NONE:
             ret("NONE");
         case InstructionFail::SSE3:
@@ -271,12 +254,28 @@ void checkRequiredInstructionsImpl(volatile InstructionFail & fail)
     fail = InstructionFail::NONE;
 }
 
+/// This function is safe to use in static initializers.
+void writeErrorLen(const char * data, size_t size)
+{
+    while (size != 0)
+    {
+        ssize_t res = ::write(STDERR_FILENO, data, size);
+
+        if ((-1 == res || 0 == res) && errno != EINTR)
+            _Exit(1);
+
+        if (res > 0)
+        {
+            data += res;
+            size -= res;
+        }
+    }
+}
 /// Macros to avoid using strlen(), since it may fail if SSE is not supported.
 #define writeError(data) do \
     { \
         static_assert(__builtin_constant_p(data)); \
-        if (!writeRetry(STDERR_FILENO, data, ARRAY_SIZE(data) - 1)) \
-            _Exit(1); \
+        writeErrorLen(data, ARRAY_SIZE(data) - 1); \
     } while (false)
 
 /// Check SSE and others instructions availability. Calls exit on fail.
@@ -305,8 +304,7 @@ void checkRequiredInstructions()
     if (sigsetjmp(jmpbuf, 1))
     {
         writeError("Instruction check fail. The CPU does not support ");
-        if (!std::apply(writeRetry, instructionFailToString(fail)))
-            _Exit(1);
+        std::apply(writeErrorLen, instructionFailToString(fail));
         writeError(" instruction set.\n");
         _Exit(1);
     }
@@ -326,11 +324,7 @@ struct Checker
     {
         checkRequiredInstructions();
     }
-} checker
-#ifndef __APPLE__
-    __attribute__((init_priority(101)))    /// Run before other static initializers.
-#endif
-;
+} checker;
 
 }
 
@@ -340,13 +334,9 @@ struct Checker
 ///
 /// extern bool inside_main;
 /// class C { C() { assert(inside_main); } };
-#ifndef FUZZING_MODE
 bool inside_main = false;
-#else
-bool inside_main = true;
-#endif
 
-#if !defined(FUZZING_MODE)
+
 int main(int argc_, char ** argv_)
 {
     inside_main = true;
@@ -377,4 +367,3 @@ int main(int argc_, char ** argv_)
 
     return main_func(static_cast<int>(argv.size()), argv.data());
 }
-#endif

@@ -2,13 +2,12 @@
 
 #include <vector>
 
-#include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/FieldVisitors.h>
 #include <Common/NaNUtils.h>
 
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {

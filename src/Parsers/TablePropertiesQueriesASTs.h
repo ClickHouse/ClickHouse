@@ -89,7 +89,7 @@ protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << ASTExistsDatabaseQueryIDAndQueryNames::Query
-                    << " " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(getDatabase());
+                    << " " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(database);
     }
 };
 
@@ -99,7 +99,7 @@ protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << ASTShowCreateDatabaseQueryIDAndQueryNames::Query
-                      << " " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(getDatabase());
+                      << " " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(database);
     }
 };
 

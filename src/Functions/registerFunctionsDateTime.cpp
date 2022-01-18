@@ -64,7 +64,6 @@ void registerFunctionSubtractMonths(FunctionFactory &);
 void registerFunctionSubtractQuarters(FunctionFactory &);
 void registerFunctionSubtractYears(FunctionFactory &);
 void registerFunctionDateDiff(FunctionFactory &);
-void registerFunctionDateName(FunctionFactory &);
 void registerFunctionToTimeZone(FunctionFactory &);
 void registerFunctionFormatDateTime(FunctionFactory &);
 void registerFunctionFromModifiedJulianDay(FunctionFactory &);
@@ -135,7 +134,6 @@ void registerFunctionsDateTime(FunctionFactory & factory)
     registerFunctionSubtractQuarters(factory);
     registerFunctionSubtractYears(factory);
     registerFunctionDateDiff(factory);
-    registerFunctionDateName(factory);
     registerFunctionToTimeZone(factory);
     registerFunctionFormatDateTime(factory);
     registerFunctionFromModifiedJulianDay(factory);

@@ -1,9 +1,7 @@
-# docker build -t clickhouse/testflows-runner .
+# docker build -t yandex/clickhouse-testflows-runner .
 FROM ubuntu:20.04
 
-# ARG for quick switch to a given ubuntu mirror
-ARG apt_archive="http://archive.ubuntu.com"
-RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
+RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
@@ -21,6 +19,7 @@ RUN apt-get update \
     cgroupfs-mount \
     python3-pip \
     tzdata \
+    libreadline-dev \
     libicu-dev \
     bsdutils \
     curl \
@@ -38,10 +37,10 @@ RUN apt-get update \
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-RUN pip3 install urllib3 testflows==1.7.20 docker-compose==1.29.1 docker==5.0.0 dicttoxml kazoo tzlocal==2.1 pytz python-dateutil numpy
+RUN pip3 install urllib3 testflows==1.6.72 docker-compose docker dicttoxml kazoo tzlocal==2.1 pytz
 
 ENV DOCKER_CHANNEL stable
-ENV DOCKER_VERSION 20.10.6
+ENV DOCKER_VERSION 17.09.1-ce
 
 RUN set -eux; \
   \
@@ -64,7 +63,6 @@ RUN set -eux; \
 
 COPY modprobe.sh /usr/local/bin/modprobe
 COPY dockerd-entrypoint.sh /usr/local/bin/
-COPY process_testflows_result.py /usr/local/bin/
 
 RUN set -x \
   && addgroup --system dockremap \
@@ -76,4 +74,5 @@ RUN set -x \
 VOLUME /var/lib/docker
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]
-CMD ["sh", "-c", "python3 regression.py --no-color -o new-fails --local --clickhouse-binary-path ${CLICKHOUSE_TESTS_SERVER_BIN_PATH} --log test.log ${TESTFLOWS_OPTS}; cat test.log | tfs report results --format json > results.json; /usr/local/bin/process_testflows_result.py || echo -e 'failure\tCannot parse results' > check_status.tsv; find * -type f | grep _instances | grep clickhouse-server | xargs -n1 tar -rvf clickhouse_logs.tar; gzip -9 clickhouse_logs.tar"]
+CMD ["sh", "-c", "python3 regression.py --no-color -o classic --local --clickhouse-binary-path ${CLICKHOUSE_TESTS_SERVER_BIN_PATH} --log test.log ${TESTFLOWS_OPTS}; cat test.log | tfs report results --format json > results.json"]
+

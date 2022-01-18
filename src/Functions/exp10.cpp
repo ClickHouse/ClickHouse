@@ -1,6 +1,6 @@
 #include <Functions/FunctionMathUnary.h>
 #include <Functions/FunctionFactory.h>
-#include <base/preciseExp10.h>
+#include <common/preciseExp10.h>
 
 namespace DB
 {

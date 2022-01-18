@@ -1,5 +1,4 @@
 #include <Core/NamesAndTypes.h>
-#include <Common/HashTable/HashMap.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -7,7 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
+#include <sparsehash/dense_hash_map>
 
 
 namespace DB
@@ -24,9 +23,7 @@ NameAndTypePair::NameAndTypePair(
     : name(name_in_storage_ + (subcolumn_name_.empty() ? "" : "." + subcolumn_name_))
     , type(subcolumn_type_)
     , type_in_storage(type_in_storage_)
-    , subcolumn_delimiter_position(subcolumn_name_.empty() ? std::nullopt : std::make_optional(name_in_storage_.size()))
-{
-}
+    , subcolumn_delimiter_position(name_in_storage_.size()) {}
 
 String NameAndTypePair::getNameInStorage() const
 {
@@ -42,17 +39,6 @@ String NameAndTypePair::getSubcolumnName() const
         return "";
 
     return name.substr(*subcolumn_delimiter_position + 1, name.size() - *subcolumn_delimiter_position);
-}
-
-String NameAndTypePair::dump() const
-{
-    WriteBufferFromOwnString out;
-    out << "name: " << name << "\n"
-        << "type: " << type->getName() << "\n"
-        << "name in storage: " << getNameInStorage() << "\n"
-        << "type in storage: " << getTypeInStorage()->getName();
-
-    return out.str();
 }
 
 void NamesAndTypesList::readText(ReadBuffer & buf)
@@ -174,20 +160,18 @@ NamesAndTypesList NamesAndTypesList::filter(const Names & names) const
 
 NamesAndTypesList NamesAndTypesList::addTypes(const Names & names) const
 {
-    /// NOTE: It's better to make a map in `IStorage` than to create it here every time again.
-    HashMapWithSavedHash<StringRef, const DataTypePtr *, StringRefHash> types;
+    std::unordered_map<std::string_view, const NameAndTypePair *> self_columns;
 
     for (const auto & column : *this)
-        types[column.name] = &column.type;
+        self_columns[column.name] = &column;
 
     NamesAndTypesList res;
     for (const String & name : names)
     {
-        const auto * it = types.find(name);
-        if (it == types.end())
-            throw Exception(ErrorCodes::THERE_IS_NO_COLUMN, "No column {}", name);
-
-        res.emplace_back(name, *it->getMapped());
+        auto it = self_columns.find(name);
+        if (it == self_columns.end())
+            throw Exception("No column " + name, ErrorCodes::THERE_IS_NO_COLUMN);
+        res.emplace_back(*it->second);
     }
 
     return res;

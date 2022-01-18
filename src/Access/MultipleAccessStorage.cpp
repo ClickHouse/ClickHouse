@@ -1,8 +1,6 @@
 #include <Access/MultipleAccessStorage.h>
-#include <Access/Credentials.h>
 #include <Common/Exception.h>
-#include <Common/quoteString.h>
-#include <base/range.h>
+#include <ext/range.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/adaptor/reversed.hpp>
 #include <boost/range/algorithm/copy.hpp>
@@ -99,7 +97,7 @@ std::shared_ptr<const Storages> MultipleAccessStorage::getStoragesInternal() con
 }
 
 
-std::optional<UUID> MultipleAccessStorage::findImpl(AccessEntityType type, const String & name) const
+std::optional<UUID> MultipleAccessStorage::findImpl(EntityType type, const String & name) const
 {
     auto storages = getStoragesInternal();
     for (const auto & storage : *storages)
@@ -116,7 +114,7 @@ std::optional<UUID> MultipleAccessStorage::findImpl(AccessEntityType type, const
 }
 
 
-std::vector<UUID> MultipleAccessStorage::findAllImpl(AccessEntityType type) const
+std::vector<UUID> MultipleAccessStorage::findAllImpl(EntityType type) const
 {
     std::vector<UUID> all_ids;
     auto storages = getStoragesInternal();
@@ -220,7 +218,7 @@ UUID MultipleAccessStorage::insertImpl(const AccessEntityPtr & entity, bool repl
     }
 
     if (!storage_for_insertion)
-        throw Exception("Not found a storage to insert " + entity->formatTypeWithName(), ErrorCodes::ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND);
+        throw Exception("Not found a storage to insert " + entity->outputTypeAndName(), ErrorCodes::ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND);
 
     auto id = replace_if_exists ? storage_for_insertion->insertOrReplace(entity) : storage_for_insertion->insert(entity);
     std::lock_guard lock{mutex};
@@ -254,8 +252,8 @@ void MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
                 if (storage->find(new_entity->getType(), new_entity->getName()))
                 {
                     throw Exception(
-                        old_entity->formatTypeWithName() + ": cannot rename to " + backQuote(new_entity->getName()) + " because "
-                            + new_entity->formatTypeWithName() + " already exists in " + storage->getStorageName(),
+                        old_entity->outputTypeAndName() + ": cannot rename to " + backQuote(new_entity->getName()) + " because "
+                            + new_entity->outputTypeAndName() + " already exists in " + storage->getStorageName(),
                         ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS);
                 }
             }
@@ -266,7 +264,7 @@ void MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
 }
 
 
-scope_guard MultipleAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
+ext::scope_guard MultipleAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
 {
     auto storage = findStorage(id);
     if (!storage)
@@ -287,7 +285,7 @@ bool MultipleAccessStorage::hasSubscriptionImpl(const UUID & id) const
 }
 
 
-scope_guard MultipleAccessStorage::subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const
+ext::scope_guard MultipleAccessStorage::subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const
 {
     std::unique_lock lock{mutex};
     auto & handlers = handlers_by_type[static_cast<size_t>(type)];
@@ -307,7 +305,7 @@ scope_guard MultipleAccessStorage::subscribeForChangesImpl(AccessEntityType type
 }
 
 
-bool MultipleAccessStorage::hasSubscriptionImpl(AccessEntityType type) const
+bool MultipleAccessStorage::hasSubscriptionImpl(EntityType type) const
 {
     std::lock_guard lock{mutex};
     const auto & handlers = handlers_by_type[static_cast<size_t>(type)];
@@ -322,10 +320,10 @@ void MultipleAccessStorage::updateSubscriptionsToNestedStorages(std::unique_lock
 {
     /// lock is already locked.
 
-    std::vector<std::pair<StoragePtr, scope_guard>> added_subscriptions[static_cast<size_t>(AccessEntityType::MAX)];
-    std::vector<scope_guard> removed_subscriptions;
+    std::vector<std::pair<StoragePtr, ext::scope_guard>> added_subscriptions[static_cast<size_t>(EntityType::MAX)];
+    std::vector<ext::scope_guard> removed_subscriptions;
 
-    for (auto type : collections::range(AccessEntityType::MAX))
+    for (auto type : ext::range(EntityType::MAX))
     {
         auto & handlers = handlers_by_type[static_cast<size_t>(type)];
         auto & subscriptions = subscriptions_to_nested_storages[static_cast<size_t>(type)];
@@ -365,7 +363,7 @@ void MultipleAccessStorage::updateSubscriptionsToNestedStorages(std::unique_lock
     lock.unlock();
     removed_subscriptions.clear();
 
-    for (auto type : collections::range(AccessEntityType::MAX))
+    for (auto type : ext::range(EntityType::MAX))
     {
         if (!added_subscriptions[static_cast<size_t>(type)].empty())
         {
@@ -384,8 +382,7 @@ void MultipleAccessStorage::updateSubscriptionsToNestedStorages(std::unique_lock
 
     /// Lock the mutex again to store added subscriptions to the nested storages.
     lock.lock();
-
-    for (auto type : collections::range(AccessEntityType::MAX))
+    for (auto type : ext::range(EntityType::MAX))
     {
         if (!added_subscriptions[static_cast<size_t>(type)].empty())
         {
@@ -402,24 +399,25 @@ void MultipleAccessStorage::updateSubscriptionsToNestedStorages(std::unique_lock
     }
 
     lock.unlock();
+    added_subscriptions->clear();
 }
 
 
-UUID MultipleAccessStorage::loginImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const
+UUID MultipleAccessStorage::loginImpl(const String & user_name, const String & password, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const
 {
     auto storages = getStoragesInternal();
     for (const auto & storage : *storages)
     {
         try
         {
-            auto id = storage->login(credentials, address, external_authenticators, /* replace_exception_with_cannot_authenticate = */ false);
+            auto id = storage->login(user_name, password, address, external_authenticators, /* replace_exception_with_cannot_authenticate = */ false);
             std::lock_guard lock{mutex};
             ids_cache.set(id, storage);
             return id;
         }
         catch (...)
         {
-            if (!storage->find(AccessEntityType::USER, credentials.getUserName()))
+            if (!storage->find(EntityType::USER, user_name))
             {
                 /// The authentication failed because there no users with such name in the `storage`
                 /// thus we can try to search in other nested storages.
@@ -428,7 +426,7 @@ UUID MultipleAccessStorage::loginImpl(const Credentials & credentials, const Poc
             throw;
         }
     }
-    throwNotFound(AccessEntityType::USER, credentials.getUserName());
+    throwNotFound(EntityType::USER, user_name);
 }
 
 
@@ -446,7 +444,7 @@ UUID MultipleAccessStorage::getIDOfLoggedUserImpl(const String & user_name) cons
         }
         catch (...)
         {
-            if (!storage->find(AccessEntityType::USER, user_name))
+            if (!storage->find(EntityType::USER, user_name))
             {
                 /// The authentication failed because there no users with such name in the `storage`
                 /// thus we can try to search in other nested storages.
@@ -455,7 +453,7 @@ UUID MultipleAccessStorage::getIDOfLoggedUserImpl(const String & user_name) cons
             throw;
         }
     }
-    throwNotFound(AccessEntityType::USER, user_name);
+    throwNotFound(EntityType::USER, user_name);
 }
 
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <Core/Row.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -39,55 +40,16 @@ public:
       *  (split rows by partition)
       * Works deterministically: if same block was passed, function will return same result in same order.
       */
-    static BlocksWithPartition splitBlockIntoParts(const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
+    static BlocksWithPartition splitBlockIntoParts(const Block & block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot);
 
     /** All rows must correspond to same partition.
       * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
       */
     MergeTreeData::MutableDataPartPtr writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, bool optimize_on_insert);
 
-    MergeTreeData::MutableDataPartPtr
-    writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
-
-    /// For insertion.
-    static MergeTreeData::MutableDataPartPtr writeProjectionPart(
-        MergeTreeData & data,
-        Poco::Logger * log,
-        Block block,
-        const ProjectionDescription & projection,
-        const IMergeTreeDataPart * parent_part);
-
-    /// For mutation: MATERIALIZE PROJECTION.
-    static MergeTreeData::MutableDataPartPtr writeTempProjectionPart(
-        MergeTreeData & data,
-        Poco::Logger * log,
-        Block block,
-        const ProjectionDescription & projection,
-        const IMergeTreeDataPart * parent_part,
-        size_t block_num);
-
-    /// For WriteAheadLog AddPart.
-    static MergeTreeData::MutableDataPartPtr writeInMemoryProjectionPart(
-        const MergeTreeData & data,
-        Poco::Logger * log,
-        Block block,
-        const ProjectionDescription & projection,
-        const IMergeTreeDataPart * parent_part);
-
     Block mergeBlock(const Block & block, SortDescription sort_description, Names & partition_key_columns, IColumn::Permutation *& permutation);
 
 private:
-    static MergeTreeData::MutableDataPartPtr writeProjectionPartImpl(
-        const String part_name,
-        MergeTreeDataPartType part_type,
-        const String & relative_path,
-        bool is_temp,
-        const IMergeTreeDataPart * parent_part,
-        const MergeTreeData & data,
-        Poco::Logger * log,
-        Block block,
-        const StorageMetadataPtr & metadata_snapshot);
-
     MergeTreeData & data;
 
     Poco::Logger * log;

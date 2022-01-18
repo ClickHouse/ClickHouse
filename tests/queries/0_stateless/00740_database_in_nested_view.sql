@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 CREATE DATABASE test_00740;
 USE test_00740;
 

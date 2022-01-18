@@ -1,21 +1,21 @@
 ---
 toc_priority: 61
-toc_title: "Инструкция для разработчиков"
+toc_title: "\u0418\u043d\u0441\u0442\u0440\u0443\u043a\u0446\u0438\u044f\u0020\u0434\u043b\u044f\u0020\u0440\u0430\u0437\u0440\u0430\u0431\u043e\u0442\u0447\u0438\u043a\u043e\u0432"
 ---
 
 # Инструкция для разработчиков
 
 Сборка ClickHouse поддерживается на Linux, FreeBSD, Mac OS X.
 
-## Если вы используете Windows {#esli-vy-ispolzuete-windows}
+# Если вы используете Windows {#esli-vy-ispolzuete-windows}
 
 Если вы используете Windows, вам потребуется создать виртуальную машину с Ubuntu. Для работы с виртуальной машиной, установите VirtualBox. Скачать Ubuntu можно на сайте: https://www.ubuntu.com/#download Создайте виртуальную машину из полученного образа. Выделите для неё не менее 4 GB оперативной памяти. Для запуска терминала в Ubuntu, найдите в меню программу со словом terminal (gnome-terminal, konsole или что-то в этом роде) или нажмите Ctrl+Alt+T.
 
-## Если вы используете 32-битную систему {#esli-vy-ispolzuete-32-bitnuiu-sistemu}
+# Если вы используете 32-битную систему {#esli-vy-ispolzuete-32-bitnuiu-sistemu}
 
 ClickHouse не работает и не собирается на 32-битных системах. Получите доступ к 64-битной системе и продолжайте.
 
-## Создание репозитория на GitHub {#sozdanie-repozitoriia-na-github}
+# Создание репозитория на GitHub {#sozdanie-repozitoriia-na-github}
 
 Для работы с репозиторием ClickHouse, вам потребуется аккаунт на GitHub. Наверное, он у вас уже есть.
 
@@ -34,16 +34,16 @@ ClickHouse не работает и не собирается на 32-битны
 
 Подробное руководство по использованию Git: https://git-scm.com/book/ru/v2
 
-## Клонирование репозитория на рабочую машину {#klonirovanie-repozitoriia-na-rabochuiu-mashinu}
+# Клонирование репозитория на рабочую машину {#klonirovanie-repozitoriia-na-rabochuiu-mashinu}
 
 Затем вам потребуется загрузить исходники для работы на свой компьютер. Это называется «клонирование репозитория», потому что создаёт на вашем компьютере локальную копию репозитория, с которой вы будете работать.
 
 Выполните в терминале:
 
-    git clone git@github.com:ClickHouse/ClickHouse.git
+    git clone --recursive git@github.com:ClickHouse/ClickHouse.git
     cd ClickHouse
 
-Замените первое вхождение слова `ClickHouse` в команде для git на имя вашего аккаунта на GitHub.
+Замените *yandex* на имя вашего аккаунта на GitHub.
 
 Эта команда создаст директорию ClickHouse, содержащую рабочую копию проекта.
 
@@ -78,11 +78,11 @@ ClickHouse не работает и не собирается на 32-битны
 
 После этого, вы сможете добавлять в свой репозиторий обновления из репозитория Яндекса с помощью команды `git pull upstream master`.
 
-### Работа с сабмодулями Git {#rabota-s-sabmoduliami-git}
+## Работа с сабмодулями Git {#rabota-s-sabmoduliami-git}
 
 Работа с сабмодулями git может быть достаточно болезненной. Следующие команды позволят содержать их в порядке:
 
-    # ! Каждая команда принимает аргумент
+    # ! Каждая команда принимает аргумент --recursive
     # Обновить URLs удалённого репозитория для каждого сабмодуля, используется относительно редко
     git submodule sync
     # Добавить новые сабмодули
@@ -92,24 +92,25 @@ ClickHouse не работает и не собирается на 32-битны
     # Две последние команды могут быть объединены вместе:
     git submodule update --init
 
+The next commands would help you to reset all submodules to the initial state (!WARING! - any chenges inside will be deleted):
 Следующие команды помогут сбросить все сабмодули в изначальное состояние (!ВНИМАНИЕ! - все изменения в сабмодулях будут утеряны):
 
     # Synchronizes submodules' remote URL with .gitmodules
     # Обновить URLs удалённого репозитория для каждого сабмодуля
-    git submodule sync
+    git submodule sync --recursive
     # Обновить существующие модули и добавить отсутствующие
-    git submodule update --init
+    git submodule update --init --recursive
     # Удалить все изменения в сабмодуле относительно HEAD
     git submodule foreach git reset --hard
     # Очистить игнорируемые файлы
     git submodule foreach git clean -xfd
     # Повторить последние 4 команды для каждого из сабмодулей
-    git submodule foreach git submodule sync
-    git submodule foreach git submodule update --init
+    git submodule foreach git submodule sync --recursive
+    git submodule foreach git submodule update --init --recursive
     git submodule foreach git submodule foreach git reset --hard
     git submodule foreach git submodule foreach git clean -xfd
 
-## Система сборки {#sistema-sborki}
+# Система сборки {#sistema-sborki}
 
 ClickHouse использует систему сборки CMake и Ninja.
 
@@ -127,27 +128,27 @@ Ninja - система запуска сборочных задач.
     /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
     brew install cmake ninja
 
-Проверьте версию CMake: `cmake --version`. Если версия меньше 3.12, то установите новую версию с сайта https://cmake.org/download/
+Проверьте версию CMake: `cmake --version`. Если версия меньше 3.3, то установите новую версию с сайта https://cmake.org/download/
 
-## Необязательные внешние библиотеки {#neobiazatelnye-vneshnie-biblioteki}
+# Необязательные внешние библиотеки {#neobiazatelnye-vneshnie-biblioteki}
 
 ClickHouse использует для сборки некоторое количество внешних библиотек. Но ни одну из них не требуется отдельно устанавливать, так как они собираются вместе с ClickHouse, из исходников, которые расположены в submodules. Посмотреть набор этих библиотек можно в директории contrib.
 
-## Компилятор C++ {#kompiliator-c}
+# Компилятор C++ {#kompiliator-c}
 
-В качестве компилятора C++ поддерживается Clang начиная с версии 11.
+В качестве компилятора C++ поддерживается GCC начиная с версии 9 или Clang начиная с версии 8.
 
-Впрочем, наша среда continuous integration проверяет около десятка вариантов сборки, включая gcc, но сборка с помощью gcc непригодна для использования в продакшене.
+Официальные сборки от Яндекса, на данный момент, используют GCC, так как он генерирует слегка более производительный машинный код (разница в среднем до нескольких процентов по нашим бенчмаркам). Clang обычно более удобен для разработки. Впрочем, наша среда continuous integration проверяет около десятка вариантов сборки.
 
-На Ubuntu и Debian вы можете использовать скрипт для автоматической установки (см. [официальный сайт](https://apt.llvm.org/))
+Для установки GCC под Ubuntu, выполните: `sudo apt install gcc g++`.
 
-```bash
-sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
-```
+Проверьте версию gcc: `gcc --version`. Если версия меньше 10, то следуйте инструкции: https://clickhouse.tech/docs/ru/development/build/#install-gcc-10.
 
 Сборка под Mac OS X поддерживается только для компилятора Clang. Чтобы установить его выполните `brew install llvm`
 
-## Процесс сборки {#protsess-sborki}
+Если вы решили использовать Clang, вы также можете установить `libc++` и `lld`, если вы знаете, что это такое. При желании, установите `ccache`.
+
+# Процесс сборки {#protsess-sborki}
 
 Теперь вы готовы к сборке ClickHouse. Для размещения собранных файлов, рекомендуется создать отдельную директорию build внутри директории ClickHouse:
 
@@ -157,24 +158,25 @@ sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 Вы можете иметь несколько разных директорий (build_release, build_debug) для разных вариантов сборки.
 
 Находясь в директории build, выполните конфигурацию сборки с помощью CMake.
-Перед первым запуском необходимо выставить переменные окружения, отвечающие за выбор компилятора.
+Перед первым запуском необходимо выставить переменные окружения, отвечающие за выбор компилятора (в данном примере это - gcc версии 9).
+
+Linux:
+
+    export CC=gcc-10 CXX=g++-10
+    cmake ..
+
+Mac OS X:
 
     export CC=clang CXX=clang++
     cmake ..
 
-Переменная CC отвечает за компилятор C (сокращение от слов C Compiler), переменная CXX отвечает за выбор компилятора C++ (символ X - это как плюс, но положенный набок, ради того, чтобы превратить его в букву). При получении ошибки типа `Could not find compiler set in environment variable CC: clang` необходимо указать в значениях для переменных CC и CXX явную версию компилятора, например, `clang-12` и `clang++-12`.
+Переменная CC отвечает за компилятор C (сокращение от слов C Compiler), переменная CXX отвечает за выбор компилятора C++ (символ X - это как плюс, но положенный набок, ради того, чтобы превратить его в букву).
 
 Для более быстрой сборки, можно использовать debug вариант - сборку без оптимизаций. Для этого, укажите параметр `-D CMAKE_BUILD_TYPE=Debug`:
 
     cmake -D CMAKE_BUILD_TYPE=Debug ..
 
-В случае использования на разработческой машине старого HDD или SSD, а также при желании использовать меньше места для артефактов сборки можно использовать следующую команду:
-```bash
-cmake -DUSE_DEBUG_HELPERS=1 -DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1 ..
-```
-При этом надо учесть, что получаемые в результате сборки исполнимые файлы будут динамически слинкованы с библиотеками, и поэтому фактически станут непереносимыми на другие компьютеры (либо для этого нужно будет предпринять значительно больше усилий по сравнению со статической сборкой). Плюсом же в данном случае является значительно меньшее время сборки (это проявляется не на первой сборке, а на последующих, после внесения изменений в исходный код - тратится меньшее время на линковку по сравнению со статической сборкой) и значительно меньшее использование места на жёстком диске (экономия более, чем в 3 раза по сравнению со статической сборкой). Для целей разработки, когда планируются только отладочные запуски на том же компьютере, где осуществлялась сборка, это может быть наиболее удобным вариантом.
-
-Вы можете изменить вариант сборки, выполнив новую команду в директории build.
+Вы можете изменить вариант сборки, выполнив эту команду в директории build.
 
 Запустите ninja для сборки:
 
@@ -200,19 +202,11 @@ cmake -DUSE_DEBUG_HELPERS=1 -DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 
 
 В процессе сборки могут появится сообщения `libprotobuf WARNING` про protobuf файлы в библиотеке libhdfs2. Это не имеет значения.
 
-В случае получения ошибок вида `error: variable 'y' set but not used [-Werror,-Wunused-but-set-variable]` ножно попробовать использовать другую версию компилятора сlang. Например, на момент написания данного текста описанная выше команда по установке clang для Ubuntu 20.04 по-умолчанию устанавливает clang-13, с которым возникает эта ошибка. Для решения проблемы можно установить clang-12 с помощью команд:
-```bash
-wget https://apt.llvm.org/llvm.sh
-chmod +x llvm.sh
-sudo ./llvm.sh 12
-```
-И далее использовать именно его, указав соответствующую версию при установке переменных окружения CC и CXX перед вызовом cmake.
-
 При успешной сборке, вы получите готовый исполняемый файл `ClickHouse/build/programs/clickhouse`:
 
     ls -l programs/clickhouse
 
-## Запуск собранной версии ClickHouse {#zapusk-sobrannoi-versii-clickhouse}
+# Запуск собранной версии ClickHouse {#zapusk-sobrannoi-versii-clickhouse}
 
 Для запуска сервера из под текущего пользователя, с выводом логов в терминал и с использованием примеров конфигурационных файлов, расположенных в исходниках, перейдите в директорию `ClickHouse/programs/server/` (эта директория находится не в директории build) и выполните:
 
@@ -239,7 +233,7 @@ sudo ./llvm.sh 12
     sudo service clickhouse-server stop
     sudo -u clickhouse ClickHouse/build/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
 
-## Среда разработки {#sreda-razrabotki}
+# Среда разработки {#sreda-razrabotki}
 
 Если вы не знаете, какую среду разработки использовать, то рекомендуется использовать CLion. CLion является платным ПО, но его можно использовать бесплатно в течение пробного периода. Также он бесплатен для учащихся. CLion можно использовать как под Linux, так и под Mac OS X.
 
@@ -247,28 +241,26 @@ sudo ./llvm.sh 12
 
 В качестве простых редакторов кода можно использовать Sublime Text или Visual Studio Code или Kate (все варианты доступны под Linux).
 
-На всякий случай заметим, что CLion самостоятельно создаёт свою build директорию, самостоятельно выбирает тип сборки debug по-умолчанию, для конфигурации использует встроенную в CLion версию CMake вместо установленного вами, а для запуска задач использует make вместо ninja (но при желании начиная с версии CLion 2019.3 EAP можно настроить использование ninja, см. подробнее [тут](https://blog.jetbrains.com/clion/2019/10/clion-2019-3-eap-ninja-cmake-generators/)). Это нормально, просто имейте это ввиду, чтобы не возникало путаницы.
+На всякий случай заметим, что CLion самостоятельно создаёт свою build директорию, самостоятельно выбирает тип сборки debug по-умолчанию, для конфигурации использует встроенную в CLion версию CMake вместо установленного вами, а для запуска задач использует make вместо ninja. Это нормально, просто имейте это ввиду, чтобы не возникало путаницы.
 
-## Написание кода {#napisanie-koda}
+# Написание кода {#napisanie-koda}
 
-Описание архитектуры ClickHouse: https://clickhouse.com/docs/ru/development/architecture/
+Описание архитектуры ClickHouse: https://clickhouse.tech/docs/ru/development/architecture/
 
-Стиль кода: https://clickhouse.com/docs/ru/development/style/
+Стиль кода: https://clickhouse.tech/docs/ru/development/style/
 
-Рекомендации по добавлению сторонних библиотек и поддержанию в них пользовательских изменений: https://clickhouse.com/docs/ru/development/contrib/#adding-third-party-libraries
-
-Разработка тестов: https://clickhouse.com/docs/ru/development/tests/
+Разработка тестов: https://clickhouse.tech/docs/ru/development/tests/
 
 Список задач: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 
-## Тестовые данные {#testovye-dannye}
+# Тестовые данные {#testovye-dannye}
 
 Разработка ClickHouse часто требует загрузки реалистичных наборов данных. Особенно это важно для тестирования производительности. Специально для вас мы подготовили набор данных, представляющий собой анонимизированные данные Яндекс.Метрики. Загрузка этих данных потребует ещё 3 GB места на диске. Для выполнения большинства задач разработки, загружать эти данные не обязательно.
 
     sudo apt install wget xz-utils
 
-    wget https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz
-    wget https://datasets.clickhouse.com/visits/tsv/visits_v1.tsv.xz
+    wget https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz
+    wget https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz
 
     xz -v -d hits_v1.tsv.xz
     xz -v -d visits_v1.tsv.xz
@@ -282,7 +274,7 @@ sudo ./llvm.sh 12
     clickhouse-client --max_insert_block_size 100000 --query "INSERT INTO test.hits FORMAT TSV" < hits_v1.tsv
     clickhouse-client --max_insert_block_size 100000 --query "INSERT INTO test.visits FORMAT TSV" < visits_v1.tsv
 
-## Создание Pull Request {#sozdanie-pull-request}
+# Создание Pull Request {#sozdanie-pull-request}
 
 Откройте свой форк репозитория в интерфейсе GitHub. Если вы вели разработку в бранче, выберите этот бранч. На странице будет доступна кнопка «Pull request». По сути, это означает «создать заявку на принятие моих изменений в основной репозиторий».
 

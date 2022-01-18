@@ -1,5 +1,0 @@
-part_log:
-  database: system
-  table: part_log
-  flush_interval_milliseconds: 7500
-

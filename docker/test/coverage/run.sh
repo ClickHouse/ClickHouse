@@ -80,7 +80,7 @@ LLVM_PROFILE_FILE='client_coverage_%5m.profraw' clickhouse-client --query "RENAM
 LLVM_PROFILE_FILE='client_coverage_%5m.profraw' clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
 LLVM_PROFILE_FILE='client_coverage_%5m.profraw' clickhouse-client --query "SHOW TABLES FROM test"
 
-LLVM_PROFILE_FILE='client_coverage_%5m.profraw' clickhouse-test -j 8 --testname --shard --zookeeper --print-time 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_result.txt
+LLVM_PROFILE_FILE='client_coverage_%5m.profraw' clickhouse-test -j 8 --testname --shard --zookeeper --print-time --use-skip-list 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee /test_result.txt
 
 readarray -t FAILED_TESTS < <(awk '/FAIL|TIMEOUT|ERROR/ { print substr($3, 1, length($3)-1) }' "/test_result.txt")
 
@@ -97,7 +97,7 @@ then
 
     echo "Going to run again: ${FAILED_TESTS[*]}"
 
-    LLVM_PROFILE_FILE='client_coverage_%5m.profraw' clickhouse-test --order=random --testname --shard --zookeeper "${FAILED_TESTS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_result.txt
+    LLVM_PROFILE_FILE='client_coverage_%5m.profraw' clickhouse-test --order=random --testname --shard --zookeeper --use-skip-list "${FAILED_TESTS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_result.txt
 else
     echo "No failed tests"
 fi

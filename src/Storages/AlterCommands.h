@@ -13,8 +13,6 @@ namespace DB
 {
 
 class ASTAlterCommand;
-class IDatabase;
-using DatabasePtr = std::shared_ptr<IDatabase>;
 
 /// Operation from the ALTER query (except for manipulation with PART/PARTITION).
 /// Adding Nested columns is not expanded to add individual columns.
@@ -25,7 +23,6 @@ struct AlterCommand
 
     enum Type
     {
-        UNKNOWN,
         ADD_COLUMN,
         DROP_COLUMN,
         MODIFY_COLUMN,
@@ -36,17 +33,11 @@ struct AlterCommand
         DROP_INDEX,
         ADD_CONSTRAINT,
         DROP_CONSTRAINT,
-        ADD_PROJECTION,
-        DROP_PROJECTION,
         MODIFY_TTL,
         MODIFY_SETTING,
-        RESET_SETTING,
         MODIFY_QUERY,
         RENAME_COLUMN,
         REMOVE_TTL,
-        MODIFY_DATABASE_SETTING,
-        COMMENT_TABLE,
-        REMOVE_SAMPLE_BY,
     };
 
     /// Which property user wants to remove from column
@@ -64,7 +55,7 @@ struct AlterCommand
         TTL
     };
 
-    Type type = UNKNOWN;
+    Type type;
 
     String column_name;
 
@@ -77,16 +68,16 @@ struct AlterCommand
     ColumnDefaultKind default_kind{};
     ASTPtr default_expression{};
 
-    /// For COMMENT column or table
+    /// For COMMENT column
     std::optional<String> comment;
 
     /// For ADD or MODIFY - after which column to add a new one. If an empty string, add to the end.
     String after_column;
 
-    /// For ADD_COLUMN, MODIFY_COLUMN, ADD_INDEX - Add to the begin if it is true.
+    /// For ADD_COLUMN, MODIFY_COLUMN - Add to the begin if it is true.
     bool first = false;
 
-    /// For DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN, RESET_SETTING
+    /// For DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN
     bool if_exists = false;
 
     /// For ADD_COLUMN
@@ -111,13 +102,6 @@ struct AlterCommand
     // For ADD/DROP CONSTRAINT
     String constraint_name;
 
-    /// For ADD PROJECTION
-    ASTPtr projection_decl = nullptr;
-    String after_projection_name;
-
-    /// For ADD/DROP PROJECTION
-    String projection_name;
-
     /// For MODIFY TTL
     ASTPtr ttl = nullptr;
 
@@ -133,9 +117,6 @@ struct AlterCommand
     /// For MODIFY SETTING
     SettingsChanges settings_changes;
 
-    /// For RESET SETTING
-    std::set<String> settings_resets;
-
     /// For MODIFY_QUERY
     ASTPtr select = nullptr;
 
@@ -147,7 +128,7 @@ struct AlterCommand
 
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 
-    void apply(StorageInMemoryMetadata & metadata, ContextPtr context) const;
+    void apply(StorageInMemoryMetadata & metadata, const Context & context) const;
 
     /// Check that alter command require data modification (mutation) to be
     /// executed. For example, cast from Date to UInt16 type can be executed
@@ -170,8 +151,11 @@ struct AlterCommand
     /// If possible, convert alter command to mutation command. In other case
     /// return empty optional. Some storages may execute mutations after
     /// metadata changes.
-    std::optional<MutationCommand> tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const;
+    std::optional<MutationCommand> tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, const Context & context) const;
 };
+
+/// Return string representation of AlterCommand::Type
+String alterTypeToString(const AlterCommand::Type type);
 
 class Context;
 
@@ -186,7 +170,7 @@ public:
     /// Checks that all columns exist and dependencies between them.
     /// This check is lightweight and base only on metadata.
     /// More accurate check have to be performed with storage->checkAlterIsPossible.
-    void validate(const StorageInMemoryMetadata & metadata, ContextPtr context) const;
+    void validate(const StorageInMemoryMetadata & metadata, const Context & context) const;
 
     /// Prepare alter commands. Set ignore flag to some of them and set some
     /// parts to commands from storage's metadata (for example, absent default)
@@ -194,22 +178,19 @@ public:
 
     /// Apply all alter command in sequential order to storage metadata.
     /// Commands have to be prepared before apply.
-    void apply(StorageInMemoryMetadata & metadata, ContextPtr context) const;
+    void apply(StorageInMemoryMetadata & metadata, const Context & context) const;
 
     /// At least one command modify settings.
-    bool hasSettingsAlterCommand() const;
-
-    /// All commands modify settings only.
     bool isSettingsAlter() const;
 
-    /// All commands modify comments only.
+    /// At least one command modify comments.
     bool isCommentAlter() const;
 
     /// Return mutation commands which some storages may execute as part of
     /// alter. If alter can be performed as pure metadata update, than result is
     /// empty. If some TTL changes happened than, depending on materialize_ttl
     /// additional mutation command (MATERIALIZE_TTL) will be returned.
-    MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context) const;
+    MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, const Context & context) const;
 };
 
 }

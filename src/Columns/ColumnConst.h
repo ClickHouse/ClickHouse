@@ -5,7 +5,6 @@
 #include <Columns/IColumn.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <Common/PODArray.h>
 
 
 namespace DB
@@ -116,11 +115,6 @@ public:
         return data->getFloat32(0);
     }
 
-    bool isDefaultAt(size_t) const override
-    {
-        return data->isDefaultAt(0);
-    }
-
     bool isNullAt(size_t) const override
     {
         return data->isNullAt(0);
@@ -169,11 +163,6 @@ public:
         return res;
     }
 
-    const char * skipSerializedInArena(const char * pos) const override
-    {
-        return data->skipSerializedInArena(pos);
-    }
-
     void updateHashWithValue(size_t, SipHash & hash) const override
     {
         data->updateHashWithValue(0, hash);
@@ -187,8 +176,6 @@ public:
     }
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
-    void expand(const Filter & mask, bool inverted) override;
-
     ColumnPtr replicate(const Offsets & offsets) const override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
@@ -245,27 +232,6 @@ public:
         return false;
     }
 
-    double getRatioOfDefaultRows(double) const override
-    {
-        return data->isDefaultAt(0) ? 1.0 : 0.0;
-    }
-
-    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
-    {
-        if (!data->isDefaultAt(0))
-        {
-            size_t to = limit && from + limit < size() ? from + limit : size();
-            indices.reserve(indices.size() + to - from);
-            for (size_t i = from; i < to; ++i)
-                indices.push_back(i);
-        }
-    }
-
-    SerializationInfoPtr getSerializationInfo() const override
-    {
-        return data->getSerializationInfo();
-    }
-
     bool isNullable() const override { return isColumnNullable(*data); }
     bool onlyNull() const override { return data->isNullAt(0); }
     bool isNumeric() const override { return data->isNumeric(); }
@@ -284,7 +250,7 @@ public:
 
     /// The constant value. It is valid even if the size of the column is 0.
     template <typename T>
-    T getValue() const { return getField().safeGet<T>(); }
+    T getValue() const { return getField().safeGet<NearestFieldType<T>>(); }
 
     bool isCollationSupported() const override { return data->isCollationSupported(); }
 };

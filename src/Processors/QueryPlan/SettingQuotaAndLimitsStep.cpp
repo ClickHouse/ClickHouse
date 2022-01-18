@@ -1,5 +1,5 @@
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <Storages/IStorage.h>
 
 namespace DB
@@ -28,7 +28,7 @@ SettingQuotaAndLimitsStep::SettingQuotaAndLimitsStep(
     StreamLocalLimits & limits_,
     SizeLimits & leaf_limits_,
     std::shared_ptr<const EnabledQuota> quota_,
-    ContextPtr context_)
+    std::shared_ptr<Context> context_)
     : ITransformingStep(input_stream_, input_stream_.header, getTraits())
     , context(std::move(context_))
     , storage(std::move(storage_))
@@ -39,7 +39,7 @@ SettingQuotaAndLimitsStep::SettingQuotaAndLimitsStep(
 {
 }
 
-void SettingQuotaAndLimitsStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void SettingQuotaAndLimitsStep::transformPipeline(QueryPipeline & pipeline)
 {
     /// Table lock is stored inside pipeline here.
     pipeline.setLimits(limits);

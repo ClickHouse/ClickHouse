@@ -28,7 +28,7 @@ struct ArrayCompactImpl
     template <typename T>
     static bool executeType(const ColumnPtr & mapped, const ColumnArray & array, ColumnPtr & res_ptr)
     {
-        using ColVecType = ColumnVectorOrDecimal<T>;
+        using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
 
         const ColVecType * src_values_column = checkAndGetColumn<ColVecType>(mapped.get());
 
@@ -39,7 +39,7 @@ struct ArrayCompactImpl
         const typename ColVecType::Container & src_values = src_values_column->getData();
 
         typename ColVecType::MutablePtr res_values_column;
-        if constexpr (is_decimal<T>)
+        if constexpr (IsDecimalNumber<T>)
             res_values_column = ColVecType::create(src_values.size(), src_values.getScale());
         else
             res_values_column = ColVecType::create(src_values.size());

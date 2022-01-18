@@ -6,6 +6,7 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Poco/Path.h>
 
 
 namespace DB
@@ -23,7 +24,7 @@ namespace ErrorCodes
 class DiskMemoryDirectoryIterator final : public IDiskDirectoryIterator
 {
 public:
-    explicit DiskMemoryDirectoryIterator(std::vector<fs::path> && dir_file_paths_)
+    explicit DiskMemoryDirectoryIterator(std::vector<Poco::Path> && dir_file_paths_)
         : dir_file_paths(std::move(dir_file_paths_)), iter(dir_file_paths.begin())
     {
     }
@@ -32,13 +33,13 @@ public:
 
     bool isValid() const override { return iter != dir_file_paths.end(); }
 
-    String path() const override { return iter->string(); }
+    String path() const override { return (*iter).toString(); }
 
-    String name() const override { return iter->filename(); }
+    String name() const override { return (*iter).getFileName(); }
 
 private:
-    std::vector<fs::path> dir_file_paths;
-    std::vector<fs::path>::iterator iter;
+    std::vector<Poco::Path> dir_file_paths;
+    std::vector<Poco::Path>::iterator iter;
 };
 
 
@@ -93,7 +94,7 @@ public:
         }
     }
 
-    void finalizeImpl() override
+    void finalize() override
     {
         if (impl.isFinished())
             return;
@@ -102,8 +103,6 @@ public:
 
         /// str() finalizes buffer.
         String value = impl.str();
-
-        std::lock_guard lock(disk->mutex);
 
         auto iter = disk->files.find(path);
 
@@ -253,7 +252,7 @@ void DiskMemory::clearDirectory(const String & path)
             throw Exception(
                 "Failed to clear directory '" + path + "'. " + iter->first + " is a directory", ErrorCodes::CANNOT_DELETE_DIRECTORY);
 
-        iter = files.erase(iter);
+        files.erase(iter++);
     }
 }
 
@@ -269,7 +268,7 @@ DiskDirectoryIteratorPtr DiskMemory::iterateDirectory(const String & path)
     if (!path.empty() && files.find(path) == files.end())
         throw Exception("Directory '" + path + "' does not exist", ErrorCodes::DIRECTORY_DOESNT_EXIST);
 
-    std::vector<fs::path> dir_file_paths;
+    std::vector<Poco::Path> dir_file_paths;
     for (const auto & file : files)
         if (parentPath(file.first) == path)
             dir_file_paths.emplace_back(file.first);
@@ -315,7 +314,7 @@ void DiskMemory::replaceFileImpl(const String & from_path, const String & to_pat
     files.insert(std::move(node));
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskMemory::readFile(const String & path, const ReadSettings &, std::optional<size_t>) const
+std::unique_ptr<ReadBufferFromFileBase> DiskMemory::readFile(const String & path, size_t /*buf_size*/, size_t, size_t, size_t) const
 {
     std::lock_guard lock(mutex);
 
@@ -452,8 +451,7 @@ void registerDiskMemory(DiskFactory & factory)
     auto creator = [](const String & name,
                       const Poco::Util::AbstractConfiguration & /*config*/,
                       const String & /*config_prefix*/,
-                      ContextPtr /*context*/,
-                      const DisksMap & /*map*/) -> DiskPtr { return std::make_shared<DiskMemory>(name); };
+                      const Context & /*context*/) -> DiskPtr { return std::make_shared<DiskMemory>(name); };
     factory.registerDiskType("memory", creator);
 }
 

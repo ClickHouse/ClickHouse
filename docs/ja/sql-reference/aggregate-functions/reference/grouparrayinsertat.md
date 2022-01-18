@@ -1,1 +1,0 @@
-../../../../en/sql-reference/aggregate-functions/reference/grouparrayinsertat.md

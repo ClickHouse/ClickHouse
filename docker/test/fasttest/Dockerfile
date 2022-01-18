@@ -1,11 +1,9 @@
-#  docker build -t clickhouse/fasttest .
-FROM clickhouse/test-util
+#  docker build -t yandex/clickhouse-fasttest .
+FROM ubuntu:20.04
 
-# ARG for quick switch to a given ubuntu mirror
-ARG apt_archive="http://archive.ubuntu.com"
-RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=10
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=13
+RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
 RUN apt-get update \
     && apt-get install ca-certificates lsb-release wget gnupg apt-transport-https \
@@ -47,20 +45,20 @@ RUN apt-get update \
         clang-tidy-${LLVM_VERSION} \
         cmake \
         curl \
+        lsof \
         expect \
         fakeroot \
-        gdb \
         git \
+        gdb \
         gperf \
         lld-${LLVM_VERSION} \
         llvm-${LLVM_VERSION} \
-        lsof \
         moreutils \
         ninja-build \
         psmisc \
         python3 \
-        python3-lxml \
         python3-pip \
+        python3-lxml \
         python3-requests \
         python3-termcolor \
         rename \
@@ -69,7 +67,7 @@ RUN apt-get update \
         unixodbc \
        --yes --no-install-recommends
 
-RUN pip3 install numpy scipy pandas Jinja2
+RUN pip3 install numpy scipy pandas
 
 # This symlink required by gcc to find lld compiler
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld

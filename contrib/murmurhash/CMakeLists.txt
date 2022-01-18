@@ -1,7 +1,7 @@
 add_library(murmurhash
-    src/MurmurHash2.cpp
-    src/MurmurHash3.cpp
-    include/MurmurHash2.h
-    include/MurmurHash3.h)
+    src/murmurhash2.cpp
+    src/murmurhash3.cpp
+    include/murmurhash2.h
+    include/murmurhash3.h)
 
 target_include_directories (murmurhash PUBLIC include)

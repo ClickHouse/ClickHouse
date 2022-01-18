@@ -12,7 +12,7 @@ class IParserBase : public IParser
 {
 public:
     template <typename F>
-    ALWAYS_INLINE static bool wrapParseImpl(Pos & pos, const F & func)
+    static bool wrapParseImpl(Pos & pos, const F & func)
     {
         Pos begin = pos;
         bool res = func();
@@ -24,7 +24,7 @@ public:
     struct IncreaseDepthTag {};
 
     template <typename F>
-    ALWAYS_INLINE static bool wrapParseImpl(Pos & pos, IncreaseDepthTag, const F & func)
+    static bool wrapParseImpl(Pos & pos, IncreaseDepthTag, const F & func)
     {
         Pos begin = pos;
         pos.increaseDepth();
@@ -35,7 +35,7 @@ public:
         return res;
     }
 
-    bool parse(Pos & pos, ASTPtr & node, Expected & expected) override;  // -V1071
+    bool parse(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 protected:
     virtual bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) = 0;

@@ -54,6 +54,9 @@ private:
     template <typename Comparator>
     void getPermutationImpl(size_t limit, Permutation & res, Comparator cmp) const;
 
+    template <typename Comparator>
+    void updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_ranges, Comparator cmp) const;
+
 public:
     const char * getFamilyName() const override { return "String"; }
     TypeIndex getDataType() const override { return TypeIndex::String; }
@@ -107,14 +110,8 @@ public:
         return StringRef(&chars[offsetAt(n)], sizeAt(n));
     }
 
-    bool isDefaultAt(size_t n) const override
-    {
-        assert(n < size());
-        return sizeAt(n) == 1;
-    }
-
 /// Suppress gcc 7.3.1 warning: '*((void*)&<anonymous> +8)' may be used uninitialized in this function
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
@@ -131,7 +128,7 @@ public:
         offsets.push_back(new_size);
     }
 
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic pop
 #endif
 
@@ -192,8 +189,6 @@ public:
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
-    const char * skipSerializedInArena(const char * pos) const override;
-
     void updateHashWithValue(size_t n, SipHash & hash) const override
     {
         size_t string_size = sizeAt(n);
@@ -214,8 +209,6 @@ public:
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
-
-    void expand(const Filter & mask, bool inverted) override;
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 
@@ -284,15 +277,6 @@ public:
         return typeid(rhs) == typeid(ColumnString);
     }
 
-    double getRatioOfDefaultRows(double sample_ratio) const override
-    {
-        return getRatioOfDefaultRowsImpl<ColumnString>(sample_ratio);
-    }
-
-    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
-    {
-        return getIndicesOfNonDefaultRowsImpl<ColumnString>(indices, from, limit);
-    }
 
     Chars & getChars() { return chars; }
     const Chars & getChars() const { return chars; }

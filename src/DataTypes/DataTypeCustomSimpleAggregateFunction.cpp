@@ -1,4 +1,4 @@
-#include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
 
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
@@ -8,12 +8,10 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTIdentifier.h>
 
 #include <boost/algorithm/string/join.hpp>
-
 
 namespace DB
 {
@@ -29,11 +27,9 @@ namespace ErrorCodes
 
 void DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(const AggregateFunctionPtr & function)
 {
-    /// TODO Make it sane.
     static const std::vector<String> supported_functions{"any", "anyLast", "min",
         "max", "sum", "sumWithOverflow", "groupBitAnd", "groupBitOr", "groupBitXor",
-        "sumMap", "minMap", "maxMap", "groupArrayArray", "groupUniqArrayArray",
-        "sumMappedArrays", "minMappedArrays", "maxMappedArrays"};
+        "sumMap", "minMap", "maxMap", "groupArrayArray", "groupUniqArrayArray"};
 
     // check function
     if (std::find(std::begin(supported_functions), std::end(supported_functions), function->getName()) == std::end(supported_functions))
@@ -55,7 +51,7 @@ String DataTypeCustomSimpleAggregateFunction::getName() const
         {
             if (i)
                 stream << ", ";
-            stream << applyVisitor(FieldVisitorToString(), parameters[i]);
+            stream << applyVisitor(DB::FieldVisitorToString(), parameters[i]);
         }
         stream << ")";
     }

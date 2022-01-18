@@ -6,7 +6,6 @@
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -30,7 +29,7 @@ struct QuantileExactWeighted
     };
 
     using Weight = UInt64;
-    using UnderlyingType = NativeType<Value>;
+    using UnderlyingType = typename NativeType<Value>::Type;
     using Hasher = std::conditional_t<std::is_same_v<Value, Decimal128>, Int128Hash, HashCRC32<UnderlyingType>>;
 
     /// When creating, the hash table must be small.

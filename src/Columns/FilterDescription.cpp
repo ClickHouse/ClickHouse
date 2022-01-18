@@ -4,7 +4,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnSparse.h>
 #include <Core/ColumnWithTypeAndName.h>
 
 
@@ -51,9 +50,6 @@ ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
 
 FilterDescription::FilterDescription(const IColumn & column_)
 {
-    if (column_.isSparse())
-        data_holder = recursiveRemoveSparse(column_.getPtr());
-
     if (column_.lowCardinality())
         data_holder = column_.convertToFullColumnIfLowCardinality();
 
@@ -89,6 +85,20 @@ FilterDescription::FilterDescription(const IColumn & column_)
 
     throw Exception("Illegal type " + column.getName() + " of column for filter. Must be UInt8 or Nullable(UInt8) or Const variants of them.",
         ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+}
+
+
+void checkColumnCanBeUsedAsFilter(const ColumnWithTypeAndName & column_elem)
+{
+    ConstantFilterDescription const_filter;
+    if (column_elem.column)
+        const_filter = ConstantFilterDescription(*column_elem.column);
+
+    if (!const_filter.always_false && !const_filter.always_true)
+    {
+        auto column = column_elem.column ? column_elem.column : column_elem.type->createColumn();
+        FilterDescription filter(*column);
+    }
 }
 
 }

@@ -23,21 +23,19 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     , data_part(std::move(data_part_))
     , columns_to_read(std::move(columns_to_read_))
     , read_with_direct_io(read_with_direct_io_)
-    , mark_cache(storage.getContext()->getMarkCache())
+    , mark_cache(storage.global_context.getMarkCache())
 {
     if (!quiet)
     {
         /// Print column name but don't pollute logs in case of many columns.
         if (columns_to_read.size() == 1)
-            LOG_DEBUG(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part, column {}",
+            LOG_TRACE(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part, column {}",
                 data_part->getMarksCount(), data_part->name, data_part->rows_count, columns_to_read.front());
         else
-            LOG_DEBUG(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part",
+            LOG_TRACE(log, "Reading {} marks from part {}, total {} rows starting from the beginning of the part",
                 data_part->getMarksCount(), data_part->name, data_part->rows_count);
     }
 
-    /// Note, that we don't check setting collaborate_with_coordinator presence, because this source
-    /// is only used in background merges.
     addTotalRowsApprox(data_part->rows_count);
 
     /// Add columns because we don't want to read empty blocks
@@ -45,7 +43,8 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     NamesAndTypesList columns_for_reader;
     if (take_column_types_from_storage)
     {
-        columns_for_reader = metadata_snapshot->getColumns().getByNames(ColumnsDescription::AllPhysical, columns_to_read, false);
+        const NamesAndTypesList & physical_columns = metadata_snapshot->getColumns().getAllPhysical();
+        columns_for_reader = physical_columns.addTypes(columns_to_read);
     }
     else
     {
@@ -53,13 +52,11 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
         columns_for_reader = data_part->getColumns().addTypes(columns_to_read);
     }
 
-    ReadSettings read_settings;
-    if (read_with_direct_io)
-        read_settings.direct_io_threshold = 1;
-
     MergeTreeReaderSettings reader_settings =
     {
-        .read_settings = read_settings,
+        /// bytes to use AIO (this is hack)
+        .min_bytes_to_use_direct_io = read_with_direct_io ? 1UL : std::numeric_limits<size_t>::max(),
+        .max_read_buffer_size = DBMS_DEFAULT_BUFFER_SIZE,
         .save_marks_in_cache = false
     };
 
@@ -80,8 +77,7 @@ try
 
         const auto & sample = reader->getColumns();
         Columns columns(sample.size());
-        /// TODO: pass stream size instead of zero?
-        size_t rows_read = reader->readRows(current_mark, 0, continue_reading, rows_to_read, columns);
+        size_t rows_read = reader->readRows(current_mark, continue_reading, rows_to_read, columns);
 
         if (rows_read)
         {

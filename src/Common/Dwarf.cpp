@@ -804,7 +804,7 @@ bool Dwarf::findLocation(
         findSubProgramDieForAddress(cu, die, address, base_addr_cu, subprogram);
 
         // Subprogram is the DIE of caller function.
-        if (/*check_inline &&*/ subprogram.abbr.has_children)
+        if (check_inline && subprogram.abbr.has_children)
         {
             // Use an extra location and get its call file and call line, so that
             // they can be used for the second last location when we don't have
@@ -832,13 +832,13 @@ bool Dwarf::findLocation(
                 // file+line of the non-inlined outer function making the call.
                 // locationInfo.name is already set by the caller by looking up the
                 // non-inlined function @address belongs to.
-                info.has_file_and_line = true; //-V1048
+                info.has_file_and_line = true;
                 info.file = call_locations[0].file;
                 info.line = call_locations[0].line;
 
                 // The next inlined subroutine's call file and call line is the current
                 // caller's location.
-                for (size_t i = 0; i < num_found - 1; ++i)
+                for (size_t i = 0; i < num_found - 1; i++)
                 {
                     call_locations[i].file = call_locations[i + 1].file;
                     call_locations[i].line = call_locations[i + 1].line;

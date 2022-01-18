@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 #include <Core/Names.h>
 #include <Interpreters/StorageID.h>
 
@@ -34,15 +34,12 @@ public:
         StorageID table_id = StorageID::createEmpty();
         bool ignore_unknown = false;
         bool expand_special_macros_only = false;
-        std::optional<String> shard;
-        std::optional<String> replica;
 
         /// Information about macro expansion
         size_t level = 0;
         bool expanded_database = false;
         bool expanded_table = false;
         bool expanded_uuid = false;
-        bool expanded_other = false;
         bool has_unknown = false;
     };
 

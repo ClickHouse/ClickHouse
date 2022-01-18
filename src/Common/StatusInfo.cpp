@@ -1,5 +1,5 @@
 #include <Common/StatusInfo.h>
-#include <Common/ExternalLoaderStatus.h>
+#include <Interpreters/ExternalLoader.h>
 
 /// Available status. Add something here as you wish.
 #define APPLY_FOR_STATUS(M) \

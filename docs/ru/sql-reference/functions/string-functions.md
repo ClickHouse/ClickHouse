@@ -1,89 +1,22 @@
 ---
 toc_priority: 40
-toc_title: "Функции для работы со строками"
+toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u0434\u043b\u044f\u0020\u0440\u0430\u0431\u043e\u0442\u044b\u0020\u0441\u043e\u0020\u0441\u0442\u0440\u043e\u043a\u0430\u043c\u0438"
 ---
 
 # Функции для работы со строками {#funktsii-dlia-raboty-so-strokami}
 
 ## empty {#empty}
 
-Проверяет, является ли входная строка пустой.
-
-**Синтаксис**
-
-``` sql
-empty(x)
-```
-
-Строка считается непустой, если содержит хотя бы один байт, пусть даже это пробел или нулевой байт. 
-
-Функция также поддерживает работу с типами [Array](array-functions.md#function-empty) и [UUID](uuid-functions.md#empty).
-
-**Параметры**
-
--   `x` — Входная строка. [String](../data-types/string.md).
-
-**Возвращаемое значение**
-
--   Возвращает `1` для пустой строки и `0` — для непустой строки.
-
-Тип: [UInt8](../data-types/int-uint.md).
-
-**Пример**
-
-Запрос:
-
-```sql
-SELECT empty('text');
-```
-
-Результат:
-
-```text
-┌─empty('text')─┐
-│             0 │
-└───────────────┘
-```
+Возвращает 1 для пустой строки, и 0 для непустой строки.
+Тип результата — UInt8.
+Строка считается непустой, если содержит хотя бы один байт, пусть даже это пробел или нулевой байт.
+Функция также работает для массивов.
 
 ## notEmpty {#notempty}
 
-Проверяет, является ли входная строка непустой.
-
-**Синтаксис**
-
-``` sql
-notEmpty(x)
-```
-
-Строка считается непустой, если содержит хотя бы один байт, пусть даже это пробел или нулевой байт. 
-
-Функция также поддерживает работу с типами [Array](array-functions.md#function-notempty) и [UUID](uuid-functions.md#notempty).
-
-**Параметры**
-
--   `x` — Входная строка. [String](../data-types/string.md).
-
-**Возвращаемое значение**
-
--   Возвращает `1` для непустой строки и `0` — для пустой строки.
-
-Тип: [UInt8](../data-types/int-uint.md).
-
-**Пример**
-
-Запрос:
-
-```sql
-SELECT notEmpty('text');
-```
-
-Результат:
-
-```text
-┌─notEmpty('text')─┐
-│                1 │
-└──────────────────┘
-```
+Возвращает 0 для пустой строки, и 1 для непустой строки.
+Тип результата — UInt8.
+Функция также работает для массивов.
 
 ## length {#length}
 
@@ -105,158 +38,6 @@ SELECT notEmpty('text');
 
 Возвращает длину строки в кодовых точках Unicode (не символах), при допущении, что строка содержит набор байтов, являющийся текстом в кодировке UTF-8. Если допущение не выполнено, возвращает какой-нибудь результат (не кидает исключение).
 Тип результата — UInt64.
-
-## leftPad {#leftpad}
-
-Дополняет текущую строку слева пробелами или указанной строкой (несколько раз, если необходимо), пока результирующая строка не достигнет заданной длины. Соответствует MySQL функции `LPAD`.
-
-**Синтаксис**
-
-``` sql
-leftPad('string', 'length'[, 'pad_string'])
-```
-
-**Параметры**
-
--   `string` — входная строка, которую необходимо дополнить. [String](../data-types/string.md).
--   `length` — длина результирующей строки. [UInt](../data-types/int-uint.md). Если указанное значение меньше, чем длина входной строки, то входная строка возвращается как есть.
--   `pad_string` — строка, используемая для дополнения входной строки. [String](../data-types/string.md). Необязательный параметр. Если не указано, то входная строка дополняется пробелами.
-
-**Возвращаемое значение**
-
--   Результирующая строка заданной длины.
-
-Type: [String](../data-types/string.md).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT leftPad('abc', 7, '*'), leftPad('def', 7);
-```
-
-Результат:
-
-``` text
-┌─leftPad('abc', 7, '*')─┬─leftPad('def', 7)─┐
-│ ****abc                │     def           │
-└────────────────────────┴───────────────────┘
-```
-
-## leftPadUTF8 {#leftpadutf8}
-
-Дополняет текущую строку слева пробелами или указанной строкой (несколько раз, если необходимо), пока результирующая строка не достигнет заданной длины. Соответствует MySQL функции `LPAD`. В отличие от функции [leftPad](#leftpad), измеряет длину строки не в байтах, а в кодовых точках Unicode.
-
-**Синтаксис**
-
-``` sql
-leftPadUTF8('string','length'[, 'pad_string'])
-```
-
-**Параметры**
-
--   `string` — входная строка, которую необходимо дополнить. [String](../data-types/string.md).
--   `length` — длина результирующей строки. [UInt](../data-types/int-uint.md). Если указанное значение меньше, чем длина входной строки, то входная строка возвращается как есть.
--   `pad_string` — строка, используемая для дополнения входной строки. [String](../data-types/string.md). Необязательный параметр. Если не указано, то входная строка дополняется пробелами.
-
-**Возвращаемое значение**
-
--   Результирующая строка заданной длины.
-
-Type: [String](../data-types/string.md).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT leftPadUTF8('абвг', 7, '*'), leftPadUTF8('дежз', 7);
-```
-
-Результат:
-
-``` text
-┌─leftPadUTF8('абвг', 7, '*')─┬─leftPadUTF8('дежз', 7)─┐
-│ ***абвг                     │    дежз                │
-└─────────────────────────────┴────────────────────────┘
-```
-
-## rightPad {#rightpad}
-
-Дополняет текущую строку справа пробелами или указанной строкой (несколько раз, если необходимо), пока результирующая строка не достигнет заданной длины. Соответствует MySQL функции `RPAD`.
-
-**Синтаксис**
-
-``` sql
-rightPad('string', 'length'[, 'pad_string'])
-```
-
-**Параметры**
-
--   `string` — входная строка, которую необходимо дополнить. [String](../data-types/string.md).
--   `length` — длина результирующей строки. [UInt](../data-types/int-uint.md). Если указанное значение меньше, чем длина входной строки, то входная строка возвращается как есть.
--   `pad_string` — строка, используемая для дополнения входной строки. [String](../data-types/string.md). Необязательный параметр. Если не указано, то входная строка дополняется пробелами.
-
-**Возвращаемое значение**
-
--   Результирующая строка заданной длины.
-
-Type: [String](../data-types/string.md).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT rightPad('abc', 7, '*'), rightPad('abc', 7);
-```
-
-Результат:
-
-``` text
-┌─rightPad('abc', 7, '*')─┬─rightPad('abc', 7)─┐
-│ abc****                 │ abc                │
-└─────────────────────────┴────────────────────┘
-```
-
-## rightPadUTF8 {#rightpadutf8}
-
-Дополняет текущую строку слева пробелами или указанной строкой (несколько раз, если необходимо), пока результирующая строка не достигнет заданной длины. Соответствует MySQL функции `RPAD`. В отличие от функции [rightPad](#rightpad), измеряет длину строки не в байтах, а в кодовых точках Unicode.
-
-**Синтаксис**
-
-``` sql
-rightPadUTF8('string','length'[, 'pad_string'])
-```
-
-**Параметры**
-
--   `string` — входная строка, которую необходимо дополнить. [String](../data-types/string.md).
--   `length` — длина результирующей строки. [UInt](../data-types/int-uint.md). Если указанное значение меньше, чем длина входной строки, то входная строка возвращается как есть.
--   `pad_string` — строка, используемая для дополнения входной строки. [String](../data-types/string.md). Необязательный параметр. Если не указано, то входная строка дополняется пробелами.
-
-**Возвращаемое значение**
-
--   Результирующая строка заданной длины.
-
-Type: [String](../data-types/string.md).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT rightPadUTF8('абвг', 7, '*'), rightPadUTF8('абвг', 7);
-```
-
-Результат:
-
-``` text
-┌─rightPadUTF8('абвг', 7, '*')─┬─rightPadUTF8('абвг', 7)─┐
-│ абвг***                      │ абвг                    │
-└──────────────────────────────┴─────────────────────────┘
-```
 
 ## lower, lcase {#lower}
 
@@ -289,19 +70,19 @@ SELECT rightPadUTF8('абвг', 7, '*'), rightPadUTF8('абвг', 7);
 Заменяет некорректные символы UTF-8 на символ `�` (U+FFFD). Все идущие подряд некорректные символы схлопываются в один заменяющий символ.
 
 ``` sql
-toValidUTF8(input_string)
+toValidUTF8( input_string )
 ```
 
-**Аргументы**
+Параметры:
 
--   `input_string` — произвольный набор байтов, представленный как объект типа [String](../../sql-reference/functions/string-functions.md).
+-   input_string — произвольный набор байтов, представленный как объект типа [String](../../sql-reference/functions/string-functions.md).
 
 Возвращаемое значение: Корректная строка UTF-8.
 
 **Пример**
 
 ``` sql
-SELECT toValidUTF8('\x61\xF0\x80\x80\x80b');
+SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
 ```
 
 ``` text
@@ -322,10 +103,10 @@ SELECT toValidUTF8('\x61\xF0\x80\x80\x80b');
 repeat(s, n)
 ```
 
-**Аргументы**
+**Параметры**
 
--   `s` — строка для повторения. [String](../../sql-reference/functions/string-functions.md).
--   `n` — количество повторов. [UInt](../../sql-reference/functions/string-functions.md).
+-   `s` — Строка для повторения. [String](../../sql-reference/functions/string-functions.md).
+-   `n` — Количество повторов. [UInt](../../sql-reference/functions/string-functions.md).
 
 **Возвращаемое значение**
 
@@ -338,10 +119,10 @@ repeat(s, n)
 Запрос:
 
 ``` sql
-SELECT repeat('abc', 10);
+SELECT repeat('abc', 10)
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─repeat('abc', 10)──────────────┐
@@ -391,7 +172,7 @@ SELECT format('{} {}', 'Hello', 'World')
 concat(s1, s2, ...)
 ```
 
-**Аргументы**
+**Параметры**
 
 Значения типа String или FixedString.
 
@@ -406,10 +187,10 @@ concat(s1, s2, ...)
 Запрос:
 
 ``` sql
-SELECT concat('Hello, ', 'World!');
+SELECT concat('Hello, ', 'World!')
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─concat('Hello, ', 'World!')─┐
@@ -429,7 +210,7 @@ SELECT concat('Hello, ', 'World!');
 concatAssumeInjective(s1, s2, ...)
 ```
 
-**Аргументы**
+**Параметры**
 
 Значения типа String или FixedString.
 
@@ -461,10 +242,10 @@ SELECT * from key_val
 Запрос:
 
 ``` sql
-SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY (key1, key2);
+SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY (key1, key2)
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─concat(key1, key2)─┬─sum(value)─┐
@@ -531,7 +312,7 @@ SELECT startsWith('Spider-Man', 'Spi');
 SELECT startsWith('Hello, world!', 'He');
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─startsWith('Hello, world!', 'He')─┐
@@ -550,7 +331,7 @@ SELECT startsWith('Hello, world!', 'He');
 trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `trim_character` — один или несколько символов, подлежащие удалению. [String](../../sql-reference/functions/string-functions.md).
 -   `input_string` — строка для обрезки. [String](../../sql-reference/functions/string-functions.md).
@@ -566,10 +347,10 @@ trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 Запрос:
 
 ``` sql
-SELECT trim(BOTH ' ()' FROM '(   Hello, world!   )');
+SELECT trim(BOTH ' ()' FROM '(   Hello, world!   )')
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─trim(BOTH ' ()' FROM '(   Hello, world!   )')─┐
@@ -589,7 +370,7 @@ trimLeft(input_string)
 
 Алиас: `ltrim(input_string)`.
 
-**Аргументы**
+**Параметры**
 
 -   `input_string` — строка для обрезки. [String](../../sql-reference/functions/string-functions.md).
 
@@ -604,10 +385,10 @@ trimLeft(input_string)
 Запрос:
 
 ``` sql
-SELECT trimLeft('     Hello, world!     ');
+SELECT trimLeft('     Hello, world!     ')
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─trimLeft('     Hello, world!     ')─┐
@@ -627,7 +408,7 @@ trimRight(input_string)
 
 Алиас: `rtrim(input_string)`.
 
-**Аргументы**
+**Параметры**
 
 -   `input_string` — строка для обрезки. [String](../../sql-reference/functions/string-functions.md).
 
@@ -642,10 +423,10 @@ trimRight(input_string)
 Запрос:
 
 ``` sql
-SELECT trimRight('     Hello, world!     ');
+SELECT trimRight('     Hello, world!     ')
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─trimRight('     Hello, world!     ')─┐
@@ -665,7 +446,7 @@ trimBoth(input_string)
 
 Алиас: `trim(input_string)`.
 
-**Аргументы**
+**Параметры**
 
 -   `input_string` — строка для обрезки. [String](../../sql-reference/functions/string-functions.md).
 
@@ -680,10 +461,10 @@ trimBoth(input_string)
 Запрос:
 
 ``` sql
-SELECT trimBoth('     Hello, world!     ');
+SELECT trimBoth('     Hello, world!     ')
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─trimBoth('     Hello, world!     ')─┐
@@ -713,15 +494,14 @@ SELECT trimBoth('     Hello, world!     ');
 
 Заменяет литералы, последовательности литералов и сложные псевдонимы заполнителями.
 
-**Синтаксис**
-
+**Синтаксис** 
 ``` sql
 normalizeQuery(x)
 ```
 
-**Аргументы**
+**Параметры** 
 
--   `x` — последовательность символов. [String](../../sql-reference/data-types/string.md).
+-   `x` — Последовательность символов. [String](../../sql-reference/data-types/string.md).
 
 **Возвращаемое значение**
 
@@ -749,15 +529,15 @@ SELECT normalizeQuery('[1, 2, 3, x]') AS query;
 
 Возвращает идентичные 64-битные хэш - суммы без значений литералов для аналогичных запросов. Это помогает анализировать журнал запросов.
 
-**Синтаксис**
+**Синтаксис** 
 
 ``` sql
 normalizedQueryHash(x)
 ```
 
-**Аргументы**
+**Параметры** 
 
--   `x` — последовательность символов. [String](../../sql-reference/data-types/string.md).
+-   `x` — Последовательность символов. [String](../../sql-reference/data-types/string.md).
 
 **Возвращаемое значение**
 
@@ -781,163 +561,19 @@ SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1
 └─────┘
 ```
 
-## normalizeUTF8NFC {#normalizeutf8nfc}
-
-Преобразует строку в нормализованную форму [NFC](https://ru.wikipedia.org/wiki/Юникод#Алгоритмы_нормализации), предполагая, что строка содержит набор байтов, составляющих текст в кодировке UTF-8.
-
-**Синтаксис**
-
-``` sql
-normalizeUTF8NFC(words)
-```
-
-**Аргументы**
-
--   `words` — входная строка, которая содержит набор байтов, составляющих текст в кодировке UTF-8. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемое значение**
-
--   Строка, преобразованная в нормализированную форму NFC.
-
-Тип: [String](../../sql-reference/data-types/string.md).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT length('â'), normalizeUTF8NFC('â') AS nfc, length(nfc) AS nfc_len;
-```
-
-Результат:
-
-``` text
-┌─length('â')─┬─nfc─┬─nfc_len─┐
-│           2 │ â   │       2 │
-└─────────────┴─────┴─────────┘
-```
-
-## normalizeUTF8NFD {#normalizeutf8nfd}
-
-Преобразует строку в нормализованную форму [NFD](https://ru.wikipedia.org/wiki/Юникод#Алгоритмы_нормализации), предполагая, что строка содержит набор байтов, составляющих текст в кодировке UTF-8.
-
-**Синтаксис**
-
-``` sql
-normalizeUTF8NFD(words)
-```
-
-**Аргументы**
-
--   `words` — входная строка, которая содержит набор байтов, составляющих текст в кодировке UTF-8. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемое значение**
-
--   Строка, преобразованная в нормализированную форму NFD.
-
-Тип: [String](../../sql-reference/data-types/string.md).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT length('â'), normalizeUTF8NFD('â') AS nfd, length(nfd) AS nfd_len;
-```
-
-Результат:
-
-``` text
-┌─length('â')─┬─nfd─┬─nfd_len─┐
-│           2 │ â   │       3 │
-└─────────────┴─────┴─────────┘
-```
-
-## normalizeUTF8NFKC {#normalizeutf8nfkc}
-
-Преобразует строку в нормализованную форму [NFKC](https://ru.wikipedia.org/wiki/Юникод#Алгоритмы_нормализации), предполагая, что строка содержит набор байтов, составляющих текст в кодировке UTF-8.
-
-**Синтаксис**
-
-``` sql
-normalizeUTF8NFKC(words)
-```
-
-**Аргументы**
-
--   `words` — входная строка, которая содержит набор байтов, составляющих текст в кодировке UTF-8. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемое значение**
-
--   Строка, преобразованная в нормализированную форму NFKC.
-
-Тип: [String](../../sql-reference/data-types/string.md).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT length('â'), normalizeUTF8NFKC('â') AS nfkc, length(nfkc) AS nfkc_len;
-```
-
-Результат:
-
-``` text
-┌─length('â')─┬─nfkc─┬─nfkc_len─┐
-│           2 │ â    │        2 │
-└─────────────┴──────┴──────────┘
-```
-
-## normalizeUTF8NFKD {#normalizeutf8nfkd}
-
-Преобразует строку в нормализованную форму [NFKD](https://ru.wikipedia.org/wiki/Юникод#Алгоритмы_нормализации), предполагая, что строка содержит набор байтов, составляющих текст в кодировке UTF-8.
-
-**Синтаксис**
-
-``` sql
-normalizeUTF8NFKD(words)
-```
-
-**Аргументы**
-
--   `words` — входная строка, которая содержит набор байтов, составляющих текст в кодировке UTF-8. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемое значение**
-
--   Строка, преобразованная в нормализированную форму NFKD.
-
-Тип: [String](../../sql-reference/data-types/string.md).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT length('â'), normalizeUTF8NFKD('â') AS nfkd, length(nfkd) AS nfkd_len;
-```
-
-Результат:
-
-``` text
-┌─length('â')─┬─nfkd─┬─nfkd_len─┐
-│           2 │ â    │        3 │
-└─────────────┴──────┴──────────┘
-```
-
 ## encodeXMLComponent {#encode-xml-component}
 
 Экранирует символы для размещения строки в текстовом узле или атрибуте XML.
 
 Экранируются символы, которые в формате XML являются зарезервированными (служебными): `<`, `&`, `>`, `"`, `'`.
 
-**Синтаксис**
+**Синтаксис** 
 
 ``` sql
 encodeXMLComponent(x)
 ```
 
-**Аргументы**
+**Параметры** 
 
 -   `x` — последовательность символов. [String](../../sql-reference/data-types/string.md).
 
@@ -967,6 +603,7 @@ Hello, &quot;world&quot;!
 &apos;foo&apos;
 ```
 
+
 ## decodeXMLComponent {#decode-xml-component}
 
 Заменяет символами предопределенные мнемоники XML: `&quot;` `&amp;` `&apos;` `&gt;` `&lt;`
@@ -978,7 +615,7 @@ Hello, &quot;world&quot;!
 decodeXMLComponent(x)
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `x` — последовательность символов. [String](../../sql-reference/data-types/string.md).
 
@@ -1000,7 +637,7 @@ SELECT decodeXMLComponent('&lt; &#x3A3; &gt;');
 Результат:
 
 ``` text
-'foo'
+'foo' 
 < Σ >
 ```
 
@@ -1008,66 +645,4 @@ SELECT decodeXMLComponent('&lt; &#x3A3; &gt;');
 
 -   [Мнемоники в HTML](https://ru.wikipedia.org/wiki/%D0%9C%D0%BD%D0%B5%D0%BC%D0%BE%D0%BD%D0%B8%D0%BA%D0%B8_%D0%B2_HTML)
 
-
-
-## extractTextFromHTML {#extracttextfromhtml}
-
-Функция для извлечения текста из HTML или XHTML.
-Она не соответствует всем HTML, XML или XHTML стандартам на 100%, но ее реализация достаточно точная и быстрая. Правила обработки следующие:
-
-1. Комментарии удаляются. Пример: `<!-- test -->`. Комментарий должен оканчиваться символами `-->`. Вложенные комментарии недопустимы.
-Примечание: конструкции наподобие `<!-->` и `<!--->` не являются допустимыми комментариями в HTML, но они будут удалены согласно другим правилам.
-2. Содержимое CDATA вставляется дословно. Примечание: формат CDATA специфичен для XML/XHTML. Но он обрабатывается всегда по принципу "наилучшего возможного результата".
-3. Элементы `script` и `style` удаляются вместе со всем содержимым. Примечание: предполагается, что закрывающий тег не может появиться внутри содержимого. Например, в JS строковый литерал должен быть экранирован как `"<\/script>"`.
-Примечание: комментарии и CDATA возможны внутри `script` или `style` - тогда закрывающие теги не ищутся внутри CDATA. Пример: `<script><![CDATA[</script>]]></script>`. Но они ищутся внутри комментариев. Иногда возникают сложные случаи: `<script>var x = "<!--"; </script> var y = "-->"; alert(x + y);</script>`
-Примечание: `script` и `style` могут быть названиями пространств имен XML - тогда они не обрабатываются как обычные элементы `script` или `style`. Пример: `<script:a>Hello</script:a>`.
-Примечание: пробелы возможны после имени закрывающего тега: `</script >`, но не перед ним: `< / script>`.
-4. Другие теги или элементы, подобные тегам, удаляются, а их внутреннее содержимое остается. Пример: `<a>.</a>`
-Примечание: ожидается, что такой HTML является недопустимым: `<a test=">"></a>`
-Примечание: функция также удаляет подобные тегам элементы: `<>`, `<!>`, и т. д.
-Примечание: если встречается тег без завершающего символа `>`, то удаляется этот тег и весь следующий за ним текст: `<hello `
-5. Мнемоники HTML и XML не декодируются. Они должны быть обработаны отдельной функцией.
-6. Пробелы в тексте удаляются и добавляются по следующим правилам:
-- Пробелы в начале и в конце извлеченного текста удаляются.
-- Несколько пробелов подряд заменяются одним пробелом.
-- Если текст разделен другими удаляемыми элементами и в этом месте нет пробела, он добавляется.
-- Это может привести к появлению неестественного написания, например: `Hello<b>world</b>`, `Hello<!-- -->world` — в HTML нет пробелов, но функция вставляет их. Также следует учитывать такие варианты написания: `Hello<p>world</p>`, `Hello<br>world`. Подобные результаты выполнения функции могут использоваться для анализа данных, например, для преобразования HTML-текста в набор используемых слов.
-7. Также обратите внимание, что правильная обработка пробелов требует поддержки `<pre></pre>` и свойств CSS `display` и `white-space`.
-
-**Синтаксис**
-
-``` sql
-extractTextFromHTML(x)
-```
-
-**Аргументы**
-
--   `x` — текст для обработки. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемое значение**
-
--   Извлеченный текст.
-
-Тип: [String](../../sql-reference/data-types/string.md).
-
-**Пример**
-
-Первый пример содержит несколько тегов и комментарий. На этом примере также видно, как обрабатываются пробелы.
-Второй пример показывает обработку `CDATA` и тега `script`.
-В третьем примере текст выделяется из полного HTML ответа, полученного с помощью функции [url](../../sql-reference/table-functions/url.md).
-
-Запрос:
-
-``` sql
-SELECT extractTextFromHTML(' <p> A text <i>with</i><b>tags</b>. <!-- comments --> </p> ');
-SELECT extractTextFromHTML('<![CDATA[The content within <b>CDATA</b>]]> <script>alert("Script");</script>');
-SELECT extractTextFromHTML(html) FROM url('http://www.donothingfor2minutes.com/', RawBLOB, 'html String');
-```
-
-Результат:
-
-``` text
-A text with tags .
-The content within <b>CDATA</b>
-Do Nothing for 2 Minutes 2:00 &nbsp;
-```
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/string_functions/) <!--hide-->

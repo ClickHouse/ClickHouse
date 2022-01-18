@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
 #include "IDictionary.h"
 #include "registerDictionaries.h"
 #include <Parsers/ASTCreateQuery.h>
@@ -22,6 +21,8 @@ class Logger;
 namespace DB
 {
 
+class Context;
+
 /** Create dictionary according to its layout.
   */
 class DictionaryFactory : private boost::noncopyable
@@ -36,37 +37,30 @@ public:
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        ContextPtr global_context,
-        bool created_from_ddl) const;
+        const Context & context,
+        bool check_source_config = false) const;
 
     /// Create dictionary from DDL-query
     DictionaryPtr create(const std::string & name,
         const ASTCreateQuery & ast,
-        ContextPtr global_context) const;
+        const Context & context) const;
 
-    using LayoutCreateFunction = std::function<DictionaryPtr(
+    using Creator = std::function<DictionaryPtr(
         const std::string & name,
         const DictionaryStructure & dict_struct,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        DictionarySourcePtr source_ptr,
-        ContextPtr global_context,
-        bool created_from_ddl)>;
+        DictionarySourcePtr source_ptr)>;
 
     bool isComplex(const std::string & layout_type) const;
 
-    void registerLayout(const std::string & layout_type, LayoutCreateFunction create_layout, bool is_layout_complex);
+    void registerLayout(const std::string & layout_type, Creator create_layout, bool is_complex);
 
 private:
-    struct RegisteredLayout
-    {
-        LayoutCreateFunction layout_create_function;
-        bool is_layout_complex;
-    };
-
-    using LayoutRegistry = std::unordered_map<std::string, RegisteredLayout>;
+    using LayoutRegistry = std::unordered_map<std::string, Creator>;
     LayoutRegistry registered_layouts;
-
+    using LayoutComplexity = std::unordered_map<std::string, bool>;
+    LayoutComplexity layout_complexity;
 };
 
 }

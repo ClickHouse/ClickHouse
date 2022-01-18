@@ -54,12 +54,6 @@ struct EmptyImpl
             prev_offset = offsets[i];
         }
     }
-
-    static void uuid(const ColumnUUID::Container & container, size_t n, PaddedPODArray<UInt8> & res)
-    {
-        for (size_t i = 0; i < n; ++i)
-            res[i] = negative ^ (container[i].toUnderType() == 0);
-    }
 };
 
 }

@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
         <dictionary>
        <name>dep_y</name>
        <source>
@@ -37,4 +37,4 @@
            </attribute>
        </structure>
    </dictionary>
-</clickhouse>
+</yandex>

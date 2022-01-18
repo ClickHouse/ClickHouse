@@ -1,17 +1,10 @@
 #include <Interpreters/join_common.h>
-
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnSparse.h>
-#include <Columns/ColumnNullable.h>
-
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
-
-#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TableJoin.h>
-
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataStreams/materializeBlock.h>
 #include <IO/WriteHelpers.h>
 
 namespace DB
@@ -19,38 +12,22 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int INVALID_JOIN_ON_EXPRESSION;
-    extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
 {
 
-void insertFromNullableOrDefault(MutableColumnPtr & dst, const ColumnNullable * nullable_col)
+void changeNullability(MutableColumnPtr & mutable_column)
 {
-    const auto & nested = nullable_col->getNestedColumn();
-    const auto & nullmap = nullable_col->getNullMapColumn().getData();
-    if (auto * lc = typeid_cast<ColumnLowCardinality *>(dst.get()); lc && !nested.lowCardinality())
-    {
-        for (size_t i = 0; i < nullable_col->size(); ++i)
-        {
-            if (nullmap[i])
-                lc->insertDefault();
-            else
-                lc->insertRangeFromFullColumn(nested, i, 1);
-        }
-    }
+    ColumnPtr column = std::move(mutable_column);
+    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*column))
+        column = nullable->getNestedColumnPtr();
     else
-    {
-        for (size_t i = 0; i < nullable_col->size(); ++i)
-        {
-            if (nullmap[i])
-                dst->insertDefault();
-            else
-                dst->insertFrom(nested, i);
-        }
-    }
+        column = makeNullable(column);
+
+    mutable_column = IColumn::mutate(std::move(column));
 }
 
 ColumnPtr changeLowCardinality(const ColumnPtr & column, const ColumnPtr & dst_sample)
@@ -58,32 +35,11 @@ ColumnPtr changeLowCardinality(const ColumnPtr & column, const ColumnPtr & dst_s
     if (dst_sample->lowCardinality())
     {
         MutableColumnPtr lc = dst_sample->cloneEmpty();
-        if (const auto * nullable_col = typeid_cast<const ColumnNullable *>(column.get()))
-            insertFromNullableOrDefault(lc, nullable_col);
-        else
-            typeid_cast<ColumnLowCardinality &>(*lc).insertRangeFromFullColumn(*column, 0, column->size());
+        typeid_cast<ColumnLowCardinality &>(*lc).insertRangeFromFullColumn(*column, 0, column->size());
         return lc;
     }
 
     return column->convertToFullColumnIfLowCardinality();
-}
-
-struct LowcardAndNull
-{
-    bool is_lowcard;
-    bool is_nullable;
-};
-
-LowcardAndNull getLowcardAndNullability(const ColumnPtr & col)
-{
-    if (col->lowCardinality())
-    {
-        /// Currently only `LowCardinality(Nullable(T))` is possible, but not `Nullable(LowCardinality(T))`
-        assert(!col->canBeInsideNullable());
-        const auto * col_as_lc = assert_cast<const ColumnLowCardinality *>(col.get());
-        return {true, col_as_lc->nestedIsNullable()};
-    }
-    return {false, col->isNullable()};
 }
 
 }
@@ -91,102 +47,20 @@ LowcardAndNull getLowcardAndNullability(const ColumnPtr & col)
 namespace JoinCommon
 {
 
-void changeLowCardinalityInplace(ColumnWithTypeAndName & column)
+void convertColumnToNullable(ColumnWithTypeAndName & column, bool low_card_nullability)
 {
-    if (column.type->lowCardinality())
+    if (low_card_nullability && column.type->lowCardinality())
     {
+        column.column = recursiveRemoveLowCardinality(column.column);
         column.type = recursiveRemoveLowCardinality(column.type);
-        column.column = column.column->convertToFullColumnIfLowCardinality();
-    }
-    else
-    {
-        column.type = std::make_shared<DataTypeLowCardinality>(column.type);
-        MutableColumnPtr lc = column.type->createColumn();
-        typeid_cast<ColumnLowCardinality &>(*lc).insertRangeFromFullColumn(*column.column, 0, column.column->size());
-        column.column = std::move(lc);
-    }
-}
-
-bool canBecomeNullable(const DataTypePtr & type)
-{
-    bool can_be_inside = type->canBeInsideNullable();
-    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
-        can_be_inside |= low_cardinality_type->getDictionaryType()->canBeInsideNullable();
-    return can_be_inside;
-}
-
-/// Add nullability to type.
-/// Note: LowCardinality(T) transformed to LowCardinality(Nullable(T))
-DataTypePtr convertTypeToNullable(const DataTypePtr & type)
-{
-    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
-    {
-        const auto & dict_type = low_cardinality_type->getDictionaryType();
-        if (dict_type->canBeInsideNullable())
-            return std::make_shared<DataTypeLowCardinality>(makeNullable(dict_type));
     }
 
-    if (type->canBeInsideNullable())
-        return makeNullable(type);
-
-    return type;
-}
-
-/// Convert column to nullable. If column LowCardinality or Const, convert nested column.
-/// Returns nullptr if conversion cannot be performed.
-static ColumnPtr tryConvertColumnToNullable(ColumnPtr col)
-{
-    if (col->isSparse())
-        col = recursiveRemoveSparse(col);
-
-    if (isColumnNullable(*col) || col->canBeInsideNullable())
-        return makeNullable(col);
-
-    if (col->lowCardinality())
-    {
-        auto mut_col = IColumn::mutate(std::move(col));
-        ColumnLowCardinality * col_lc = assert_cast<ColumnLowCardinality *>(mut_col.get());
-        if (col_lc->nestedIsNullable())
-        {
-            return mut_col;
-        }
-        else if (col_lc->nestedCanBeInsideNullable())
-        {
-            col_lc->nestedToNullable();
-            return mut_col;
-        }
-    }
-    else if (const ColumnConst * col_const = checkAndGetColumn<ColumnConst>(*col))
-    {
-        const auto & nested = col_const->getDataColumnPtr();
-        if (nested->isNullable() || nested->canBeInsideNullable())
-        {
-            return makeNullable(col);
-        }
-        else if (nested->lowCardinality())
-        {
-            ColumnPtr nested_nullable = tryConvertColumnToNullable(nested);
-            if (nested_nullable)
-                return ColumnConst::create(nested_nullable, col_const->size());
-        }
-    }
-    return nullptr;
-}
-
-void convertColumnToNullable(ColumnWithTypeAndName & column)
-{
-    if (!column.column)
-    {
-        column.type = convertTypeToNullable(column.type);
+    if (column.type->isNullable() || !column.type->canBeInsideNullable())
         return;
-    }
 
-    ColumnPtr nullable_column = tryConvertColumnToNullable(column.column);
-    if (nullable_column)
-    {
-        column.type = convertTypeToNullable(column.type);
-        column.column = std::move(nullable_column);
-    }
+    column.type = makeNullable(column.type);
+    if (column.column)
+        column.column = makeNullable(column.column);
 }
 
 void convertColumnsToNullable(Block & block, size_t starting_pos)
@@ -195,51 +69,19 @@ void convertColumnsToNullable(Block & block, size_t starting_pos)
         convertColumnToNullable(block.getByPosition(i));
 }
 
-void convertColumnsToNullable(MutableColumns & mutable_columns, size_t starting_pos)
-{
-    for (size_t i = starting_pos; i < mutable_columns.size(); ++i)
-    {
-        ColumnPtr column = std::move(mutable_columns[i]);
-        column = makeNullable(column);
-        mutable_columns[i] = IColumn::mutate(std::move(column));
-    }
-}
-
 /// @warning It assumes that every NULL has default value in nested column (or it does not matter)
 void removeColumnNullability(ColumnWithTypeAndName & column)
 {
-    if (column.type->lowCardinality())
+    if (!column.type->isNullable())
+        return;
+
+    column.type = static_cast<const DataTypeNullable &>(*column.type).getNestedType();
+    if (column.column)
     {
-        /// LowCardinality(Nullable(T)) case
-        const auto & dict_type = typeid_cast<const DataTypeLowCardinality *>(column.type.get())->getDictionaryType();
-        column.type = std::make_shared<DataTypeLowCardinality>(removeNullable(dict_type));
-
-        if (column.column && column.column->lowCardinality())
-        {
-            auto mut_col = IColumn::mutate(std::move(column.column));
-            ColumnLowCardinality * col_as_lc = typeid_cast<ColumnLowCardinality *>(mut_col.get());
-            if (col_as_lc && col_as_lc->nestedIsNullable())
-                col_as_lc->nestedRemoveNullable();
-            column.column = std::move(mut_col);
-        }
-    }
-    else
-    {
-        column.type = removeNullable(column.type);
-
-        if (column.column && column.column->isNullable())
-        {
-            column.column = column.column->convertToFullColumnIfConst();
-            const auto * nullable_col = checkAndGetColumn<ColumnNullable>(*column.column);
-            if (!nullable_col)
-            {
-                throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' is expected to be nullable", column.dumpStructure());
-            }
-
-            MutableColumnPtr mutable_column = nullable_col->getNestedColumn().cloneEmpty();
-            insertFromNullableOrDefault(mutable_column, nullable_col);
-            column.column = std::move(mutable_column);
-        }
+        const auto * nullable_column = checkAndGetColumn<ColumnNullable>(*column.column);
+        ColumnPtr nested_column = nullable_column->getNestedColumnPtr();
+        MutableColumnPtr mutable_column = IColumn::mutate(std::move(nested_column));
+        column.column = std::move(mutable_column);
     }
 }
 
@@ -252,7 +94,7 @@ void changeColumnRepresentation(const ColumnPtr & src_column, ColumnPtr & dst_co
     ColumnPtr dst_not_null = JoinCommon::emptyNotNullableClone(dst_column);
     bool lowcard_src = JoinCommon::emptyNotNullableClone(src_column)->lowCardinality();
     bool lowcard_dst = dst_not_null->lowCardinality();
-    bool change_lowcard = lowcard_src != lowcard_dst;
+    bool change_lowcard = (!lowcard_src && lowcard_dst) || (lowcard_src && !lowcard_dst);
 
     if (nullable_src && !nullable_dst)
     {
@@ -301,33 +143,11 @@ ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
     for (const auto & column_name : names)
     {
         auto & column = block.getByName(column_name).column;
-        column = recursiveRemoveLowCardinality(recursiveRemoveSparse(column->convertToFullColumnIfConst()));
+        column = recursiveRemoveLowCardinality(column->convertToFullColumnIfConst());
         ptrs.push_back(column.get());
     }
 
     return ptrs;
-}
-
-ColumnRawPtrMap materializeColumnsInplaceMap(Block & block, const Names & names)
-{
-    ColumnRawPtrMap ptrs;
-    ptrs.reserve(names.size());
-
-    for (const auto & column_name : names)
-    {
-        auto & column = block.getByName(column_name).column;
-        column = recursiveRemoveLowCardinality(column->convertToFullColumnIfConst());
-        ptrs[column_name] = column.get();
-    }
-
-    return ptrs;
-}
-
-ColumnPtr materializeColumn(const Block & block, const String & column_name)
-{
-    const auto & src_column = block.getByName(column_name).column;
-    return recursiveRemoveLowCardinality(
-        recursiveRemoveSparse(src_column->convertToFullColumnIfConst()));
 }
 
 Columns materializeColumns(const Block & block, const Names & names)
@@ -337,7 +157,8 @@ Columns materializeColumns(const Block & block, const Names & names)
 
     for (const auto & column_name : names)
     {
-        materialized.emplace_back(materializeColumn(block, column_name));
+        const auto & src_column = block.getByName(column_name).column;
+        materialized.emplace_back(recursiveRemoveLowCardinality(src_column->convertToFullColumnIfConst()));
     }
 
     return materialized;
@@ -354,37 +175,29 @@ ColumnRawPtrs getRawPointers(const Columns & columns)
     return ptrs;
 }
 
-void convertToFullColumnsInplace(Block & block)
+void removeLowCardinalityInplace(Block & block)
 {
     for (size_t i = 0; i < block.columns(); ++i)
     {
         auto & col = block.getByPosition(i);
-        col.column = recursiveRemoveLowCardinality(recursiveRemoveSparse(col.column));
+        col.column = recursiveRemoveLowCardinality(col.column);
         col.type = recursiveRemoveLowCardinality(col.type);
     }
 }
 
-void convertToFullColumnsInplace(Block & block, const Names & names, bool change_type)
+void removeLowCardinalityInplace(Block & block, const Names & names, bool change_type)
 {
     for (const String & column_name : names)
     {
         auto & col = block.getByName(column_name);
-        col.column = recursiveRemoveLowCardinality(recursiveRemoveSparse(col.column));
+        col.column = recursiveRemoveLowCardinality(col.column);
         if (change_type)
             col.type = recursiveRemoveLowCardinality(col.type);
     }
 }
 
-void restoreLowCardinalityInplace(Block & block, const Names & lowcard_keys)
+void restoreLowCardinalityInplace(Block & block)
 {
-    for (const auto & column_name : lowcard_keys)
-    {
-        if (!block.has(column_name))
-            continue;
-        if (auto & col = block.getByName(column_name); !col.type->lowCardinality())
-            JoinCommon::changeLowCardinalityInplace(col);
-    }
-
     for (size_t i = 0; i < block.columns(); ++i)
     {
         auto & col = block.getByPosition(i);
@@ -406,16 +219,12 @@ ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_nam
         /// We will join only keys, where all components are not NULL.
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*key_columns[i]))
             key_columns[i] = &nullable->getNestedColumn();
-
-        if (const auto * sparse = checkAndGetColumn<ColumnSparse>(*key_columns[i]))
-            key_columns[i] = &sparse->getValuesColumn();
     }
 
     return key_columns;
 }
 
-void checkTypesOfKeys(const Block & block_left, const Names & key_names_left,
-                      const Block & block_right, const Names & key_names_right)
+void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, const Block & block_right, const Names & key_names_right)
 {
     size_t keys_size = key_names_left.size();
 
@@ -426,36 +235,10 @@ void checkTypesOfKeys(const Block & block_left, const Names & key_names_left,
 
         if (!left_type->equals(*right_type))
             throw Exception("Type mismatch of columns to JOIN by: "
-                            + key_names_left[i] + " " + left_type->getName() + " at left, "
-                            + key_names_right[i] + " " + right_type->getName() + " at right",
-                            ErrorCodes::TYPE_MISMATCH);
+                + key_names_left[i] + " " + left_type->getName() + " at left, "
+                + key_names_right[i] + " " + right_type->getName() + " at right",
+                ErrorCodes::TYPE_MISMATCH);
     }
-}
-
-void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, const String & condition_name_left,
-                      const Block & block_right, const Names & key_names_right, const String & condition_name_right)
-{
-    checkTypesOfKeys(block_left, key_names_left, block_right, key_names_right);
-    checkTypesOfMasks(block_left, condition_name_left, block_right, condition_name_right);
-}
-
-void checkTypesOfMasks(const Block & block_left, const String & condition_name_left,
-                       const Block & block_right, const String & condition_name_right)
-{
-    auto check_cond_column_type = [](const Block & block, const String & col_name)
-    {
-        if (col_name.empty())
-            return;
-
-        DataTypePtr dtype = removeNullable(recursiveRemoveLowCardinality(block.getByName(col_name).type));
-
-        if (!dtype->equals(DataTypeUInt8{}))
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                            "Expected logical expression in JOIN ON section, got unexpected column '{}' of type '{}'",
-                            col_name, dtype->getName());
-    };
-    check_cond_column_type(block_left, condition_name_left);
-    check_cond_column_type(block_right, condition_name_right);
 }
 
 void createMissedColumns(Block & block)
@@ -463,32 +246,47 @@ void createMissedColumns(Block & block)
     for (size_t i = 0; i < block.columns(); ++i)
     {
         auto & column = block.getByPosition(i);
-        if (!column.column) //-V1051
+        if (!column.column)
             column.column = column.type->createColumn();
     }
 }
 
 /// Append totals from right to left block, correct types if needed
-void joinTotals(Block left_totals, Block right_totals, const TableJoin & table_join, Block & out_block)
+void joinTotals(const Block & totals, const Block & columns_to_add, const TableJoin & table_join, Block & block)
 {
     if (table_join.forceNullableLeft())
-        JoinCommon::convertColumnsToNullable(left_totals);
+        convertColumnsToNullable(block);
 
-    if (table_join.forceNullableRight())
-        JoinCommon::convertColumnsToNullable(right_totals);
-
-    for (auto & col : out_block)
+    if (Block totals_without_keys = totals)
     {
-        if (const auto * left_col = left_totals.findByName(col.name))
-            col = *left_col;
-        else if (const auto * right_col = right_totals.findByName(col.name))
-            col = *right_col;
-        else
-            col.column = col.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+        for (const auto & name : table_join.keyNamesRight())
+            totals_without_keys.erase(totals_without_keys.getPositionByName(name));
 
-        /// In case of using `arrayJoin` we can get more or less rows than one
-        if (col.column->size() != 1)
-            col.column = col.column->cloneResized(1);
+        for (auto & col : totals_without_keys)
+        {
+            if (table_join.rightBecomeNullable(col.type))
+                JoinCommon::convertColumnToNullable(col);
+
+            /// In case of arrayJoin it can be not one row
+            if (col.column->size() != 1)
+                col.column = col.column->cloneResized(1);
+        }
+
+        for (size_t i = 0; i < totals_without_keys.columns(); ++i)
+            block.insert(totals_without_keys.safeGetByPosition(i));
+    }
+    else
+    {
+        /// We will join empty `totals` - from one row with the default values.
+
+        for (size_t i = 0; i < columns_to_add.columns(); ++i)
+        {
+            const auto & col = columns_to_add.getByPosition(i);
+            block.insert({
+                col.type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(),
+                col.type,
+                col.name});
+        }
     }
 }
 
@@ -499,83 +297,45 @@ void addDefaultValues(IColumn & column, const DataTypePtr & type, size_t count)
         type->insertDefaultInto(column);
 }
 
-bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)
-{
-    DataTypePtr left_type_strict = removeNullable(recursiveRemoveLowCardinality(left_type));
-    DataTypePtr right_type_strict = removeNullable(recursiveRemoveLowCardinality(right_type));
-    return left_type_strict->equals(*right_type_strict);
-}
-
-JoinMask getColumnAsMask(const Block & block, const String & column_name)
-{
-    if (column_name.empty())
-        return JoinMask(true);
-
-    const auto & src_col = block.getByName(column_name);
-
-    DataTypePtr col_type = recursiveRemoveLowCardinality(src_col.type);
-    if (isNothing(col_type))
-        return JoinMask(false);
-
-    if (const auto * const_cond = checkAndGetColumn<ColumnConst>(*src_col.column))
-    {
-        return JoinMask(const_cond->getBool(0));
-    }
-
-    ColumnPtr join_condition_col = recursiveRemoveLowCardinality(src_col.column->convertToFullColumnIfConst());
-    if (const auto * nullable_col = typeid_cast<const ColumnNullable *>(join_condition_col.get()))
-    {
-        if (isNothing(assert_cast<const DataTypeNullable &>(*col_type).getNestedType()))
-            return JoinMask(false);
-
-        /// Return nested column with NULL set to false
-        const auto & nest_col = assert_cast<const ColumnUInt8 &>(nullable_col->getNestedColumn());
-        const auto & null_map = nullable_col->getNullMapColumn();
-
-        auto res = ColumnUInt8::create(nullable_col->size(), 0);
-        for (size_t i = 0, sz = nullable_col->size(); i < sz; ++i)
-            res->getData()[i] = !null_map.getData()[i] && nest_col.getData()[i];
-        return JoinMask(std::move(res));
-    }
-    else
-        return JoinMask(std::move(join_condition_col));
 }
 
 
-void splitAdditionalColumns(const Names & key_names, const Block & sample_block, Block & block_keys, Block & block_others)
-{
-    block_others = materializeBlock(sample_block);
-
-    for (const String & column_name : key_names)
-    {
-        /// Extract right keys with correct keys order. There could be the same key names.
-        if (!block_keys.has(column_name))
-        {
-            auto & col = block_others.getByName(column_name);
-            block_keys.insert(col);
-            block_others.erase(column_name);
-        }
-    }
-}
-
-}
-
-NotJoinedBlocks::NotJoinedBlocks(std::unique_ptr<RightColumnsFiller> filler_,
-                     const Block & result_sample_block_,
-                     size_t left_columns_count,
-                     const LeftToRightKeyRemap & left_to_right_key_remap)
-    : filler(std::move(filler_))
-    , saved_block_sample(filler->getEmptyBlock())
+NotJoined::NotJoined(const TableJoin & table_join, const Block & saved_block_sample_, const Block & right_sample_block,
+                     const Block & result_sample_block_)
+    : saved_block_sample(saved_block_sample_)
     , result_sample_block(materializeBlock(result_sample_block_))
 {
+    std::vector<String> tmp;
+    Block right_table_keys;
+    Block sample_block_with_columns_to_add;
+    table_join.splitAdditionalColumns(right_sample_block, right_table_keys, sample_block_with_columns_to_add);
+    Block required_right_keys = table_join.getRequiredRightKeys(right_table_keys, tmp);
+
+    bool remap_keys = table_join.hasUsing();
+    std::unordered_map<size_t, size_t> left_to_right_key_remap;
+
+    for (size_t i = 0; i < table_join.keyNamesLeft().size(); ++i)
+    {
+        const String & left_key_name = table_join.keyNamesLeft()[i];
+        const String & right_key_name = table_join.keyNamesRight()[i];
+
+        size_t left_key_pos = result_sample_block.getPositionByName(left_key_name);
+        size_t right_key_pos = saved_block_sample.getPositionByName(right_key_name);
+
+        if (remap_keys && !required_right_keys.has(right_key_name))
+            left_to_right_key_remap[left_key_pos] = right_key_pos;
+    }
+
+    /// result_sample_block: left_sample_block + left expressions, right not key columns, required right keys
+    size_t left_columns_count = result_sample_block.columns() -
+        sample_block_with_columns_to_add.columns() - required_right_keys.columns();
+
     for (size_t left_pos = 0; left_pos < left_columns_count; ++left_pos)
     {
-        /// We need right 'x' for 'RIGHT JOIN ... USING(x)'
-        auto left_name = result_sample_block.getByPosition(left_pos).name;
-        const auto & right_key = left_to_right_key_remap.find(left_name);
-        if (right_key != left_to_right_key_remap.end())
+        /// We need right 'x' for 'RIGHT JOIN ... USING(x)'.
+        if (left_to_right_key_remap.count(left_pos))
         {
-            size_t right_key_pos = saved_block_sample.getPositionByName(right_key->second);
+            size_t right_key_pos = left_to_right_key_remap[left_pos];
             setRightIndex(right_key_pos, left_pos);
         }
         else
@@ -598,15 +358,16 @@ NotJoinedBlocks::NotJoinedBlocks(std::unique_ptr<RightColumnsFiller> filler_,
     }
 
     if (column_indices_left.size() + column_indices_right.size() + same_result_keys.size() != result_sample_block.columns())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Error in columns mapping in RIGHT|FULL JOIN. Left: {}, right: {}, same: {}, result: {}",
-                        column_indices_left.size(), column_indices_right.size(),
-                        same_result_keys.size(), result_sample_block.columns());
+        throw Exception("Error in columns mapping in RIGHT|FULL JOIN. Left: " + toString(column_indices_left.size()) +
+                        ", right: " + toString(column_indices_right.size()) +
+                        ", same: " + toString(same_result_keys.size()) +
+                        ", result: " + toString(result_sample_block.columns()),
+                        ErrorCodes::LOGICAL_ERROR);
 }
 
-void NotJoinedBlocks::setRightIndex(size_t right_pos, size_t result_position)
+void NotJoined::setRightIndex(size_t right_pos, size_t result_position)
 {
-    if (!column_indices_right.contains(right_pos))
+    if (!column_indices_right.count(right_pos))
     {
         column_indices_right[right_pos] = result_position;
         extractColumnChanges(right_pos, result_position);
@@ -615,47 +376,37 @@ void NotJoinedBlocks::setRightIndex(size_t right_pos, size_t result_position)
         same_result_keys[result_position] = column_indices_right[right_pos];
 }
 
-void NotJoinedBlocks::extractColumnChanges(size_t right_pos, size_t result_pos)
+void NotJoined::extractColumnChanges(size_t right_pos, size_t result_pos)
 {
-    auto src_props = getLowcardAndNullability(saved_block_sample.getByPosition(right_pos).column);
-    auto dst_props = getLowcardAndNullability(result_sample_block.getByPosition(result_pos).column);
+    const auto & src = saved_block_sample.getByPosition(right_pos).column;
+    const auto & dst = result_sample_block.getByPosition(result_pos).column;
 
-    if (src_props.is_nullable != dst_props.is_nullable)
-        right_nullability_changes.push_back({result_pos, dst_props.is_nullable});
+    if (!src->isNullable() && dst->isNullable())
+        right_nullability_adds.push_back(right_pos);
 
-    if (src_props.is_lowcard != dst_props.is_lowcard)
-        right_lowcard_changes.push_back({result_pos, dst_props.is_lowcard});
+    if (src->isNullable() && !dst->isNullable())
+        right_nullability_removes.push_back(right_pos);
+
+    ColumnPtr src_not_null = JoinCommon::emptyNotNullableClone(src);
+    ColumnPtr dst_not_null = JoinCommon::emptyNotNullableClone(dst);
+
+    if (src_not_null->lowCardinality() != dst_not_null->lowCardinality())
+        right_lowcard_changes.push_back({right_pos, dst_not_null});
 }
 
-void NotJoinedBlocks::correctLowcardAndNullability(Block & block)
+void NotJoined::correctLowcardAndNullability(MutableColumns & columns_right)
 {
-    for (auto & [pos, added] : right_nullability_changes)
-    {
-        auto & col = block.getByPosition(pos);
-        if (added)
-            JoinCommon::convertColumnToNullable(col);
-        else
-            JoinCommon::removeColumnNullability(col);
-    }
+    for (size_t pos : right_nullability_removes)
+        changeNullability(columns_right[pos]);
 
-    for (auto & [pos, added] : right_lowcard_changes)
-    {
-        auto & col = block.getByPosition(pos);
-        if (added)
-        {
-            if (!col.type->lowCardinality())
-                col.type = std::make_shared<DataTypeLowCardinality>(col.type);
-            col.column = changeLowCardinality(col.column, col.type->createColumn());
-        }
-        else
-        {
-            col.column = recursiveRemoveLowCardinality(col.column);
-            col.type = recursiveRemoveLowCardinality(col.type);
-        }
-    }
+    for (auto & [pos, dst_sample] : right_lowcard_changes)
+        columns_right[pos] = changeLowCardinality(std::move(columns_right[pos]), dst_sample)->assumeMutable();
+
+    for (size_t pos : right_nullability_adds)
+        changeNullability(columns_right[pos]);
 }
 
-void NotJoinedBlocks::addLeftColumns(Block & block, size_t rows_added) const
+void NotJoined::addLeftColumns(Block & block, size_t rows_added) const
 {
     for (size_t pos : column_indices_left)
     {
@@ -667,17 +418,22 @@ void NotJoinedBlocks::addLeftColumns(Block & block, size_t rows_added) const
     }
 }
 
-void NotJoinedBlocks::addRightColumns(Block & block, MutableColumns & columns_right) const
+void NotJoined::addRightColumns(Block & block, MutableColumns & columns_right) const
 {
     for (const auto & pr : column_indices_right)
     {
         auto & right_column = columns_right[pr.first];
         auto & result_column = block.getByPosition(pr.second).column;
+#ifndef NDEBUG
+        if (result_column->getName() != right_column->getName())
+            throw Exception("Wrong columns assign in RIGHT|FULL JOIN: " + result_column->getName() +
+                            " " + right_column->getName(), ErrorCodes::LOGICAL_ERROR);
+#endif
         result_column = std::move(right_column);
     }
 }
 
-void NotJoinedBlocks::copySameKeys(Block & block) const
+void NotJoined::copySameKeys(Block & block) const
 {
     for (const auto & pr : same_result_keys)
     {
@@ -685,28 +441,6 @@ void NotJoinedBlocks::copySameKeys(Block & block) const
         auto & dst_column = block.getByPosition(pr.first).column;
         JoinCommon::changeColumnRepresentation(src_column, dst_column);
     }
-}
-
-Block NotJoinedBlocks::read()
-{
-    Block result_block = result_sample_block.cloneEmpty();
-    {
-        Block right_block = filler->getEmptyBlock();
-        MutableColumns columns_right = right_block.cloneEmptyColumns();
-        size_t rows_added = filler->fillColumns(columns_right);
-        if (rows_added == 0)
-            return {};
-
-        addLeftColumns(result_block, rows_added);
-        addRightColumns(result_block, columns_right);
-    }
-    copySameKeys(result_block);
-    correctLowcardAndNullability(result_block);
-
-#ifndef NDEBUG
-    assertBlocksHaveEqualStructure(result_block, result_sample_block, "NotJoinedBlocks");
-#endif
-    return result_block;
 }
 
 }

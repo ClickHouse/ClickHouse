@@ -203,5 +203,3 @@ CheckOptions:
     value: CamelCase
   - key: readability-identifier-naming.UsingCase
     value: CamelCase
-  - key: modernize-loop-convert.UseCxx20ReverseRanges
-    value: false

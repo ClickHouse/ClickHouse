@@ -1,21 +1,21 @@
 #pragma once
 
-#include <Common/Allocator.h>
+#include <common/types.h>
 #include <Columns/IColumn.h>
+#include <DataStreams/IBlockStream_fwd.h>
 #include <Formats/FormatSettings.h>
-#include <Interpreters/Context_fwd.h>
-#include <base/types.h>
-
-#include <boost/noncopyable.hpp>
+#include <IO/BufferWithOwnMemory.h>
 
 #include <functional>
 #include <memory>
 #include <unordered_map>
+#include <boost/noncopyable.hpp>
 
 namespace DB
 {
 
 class Block;
+class Context;
 struct Settings;
 struct FormatFactorySettings;
 
@@ -34,15 +34,13 @@ struct RowOutputFormatParams;
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
-template <typename Allocator>
-struct Memory;
-
-FormatSettings getFormatSettings(ContextPtr context);
+FormatSettings getFormatSettings(const Context & context);
 
 template <typename T>
-FormatSettings getFormatSettings(ContextPtr context, const T & settings);
+FormatSettings getFormatSettings(const Context & context,
+    const T & settings);
 
-/** Allows to create an IInputFormat or IOutputFormat by the name of the format.
+/** Allows to create an IBlockInputStream or IBlockOutputStream by the name of the format.
   * Note: format and compression are independent things.
   */
 class FormatFactory final : private boost::noncopyable
@@ -58,7 +56,7 @@ public:
       */
     using FileSegmentationEngine = std::function<std::pair<bool, size_t>(
         ReadBuffer & buf,
-        DB::Memory<Allocator<false>> & memory,
+        DB::Memory<> & memory,
         size_t min_chunk_bytes)>;
 
     /// This callback allows to perform some additional actions after writing a single row.
@@ -68,31 +66,41 @@ public:
         size_t row)>;
 
 private:
-    using InputCreator = std::function<InputFormatPtr(
-            ReadBuffer & buf,
-            const Block & header,
-            const RowInputFormatParams & params,
-            const FormatSettings & settings)>;
+    using InputCreator = std::function<BlockInputStreamPtr(
+        ReadBuffer & buf,
+        const Block & sample,
+        UInt64 max_block_size,
+        ReadCallback callback,
+        const FormatSettings & settings)>;
 
-    using OutputCreator = std::function<OutputFormatPtr(
+    using OutputCreator = std::function<BlockOutputStreamPtr(
+        WriteBuffer & buf,
+        const Block & sample,
+        WriteCallback callback,
+        const FormatSettings & settings)>;
+
+    using InputProcessorCreatorFunc = InputFormatPtr(
+        ReadBuffer & buf,
+        const Block & header,
+        const RowInputFormatParams & params,
+        const FormatSettings & settings);
+
+    using InputProcessorCreator = std::function<InputProcessorCreatorFunc>;
+
+    using OutputProcessorCreator = std::function<OutputFormatPtr(
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams & params,
             const FormatSettings & settings)>;
 
-    /// Some input formats can have non trivial readPrefix() and readSuffix(),
-    /// so in some cases there is no possibility to use parallel parsing.
-    /// The checker should return true if parallel parsing should be disabled.
-    using NonTrivialPrefixAndSuffixChecker = std::function<bool(ReadBuffer & buf)>;
-
     struct Creators
     {
         InputCreator input_creator;
         OutputCreator output_creator;
+        InputProcessorCreator input_processor_creator;
+        OutputProcessorCreator output_processor_creator;
         FileSegmentationEngine file_segmentation_engine;
         bool supports_parallel_formatting{false};
-        bool is_column_oriented{false};
-        NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker;
     };
 
     using FormatsDictionary = std::unordered_map<String, Creators>;
@@ -104,60 +112,54 @@ public:
         const String & name,
         ReadBuffer & buf,
         const Block & sample,
-        ContextPtr context,
+        const Context & context,
         UInt64 max_block_size,
+        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+
+    /// Checks all preconditions. Returns ordinary stream if parallel formatting cannot be done.
+    /// Currently used only in Client. Don't use it something else! Better look at getOutputFormatParallelIfPossible.
+    BlockOutputStreamPtr getOutputStreamParallelIfPossible(const String & name, WriteBuffer & buf,
+        const Block & sample, const Context & context, WriteCallback callback = {},
+        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+
+    /// Currently used only in Client. Don't use it something else! Better look at getOutputFormat.
+    BlockOutputStreamPtr getOutputStream(const String & name, WriteBuffer & buf,
+        const Block & sample, const Context & context, WriteCallback callback = {},
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     InputFormatPtr getInputFormat(
         const String & name,
         ReadBuffer & buf,
         const Block & sample,
-        ContextPtr context,
+        const Context & context,
         UInt64 max_block_size,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     /// Checks all preconditions. Returns ordinary format if parallel formatting cannot be done.
     OutputFormatPtr getOutputFormatParallelIfPossible(
-        const String & name,
-        WriteBuffer & buf,
-        const Block & sample,
-        ContextPtr context,
-        WriteCallback callback = {},
+        const String & name, WriteBuffer & buf, const Block & sample,
+        const Context & context, WriteCallback callback = {},
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     OutputFormatPtr getOutputFormat(
-        const String & name,
-        WriteBuffer & buf,
-        const Block & sample,
-        ContextPtr context,
-        WriteCallback callback = {},
-        const std::optional<FormatSettings> & _format_settings = std::nullopt) const;
-
-    String getContentType(
-        const String & name,
-        ContextPtr context,
+        const String & name, WriteBuffer & buf, const Block & sample,
+        const Context & context, WriteCallback callback = {},
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
-
-    void registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine);
-
-    void registerNonTrivialPrefixAndSuffixChecker(const String & name, NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker);
 
     /// Register format by its name.
     void registerInputFormat(const String & name, InputCreator input_creator);
     void registerOutputFormat(const String & name, OutputCreator output_creator);
+    void registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine);
+
+    void registerInputFormatProcessor(const String & name, InputProcessorCreator input_creator);
+    void registerOutputFormatProcessor(const String & name, OutputProcessorCreator output_creator);
 
     void markOutputFormatSupportsParallelFormatting(const String & name);
-    void markFormatAsColumnOriented(const String & name);
-
-    bool checkIfFormatIsColumnOriented(const String & name);
 
     const FormatsDictionary & getAllFormats() const
     {
         return dict;
     }
-
-    bool isInputFormat(const String & name) const;
-    bool isOutputFormat(const String & name) const;
 
 private:
     FormatsDictionary dict;

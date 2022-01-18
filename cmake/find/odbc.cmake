@@ -19,7 +19,7 @@ if (NOT ENABLE_ODBC)
     return()
 endif()
 
-option (USE_INTERNAL_ODBC_LIBRARY "Use internal ODBC library" ON)
+option (USE_INTERNAL_ODBC_LIBRARY "Use internal ODBC library" ${NOT_UNBUNDLED})
 
 if (NOT USE_INTERNAL_ODBC_LIBRARY)
     find_library (LIBRARY_ODBC NAMES unixodbc odbc)
@@ -49,7 +49,5 @@ endif()
 if (NOT EXTERNAL_ODBC_LIBRARY_FOUND)
     set (USE_INTERNAL_ODBC_LIBRARY 1)
 endif ()
-
-set (USE_INTERNAL_NANODBC_LIBRARY 1)
 
 message (STATUS "Using unixodbc")

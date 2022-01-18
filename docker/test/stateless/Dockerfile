@@ -1,5 +1,5 @@
-# docker build -t clickhouse/stateless-test .
-FROM clickhouse/test-base
+# docker build -t yandex/clickhouse-stateless-test .
+FROM yandex/clickhouse-test-base
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.4.20200302/clickhouse-odbc-1.1.4-Linux.tar.gz"
 
@@ -30,11 +30,9 @@ RUN apt-get update -y \
             tree \
             unixodbc \
             wget \
-            mysql-client=5.7* \
-            postgresql-client \
-            sqlite3
+            mysql-client=5.7*
 
-RUN pip3 install numpy scipy pandas Jinja2
+RUN pip3 install numpy scipy pandas
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
    && wget -nv -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \
@@ -49,15 +47,5 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 ENV NUM_TRIES=1
 ENV MAX_RUN_TIME=0
 
-# Download Minio-related binaries
-RUN wget 'https://dl.min.io/server/minio/release/linux-amd64/minio' \
-    && chmod +x ./minio \
-    && wget 'https://dl.min.io/client/mc/release/linux-amd64/mc' \
-    && chmod +x ./mc
-
-ENV MINIO_ROOT_USER="clickhouse"
-ENV MINIO_ROOT_PASSWORD="clickhouse"
-
 COPY run.sh /
-COPY setup_minio.sh /
 CMD ["/bin/bash", "/run.sh"]

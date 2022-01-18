@@ -47,32 +47,4 @@ SELECT tuple(1, NULL) AS x, toTypeName(x)
 └──────────┴─────────────────────────────────┘
 ```
 
-## Addressing Tuple Elements {#addressing-tuple-elements}
-
-It is possible to read elements of named tuples using indexes and names:
-
-``` sql
-CREATE TABLE named_tuples (`a` Tuple(s String, i Int64)) ENGINE = Memory;
-
-INSERT INTO named_tuples VALUES (('y', 10)), (('x',-10));
-
-SELECT a.s FROM named_tuples;
-
-SELECT a.2 FROM named_tuples;
-```
-
-Result:
-
-``` text
-┌─a.s─┐
-│ y   │
-│ x   │
-└─────┘
-
-┌─tupleElement(a, 2)─┐
-│                 10 │
-│                -10 │
-└────────────────────┘
-```
-
-[Original article](https://clickhouse.com/docs/en/data_types/tuple/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/data_types/tuple/) <!--hide-->

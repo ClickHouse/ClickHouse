@@ -1,6 +1,6 @@
-<clickhouse>
+<yandex>
     <logger>
         <log></log>
         <errorlog></errorlog>
     </logger>
-</clickhouse>
+</yandex>

@@ -4,11 +4,17 @@
 namespace DB
 {
 
+struct TransformFromNano
+{
+    static constexpr auto name = "fromUnixTimestamp64Nano";
+    static constexpr auto target_scale = 9;
+    using SourceDataType = DataTypeInt64;
+    using ResultDataType = DataTypeDateTime64;
+};
+
 void registerFromUnixTimestamp64Nano(FunctionFactory & factory)
 {
-    factory.registerFunction("fromUnixTimestamp64Nano",
-        [](ContextPtr){ return std::make_unique<FunctionToOverloadResolverAdaptor>(
-            std::make_shared<FunctionFromUnixTimestamp64>(9, "fromUnixTimestamp64Nano")); });
+    factory.registerFunction<FunctionUnixTimestamp64<TransformFromNano>>();
 }
 
 }

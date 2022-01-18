@@ -11,21 +11,24 @@ PostgreSQLOutputFormat::PostgreSQLOutputFormat(WriteBuffer & out_, const Block &
 {
 }
 
-void PostgreSQLOutputFormat::writePrefix()
+void PostgreSQLOutputFormat::doWritePrefix()
 {
+    if (initialized)
+        return;
+
+    initialized = true;
     const auto & header = getPort(PortKind::Main).getHeader();
-    auto data_types = header.getDataTypes();
+    data_types = header.getDataTypes();
 
     if (header.columns())
     {
         std::vector<PostgreSQLProtocol::Messaging::FieldDescription> columns;
         columns.reserve(header.columns());
 
-        for (size_t i = 0; i < header.columns(); ++i)
+        for (size_t i = 0; i < header.columns(); i++)
         {
             const auto & column_name = header.getColumnsWithTypeAndName()[i].name;
             columns.emplace_back(column_name, data_types[i]->getTypeId());
-            serializations.emplace_back(data_types[i]->getDefaultSerialization());
         }
         message_transport.send(PostgreSQLProtocol::Messaging::RowDescription(columns));
     }
@@ -33,6 +36,8 @@ void PostgreSQLOutputFormat::writePrefix()
 
 void PostgreSQLOutputFormat::consume(Chunk chunk)
 {
+    doWritePrefix();
+
     for (size_t i = 0; i != chunk.getNumRows(); ++i)
     {
         const Columns & columns = chunk.getColumns();
@@ -46,7 +51,7 @@ void PostgreSQLOutputFormat::consume(Chunk chunk)
             else
             {
                 WriteBufferFromOwnString ostr;
-                serializations[j]->serializeText(*columns[j], i, ostr, format_settings);
+                data_types[j]->serializeAsText(*columns[j], i, ostr, format_settings);
                 row.push_back(std::make_shared<PostgreSQLProtocol::Messaging::StringField>(std::move(ostr.str())));
             }
         }
@@ -55,14 +60,16 @@ void PostgreSQLOutputFormat::consume(Chunk chunk)
     }
 }
 
+void PostgreSQLOutputFormat::finalize() {}
+
 void PostgreSQLOutputFormat::flush()
 {
     message_transport.flush();
 }
 
-void registerOutputFormatPostgreSQLWire(FormatFactory & factory)
+void registerOutputFormatProcessorPostgreSQLWire(FormatFactory & factory)
 {
-    factory.registerOutputFormat(
+    factory.registerOutputFormatProcessor(
         "PostgreSQLWire",
         [](WriteBuffer & buf,
            const Block & sample,

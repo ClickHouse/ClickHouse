@@ -19,3 +19,4 @@ SET profile = 'profile-name-from-the-settings-file'
 
 Подробности смотрите в разделе [Настройки](../../operations/settings/settings.md).
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/set/) <!--hide-->

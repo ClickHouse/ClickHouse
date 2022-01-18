@@ -2,12 +2,12 @@
 
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/Types.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeType.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
-#include <Disks/IDisk.h>
+
 
 #include <mutex>
 #include <condition_variable>
@@ -34,8 +34,6 @@ struct ReplicatedMergeTreeLogEntryData
     {
         EMPTY,          /// Not used.
         GET_PART,       /// Get the part from another replica.
-        ATTACH_PART,    /// Attach the part, possibly from our own replica (if found in /detached folder).
-                        /// You may think of it as a GET_PART with some optimisations as they're nearly identical.
         MERGE_PARTS,    /// Merge the parts.
         DROP_RANGE,     /// Delete the parts in the specified partition in the specified number range.
         CLEAR_COLUMN,   /// NOTE: Deprecated. Drop specific column from specified partition.
@@ -43,8 +41,6 @@ struct ReplicatedMergeTreeLogEntryData
         REPLACE_RANGE,  /// Drop certain range of partitions and replace them by new ones
         MUTATE_PART,    /// Apply one or several mutations to the part.
         ALTER_METADATA, /// Apply alter modification according to global /metadata and /columns paths
-        SYNC_PINNED_PART_UUIDS, /// Synchronization point for ensuring that all replicas have up to date in-memory state.
-        CLONE_PART_FROM_SHARD,  /// Clone part from another shard.
     };
 
     static String typeToString(Type type)
@@ -52,7 +48,6 @@ struct ReplicatedMergeTreeLogEntryData
         switch (type)
         {
             case ReplicatedMergeTreeLogEntryData::GET_PART:         return "GET_PART";
-            case ReplicatedMergeTreeLogEntryData::ATTACH_PART:      return "ATTACH_PART";
             case ReplicatedMergeTreeLogEntryData::MERGE_PARTS:      return "MERGE_PARTS";
             case ReplicatedMergeTreeLogEntryData::DROP_RANGE:       return "DROP_RANGE";
             case ReplicatedMergeTreeLogEntryData::CLEAR_COLUMN:     return "CLEAR_COLUMN";
@@ -60,8 +55,6 @@ struct ReplicatedMergeTreeLogEntryData
             case ReplicatedMergeTreeLogEntryData::REPLACE_RANGE:    return "REPLACE_RANGE";
             case ReplicatedMergeTreeLogEntryData::MUTATE_PART:      return "MUTATE_PART";
             case ReplicatedMergeTreeLogEntryData::ALTER_METADATA:   return "ALTER_METADATA";
-            case ReplicatedMergeTreeLogEntryData::SYNC_PINNED_PART_UUIDS: return "SYNC_PINNED_PART_UUIDS";
-            case ReplicatedMergeTreeLogEntryData::CLONE_PART_FROM_SHARD:  return "CLONE_PART_FROM_SHARD";
             default:
                 throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
         }
@@ -77,13 +70,9 @@ struct ReplicatedMergeTreeLogEntryData
     String toString() const;
 
     String znode_name;
-    String log_entry_id;
 
     Type type = EMPTY;
     String source_replica; /// Empty string means that this entry was added to the queue immediately, and not copied from the log.
-    String source_shard;
-
-    String part_checksum; /// Part checksum for ATTACH_PART, empty otherwise.
 
     /// The name of resulting part for GET_PART and MERGE_PARTS
     /// Part range for DROP_RANGE and CLEAR_COLUMN
@@ -143,10 +132,6 @@ struct ReplicatedMergeTreeLogEntryData
 
     /// Returns fake part for drop range (for DROP_RANGE and REPLACE_RANGE)
     std::optional<String> getDropRange(MergeTreeDataFormatVersion format_version) const;
-
-    /// This entry is DROP PART, not DROP PARTITION. They both have same
-    /// DROP_RANGE entry type, but differs in information about drop range.
-    bool isDropPart(MergeTreeDataFormatVersion format_version) const;
 
     /// Access under queue_mutex, see ReplicatedMergeTreeQueue.
     bool currently_executing = false;    /// Whether the action is executing now.

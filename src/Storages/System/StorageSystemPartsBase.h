@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
+#include <ext/shared_ptr_helper.h>
 #include <Formats/FormatSettings.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -24,15 +24,14 @@ struct StoragesInfo
     MergeTreeData * data = nullptr;
 
     operator bool() const { return storage != nullptr; }
-    MergeTreeData::DataPartsVector
-    getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, bool require_projection_parts = false) const;
+    MergeTreeData::DataPartsVector getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column) const;
 };
 
 /** A helper class that enumerates the storages that match given query. */
 class StoragesInfoStream
 {
 public:
-    StoragesInfoStream(const SelectQueryInfo & query_info, ContextPtr context);
+    StoragesInfoStream(const SelectQueryInfo & query_info, const Context & context);
     StoragesInfo next();
 
 private:
@@ -60,14 +59,12 @@ public:
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         SelectQueryInfo & query_info,
-        ContextPtr context,
+        const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
     NamesAndTypesList getVirtuals() const override;
-
-    bool isSystemStorage() const override { return true; }
 
 private:
     bool hasStateColumn(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const;

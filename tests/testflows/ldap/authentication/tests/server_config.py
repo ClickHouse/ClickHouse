@@ -8,7 +8,7 @@ from ldap.authentication.requirements import *
     RQ_SRS_007_LDAP_Server_Configuration_Invalid("1.0"),
     RQ_SRS_007_LDAP_Configuration_Server_Name("1.0")
 )
-def empty_server_name(self, timeout=300):
+def empty_server_name(self, timeout=20):
     """Check that empty string as a server name is not allowed.
     """
     servers = {"": {"host": "foo", "port": "389", "enable_tls": "no",
@@ -229,7 +229,7 @@ def auth_dn_value(self):
 @Requirements(
     RQ_SRS_007_LDAP_Configuration_Server_VerificationCooldown_Invalid("1.0")
 )
-def invalid_verification_cooldown_value(self, invalid_value, timeout=300):
+def invalid_verification_cooldown_value(self, invalid_value, timeout=20):
     """Check that server returns an error when LDAP server
     verification cooldown parameter is invalid.
     """
@@ -254,7 +254,7 @@ def invalid_verification_cooldown_value(self, invalid_value, timeout=300):
 def syntax(self):
     """Check that server configuration with valid syntax can be loaded.
     ```xml
-    <clickhouse>
+    <yandex>
         <ldap_server>
             <host>localhost</host>
             <port>636</port>
@@ -270,7 +270,7 @@ def syntax(self):
             <tls_ca_cert_dir>/path/to/tls_ca_cert_dir</tls_ca_cert_dir>
             <tls_cipher_suite>ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:AES256-GCM-SHA384</tls_cipher_suite>
         </ldap_server>
-    </clickhouse>
+    </yandex>
     ```
     """
     servers = {

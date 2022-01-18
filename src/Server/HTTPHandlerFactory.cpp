@@ -2,8 +2,6 @@
 
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/IServer.h>
-#include <Access/Credentials.h>
-#include <Interpreters/Context.h>
 
 #include <Poco/Util/LayeredConfiguration.h>
 
@@ -123,7 +121,7 @@ static inline HTTPRequestHandlerFactoryPtr createInterserverHTTPHandlerFactory(I
     addCommonDefaultHandlersFactory(*factory, server);
 
     auto main_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<InterserverIOHTTPHandler>>(server);
-    main_handler->allowPostAndGetParamsAndOptionsRequest();
+    main_handler->allowPostAndGetParamsRequest();
     factory->addHandler(main_handler);
 
     return factory;
@@ -180,7 +178,7 @@ void addDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IServer 
     addCommonDefaultHandlersFactory(factory, server);
 
     auto query_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>>(server, "query");
-    query_handler->allowPostAndGetParamsAndOptionsRequest();
+    query_handler->allowPostAndGetParamsRequest();
     factory.addHandler(query_handler);
 
     /// We check that prometheus handler will be served on current (default) port.

@@ -1,5 +1,3 @@
--- NOTE: database = currentDatabase() is not mandatory
-
 SELECT count() > 0 FROM (SELECT * FROM system.columns LIMIT 0);
 SELECT count() > 0 FROM (SELECT * FROM system.columns LIMIT 1);
 SELECT count() > 0 FROM (SELECT * FROM system.columns LIMIT 2);

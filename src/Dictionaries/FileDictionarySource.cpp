@@ -1,15 +1,17 @@
 #include "FileDictionarySource.h"
-#include <base/logger_useful.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/filesystemHelpers.h>
+
+#include <Poco/File.h>
+#include <filesystem>
+
+#include <DataStreams/OwningBlockInputStream.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Context.h>
-#include <Processors/Formats/IInputFormat.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <common/logger_useful.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
 #include "DictionarySourceHelpers.h"
-
 
 namespace DB
 {
@@ -24,15 +26,28 @@ namespace ErrorCodes
 
 FileDictionarySource::FileDictionarySource(
     const std::string & filepath_, const std::string & format_,
-    Block & sample_block_, ContextPtr context_, bool created_from_ddl)
+    Block & sample_block_, const Context & context_, bool check_config)
     : filepath{filepath_}
     , format{format_}
     , sample_block{sample_block_}
     , context(context_)
 {
-    auto user_files_path = context->getUserFilesPath();
-    if (created_from_ddl && !fileOrSymlinkPathStartsWith(filepath, user_files_path))
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", filepath, user_files_path);
+    if (check_config)
+    {
+        auto source_file_path = std::filesystem::path(filepath);
+        auto source_file_absolute_path = std::filesystem::canonical(source_file_path);
+
+        String user_files_path_string_value = context.getUserFilesPath();
+        auto user_files_path = std::filesystem::path(user_files_path_string_value);
+        auto user_files_absolute_path = std::filesystem::canonical(user_files_path);
+
+        auto [_, user_files_absolute_path_mismatch_it] = std::mismatch(source_file_absolute_path.begin(), source_file_absolute_path.end(), user_files_absolute_path.begin(), user_files_absolute_path.end());
+
+        bool user_files_absolute_path_include_source_file_absolute_path = user_files_absolute_path_mismatch_it == user_files_absolute_path.end();
+
+        if (!user_files_absolute_path_include_source_file_absolute_path)
+            throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", filepath, user_files_path_string_value);
+    }
 }
 
 
@@ -40,21 +55,20 @@ FileDictionarySource::FileDictionarySource(const FileDictionarySource & other)
     : filepath{other.filepath}
     , format{other.format}
     , sample_block{other.sample_block}
-    , context(Context::createCopy(other.context))
+    , context(other.context)
     , last_modification{other.last_modification}
 {
 }
 
 
-Pipe FileDictionarySource::loadAll()
+BlockInputStreamPtr FileDictionarySource::loadAll()
 {
     LOG_TRACE(&Poco::Logger::get("FileDictionary"), "loadAll {}", toString());
     auto in_ptr = std::make_unique<ReadBufferFromFile>(filepath);
-    auto source = context->getInputFormat(format, *in_ptr, sample_block, max_block_size);
-    source->addBuffer(std::move(in_ptr));
+    auto stream = context.getInputFormat(format, *in_ptr, sample_block, max_block_size);
     last_modification = getLastModification();
 
-    return Pipe(std::move(source));
+    return std::make_shared<OwningBlockInputStream<ReadBuffer>>(stream, std::move(in_ptr));
 }
 
 
@@ -66,9 +80,8 @@ std::string FileDictionarySource::toString() const
 
 Poco::Timestamp FileDictionarySource::getLastModification() const
 {
-    return FS::getModificationTimestamp(filepath);
+    return Poco::File{filepath}.getLastModified();
 }
-
 
 void registerDictionarySourceFile(DictionarySourceFactory & factory)
 {
@@ -76,19 +89,19 @@ void registerDictionarySourceFile(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 ContextPtr global_context,
+                                 const Context & context,
                                  const std::string & /* default_database */,
-                                 bool created_from_ddl) -> DictionarySourcePtr
+                                 bool check_config) -> DictionarySourcePtr
     {
         if (dict_struct.has_expressions)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `file` does not support attribute expressions");
+            throw Exception{"Dictionary source of type `file` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
 
         const auto filepath = config.getString(config_prefix + ".file.path");
         const auto format = config.getString(config_prefix + ".file.format");
 
-        const auto context = copyContextAndApplySettingsFromDictionaryConfig(global_context, config, config_prefix);
+        Context context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
 
-        return std::make_unique<FileDictionarySource>(filepath, format, sample_block, context, created_from_ddl);
+        return std::make_unique<FileDictionarySource>(filepath, format, sample_block, context_local_copy, check_config);
     };
 
     factory.registerSource("file", create_table_source);

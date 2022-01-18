@@ -38,8 +38,7 @@ const std::unordered_set<std::string_view> keywords
     "IN",           "KILL",     "QUERY",  "SYNC",      "ASYNC",    "TEST",        "BETWEEN",  "TRUNCATE",    "USER",    "ROLE",
     "PROFILE",      "QUOTA",    "POLICY", "ROW",       "GRANT",    "REVOKE",      "OPTION",   "ADMIN",       "EXCEPT",  "REPLACE",
     "IDENTIFIED",   "HOST",     "NAME",   "READONLY",  "WRITABLE", "PERMISSIVE",  "FOR",      "RESTRICTIVE", "RANDOMIZED",
-    "INTERVAL",     "LIMITS",   "ONLY",   "TRACKING",  "IP",       "REGEXP",      "ILIKE",    "DICTIONARY",  "OFFSET",
-    "TRIM", "LTRIM", "RTRIM", "BOTH", "LEADING", "TRAILING"
+    "INTERVAL",     "LIMITS",   "ONLY",   "TRACKING",  "IP",       "REGEXP",      "ILIKE",    "DICTIONARY"
 };
 
 const std::unordered_set<std::string_view> keep_words
@@ -907,13 +906,7 @@ void obfuscateQueries(
 
             /// Write quotes and the obfuscated content inside.
             result.write(*token.begin);
-
-            /// If it is long, just replace it with hash. Long identifiers in queries are usually auto-generated.
-            if (token.size() > 32)
-                writeIntText(sipHash64(token.begin + 1, token.size() - 2), result);
-            else
-                obfuscateIdentifier({token.begin + 1, token.size() - 2}, result, obfuscate_map, used_nouns, hash_func);
-
+            obfuscateIdentifier({token.begin + 1, token.size() - 2}, result, obfuscate_map, used_nouns, hash_func);
             result.write(token.end[-1]);
         }
         else if (token.type == TokenType::Number)

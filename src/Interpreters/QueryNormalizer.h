@@ -4,7 +4,6 @@
 
 #include <Parsers/IAST.h>
 #include <Interpreters/Aliases.h>
-#include <Core/Names.h>
 
 namespace DB
 {
@@ -22,15 +21,12 @@ class QueryNormalizer
     {
         const UInt64 max_ast_depth;
         const UInt64 max_expanded_ast_elements;
-        bool prefer_column_name_to_alias;
 
         template <typename T>
         ExtractedSettings(const T & settings)
-            : max_ast_depth(settings.max_ast_depth)
-            , max_expanded_ast_elements(settings.max_expanded_ast_elements)
-            , prefer_column_name_to_alias(settings.prefer_column_name_to_alias)
-        {
-        }
+        :   max_ast_depth(settings.max_ast_depth),
+            max_expanded_ast_elements(settings.max_expanded_ast_elements)
+        {}
     };
 
 public:
@@ -39,26 +35,22 @@ public:
         using SetOfASTs = std::set<const IAST *>;
         using MapOfASTs = std::map<ASTPtr, ASTPtr>;
 
-        Aliases & aliases;
-        const NameSet & source_columns_set;
-        ExtractedSettings settings;
+        const Aliases & aliases;
+        const ExtractedSettings settings;
 
         /// tmp data
         size_t level;
         MapOfASTs finished_asts;    /// already processed vertices (and by what they replaced)
         SetOfASTs current_asts;     /// vertices in the current call stack of this method
         std::string current_alias;  /// the alias referencing to the ancestor of ast (the deepest ancestor with aliases)
-        const bool ignore_alias; /// normalize query without any aliases
 
         /// It's Ok to have "c + 1 AS c" in queries, but not in table definition
         const bool allow_self_aliases; /// for constructs like "SELECT column + 1 AS column"
 
-        Data(Aliases & aliases_, const NameSet & source_columns_set_, bool ignore_alias_, ExtractedSettings && settings_, bool allow_self_aliases_)
+        Data(const Aliases & aliases_, ExtractedSettings && settings_, bool allow_self_aliases_)
             : aliases(aliases_)
-            , source_columns_set(source_columns_set_)
             , settings(settings_)
             , level(0)
-            , ignore_alias(ignore_alias_)
             , allow_self_aliases(allow_self_aliases_)
         {}
     };

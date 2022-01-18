@@ -13,8 +13,8 @@
 #include <type_traits>
 #include <memory>
 
-#include <base/bit_cast.h>
-#include <base/extended_types.h>
+#include <ext/bit_cast.h>
+#include <common/extended_types.h>
 #include <Core/Defines.h>
 
 
@@ -187,7 +187,7 @@ struct RadixSortIntTraits
 
 template <typename T>
 using RadixSortNumTraits = std::conditional_t<
-    is_integer<T>,
+    is_integer_v<T>,
     std::conditional_t<is_unsigned_v<T>, RadixSortUIntTraits<T>, RadixSortIntTraits<T>>,
     RadixSortFloatTraits<T>>;
 
@@ -211,8 +211,8 @@ private:
     static constexpr size_t NUM_PASSES = (KEY_BITS + (Traits::PART_SIZE_BITS - 1)) / Traits::PART_SIZE_BITS;
 
 
-    static KeyBits keyToBits(Key x) { return bit_cast<KeyBits>(x); }
-    static Key bitsToKey(KeyBits x) { return bit_cast<Key>(x); }
+    static KeyBits keyToBits(Key x) { return ext::bit_cast<KeyBits>(x); }
+    static Key bitsToKey(KeyBits x) { return ext::bit_cast<Key>(x); }
 
     static ALWAYS_INLINE KeyBits getPart(size_t N, KeyBits x)
     {

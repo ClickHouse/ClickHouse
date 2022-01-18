@@ -478,7 +478,7 @@ max_alter_threads   2
                 <response_content>Say Hi!</response_content>
             </handler>
         </rule>
-</http_handlers>
+<http_handlers>
 ```
 
 ``` bash
@@ -614,4 +614,4 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 * Connection #0 to host localhost left intact
 ```
 
-[元の記事](https://clickhouse.com/docs/en/interfaces/http_interface/) <!--hide-->
+[元の記事](https://clickhouse.tech/docs/en/interfaces/http_interface/) <!--hide-->

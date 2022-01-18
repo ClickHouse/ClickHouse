@@ -2,12 +2,11 @@
 
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
-#include <IO/WriteBufferDecorator.h>
 
 namespace DB
 {
 
-class BrotliWriteBuffer : public WriteBufferWithOwnMemoryDecorator
+class BrotliWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
     BrotliWriteBuffer(
@@ -19,10 +18,13 @@ public:
 
     ~BrotliWriteBuffer() override;
 
+    void finalize() override { finish(); }
+
 private:
     void nextImpl() override;
 
-    void finalizeBefore() override;
+    void finish();
+    void finishImpl();
 
     class BrotliStateWrapper;
     std::unique_ptr<BrotliStateWrapper> brotli;
@@ -32,6 +34,10 @@ private:
 
     size_t out_capacity;
     uint8_t * out_data;
+
+    std::unique_ptr<WriteBuffer> out;
+
+    bool finished = false;
 };
 
 }

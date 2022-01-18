@@ -13,9 +13,6 @@ arraySort(used_table_functions)
 arraySort(used_functions)
 ['CAST','CRC32','addDays','array','arrayFlatten','modulo','plus','pow','round','substring','tanh','toDate','toDayOfYear','toTypeName','toWeek']
 
-used_functions
-['repeat']
-
 arraySort(used_data_type_families)
 ['Array','Int32','Nullable','String']
 

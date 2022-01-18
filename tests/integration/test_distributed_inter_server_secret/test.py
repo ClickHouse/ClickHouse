@@ -3,8 +3,6 @@
 # pylint: disable=line-too-long
 
 import pytest
-import uuid
-import time
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
@@ -29,10 +27,8 @@ users = pytest.mark.parametrize('user,password', [
 def bootstrap():
     for n in list(cluster.instances.values()):
         n.query('DROP TABLE IF EXISTS data')
-        n.query('DROP TABLE IF EXISTS data_from_buffer')
         n.query('DROP TABLE IF EXISTS dist')
         n.query('CREATE TABLE data (key Int) Engine=Memory()')
-        n.query('CREATE TABLE data_from_buffer (key Int) Engine=Memory()')
         n.query("""
         CREATE TABLE dist_insecure AS data
         Engine=Distributed(insecure, currentDatabase(), data, key)
@@ -42,24 +38,20 @@ def bootstrap():
         Engine=Distributed(secure, currentDatabase(), data, key)
         """)
         n.query("""
-        CREATE TABLE dist_secure_from_buffer AS data_from_buffer
-        Engine=Distributed(secure, currentDatabase(), data_from_buffer, key)
-        """)
-        n.query("""
         CREATE TABLE dist_secure_disagree AS data
         Engine=Distributed(secure_disagree, currentDatabase(), data, key)
         """)
         n.query("""
-        CREATE TABLE dist_secure_buffer AS dist_secure_from_buffer
-        Engine=Buffer(currentDatabase(), dist_secure_from_buffer,
+        CREATE TABLE dist_secure_buffer AS dist_secure
+        Engine=Buffer(currentDatabase(), dist_secure,
             /* settings for manual flush only */
-            1, /* num_layers */
-            0, /* min_time, placeholder */
-            0, /* max_time, placeholder */
-            0, /* min_rows   */
-            0, /* max_rows   */
-            0, /* min_bytes  */
-            0  /* max_bytes  */
+            1,    /* num_layers */
+            10e6, /* min_time, placeholder */
+            10e6, /* max_time, placeholder */
+            0,    /* min_rows   */
+            10e6, /* max_rows   */
+            0,    /* min_bytes  */
+            80e6  /* max_bytes  */
         )
         """)
 
@@ -91,7 +83,7 @@ def get_query_user_info(node, query_pattern):
 def get_query_setting_on_shard(node, query_pattern, setting):
     node.query("SYSTEM FLUSH LOGS")
     return node.query("""
-    SELECT Settings['{}']
+    SELECT (arrayFilter(x -> ((x.1) = '{}'), arrayZip(Settings.Names, Settings.Values))[1]).2
     FROM system.query_log
     WHERE
         query LIKE '%{}%' AND
@@ -105,14 +97,12 @@ def test_insecure():
     n1.query('SELECT * FROM dist_insecure')
 
 def test_insecure_insert_async():
-    n1.query("TRUNCATE TABLE data")
     n1.query('INSERT INTO dist_insecure SELECT * FROM numbers(2)')
     n1.query('SYSTEM FLUSH DISTRIBUTED ON CLUSTER insecure dist_insecure')
     assert int(n1.query('SELECT count() FROM dist_insecure')) == 2
     n1.query('TRUNCATE TABLE data ON CLUSTER insecure')
 
 def test_insecure_insert_sync():
-    n1.query("TRUNCATE TABLE data")
     n1.query('INSERT INTO dist_insecure SELECT * FROM numbers(2)', settings={'insert_distributed_sync': 1})
     assert int(n1.query('SELECT count() FROM dist_insecure')) == 2
     n1.query('TRUNCATE TABLE data ON CLUSTER secure')
@@ -121,14 +111,12 @@ def test_secure():
     n1.query('SELECT * FROM dist_secure')
 
 def test_secure_insert_async():
-    n1.query("TRUNCATE TABLE data")
     n1.query('INSERT INTO dist_secure SELECT * FROM numbers(2)')
     n1.query('SYSTEM FLUSH DISTRIBUTED ON CLUSTER secure dist_secure')
     assert int(n1.query('SELECT count() FROM dist_secure')) == 2
     n1.query('TRUNCATE TABLE data ON CLUSTER secure')
 
 def test_secure_insert_sync():
-    n1.query("TRUNCATE TABLE data")
     n1.query('INSERT INTO dist_secure SELECT * FROM numbers(2)', settings={'insert_distributed_sync': 1})
     assert int(n1.query('SELECT count() FROM dist_secure')) == 2
     n1.query('TRUNCATE TABLE data ON CLUSTER secure')
@@ -137,69 +125,22 @@ def test_secure_insert_sync():
 #
 # Buffer() flush happens with global context, that does not have user
 # And so Context::user/ClientInfo::current_user/ClientInfo::initial_user will be empty
-#
-# This is the regression test for the subsequent query that it
-# will not use user from the previous query.
-#
-# The test a little bit complex, but I will try to explain:
-# - first, we need to execute query with the readonly user (regualar SELECT),
-#   and then we will execute INSERT, and if the bug is there, then INSERT will
-#   use the user from SELECT and will fail (since you cannot do INSERT with
-#   readonly=1/2)
-#
-# - the trick with generating random priority (via sed) is to avoid reusing
-#   connection from n1 to n2 from another test (and we cannot simply use
-#   another pool after ConnectionPoolFactory had been added [1].
-#
-#     [1]: https://github.com/ClickHouse/ClickHouse/pull/26318
-#
-#   We need at least one change in one of fields of the node/shard definition,
-#   and this "priorirty" for us in this test.
-#
-# - after we will ensure that connection is really established from the context
-#   of SELECT query, and that the connection will not be established from the
-#   context of the INSERT query (but actually it is a no-op since the INSERT
-#   will be done in background, due to insert_distributed_sync=false by
-#   default)
-#
-# - if the bug is there, then FLUSH DISTRIBUTED will fail, because it will go
-#   from n1 to n2 using previous user.
-#
-# I hope that this will clarify something for the reader.
 def test_secure_insert_buffer_async():
-    # Change cluster definition so that the SELECT will always creates new connection
-    priority = int(time.time())
-    n1.exec_in_container(['bash', '-c', f'sed -i "s#<priority>.*</priority>#<priority>{priority}</priority>#" /etc/clickhouse-server/config.d/remote_servers.xml'])
-    n1.query('SYSTEM RELOAD CONFIG')
-    # ensure that SELECT creates new connection (we need separate table for
-    # this, so that separate distributed pool will be used)
-    query_id = uuid.uuid4().hex
-    n1.query('SELECT * FROM dist_secure_from_buffer', user='ro', query_id=query_id)
-    assert n1.contains_in_log('{' + query_id + '} <Trace> Connection (n2:9000): Connecting.')
-
-    query_id = uuid.uuid4().hex
-    n1.query('INSERT INTO dist_secure_buffer SELECT * FROM numbers(2)', query_id=query_id)
-    # ensure that INSERT does not creates new connection, so that it will use
-    # previous connection that was instantiated with "ro" user (using
-    # interserver secret)
-    assert not n1.contains_in_log('{' + query_id + '} <Trace> Connection (n2:9000): Connecting.')
-
-    # And before the bug was fixed this query will fail with the following error:
-    #
-    #     Code: 164. DB::Exception: Received from 172.16.2.5:9000. DB::Exception: There was an error on [n1:9000]: Code: 164. DB::Exception: Received from n2:9000. DB::Exception: ro: Cannot execute query in readonly mode. (READONLY)
-    n1.query('SYSTEM FLUSH DISTRIBUTED ON CLUSTER secure dist_secure_from_buffer')
+    n1.query('INSERT INTO dist_secure_buffer SELECT * FROM numbers(2)')
+    n1.query('SYSTEM FLUSH DISTRIBUTED ON CLUSTER secure dist_secure')
+    # no Buffer flush happened
+    assert int(n1.query('SELECT count() FROM dist_secure')) == 0
     n1.query('OPTIMIZE TABLE dist_secure_buffer')
-    n1.query('SYSTEM FLUSH DISTRIBUTED ON CLUSTER secure dist_secure_from_buffer')
-
-    assert int(n1.query('SELECT count() FROM dist_secure_from_buffer')) == 2
-    n1.query('TRUNCATE TABLE data_from_buffer ON CLUSTER secure')
+    # manual flush
+    n1.query('SYSTEM FLUSH DISTRIBUTED ON CLUSTER secure dist_secure')
+    assert int(n1.query('SELECT count() FROM dist_secure')) == 2
+    n1.query('TRUNCATE TABLE data ON CLUSTER secure')
 
 def test_secure_disagree():
     with pytest.raises(QueryRuntimeException, match='.*Hash mismatch.*'):
         n1.query('SELECT * FROM dist_secure_disagree')
 
 def test_secure_disagree_insert():
-    n1.query("TRUNCATE TABLE data")
     n1.query('INSERT INTO dist_secure_disagree SELECT * FROM numbers(2)')
     with pytest.raises(QueryRuntimeException, match='.*Hash mismatch.*'):
         n1.query('SYSTEM FLUSH DISTRIBUTED ON CLUSTER secure_disagree dist_secure_disagree')
@@ -262,3 +203,5 @@ def test_per_user_protocol_settings_secure_cluster(user, password):
         'max_untracked_memory': 0,
     })
     assert int(get_query_setting_on_shard(n1, id_, 'max_memory_usage_for_user')) == int(1e9)
+
+# TODO: check user for INSERT

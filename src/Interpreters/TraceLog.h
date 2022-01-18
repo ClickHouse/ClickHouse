@@ -27,8 +27,7 @@ struct TraceLogElement
     Int64 size{}; /// Allocation size in bytes for TraceType::Memory
 
     static std::string name() { return "TraceLog"; }
-    static NamesAndTypesList getNamesAndTypes();
-    static NamesAndAliases getNamesAndAliases() { return {}; }
+    static Block createBlock();
     void appendToBlock(MutableColumns & columns) const;
 };
 

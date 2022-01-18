@@ -1,10 +1,10 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 #include <string.h>
 #include <algorithm>
 #include <utility>
-#include <base/range.h>
+#include <ext/range.h>
 #include <Common/hex.h>
 #include <Common/StringUtils/StringUtils.h>
 
@@ -25,7 +25,7 @@ void formatIPv6(const unsigned char * src, char *& dst, uint8_t zeroed_tail_byte
 
 /** Unsafe (no bounds-checking for src nor dst), optimized version of parsing IPv4 string.
  *
- * Parses the input string `src` and stores binary host-endian value into buffer pointed by `dst`,
+ * Parses the input string `src` and stores binary BE value into buffer pointed by `dst`,
  * which should be long enough.
  * That is "127.0.0.1" becomes 0x7f000001.
  *
@@ -63,7 +63,7 @@ inline bool parseIPv4(const char * src, unsigned char * dst)
 /** Unsafe (no bounds-checking for src nor dst), optimized version of parsing IPv6 string.
 *
 * Slightly altered implementation from http://svn.apache.org/repos/asf/apr/apr/trunk/network_io/unix/inet_pton.c
-* Parses the input string `src` and stores binary big-endian value into buffer pointed by `dst`,
+* Parses the input string `src` and stores binary LE value into buffer pointed by `dst`,
 * which should be long enough. In case of failure zeroes
 * IPV6_BINARY_LENGTH bytes of buffer pointed by `dst`.
 *
@@ -85,19 +85,19 @@ inline bool parseIPv6(const char * src, unsigned char * dst)
             return clear_dst();
 
     unsigned char tmp[IPV6_BINARY_LENGTH]{};
-    unsigned char * tp = tmp;
-    unsigned char * endp = tp + IPV6_BINARY_LENGTH;
-    const char * curtok = src;
-    bool saw_xdigit = false;
+    auto * tp = tmp;
+    auto * endp = tp + IPV6_BINARY_LENGTH;
+    const auto * curtok = src;
+    auto saw_xdigit = false;
     UInt32 val{};
     unsigned char * colonp = nullptr;
 
     /// Assuming zero-terminated string.
-    while (char ch = *src++)
+    while (const auto ch = *src++)
     {
-        UInt8 num = unhex(ch);
+        const auto num = unhex(ch);
 
-        if (num != 0xFF)
+        if (num != u8'\xff')
         {
             val <<= 4;
             val |= num;

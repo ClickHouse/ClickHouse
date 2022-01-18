@@ -13,12 +13,11 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/adaptor/map.hpp>
 #include <cstring>
 #include <filesystem>
-#include <base/FnTraits.h>
 
 
 namespace DB
@@ -33,12 +32,15 @@ namespace ErrorCodes
 
 namespace
 {
-    UUID generateID(AccessEntityType type, const String & name)
+    using EntityType = IAccessStorage::EntityType;
+    using EntityTypeInfo = IAccessStorage::EntityTypeInfo;
+
+    UUID generateID(EntityType type, const String & name)
     {
         Poco::MD5Engine md5;
         md5.update(name);
         char type_storage_chars[] = " USRSXML";
-        type_storage_chars[0] = AccessEntityTypeInfo::get(type).unique_char;
+        type_storage_chars[0] = EntityTypeInfo::get(type).unique_char;
         md5.update(type_storage_chars, strlen(type_storage_chars));
         UUID result;
         memcpy(&result, md5.digest().data(), md5.digestLength());
@@ -60,30 +62,29 @@ namespace
         bool has_password_sha256_hex = config.has(user_config + ".password_sha256_hex");
         bool has_password_double_sha1_hex = config.has(user_config + ".password_double_sha1_hex");
         bool has_ldap = config.has(user_config + ".ldap");
-        bool has_kerberos = config.has(user_config + ".kerberos");
 
-        size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex + has_ldap + has_kerberos;
+        size_t num_password_fields = has_no_password + has_password_plaintext + has_password_sha256_hex + has_password_double_sha1_hex + has_ldap;
         if (num_password_fields > 1)
-            throw Exception("More than one field of 'password', 'password_sha256_hex', 'password_double_sha1_hex', 'no_password', 'ldap', 'kerberos' are used to specify password for user " + user_name + ". Must be only one of them.",
+            throw Exception("More than one field of 'password', 'password_sha256_hex', 'password_double_sha1_hex', 'no_password', 'ldap' are used to specify password for user " + user_name + ". Must be only one of them.",
                 ErrorCodes::BAD_ARGUMENTS);
 
         if (num_password_fields < 1)
-            throw Exception("Either 'password' or 'password_sha256_hex' or 'password_double_sha1_hex' or 'no_password' or 'ldap' or 'kerberos' must be specified for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Either 'password' or 'password_sha256_hex' or 'password_double_sha1_hex' or 'no_password' or 'ldap' must be specified for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
 
         if (has_password_plaintext)
         {
-            user->auth_data = AuthenticationData{AuthenticationType::PLAINTEXT_PASSWORD};
-            user->auth_data.setPassword(config.getString(user_config + ".password"));
+            user->authentication = Authentication{Authentication::PLAINTEXT_PASSWORD};
+            user->authentication.setPassword(config.getString(user_config + ".password"));
         }
         else if (has_password_sha256_hex)
         {
-            user->auth_data = AuthenticationData{AuthenticationType::SHA256_PASSWORD};
-            user->auth_data.setPasswordHashHex(config.getString(user_config + ".password_sha256_hex"));
+            user->authentication = Authentication{Authentication::SHA256_PASSWORD};
+            user->authentication.setPasswordHashHex(config.getString(user_config + ".password_sha256_hex"));
         }
         else if (has_password_double_sha1_hex)
         {
-            user->auth_data = AuthenticationData{AuthenticationType::DOUBLE_SHA1_PASSWORD};
-            user->auth_data.setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"));
+            user->authentication = Authentication{Authentication::DOUBLE_SHA1_PASSWORD};
+            user->authentication.setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"));
         }
         else if (has_ldap)
         {
@@ -95,15 +96,8 @@ namespace
             if (ldap_server_name.empty())
                 throw Exception("LDAP server name cannot be empty for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
 
-            user->auth_data = AuthenticationData{AuthenticationType::LDAP};
-            user->auth_data.setLDAPServerName(ldap_server_name);
-        }
-        else if (has_kerberos)
-        {
-            const auto realm = config.getString(user_config + ".kerberos.realm", "");
-
-            user->auth_data = AuthenticationData{AuthenticationType::KERBEROS};
-            user->auth_data.setKerberosRealm(realm);
+            user->authentication = Authentication{Authentication::LDAP_SERVER};
+            user->authentication.setServerName(ldap_server_name);
         }
 
         const auto profile_name_config = user_config + ".profile";
@@ -111,7 +105,7 @@ namespace
         {
             auto profile_name = config.getString(profile_name_config);
             SettingsProfileElement profile_element;
-            profile_element.parent_profile = generateID(AccessEntityType::SETTINGS_PROFILE, profile_name);
+            profile_element.parent_profile = generateID(EntityType::SETTINGS_PROFILE, profile_name);
             user->settings.push_back(std::move(profile_element));
         }
 
@@ -194,9 +188,6 @@ namespace
             user->access.revokeGrantOption(AccessType::ALL);
         }
 
-        String default_database = config.getString(user_config + ".default_database", "");
-        user->default_database = default_database;
-
         return user;
     }
 
@@ -208,19 +199,8 @@ namespace
 
         std::vector<AccessEntityPtr> users;
         users.reserve(user_names.size());
-
         for (const auto & user_name : user_names)
-        {
-            try
-            {
-                users.push_back(parseUser(config, user_name));
-            }
-            catch (Exception & e)
-            {
-                e.addMessage(fmt::format("while parsing user '{}' in users configuration file", user_name));
-                throw;
-            }
-        }
+            users.push_back(parseUser(config, user_name));
 
         return users;
     }
@@ -231,15 +211,16 @@ namespace
         auto quota = std::make_shared<Quota>();
         quota->setName(quota_name);
 
+        using KeyType = Quota::KeyType;
         String quota_config = "quotas." + quota_name;
         if (config.has(quota_config + ".keyed_by_ip"))
-            quota->key_type = QuotaKeyType::IP_ADDRESS;
+            quota->key_type = KeyType::IP_ADDRESS;
         else if (config.has(quota_config + ".keyed_by_forwarded_ip"))
-            quota->key_type = QuotaKeyType::FORWARDED_IP_ADDRESS;
+            quota->key_type = KeyType::FORWARDED_IP_ADDRESS;
         else if (config.has(quota_config + ".keyed"))
-            quota->key_type = QuotaKeyType::CLIENT_KEY_OR_USER_NAME;
+            quota->key_type = KeyType::CLIENT_KEY_OR_USER_NAME;
         else
-            quota->key_type = QuotaKeyType::USER_NAME;
+            quota->key_type = KeyType::USER_NAME;
 
         Poco::Util::AbstractConfiguration::Keys interval_keys;
         config.keys(quota_config, interval_keys);
@@ -259,12 +240,12 @@ namespace
             limits.duration = duration;
             limits.randomize_interval = config.getBool(interval_config + ".randomize", false);
 
-            for (auto quota_type : collections::range(QuotaType::MAX))
+            for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
             {
-                const auto & type_info = QuotaTypeInfo::get(quota_type);
+                const auto & type_info = Quota::ResourceTypeInfo::get(resource_type);
                 auto value = config.getString(interval_config + "." + type_info.name, "0");
                 if (value != "0")
-                    limits.max[static_cast<size_t>(quota_type)] = type_info.stringToValue(value);
+                    limits.max[resource_type] = type_info.amountFromString(value);
             }
         }
 
@@ -281,30 +262,19 @@ namespace
         for (const auto & user_name : user_names)
         {
             if (config.has("users." + user_name + ".quota"))
-                quota_to_user_ids[config.getString("users." + user_name + ".quota")].push_back(generateID(AccessEntityType::USER, user_name));
+                quota_to_user_ids[config.getString("users." + user_name + ".quota")].push_back(generateID(EntityType::USER, user_name));
         }
 
         Poco::Util::AbstractConfiguration::Keys quota_names;
         config.keys("quotas", quota_names);
-
         std::vector<AccessEntityPtr> quotas;
         quotas.reserve(quota_names.size());
-
         for (const auto & quota_name : quota_names)
         {
-            try
-            {
-                auto it = quota_to_user_ids.find(quota_name);
-                const std::vector<UUID> & quota_users = (it != quota_to_user_ids.end()) ? std::move(it->second) : std::vector<UUID>{};
-                quotas.push_back(parseQuota(config, quota_name, quota_users));
-            }
-            catch (Exception & e)
-            {
-                e.addMessage(fmt::format("while parsing quota '{}' in users configuration file", quota_name));
-                throw;
-            }
+            auto it = quota_to_user_ids.find(quota_name);
+            const std::vector<UUID> & quota_users = (it != quota_to_user_ids.end()) ? std::move(it->second) : std::vector<UUID>{};
+            quotas.push_back(parseQuota(config, quota_name, quota_users));
         }
-
         return quotas;
     }
 
@@ -369,9 +339,9 @@ namespace
                 String filter = (it != user_to_filters.end()) ? it->second : "1";
 
                 auto policy = std::make_shared<RowPolicy>();
-                policy->setFullName(user_name, database, table_name);
-                policy->filters[static_cast<size_t>(RowPolicyFilterType::SELECT_FILTER)] = filter;
-                policy->to_roles.add(generateID(AccessEntityType::USER, user_name));
+                policy->setNameParts(user_name, database, table_name);
+                policy->conditions[RowPolicy::SELECT_FILTER] = filter;
+                policy->to_roles.add(generateID(EntityType::USER, user_name));
                 policies.push_back(policy);
             }
         }
@@ -381,7 +351,7 @@ namespace
 
     SettingsProfileElements parseSettingsConstraints(const Poco::Util::AbstractConfiguration & config,
                                                      const String & path_to_constraints,
-                                                     Fn<void(std::string_view)> auto && check_setting_name_function)
+                                                     const std::function<void(const std::string_view &)> & check_setting_name_function)
     {
         SettingsProfileElements profile_elements;
         Poco::Util::AbstractConfiguration::Keys keys;
@@ -418,7 +388,7 @@ namespace
     std::shared_ptr<SettingsProfile> parseSettingsProfile(
         const Poco::Util::AbstractConfiguration & config,
         const String & profile_name,
-        Fn<void(std::string_view)> auto && check_setting_name_function)
+        const std::function<void(const std::string_view &)> & check_setting_name_function)
     {
         auto profile = std::make_shared<SettingsProfile>();
         profile->setName(profile_name);
@@ -433,7 +403,7 @@ namespace
             {
                 String parent_profile_name = config.getString(profile_config + "." + key);
                 SettingsProfileElement profile_element;
-                profile_element.parent_profile = generateID(AccessEntityType::SETTINGS_PROFILE, parent_profile_name);
+                profile_element.parent_profile = generateID(EntityType::SETTINGS_PROFILE, parent_profile_name);
                 profile->elements.emplace_back(std::move(profile_element));
                 continue;
             }
@@ -460,26 +430,13 @@ namespace
 
     std::vector<AccessEntityPtr> parseSettingsProfiles(
         const Poco::Util::AbstractConfiguration & config,
-        Fn<void(std::string_view)> auto && check_setting_name_function)
+        const std::function<void(const std::string_view &)> & check_setting_name_function)
     {
+        std::vector<AccessEntityPtr> profiles;
         Poco::Util::AbstractConfiguration::Keys profile_names;
         config.keys("profiles", profile_names);
-
-        std::vector<AccessEntityPtr> profiles;
-        profiles.reserve(profile_names.size());
-
         for (const auto & profile_name : profile_names)
-        {
-            try
-            {
-                profiles.push_back(parseSettingsProfile(config, profile_name, check_setting_name_function));
-            }
-            catch (Exception & e)
-            {
-                e.addMessage(fmt::format("while parsing profile '{}' in users configuration file", profile_name));
-                throw;
-            }
-        }
+            profiles.push_back(parseSettingsProfile(config, profile_name, check_setting_name_function));
 
         return profiles;
     }
@@ -534,24 +491,16 @@ void UsersConfigAccessStorage::setConfig(const Poco::Util::AbstractConfiguration
 
 void UsersConfigAccessStorage::parseFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
-    try
-    {
-        std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;
-        for (const auto & entity : parseUsers(config))
-            all_entities.emplace_back(generateID(*entity), entity);
-        for (const auto & entity : parseQuotas(config))
-            all_entities.emplace_back(generateID(*entity), entity);
-        for (const auto & entity : parseRowPolicies(config))
-            all_entities.emplace_back(generateID(*entity), entity);
-        for (const auto & entity : parseSettingsProfiles(config, check_setting_name_function))
-            all_entities.emplace_back(generateID(*entity), entity);
-        memory_storage.setAll(all_entities);
-    }
-    catch (Exception & e)
-    {
-        e.addMessage(fmt::format("while loading {}", path.empty() ? "configuration" : ("configuration file " + quoteString(path))));
-        throw;
-    }
+    std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;
+    for (const auto & entity : parseUsers(config))
+        all_entities.emplace_back(generateID(*entity), entity);
+    for (const auto & entity : parseQuotas(config))
+        all_entities.emplace_back(generateID(*entity), entity);
+    for (const auto & entity : parseRowPolicies(config))
+        all_entities.emplace_back(generateID(*entity), entity);
+    for (const auto & entity : parseSettingsProfiles(config, check_setting_name_function))
+        all_entities.emplace_back(generateID(*entity), entity);
+    memory_storage.setAll(all_entities);
 }
 
 void UsersConfigAccessStorage::load(
@@ -591,20 +540,13 @@ void UsersConfigAccessStorage::startPeriodicReloading()
         config_reloader->start();
 }
 
-void UsersConfigAccessStorage::stopPeriodicReloading()
-{
-    std::lock_guard lock{load_mutex};
-    if (config_reloader)
-        config_reloader->stop();
-}
-
-std::optional<UUID> UsersConfigAccessStorage::findImpl(AccessEntityType type, const String & name) const
+std::optional<UUID> UsersConfigAccessStorage::findImpl(EntityType type, const String & name) const
 {
     return memory_storage.find(type, name);
 }
 
 
-std::vector<UUID> UsersConfigAccessStorage::findAllImpl(AccessEntityType type) const
+std::vector<UUID> UsersConfigAccessStorage::findAllImpl(EntityType type) const
 {
     return memory_storage.findAll(type);
 }
@@ -648,13 +590,13 @@ void UsersConfigAccessStorage::updateImpl(const UUID & id, const UpdateFunc &)
 }
 
 
-scope_guard UsersConfigAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
+ext::scope_guard UsersConfigAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
 {
     return memory_storage.subscribeForChanges(id, handler);
 }
 
 
-scope_guard UsersConfigAccessStorage::subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const
+ext::scope_guard UsersConfigAccessStorage::subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const
 {
     return memory_storage.subscribeForChanges(type, handler);
 }
@@ -666,7 +608,7 @@ bool UsersConfigAccessStorage::hasSubscriptionImpl(const UUID & id) const
 }
 
 
-bool UsersConfigAccessStorage::hasSubscriptionImpl(AccessEntityType type) const
+bool UsersConfigAccessStorage::hasSubscriptionImpl(EntityType type) const
 {
     return memory_storage.hasSubscription(type);
 }

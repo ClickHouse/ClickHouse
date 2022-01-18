@@ -1,6 +1,7 @@
 #include <re2/re2.h>
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Formats/FormatFactory.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
@@ -18,14 +19,14 @@ void RemoteHostFilter::checkURL(const Poco::URI & uri) const
 {
     if (!checkForDirectEntry(uri.getHost()) &&
         !checkForDirectEntry(uri.getHost() + ":" + toString(uri.getPort())))
-        throw Exception("URL \"" + uri.toString() + "\" is not allowed in configuration file, see <remote_url_allow_hosts>", ErrorCodes::UNACCEPTABLE_URL);
+        throw Exception("URL \"" + uri.toString() + "\" is not allowed in config.xml", ErrorCodes::UNACCEPTABLE_URL);
 }
 
 void RemoteHostFilter::checkHostAndPort(const std::string & host, const std::string & port) const
 {
     if (!checkForDirectEntry(host) &&
         !checkForDirectEntry(host + ":" + port))
-        throw Exception("URL \"" + host + ":" + port + "\" is not allowed in configuration file, see <remote_url_allow_hosts>", ErrorCodes::UNACCEPTABLE_URL);
+        throw Exception("URL \"" + host + ":" + port + "\" is not allowed in config.xml", ErrorCodes::UNACCEPTABLE_URL);
 }
 
 void RemoteHostFilter::setValuesFromConfig(const Poco::Util::AbstractConfiguration & config)
@@ -41,7 +42,6 @@ void RemoteHostFilter::setValuesFromConfig(const Poco::Util::AbstractConfigurati
             else if (startsWith(key, "host"))
                 primary_hosts.insert(config.getString("remote_url_allow_hosts." + key));
         }
-        is_allow_by_default = false;
     }
 }
 
@@ -58,6 +58,6 @@ bool RemoteHostFilter::checkForDirectEntry(const std::string & str) const
         }
         return true;
     }
-    return is_allow_by_default;
+    return true;
 }
 }

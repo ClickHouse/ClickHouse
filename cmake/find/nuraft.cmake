@@ -4,14 +4,14 @@ if (NOT ENABLE_NURAFT)
     return()
 endif()
 
-if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/NuRaft/src")
-    message (WARNING "submodule contrib/NuRaft is missing. to fix try run: \n git submodule update --init")
+if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/NuRaft/CMakeLists.txt")
+    message (WARNING "submodule contrib/NuRaft is missing. to fix try run: \n git submodule update --init --recursive")
     message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal NuRaft library")
     set (USE_NURAFT 0)
     return()
 endif ()
 
-if (NOT OS_FREEBSD)
+if (NOT OS_FREEBSD AND NOT OS_DARWIN)
     set (USE_NURAFT 1)
     set (NURAFT_LIBRARY nuraft)
 

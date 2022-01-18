@@ -28,7 +28,7 @@ JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat(
 }
 
 
-void JSONEachRowRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
+void JSONEachRowRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
     writeString(fields[field_number], out);
     writeChar(':', out);
@@ -37,11 +37,11 @@ void JSONEachRowRowOutputFormat::writeField(const IColumn & column, const ISeria
     {
         WriteBufferFromOwnString buf;
 
-        serialization.serializeText(column, row_num, buf, settings);
+        type.serializeAsText(column, row_num, buf, settings);
         writeJSONString(buf.str(), out, settings);
     }
     else
-        serialization.serializeTextJSON(column, row_num, out, settings);
+        type.serializeAsTextJSON(column, row_num, out, settings);
 
     ++field_number;
 }
@@ -125,9 +125,9 @@ void JSONEachRowRowOutputFormat::writeSuffix()
 }
 
 
-void registerOutputFormatJSONEachRow(FormatFactory & factory)
+void registerOutputFormatProcessorJSONEachRow(FormatFactory & factory)
 {
-    factory.registerOutputFormat("JSONEachRow", [](
+    factory.registerOutputFormatProcessor("JSONEachRow", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,
@@ -140,7 +140,7 @@ void registerOutputFormatJSONEachRow(FormatFactory & factory)
     });
     factory.markOutputFormatSupportsParallelFormatting("JSONEachRow");
 
-    factory.registerOutputFormat("JSONStringsEachRow", [](
+    factory.registerOutputFormatProcessor("JSONStringsEachRow", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,

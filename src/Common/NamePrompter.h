@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 #include <Common/PODArray.h>
 
 #include <algorithm>
@@ -90,24 +90,18 @@ private:
     }
 };
 
-
-template <size_t MaxNumHints, typename Self>
+template <size_t MaxNumHints, class Self>
 class IHints
 {
 public:
+
     virtual std::vector<String> getAllRegisteredNames() const = 0;
 
     std::vector<String> getHints(const String & name) const
     {
-        return prompter.getHints(name, getAllRegisteredNames());
+        static const auto registered_names = getAllRegisteredNames();
+        return prompter.getHints(name, registered_names);
     }
-
-    IHints() = default;
-
-    IHints(const IHints &) = default;
-    IHints(IHints &&) = default;
-    IHints & operator=(const IHints &) = default;
-    IHints & operator=(IHints &&) = default;
 
     virtual ~IHints() = default;
 

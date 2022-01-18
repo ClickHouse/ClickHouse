@@ -1,5 +1,3 @@
--- Tags: zookeeper
-
 DROP TABLE IF EXISTS broken_partition;
 
 CREATE TABLE broken_partition

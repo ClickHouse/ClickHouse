@@ -5,10 +5,12 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 
-#include "config_functions.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
 
 /** FastOps is a fast vector math library from Mikhail Parakhin (former Yandex CTO),
   * Enabled by default.
@@ -33,13 +35,11 @@ class FunctionMathUnary : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMathUnary>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMathUnary>(); }
 
 private:
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -87,14 +87,24 @@ private:
             if (rows_remaining != 0)
             {
                 T src_remaining[Impl::rows_per_iteration];
-                memcpy(src_remaining, &src_data[rows_size], rows_remaining * sizeof(T));
-                memset(src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(T));
+                if constexpr (is_big_int_v<T> || std::is_same_v<T, Decimal256>)
+                {
+                    for (size_t i = 0; i < rows_remaining; i++)
+                        src_remaining[i] = src_data[rows_size + i];
+                    for (size_t i = rows_remaining; i < Impl::rows_per_iteration; i++)
+                        src_remaining[i] = 0;
+                }
+                else
+                {
+                    memcpy(src_remaining, &src_data[rows_size], rows_remaining * sizeof(T));
+                    memset(src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(T));
+                }
                 ReturnType dst_remaining[Impl::rows_per_iteration];
 
                 Impl::execute(src_remaining, dst_remaining);
 
                 if constexpr (is_big_int_v<T> || std::is_same_v<T, Decimal256>)
-                    for (size_t i = 0; i < rows_remaining; ++i)
+                    for (size_t i = 0; i < rows_remaining; i++)
                         dst_data[rows_size + i] = dst_remaining[i];
                 else
                     memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(ReturnType));
@@ -148,7 +158,7 @@ private:
             using Types = std::decay_t<decltype(types)>;
             using Type = typename Types::RightType;
             using ReturnType = std::conditional_t<Impl::always_returns_float64 || !std::is_floating_point_v<Type>, Float64, Type>;
-            using ColVecType = ColumnVectorOrDecimal<Type>;
+            using ColVecType = std::conditional_t<IsDecimalNumber<Type>, ColumnDecimal<Type>, ColumnVector<Type>>;
 
             const auto col_vec = checkAndGetColumn<ColVecType>(col.column.get());
             return (res = execute<Type, ReturnType>(col_vec)) != nullptr;

@@ -1,5 +1,5 @@
 #include <Access/ContextAccess.h>
-#include <Access/AccessControl.h>
+#include <Access/AccessControlManager.h>
 #include <Access/EnabledRoles.h>
 #include <Access/EnabledRowPolicies.h>
 #include <Access/EnabledQuota.h>
@@ -7,14 +7,13 @@
 #include <Access/User.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledSettings.h>
-#include <Access/SettingsProfilesInfo.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Logger.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/range/algorithm/set_algorithm.hpp>
 #include <assert.h>
@@ -119,10 +118,8 @@ namespace
         AccessRights res = access;
         res.modifyFlags(modifier);
 
-        /// Anyone has access to the "system" and "information_schema" database.
+        /// Anyone has access to the "system" database.
         res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE);
-        res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA);
-        res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE);
         return res;
     }
 
@@ -142,13 +139,13 @@ namespace
 }
 
 
-ContextAccess::ContextAccess(const AccessControl & access_control_, const Params & params_)
-    : access_control(&access_control_)
+ContextAccess::ContextAccess(const AccessControlManager & manager_, const Params & params_)
+    : manager(&manager_)
     , params(params_)
 {
     std::lock_guard lock{mutex};
 
-    subscription_for_user_change = access_control->subscribeForChanges(
+    subscription_for_user_change = manager->subscribeForChanges(
         *params.user_id, [this](const UUID &, const AccessEntityPtr & entity)
     {
         UserPtr changed_user = entity ? typeid_cast<UserPtr>(entity) : nullptr;
@@ -156,7 +153,7 @@ ContextAccess::ContextAccess(const AccessControl & access_control_, const Params
         setUser(changed_user);
     });
 
-    setUser(access_control->read<User>(*params.user_id));
+    setUser(manager->read<User>(*params.user_id));
 }
 
 
@@ -181,20 +178,30 @@ void ContextAccess::setUser(const UserPtr & user_) const
     user_name = user->getName();
     trace_log = &Poco::Logger::get("ContextAccess (" + user_name + ")");
 
-    std::vector<UUID> current_roles, current_roles_with_admin_option;
+    boost::container::flat_set<UUID> current_roles, current_roles_with_admin_option;
     if (params.use_default_roles)
     {
-        current_roles = user->granted_roles.findGranted(user->default_roles);
-        current_roles_with_admin_option = user->granted_roles.findGrantedWithAdminOption(user->default_roles);
+        for (const UUID & id : user->granted_roles.roles)
+        {
+            if (user->default_roles.match(id))
+                current_roles.emplace(id);
+        }
     }
     else
     {
-        current_roles = user->granted_roles.findGranted(params.current_roles);
-        current_roles_with_admin_option = user->granted_roles.findGrantedWithAdminOption(params.current_roles);
+        boost::range::set_intersection(
+            params.current_roles,
+            user->granted_roles.roles,
+            std::inserter(current_roles, current_roles.end()));
     }
 
+    boost::range::set_intersection(
+        current_roles,
+        user->granted_roles.roles_with_admin_option,
+        std::inserter(current_roles_with_admin_option, current_roles_with_admin_option.end()));
+
     subscription_for_roles_changes.reset();
-    enabled_roles = access_control->getEnabledRoles(current_roles, current_roles_with_admin_option);
+    enabled_roles = manager->getEnabledRoles(current_roles, current_roles_with_admin_option);
     subscription_for_roles_changes = enabled_roles->subscribeForChanges([this](const std::shared_ptr<const EnabledRolesInfo> & roles_info_)
     {
         std::lock_guard lock{mutex};
@@ -209,11 +216,11 @@ void ContextAccess::setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> &
 {
     assert(roles_info_);
     roles_info = roles_info_;
-    enabled_row_policies = access_control->getEnabledRowPolicies(
+    enabled_row_policies = manager->getEnabledRowPolicies(
         *params.user_id, roles_info->enabled_roles);
-    enabled_quota = access_control->getEnabledQuota(
+    enabled_quota = manager->getEnabledQuota(
         *params.user_id, user_name, roles_info->enabled_roles, params.address, params.forwarded_address, params.quota_key);
-    enabled_settings = access_control->getEnabledSettings(
+    enabled_settings = manager->getEnabledSettings(
         *params.user_id, user->settings, roles_info->enabled_roles, roles_info->settings_from_enabled_roles);
     calculateAccessRights();
 }
@@ -269,11 +276,11 @@ std::shared_ptr<const EnabledRowPolicies> ContextAccess::getEnabledRowPolicies()
     return no_row_policies;
 }
 
-ASTPtr ContextAccess::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, const ASTPtr & combine_with_expr) const
+ASTPtr ContextAccess::getRowPolicyCondition(const String & database, const String & table_name, RowPolicy::ConditionType index, const ASTPtr & extra_condition) const
 {
     std::lock_guard lock{mutex};
     if (enabled_row_policies)
-        return enabled_row_policies->getFilter(database, table_name, filter_type, combine_with_expr);
+        return enabled_row_policies->getCondition(database, table_name, index, extra_condition);
     return nullptr;
 }
 
@@ -310,25 +317,23 @@ std::shared_ptr<const ContextAccess> ContextAccess::getFullAccess()
 }
 
 
-SettingsChanges ContextAccess::getDefaultSettings() const
+std::shared_ptr<const Settings> ContextAccess::getDefaultSettings() const
 {
     std::lock_guard lock{mutex};
     if (enabled_settings)
-    {
-        if (auto info = enabled_settings->getInfo())
-            return info->settings;
-    }
-    return {};
+        return enabled_settings->getSettings();
+    static const auto everything_by_default = std::make_shared<Settings>();
+    return everything_by_default;
 }
 
 
-std::shared_ptr<const SettingsProfilesInfo> ContextAccess::getDefaultProfileInfo() const
+std::shared_ptr<const SettingsConstraints> ContextAccess::getSettingsConstraints() const
 {
     std::lock_guard lock{mutex};
     if (enabled_settings)
-        return enabled_settings->getInfo();
-    static const auto everything_by_default = std::make_shared<SettingsProfilesInfo>(*access_control);
-    return everything_by_default;
+        return enabled_settings->getConstraints();
+    static const auto no_constraints = std::make_shared<SettingsConstraints>();
+    return no_constraints;
 }
 
 
@@ -352,13 +357,47 @@ std::shared_ptr<const AccessRights> ContextAccess::getAccessRightsWithImplicit()
 }
 
 
+template <bool throw_if_denied, bool grant_option>
+bool ContextAccess::checkAccessImpl(const AccessFlags & flags) const
+{
+    return checkAccessImpl2<throw_if_denied, grant_option>(flags);
+}
+
 template <bool throw_if_denied, bool grant_option, typename... Args>
-bool ContextAccess::checkAccessImplHelper(const AccessFlags & flags, const Args &... args) const
+bool ContextAccess::checkAccessImpl(const AccessFlags & flags, const std::string_view & database, const Args &... args) const
+{
+    return checkAccessImpl2<throw_if_denied, grant_option>(flags, database.empty() ? params.current_database : database, args...);
+}
+
+template <bool throw_if_denied, bool grant_option>
+bool ContextAccess::checkAccessImpl(const AccessRightsElement & element) const
+{
+    if (element.any_database)
+        return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags);
+    else if (element.any_table)
+        return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags, element.database);
+    else if (element.any_column)
+        return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags, element.database, element.table);
+    else
+        return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags, element.database, element.table, element.columns);
+}
+
+template <bool throw_if_denied, bool grant_option>
+bool ContextAccess::checkAccessImpl(const AccessRightsElements & elements) const
+{
+    for (const auto & element : elements)
+        if (!checkAccessImpl<throw_if_denied, grant_option>(element))
+            return false;
+    return true;
+}
+
+template <bool throw_if_denied, bool grant_option, typename... Args>
+bool ContextAccess::checkAccessImpl2(const AccessFlags & flags, const Args &... args) const
 {
     auto access_granted = [&]
     {
         if (trace_log)
-            LOG_TRACE(trace_log, "Access granted: {}{}", (AccessRightsElement{flags, args...}.toStringWithoutOptions()),
+            LOG_TRACE(trace_log, "Access granted: {}{}", (AccessRightsElement{flags, args...}.toString()),
                       (grant_option ? " WITH GRANT OPTION" : ""));
         return true;
     };
@@ -366,7 +405,7 @@ bool ContextAccess::checkAccessImplHelper(const AccessFlags & flags, const Args 
     auto access_denied = [&](const String & error_msg, int error_code [[maybe_unused]])
     {
         if (trace_log)
-            LOG_TRACE(trace_log, "Access denied: {}{}", (AccessRightsElement{flags, args...}.toStringWithoutOptions()),
+            LOG_TRACE(trace_log, "Access denied: {}{}", (AccessRightsElement{flags, args...}.toString()),
                       (grant_option ? " WITH GRANT OPTION" : ""));
         if constexpr (throw_if_denied)
             throw Exception(getUserName() + ": " + error_msg, error_code);
@@ -402,13 +441,13 @@ bool ContextAccess::checkAccessImplHelper(const AccessFlags & flags, const Args 
                 "Not enough privileges. "
                 "The required privileges have been granted, but without grant option. "
                 "To execute this query it's necessary to have grant "
-                    + AccessRightsElement{flags, args...}.toStringWithoutOptions() + " WITH GRANT OPTION",
+                    + AccessRightsElement{flags, args...}.toString() + " WITH GRANT OPTION",
                 ErrorCodes::ACCESS_DENIED);
         }
 
         return access_denied(
             "Not enough privileges. To execute this query it's necessary to have grant "
-                + AccessRightsElement{flags, args...}.toStringWithoutOptions() + (grant_option ? " WITH GRANT OPTION" : ""),
+                + AccessRightsElement{flags, args...}.toString() + (grant_option ? " WITH GRANT OPTION" : ""),
             ErrorCodes::ACCESS_DENIED);
     }
 
@@ -465,56 +504,6 @@ bool ContextAccess::checkAccessImplHelper(const AccessFlags & flags, const Args 
     return access_granted();
 }
 
-template <bool throw_if_denied, bool grant_option>
-bool ContextAccess::checkAccessImpl(const AccessFlags & flags) const
-{
-    return checkAccessImplHelper<throw_if_denied, grant_option>(flags);
-}
-
-template <bool throw_if_denied, bool grant_option, typename... Args>
-bool ContextAccess::checkAccessImpl(const AccessFlags & flags, const std::string_view & database, const Args &... args) const
-{
-    return checkAccessImplHelper<throw_if_denied, grant_option>(flags, database.empty() ? params.current_database : database, args...);
-}
-
-template <bool throw_if_denied, bool grant_option>
-bool ContextAccess::checkAccessImplHelper(const AccessRightsElement & element) const
-{
-    assert(!element.grant_option || grant_option);
-    if (element.any_database)
-        return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags);
-    else if (element.any_table)
-        return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags, element.database);
-    else if (element.any_column)
-        return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags, element.database, element.table);
-    else
-        return checkAccessImpl<throw_if_denied, grant_option>(element.access_flags, element.database, element.table, element.columns);
-}
-
-template <bool throw_if_denied, bool grant_option>
-bool ContextAccess::checkAccessImpl(const AccessRightsElement & element) const
-{
-    if constexpr (grant_option)
-    {
-        return checkAccessImplHelper<throw_if_denied, true>(element);
-    }
-    else
-    {
-        if (element.grant_option)
-            return checkAccessImplHelper<throw_if_denied, true>(element);
-        else
-            return checkAccessImplHelper<throw_if_denied, false>(element);
-    }
-}
-
-template <bool throw_if_denied, bool grant_option>
-bool ContextAccess::checkAccessImpl(const AccessRightsElements & elements) const
-{
-    for (const auto & element : elements)
-        if (!checkAccessImpl<throw_if_denied, grant_option>(element))
-            return false;
-    return true;
-}
 
 bool ContextAccess::isGranted(const AccessFlags & flags) const { return checkAccessImpl<false, false>(flags); }
 bool ContextAccess::isGranted(const AccessFlags & flags, const std::string_view & database) const { return checkAccessImpl<false, false>(flags, database); }
@@ -553,8 +542,44 @@ void ContextAccess::checkGrantOption(const AccessRightsElement & element) const 
 void ContextAccess::checkGrantOption(const AccessRightsElements & elements) const { checkAccessImpl<true, true>(elements); }
 
 
+template <bool throw_if_denied>
+bool ContextAccess::checkAdminOptionImpl(const UUID & role_id) const
+{
+    return checkAdminOptionImpl2<throw_if_denied>(to_array(role_id), [this](const UUID & id, size_t) { return manager->tryReadName(id); });
+}
+
+template <bool throw_if_denied>
+bool ContextAccess::checkAdminOptionImpl(const UUID & role_id, const String & role_name) const
+{
+    return checkAdminOptionImpl2<throw_if_denied>(to_array(role_id), [&role_name](const UUID &, size_t) { return std::optional<String>{role_name}; });
+}
+
+template <bool throw_if_denied>
+bool ContextAccess::checkAdminOptionImpl(const UUID & role_id, const std::unordered_map<UUID, String> & names_of_roles) const
+{
+    return checkAdminOptionImpl2<throw_if_denied>(to_array(role_id), [&names_of_roles](const UUID & id, size_t) { auto it = names_of_roles.find(id); return (it != names_of_roles.end()) ? it->second : std::optional<String>{}; });
+}
+
+template <bool throw_if_denied>
+bool ContextAccess::checkAdminOptionImpl(const std::vector<UUID> & role_ids) const
+{
+    return checkAdminOptionImpl2<throw_if_denied>(role_ids, [this](const UUID & id, size_t) { return manager->tryReadName(id); });
+}
+
+template <bool throw_if_denied>
+bool ContextAccess::checkAdminOptionImpl(const std::vector<UUID> & role_ids, const Strings & names_of_roles) const
+{
+    return checkAdminOptionImpl2<throw_if_denied>(role_ids, [&names_of_roles](const UUID &, size_t i) { return std::optional<String>{names_of_roles[i]}; });
+}
+
+template <bool throw_if_denied>
+bool ContextAccess::checkAdminOptionImpl(const std::vector<UUID> & role_ids, const std::unordered_map<UUID, String> & names_of_roles) const
+{
+    return checkAdminOptionImpl2<throw_if_denied>(role_ids, [&names_of_roles](const UUID & id, size_t) { auto it = names_of_roles.find(id); return (it != names_of_roles.end()) ? it->second : std::optional<String>{}; });
+}
+
 template <bool throw_if_denied, typename Container, typename GetNameFunction>
-bool ContextAccess::checkAdminOptionImplHelper(const Container & role_ids, const GetNameFunction & get_name_function) const
+bool ContextAccess::checkAdminOptionImpl2(const Container & role_ids, const GetNameFunction & get_name_function) const
 {
     if (!std::size(role_ids) || is_full_access)
         return true;
@@ -604,42 +629,6 @@ bool ContextAccess::checkAdminOptionImplHelper(const Container & role_ids, const
     }
 
     return true;
-}
-
-template <bool throw_if_denied>
-bool ContextAccess::checkAdminOptionImpl(const UUID & role_id) const
-{
-    return checkAdminOptionImplHelper<throw_if_denied>(to_array(role_id), [this](const UUID & id, size_t) { return access_control->tryReadName(id); });
-}
-
-template <bool throw_if_denied>
-bool ContextAccess::checkAdminOptionImpl(const UUID & role_id, const String & role_name) const
-{
-    return checkAdminOptionImplHelper<throw_if_denied>(to_array(role_id), [&role_name](const UUID &, size_t) { return std::optional<String>{role_name}; });
-}
-
-template <bool throw_if_denied>
-bool ContextAccess::checkAdminOptionImpl(const UUID & role_id, const std::unordered_map<UUID, String> & names_of_roles) const
-{
-    return checkAdminOptionImplHelper<throw_if_denied>(to_array(role_id), [&names_of_roles](const UUID & id, size_t) { auto it = names_of_roles.find(id); return (it != names_of_roles.end()) ? it->second : std::optional<String>{}; });
-}
-
-template <bool throw_if_denied>
-bool ContextAccess::checkAdminOptionImpl(const std::vector<UUID> & role_ids) const
-{
-    return checkAdminOptionImplHelper<throw_if_denied>(role_ids, [this](const UUID & id, size_t) { return access_control->tryReadName(id); });
-}
-
-template <bool throw_if_denied>
-bool ContextAccess::checkAdminOptionImpl(const std::vector<UUID> & role_ids, const Strings & names_of_roles) const
-{
-    return checkAdminOptionImplHelper<throw_if_denied>(role_ids, [&names_of_roles](const UUID &, size_t i) { return std::optional<String>{names_of_roles[i]}; });
-}
-
-template <bool throw_if_denied>
-bool ContextAccess::checkAdminOptionImpl(const std::vector<UUID> & role_ids, const std::unordered_map<UUID, String> & names_of_roles) const
-{
-    return checkAdminOptionImplHelper<throw_if_denied>(role_ids, [&names_of_roles](const UUID & id, size_t) { auto it = names_of_roles.find(id); return (it != names_of_roles.end()) ? it->second : std::optional<String>{}; });
 }
 
 bool ContextAccess::hasAdminOption(const UUID & role_id) const { return checkAdminOptionImpl<false>(role_id); }

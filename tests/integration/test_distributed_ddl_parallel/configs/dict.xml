@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<clickhouse>
+<yandex>
     <dictionary>
         <name>slow_dict_7</name>
         <source>
@@ -47,4 +47,4 @@
         </structure>
         <lifetime>0</lifetime>
     </dictionary>
-</clickhouse>
+</yandex>

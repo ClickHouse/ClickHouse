@@ -9,6 +9,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+    constexpr auto INDEX_FILE_EXTENSION = ".idx";
+}
+
 void MergeTreeDataPartWriterOnDisk::Stream::finalize()
 {
     compressed.next();
@@ -116,7 +121,7 @@ static size_t computeIndexGranularityImpl(
         }
         else
         {
-            size_t size_of_row_in_bytes = std::max(block_size_in_memory / rows_in_block, 1UL);
+            size_t size_of_row_in_bytes = block_size_in_memory / rows_in_block;
             index_granularity_for_block = index_granularity_bytes / size_of_row_in_bytes;
         }
     }
@@ -157,7 +162,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                 std::make_unique<MergeTreeDataPartWriterOnDisk::Stream>(
                         stream_name,
                         data_part->volume->getDisk(),
-                        part_path + stream_name, index_helper->getSerializedFileExtension(),
+                        part_path + stream_name, INDEX_FILE_EXTENSION,
                         part_path + stream_name, marks_file_extension,
                         default_codec, settings.max_compress_block_size));
         skip_indices_aggregators.push_back(index_helper->createIndexAggregator());
@@ -195,7 +200,7 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
                 {
                     const auto & primary_column = primary_index_block.getByPosition(j);
                     index_columns[j]->insertFrom(*primary_column.column, granule.start_row);
-                    primary_column.type->getDefaultSerialization()->serializeBinary(*primary_column.column, granule.start_row, *index_stream);
+                    primary_column.type->serializeBinary(*primary_column.column, granule.start_row, *index_stream);
                 }
             }
         }
@@ -260,7 +265,7 @@ void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(
                 const auto & column = *last_block_index_columns[j];
                 size_t last_row_number = column.size() - 1;
                 index_columns[j]->insertFrom(column, last_row_number);
-                index_types[j]->getDefaultSerialization()->serializeBinary(column, last_row_number, *index_stream);
+                index_types[j]->serializeBinary(column, last_row_number, *index_stream);
             }
             last_block_index_columns.clear();
         }

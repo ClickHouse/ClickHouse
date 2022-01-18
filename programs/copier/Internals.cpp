@@ -1,8 +1,4 @@
 #include "Internals.h"
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/extractKeyExpressionList.h>
 
@@ -59,22 +55,19 @@ std::shared_ptr<ASTStorage> createASTStorageDistributed(
 }
 
 
-Block getBlockWithAllStreamData(QueryPipeline pipeline)
+BlockInputStreamPtr squashStreamIntoOneBlock(const BlockInputStreamPtr & stream)
 {
-    QueryPipelineBuilder builder;
-    builder.init(std::move(pipeline));
-    builder.addTransform(std::make_shared<SquashingChunksTransform>(
-        builder.getHeader(),
-        std::numeric_limits<size_t>::max(),
-        std::numeric_limits<size_t>::max()));
-
-    auto cur_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
-    Block block;
-    PullingPipelineExecutor executor(cur_pipeline);
-    executor.pull(block);
-
-    return block;
+    return std::make_shared<SquashingBlockInputStream>(
+            stream,
+            std::numeric_limits<size_t>::max(),
+            std::numeric_limits<size_t>::max());
 }
+
+Block getBlockWithAllStreamData(const BlockInputStreamPtr & stream)
+{
+    return squashStreamIntoOneBlock(stream)->read();
+}
+
 
 bool isExtendedDefinitionStorage(const ASTPtr & storage_ast)
 {
@@ -229,8 +222,8 @@ Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast)
         {
             String pk_column = primary_key_expr_list->children[i]->getColumnName();
             if (pk_column != sorting_key_column)
-                throw Exception("Primary key must be a prefix of the sorting key, but the column in the position "
-                                + toString(i) + " is " + sorting_key_column +", not " + pk_column,
+                throw Exception("Primary key must be a prefix of the sorting key, but in position "
+                                + toString(i) + " its column is " + pk_column + ", not " + sorting_key_column,
                                 ErrorCodes::BAD_ARGUMENTS);
 
             if (!primary_key_columns_set.emplace(pk_column).second)

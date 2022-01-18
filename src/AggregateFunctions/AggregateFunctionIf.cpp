@@ -1,6 +1,8 @@
-#include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/AggregateFunctionIf.h>
+#include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
+#include "registerAggregateFunctions.h"
 #include "AggregateFunctionNull.h"
+
 
 namespace DB
 {
@@ -39,29 +41,6 @@ public:
         return std::make_shared<AggregateFunctionIf>(nested_function, arguments, params);
     }
 };
-
-/** Given an array of flags, checks if it's all zeros
- *  When the buffer is all zeros, this is slightly faster than doing a memcmp since doesn't require allocating memory
- *  When the buffer has values, this is much faster since it avoids visiting all memory (and the allocation and function calls)
- */
-static bool ALWAYS_INLINE inline is_all_zeros(const UInt8 * flags, size_t size)
-{
-    size_t unroll_size = size - size % 8;
-    size_t i = 0;
-    while (i < unroll_size)
-    {
-        UInt64 v = *reinterpret_cast<const UInt64 *>(&flags[i]);
-        if (v)
-            return false;
-        i += 8;
-    }
-
-    for (; i < size; ++i)
-        if (flags[i])
-            return false;
-
-    return true;
-}
 
 /** There are two cases: for single argument and variadic.
   * Code for single argument is much more efficient.
@@ -128,80 +107,6 @@ public:
             this->nested_function->add(this->nestedPlace(place), &nested_column, row_num, arena);
         }
     }
-
-    void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t) const override
-    {
-        const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
-        const UInt8 * null_map = column->getNullMapData().data();
-        const IColumn * columns_param[] = {&column->getNestedColumn()};
-
-        const IColumn * filter_column = columns[num_arguments - 1];
-        if (const ColumnNullable * nullable_column = typeid_cast<const ColumnNullable *>(filter_column))
-            filter_column = nullable_column->getNestedColumnPtr().get();
-        if constexpr (result_is_nullable)
-        {
-            /// We need to check if there is work to do as otherwise setting the flag would be a mistake,
-            /// it would mean that the return value would be the default value of the nested type instead of NULL
-            if (is_all_zeros(assert_cast<const ColumnUInt8 *>(filter_column)->getData().data(), batch_size))
-                return;
-        }
-
-        /// Combine the 2 flag arrays so we can call a simplified version (one check vs 2)
-        /// Note that now the null map will contain 0 if not null and not filtered, or 1 for null or filtered (or both)
-        const auto * filter_flags = assert_cast<const ColumnUInt8 *>(filter_column)->getData().data();
-        auto final_nulls = std::make_unique<UInt8[]>(batch_size);
-        for (size_t i = 0; i < batch_size; ++i)
-            final_nulls[i] = (!!null_map[i]) | (!filter_flags[i]);
-
-        this->nested_function->addBatchSinglePlaceNotNull(
-            batch_size, this->nestedPlace(place), columns_param, final_nulls.get(), arena, -1);
-
-        if constexpr (result_is_nullable)
-            if (!memoryIsByte(null_map, batch_size, 1))
-                this->setFlag(place);
-    }
-
-#if USE_EMBEDDED_COMPILER
-
-    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes & arguments_types, const std::vector<llvm::Value *> & argument_values) const override
-    {
-        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
-
-        const auto & nullable_type = arguments_types[0];
-        const auto & nullable_value = argument_values[0];
-
-        auto * wrapped_value = b.CreateExtractValue(nullable_value, {0});
-        auto * is_null_value = b.CreateExtractValue(nullable_value, {1});
-
-        const auto & predicate_type = arguments_types[argument_values.size() - 1];
-        auto * predicate_value = argument_values[argument_values.size() - 1];
-        auto * is_predicate_true = nativeBoolCast(b, predicate_type, predicate_value);
-
-        auto * head = b.GetInsertBlock();
-
-        auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
-        auto * if_null = llvm::BasicBlock::Create(head->getContext(), "if_null", head->getParent());
-        auto * if_not_null = llvm::BasicBlock::Create(head->getContext(), "if_not_null", head->getParent());
-
-        b.CreateCondBr(b.CreateAnd(b.CreateNot(is_null_value), is_predicate_true), if_not_null, if_null);
-
-        b.SetInsertPoint(if_null);
-        b.CreateBr(join_block);
-
-        b.SetInsertPoint(if_not_null);
-
-        if constexpr (result_is_nullable)
-            b.CreateStore(llvm::ConstantInt::get(b.getInt8Ty(), 1), aggregate_data_ptr);
-
-        auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_ptr, this->prefix_size);
-        this->nested_function->compileAdd(b, aggregate_data_ptr_with_prefix_size_offset, { removeNullable(nullable_type) }, { wrapped_value });
-        b.CreateBr(join_block);
-
-        b.SetInsertPoint(join_block);
-    }
-
-#endif
-
 };
 
 template <bool result_is_nullable, bool serialize_flag, bool null_is_skipped>
@@ -263,95 +168,6 @@ public:
             this->nested_function->add(this->nestedPlace(place), nested_columns, row_num, arena);
         }
     }
-
-#if USE_EMBEDDED_COMPILER
-
-    void compileAdd(llvm::IRBuilderBase & builder, llvm::Value * aggregate_data_ptr, const DataTypes & arguments_types, const std::vector<llvm::Value *> & argument_values) const override
-    {
-        /// TODO: Check
-
-        llvm::IRBuilder<> & b = static_cast<llvm::IRBuilder<> &>(builder);
-
-        size_t arguments_size = arguments_types.size();
-
-        DataTypes non_nullable_types;
-        std::vector<llvm::Value * > wrapped_values;
-        std::vector<llvm::Value * > is_null_values;
-
-        non_nullable_types.resize(arguments_size);
-        wrapped_values.resize(arguments_size);
-        is_null_values.resize(arguments_size);
-
-        for (size_t i = 0; i < arguments_size; ++i)
-        {
-            const auto & argument_value = argument_values[i];
-
-            if (is_nullable[i])
-            {
-                auto * wrapped_value = b.CreateExtractValue(argument_value, {0});
-
-                if constexpr (null_is_skipped)
-                    is_null_values[i] = b.CreateExtractValue(argument_value, {1});
-
-                wrapped_values[i] = wrapped_value;
-                non_nullable_types[i] = removeNullable(arguments_types[i]);
-            }
-            else
-            {
-                wrapped_values[i] = argument_value;
-                non_nullable_types[i] = arguments_types[i];
-            }
-        }
-
-        auto * head = b.GetInsertBlock();
-
-        auto * join_block = llvm::BasicBlock::Create(head->getContext(), "join_block", head->getParent());
-        auto * join_block_after_null_checks = llvm::BasicBlock::Create(head->getContext(), "join_block_after_null_checks", head->getParent());
-
-        if constexpr (null_is_skipped)
-        {
-            auto * values_have_null_ptr = b.CreateAlloca(b.getInt1Ty());
-            b.CreateStore(b.getInt1(false), values_have_null_ptr);
-
-            for (auto * is_null_value : is_null_values)
-            {
-                if (!is_null_value)
-                    continue;
-
-                auto * values_have_null = b.CreateLoad(b.getInt1Ty(), values_have_null_ptr);
-                b.CreateStore(b.CreateOr(values_have_null, is_null_value), values_have_null_ptr);
-            }
-
-            b.CreateCondBr(b.CreateLoad(b.getInt1Ty(), values_have_null_ptr), join_block, join_block_after_null_checks);
-        }
-
-        b.SetInsertPoint(join_block_after_null_checks);
-
-        const auto & predicate_type = arguments_types[argument_values.size() - 1];
-        auto * predicate_value = argument_values[argument_values.size() - 1];
-        auto * is_predicate_true = nativeBoolCast(b, predicate_type, predicate_value);
-
-        auto * if_true = llvm::BasicBlock::Create(head->getContext(), "if_true", head->getParent());
-        auto * if_false = llvm::BasicBlock::Create(head->getContext(), "if_false", head->getParent());
-
-        b.CreateCondBr(is_predicate_true, if_true, if_false);
-
-        b.SetInsertPoint(if_false);
-        b.CreateBr(join_block);
-
-        b.SetInsertPoint(if_true);
-
-        if constexpr (result_is_nullable)
-            b.CreateStore(llvm::ConstantInt::get(b.getInt8Ty(), 1), aggregate_data_ptr);
-
-        auto * aggregate_data_ptr_with_prefix_size_offset = b.CreateConstInBoundsGEP1_64(nullptr, aggregate_data_ptr, this->prefix_size);
-        this->nested_function->compileAdd(b, aggregate_data_ptr_with_prefix_size_offset, non_nullable_types, wrapped_values);
-        b.CreateBr(join_block);
-
-        b.SetInsertPoint(join_block);
-    }
-
-#endif
 
 private:
     using Base = AggregateFunctionNullBase<result_is_nullable, serialize_flag,

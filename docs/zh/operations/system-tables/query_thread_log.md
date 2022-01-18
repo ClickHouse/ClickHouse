@@ -61,7 +61,8 @@ ClickHouse不会自动从表中删除数据。 看 [导言](../../operations/sys
 -   `http_user_agent` ([字符串](../../sql-reference/data-types/string.md)) — The `UserAgent` http请求中传递的标头。
 -   `quota_key` ([字符串](../../sql-reference/data-types/string.md)) — The “quota key” 在指定 [配额](../../operations/quotas.md) 设置（见 `keyed`).
 -   `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ClickHouse revision.
--   `ProfileEvents` ([数组（字符串, UInt64)](../../sql-reference/data-types/array.md)) — Counters that measure different metrics for this thread. The description of them could be found in the table [系统。活动](#system_tables-events).
+-   `ProfileEvents.Names` ([数组（字符串)](../../sql-reference/data-types/array.md)) — Counters that measure different metrics for this thread. The description of them could be found in the table [系统。活动](#system_tables-events).
+-   `ProfileEvents.Values` ([数组(UInt64)](../../sql-reference/data-types/array.md)) — Values of metrics for this thread that are listed in the `ProfileEvents.Names` 列。
 
 **示例**
 
@@ -107,7 +108,8 @@ http_method:          0
 http_user_agent:
 quota_key:
 revision:             54434
-ProfileEvents:        {'Query':1,'SelectQuery':1,'ReadCompressedBytes':36,'CompressedReadBufferBlocks':1,'CompressedReadBufferBytes':10,'IOBufferAllocs':1,'IOBufferAllocBytes':89,'ContextLock':15,'RWLockAcquiredReadLocks':1}
+ProfileEvents.Names:  ['ContextLock','RealTimeMicroseconds','UserTimeMicroseconds','OSCPUWaitMicroseconds','OSCPUVirtualTimeMicroseconds']
+ProfileEvents.Values: [1,97,81,5,81]
 ...
 ```
 

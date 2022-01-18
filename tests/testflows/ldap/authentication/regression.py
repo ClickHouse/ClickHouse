@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import os
 import sys
 from testflows.core import *
 
@@ -40,19 +39,17 @@ xfails = {
 def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
     """ClickHouse integration with LDAP regression module.
     """
-    top().terminating = False
     nodes = {
         "clickhouse": ("clickhouse1", "clickhouse2", "clickhouse3"),
     }
 
-    if stress is not None:
-        self.context.stress = stress
-    if parallel is not None:
-        self.context.parallel = parallel
-
-    with Cluster(local, clickhouse_binary_path, nodes=nodes,
-            docker_compose_project_dir=os.path.join(current_dir(), "ldap_authentication_env")) as cluster:
+    with Cluster(local, clickhouse_binary_path, nodes=nodes) as cluster:
         self.context.cluster = cluster
+
+        if stress is not None or not hasattr(self.context, "stress"):
+            self.context.stress = stress
+        if parallel is not None or not hasattr(self.context, "parallel"):
+            self.context.parallel = parallel
 
         Scenario(run=load("ldap.authentication.tests.sanity", "scenario"))
         Scenario(run=load("ldap.authentication.tests.multiple_servers", "scenario"))

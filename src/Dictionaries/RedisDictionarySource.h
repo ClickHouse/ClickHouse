@@ -59,30 +59,31 @@ namespace ErrorCodes
 
         ~RedisDictionarySource() override;
 
-        Pipe loadAll() override;
+        BlockInputStreamPtr loadAll() override;
 
-        Pipe loadUpdatedAll() override
+        BlockInputStreamPtr loadUpdatedAll() override
         {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for RedisDictionarySource");
+            throw Exception{"Method loadUpdatedAll is unsupported for RedisDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
         }
 
         bool supportsSelectiveLoad() const override { return true; }
 
-        Pipe loadIds(const std::vector<UInt64> & ids) override;
+        BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
 
-        Pipe loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+        BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
         bool isModified() const override { return true; }
 
         bool hasUpdateField() const override { return false; }
 
-        DictionarySourcePtr clone() const override { return std::make_shared<RedisDictionarySource>(*this); }
+        DictionarySourcePtr clone() const override { return std::make_unique<RedisDictionarySource>(*this); }
 
         std::string toString() const override;
 
     private:
         static RedisStorageType parseStorageType(const std::string& storage_type);
 
+    private:
         const DictionaryStructure dict_struct;
         const std::string host;
         const UInt16 port;

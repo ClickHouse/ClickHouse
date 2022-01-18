@@ -4,10 +4,11 @@
 #include <optional>
 #include <mutex>
 
-#include <base/shared_ptr_helper.h>
+#include <ext/shared_ptr_helper.h>
 
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
+#include <DataStreams/IBlockOutputStream.h>
 
 #include <Common/MultiVersion.h>
 
@@ -19,10 +20,10 @@ namespace DB
   * It does not support keys.
   * Data is stored as a set of blocks and is not stored anywhere else.
   */
-class StorageMemory final : public shared_ptr_helper<StorageMemory>, public IStorage
+class StorageMemory final : public ext::shared_ptr_helper<StorageMemory>, public IStorage
 {
-friend class MemorySink;
-friend struct shared_ptr_helper<StorageMemory>;
+friend class MemoryBlockOutputStream;
+friend struct ext::shared_ptr_helper<StorageMemory>;
 
 public:
     String getName() const override { return "Memory"; }
@@ -33,7 +34,7 @@ public:
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
-        ContextPtr context,
+        const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
@@ -46,14 +47,14 @@ public:
 
     bool hasEvenlyDistributedRead() const override { return true; }
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, const Context & context) override;
 
     void drop() override;
 
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
-    void mutate(const MutationCommands & commands, ContextPtr context) override;
+    void mutate(const MutationCommands & commands, const Context & context) override;
 
-    void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr &, const Context &, TableExclusiveLockHolder &) override;
 
     std::optional<UInt64> totalRows(const Settings &) const override;
     std::optional<UInt64> totalBytes(const Settings &) const override;
@@ -96,7 +97,7 @@ public:
     void delayReadForGlobalSubqueries() { delay_read_for_global_subqueries = true; }
 
 private:
-    /// MultiVersion data storage, so that we can copy the vector of blocks to readers.
+    /// MultiVersion data storage, so that we can copy the list of blocks to readers.
 
     MultiVersion<Blocks> data;
 
@@ -114,7 +115,6 @@ protected:
         const StorageID & table_id_,
         ColumnsDescription columns_description_,
         ConstraintsDescription constraints_,
-        const String & comment,
         bool compress_ = false);
 };
 

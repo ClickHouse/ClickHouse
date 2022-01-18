@@ -2,16 +2,18 @@
 
 ## TL; DR How to make ClickHouse compile and link faster?
 
-Minimal ClickHouse build example:
+Developer only! This command will likely fulfill most of your needs. Run before calling `ninja`.
 
-```bash
+```cmake
 cmake .. \
-    -DCMAKE_C_COMPILER=$(which clang-11) \
-    -DCMAKE_CXX_COMPILER=$(which clang++-11) \
+    -DCMAKE_C_COMPILER=/bin/clang-10 \
+    -DCMAKE_CXX_COMPILER=/bin/clang++-10 \
     -DCMAKE_BUILD_TYPE=Debug \
     -DENABLE_CLICKHOUSE_ALL=OFF \
     -DENABLE_CLICKHOUSE_SERVER=ON \
     -DENABLE_CLICKHOUSE_CLIENT=ON \
+    -DUSE_STATIC_LIBRARIES=OFF \
+    -DSPLIT_SHARED_LIBRARIES=ON \
     -DENABLE_LIBRARIES=OFF \
     -DUSE_UNWIND=ON \
     -DENABLE_UTILS=OFF \

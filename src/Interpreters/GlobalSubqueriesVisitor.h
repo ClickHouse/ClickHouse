@@ -1,37 +1,37 @@
 #pragma once
 
+#include <Parsers/IAST.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Interpreters/interpretSubquery.h>
+#include <Common/typeid_cast.h>
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Databases/IDatabase.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Interpreters/interpretSubquery.h>
-#include <Interpreters/SubqueryForSet.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSubquery.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/IAST.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Sinks/SinkToStorage.h>
-#include <Common/typeid_cast.h>
+#include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/Context.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int WRONG_GLOBAL_SUBQUERY;
 }
 
+
 class GlobalSubqueriesMatcher
 {
 public:
-    struct Data : WithContext
+    struct Data
     {
+        const Context & context;
         size_t subquery_depth;
         bool is_remote;
         size_t external_table_id;
@@ -39,22 +39,16 @@ public:
         SubqueriesForSets & subqueries_for_sets;
         bool & has_global_subqueries;
 
-        Data(
-            ContextPtr context_,
-            size_t subquery_depth_,
-            bool is_remote_,
-            TemporaryTablesMapping & tables,
-            SubqueriesForSets & subqueries_for_sets_,
-            bool & has_global_subqueries_)
-            : WithContext(context_)
-            , subquery_depth(subquery_depth_)
-            , is_remote(is_remote_)
-            , external_table_id(1)
-            , external_tables(tables)
-            , subqueries_for_sets(subqueries_for_sets_)
-            , has_global_subqueries(has_global_subqueries_)
-        {
-        }
+        Data(const Context & context_, size_t subquery_depth_, bool is_remote_,
+             TemporaryTablesMapping & tables, SubqueriesForSets & subqueries_for_sets_, bool & has_global_subqueries_)
+        :   context(context_),
+            subquery_depth(subquery_depth_),
+            is_remote(is_remote_),
+            external_table_id(1),
+            external_tables(tables),
+            subqueries_for_sets(subqueries_for_sets_),
+            has_global_subqueries(has_global_subqueries_)
+        {}
 
         void addExternalStorage(ASTPtr & ast, bool set_alias = false)
         {
@@ -63,7 +57,7 @@ public:
                 return;
 
             bool is_table = false;
-            ASTPtr subquery_or_table_name; /// ASTTableIdentifier | ASTSubquery | ASTTableExpression
+            ASTPtr subquery_or_table_name = ast; /// ASTIdentifier | ASTSubquery | ASTTableExpression
 
             if (const auto * ast_table_expr = ast->as<ASTTableExpression>())
             {
@@ -75,15 +69,8 @@ public:
                     is_table = true;
                 }
             }
-            else if (ast->as<ASTTableIdentifier>())
-            {
-                subquery_or_table_name = ast;
+            else if (ast->as<ASTIdentifier>())
                 is_table = true;
-            }
-            else if (ast->as<ASTSubquery>())
-            {
-                subquery_or_table_name = ast;
-            }
 
             if (!subquery_or_table_name)
                 throw Exception("Global subquery requires subquery or table name", ErrorCodes::WRONG_GLOBAL_SUBQUERY);
@@ -93,8 +80,7 @@ public:
                 /// If this is already an external table, you do not need to add anything. Just remember its presence.
                 auto temporary_table_name = getIdentifierName(subquery_or_table_name);
                 bool exists_in_local_map = external_tables.end() != external_tables.find(temporary_table_name);
-                bool exists_in_context = static_cast<bool>(getContext()->tryResolveStorageID(
-                    StorageID("", temporary_table_name), Context::ResolveExternal));
+                bool exists_in_context = context.tryResolveStorageID(StorageID("", temporary_table_name), Context::ResolveExternal);
                 if (exists_in_local_map || exists_in_context)
                     return;
             }
@@ -111,17 +97,14 @@ public:
                 }
             }
 
-            auto interpreter = interpretSubquery(subquery_or_table_name, getContext(), subquery_depth, {});
+            auto interpreter = interpretSubquery(subquery_or_table_name, context, subquery_depth, {});
 
             Block sample = interpreter->getSampleBlock();
             NamesAndTypesList columns = sample.getNamesAndTypesList();
 
             auto external_storage_holder = std::make_shared<TemporaryTableHolder>(
-                getContext(),
-                ColumnsDescription{columns},
-                ConstraintsDescription{},
-                nullptr,
-                /*create_for_global_subquery*/ true);
+                    context, ColumnsDescription{columns}, ConstraintsDescription{}, nullptr,
+                    /*create_for_global_subquery*/ true);
             StoragePtr external_storage = external_storage_holder->getTable();
 
             /** We replace the subquery with the name of the temporary table.
@@ -130,11 +113,11 @@ public:
                 *  instead of doing a subquery, you just need to read it.
                 */
 
-            auto database_and_table_name = std::make_shared<ASTTableIdentifier>(external_table_name);
+            auto database_and_table_name = createTableIdentifier("", external_table_name);
             if (set_alias)
             {
                 String alias = subquery_or_table_name->tryGetAlias();
-                if (auto * table_name = subquery_or_table_name->as<ASTTableIdentifier>())
+                if (auto * table_name = subquery_or_table_name->as<ASTIdentifier>())
                     if (alias.empty())
                         alias = table_name->shortName();
                 database_and_table_name->setAlias(alias);
@@ -153,14 +136,24 @@ public:
 
             external_tables[external_table_name] = external_storage_holder;
 
-            if (getContext()->getSettingsRef().use_index_for_in_with_subqueries)
+            if (context.getSettingsRef().use_index_for_in_with_subqueries)
             {
                 auto external_table = external_storage_holder->getTable();
-                auto table_out = external_table->write({}, external_table->getInMemoryMetadataPtr(), getContext());
+                auto table_out = external_table->write({}, external_table->getInMemoryMetadataPtr(), context);
                 auto io = interpreter->execute();
-                io.pipeline.complete(std::move(table_out));
-                CompletedPipelineExecutor executor(io.pipeline);
-                executor.execute();
+
+                PullingAsyncPipelineExecutor executor(io.pipeline);
+
+                table_out->writePrefix();
+                Block block;
+                while (executor.pull(block))
+                {
+                    if (block)
+                        table_out->write(block);
+                    block.clear();
+                }
+
+                table_out->writeSuffix();
             }
             else
             {
@@ -188,31 +181,26 @@ public:
     static bool needChildVisit(ASTPtr &, const ASTPtr & child)
     {
         /// We do not go into subqueries.
-        return !child->as<ASTSelectQuery>();
+        if (child->as<ASTSelectQuery>())
+            return false;
+        return true;
     }
 
 private:
     /// GLOBAL IN
     static void visit(ASTFunction & func, ASTPtr &, Data & data)
     {
-        if ((data.getContext()->getSettingsRef().prefer_global_in_and_join
-             && (func.name == "in" || func.name == "notIn" || func.name == "nullIn" || func.name == "notNullIn"))
-            || func.name == "globalIn" || func.name == "globalNotIn" || func.name == "globalNullIn" || func.name == "globalNotNullIn")
+        if (func.name == "globalIn" || func.name == "globalNotIn")
         {
             ASTPtr & ast = func.arguments->children[1];
 
-            /// Literal or function can use regular IN.
-            /// NOTE: We don't support passing table functions to IN.
-            if (ast->as<ASTLiteral>() || ast->as<ASTFunction>())
+            /// Literal can use regular IN
+            if (ast->as<ASTLiteral>())
             {
                 if (func.name == "globalIn")
                     func.name = "in";
-                else if (func.name == "globalNotIn")
+                else
                     func.name = "notIn";
-                else if (func.name == "globalNullIn")
-                    func.name = "nullIn";
-                else if (func.name == "globalNotNullIn")
-                    func.name = "notNullIn";
                 return;
             }
 
@@ -224,9 +212,7 @@ private:
     /// GLOBAL JOIN
     static void visit(ASTTablesInSelectQueryElement & table_elem, ASTPtr &, Data & data)
     {
-        if (table_elem.table_join
-            && (table_elem.table_join->as<ASTTableJoin &>().locality == ASTTableJoin::Locality::Global
-                || data.getContext()->getSettingsRef().prefer_global_in_and_join))
+        if (table_elem.table_join && table_elem.table_join->as<ASTTableJoin &>().locality == ASTTableJoin::Locality::Global)
         {
             data.addExternalStorage(table_elem.table_expression, true);
             data.has_global_subqueries = true;

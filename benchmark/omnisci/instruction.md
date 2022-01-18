@@ -38,7 +38,7 @@ https://github.com/omnisci/omniscidb/issues?q=is%3Aissue+author%3Aalexey-milovid
 # How to prepare data
 
 Download the 100 million rows dataset from here and insert into ClickHouse:
-https://clickhouse.com/docs/en/getting-started/example-datasets/metrica/
+https://clickhouse.tech/docs/en/getting-started/example-datasets/metrica/
 
 Convert the CREATE TABLE query:
 

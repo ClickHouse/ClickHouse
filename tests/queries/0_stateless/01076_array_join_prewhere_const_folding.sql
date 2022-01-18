@@ -2,7 +2,9 @@ SET log_queries = 1;
 SELECT 1 LIMIT 0;
 SYSTEM FLUSH LOGS;
 
-SELECT * FROM system.query_log
-PREWHERE ProfileEvents['Query'] > 0 and current_database = currentDatabase() 
-
+SELECT arrayJoin AS kv_key
+FROM system.query_log
+ARRAY JOIN ProfileEvents.Names AS arrayJoin
+PREWHERE current_database = currentDatabase() AND has(arrayMap(key -> key, ProfileEvents.Names), 'Query')
+WHERE arrayJoin = 'Query'
 LIMIT 0;

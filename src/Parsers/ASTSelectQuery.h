@@ -35,44 +35,6 @@ public:
         SETTINGS
     };
 
-    static String expressionToString(Expression expr)
-    {
-        switch (expr)
-        {
-            case Expression::WITH:
-                return "WITH";
-            case Expression::SELECT:
-                return "SELECT";
-            case Expression::TABLES:
-                return "TABLES";
-            case Expression::PREWHERE:
-                return "PREWHERE";
-            case Expression::WHERE:
-                return "WHERE";
-            case Expression::GROUP_BY:
-                return "GROUP BY";
-            case Expression::HAVING:
-                return "HAVING";
-            case Expression::WINDOW:
-                return "WINDOW";
-            case Expression::ORDER_BY:
-                return "ORDER BY";
-            case Expression::LIMIT_BY_OFFSET:
-                return "LIMIT BY OFFSET";
-            case Expression::LIMIT_BY_LENGTH:
-                return "LIMIT BY LENGTH";
-            case Expression::LIMIT_BY:
-                return "LIMIT BY";
-            case Expression::LIMIT_OFFSET:
-                return "LIMIT OFFSET";
-            case Expression::LIMIT_LENGTH:
-                return "LIMIT LENGTH";
-            case Expression::SETTINGS:
-                return "SETTINGS";
-        }
-        return "";
-    }
-
     /** Get the text that identifies this element. */
     String getID(char) const override { return "SelectQuery"; }
 
@@ -82,8 +44,6 @@ public:
     bool group_by_with_totals = false;
     bool group_by_with_rollup = false;
     bool group_by_with_cube = false;
-    bool group_by_with_constant_keys = false;
-    bool group_by_with_grouping_sets = false;
     bool limit_with_ties = false;
 
     ASTPtr & refSelect()    { return getExpression(Expression::SELECT); }
@@ -108,8 +68,6 @@ public:
     const ASTPtr limitLength()    const { return getExpression(Expression::LIMIT_LENGTH); }
     const ASTPtr settings()       const { return getExpression(Expression::SETTINGS); }
 
-    bool hasFiltration() const { return where() || prewhere() || having(); }
-
     /// Set/Reset/Remove expression.
     void setExpression(Expression expr, ASTPtr && ast);
 
@@ -124,8 +82,8 @@ public:
     /// Compatibility with old parser of tables list. TODO remove
     ASTPtr sampleSize() const;
     ASTPtr sampleOffset() const;
-    std::pair<ASTPtr, bool> arrayJoinExpressionList() const;
-
+    ASTPtr arrayJoinExpressionList(bool & is_left) const;
+    ASTPtr arrayJoinExpressionList() const;
     const ASTTablesInSelectQueryElement * join() const;
     bool final() const;
     bool withFill() const;
@@ -133,10 +91,6 @@ public:
     void replaceDatabaseAndTable(const StorageID & table_id);
     void addTableFunction(ASTPtr & table_function_ptr);
     void updateTreeHashImpl(SipHash & hash_state) const override;
-
-    void setFinal();
-
-    const char * getQueryKindString() const override { return "Select"; }
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

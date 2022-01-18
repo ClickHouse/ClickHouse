@@ -1,6 +1,7 @@
 import pytest
 import time
 import logging
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
@@ -58,13 +59,13 @@ def test_login_as_dropped_user_xml():
         instance.exec_in_container(["bash", "-c" , """
             cat > /etc/clickhouse-server/users.d/user_c.xml << EOF
 <?xml version="1.0"?>
-<clickhouse>
+<yandex>
     <users>
         <C>
             <no_password/>
         </C>
     </users>
-</clickhouse>
+</yandex>
 EOF"""])
 
         assert_eq_with_retry(instance, "SELECT name FROM system.users WHERE name='C'", "C")

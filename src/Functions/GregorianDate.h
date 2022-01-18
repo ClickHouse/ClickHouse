@@ -1,6 +1,5 @@
 #pragma once
 
-#include <base/extended_types.h>
 #include <Common/Exception.h>
 #include <Core/Types.h>
 #include <IO/ReadBuffer.h>
@@ -9,7 +8,6 @@
 #include <IO/WriteHelpers.h>
 
 #include <cstdint>
-
 
 namespace DB
 {
@@ -29,6 +27,8 @@ namespace DB
     class GregorianDate
     {
     public:
+        GregorianDate() = delete;
+
         /** Construct from date in text form 'YYYY-MM-DD' by reading from
           * ReadBuffer.
           */
@@ -38,13 +38,14 @@ namespace DB
           * integral type which should be at least 32 bits wide, and
           * should preferably signed.
           */
-        GregorianDate(is_integer auto mjd);
+        template <typename T, std::enable_if_t<wide::IntegralConcept<T>()> * = nullptr>
+        GregorianDate(T mjd);
 
         /** Convert to Modified Julian Day. The type T is an integral type
           * which should be at least 32 bits wide, and should preferably
           * signed.
           */
-        template <is_integer T>
+        template <typename T, std::enable_if_t<wide::IntegralConcept<T>()> * = nullptr>
         T toModifiedJulianDay() const;
 
         /** Write the date in text form 'YYYY-MM-DD' to a buffer.
@@ -89,13 +90,14 @@ namespace DB
           * integral type which should be at least 32 bits wide, and
           * should preferably signed.
           */
-        OrdinalDate(is_integer auto mjd);
+        template <typename T, std::enable_if_t<wide::IntegralConcept<T>()> * = nullptr>
+        OrdinalDate(T mjd);
 
         /** Convert to Modified Julian Day. The type T is an integral
           * type which should be at least 32 bits wide, and should
           * preferably be signed.
           */
-        template <is_integer T>
+        template <typename T, std::enable_if_t<wide::IntegralConcept<T>()> * = nullptr>
         T toModifiedJulianDay() const noexcept;
 
         YearT year() const noexcept
@@ -257,7 +259,8 @@ namespace DB
     }
 
     template <typename YearT>
-    GregorianDate<YearT>::GregorianDate(is_integer auto mjd)
+    template <typename T, std::enable_if_t<wide::IntegralConcept<T>()> *>
+    GregorianDate<YearT>::GregorianDate(T mjd)
     {
         const OrdinalDate<YearT> ord(mjd);
         const MonthDay md(gd::is_leap_year(ord.year()), ord.dayOfYear());
@@ -267,7 +270,7 @@ namespace DB
     }
 
     template <typename YearT>
-    template <is_integer T>
+    template <typename T, std::enable_if_t<wide::IntegralConcept<T>()> *>
     T GregorianDate<YearT>::toModifiedJulianDay() const
     {
         const MonthDay md(month_, day_of_month_);
@@ -329,7 +332,8 @@ namespace DB
     }
 
     template <typename YearT>
-    OrdinalDate<YearT>::OrdinalDate(is_integer auto mjd)
+    template <typename T, std::enable_if_t<wide::IntegralConcept<T>()> *>
+    OrdinalDate<YearT>::OrdinalDate(T mjd)
     {
         const auto a         = mjd + 678575;
         const auto quad_cent = gd::div(a, 146097);
@@ -344,7 +348,7 @@ namespace DB
     }
 
     template <typename YearT>
-    template <is_integer T>
+    template <typename T, std::enable_if_t<wide::IntegralConcept<T>()> *>
     T OrdinalDate<YearT>::toModifiedJulianDay() const noexcept
     {
         const auto y = year_ - 1;

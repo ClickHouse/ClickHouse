@@ -1,10 +1,10 @@
-#include <base/DateLUT.h>
+#include <common/DateLUT.h>
 
 #include <Core/Field.h>
 
 #include <DataTypes/DataTypeDate.h>
 
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 
 
@@ -13,14 +13,14 @@ namespace DB
 namespace
 {
 
-class ExecutableFunctionToday : public IExecutableFunction
+class ExecutableFunctionToday : public IExecutableFunctionImpl
 {
 public:
     explicit ExecutableFunctionToday(time_t time_) : day_value(time_) {}
 
     String getName() const override { return "today"; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
+    ColumnPtr execute(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
     {
         return DataTypeDate().createColumnConst(input_rows_count, day_value);
     }
@@ -29,7 +29,7 @@ private:
     DayNum day_value;
 };
 
-class FunctionBaseToday : public IFunctionBase
+class FunctionBaseToday : public IFunctionBaseImpl
 {
 public:
     explicit FunctionBaseToday(DayNum day_value_) : day_value(day_value_), return_type(std::make_shared<DataTypeDate>()) {}
@@ -47,21 +47,20 @@ public:
         return return_type;
     }
 
-    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
+    ExecutableFunctionImplPtr prepare(const ColumnsWithTypeAndName &) const override
     {
         return std::make_unique<ExecutableFunctionToday>(day_value);
     }
 
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
 private:
     DayNum day_value;
     DataTypePtr return_type;
 };
 
-class TodayOverloadResolver : public IFunctionOverloadResolver
+class TodayOverloadResolver : public IFunctionOverloadResolverImpl
 {
 public:
     static constexpr auto name = "today";
@@ -72,13 +71,13 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<TodayOverloadResolver>(); }
+    static FunctionOverloadResolverImplPtr create(const Context &) { return std::make_unique<TodayOverloadResolver>(); }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override { return std::make_shared<DataTypeDate>(); }
+    DataTypePtr getReturnType(const DataTypes &) const override { return std::make_shared<DataTypeDate>(); }
 
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
+    FunctionBaseImplPtr build(const ColumnsWithTypeAndName &, const DataTypePtr &) const override
     {
-        return std::make_unique<FunctionBaseToday>(DayNum(DateLUT::instance().toDayNum(time(nullptr)).toUnderType()));
+        return std::make_unique<FunctionBaseToday>(DateLUT::instance().toDayNum(time(nullptr)));
     }
 };
 

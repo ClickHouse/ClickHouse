@@ -1,11 +1,10 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Common/Exception.h>
 #include <Common/TypePromotion.h>
-#include <Core/Settings.h>
 #include <IO/WriteBufferFromString.h>
 
 #include <algorithm>
@@ -42,10 +41,8 @@ public:
 
     /** Get the canonical name of the column if the element is a column */
     String getColumnName() const;
-
     /** Same as the above but ensure no alias names are used. This is for index analysis */
     String getColumnNameWithoutAlias() const;
-
     virtual void appendColumnName(WriteBuffer &) const
     {
         throw Exception("Trying to get name of not a column: " + getID(), ErrorCodes::LOGICAL_ERROR);
@@ -157,24 +154,6 @@ public:
             set(field, child);
     }
 
-    template <typename T>
-    void reset(T * & field)
-    {
-        if (field == nullptr)
-            return;
-
-        const auto child = std::find_if(children.begin(), children.end(), [field](const auto & p)
-        {
-           return p.get() == field;
-        });
-
-        if (child == children.end())
-            throw Exception("AST subtree not found in children", ErrorCodes::LOGICAL_ERROR);
-
-        children.erase(child);
-        field = nullptr;
-    }
-
     /// Convert to a string.
 
     /// Format settings.
@@ -224,7 +203,6 @@ public:
         bool need_parens = false;
         bool expression_list_always_start_on_new_line = false;  /// Line feed and indent before expression list even if it's of single element.
         bool expression_list_prepend_whitespace = false; /// Prepend whitespace (if it is required)
-        bool surround_each_list_element_with_parens = false;
         const IAST * current_select = nullptr;
     };
 
@@ -245,9 +223,6 @@ public:
     static std::string formatForErrorMessage(const AstArray & array);
 
     void cloneChildren();
-
-    // Return query_kind string representation of this AST query.
-    virtual const char * getQueryKindString() const { return ""; }
 
 public:
     /// For syntax highlighting.

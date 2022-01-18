@@ -32,9 +32,8 @@ private:
     /// The size of the rows.
     const size_t n;
 
-    template <bool positive> struct Cmp;
+    template <bool positive>
     struct less;
-    struct greater;
 
     /** Create an empty column of strings of fixed-length `n` */
     ColumnFixedString(size_t n_) : n(n_) {}
@@ -88,8 +87,6 @@ public:
         return StringRef(&chars[n * index], n);
     }
 
-    bool isDefaultAt(size_t index) const override;
-
     void insert(const Field & x) override;
 
     void insertFrom(const IColumn & src_, size_t index) override;
@@ -114,8 +111,6 @@ public:
     StringRef serializeValueIntoArena(size_t index, Arena & arena, char const *& begin) const override;
 
     const char * deserializeAndInsertFromArena(const char * pos) override;
-
-    const char * skipSerializedInArena(const char * pos) const override;
 
     void updateHashWithValue(size_t index, SipHash & hash) const override;
 
@@ -150,8 +145,6 @@ public:
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 
-    void expand(const IColumn::Filter & mask, bool inverted) override;
-
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
@@ -182,16 +175,6 @@ public:
         if (auto rhs_concrete = typeid_cast<const ColumnFixedString *>(&rhs))
             return n == rhs_concrete->n;
         return false;
-    }
-
-    double getRatioOfDefaultRows(double sample_ratio) const override
-    {
-        return getRatioOfDefaultRowsImpl<ColumnFixedString>(sample_ratio);
-    }
-
-    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
-    {
-        return getIndicesOfNonDefaultRowsImpl<ColumnFixedString>(indices, from, limit);
     }
 
     bool canBeInsideNullable() const override { return true; }

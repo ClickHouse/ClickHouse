@@ -6,7 +6,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Poco/Logger.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include "DictionaryStructure.h"
 
 namespace DB
@@ -25,10 +25,9 @@ namespace
         Block block;
 
         if (dict_struct.id)
-        {
             block.insert(ColumnWithTypeAndName{ColumnUInt64::create(1, 0), std::make_shared<DataTypeUInt64>(), dict_struct.id->name});
-        }
-        else if (dict_struct.key)
+
+        if (dict_struct.key)
         {
             for (const auto & attribute : *dict_struct.key)
             {
@@ -72,7 +71,7 @@ DictionarySourceFactory::DictionarySourceFactory() : log(&Poco::Logger::get("Dic
 void DictionarySourceFactory::registerSource(const std::string & source_type, Creator create_source)
 {
     if (!registered_sources.emplace(source_type, std::move(create_source)).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "DictionarySourceFactory: the source name '{}' is not unique", source_type);
+        throw Exception("DictionarySourceFactory: the source name '" + source_type + "' is not unique", ErrorCodes::LOGICAL_ERROR);
 }
 
 DictionarySourcePtr DictionarySourceFactory::create(
@@ -80,7 +79,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     const DictionaryStructure & dict_struct,
-    ContextPtr global_context,
+    const Context & context,
     const std::string & default_database,
     bool check_config) const
 {
@@ -88,9 +87,8 @@ DictionarySourcePtr DictionarySourceFactory::create(
     config.keys(config_prefix, keys);
 
     if (keys.empty() || keys.size() > 2)
-        throw Exception(ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG,
-            "{}: element dictionary.source should have one or two child elements",
-            name);
+        throw Exception{name + ": element dictionary.source should have one or two child elements",
+                        ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG};
 
     const std::string & source_type = keys.front() == "settings" ? keys.back() : keys.front();
 
@@ -99,13 +97,10 @@ DictionarySourcePtr DictionarySourceFactory::create(
     {
         const auto & create_source = found->second;
         auto sample_block = createSampleBlock(dict_struct);
-        return create_source(dict_struct, config, config_prefix, sample_block, global_context, default_database, check_config);
+        return create_source(dict_struct, config, config_prefix, sample_block, context, default_database, check_config);
     }
 
-    throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
-        "{}: unknown dictionary source type: {}",
-        name,
-        source_type);
+    throw Exception{name + ": unknown dictionary source type: " + source_type, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG};
 }
 
 DictionarySourceFactory & DictionarySourceFactory::instance()

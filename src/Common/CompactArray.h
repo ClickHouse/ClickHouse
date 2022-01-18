@@ -55,6 +55,28 @@ public:
         return locus;
     }
 
+    /// Used only in arcadia/metrika
+    void readText(ReadBuffer & in)
+    {
+        for (size_t i = 0; i < BITSET_SIZE; ++i)
+        {
+            if (i != 0)
+                assertChar(',', in);
+            readIntText(bitset[i], in);
+        }
+    }
+
+    /// Used only in arcadia/metrika
+    void writeText(WriteBuffer & out) const
+    {
+        for (size_t i = 0; i < BITSET_SIZE; ++i)
+        {
+            if (i != 0)
+                writeCString(",", out);
+            writeIntText(bitset[i], out);
+        }
+    }
+
 private:
     /// number of bytes in bitset
     static constexpr size_t BITSET_SIZE = (static_cast<size_t>(bucket_count) * content_width + 7) / 8;
@@ -137,12 +159,12 @@ private:
     /// The number of bytes read.
     size_t read_count = 0;
     /// The content in the current position.
-    UInt8 value_l = 0;
-    UInt8 value_r = 0;
+    UInt8 value_l;
+    UInt8 value_r;
     ///
     bool is_eof = false;
     /// Does the cell fully fit into one byte?
-    bool fits_in_byte = false;
+    bool fits_in_byte;
 };
 
 /** TODO This code looks very suboptimal.

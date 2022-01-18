@@ -15,15 +15,13 @@ public:
         const String & name_,
         const MergeTreePartInfo & info_,
         const VolumePtr & volume_,
-        const std::optional<String> & relative_path_ = {},
-        const IMergeTreeDataPart * parent_part_ = nullptr);
+        const std::optional<String> & relative_path_ = {});
 
     MergeTreeDataPartInMemory(
         MergeTreeData & storage_,
         const String & name_,
         const VolumePtr & volume_,
-        const std::optional<String> & relative_path_ = {},
-        const IMergeTreeDataPart * parent_part_ = nullptr);
+        const std::optional<String> & relative_path_ = {});
 
     MergeTreeReaderPtr getReader(
         const NamesAndTypesList & columns,
@@ -44,8 +42,7 @@ public:
         const MergeTreeIndexGranularity & computed_index_granularity) const override;
 
     bool isStoredOnDisk() const override { return false; }
-    bool isStoredOnRemoteDisk() const override { return false; }
-    bool hasColumnFiles(const NameAndTypePair & column) const override { return !!getColumnPosition(column.getNameInStorage()); }
+    bool hasColumnFiles(const NameAndTypePair & column) const override { return !!getColumnPosition(column.name); }
     String getFileNameForColumn(const NameAndTypePair & /* column */) const override { return ""; }
     void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const override;
     void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const override;

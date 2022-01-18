@@ -4,7 +4,7 @@
 #include <Columns/ColumnArray.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <base/map.h>
+#include <ext/map.h>
 
 
 namespace DB
@@ -57,7 +57,7 @@ class FunctionReverse : public IFunction
 {
 public:
     static constexpr auto name = "reverse";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionReverse>();
     }
@@ -76,8 +76,6 @@ public:
     {
         return true;
     }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -115,35 +113,35 @@ public:
 
 
 /// Also works with arrays.
-class ReverseOverloadResolver : public IFunctionOverloadResolver
+class ReverseOverloadResolver : public IFunctionOverloadResolverImpl
 {
 public:
     static constexpr auto name = "reverse";
-    static FunctionOverloadResolverPtr create(ContextPtr context) { return std::make_unique<ReverseOverloadResolver>(context); }
+    static FunctionOverloadResolverImplPtr create(const Context & context) { return std::make_unique<ReverseOverloadResolver>(context); }
 
-    explicit ReverseOverloadResolver(ContextPtr context_) : context(context_) {}
+    explicit ReverseOverloadResolver(const Context & context_) : context(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
 
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (isArray(arguments.at(0).type))
-            return FunctionFactory::instance().getImpl("arrayReverse", context)->build(arguments);
+            return FunctionOverloadResolverAdaptor(FunctionFactory::instance().getImpl("arrayReverse", context)).buildImpl(arguments);
         else
-            return std::make_unique<FunctionToFunctionBaseAdaptor>(
+            return std::make_unique<DefaultFunction>(
                 FunctionReverse::create(context),
-                collections::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
+                ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
                 return_type);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnType(const DataTypes & arguments) const override
     {
         return arguments.at(0);
     }
 
 private:
-    ContextPtr context;
+    const Context & context;
 };
 
 }

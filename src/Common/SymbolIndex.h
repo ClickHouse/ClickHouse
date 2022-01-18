@@ -22,8 +22,7 @@ protected:
     SymbolIndex() { update(); }
 
 public:
-    static MultiVersion<SymbolIndex>::Version instance();
-    static void reload();
+    static MultiVersion<SymbolIndex>::Version instance(bool reload = false);
 
     struct Symbol
     {
@@ -61,7 +60,6 @@ private:
     Data data;
 
     void update();
-    static MultiVersion<SymbolIndex> & instanceImpl();
 };
 
 }

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeWithSimpleSerialization.h>
 
 
 namespace DB
@@ -16,7 +16,7 @@ namespace DB
   *
   * All tuples with same size and types of elements are equivalent for expressions, regardless to names of elements.
   */
-class DataTypeTuple final : public IDataType
+class DataTypeTuple final : public DataTypeWithSimpleSerialization
 {
 private:
     DataTypes elems;
@@ -36,10 +36,52 @@ public:
     const char * getFamilyName() const override { return "Tuple"; }
 
     bool canBeInsideNullable() const override { return false; }
-    bool supportsSparseSerialization() const override { return true; }
+
+    void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
+    void deserializeBinary(Field & field, ReadBuffer & istr) const override;
+    void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+    void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
+    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+
+    /// Tuples in CSV format will be serialized as separate columns (that is, losing their nesting in the tuple).
+    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+
+    /** Each sub-column in a tuple is serialized in separate stream.
+      */
+    void enumerateStreamsImpl(const StreamCallback & callback, SubstreamPath & path) const override;
+
+    void serializeBinaryBulkStatePrefixImpl(
+            SerializeBinaryBulkSettings & settings,
+            SerializeBinaryBulkStatePtr & state) const override;
+
+    void serializeBinaryBulkStateSuffixImpl(
+            SerializeBinaryBulkSettings & settings,
+            SerializeBinaryBulkStatePtr & state) const override;
+
+    void deserializeBinaryBulkStatePrefixImpl(
+            DeserializeBinaryBulkSettings & settings,
+            DeserializeBinaryBulkStatePtr & state) const override;
+
+    void serializeBinaryBulkWithMultipleStreamsImpl(
+            const IColumn & column,
+            size_t offset,
+            size_t limit,
+            SerializeBinaryBulkSettings & settings,
+            SerializeBinaryBulkStatePtr & state) const override;
+
+    void deserializeBinaryBulkWithMultipleStreamsImpl(
+            IColumn & column,
+            size_t limit,
+            DeserializeBinaryBulkSettings & settings,
+            DeserializeBinaryBulkStatePtr & state,
+            SubstreamsCache * cache) const override;
 
     MutableColumnPtr createColumn() const override;
-    MutableColumnPtr createColumn(const ISerialization & serialization) const override;
 
     Field getDefault() const override;
     void insertDefaultInto(IColumn & column) const override;
@@ -54,16 +96,13 @@ public:
     size_t getMaximumSizeOfValueInMemory() const override;
     size_t getSizeOfValueInMemory() const override;
 
-    SerializationPtr doGetDefaultSerialization() const override;
-    SerializationPtr getSerialization(const SerializationInfo & info) const override;
-    MutableSerializationInfoPtr createSerializationInfo(const SerializationInfo::Settings & settings) const override;
+    DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
+    ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const override;
 
-    const DataTypePtr & getElement(size_t i) const { return elems[i]; }
     const DataTypes & getElements() const { return elems; }
     const Strings & getElementNames() const { return names; }
 
     size_t getPositionByName(const String & name) const;
-    String getNameByPosition(size_t i) const;
 
     bool haveExplicitNames() const { return have_explicit_names; }
     bool serializeNames() const { return serialize_names; }

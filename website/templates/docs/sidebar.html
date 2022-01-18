@@ -15,6 +15,9 @@
                 {% set level = 1 %}
                 {% include "templates/docs/sidebar-item.html" %}
             {% endfor %}
+            <a href="{{ base_url }}/single/clickhouse_{{ language }}.pdf" class="nav-link border-top border-secondary mt-3 px-0 pt-3 text-light">
+                <img src="/images/mkdocs/pdf.svg" alt="{{ _('PDF version') }}" title="{{ _('PDF version') }}" height="24" class="d-block mr-1 float-left" /><div>{{ _('PDF version') }}</div>
+            </a>
         </nav>
         {% else %}
             {% include "templates/docs/toc.html" %}

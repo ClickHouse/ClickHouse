@@ -4,11 +4,10 @@
 #include "TestKeeper.h"
 
 #include <functional>
-#include <filesystem>
 #include <pcg-random/pcg_random.hpp>
 
-#include <base/logger_useful.h>
-#include <base/find_symbols.h>
+#include <common/logger_useful.h>
+#include <common/find_symbols.h>
 #include <Common/randomSeed.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
@@ -18,7 +17,6 @@
 
 #define ZOOKEEPER_CONNECTION_TIMEOUT_MS 1000
 
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -111,8 +109,7 @@ void ZooKeeper::init(const std::string & implementation_, const Strings & hosts_
                 identity_,
                 Poco::Timespan(0, session_timeout_ms_ * 1000),
                 Poco::Timespan(0, ZOOKEEPER_CONNECTION_TIMEOUT_MS * 1000),
-                Poco::Timespan(0, operation_timeout_ms_ * 1000),
-                zk_log);
+                Poco::Timespan(0, operation_timeout_ms_ * 1000));
 
         if (chroot.empty())
             LOG_TRACE(log, "Initialized, hosts: {}", fmt::join(hosts, ","));
@@ -154,10 +151,8 @@ void ZooKeeper::init(const std::string & implementation_, const Strings & hosts_
 }
 
 ZooKeeper::ZooKeeper(const std::string & hosts_string, const std::string & identity_, int32_t session_timeout_ms_,
-                     int32_t operation_timeout_ms_, const std::string & chroot_, const std::string & implementation_,
-                     std::shared_ptr<DB::ZooKeeperLog> zk_log_)
+                     int32_t operation_timeout_ms_, const std::string & chroot_, const std::string & implementation_)
 {
-    zk_log = std::move(zk_log_);
     Strings hosts_strings;
     splitInto<','>(hosts_strings, hosts_string);
 
@@ -165,10 +160,8 @@ ZooKeeper::ZooKeeper(const std::string & hosts_string, const std::string & ident
 }
 
 ZooKeeper::ZooKeeper(const Strings & hosts_, const std::string & identity_, int32_t session_timeout_ms_,
-                     int32_t operation_timeout_ms_, const std::string & chroot_, const std::string & implementation_,
-                     std::shared_ptr<DB::ZooKeeperLog> zk_log_)
+                     int32_t operation_timeout_ms_, const std::string & chroot_, const std::string & implementation_)
 {
-    zk_log = std::move(zk_log_);
     init(implementation_, hosts_, identity_, session_timeout_ms_, operation_timeout_ms_, chroot_);
 }
 
@@ -233,8 +226,7 @@ struct ZooKeeperArgs
     std::string implementation;
 };
 
-ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name, std::shared_ptr<DB::ZooKeeperLog> zk_log_)
-    : zk_log(std::move(zk_log_))
+ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name)
 {
     ZooKeeperArgs args(config, config_name);
     init(args.implementation, args.hosts, args.identity, args.session_timeout_ms, args.operation_timeout_ms, args.chroot);
@@ -265,25 +257,24 @@ Coordination::Error ZooKeeper::getChildrenImpl(const std::string & path, Strings
                                    Coordination::Stat * stat,
                                    Coordination::WatchCallback watch_callback)
 {
-    auto future_result = asyncTryGetChildrenNoThrow(path, watch_callback);
+    Coordination::Error code = Coordination::Error::ZOK;
+    Poco::Event event;
 
-    if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
+    auto callback = [&](const Coordination::ListResponse & response)
     {
-        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::List), path));
-        return Coordination::Error::ZOPERATIONTIMEOUT;
-    }
-    else
-    {
-        auto response = future_result.get();
-        Coordination::Error code = response.error;
+        SCOPE_EXIT(event.set());
+        code = response.error;
         if (code == Coordination::Error::ZOK)
         {
             res = response.names;
             if (stat)
                 *stat = response.stat;
         }
-        return code;
-    }
+    };
+
+    impl->list(path, callback, watch_callback);
+    event.wait();
+    return code;
 }
 
 Strings ZooKeeper::getChildren(
@@ -326,21 +317,20 @@ Coordination::Error ZooKeeper::tryGetChildrenWatch(const std::string & path, Str
 
 Coordination::Error ZooKeeper::createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created)
 {
-    auto future_result = asyncTryCreateNoThrow(path, data, mode);
+    Coordination::Error code = Coordination::Error::ZOK;
+    Poco::Event event;
 
-    if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
+    auto callback = [&](const Coordination::CreateResponse & response)
     {
-        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::Create), path));
-        return Coordination::Error::ZOPERATIONTIMEOUT;
-    }
-    else
-    {
-        auto response = future_result.get();
-        Coordination::Error code = response.error;
+        SCOPE_EXIT(event.set());
+        code = response.error;
         if (code == Coordination::Error::ZOK)
             path_created = response.path_created;
-        return code;
-    }
+    };
+
+    impl->create(path, data, mode & 1, mode & 2, {}, callback);  /// TODO better mode
+    event.wait();
+    return code;
 }
 
 std::string ZooKeeper::create(const std::string & path, const std::string & data, int32_t mode)
@@ -395,19 +385,19 @@ void ZooKeeper::createAncestors(const std::string & path)
 
 Coordination::Error ZooKeeper::removeImpl(const std::string & path, int32_t version)
 {
-    auto future_result = asyncTryRemoveNoThrow(path, version);
+    Coordination::Error code = Coordination::Error::ZOK;
+    Poco::Event event;
 
+    auto callback = [&](const Coordination::RemoveResponse & response)
+    {
+        SCOPE_EXIT(event.set());
+        if (response.error != Coordination::Error::ZOK)
+            code = response.error;
+    };
 
-    if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
-    {
-        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::Remove), path));
-        return Coordination::Error::ZOPERATIONTIMEOUT;
-    }
-    else
-    {
-        auto response = future_result.get();
-        return response.error;
-    }
+    impl->remove(path, version, callback);
+    event.wait();
+    return code;
 }
 
 void ZooKeeper::remove(const std::string & path, int32_t version)
@@ -428,22 +418,20 @@ Coordination::Error ZooKeeper::tryRemove(const std::string & path, int32_t versi
 
 Coordination::Error ZooKeeper::existsImpl(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback)
 {
-    auto future_result = asyncTryExistsNoThrow(path, watch_callback);
+    Coordination::Error code = Coordination::Error::ZOK;
+    Poco::Event event;
 
-    if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
+    auto callback = [&](const Coordination::ExistsResponse & response)
     {
-        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::Exists), path));
-        return Coordination::Error::ZOPERATIONTIMEOUT;
-    }
-    else
-    {
-        auto response = future_result.get();
-        Coordination::Error code = response.error;
+        SCOPE_EXIT(event.set());
+        code = response.error;
         if (code == Coordination::Error::ZOK && stat)
             *stat = response.stat;
+    };
 
-        return code;
-    }
+    impl->exists(path, callback, watch_callback);
+    event.wait();
+    return code;
 }
 
 bool ZooKeeper::exists(const std::string & path, Coordination::Stat * stat, const EventPtr & watch)
@@ -462,25 +450,24 @@ bool ZooKeeper::existsWatch(const std::string & path, Coordination::Stat * stat,
 
 Coordination::Error ZooKeeper::getImpl(const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallback watch_callback)
 {
-    auto future_result = asyncTryGetNoThrow(path, watch_callback);
+    Coordination::Error code = Coordination::Error::ZOK;
+    Poco::Event event;
 
-    if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
+    auto callback = [&](const Coordination::GetResponse & response)
     {
-        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::Get), path));
-        return Coordination::Error::ZOPERATIONTIMEOUT;
-    }
-    else
-    {
-        auto response = future_result.get();
-        Coordination::Error code = response.error;
+        SCOPE_EXIT(event.set());
+        code = response.error;
         if (code == Coordination::Error::ZOK)
         {
             res = response.data;
             if (stat)
                 *stat = response.stat;
         }
-        return code;
-    }
+    };
+
+    impl->get(path, callback, watch_callback);
+    event.wait();
+    return code;
 }
 
 
@@ -535,22 +522,20 @@ bool ZooKeeper::tryGetWatch(
 Coordination::Error ZooKeeper::setImpl(const std::string & path, const std::string & data,
                            int32_t version, Coordination::Stat * stat)
 {
-    auto future_result = asyncTrySetNoThrow(path, data, version);
+    Coordination::Error code = Coordination::Error::ZOK;
+    Poco::Event event;
 
-    if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
+    auto callback = [&](const Coordination::SetResponse & response)
     {
-        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::Set), path));
-        return Coordination::Error::ZOPERATIONTIMEOUT;
-    }
-    else
-    {
-        auto response = future_result.get();
-        Coordination::Error code = response.error;
+        SCOPE_EXIT(event.set());
+        code = response.error;
         if (code == Coordination::Error::ZOK && stat)
             *stat = response.stat;
+    };
 
-        return code;
-    }
+    impl->set(path, data, version, callback);
+    event.wait();
+    return code;
 }
 
 void ZooKeeper::set(const std::string & path, const std::string & data, int32_t version, Coordination::Stat * stat)
@@ -587,20 +572,19 @@ Coordination::Error ZooKeeper::multiImpl(const Coordination::Requests & requests
     if (requests.empty())
         return Coordination::Error::ZOK;
 
-    auto future_result = asyncTryMultiNoThrow(requests);
+    Coordination::Error code = Coordination::Error::ZOK;
+    Poco::Event event;
 
-    if (future_result.wait_for(std::chrono::milliseconds(operation_timeout_ms)) != std::future_status::ready)
+    auto callback = [&](const Coordination::MultiResponse & response)
     {
-        impl->finalize(fmt::format("Operation timeout on {} {}", toString(Coordination::OpNum::Multi), requests[0]->getPath()));
-        return Coordination::Error::ZOPERATIONTIMEOUT;
-    }
-    else
-    {
-        auto response = future_result.get();
-        Coordination::Error code = response.error;
+        SCOPE_EXIT(event.set());
+        code = response.error;
         responses = response.responses;
-        return code;
-    }
+    };
+
+    impl->multi(requests, callback);
+    event.wait();
+    return code;
 }
 
 Coordination::Responses ZooKeeper::multi(const Coordination::Requests & requests)
@@ -628,7 +612,7 @@ void ZooKeeper::removeChildren(const std::string & path)
         Coordination::Requests ops;
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
-            ops.emplace_back(makeRemoveRequest(fs::path(path) / children.back(), -1));
+            ops.emplace_back(makeRemoveRequest(path + "/" + children.back(), -1));
             children.pop_back();
         }
         multi(ops);
@@ -644,9 +628,9 @@ void ZooKeeper::removeChildrenRecursive(const std::string & path, const String &
         Coordination::Requests ops;
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
-            removeChildrenRecursive(fs::path(path) / children.back());
+            removeChildrenRecursive(path + "/" + children.back());
             if (likely(keep_child_node.empty() || keep_child_node != children.back()))
-                ops.emplace_back(makeRemoveRequest(fs::path(path) / children.back(), -1));
+                ops.emplace_back(makeRemoveRequest(path + "/" + children.back(), -1));
             children.pop_back();
         }
         multi(ops);
@@ -664,7 +648,7 @@ void ZooKeeper::tryRemoveChildrenRecursive(const std::string & path, const Strin
         Strings batch;
         for (size_t i = 0; i < MULTI_BATCH_SIZE && !children.empty(); ++i)
         {
-            String child_path = fs::path(path) / children.back();
+            String child_path = path + "/" + children.back();
             tryRemoveChildrenRecursive(child_path);
             if (likely(keep_child_node.empty() || keep_child_node != children.back()))
             {
@@ -730,15 +714,14 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
         }
     };
 
-    /// do-while control structure to allow using this function in non-blocking
-    /// fashion with a wait condition which returns false by the time this
-    /// method is called.
-    do
+    while (!condition || !condition())
     {
         /// Use getData insteand of exists to avoid watch leak.
         impl->get(path, callback, watch);
 
-        if (!state->event.tryWait(1000))
+        if (!condition)
+            state->event.wait();
+        else if (!state->event.tryWait(1000))
             continue;
 
         if (state->code == int32_t(Coordination::Error::ZNONODE))
@@ -749,14 +732,13 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
 
         if (state->event_type == Coordination::DELETED)
             return true;
-    } while (!condition || !condition());
-
+    }
     return false;
 }
 
 ZooKeeperPtr ZooKeeper::startNewSession() const
 {
-    return std::make_shared<ZooKeeper>(hosts, identity, session_timeout_ms, operation_timeout_ms, chroot, implementation, zk_log);
+    return std::make_shared<ZooKeeper>(hosts, identity, session_timeout_ms, operation_timeout_ms, chroot, implementation);
 }
 
 
@@ -789,21 +771,8 @@ std::future<Coordination::CreateResponse> ZooKeeper::asyncCreate(const std::stri
     return future;
 }
 
-std::future<Coordination::CreateResponse> ZooKeeper::asyncTryCreateNoThrow(const std::string & path, const std::string & data, int32_t mode)
-{
-    auto promise = std::make_shared<std::promise<Coordination::CreateResponse>>();
-    auto future = promise->get_future();
 
-    auto callback = [promise](const Coordination::CreateResponse & response) mutable
-    {
-        promise->set_value(response);
-    };
-
-    impl->create(path, data, mode & 1, mode & 2, {}, std::move(callback));
-    return future;
-}
-
-std::future<Coordination::GetResponse> ZooKeeper::asyncGet(const std::string & path, Coordination::WatchCallback watch_callback)
+std::future<Coordination::GetResponse> ZooKeeper::asyncGet(const std::string & path)
 {
     auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
     auto future = promise->get_future();
@@ -816,21 +785,7 @@ std::future<Coordination::GetResponse> ZooKeeper::asyncGet(const std::string & p
             promise->set_value(response);
     };
 
-    impl->get(path, std::move(callback), watch_callback);
-    return future;
-}
-
-std::future<Coordination::GetResponse> ZooKeeper::asyncTryGetNoThrow(const std::string & path, Coordination::WatchCallback watch_callback)
-{
-    auto promise = std::make_shared<std::promise<Coordination::GetResponse>>();
-    auto future = promise->get_future();
-
-    auto callback = [promise](const Coordination::GetResponse & response) mutable
-    {
-        promise->set_value(response);
-    };
-
-    impl->get(path, std::move(callback), watch_callback);
+    impl->get(path, std::move(callback), {});
     return future;
 }
 
@@ -852,7 +807,7 @@ std::future<Coordination::GetResponse> ZooKeeper::asyncTryGet(const std::string 
     return future;
 }
 
-std::future<Coordination::ExistsResponse> ZooKeeper::asyncExists(const std::string & path, Coordination::WatchCallback watch_callback)
+std::future<Coordination::ExistsResponse> ZooKeeper::asyncExists(const std::string & path)
 {
     auto promise = std::make_shared<std::promise<Coordination::ExistsResponse>>();
     auto future = promise->get_future();
@@ -865,21 +820,7 @@ std::future<Coordination::ExistsResponse> ZooKeeper::asyncExists(const std::stri
             promise->set_value(response);
     };
 
-    impl->exists(path, std::move(callback), watch_callback);
-    return future;
-}
-
-std::future<Coordination::ExistsResponse> ZooKeeper::asyncTryExistsNoThrow(const std::string & path, Coordination::WatchCallback watch_callback)
-{
-    auto promise = std::make_shared<std::promise<Coordination::ExistsResponse>>();
-    auto future = promise->get_future();
-
-    auto callback = [promise](const Coordination::ExistsResponse & response) mutable
-    {
-        promise->set_value(response);
-    };
-
-    impl->exists(path, std::move(callback), watch_callback);
+    impl->exists(path, std::move(callback), {});
     return future;
 }
 
@@ -900,22 +841,7 @@ std::future<Coordination::SetResponse> ZooKeeper::asyncSet(const std::string & p
     return future;
 }
 
-
-std::future<Coordination::SetResponse> ZooKeeper::asyncTrySetNoThrow(const std::string & path, const std::string & data, int32_t version)
-{
-    auto promise = std::make_shared<std::promise<Coordination::SetResponse>>();
-    auto future = promise->get_future();
-
-    auto callback = [promise](const Coordination::SetResponse & response) mutable
-    {
-        promise->set_value(response);
-    };
-
-    impl->set(path, data, version, std::move(callback));
-    return future;
-}
-
-std::future<Coordination::ListResponse> ZooKeeper::asyncGetChildren(const std::string & path, Coordination::WatchCallback watch_callback)
+std::future<Coordination::ListResponse> ZooKeeper::asyncGetChildren(const std::string & path)
 {
     auto promise = std::make_shared<std::promise<Coordination::ListResponse>>();
     auto future = promise->get_future();
@@ -928,21 +854,7 @@ std::future<Coordination::ListResponse> ZooKeeper::asyncGetChildren(const std::s
             promise->set_value(response);
     };
 
-    impl->list(path, std::move(callback), watch_callback);
-    return future;
-}
-
-std::future<Coordination::ListResponse> ZooKeeper::asyncTryGetChildrenNoThrow(const std::string & path, Coordination::WatchCallback watch_callback)
-{
-    auto promise = std::make_shared<std::promise<Coordination::ListResponse>>();
-    auto future = promise->get_future();
-
-    auto callback = [promise](const Coordination::ListResponse & response) mutable
-    {
-        promise->set_value(response);
-    };
-
-    impl->list(path, std::move(callback), watch_callback);
+    impl->list(path, std::move(callback), {});
     return future;
 }
 
@@ -985,21 +897,7 @@ std::future<Coordination::RemoveResponse> ZooKeeper::asyncTryRemove(const std::s
     return future;
 }
 
-std::future<Coordination::RemoveResponse> ZooKeeper::asyncTryRemoveNoThrow(const std::string & path, int32_t version)
-{
-    auto promise = std::make_shared<std::promise<Coordination::RemoveResponse>>();
-    auto future = promise->get_future();
-
-    auto callback = [promise](const Coordination::RemoveResponse & response) mutable
-    {
-        promise->set_value(response);
-    };
-
-    impl->remove(path, version, std::move(callback));
-    return future;
-}
-
-std::future<Coordination::MultiResponse> ZooKeeper::asyncTryMultiNoThrow(const Coordination::Requests & ops)
+std::future<Coordination::MultiResponse> ZooKeeper::tryAsyncMulti(const Coordination::Requests & ops)
 {
     auto promise = std::make_shared<std::promise<Coordination::MultiResponse>>();
     auto future = promise->get_future();
@@ -1042,18 +940,10 @@ Coordination::Error ZooKeeper::tryMultiNoThrow(const Coordination::Requests & re
     }
 }
 
-void ZooKeeper::finalize(const String & reason)
+void ZooKeeper::finalize()
 {
-    impl->finalize(reason);
+    impl->finalize();
 }
-
-void ZooKeeper::setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_)
-{
-    zk_log = std::move(zk_log_);
-    if (auto * zk = dynamic_cast<Coordination::ZooKeeper *>(impl.get()))
-        zk->setZooKeeperLog(zk_log);
-}
-
 
 size_t KeeperMultiException::getFailedOpIndex(Coordination::Error exception_code, const Coordination::Responses & responses)
 {

@@ -1,8 +1,7 @@
 #include <stdlib.h>
-#include <base/find_symbols.h>
+#include <common/find_symbols.h>
 #include <Processors/Formats/Impl/RegexpRowInputFormat.h>
-#include <DataTypes/Serializations/SerializationNullable.h>
-#include <Formats/EscapingRuleUtils.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadHelpers.h>
 
 namespace DB
@@ -11,20 +10,16 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
-RegexpRowInputFormat::RegexpRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
-    : RegexpRowInputFormat(std::make_unique<PeekableReadBuffer>(in_), header_, params_, format_settings_)
-{
-}
-
 RegexpRowInputFormat::RegexpRowInputFormat(
-        std::unique_ptr<PeekableReadBuffer> buf_, const Block & header_, Params params_, const FormatSettings & format_settings_)
-        : IRowInputFormat(header_, *buf_, std::move(params_))
-        , buf(std::move(buf_))
+        ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
+        : IRowInputFormat(header_, in_, std::move(params_))
+        , buf(in_)
         , format_settings(format_settings_)
-        , escaping_rule(format_settings_.regexp.escaping_rule)
+        , field_format(stringToFormat(format_settings_.regexp.escaping_rule))
         , regexp(format_settings_.regexp.regexp)
 {
     size_t fields_count = regexp.NumberOfCapturingGroups();
@@ -44,22 +39,74 @@ RegexpRowInputFormat::RegexpRowInputFormat(
 void RegexpRowInputFormat::resetParser()
 {
     IRowInputFormat::resetParser();
-    buf->reset();
+    buf.reset();
+}
+
+RegexpRowInputFormat::ColumnFormat RegexpRowInputFormat::stringToFormat(const String & format)
+{
+    if (format == "Escaped")
+        return ColumnFormat::Escaped;
+    if (format == "Quoted")
+        return ColumnFormat::Quoted;
+    if (format == "CSV")
+        return ColumnFormat::Csv;
+    if (format == "JSON")
+        return ColumnFormat::Json;
+    if (format == "Raw")
+        return ColumnFormat::Raw;
+    throw Exception("Unsupported column format \"" + format + "\".", ErrorCodes::BAD_ARGUMENTS);
 }
 
 bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
 {
     const auto & type = getPort().getHeader().getByPosition(index).type;
+    bool parse_as_nullable = format_settings.null_as_default && !type->isNullable();
+    bool read = true;
     ReadBuffer field_buf(const_cast<char *>(matched_fields[index].data()), matched_fields[index].size(), 0);
     try
     {
-        return deserializeFieldByEscapingRule(type, serializations[index], *columns[index], field_buf, escaping_rule, format_settings);
+        switch (field_format)
+        {
+            case ColumnFormat::Escaped:
+                if (parse_as_nullable)
+                    read = DataTypeNullable::deserializeTextEscaped(*columns[index], field_buf, format_settings, type);
+                else
+                    type->deserializeAsTextEscaped(*columns[index], field_buf, format_settings);
+                break;
+            case ColumnFormat::Quoted:
+                if (parse_as_nullable)
+                    read = DataTypeNullable::deserializeTextQuoted(*columns[index], field_buf, format_settings, type);
+                else
+                    type->deserializeAsTextQuoted(*columns[index], field_buf, format_settings);
+                break;
+            case ColumnFormat::Csv:
+                if (parse_as_nullable)
+                    read = DataTypeNullable::deserializeTextCSV(*columns[index], field_buf, format_settings, type);
+                else
+                    type->deserializeAsTextCSV(*columns[index], field_buf, format_settings);
+                break;
+            case ColumnFormat::Json:
+                if (parse_as_nullable)
+                    read = DataTypeNullable::deserializeTextJSON(*columns[index], field_buf, format_settings, type);
+                else
+                    type->deserializeAsTextJSON(*columns[index], field_buf, format_settings);
+                break;
+            case ColumnFormat::Raw:
+                if (parse_as_nullable)
+                    read = DataTypeNullable::deserializeWholeText(*columns[index], field_buf, format_settings, type);
+                else
+                    type->deserializeAsWholeText(*columns[index], field_buf, format_settings);
+                break;
+            default:
+                break;
+        }
     }
     catch (Exception & e)
     {
         e.addMessage("(while reading the value of column " +  getPort().getHeader().getByPosition(index).name + ")");
         throw;
     }
+    return read;
 }
 
 void RegexpRowInputFormat::readFieldsFromMatch(MutableColumns & columns, RowReadExtension & ext)
@@ -76,54 +123,48 @@ void RegexpRowInputFormat::readFieldsFromMatch(MutableColumns & columns, RowRead
 
 bool RegexpRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
-    if (buf->eof())
+    if (buf.eof())
         return false;
 
-    PeekableReadBufferCheckpoint checkpoint{*buf};
+    PeekableReadBufferCheckpoint checkpoint{buf};
 
     size_t line_size = 0;
 
     do
     {
-        char * pos = find_first_symbols<'\n', '\r'>(buf->position(), buf->buffer().end());
-        line_size += pos - buf->position();
-        buf->position() = pos;
-    } while (buf->position() == buf->buffer().end() && !buf->eof());
+        char * pos = find_first_symbols<'\n', '\r'>(buf.position(), buf.buffer().end());
+        line_size += pos - buf.position();
+        buf.position() = pos;
+    } while (buf.position() == buf.buffer().end() && !buf.eof());
 
-    buf->makeContinuousMemoryFromCheckpointToPos();
-    buf->rollbackToCheckpoint();
+    buf.makeContinuousMemoryFromCheckpointToPos();
+    buf.rollbackToCheckpoint();
 
-    bool match = RE2::FullMatchN(re2::StringPiece(buf->position(), line_size), regexp, re2_arguments_ptrs.data(), re2_arguments_ptrs.size());
+    bool match = RE2::FullMatchN(re2::StringPiece(buf.position(), line_size), regexp, re2_arguments_ptrs.data(), re2_arguments_ptrs.size());
     bool read_line = true;
 
     if (!match)
     {
         if (!format_settings.regexp.skip_unmatched)
-            throw Exception("Line \"" + std::string(buf->position(), line_size) + "\" doesn't match the regexp.", ErrorCodes::INCORRECT_DATA);
+            throw Exception("Line \"" + std::string(buf.position(), line_size) + "\" doesn't match the regexp.", ErrorCodes::INCORRECT_DATA);
         read_line = false;
     }
 
     if (read_line)
         readFieldsFromMatch(columns, ext);
 
-    buf->position() += line_size;
+    buf.position() += line_size;
 
-    checkChar('\r', *buf);
-    if (!buf->eof() && !checkChar('\n', *buf))
+    checkChar('\r', buf);
+    if (!buf.eof() && !checkChar('\n', buf))
         throw Exception("No \\n after \\r at the end of line.", ErrorCodes::INCORRECT_DATA);
 
     return true;
 }
 
-void RegexpRowInputFormat::setReadBuffer(ReadBuffer & in_)
+void registerInputFormatProcessorRegexp(FormatFactory & factory)
 {
-    buf = std::make_unique<PeekableReadBuffer>(in_);
-    IInputFormat::setReadBuffer(*buf);
-}
-
-void registerInputFormatRegexp(FormatFactory & factory)
-{
-    factory.registerInputFormat("Regexp", [](
+    factory.registerInputFormatProcessor("Regexp", [](
             ReadBuffer & buf,
             const Block & sample,
             IRowInputFormat::Params params,

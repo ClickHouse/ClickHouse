@@ -2,6 +2,7 @@
 
 #if USE_HDFS
 
+#include <Interpreters/Context.h>
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <Storages/HDFS/HDFSCommon.h>
 #include <hdfs/hdfs.h>
@@ -26,25 +27,20 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     HDFSBuilderWrapper builder;
     HDFSFSPtr fs;
 
-    explicit WriteBufferFromHDFSImpl(
-            const std::string & hdfs_uri_,
-            const Poco::Util::AbstractConfiguration & config_,
-            int replication_,
-            int flags)
-        : hdfs_uri(hdfs_uri_)
-        , builder(createHDFSBuilder(hdfs_uri, config_))
+    explicit WriteBufferFromHDFSImpl(const std::string & hdfs_name_, const Poco::Util::AbstractConfiguration & config_)
+        : hdfs_uri(hdfs_name_)
+        , builder(createHDFSBuilder(hdfs_uri,config_))
         , fs(createHDFSFS(builder.get()))
     {
         const size_t begin_of_path = hdfs_uri.find('/', hdfs_uri.find("//") + 2);
         const String path = hdfs_uri.substr(begin_of_path);
-
         if (path.find_first_of("*?{") != std::string::npos)
-            throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "URI '{}' contains globs, so the table is in readonly mode", hdfs_uri);
+            throw Exception("URI '" + hdfs_uri + "' contains globs, so the table is in readonly mode", ErrorCodes::CANNOT_OPEN_FILE);
 
         if (!hdfsExists(fs.get(), path.c_str()))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "File {} already exists", path);
+            throw Exception("File: " + path + " is already exists", ErrorCodes::BAD_ARGUMENTS);
 
-        fout = hdfsOpenFile(fs.get(), path.c_str(), flags, 0, replication_, 0);     /// O_WRONLY meaning create or overwrite i.e., implies O_TRUNCAT here
+        fout = hdfsOpenFile(fs.get(), path.c_str(), O_WRONLY, 0, 0, 0);     /// O_WRONLY meaning create or overwrite i.e., implies O_TRUNCAT here
 
         if (fout == nullptr)
         {
@@ -80,14 +76,9 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     }
 };
 
-WriteBufferFromHDFS::WriteBufferFromHDFS(
-        const std::string & hdfs_name_,
-        const Poco::Util::AbstractConfiguration & config_,
-        int replication_,
-        size_t buf_size_,
-        int flags_)
+WriteBufferFromHDFS::WriteBufferFromHDFS(const std::string & hdfs_name_, const Poco::Util::AbstractConfiguration & config_, size_t buf_size_)
     : BufferWithOwnMemory<WriteBuffer>(buf_size_)
-    , impl(std::make_unique<WriteBufferFromHDFSImpl>(hdfs_name_, config_, replication_, flags_))
+    , impl(std::make_unique<WriteBufferFromHDFSImpl>(hdfs_name_, config_))
 {
 }
 
@@ -110,7 +101,7 @@ void WriteBufferFromHDFS::sync()
 }
 
 
-void WriteBufferFromHDFS::finalizeImpl()
+void WriteBufferFromHDFS::finalize()
 {
     try
     {

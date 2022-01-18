@@ -15,7 +15,7 @@ ClickHouse cannot work or build on a 32-bit system. You should acquire access to
 
 To start working with ClickHouse repository you will need a GitHub account.
 
-You probably already have one, but if you do not, please register at https://github.com. In case you do not have SSH keys, you should generate them and then upload them on GitHub. It is required for sending over your patches. It is also possible to use the same SSH keys that you use with any other SSH servers - probably you already have those.
+You probably already have one, but if you don’t, please register at https://github.com. In case you do not have SSH keys, you should generate them and then upload them on GitHub. It is required for sending over your patches. It is also possible to use the same SSH keys that you use with any other SSH servers - probably you already have those.
 
 Create a fork of ClickHouse repository. To do that please click on the “fork” button in the upper right corner at https://github.com/ClickHouse/ClickHouse. It will fork your own copy of ClickHouse/ClickHouse to your account.
 
@@ -65,7 +65,7 @@ It generally means that the SSH keys for connecting to GitHub are missing. These
 
 You can also clone the repository via https protocol:
 
-    git clone --recursive https://github.com/ClickHouse/ClickHouse.git
+    git clone https://github.com/ClickHouse/ClickHouse.git
 
 This, however, will not let you send your changes to the server. You can still use it temporarily and add the SSH keys later replacing the remote address of the repository with `git remote` command.
 
@@ -79,7 +79,7 @@ After successfully running this command you will be able to pull updates from th
 
 Working with submodules in git could be painful. Next commands will help to manage it:
 
-    # ! each command accepts
+    # ! each command accepts --recursive
     # Update remote URLs for submodules. Barely rare case
     git submodule sync
     # Add new submodules
@@ -92,16 +92,16 @@ Working with submodules in git could be painful. Next commands will help to mana
 The next commands would help you to reset all submodules to the initial state (!WARNING! - any changes inside will be deleted):
 
     # Synchronizes submodules' remote URL with .gitmodules
-    git submodule sync
+    git submodule sync --recursive
     # Update the registered submodules with initialize not yet initialized
-    git submodule update --init
+    git submodule update --init --recursive
     # Reset all changes done after HEAD
     git submodule foreach git reset --hard
     # Clean files from .gitignore
     git submodule foreach git clean -xfd
     # Repeat last 4 commands for all submodule
-    git submodule foreach git submodule sync
-    git submodule foreach git submodule update --init
+    git submodule foreach git submodule sync --recursive
+    git submodule foreach git submodule update --init --recursive
     git submodule foreach git submodule foreach git reset --hard
     git submodule foreach git submodule foreach git clean -xfd
 
@@ -123,7 +123,7 @@ For installing CMake and Ninja on Mac OS X first install Homebrew and then insta
     /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
     brew install cmake ninja
 
-Next, check the version of CMake: `cmake --version`. If it is below 3.12, you should install a newer version from the website: https://cmake.org/download/.
+Next, check the version of CMake: `cmake --version`. If it is below 3.3, you should install a newer version from the website: https://cmake.org/download/.
 
 ## Optional External Libraries {#optional-external-libraries}
 
@@ -131,18 +131,17 @@ ClickHouse uses several external libraries for building. All of them do not need
 
 ## C++ Compiler {#c-compiler}
 
-Compilers Clang starting from version 11 is supported for building ClickHouse.
+Compilers GCC starting from version 10 and Clang version 8 or above are supported for building ClickHouse.
 
-Clang should be used instead of gcc. Though, our continuous integration (CI) platform runs checks for about a dozen of build combinations.
+Official Yandex builds currently use GCC because it generates machine code of slightly better performance (yielding a difference of up to several percent according to our benchmarks). And Clang is more convenient for development usually. Though, our continuous integration (CI) platform runs checks for about a dozen of build combinations.
 
-On Ubuntu/Debian you can use the automatic installation script (check [official webpage](https://apt.llvm.org/))
+To install GCC on Ubuntu run: `sudo apt install gcc g++`
 
-```bash
-sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
-```
+Check the version of gcc: `gcc --version`. If it is below 10, then follow the instruction here: https://clickhouse.tech/docs/en/development/build/#install-gcc-10.
 
-Mac OS X build is also supported. Just run `brew install llvm`
+Mac OS X build is supported only for Clang. Just run `brew install llvm`
 
+If you decide to use Clang, you can also install `libc++` and `lld`, if you know what it is. Using `ccache` is also recommended.
 
 ## The Building Process {#the-building-process}
 
@@ -153,7 +152,14 @@ Now that you are ready to build ClickHouse we recommend you to create a separate
 
 You can have several different directories (build_release, build_debug, etc.) for different types of build.
 
-While inside the `build` directory, configure your build by running CMake. Before the first run, you need to define environment variables that specify compiler.
+While inside the `build` directory, configure your build by running CMake. Before the first run, you need to define environment variables that specify compiler (version 10 gcc compiler in this example).
+
+Linux:
+
+    export CC=gcc-10 CXX=g++-10
+    cmake ..
+
+Mac OS X:
 
     export CC=clang CXX=clang++
     cmake ..
@@ -233,15 +239,13 @@ Just in case, it is worth mentioning that CLion creates `build` path on its own,
 
 ## Writing Code {#writing-code}
 
-The description of ClickHouse architecture can be found here: https://clickhouse.com/docs/en/development/architecture/
+The description of ClickHouse architecture can be found here: https://clickhouse.tech/docs/en/development/architecture/
 
-The Code Style Guide: https://clickhouse.com/docs/en/development/style/
+The Code Style Guide: https://clickhouse.tech/docs/en/development/style/
 
-Adding third-party libraries: https://clickhouse.com/docs/en/development/contrib/#adding-third-party-libraries
+Writing tests: https://clickhouse.tech/docs/en/development/tests/
 
-Writing tests: https://clickhouse.com/docs/en/development/tests/
-
-List of tasks: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3Ahacktoberfest
+List of tasks: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 
 ## Test Data {#test-data}
 
@@ -249,8 +253,8 @@ Developing ClickHouse often requires loading realistic datasets. It is particula
 
     sudo apt install wget xz-utils
 
-    wget https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz
-    wget https://datasets.clickhouse.com/visits/tsv/visits_v1.tsv.xz
+    wget https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz
+    wget https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz
 
     xz -v -d hits_v1.tsv.xz
     xz -v -d visits_v1.tsv.xz

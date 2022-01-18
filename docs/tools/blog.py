@@ -40,7 +40,7 @@ def build_for_lang(lang, args):
 
         site_names = {
             'en': 'ClickHouse Blog',
-            'ru': 'Блог ClickHouse'
+            'ru': 'Блог ClickHouse '
         }
 
         assert len(site_names) == len(languages)
@@ -51,7 +51,7 @@ def build_for_lang(lang, args):
         if args.htmlproofer:
             plugins.append('htmlproofer')
 
-        website_url = 'https://clickhouse.com'
+        website_url = 'https://clickhouse.tech'
         site_name = site_names.get(lang, site_names['en'])
         blog_nav, post_meta = nav.build_blog_nav(lang, args)
         raw_config = dict(
@@ -62,7 +62,7 @@ def build_for_lang(lang, args):
             strict=True,
             theme=theme_cfg,
             nav=blog_nav,
-            copyright='©2016–2021 ClickHouse, Inc.',
+            copyright='©2016–2020 Yandex LLC',
             use_directory_urls=True,
             repo_name='ClickHouse/ClickHouse',
             repo_url='https://github.com/ClickHouse/ClickHouse/',

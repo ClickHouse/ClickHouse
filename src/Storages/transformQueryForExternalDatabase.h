@@ -1,16 +1,16 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Storages/SelectQueryInfo.h>
-#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
 {
 
 class IAST;
+class Context;
 
 /** For given ClickHouse query,
   * creates another query in a form of
@@ -22,9 +22,6 @@ class IAST;
   * that contain only compatible expressions.
   *
   * Compatible expressions are comparisons of identifiers, constants, and logical operations on them.
-  *
-  * Throws INCORRECT_QUERY if external_table_strict_query (from context settings)
-  * is set and some expression from WHERE is not compatible.
   */
 String transformQueryForExternalDatabase(
     const SelectQueryInfo & query_info,
@@ -32,6 +29,6 @@ String transformQueryForExternalDatabase(
     IdentifierQuotingStyle identifier_quoting_style,
     const String & database,
     const String & table,
-    ContextPtr context);
+    const Context & context);
 
 }

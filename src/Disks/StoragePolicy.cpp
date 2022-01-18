@@ -8,6 +8,8 @@
 
 #include <set>
 
+#include <Poco/File.h>
+
 
 namespace
 {

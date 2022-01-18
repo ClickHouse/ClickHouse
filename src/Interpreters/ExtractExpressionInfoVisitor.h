@@ -1,21 +1,21 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/IAST_fwd.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 
 namespace DB
 {
 
-class ASTFunction;
-class ASTIdentifier;
-
+class Context;
 
 struct ExpressionInfoMatcher
 {
-    struct Data : public WithContext
+    struct Data
     {
+        const Context & context;
         const TablesWithColumns & tables;
 
         bool is_array_join = false;
@@ -37,6 +37,6 @@ struct ExpressionInfoMatcher
 
 using ExpressionInfoVisitor = ConstInDepthNodeVisitor<ExpressionInfoMatcher, true>;
 
-bool hasNonRewritableFunction(const ASTPtr & node, ContextPtr context);
+bool hasNonRewritableFunction(const ASTPtr & node, const Context & context);
 
 }

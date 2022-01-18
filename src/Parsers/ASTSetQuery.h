@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/FieldVisitors.h>
 #include <Common/SettingsChanges.h>
 #include <Parsers/IAST.h>
 

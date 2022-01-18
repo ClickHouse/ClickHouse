@@ -1,23 +1,18 @@
 #pragma once
 
-#include <Compression/CompressionFactory.h>
-#include <Core/Block.h>
-#include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
-#include <Core/NamesAndAliases.h>
-#include <Interpreters/Context_fwd.h>
-#include <Storages/ColumnCodec.h>
-#include <Storages/ColumnDefault.h>
+#include <Core/Names.h>
+#include <Core/Block.h>
 #include <Common/Exception.h>
-
-#include <boost/multi_index/member.hpp>
-#include <boost/multi_index/mem_fun.hpp>
-#include <boost/multi_index/hashed_index.hpp>
-#include <boost/multi_index/ordered_index.hpp>
-#include <boost/multi_index/sequenced_index.hpp>
-#include <boost/multi_index_container.hpp>
-
+#include <Storages/ColumnDefault.h>
+#include <Storages/ColumnCodec.h>
 #include <optional>
+#include <Compression/CompressionFactory.h>
+
+#include <boost/multi_index_container.hpp>
+#include <boost/multi_index/sequenced_index.hpp>
+#include <boost/multi_index/ordered_index.hpp>
+#include <boost/multi_index/member.hpp>
 
 
 namespace DB
@@ -57,9 +52,7 @@ class ColumnsDescription
 {
 public:
     ColumnsDescription() = default;
-    explicit ColumnsDescription(NamesAndTypesList ordinary);
-
-    explicit ColumnsDescription(NamesAndTypesList ordinary, NamesAndAliases aliases);
+    explicit ColumnsDescription(NamesAndTypesList ordinary_);
 
     /// `after_column` can be a Nested column name;
     void add(ColumnDescription column, const String & after_column = String(), bool first = false);
@@ -79,18 +72,6 @@ public:
     auto begin() const { return columns.begin(); }
     auto end() const { return columns.end(); }
 
-    enum GetFlags : UInt8
-    {
-        Ordinary = 1,
-        Materialized = 2,
-        Aliases = 4,
-
-        AllPhysical = Ordinary | Materialized,
-        All = AllPhysical | Aliases,
-    };
-
-    NamesAndTypesList getByNames(GetFlags flags, const Names & names, bool with_subcolumns) const;
-
     NamesAndTypesList getOrdinary() const;
     NamesAndTypesList getMaterialized() const;
     NamesAndTypesList getAliases() const;
@@ -105,6 +86,7 @@ public:
     bool has(const String & column_name) const;
     bool hasNested(const String & column_name) const;
     bool hasSubcolumn(const String & column_name) const;
+    bool hasInStorageOrSubcolumn(const String & column_name) const;
     const ColumnDescription & get(const String & column_name) const;
 
     template <typename F>
@@ -126,15 +108,10 @@ public:
     }
 
     Names getNamesOfPhysical() const;
-
     bool hasPhysical(const String & column_name) const;
-    bool hasColumnOrSubcolumn(GetFlags flags, const String & column_name) const;
-
+    bool hasPhysicalOrSubcolumn(const String & column_name) const;
     NameAndTypePair getPhysical(const String & column_name) const;
-    NameAndTypePair getColumnOrSubcolumn(GetFlags flags, const String & column_name) const;
-
-    std::optional<NameAndTypePair> tryGetPhysical(const String & column_name) const;
-    std::optional<NameAndTypePair> tryGetColumnOrSubcolumn(GetFlags flags, const String & column_name) const;
+    NameAndTypePair getPhysicalOrSubcolumn(const String & column_name) const;
 
     ColumnDefaults getDefaults() const; /// TODO: remove
     bool hasDefault(const String & column_name) const;
@@ -161,32 +138,26 @@ public:
     }
 
     /// Keep the sequence of columns and allow to lookup by name.
-    using ColumnsContainer = boost::multi_index_container<
+    using Container = boost::multi_index_container<
         ColumnDescription,
         boost::multi_index::indexed_by<
             boost::multi_index::sequenced<>,
             boost::multi_index::ordered_unique<boost::multi_index::member<ColumnDescription, String, &ColumnDescription::name>>>>;
 
-    using SubcolumnsContainter = boost::multi_index_container<
-        NameAndTypePair,
-        boost::multi_index::indexed_by<
-            boost::multi_index::hashed_unique<boost::multi_index::member<NameAndTypePair, String, &NameAndTypePair::name>>,
-            boost::multi_index::hashed_non_unique<boost::multi_index::const_mem_fun<NameAndTypePair, String, &NameAndTypePair::getNameInStorage>>>>;
-
 private:
-    ColumnsContainer columns;
-    SubcolumnsContainter subcolumns;
+    Container columns;
+
+    using SubcolumnsContainer = std::unordered_map<String, NameAndTypePair>;
+    SubcolumnsContainer subcolumns;
 
     void modifyColumnOrder(const String & column_name, const String & after_column, bool first);
-    void addSubcolumnsToList(NamesAndTypesList & source_list) const;
-
     void addSubcolumns(const String & name_in_storage, const DataTypePtr & type_in_storage);
-    void removeSubcolumns(const String & name_in_storage);
+    void removeSubcolumns(const String & name_in_storage, const DataTypePtr & type_in_storage);
 };
 
 /// Validate default expressions and corresponding types compatibility, i.e.
 /// default expression result can be casted to column_type. Also checks, that we
 /// don't have strange constructions in default expression like SELECT query or
 /// arrayJoin function.
-Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, ContextPtr context);
+Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, const Context & context);
 }

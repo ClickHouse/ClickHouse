@@ -25,8 +25,7 @@ struct MetricLogElement
     std::vector<CurrentMetrics::Metric> current_metrics;
 
     static std::string name() { return "MetricLog"; }
-    static NamesAndTypesList getNamesAndTypes();
-    static NamesAndAliases getNamesAndAliases() { return {}; }
+    static Block createBlock();
     void appendToBlock(MutableColumns & columns) const;
 };
 

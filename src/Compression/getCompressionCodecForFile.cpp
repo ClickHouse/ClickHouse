@@ -4,7 +4,9 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Common/PODArray.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
+
+#include <Common/UInt128.h>
 
 namespace DB
 {

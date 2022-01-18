@@ -59,3 +59,4 @@ SELECT groupArray(y) FROM t_null_big
 `groupArray` does not include `NULL` in the resulting array.
 
 
+[Original article](https://clickhouse.tech/docs/en/query_language/agg_functions/) <!--hide-->

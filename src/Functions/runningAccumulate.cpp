@@ -1,11 +1,11 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
-#include <base/scope_guard_safe.h>
+#include <ext/scope_guard.h>
 
 
 namespace DB
@@ -33,7 +33,7 @@ class FunctionRunningAccumulate : public IFunction
 {
 public:
     static constexpr auto name = "runningAccumulate";
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionRunningAccumulate>();
     }
@@ -58,8 +58,6 @@ public:
     {
         return false;
     }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -106,7 +104,7 @@ public:
         const auto & states = column_with_states->getData();
 
         bool state_created = false;
-        SCOPE_EXIT_MEMORY_SAFE({
+        SCOPE_EXIT({
             if (state_created)
                 agg_func.destroy(place.data());
         });
@@ -122,8 +120,8 @@ public:
                     state_created = false;
                 }
 
-                agg_func.create(place.data()); /// This function can throw.
-                state_created = true; //-V519
+                agg_func.create(place.data());
+                state_created = true;
             }
 
             agg_func.merge(place.data(), state_to_add, arena.get());

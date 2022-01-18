@@ -1,20 +1,15 @@
 #pragma once
 #include "config_formats.h"
-
 #if USE_ARROW || USE_ORC || USE_PARQUET
 
 #include <arrow/io/interfaces.h>
-#include <optional>
 
 namespace DB
 {
 
 class ReadBuffer;
-class WriteBuffer;
-
 class SeekableReadBuffer;
-class SeekableReadBufferWithSize;
-struct FormatSettings;
+class WriteBuffer;
 
 class ArrowBufferedOutputStream : public arrow::io::OutputStream
 {
@@ -44,8 +39,6 @@ class RandomAccessFileFromSeekableReadBuffer : public arrow::io::RandomAccessFil
 public:
     RandomAccessFileFromSeekableReadBuffer(SeekableReadBuffer & in_, off_t file_size_);
 
-    RandomAccessFileFromSeekableReadBuffer(SeekableReadBufferWithSize & in_);
-
     arrow::Result<int64_t> GetSize() override;
 
     arrow::Status Close() override;
@@ -62,31 +55,13 @@ public:
 
 private:
     SeekableReadBuffer & in;
-    std::optional<off_t> file_size;
+    off_t file_size;
     bool is_open = false;
 
     ARROW_DISALLOW_COPY_AND_ASSIGN(RandomAccessFileFromSeekableReadBuffer);
 };
 
-class ArrowInputStreamFromReadBuffer : public arrow::io::InputStream
-{
-public:
-    explicit ArrowInputStreamFromReadBuffer(ReadBuffer & in);
-    arrow::Result<int64_t> Read(int64_t nbytes, void* out) override;
-    arrow::Result<std::shared_ptr<arrow::Buffer>> Read(int64_t nbytes) override;
-    arrow::Status Abort() override;
-    arrow::Result<int64_t> Tell() const override;
-    arrow::Status Close() override;
-    bool closed() const override { return !is_open; }
-
-private:
-    ReadBuffer & in;
-    bool is_open = false;
-
-    ARROW_DISALLOW_COPY_AND_ASSIGN(ArrowInputStreamFromReadBuffer);
-};
-
-std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(ReadBuffer & in, const FormatSettings & settings);
+std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(ReadBuffer & in);
 
 }
 

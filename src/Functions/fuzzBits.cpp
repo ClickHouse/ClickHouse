@@ -3,10 +3,10 @@
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <pcg_random.hpp>
 #include <Common/randomSeed.h>
-#include <base/arithmeticOverflow.h>
+#include <common/arithmeticOverflow.h>
 
 #include <memory>
 
@@ -54,13 +54,11 @@ class FunctionFuzzBits : public IFunction
 public:
     static constexpr auto name = "fuzzBits";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFuzzBits>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionFuzzBits>(); }
 
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 2; }
 

@@ -8,7 +8,7 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <base/strong_typedef.h>
+#include <common/strong_typedef.h>
 
 #include <Common/Allocator.h>
 #include <Common/Exception.h>
@@ -37,6 +37,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_MPROTECT;
+    extern const int CANNOT_ALLOCATE_MEMORY;
 }
 
 /** A dynamic array for POD types.
@@ -104,7 +105,13 @@ protected:
     char * c_end_of_storage = null;    /// Does not include pad_right.
 
     /// The amount of memory occupied by the num_elements of the elements.
-    static size_t byte_size(size_t num_elements) { return num_elements * ELEMENT_SIZE; }
+    static size_t byte_size(size_t num_elements)
+    {
+        size_t amount;
+        if (__builtin_mul_overflow(num_elements, ELEMENT_SIZE, &amount))
+            throw Exception("Amount of memory requested to allocate is more than allowed", ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+        return amount;
+    }
 
     /// Minimum amount of memory to allocate for num_elements, including padding.
     static size_t minimum_memory_for_elements(size_t num_elements) { return byte_size(num_elements) + pad_right + pad_left; }
@@ -260,12 +267,22 @@ public:
     template <typename ... TAllocatorParams>
     void push_back_raw(const void * ptr, TAllocatorParams &&... allocator_params)
     {
-        size_t required_capacity = size() + ELEMENT_SIZE;
+        push_back_raw_many(1, ptr, std::forward<TAllocatorParams>(allocator_params)...);
+    }
+
+    template <typename ... TAllocatorParams>
+    void push_back_raw_many(size_t number_of_items, const void * ptr, TAllocatorParams &&... allocator_params)
+    {
+        size_t required_capacity = size() + number_of_items;
         if (unlikely(required_capacity > capacity()))
             reserve(required_capacity, std::forward<TAllocatorParams>(allocator_params)...);
 
-        memcpy(c_end, ptr, ELEMENT_SIZE);
-        c_end += ELEMENT_SIZE;
+        size_t items_byte_size = byte_size(number_of_items);
+        if (items_byte_size)
+        {
+            memcpy(c_end, ptr, items_byte_size);
+            c_end += items_byte_size;
+        }
     }
 
     void protect()
@@ -520,31 +537,6 @@ public:
         this->c_end += bytes_to_copy;
     }
 
-    template <typename ... TAllocatorParams>
-    void insertFromItself(iterator from_begin, iterator from_end, TAllocatorParams && ... allocator_params)
-    {
-        static_assert(memcpy_can_be_used_for_assignment<std::decay_t<T>, std::decay_t<decltype(*from_begin)>>);
-
-        /// Convert iterators to indexes because reserve can invalidate iterators
-        size_t start_index = from_begin - begin();
-        size_t end_index = from_end - begin();
-        size_t copy_size = end_index - start_index;
-
-        assert(start_index <= end_index);
-
-        size_t required_capacity = this->size() + copy_size;
-        if (required_capacity > this->capacity())
-            this->reserve(roundUpToPowerOfTwoOrZero(required_capacity), std::forward<TAllocatorParams>(allocator_params)...);
-
-        size_t bytes_to_copy = this->byte_size(copy_size);
-        if (bytes_to_copy)
-        {
-            auto begin = this->c_start + this->byte_size(start_index);
-            memcpy(this->c_end, reinterpret_cast<const void *>(&*begin), bytes_to_copy);
-            this->c_end += bytes_to_copy;
-        }
-    }
-
     template <typename It1, typename It2>
     void insert_assume_reserved(It1 from_begin, It2 from_end)
     {
@@ -583,7 +575,7 @@ public:
 
             /// arr1 takes ownership of the heap memory of arr2.
             arr1.c_start = arr2.c_start;
-            arr1.c_end_of_storage = arr1.c_start + heap_allocated - arr2.pad_right - arr2.pad_left;
+            arr1.c_end_of_storage = arr1.c_start + heap_allocated - arr1.pad_right;
             arr1.c_end = arr1.c_start + this->byte_size(heap_size);
 
             /// Allocate stack space for arr2.
@@ -600,7 +592,7 @@ public:
                 dest.dealloc();
                 dest.alloc(src.allocated_bytes(), std::forward<TAllocatorParams>(allocator_params)...);
                 memcpy(dest.c_start, src.c_start, this->byte_size(src.size()));
-                dest.c_end = dest.c_start + this->byte_size(src.size());
+                dest.c_end = dest.c_start + (src.c_end - src.c_start);
 
                 src.c_start = Base::null;
                 src.c_end = Base::null;
@@ -654,8 +646,8 @@ public:
             size_t rhs_size = rhs.size();
             size_t rhs_allocated = rhs.allocated_bytes();
 
-            this->c_end_of_storage = this->c_start + rhs_allocated - Base::pad_right - Base::pad_left;
-            rhs.c_end_of_storage = rhs.c_start + lhs_allocated - Base::pad_right - Base::pad_left;
+            this->c_end_of_storage = this->c_start + rhs_allocated - Base::pad_right;
+            rhs.c_end_of_storage = rhs.c_start + lhs_allocated - Base::pad_right;
 
             this->c_end = this->c_start + this->byte_size(rhs_size);
             rhs.c_end = rhs.c_start + this->byte_size(lhs_size);
@@ -707,59 +699,35 @@ public:
         assign(from.begin(), from.end());
     }
 
-    void erase(const_iterator first, const_iterator last)
+
+    bool operator== (const PODArray & other) const
     {
-        iterator first_no_const = const_cast<iterator>(first);
-        iterator last_no_const = const_cast<iterator>(last);
-
-        size_t items_to_move = end() - last;
-
-        while (items_to_move != 0)
-        {
-            *first_no_const = *last_no_const;
-
-            ++first_no_const;
-            ++last_no_const;
-
-            --items_to_move;
-        }
-
-        this->c_end = reinterpret_cast<char *>(first_no_const);
-    }
-
-    void erase(const_iterator pos)
-    {
-        this->erase(pos, pos + 1);
-    }
-
-    bool operator== (const PODArray & rhs) const
-    {
-        if (this->size() != rhs.size())
+        if (this->size() != other.size())
             return false;
 
-        const_iterator lhs_it = begin();
-        const_iterator rhs_it = rhs.begin();
+        const_iterator this_it = begin();
+        const_iterator that_it = other.begin();
 
-        while (lhs_it != end())
+        while (this_it != end())
         {
-            if (*lhs_it != *rhs_it)
+            if (*this_it != *that_it)
                 return false;
 
-            ++lhs_it;
-            ++rhs_it;
+            ++this_it;
+            ++that_it;
         }
 
         return true;
     }
 
-    bool operator!= (const PODArray & rhs) const
+    bool operator!= (const PODArray & other) const
     {
-        return !operator==(rhs);
+        return !operator==(other);
     }
 };
 
-template <typename T, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
-void swap(PODArray<T, initial_bytes, TAllocator, pad_right_, pad_left_> & lhs, PODArray<T, initial_bytes, TAllocator, pad_right_, pad_left_> & rhs)
+template <typename T, size_t initial_bytes, typename TAllocator, size_t pad_right_>
+void swap(PODArray<T, initial_bytes, TAllocator, pad_right_> & lhs, PODArray<T, initial_bytes, TAllocator, pad_right_> & rhs)
 {
     lhs.swap(rhs);
 }

@@ -6,12 +6,16 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTLiteral.h>
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/Context.h>
+
+#include <Parsers/queryToString.h>
 
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -158,7 +162,7 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
 TTLDescription TTLDescription::getTTLFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
-    ContextPtr context,
+    const Context & context,
     const KeyDescription & primary_key)
 {
     TTLDescription result;
@@ -285,7 +289,7 @@ TTLDescription TTLDescription::getTTLFromAST(
         {
             result.recompression_codec =
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                    ttl_element->recompression_codec, {}, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs);
+                    ttl_element->recompression_codec, {}, !context.getSettingsRef().allow_suspicious_codecs);
         }
     }
 
@@ -326,7 +330,7 @@ TTLTableDescription & TTLTableDescription::operator=(const TTLTableDescription &
 TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     const ASTPtr & definition_ast,
     const ColumnsDescription & columns,
-    ContextPtr context,
+    const Context & context,
     const KeyDescription & primary_key)
 {
     TTLTableDescription result;

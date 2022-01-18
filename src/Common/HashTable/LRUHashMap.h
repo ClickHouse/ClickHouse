@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 
 #include <boost/intrusive/trivial_value_traits.hpp>
 #include <boost/intrusive/list.hpp>
@@ -77,7 +77,7 @@ struct LRUHashMapCellNodeTraits
     static void set_previous(node * __restrict ptr, node * __restrict prev) { ptr->prev = prev; }
 };
 
-template <typename TKey, typename TValue, typename Disposer, typename Hash, bool save_hash_in_cells>
+template <typename TKey, typename TValue, typename Hash, bool save_hash_in_cells>
 class LRUHashMapImpl :
     private HashMapTable<
         TKey,
@@ -108,33 +108,24 @@ public:
         boost::intrusive::value_traits<LRUHashMapCellIntrusiveValueTraits>,
         boost::intrusive::constant_time_size<false>>;
 
-    using LookupResult = typename Base::LookupResult;
-    using ConstLookupResult = typename Base::ConstLookupResult;
-
     using iterator = typename LRUList::iterator;
     using const_iterator = typename LRUList::const_iterator;
     using reverse_iterator = typename LRUList::reverse_iterator;
     using const_reverse_iterator = typename LRUList::const_reverse_iterator;
 
-    explicit LRUHashMapImpl(size_t max_size_, bool preallocate_max_size_in_hash_map = false, Disposer disposer_ = Disposer())
+    LRUHashMapImpl(size_t max_size_, bool preallocate_max_size_in_hash_map = false)
         : Base(preallocate_max_size_in_hash_map ? max_size_ : 32)
         , max_size(max_size_)
-        , disposer(std::move(disposer_))
     {
         assert(max_size > 0);
     }
 
-    ~LRUHashMapImpl()
-    {
-        clear();
-    }
-
-    std::pair<Cell *, bool> ALWAYS_INLINE insert(const Key & key, const Value & value)
+    std::pair<Cell *, bool> insert(const Key & key, const Value & value)
     {
         return emplace(key, value);
     }
 
-    std::pair<Cell *, bool> ALWAYS_INLINE insert(const Key & key, Value && value)
+    std::pair<Cell *, bool> insert(const Key & key, Value && value)
     {
         return emplace(key, std::move(value));
     }
@@ -156,16 +147,15 @@ public:
         if (size() == max_size)
         {
             /// Erase least recently used element from front of the list
-            Cell copy_node = lru_list.front();
+            Cell & node = lru_list.front();
 
-            const Key & element_to_remove_key = copy_node.getKey();
+            const Key & element_to_remove_key = node.getKey();
+            size_t key_hash = node.getHash(*this);
 
             lru_list.pop_front();
 
-            [[maybe_unused]] bool erased = Base::erase(element_to_remove_key);
+            [[maybe_unused]] bool erased = Base::erase(element_to_remove_key, key_hash);
             assert(erased);
-
-            disposer(element_to_remove_key, copy_node.getMapped());
         }
 
         [[maybe_unused]] bool inserted;
@@ -184,70 +174,46 @@ public:
         return std::make_pair(it, true);
     }
 
-    LookupResult ALWAYS_INLINE find(const Key & key)
+    using Base::find;
+
+    Value & get(const Key & key)
     {
         auto it = Base::find(key);
+        assert(it);
 
-        if (!it)
-            return nullptr;
+        Value & value = it->getMapped();
 
         /// Put cell to the end of lru list
         lru_list.splice(lru_list.end(), lru_list, lru_list.iterator_to(*it));
 
-        return it;
+        return value;
     }
 
-    ConstLookupResult ALWAYS_INLINE find(const Key & key) const
-    {
-        return const_cast<std::decay_t<decltype(*this)> *>(this)->find(key);
-    }
-
-    Value & ALWAYS_INLINE get(const Key & key)
-    {
-        auto it = find(key);
-        assert(it);
-
-        return it->getMapped();
-    }
-
-    const Value & ALWAYS_INLINE get(const Key & key) const
+    const Value & get(const Key & key) const
     {
         return const_cast<std::decay_t<decltype(*this)> *>(this)->get(key);
     }
 
-    bool ALWAYS_INLINE contains(const Key & key) const
+    bool contains(const Key & key) const
     {
-        return find(key) != nullptr;
+        return Base::has(key);
     }
 
-    Value & ALWAYS_INLINE operator[](const Key & key)
+    bool erase(const Key & key)
     {
-        auto [it, _] = emplace(key);
-        return it->getMapped();
-    }
-
-    bool ALWAYS_INLINE erase(const Key & key)
-    {
-        auto key_hash = Base::hash(key);
-        auto it = Base::find(key, key_hash);
+        auto hash = Base::hash(key);
+        auto it = Base::find(key, hash);
 
         if (!it)
             return false;
 
         lru_list.erase(lru_list.iterator_to(*it));
 
-        Cell copy_node = *it;
-        Base::erase(key, key_hash);
-        disposer(copy_node.getKey(), copy_node.getMapped());
-
-        return true;
+        return Base::erase(key, hash);
     }
 
-    void ALWAYS_INLINE clear()
+    void clear()
     {
-        for (auto & cell : lru_list)
-            disposer(cell.getKey(), cell.getMapped());
-
         lru_list.clear();
         Base::clear();
     }
@@ -255,10 +221,6 @@ public:
     using Base::size;
 
     size_t getMaxSize() const { return max_size; }
-
-    size_t getSizeInBytes() const { return Base::getBufferSizeInBytes(); }
-
-    using Base::hash;
 
     iterator begin() { return lru_list.begin(); }
     const_iterator begin() const { return lru_list.cbegin(); }
@@ -273,17 +235,10 @@ public:
 private:
     size_t max_size;
     LRUList lru_list;
-    Disposer disposer;
 };
 
-template <typename Key, typename Mapped>
-struct DefaultLRUHashMapCellDisposer
-{
-    void operator()(const Key &, const Mapped &) const {}
-};
+template <typename Key, typename Value, typename Hash = DefaultHash<Key>>
+using LRUHashMap = LRUHashMapImpl<Key, Value, Hash, false>;
 
-template <typename Key, typename Value, typename Disposer = DefaultLRUHashMapCellDisposer<Key, Value>, typename Hash = DefaultHash<Key>>
-using LRUHashMap = LRUHashMapImpl<Key, Value, Disposer, Hash, false>;
-
-template <typename Key, typename Value, typename Disposer = DefaultLRUHashMapCellDisposer<Key, Value>, typename Hash = DefaultHash<Key>>
-using LRUHashMapWithSavedHash = LRUHashMapImpl<Key, Value, Disposer, Hash, true>;
+template <typename Key, typename Value, typename Hash = DefaultHash<Key>>
+using LRUHashMapWithSavedHash = LRUHashMapImpl<Key, Value, Hash, true>;

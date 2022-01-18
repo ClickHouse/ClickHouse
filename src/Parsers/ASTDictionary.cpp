@@ -1,8 +1,6 @@
 #include <Parsers/ASTDictionary.h>
 #include <Poco/String.h>
 #include <IO/Operators.h>
-#include <Common/FieldVisitorToString.h>
-
 
 namespace DB
 {

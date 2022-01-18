@@ -23,7 +23,6 @@
 
 namespace DB
 {
-struct Settings;
 
 
 template <typename T>
@@ -60,8 +59,6 @@ public:
         return std::make_shared<DataTypeArray>(this->argument_types[0]);
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
-
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         if (limit_num_elems && this->data(place).value.size() >= max_elems)
@@ -87,7 +84,7 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         auto & set = this->data(place).value;
         size_t size = set.size();
@@ -96,7 +93,7 @@ public:
             writeIntBinary(elem, buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
     {
         this->data(place).value.read(buf);
     }
@@ -169,7 +166,7 @@ public:
         return true;
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         auto & set = this->data(place).value;
         writeVarUInt(set.size(), buf);
@@ -180,7 +177,7 @@ public:
         }
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
     {
         auto & set = this->data(place).value;
         size_t size;

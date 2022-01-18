@@ -2,7 +2,6 @@
 
 #include <Client/Connection.h>
 #include <Core/Block.h>
-#include <Interpreters/Context_fwd.h>
 #include <IO/ReadBuffer.h>
 #include <Server/HTTP/HTMLForm.h>
 
@@ -12,20 +11,29 @@
 #include <vector>
 
 
-namespace Poco::Net
+namespace Poco
 {
-class NameValueCollection;
-class MessageHeader;
+    namespace Net
+    {
+        class NameValueCollection;
+        class MessageHeader;
+    }
 }
 
-namespace boost::program_options
+namespace boost
 {
-class variables_map;
+    namespace program_options
+    {
+        class variables_map;
+    }
 }
 
 
 namespace DB
 {
+
+class Context;
+
 
 /// The base class containing the basic information about external table and
 /// basic functions for extracting this information from text fields.
@@ -48,7 +56,7 @@ public:
     virtual void initReadBuffer() {}
 
     /// Get the table data - a pair (a stream with the contents of the table, the name of the table)
-    ExternalTableDataPtr getData(ContextPtr context);
+    ExternalTableDataPtr getData(const Context & context);
 
 protected:
     /// Clear all accumulated information
@@ -80,14 +88,15 @@ public:
 /// Parsing of external table used when sending tables via http
 /// The `handlePart` function will be called for each table passed,
 /// so it's also necessary to call `clean` at the end of the `handlePart`.
-class ExternalTablesHandler : public HTMLForm::PartHandler, BaseExternalTable, WithMutableContext
+class ExternalTablesHandler : public HTMLForm::PartHandler, BaseExternalTable
 {
 public:
-    ExternalTablesHandler(ContextMutablePtr context_, const Poco::Net::NameValueCollection & params_) : WithMutableContext(context_), params(params_) {}
+    ExternalTablesHandler(Context & context_, const Poco::Net::NameValueCollection & params_) : context(context_), params(params_) {}
 
     void handlePart(const Poco::Net::MessageHeader & header, ReadBuffer & stream) override;
 
 private:
+    Context & context;
     const Poco::Net::NameValueCollection & params;
 };
 

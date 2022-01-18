@@ -3,11 +3,13 @@
 #include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Core/ProtocolDefines.h>
-#include <base/getFQDNOrHostName.h>
+#include <Core/Defines.h>
+#include <common/getFQDNOrHostName.h>
 #include <unistd.h>
 
-#include <Common/config_version.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config_version.h>
+#endif
 
 
 namespace DB
@@ -31,9 +33,6 @@ void ClientInfo::write(WriteBuffer & out, const UInt64 server_protocol_revision)
     writeBinary(initial_user, out);
     writeBinary(initial_query_id, out);
     writeBinary(initial_address.toString(), out);
-
-    if (server_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INITIAL_QUERY_START_TIME)
-        writeBinary(initial_query_start_time_microseconds, out);
 
     writeBinary(UInt8(interface), out);
 
@@ -61,9 +60,6 @@ void ClientInfo::write(WriteBuffer & out, const UInt64 server_protocol_revision)
     if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_QUOTA_KEY_IN_CLIENT_INFO)
         writeBinary(quota_key, out);
 
-    if (server_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_DISTRIBUTED_DEPTH)
-        writeVarUInt(distributed_depth, out);
-
     if (interface == Interface::TCP)
     {
         if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
@@ -72,7 +68,7 @@ void ClientInfo::write(WriteBuffer & out, const UInt64 server_protocol_revision)
 
     if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_OPENTELEMETRY)
     {
-        if (client_trace_context.trace_id != UUID())
+        if (client_trace_context.trace_id)
         {
             // Have OpenTelemetry header.
             writeBinary(uint8_t(1), out);
@@ -88,13 +84,6 @@ void ClientInfo::write(WriteBuffer & out, const UInt64 server_protocol_revision)
             // Don't have OpenTelemetry header.
             writeBinary(uint8_t(0), out);
         }
-    }
-
-    if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS)
-    {
-        writeVarUInt(static_cast<UInt64>(collaborate_with_initiator), out);
-        writeVarUInt(count_participating_replicas, out);
-        writeVarUInt(number_of_current_replica, out);
     }
 }
 
@@ -116,12 +105,6 @@ void ClientInfo::read(ReadBuffer & in, const UInt64 client_protocol_revision)
     String initial_address_string;
     readBinary(initial_address_string, in);
     initial_address = Poco::Net::SocketAddress(initial_address_string);
-
-    if (client_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INITIAL_QUERY_START_TIME)
-    {
-        readBinary(initial_query_start_time_microseconds, in);
-        initial_query_start_time = initial_query_start_time_microseconds / 1000000;
-    }
 
     UInt8 read_interface = 0;
     readBinary(read_interface, in);
@@ -154,9 +137,6 @@ void ClientInfo::read(ReadBuffer & in, const UInt64 client_protocol_revision)
     if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_QUOTA_KEY_IN_CLIENT_INFO)
         readBinary(quota_key, in);
 
-    if (client_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_DISTRIBUTED_DEPTH)
-        readVarUInt(distributed_depth, in);
-
     if (interface == Interface::TCP)
     {
         if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
@@ -176,15 +156,6 @@ void ClientInfo::read(ReadBuffer & in, const UInt64 client_protocol_revision)
             readBinary(client_trace_context.tracestate, in);
             readBinary(client_trace_context.trace_flags, in);
         }
-    }
-
-    if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS)
-    {
-        UInt64 value;
-        readVarUInt(value, in);
-        collaborate_with_initiator = static_cast<bool>(value);
-        readVarUInt(count_participating_replicas, in);
-        readVarUInt(number_of_current_replica, in);
     }
 }
 

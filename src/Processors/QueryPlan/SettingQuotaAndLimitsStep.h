@@ -1,9 +1,7 @@
 #pragma once
-
-#include <Interpreters/Context_fwd.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Storages/TableLockHolder.h>
-#include <QueryPipeline/StreamLocalLimits.h>
+#include <DataStreams/StreamLocalLimits.h>
 
 namespace DB
 {
@@ -28,14 +26,14 @@ public:
         StreamLocalLimits & limits_,
         SizeLimits & leaf_limits_,
         std::shared_ptr<const EnabledQuota> quota_,
-        ContextPtr context_);
+        std::shared_ptr<Context> context_);
 
     String getName() const override { return "SettingQuotaAndLimits"; }
 
-    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+    void transformPipeline(QueryPipeline & pipeline) override;
 
 private:
-    ContextPtr context;
+    std::shared_ptr<Context> context;
     StoragePtr storage;
     TableLockHolder table_lock;
     StreamLocalLimits limits;

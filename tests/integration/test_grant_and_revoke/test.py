@@ -3,7 +3,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('instance')
+instance = cluster.add_instance('instance', main_configs=['configs/log_conf.xml'])
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -26,7 +26,7 @@ def cleanup_after_test():
     try:
         yield
     finally:
-        instance.query("DROP USER IF EXISTS A, B, C")
+        instance.query("DROP USER IF EXISTS A, B")
         instance.query("DROP TABLE IF EXISTS test.view_1")
 
 
@@ -106,52 +106,12 @@ def test_revoke_requires_grant_option():
     assert instance.query("SHOW GRANTS FOR B") == ""
 
 
-def test_allowed_grantees():
-    instance.query("CREATE USER A")
-    instance.query("CREATE USER B")
-
-    instance.query('GRANT SELECT ON test.table TO A WITH GRANT OPTION')
-    instance.query("GRANT SELECT ON test.table TO B", user='A')
-    assert instance.query("SELECT * FROM test.table", user='B') == "1\t5\n2\t10\n"
-    instance.query("REVOKE SELECT ON test.table FROM B", user='A')
-
-    instance.query('ALTER USER A GRANTEES NONE')
-    expected_error = "user `B` is not allowed as grantee"
-    assert expected_error in instance.query_and_get_error("GRANT SELECT ON test.table TO B", user='A')
-
-    instance.query('ALTER USER A GRANTEES ANY EXCEPT B')
-    assert instance.query('SHOW CREATE USER A') == "CREATE USER A GRANTEES ANY EXCEPT B\n"
-    expected_error = "user `B` is not allowed as grantee"
-    assert expected_error in instance.query_and_get_error("GRANT SELECT ON test.table TO B", user='A')
-
-    instance.query('ALTER USER A GRANTEES B')
-    instance.query("GRANT SELECT ON test.table TO B", user='A')
-    assert instance.query("SELECT * FROM test.table", user='B') == "1\t5\n2\t10\n"
-    instance.query("REVOKE SELECT ON test.table FROM B", user='A')
-
-    instance.query('ALTER USER A GRANTEES ANY')
-    assert instance.query('SHOW CREATE USER A') == "CREATE USER A\n"
-    instance.query("GRANT SELECT ON test.table TO B", user='A')
-    assert instance.query("SELECT * FROM test.table", user='B') == "1\t5\n2\t10\n"
-
-    instance.query('ALTER USER A GRANTEES NONE')
-    expected_error = "user `B` is not allowed as grantee"
-    assert expected_error in instance.query_and_get_error("REVOKE SELECT ON test.table FROM B", user='A')
-
-    instance.query("CREATE USER C GRANTEES ANY EXCEPT C")
-    assert instance.query('SHOW CREATE USER C') == "CREATE USER C GRANTEES ANY EXCEPT C\n"
-    instance.query('GRANT SELECT ON test.table TO C WITH GRANT OPTION')
-    assert instance.query("SELECT * FROM test.table", user='C') == "1\t5\n2\t10\n"
-    expected_error = "user `C` is not allowed as grantee"
-    assert expected_error in instance.query_and_get_error("REVOKE SELECT ON test.table FROM C", user='C')
-
-
 def test_grant_all_on_table():
     instance.query("CREATE USER A, B")
     instance.query("GRANT ALL ON test.table TO A WITH GRANT OPTION")
     instance.query("GRANT ALL ON test.table TO B", user='A')
     assert instance.query(
-        "SHOW GRANTS FOR B") == "GRANT SHOW TABLES, SHOW COLUMNS, SHOW DICTIONARIES, SELECT, INSERT, ALTER TABLE, ALTER VIEW, CREATE TABLE, CREATE VIEW, CREATE DICTIONARY, DROP TABLE, DROP VIEW, DROP DICTIONARY, TRUNCATE, OPTIMIZE, SYSTEM MERGES, SYSTEM TTL MERGES, SYSTEM FETCHES, SYSTEM MOVES, SYSTEM SENDS, SYSTEM REPLICATION QUEUES, SYSTEM DROP REPLICA, SYSTEM SYNC REPLICA, SYSTEM RESTART REPLICA, SYSTEM RESTORE REPLICA, SYSTEM FLUSH DISTRIBUTED, dictGet ON test.table TO B\n"
+        "SHOW GRANTS FOR B") == "GRANT SHOW TABLES, SHOW COLUMNS, SHOW DICTIONARIES, SELECT, INSERT, ALTER, CREATE TABLE, CREATE VIEW, CREATE DICTIONARY, DROP TABLE, DROP VIEW, DROP DICTIONARY, TRUNCATE, OPTIMIZE, SYSTEM MERGES, SYSTEM TTL MERGES, SYSTEM FETCHES, SYSTEM MOVES, SYSTEM SENDS, SYSTEM REPLICATION QUEUES, SYSTEM DROP REPLICA, SYSTEM SYNC REPLICA, SYSTEM RESTART REPLICA, SYSTEM FLUSH DISTRIBUTED, dictGet ON test.table TO B\n"
     instance.query("REVOKE ALL ON test.table FROM B", user='A')
     assert instance.query("SHOW GRANTS FOR B") == ""
 
@@ -282,36 +242,3 @@ def test_current_database():
 
     instance.query("CREATE TABLE default.table(x UInt32, y UInt32) ENGINE = MergeTree ORDER BY tuple()")
     assert "Not enough privileges" in instance.query_and_get_error("SELECT * FROM table", user='A')
-
-
-def test_grant_with_replace_option():
-    instance.query("CREATE USER A")
-    instance.query('GRANT SELECT ON test.table TO A')
-    assert instance.query("SHOW GRANTS FOR A") == TSV(["GRANT SELECT ON test.table TO A"])
-
-    instance.query('GRANT INSERT ON test.table TO A WITH REPLACE OPTION')
-    assert instance.query("SHOW GRANTS FOR A") == TSV(["GRANT INSERT ON test.table TO A"])
-
-    instance.query('GRANT NONE ON *.* TO A WITH REPLACE OPTION')
-    assert instance.query("SHOW GRANTS FOR A") == TSV([])
-
-    instance.query('CREATE USER B')
-    instance.query('GRANT SELECT ON test.table TO B')
-    assert instance.query("SHOW GRANTS FOR A") == TSV([])
-    assert instance.query("SHOW GRANTS FOR B") == TSV(["GRANT SELECT ON test.table TO B"])
-
-    expected_error = "it's necessary to have grant INSERT ON test.table WITH GRANT OPTION"
-    assert expected_error in instance.query_and_get_error("GRANT INSERT ON test.table TO B WITH REPLACE OPTION", user='A')
-    assert instance.query("SHOW GRANTS FOR A") == TSV([])
-    assert instance.query("SHOW GRANTS FOR B") == TSV(["GRANT SELECT ON test.table TO B"])
-
-    instance.query("GRANT INSERT ON test.table TO A WITH GRANT OPTION")
-    expected_error = "it's necessary to have grant SELECT ON test.table WITH GRANT OPTION"
-    assert expected_error in instance.query_and_get_error("GRANT INSERT ON test.table TO B WITH REPLACE OPTION", user='A')
-    assert instance.query("SHOW GRANTS FOR A") == TSV(["GRANT INSERT ON test.table TO A WITH GRANT OPTION"])
-    assert instance.query("SHOW GRANTS FOR B") == TSV(["GRANT SELECT ON test.table TO B"])
-
-    instance.query("GRANT SELECT ON test.table TO A WITH GRANT OPTION")
-    instance.query("GRANT INSERT ON test.table TO B WITH REPLACE OPTION", user='A')
-    assert instance.query("SHOW GRANTS FOR A") == TSV(["GRANT SELECT, INSERT ON test.table TO A WITH GRANT OPTION"])
-    assert instance.query("SHOW GRANTS FOR B") == TSV(["GRANT INSERT ON test.table TO B"])

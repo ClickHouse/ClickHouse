@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/ASTQueryWithOutput.h>
-#include <Parsers/SelectUnionMode.h>
+
 
 namespace DB
 {
@@ -14,23 +14,24 @@ public:
     String getID(char) const override { return "SelectWithUnionQuery"; }
 
     ASTPtr clone() const override;
-
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
-    const char * getQueryKindString() const override { return "Select"; }
+    enum class Mode
+    {
+        Unspecified,
+        ALL,
+        DISTINCT
+    };
 
-    SelectUnionMode union_mode;
+    using UnionModes = std::vector<Mode>;
 
-    SelectUnionModes list_of_modes;
+    Mode union_mode;
+
+    UnionModes list_of_modes;
 
     bool is_normalized = false;
 
     ASTPtr list_of_selects;
-
-    SelectUnionModesSet set_of_modes;
-
-    /// Consider any mode other than ALL as non-default.
-    bool hasNonDefaultUnionMode() const;
 };
 
 }

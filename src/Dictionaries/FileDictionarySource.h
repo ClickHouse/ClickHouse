@@ -17,25 +17,25 @@ class FileDictionarySource final : public IDictionarySource
 {
 public:
     FileDictionarySource(const std::string & filepath_, const std::string & format_,
-        Block & sample_block_, ContextPtr context_, bool created_from_ddl);
+        Block & sample_block_, const Context & context_, bool check_config);
 
     FileDictionarySource(const FileDictionarySource & other);
 
-    Pipe loadAll() override;
+    BlockInputStreamPtr loadAll() override;
 
-    Pipe loadUpdatedAll() override
+    BlockInputStreamPtr loadUpdatedAll() override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadUpdatedAll is unsupported for FileDictionarySource");
+        throw Exception{"Method loadUpdatedAll is unsupported for FileDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
     }
 
-    Pipe loadIds(const std::vector<UInt64> & /*ids*/) override
+    BlockInputStreamPtr loadIds(const std::vector<UInt64> & /*ids*/) override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadIds is unsupported for FileDictionarySource");
+        throw Exception{"Method loadIds is unsupported for FileDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
     }
 
-    Pipe loadKeys(const Columns & /*key_columns*/, const std::vector<size_t> & /*requested_rows*/) override
+    BlockInputStreamPtr loadKeys(const Columns & /*key_columns*/, const std::vector<size_t> & /*requested_rows*/) override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method loadKeys is unsupported for FileDictionarySource");
+        throw Exception{"Method loadKeys is unsupported for FileDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
     }
 
     bool isModified() const override
@@ -51,7 +51,7 @@ public:
     ///Not supported for FileDictionarySource
     bool hasUpdateField() const override { return false; }
 
-    DictionarySourcePtr clone() const override { return std::make_shared<FileDictionarySource>(*this); }
+    DictionarySourcePtr clone() const override { return std::make_unique<FileDictionarySource>(*this); }
 
     std::string toString() const override;
 
@@ -61,7 +61,7 @@ private:
     const std::string filepath;
     const std::string format;
     Block sample_block;
-    ContextPtr context;
+    const Context context;
     Poco::Timestamp last_modification;
 };
 

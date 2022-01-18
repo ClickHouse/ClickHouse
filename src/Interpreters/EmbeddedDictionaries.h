@@ -1,13 +1,10 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
-#include <Common/MultiVersion.h>
-#include <Common/ThreadPool.h>
-
-#include <Poco/Event.h>
-
 #include <thread>
 #include <functional>
+#include <Common/MultiVersion.h>
+#include <Common/ThreadPool.h>
+#include <Poco/Event.h>
 
 
 namespace Poco { class Logger; namespace Util { class AbstractConfiguration; } }
@@ -20,12 +17,16 @@ class GeoDictionariesLoader;
 namespace DB
 {
 
+class Context;
+
+
 /// Metrica's Dictionaries which can be used in functions.
 
-class EmbeddedDictionaries : WithContext
+class EmbeddedDictionaries
 {
 private:
     Poco::Logger * log;
+    Context & context;
 
     MultiVersion<RegionsHierarchies> regions_hierarchies;
     MultiVersion<RegionsNames> regions_names;
@@ -43,7 +44,7 @@ private:
     Poco::Event destroy;
 
 
-    void handleException(bool throw_on_error) const;
+    void handleException(const bool throw_on_error) const;
 
     /** Updates directories (dictionaries) every reload_period seconds.
      * If all dictionaries are not loaded at least once, try reload them with exponential delay (1, 2, ... reload_period).
@@ -52,7 +53,7 @@ private:
     void reloadPeriodically();
 
     /// Updates dictionaries.
-    bool reloadImpl(bool throw_on_error, bool force_reload = false);
+    bool reloadImpl(const bool throw_on_error, const bool force_reload = false);
 
     template <typename Dictionary>
     using DictionaryReloader = std::function<std::unique_ptr<Dictionary>(const Poco::Util::AbstractConfiguration & config)>;
@@ -61,15 +62,15 @@ private:
     bool reloadDictionary(
         MultiVersion<Dictionary> & dictionary,
         DictionaryReloader<Dictionary> reload_dictionary,
-        bool throw_on_error,
-        bool force_reload);
+        const bool throw_on_error,
+        const bool force_reload);
 
 public:
     /// Every reload_period seconds directories are updated inside a separate thread.
     EmbeddedDictionaries(
         std::unique_ptr<GeoDictionariesLoader> geo_dictionaries_loader,
-        ContextPtr context,
-        bool throw_on_error);
+        Context & context,
+        const bool throw_on_error);
 
     /// Forcibly reloads all dictionaries.
     void reload();

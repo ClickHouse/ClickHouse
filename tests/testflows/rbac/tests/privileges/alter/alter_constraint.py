@@ -275,8 +275,7 @@ def user_with_privileges_on_cluster(self, table_type, node=None):
 @Requirements(
     RQ_SRS_006_RBAC_Privileges_AlterConstraint("1.0"),
     RQ_SRS_006_RBAC_Privileges_AlterConstraint_TableEngines("1.0"),
-    RQ_SRS_006_RBAC_Privileges_All("1.0"),
-    RQ_SRS_006_RBAC_Privileges_None("1.0")
+    RQ_SRS_006_RBAC_Privileges_All("1.0")
 )
 @Examples("table_type", [
     (key,) for key in table_types.keys()
@@ -297,10 +296,13 @@ def feature(self, node="clickhouse1", parallel=None, stress=None):
             continue
 
         with Example(str(example)):
-            with Pool(5) as pool:
+            pool = Pool(5)
+            try:
                 tasks = []
                 try:
                     for scenario in loads(current_module(), Scenario):
                         run_scenario(pool, tasks, Scenario(test=scenario, setup=instrument_clickhouse_server_log), {"table_type" : table_type})
                 finally:
                     join(tasks)
+            finally:
+                pool.close()

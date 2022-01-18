@@ -4,6 +4,8 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -95,7 +97,7 @@ public:
         KeepFunctionVisitor::Data keep_data{data.key_names_to_keep, keep_key};
         KeepFunctionVisitor(keep_data).visit(function_node->arguments);
 
-        if (!keep_key) //-V547
+        if (!keep_key)
             (data.key_names_to_keep).erase(function_node->getColumnName());
     }
 

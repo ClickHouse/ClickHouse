@@ -17,8 +17,6 @@ def start_cluster():
         cluster.shutdown()
 
 def test_default_codec_read(start_cluster):
-    node1.query("DROP TABLE IF EXISTS test_18340")
-
     node1.query("""
         CREATE TABLE test_18340
         (

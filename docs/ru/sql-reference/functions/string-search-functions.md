@@ -1,13 +1,13 @@
 ---
 toc_priority: 41
-toc_title: "Функции поиска в строках"
+toc_title: "\u0424\u0443\u043d\u043a\u0446\u0438\u0438\u0020\u043f\u043e\u0438\u0441\u043a\u0430\u0020\u0432\u0020\u0441\u0442\u0440\u043e\u043a\u0430\u0445"
 ---
 
 # Функции поиска в строках {#funktsii-poiska-v-strokakh}
 
 Во всех функциях, поиск регистрозависимый по умолчанию. Существуют варианты функций для регистронезависимого поиска.
 
-## position(haystack, needle), locate(haystack, needle) {#position}
+## position(haystack, needle) {#position}
 
 Поиск подстроки `needle` в строке `haystack`.
 
@@ -21,20 +21,13 @@ toc_title: "Функции поиска в строках"
 position(haystack, needle[, start_pos])
 ```
 
-``` sql
-position(needle IN haystack)
-```
-
 Алиас: `locate(haystack, needle[, start_pos])`.
 
-!!! note "Примечание"
-    Синтаксис `position(needle IN haystack)` обеспечивает совместимость с SQL, функция работает так же, как `position(haystack, needle)`.
-
-**Аргументы**
+**Параметры**
 
 -   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
 -   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
--   `start_pos` — опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md).
+-   `start_pos` – Опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Возвращаемые значения**
 
@@ -50,10 +43,10 @@ position(needle IN haystack)
 Запрос:
 
 ``` sql
-SELECT position('Hello, world!', '!');
+SELECT position('Hello, world!', '!')
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─position('Hello, world!', '!')─┐
@@ -66,45 +59,15 @@ SELECT position('Hello, world!', '!');
 Запрос:
 
 ``` sql
-SELECT position('Привет, мир!', '!');
+SELECT position('Привет, мир!', '!')
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─position('Привет, мир!', '!')─┐
 │                            21 │
 └───────────────────────────────┘
-```
-
-**Примеры работы функции с синтаксисом POSITION(needle IN haystack)**
-
-Запрос:
-
-```sql
-SELECT 1 = position('абв' IN 'абв');
-```
-
-Результат:
-
-```text
-┌─equals(1, position('абв', 'абв'))─┐
-│                                 1 │
-└───────────────────────────────────┘
-```
-
-Запрос:
-
-```sql
-SELECT 0 = position('абв' IN '');
-```
-
-Результат:
-
-```text
-┌─equals(0, position('', 'абв'))─┐
-│                              1 │
-└────────────────────────────────┘
 ```
 
 ## positionCaseInsensitive {#positioncaseinsensitive}
@@ -119,11 +82,11 @@ SELECT 0 = position('абв' IN '');
 positionCaseInsensitive(haystack, needle[, start_pos])
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
 -   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
--   `start_pos` — опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md).
+-   `start_pos` – Опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Возвращаемые значения**
 
@@ -137,10 +100,10 @@ positionCaseInsensitive(haystack, needle[, start_pos])
 Запрос:
 
 ``` sql
-SELECT positionCaseInsensitive('Hello, world!', 'hello');
+SELECT positionCaseInsensitive('Hello, world!', 'hello')
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─positionCaseInsensitive('Hello, world!', 'hello')─┐
@@ -162,11 +125,11 @@ SELECT positionCaseInsensitive('Hello, world!', 'hello');
 positionUTF8(haystack, needle[, start_pos])
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
 -   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
--   `start_pos` — опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md).
+-   `start_pos` – Опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Возвращаемые значения**
 
@@ -182,10 +145,10 @@ positionUTF8(haystack, needle[, start_pos])
 Запрос:
 
 ``` sql
-SELECT positionUTF8('Привет, мир!', '!');
+SELECT positionUTF8('Привет, мир!', '!')
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─positionUTF8('Привет, мир!', '!')─┐
@@ -198,7 +161,7 @@ SELECT positionUTF8('Привет, мир!', '!');
 Запрос для символа `é`, который представлен одной кодовой точкой `U+00E9`:
 
 ``` sql
-SELECT positionUTF8('Salut, étudiante!', '!');
+SELECT positionUTF8('Salut, étudiante!', '!')
 ```
 
 Result:
@@ -212,10 +175,10 @@ Result:
 Запрос для символа `é`, который представлен двумя кодовыми точками `U+0065U+0301`:
 
 ``` sql
-SELECT positionUTF8('Salut, étudiante!', '!');
+SELECT positionUTF8('Salut, étudiante!', '!')
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─positionUTF8('Salut, étudiante!', '!')─┐
@@ -235,11 +198,11 @@ SELECT positionUTF8('Salut, étudiante!', '!');
 positionCaseInsensitiveUTF8(haystack, needle[, start_pos])
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
 -   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
--   `start_pos` — опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md).
+-   `start_pos` – Опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md)
 
 **Возвращаемые значения**
 
@@ -253,10 +216,10 @@ positionCaseInsensitiveUTF8(haystack, needle[, start_pos])
 Запрос:
 
 ``` sql
-SELECT positionCaseInsensitiveUTF8('Привет, мир!', 'Мир');
+SELECT positionCaseInsensitiveUTF8('Привет, мир!', 'Мир')
 ```
 
-Результат:
+Ответ:
 
 ``` text
 ┌─positionCaseInsensitiveUTF8('Привет, мир!', 'Мир')─┐
@@ -294,7 +257,7 @@ multiSearchAllPositions(haystack, [needle1, needle2, ..., needlen])
 Query:
 
 ``` sql
-SELECT multiSearchAllPositions('Hello, World!', ['hello', '!', 'world']);
+SELECT multiSearchAllPositions('Hello, World!', ['hello', '!', 'world'])
 ```
 
 Result:
@@ -357,7 +320,7 @@ Result:
 
 ## multiFuzzyMatchAny(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\]) {#multifuzzymatchanyhaystack-distance-pattern1-pattern2-patternn}
 
-То же, что и `multiMatchAny`, но возвращает 1 если любой шаблон соответствует haystack в пределах константного [редакционного расстояния](https://en.wikipedia.org/wiki/Edit_distance). Эта функция основана на экспериментальной библиотеке [hyperscan](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching) и может быть медленной для некоторых частных случаев. Производительность зависит от значения редакционного расстояния и используемых шаблонов, но всегда медленнее по сравнению с non-fuzzy вариантами.
+То же, что и `multiMatchAny`, но возвращает 1 если любой pattern соответствует haystack в пределах константного [редакционного расстояния](https://en.wikipedia.org/wiki/Edit_distance). Эта функция также находится в экспериментальном режиме и может быть очень медленной. За подробностями обращайтесь к [документации hyperscan](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching).
 
 ## multiFuzzyMatchAnyIndex(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\]) {#multifuzzymatchanyindexhaystack-distance-pattern1-pattern2-patternn}
 
@@ -383,34 +346,34 @@ Result:
 
 ## extractAllGroupsHorizontal {#extractallgroups-horizontal}
 
-Разбирает строку `haystack` на фрагменты, соответствующие группам регулярного выражения `pattern`. Возвращает массив массивов, где первый массив содержит все фрагменты, соответствующие первой группе регулярного выражения, второй массив - соответствующие второй группе, и т.д.
+Разбирает строку `haystack` на фрагменты, соответствующие группам регулярного выражения `pattern`. Возвращает массив массивов, где первый массив содержит все фрагменты, соответствующие первой группе регулярного выражения, второй массив - соответствующие второй группе, и т.д.  
 
 !!! note "Замечание"
     Функция `extractAllGroupsHorizontal` работает медленнее, чем функция [extractAllGroupsVertical](#extractallgroups-vertical).
 
-**Синтаксис**
+**Синтаксис** 
 
 ``` sql
 extractAllGroupsHorizontal(haystack, pattern)
 ```
 
-**Аргументы**
+**Параметры** 
 
 -   `haystack` — строка для разбора. Тип: [String](../../sql-reference/data-types/string.md).
--   `pattern` — регулярное выражение, построенное по синтаксическим правилам [re2](https://github.com/google/re2/wiki/Syntax). Выражение должно содержать группы, заключенные в круглые скобки. Если выражение не содержит групп, генерируется исключение. Тип: [String](../../sql-reference/data-types/string.md).
+-   `pattern` — регулярное выражение, построенное по синтаксическим правилам [re2](https://github.com/google/re2/wiki/Syntax). Выражение должно содержать группы, заключенные в круглые скобки. Если выражение не содержит групп, генерируется исключение. Тип: [String](../../sql-reference/data-types/string.md). 
 
 **Возвращаемое значение**
 
 -   Тип: [Array](../../sql-reference/data-types/array.md).
 
-Если в строке `haystack` нет групп, соответствующих регулярному выражению `pattern`, возвращается массив пустых массивов.
+Если в строке `haystack` нет групп, соответствующих регулярному выражению `pattern`, возвращается массив пустых массивов. 
 
 **Пример**
 
 Запрос:
 
 ``` sql
-SELECT extractAllGroupsHorizontal('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)');
+SELECT extractAllGroupsHorizontal('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')
 ```
 
 Результат:
@@ -421,21 +384,20 @@ SELECT extractAllGroupsHorizontal('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=(
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Смотрите также**
-
--   Функция [extractAllGroupsVertical](#extractallgroups-vertical)
+**См. также**
+-   функция [extractAllGroupsVertical](#extractallgroups-vertical)
 
 ## extractAllGroupsVertical {#extractallgroups-vertical}
 
 Разбирает строку `haystack` на фрагменты, соответствующие группам регулярного выражения `pattern`. Возвращает массив массивов, где каждый массив содержит по одному фрагменту, соответствующему каждой группе регулярного выражения. Фрагменты группируются в массивы в соответствии с порядком появления в исходной строке.
 
-**Синтаксис**
+**Синтаксис** 
 
 ``` sql
 extractAllGroupsVertical(haystack, pattern)
 ```
 
-**Аргументы**
+**Параметры** 
 
 -   `haystack` — строка для разбора. Тип: [String](../../sql-reference/data-types/string.md).
 -   `pattern` — регулярное выражение, построенное по синтаксическим правилам [re2](https://github.com/google/re2/wiki/Syntax). Выражение должно содержать группы, заключенные в круглые скобки. Если выражение не содержит групп, генерируется исключение. Тип: [String](../../sql-reference/data-types/string.md).
@@ -444,14 +406,14 @@ extractAllGroupsVertical(haystack, pattern)
 
 -   Тип: [Array](../../sql-reference/data-types/array.md).
 
-Если в строке `haystack` нет групп, соответствующих регулярному выражению `pattern`, возвращается пустой массив.
+Если в строке `haystack` нет групп, соответствующих регулярному выражению `pattern`, возвращается пустой массив. 
 
 **Пример**
 
 Запрос:
 
 ``` sql
-SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)');
+SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')
 ```
 
 Результат:
@@ -462,9 +424,8 @@ SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Смотрите также**
-
--   Функция [extractAllGroupsHorizontal](#extractallgroups-horizontal)
+**См. также**
+-   функция [extractAllGroupsHorizontal](#extractallgroups-horizontal)
 
 ## like(haystack, pattern), оператор haystack LIKE pattern {#function-like}
 
@@ -486,7 +447,7 @@ SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[
 
 ## ilike {#ilike}
 
-Нечувствительный к регистру вариант функции [like](https://clickhouse.com/docs/ru/sql-reference/functions/string-search-functions/#function-like). Вы можете использовать оператор `ILIKE` вместо функции `ilike`.
+Нечувствительный к регистру вариант функции [like](https://clickhouse.tech/docs/ru/sql-reference/functions/string-search-functions/#function-like). Вы можете использовать оператор `ILIKE` вместо функции `ilike`.
 
 **Синтаксис**
 
@@ -494,10 +455,10 @@ SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[
 ilike(haystack, pattern)
 ```
 
-**Аргументы**
+**Параметры**
 
--   `haystack` — входная строка. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `pattern` — если `pattern` не содержит процента или нижнего подчеркивания, тогда `pattern` представляет саму строку. Нижнее подчеркивание (`_`) в `pattern` обозначает любой отдельный символ. Знак процента (`%`) соответствует последовательности из любого количества символов: от нуля и более.
+-   `haystack` — Входная строка. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `pattern` — Если `pattern` не содержит процента или нижнего подчеркивания, тогда `pattern` представляет саму строку. Нижнее подчеркивание (`_`) в `pattern` обозначает любой отдельный символ. Знак процента (`%`) соответствует последовательности из любого количества символов: от нуля и более.
 
 Некоторые примеры `pattern`:
 
@@ -529,7 +490,7 @@ ilike(haystack, pattern)
 Запрос:
 
 ``` sql
-SELECT * FROM Months WHERE ilike(name, '%j%');
+SELECT * FROM Months WHERE ilike(name, '%j%')
 ```
 
 Результат:
@@ -542,7 +503,7 @@ SELECT * FROM Months WHERE ilike(name, '%j%');
 
 **Смотрите также**
 
--   [like](https://clickhouse.com/docs/ru/sql-reference/functions/string-search-functions/#function-like) <!--hide-->
+-   [like](https://clickhouse.tech/docs/ru/sql-reference/functions/string-search-functions/#function-like) <!--hide-->
 
 ## ngramDistance(haystack, needle) {#ngramdistancehaystack-needle}
 
@@ -558,7 +519,7 @@ SELECT * FROM Months WHERE ilike(name, '%j%');
 
 !!! note "Примечание"
     Для случая UTF-8 мы используем триграммное расстояние. Вычисление n-граммного расстояния не совсем честное. Мы используем 2-х байтные хэши для хэширования n-грамм, а затем вычисляем (не)симметрическую разность между хэш таблицами – могут возникнуть коллизии. В формате UTF-8 без учета регистра мы не используем честную функцию `tolower` – мы обнуляем 5-й бит (нумерация с нуля) каждого байта кодовой точки, а также первый бит нулевого байта, если байтов больше 1 – это работает для латиницы и почти для всех кириллических букв.
-
+	
 ## countMatches(haystack, pattern) {#countmatcheshaystack-pattern}
 
 Возвращает количество совпадений, найденных в строке `haystack`, для регулярного выражения `pattern`.
@@ -569,7 +530,7 @@ SELECT * FROM Months WHERE ilike(name, '%j%');
 countMatches(haystack, pattern)
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `haystack` — строка, по которой выполняется поиск. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `pattern` — регулярное выражение, построенное по синтаксическим правилам [re2](https://github.com/google/re2/wiki/Syntax). [String](../../sql-reference/data-types/string.md).
@@ -622,11 +583,11 @@ SELECT countMatches('aaaa', 'aa');
 countSubstrings(haystack, needle[, start_pos])
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `haystack` — строка, в которой ведется поиск. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `needle` — искомая подстрока. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` — позиция первого символа в строке, с которого начнется поиск. Необязательный параметр. [UInt](../../sql-reference/data-types/int-uint.md).
+-   `start_pos` – позиция первого символа в строке, с которого начнется поиск. Необязательный параметр. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемые значения**
 
@@ -688,11 +649,11 @@ SELECT countSubstrings('abc___abc', 'abc', 4);
 countSubstringsCaseInsensitive(haystack, needle[, start_pos])
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `haystack` — строка, в которой ведется поиск. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `needle` — искомая подстрока. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` — позиция первого символа в строке, с которого начнется поиск. Необязательный параметр. [UInt](../../sql-reference/data-types/int-uint.md).
+-   `start_pos` – позиция первого символа в строке, с которого начнется поиск. Необязательный параметр. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемые значения**
 
@@ -754,11 +715,11 @@ SELECT countSubstringsCaseInsensitive('abC___abC', 'aBc', 2);
 SELECT countSubstringsCaseInsensitiveUTF8(haystack, needle[, start_pos])
 ```
 
-**Аргументы**
+**Параметры**
 
 -   `haystack` — строка, в которой ведется поиск. [String](../../sql-reference/syntax.md#syntax-string-literal).
 -   `needle` — искомая подстрока. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `start_pos` — позиция первого символа в строке, с которого начнется поиск. Необязательный параметр. [UInt](../../sql-reference/data-types/int-uint.md).
+-   `start_pos` – позиция первого символа в строке, с которого начнется поиск. Необязательный параметр. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемые значения**
 
@@ -795,3 +756,5 @@ SELECT countSubstringsCaseInsensitiveUTF8('аБв__АбВ__абв', 'Абв');
 │                                                          3 │
 └────────────────────────────────────────────────────────────┘
 ```
+
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/string_search_functions/) <!--hide-->

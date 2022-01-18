@@ -1,15 +1,6 @@
 #!/bin/bash
 set -e
 
-echo "Configure to use Yandex dockerhub-proxy"
-mkdir -p /etc/docker/
-cat > /etc/docker/daemon.json << EOF
-{
-    "insecure-registries" : ["dockerhub-proxy.dockerhub-proxy-zone:5000"],
-    "registry-mirrors" : ["http://dockerhub-proxy.dockerhub-proxy-zone:5000"]
-}
-EOF
-
 dockerd --host=unix:///var/run/docker.sock --host=tcp://0.0.0.0:2375 &>/var/log/somefile &
 
 set +e

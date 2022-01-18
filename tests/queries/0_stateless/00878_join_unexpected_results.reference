@@ -29,9 +29,6 @@ join_use_nulls = 1
 1	1	1	1
 2	2	\N	\N
 -
-1	1	1	1
--
-2	2	\N	\N
 join_use_nulls = 0
 1	1
 2	2
@@ -60,6 +57,3 @@ join_use_nulls = 0
 1	1	1	1
 2	2	0	0
 -
-1	1	1	1
--
-2	2	0	0

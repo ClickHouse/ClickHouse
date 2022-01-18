@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <IO/ReadBuffer.h>
 #include <amqpcpp.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
@@ -15,12 +15,16 @@ namespace Poco
 namespace DB
 {
 
+using ChannelPtr = std::shared_ptr<AMQP::TcpChannel>;
+using HandlerPtr = std::shared_ptr<RabbitMQHandler>;
+
 class ReadBufferFromRabbitMQConsumer : public ReadBuffer
 {
 
 public:
     ReadBufferFromRabbitMQConsumer(
-            RabbitMQHandler & event_handler_,
+            ChannelPtr consumer_channel_,
+            HandlerPtr event_handler_,
             std::vector<String> & queues_,
             size_t channel_id_base_,
             const String & channel_base_,
@@ -36,7 +40,7 @@ public:
         UInt64 delivery_tag;
         String channel_id;
 
-        AckTracker() = default;
+        AckTracker() : delivery_tag(0), channel_id("") {}
         AckTracker(UInt64 tag, String id) : delivery_tag(tag), channel_id(id) {}
     };
 
@@ -44,19 +48,14 @@ public:
     {
         String message;
         String message_id;
-        uint64_t timestamp = 0;
-        bool redelivered = false;
-        AckTracker track{};
+        uint64_t timestamp;
+        bool redelivered;
+        AckTracker track;
     };
 
     ChannelPtr & getChannel() { return consumer_channel; }
     void setupChannel();
     bool needChannelUpdate();
-    void closeChannel()
-    {
-        if (consumer_channel)
-            consumer_channel->close();
-    }
 
     void updateQueues(std::vector<String> & queues_) { queues = queues_; }
     size_t queuesCount() { return queues.size(); }
@@ -81,7 +80,7 @@ private:
     void iterateEventLoop();
 
     ChannelPtr consumer_channel;
-    RabbitMQHandler & event_handler; /// Used concurrently, but is thread safe.
+    HandlerPtr event_handler;
     std::vector<String> queues;
     const String channel_base;
     const size_t channel_id_base;

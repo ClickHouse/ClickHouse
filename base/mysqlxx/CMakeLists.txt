@@ -13,7 +13,10 @@ add_library (mysqlxx
 
 target_include_directories (mysqlxx PUBLIC ..)
 
-if (NOT USE_INTERNAL_MYSQL_LIBRARY)
+if (USE_INTERNAL_MYSQL_LIBRARY)
+    target_include_directories (mysqlxx PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/mariadb-connector-c/include)
+    target_include_directories (mysqlxx PUBLIC ${ClickHouse_BINARY_DIR}/contrib/mariadb-connector-c/include)
+else ()
     set(PLATFORM_LIBRARIES ${CMAKE_DL_LIBS})
 
     if (USE_MYSQL)
@@ -45,8 +48,6 @@ target_link_libraries(mysqlxx PRIVATE ${PLATFORM_LIBRARIES})
 if (NOT USE_INTERNAL_MYSQL_LIBRARY AND OPENSSL_INCLUDE_DIR)
     target_include_directories (mysqlxx SYSTEM PRIVATE ${OPENSSL_INCLUDE_DIR})
 endif ()
-
-target_no_warning(mysqlxx reserved-macro-identifier)
 
 if (NOT USE_INTERNAL_MYSQL_LIBRARY AND USE_STATIC_LIBRARIES)
    message(WARNING "Statically linking with system mysql/mariadb only works "

@@ -18,20 +18,23 @@
 namespace DB
 {
 
-ReplicasStatusHandler::ReplicasStatusHandler(IServer & server) : WithContext(server.context())
+
+ReplicasStatusHandler::ReplicasStatusHandler(IServer & server)
+    : context(server.context())
 {
 }
+
 
 void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response)
 {
     try
     {
-        HTMLForm params(getContext()->getSettingsRef(), request);
+        HTMLForm params(request);
 
         /// Even if lag is small, output detailed information about the lag.
         bool verbose = params.get("verbose", "") == "1";
 
-        const MergeTreeSettings & settings = getContext()->getReplicatedMergeTreeSettings();
+        const MergeTreeSettings & settings = context.getReplicatedMergeTreeSettings();
 
         bool ok = true;
         WriteBufferFromOwnString message;
@@ -45,7 +48,7 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             if (!db.second->canContainMergeTreeTables())
                 continue;
 
-            for (auto iterator = db.second->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
+            for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
                 const auto & table = iterator->table();
                 if (!table)
@@ -70,7 +73,7 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             }
         }
 
-        const auto & config = getContext()->getConfigRef();
+        const auto & config = context.getConfigRef();
         setResponseDefaultHeaders(response, config.getUInt("keep_alive_timeout", 10));
 
         if (!ok)

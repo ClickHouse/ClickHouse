@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-parallel
 
 set -e
 
@@ -34,10 +33,9 @@ function check_sticky_mutations()
 
     query_result=$($CLICKHOUSE_CLIENT --query="$check_query" 2>&1)
 
-    for _ in {1..50}
+    while [ "$query_result" == "0" ]
     do
         query_result=$($CLICKHOUSE_CLIENT --query="$check_query" 2>&1)
-        if ! [ "$query_result" == "0" ]; then break; fi
         sleep 0.5
     done
     ##### wait mutation to start #####

@@ -3,16 +3,15 @@
 #include <Columns/Collator.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
-#include <Columns/MaskOperations.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <DataStreams/ColumnGathererStream.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <Common/memcmpSmall.h>
-#include <base/sort.h>
-#include <base/unaligned.h>
-#include <base/scope_guard.h>
+#include <common/sort.h>
+#include <common/unaligned.h>
+#include <ext/scope_guard.h>
 
 
 namespace DB
@@ -158,57 +157,54 @@ ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) co
     return res;
 }
 
-void ColumnString::expand(const IColumn::Filter & mask, bool inverted)
-{
-    auto & offsets_data = getOffsets();
-    auto & chars_data = getChars();
-    if (mask.size() < offsets_data.size())
-        throw Exception("Mask size should be no less than data size.", ErrorCodes::LOGICAL_ERROR);
-
-    /// We cannot change only offsets, because each string should end with terminating zero byte.
-    /// So, we will insert one zero byte when mask value is zero.
-
-    int index = mask.size() - 1;
-    int from = offsets_data.size() - 1;
-    /// mask.size() - offsets_data.size() should be equal to the number of zeros in mask
-    /// (if not, one of exceptions below will throw) and we can calculate the resulting chars size.
-    UInt64 last_offset = offsets_data[from] + (mask.size() - offsets_data.size());
-    offsets_data.resize(mask.size());
-    chars_data.resize_fill(last_offset, 0);
-    while (index >= 0)
-    {
-        offsets_data[index] = last_offset;
-        if (!!mask[index] ^ inverted)
-        {
-            if (from < 0)
-                throw Exception("Too many bytes in mask", ErrorCodes::LOGICAL_ERROR);
-
-            size_t len = offsets_data[from] - offsets_data[from - 1];
-
-            /// Copy only if it makes sense. It's important to copy backward, because
-            /// ranges can overlap, but destination is always is more to the right then source
-            if (last_offset - len != offsets_data[from - 1])
-                std::copy_backward(&chars_data[offsets_data[from - 1]], &chars_data[offsets_data[from]], &chars_data[last_offset]);
-            last_offset -= len;
-            --from;
-        }
-        else
-        {
-            chars_data[last_offset - 1] = 0;
-            --last_offset;
-        }
-
-        --index;
-    }
-
-    if (from != -1)
-        throw Exception("Not enough bytes in mask", ErrorCodes::LOGICAL_ERROR);
-}
-
 
 ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
 {
-    return permuteImpl(*this, perm, limit);
+    size_t size = offsets.size();
+
+    if (limit == 0)
+        limit = size;
+    else
+        limit = std::min(size, limit);
+
+    if (perm.size() < limit)
+        throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+    if (limit == 0)
+        return ColumnString::create();
+
+    auto res = ColumnString::create();
+
+    Chars & res_chars = res->chars;
+    Offsets & res_offsets = res->offsets;
+
+    if (limit == size)
+        res_chars.resize(chars.size());
+    else
+    {
+        size_t new_chars_size = 0;
+        for (size_t i = 0; i < limit; ++i)
+            new_chars_size += sizeAt(perm[i]);
+        res_chars.resize(new_chars_size);
+    }
+
+    res_offsets.resize(limit);
+
+    Offset current_new_offset = 0;
+
+    for (size_t i = 0; i < limit; ++i)
+    {
+        size_t j = perm[i];
+        size_t string_offset = offsets[j - 1];
+        size_t string_size = offsets[j] - string_offset;
+
+        memcpySmallAllowReadWriteOverflow15(&res_chars[current_new_offset], &chars[string_offset], string_size);
+
+        current_new_offset += string_size;
+        res_offsets[i] = current_new_offset;
+    }
+
+    return res;
 }
 
 
@@ -241,12 +237,6 @@ const char * ColumnString::deserializeAndInsertFromArena(const char * pos)
     return pos + string_size;
 }
 
-const char * ColumnString::skipSerializedInArena(const char * pos) const
-{
-    const size_t string_size = unalignedLoad<size_t>(pos);
-    pos += sizeof(string_size);
-    return pos + string_size;
-}
 
 ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const
 {
@@ -256,7 +246,6 @@ ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const
 template <typename Type>
 ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    assert(limit <= indexes.size());
     if (limit == 0)
         return ColumnString::create();
 
@@ -314,10 +303,7 @@ struct ColumnString::Cmp
             parent.chars.data() + parent.offsetAt(lhs), parent.sizeAt(lhs) - 1,
             parent.chars.data() + parent.offsetAt(rhs), parent.sizeAt(rhs) - 1);
 
-        if constexpr (positive)
-            return res;
-        else
-            return -res;
+        return positive ? res : -res;
     }
 };
 
@@ -338,6 +324,78 @@ void ColumnString::getPermutationImpl(size_t limit, Permutation & res, Comparato
         partial_sort(res.begin(), res.begin() + limit, res.end(), less);
     else
         std::sort(res.begin(), res.end(), less);
+}
+
+template <typename Comparator>
+void ColumnString::updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_ranges, Comparator cmp) const
+{
+    if (equal_ranges.empty())
+        return;
+
+    if (limit >= size() || limit > equal_ranges.back().second)
+        limit = 0;
+
+    EqualRanges new_ranges;
+    SCOPE_EXIT({equal_ranges = std::move(new_ranges);});
+
+    size_t number_of_ranges = equal_ranges.size();
+    if (limit)
+        --number_of_ranges;
+
+    auto less = [&cmp](size_t lhs, size_t rhs){ return cmp(lhs, rhs) < 0; };
+
+    for (size_t i = 0; i < number_of_ranges; ++i)
+    {
+        const auto & [first, last] = equal_ranges[i];
+        std::sort(res.begin() + first, res.begin() + last, less);
+
+        size_t new_first = first;
+        for (size_t j = first + 1; j < last; ++j)
+        {
+            if (cmp(res[j], res[new_first]) != 0)
+            {
+                if (j - new_first > 1)
+                    new_ranges.emplace_back(new_first, j);
+
+                new_first = j;
+            }
+        }
+        if (last - new_first > 1)
+            new_ranges.emplace_back(new_first, last);
+    }
+
+    if (limit)
+    {
+        const auto & [first, last] = equal_ranges.back();
+
+        if (limit < first || limit > last)
+            return;
+
+        /// Since then we are working inside the interval.
+        partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less);
+
+        size_t new_first = first;
+        for (size_t j = first + 1; j < limit; ++j)
+        {
+            if (cmp(res[j], res[new_first]) != 0)
+            {
+                if (j - new_first > 1)
+                    new_ranges.emplace_back(new_first, j);
+                new_first = j;
+            }
+        }
+        size_t new_last = limit;
+        for (size_t j = limit; j < last; ++j)
+        {
+            if (cmp(res[j], res[new_first]) == 0)
+            {
+                std::swap(res[j], res[new_last]);
+                ++new_last;
+            }
+        }
+        if (new_last - new_first > 1)
+            new_ranges.emplace_back(new_first, new_last);
+    }
 }
 
 void ColumnString::getPermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res) const
@@ -472,11 +530,11 @@ void ColumnString::getExtremes(Field & min, Field & max) const
     get(max_idx, max);
 }
 
+
 ColumnPtr ColumnString::compress() const
 {
-    const size_t source_chars_size = chars.size();
-    const size_t source_offsets_elements = offsets.size();
-    const size_t source_offsets_size = source_offsets_elements * sizeof(Offset);
+    size_t source_chars_size = chars.size();
+    size_t source_offsets_size = offsets.size() * sizeof(Offset);
 
     /// Don't compress small blocks.
     if (source_chars_size < 4096) /// A wild guess.
@@ -490,14 +548,12 @@ ColumnPtr ColumnString::compress() const
 
     auto offsets_compressed = ColumnCompressed::compressBuffer(offsets.data(), source_offsets_size, true);
 
-    const size_t chars_compressed_size = chars_compressed->size();
-    const size_t offsets_compressed_size = offsets_compressed->size();
-    return ColumnCompressed::create(source_offsets_elements, chars_compressed_size + offsets_compressed_size,
+    return ColumnCompressed::create(offsets.size(), chars_compressed->size() + offsets_compressed->size(),
         [
             chars_compressed = std::move(chars_compressed),
             offsets_compressed = std::move(offsets_compressed),
             source_chars_size,
-            source_offsets_elements
+            source_offsets_elements = offsets.size()
         ]
         {
             auto res = ColumnString::create();

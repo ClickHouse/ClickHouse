@@ -17,12 +17,11 @@ class LineAsStringRowInputFormat : public IRowInputFormat
 public:
     LineAsStringRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_);
 
+    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     String getName() const override { return "LineAsStringRowInputFormat"; }
     void resetParser() override;
 
 private:
-    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
-
     void readLineObject(IColumn & column);
 };
 

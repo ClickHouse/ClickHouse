@@ -14,10 +14,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ColumnsDescription parseColumnsListFromString(const std::string & structure, ContextPtr context)
+ColumnsDescription parseColumnsListFromString(const std::string & structure, const Context & context)
 {
     ParserColumnDeclarationList parser;
-    const Settings & settings = context->getSettingsRef();
+    const Settings & settings = context.getSettingsRef();
 
     ASTPtr columns_list_raw = parseQuery(parser, structure, "columns declaration list", settings.max_query_size, settings.max_parser_depth);
 

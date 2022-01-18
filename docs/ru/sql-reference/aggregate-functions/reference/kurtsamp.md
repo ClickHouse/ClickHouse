@@ -12,9 +12,9 @@ toc_priority: 154
 kurtSamp(expr)
 ```
 
-**Аргументы**
+**Параметры**
 
-`expr` — [выражение](../../syntax.md#syntax-expressions), возвращающее число.
+`expr` — [Выражение](../../syntax.md#syntax-expressions), возвращающее число.
 
 **Возвращаемое значение**
 
@@ -23,6 +23,7 @@ kurtSamp(expr)
 **Пример**
 
 ``` sql
-SELECT kurtSamp(value) FROM series_with_value_column;
+SELECT kurtSamp(value) FROM series_with_value_column
 ```
 
+[Оригинальная статья](https://clickhouse.tech/docs/en/sql-reference/aggregate-functions/reference/kurtsamp/) <!--hide-->

@@ -32,8 +32,5 @@ def started_cluster():
 
 
 def test(started_cluster):
-    if node.is_built_with_memory_sanitizer():
-        pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
-
     node.query("select modelEvaluate('titanic', 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11);")
-
+    

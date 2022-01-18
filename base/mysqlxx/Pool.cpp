@@ -7,22 +7,10 @@
 #endif
 
 #include <mysqlxx/Pool.h>
-#include <base/sleep.h>
+
+#include <common/sleep.h>
+
 #include <Poco/Util/LayeredConfiguration.h>
-#include <ctime>
-
-
-namespace
-{
-
-inline uint64_t clock_gettime_ns(clockid_t clock_type = CLOCK_MONOTONIC)
-{
-    struct timespec ts;
-    clock_gettime(clock_type, &ts);
-    return uint64_t(ts.tv_sec * 1000000000LL + ts.tv_nsec);
-}
-
-}
 
 
 namespace mysqlxx
@@ -136,14 +124,9 @@ Pool::~Pool()
 }
 
 
-Pool::Entry Pool::get(uint64_t wait_timeout)
+Pool::Entry Pool::get()
 {
     std::unique_lock<std::mutex> lock(mutex);
-
-    uint64_t deadline = 0;
-    /// UINT64_MAX -- wait indefinitely
-    if (wait_timeout && wait_timeout != UINT64_MAX)
-        deadline = clock_gettime_ns() + wait_timeout * 1'000'000'000;
 
     initialize();
     for (;;)
@@ -170,12 +153,6 @@ Pool::Entry Pool::get(uint64_t wait_timeout)
             logger.trace("(%s): Unable to create a new connection: Max number of connections has been reached.", getDescription());
         }
 
-        if (!wait_timeout)
-            throw Poco::Exception("mysqlxx::Pool is full (wait is disabled, see connection_wait_timeout setting)");
-
-        if (deadline && clock_gettime_ns() >= deadline)
-            throw Poco::Exception("mysqlxx::Pool is full (connection_wait_timeout is exceeded)");
-
         lock.unlock();
         logger.trace("(%s): Sleeping for %d seconds.", getDescription(), MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
         sleepForSeconds(MYSQLXX_POOL_SLEEP_ON_CONNECT_FAIL);
@@ -197,11 +174,9 @@ Pool::Entry Pool::tryGet()
         /// Fixme: There is a race condition here b/c we do not synchronize with Pool::Entry's copy-assignment operator
         if (connection_ptr->ref_count == 0)
         {
-            {
-                Entry res(connection_ptr, this);
-                if (res.tryForceConnected())  /// Tries to reestablish connection as well
-                    return res;
-            }
+            Entry res(connection_ptr, this);
+            if (res.tryForceConnected())  /// Tries to reestablish connection as well
+                return res;
 
             logger.debug("(%s): Idle connection to MySQL server cannot be recovered, dropping it.", getDescription());
 
@@ -319,7 +294,7 @@ void Pool::initialize()
 
 Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
 {
-    std::unique_ptr conn_ptr = std::make_unique<Connection>();
+    std::unique_ptr<Connection> conn_ptr{new Connection};
 
     try
     {

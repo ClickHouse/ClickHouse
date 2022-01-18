@@ -208,10 +208,10 @@ and the temporary table `_data1` will be sent to every remote server with the qu
 
 This is more optimal than using the normal IN. However, keep the following points in mind:
 
-1.  When creating a temporary table, data is not made unique. To reduce the volume of data transmitted over the network, specify DISTINCT in the subquery. (You do not need to do this for a normal IN.)
+1.  When creating a temporary table, data is not made unique. To reduce the volume of data transmitted over the network, specify DISTINCT in the subquery. (You don’t need to do this for a normal IN.)
 2.  The temporary table will be sent to all the remote servers. Transmission does not account for network topology. For example, if 10 remote servers reside in a datacenter that is very remote in relation to the requestor server, the data will be sent 10 times over the channel to the remote datacenter. Try to avoid large data sets when using GLOBAL IN.
 3.  When transmitting data to remote servers, restrictions on network bandwidth are not configurable. You might overload the network.
-4.  Try to distribute data across servers so that you do not need to use GLOBAL IN on a regular basis.
+4.  Try to distribute data across servers so that you don’t need to use GLOBAL IN on a regular basis.
 5.  If you need to use GLOBAL IN often, plan the location of the ClickHouse cluster so that a single group of replicas resides in no more than one data center with a fast network between them, so that a query can be processed entirely within a single data center.
 
 It also makes sense to specify a local table in the `GLOBAL IN` clause, in case this local table is only available on the requestor server and you want to use data from it on remote servers.
@@ -221,7 +221,7 @@ It also makes sense to specify a local table in the `GLOBAL IN` clause, in case 
 When max_parallel_replicas is greater than 1, distributed queries are further transformed. For example, the following:
 
 ```sql
-SELECT CounterID, count() FROM distributed_table_1 WHERE UserID IN (SELECT UserID FROM local_table_2 WHERE CounterID < 100)
+SEELECT CounterID, count() FROM distributed_table_1 WHERE UserID IN (SELECT UserID FROM local_table_2 WHERE CounterID < 100)
 SETTINGS max_parallel_replicas=3
 ```
 
@@ -236,4 +236,4 @@ where M is between 1 and 3 depending on which replica the local query is executi
 
 Therefore adding the max_parallel_replicas setting will only produce correct results if both tables have the same replication scheme and are sampled by UserID or a subkey of it. In particular, if local_table_2 does not have a sampling key, incorrect results will be produced. The same rule applies to JOIN.
 
-One workaround if local_table_2 does not meet the requirements, is to use `GLOBAL IN` or `GLOBAL JOIN`.
+One workaround if local_table_2 doesn't meet the requirements, is to use `GLOBAL IN` or `GLOBAL JOIN`.

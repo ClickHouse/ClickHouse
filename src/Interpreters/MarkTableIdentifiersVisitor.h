@@ -24,7 +24,8 @@ public:
     static void visit(ASTPtr & ast, Data & data);
 
 private:
-    static void visit(ASTFunction & func, const Data & data);
+    static void visit(ASTTableExpression & table, ASTPtr &, Data &);
+    static void visit(const ASTFunction & func, ASTPtr &, Data &);
 };
 
 using MarkTableIdentifiersVisitor = MarkTableIdentifiersMatcher::Visitor;

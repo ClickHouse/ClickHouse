@@ -12,7 +12,7 @@
 #include <Common/PipeFDs.h>
 #include <Common/StackTrace.h>
 #include <Common/setThreadName.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -24,11 +24,7 @@ namespace
     /// Thus upper bound on query_id length should be introduced to avoid buffer overflow in signal handler.
     ///
     /// And it cannot be large, since otherwise it will not fit into PIPE_BUF.
-    /// The performance test query ids can be surprisingly long like
-    /// `aggregating_merge_tree_simple_aggregate_function_string.query100.profile100`,
-    /// so make some allowance for them as well.
-    constexpr size_t QUERY_ID_MAX_LEN = 128;
-    static_assert(QUERY_ID_MAX_LEN <= std::numeric_limits<uint8_t>::max());
+    constexpr size_t QUERY_ID_MAX_LEN = sizeof("00000000-0000-0000-0000-000000000000") - 1; // 36
 }
 
 LazyPipeFDs pipe;
@@ -62,19 +58,17 @@ TraceCollector::~TraceCollector()
 
 void TraceCollector::collect(TraceType trace_type, const StackTrace & stack_trace, Int64 size)
 {
-    constexpr size_t buf_size = sizeof(char) /// TraceCollector stop flag
-        + sizeof(UInt8)                      /// String size
-        + QUERY_ID_MAX_LEN                   /// Maximum query_id length
-        + sizeof(UInt8)                      /// Number of stack frames
-        + sizeof(StackTrace::FramePointers)  /// Collected stack trace, maximum capacity
-        + sizeof(TraceType)                  /// trace type
-        + sizeof(UInt64)                     /// thread_id
-        + sizeof(Int64);                     /// size
-
+    constexpr size_t buf_size = sizeof(char) + // TraceCollector stop flag
+        8 * sizeof(char) +                     // maximum VarUInt length for string size
+        QUERY_ID_MAX_LEN * sizeof(char) +      // maximum query_id length
+        sizeof(UInt8) +                        // number of stack frames
+        sizeof(StackTrace::FramePointers) +    // collected stack trace, maximum capacity
+        sizeof(TraceType) +                    // trace type
+        sizeof(UInt64) +                       // thread_id
+        sizeof(Int64);                         // size
     /// Write should be atomic to avoid overlaps
     /// (since recursive collect() is possible)
-    static_assert(PIPE_BUF >= 512);
-    static_assert(buf_size <= 512, "Only write of PIPE_BUF to pipe is atomic and the minimal known PIPE_BUF across supported platforms is 512");
+    static_assert(buf_size < PIPE_BUF, "Only write of PIPE_BUF to pipe is atomic");
 
     char buffer[buf_size];
     WriteBufferFromFileDescriptorDiscardOnFailure out(pipe.fds_rw[1], buf_size, buffer);
@@ -95,9 +89,7 @@ void TraceCollector::collect(TraceType trace_type, const StackTrace & stack_trac
     }
 
     writeChar(false, out);  /// true if requested to stop the collecting thread.
-
-    writeBinary(static_cast<uint8_t>(query_id.size), out);
-    out.write(query_id.data, query_id.size);
+    writeStringBinary(query_id, out);
 
     size_t stack_trace_size = stack_trace.getSize();
     size_t stack_trace_offset = stack_trace.getOffset();
@@ -142,10 +134,7 @@ void TraceCollector::run()
             break;
 
         std::string query_id;
-        UInt8 query_id_size = 0;
-        readBinary(query_id_size, in);
-        query_id.resize(query_id_size);
-        in.read(query_id.data(), query_id_size);
+        readStringBinary(query_id, in);
 
         UInt8 trace_size = 0;
         readIntBinary(trace_size, in);
@@ -153,7 +142,7 @@ void TraceCollector::run()
         Array trace;
         trace.reserve(trace_size);
 
-        for (size_t i = 0; i < trace_size; ++i)
+        for (size_t i = 0; i < trace_size; i++)
         {
             uintptr_t addr = 0;
             readPODBinary(addr, in);

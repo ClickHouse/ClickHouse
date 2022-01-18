@@ -3,13 +3,16 @@ import logging
 import pytest
 from helpers.cluster import ClickHouseCluster
 
+logging.getLogger().setLevel(logging.INFO)
+logging.getLogger().addHandler(logging.StreamHandler())
+
 
 @pytest.fixture(scope="module")
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        cluster.add_instance("node", main_configs=["configs/config.d/storage_conf.xml", "configs/config.d/ssl_conf.xml",
-                                                   "configs/config.d/query_log.xml"],
+        cluster.add_instance("node", main_configs=["configs/config.d/log_conf.xml", "configs/config.d/storage_conf.xml",
+                                                   "configs/config.d/ssl_conf.xml", "configs/config.d/query_log.xml"],
                              user_configs=["configs/config.d/users.xml"], with_minio=True)
         logging.info("Starting cluster...")
         cluster.start()
@@ -24,7 +27,7 @@ def get_query_stat(instance, hint):
     result = {}
     instance.query("SYSTEM FLUSH LOGS")
     events = instance.query('''
-        SELECT ProfileEvents.keys, ProfileEvents.values
+        SELECT ProfileEvents.Names, ProfileEvents.Values
         FROM system.query_log
         ARRAY JOIN ProfileEvents
         WHERE type != 1 AND query LIKE '%{}%'
@@ -35,6 +38,7 @@ def get_query_stat(instance, hint):
             if ev[0].startswith("S3"):
                 result[ev[0]] = int(ev[1])
     return result
+
 
 @pytest.mark.parametrize("min_rows_for_wide_part,read_requests", [(0, 2), (8192, 1)])
 def test_write_is_cached(cluster, min_rows_for_wide_part, read_requests):
@@ -59,9 +63,8 @@ def test_write_is_cached(cluster, min_rows_for_wide_part, read_requests):
     select_query = "SELECT * FROM s3_test order by id FORMAT Values"
     assert node.query(select_query) == "(0,'data'),(1,'data')"
 
-    # With async reads profile events are not updated because reads are done in a separate thread.
-    # stat = get_query_stat(node, select_query)
-    # assert stat["S3ReadRequestsCount"] == read_requests  # Only .bin files should be accessed from S3.
+    stat = get_query_stat(node, select_query)
+    assert stat["S3ReadRequestsCount"] == read_requests  # Only .bin files should be accessed from S3.
 
     node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
 
@@ -90,16 +93,13 @@ def test_read_after_cache_is_wiped(cluster, min_rows_for_wide_part, all_files, b
 
     select_query = "SELECT * FROM s3_test"
     node.query(select_query)
-    # With async reads profile events are not updated because reads are done in a separate thread.
-    # stat = get_query_stat(node, select_query)
-    # assert stat["S3ReadRequestsCount"] == all_files  # .mrk and .bin files should be accessed from S3.
+    stat = get_query_stat(node, select_query)
+    assert stat["S3ReadRequestsCount"] == all_files  # .mrk and .bin files should be accessed from S3.
 
     # After cache is populated again, only .bin files should be accessed from S3.
     select_query = "SELECT * FROM s3_test order by id FORMAT Values"
     assert node.query(select_query) == "(0,'data'),(1,'data')"
-
-    # With async reads profile events are not updated because reads are done in a separate thread.
-    #stat = get_query_stat(node, select_query)
-    #assert stat["S3ReadRequestsCount"] == bin_files
+    stat = get_query_stat(node, select_query)
+    assert stat["S3ReadRequestsCount"] == bin_files
 
     node.query("DROP TABLE IF EXISTS s3_test NO DELAY")

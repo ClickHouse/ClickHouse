@@ -1,7 +1,7 @@
 #include <Common/ZooKeeper/TestKeeper.h>
 #include <Common/setThreadName.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <base/types.h>
+#include <common/types.h>
 
 #include <sstream>
 #include <iomanip>
@@ -198,7 +198,7 @@ std::pair<ResponsePtr, Undo> TestKeeperCreateRequest::process(TestKeeper::Contai
         else
         {
             TestKeeper::Node created_node;
-            created_node.seq_num = 0; //-V1048
+            created_node.seq_num = 0;
             created_node.stat.czxid = zxid;
             created_node.stat.mzxid = zxid;
             created_node.stat.ctime = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
@@ -271,7 +271,7 @@ std::pair<ResponsePtr, Undo> TestKeeperRemoveRequest::process(TestKeeper::Contai
         auto & parent = container.at(parentPath(path));
         --parent.stat.numChildren;
         ++parent.stat.cversion;
-        response.error = Error::ZOK; //-V1048
+        response.error = Error::ZOK;
 
         undo = [prev_node, &container, path = path]
         {
@@ -293,7 +293,7 @@ std::pair<ResponsePtr, Undo> TestKeeperExistsRequest::process(TestKeeper::Contai
     if (it != container.end())
     {
         response.stat = it->second.stat;
-        response.error = Error::ZOK; //-V1048
+        response.error = Error::ZOK;
     }
     else
     {
@@ -316,7 +316,7 @@ std::pair<ResponsePtr, Undo> TestKeeperGetRequest::process(TestKeeper::Container
     {
         response.stat = it->second.stat;
         response.data = it->second.data;
-        response.error = Error::ZOK; //-V1048
+        response.error = Error::ZOK;
     }
 
     return { std::make_shared<GetResponse>(response), {} };
@@ -343,7 +343,7 @@ std::pair<ResponsePtr, Undo> TestKeeperSetRequest::process(TestKeeper::Container
         it->second.data = data;
         ++container.at(parentPath(path)).stat.cversion;
         response.stat = it->second.stat;
-        response.error = Error::ZOK; //-V1048
+        response.error = Error::ZOK;
 
         undo = [prev_node, &container, path = path]
         {
@@ -387,7 +387,7 @@ std::pair<ResponsePtr, Undo> TestKeeperListRequest::process(TestKeeper::Containe
         }
 
         response.stat = it->second.stat;
-        response.error = Error::ZOK; //-V1048
+        response.error = Error::ZOK;
     }
 
     return { std::make_shared<ListResponse>(response), {} };
@@ -407,7 +407,7 @@ std::pair<ResponsePtr, Undo> TestKeeperCheckRequest::process(TestKeeper::Contain
     }
     else
     {
-        response.error = Error::ZOK; //-V1048
+        response.error = Error::ZOK;
     }
 
     return { std::make_shared<CheckResponse>(response), {} };
@@ -421,38 +421,26 @@ std::pair<ResponsePtr, Undo> TestKeeperMultiRequest::process(TestKeeper::Contain
 
     try
     {
-        auto request_it = requests.begin();
-        response.error = Error::ZOK; //-V1048
-        while (request_it != requests.end())
+        for (const auto & request : requests)
         {
-            const TestKeeperRequest & concrete_request = dynamic_cast<const TestKeeperRequest &>(**request_it);
-            ++request_it;
+            const TestKeeperRequest & concrete_request = dynamic_cast<const TestKeeperRequest &>(*request);
             auto [ cur_response, undo_action ] = concrete_request.process(container, zxid);
             response.responses.emplace_back(cur_response);
             if (cur_response->error != Error::ZOK)
             {
                 response.error = cur_response->error;
-                break;
-            }
 
-            undo_actions.emplace_back(std::move(undo_action));
+                for (auto it = undo_actions.rbegin(); it != undo_actions.rend(); ++it)
+                    if (*it)
+                        (*it)();
+
+                return { std::make_shared<MultiResponse>(response), {} };
+            }
+            else
+                undo_actions.emplace_back(std::move(undo_action));
         }
 
-        if (response.error != Error::ZOK)
-        {
-            for (auto it = undo_actions.rbegin(); it != undo_actions.rend(); ++it)
-                if (*it)
-                    (*it)();
-
-            while (request_it != requests.end())
-            {
-                const TestKeeperRequest & concrete_request = dynamic_cast<const TestKeeperRequest &>(**request_it);
-                ++request_it;
-                response.responses.emplace_back(concrete_request.createResponse());
-                response.responses.back()->error = Error::ZRUNTIMEINCONSISTENCY;
-            }
-        }
-
+        response.error = Error::ZOK;
         return { std::make_shared<MultiResponse>(response), {} };
     }
     catch (...)
@@ -493,7 +481,7 @@ TestKeeper::~TestKeeper()
 {
     try
     {
-        finalize(__PRETTY_FUNCTION__);
+        finalize();
         if (processing_thread.joinable())
             processing_thread.join();
     }
@@ -556,12 +544,12 @@ void TestKeeper::processingThread()
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
-        finalize(__PRETTY_FUNCTION__);
+        finalize();
     }
 }
 
 
-void TestKeeper::finalize(const String &)
+void TestKeeper::finalize()
 {
     {
         std::lock_guard lock(push_request_mutex);
@@ -661,7 +649,7 @@ void TestKeeper::pushRequest(RequestInfo && request)
     }
     catch (...)
     {
-        finalize(__PRETTY_FUNCTION__);
+        finalize();
         throw;
     }
 }

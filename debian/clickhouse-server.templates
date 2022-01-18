@@ -1,0 +1,3 @@
+Template: clickhouse-server/default-password
+Type: password
+Description: Enter password for default user:

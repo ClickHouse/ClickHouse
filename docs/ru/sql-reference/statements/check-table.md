@@ -29,36 +29,9 @@ CHECK TABLE [db.]name
 
 В движках `*Log` не предусмотрено автоматическое восстановление данных после сбоя. Используйте запрос `CHECK TABLE`, чтобы своевременно выявлять повреждение данных.
 
-## Проверка таблиц семейства MergeTree {#checking-mergetree-tables}
+Для движков из семейства `MergeTree` запрос `CHECK TABLE` показывает статус проверки для каждого отдельного куска данных таблицы на локальном сервере.
 
-Для таблиц семейства `MergeTree` если [check_query_single_value_result](../../operations/settings/settings.md#check_query_single_value_result) = 0, запрос `CHECK TABLE` возвращает статус каждого куска данных таблицы на локальном сервере.
-
-```sql
-SET check_query_single_value_result = 0;
-CHECK TABLE test_table;
-```
-
-```text
-┌─part_path─┬─is_passed─┬─message─┐
-│ all_1_4_1 │         1 │         │
-│ all_1_4_2 │         1 │         │
-└───────────┴───────────┴─────────┘
-```
-
-Если `check_query_single_value_result` = 0, запрос `CHECK TABLE` возвращает статус таблицы в целом.
-
-```sql
-SET check_query_single_value_result = 1;
-CHECK TABLE test_table;
-```
-
-```text
-┌─result─┐
-│      1 │
-└────────┘
-```
-
-## Что делать, если данные повреждены {#if-data-is-corrupted}
+**Что делать, если данные повреждены**
 
 В этом случае можно скопировать оставшиеся неповрежденные данные в другую таблицу. Для этого:
 
@@ -68,3 +41,4 @@ CHECK TABLE test_table;
 4.  Перезапустите `clickhouse-client`, чтобы вернуть предыдущее значение параметра `max_threads`.
 
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/check-table/) <!--hide-->

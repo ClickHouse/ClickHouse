@@ -9,9 +9,8 @@
     M(ReplicatedFetch, "Number of data parts being fetched from replica") \
     M(ReplicatedSend, "Number of data parts being sent to replicas") \
     M(ReplicatedChecks, "Number of data parts checking for consistency") \
-    M(BackgroundMergesAndMutationsPoolTask, "Number of active merges and mutations in an associated background pool") \
-    M(BackgroundFetchesPoolTask, "Number of active fetches in an associated background pool") \
-    M(BackgroundCommonPoolTask, "Number of active tasks in an associated background pool") \
+    M(BackgroundPoolTask, "Number of active tasks in BackgroundProcessingPool (merges, mutations, or replication queue bookkeeping)") \
+    M(BackgroundFetchesPoolTask, "Number of active tasks in BackgroundFetchesPool") \
     M(BackgroundMovePoolTask, "Number of active tasks in BackgroundProcessingPool for moves") \
     M(BackgroundSchedulePoolTask, "Number of active tasks in BackgroundSchedulePool. This pool is used for periodic ReplicatedMergeTree tasks, like cleaning old data parts, altering data parts, replica re-initialization, etc.") \
     M(BackgroundBufferFlushSchedulePoolTask, "Number of active tasks in BackgroundBufferFlushSchedulePool. This pool is used for periodic Buffer flushes") \
@@ -31,8 +30,6 @@
     M(OpenFileForWrite, "Number of files open for writing") \
     M(Read, "Number of read (read, pread, io_getevents, etc.) syscalls in fly") \
     M(Write, "Number of write (write, pwrite, io_getevents, etc.) syscalls in fly") \
-    M(NetworkReceive, "Number of threads receiving data from network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
-    M(NetworkSend, "Number of threads sending data to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
     M(SendScalars, "Number of connections that are sending data for scalars to remote servers.") \
     M(SendExternalTables, "Number of connections that are sending data for external tables to remote servers. External tables are used to implement GLOBAL IN and GLOBAL JOIN operators with distributed subqueries.") \
     M(QueryThread, "Number of query processing threads") \
@@ -55,13 +52,11 @@
     M(RWLockActiveWriters, "Number of threads holding write lock in a table RWLock.") \
     M(GlobalThread, "Number of threads in global thread pool.") \
     M(GlobalThreadActive, "Number of threads in global thread pool running a task.") \
-    M(LocalThread, "Number of threads in local thread pools. The threads in local thread pools are taken from the global thread pool.") \
+    M(LocalThread, "Number of threads in local thread pools. Should be similar to GlobalThreadActive.") \
     M(LocalThreadActive, "Number of threads in local thread pools running a task.") \
     M(DistributedFilesToInsert, "Number of pending files to process for asynchronous insertion into Distributed tables. Number of files for every shard is summed.") \
-    M(BrokenDistributedFilesToInsert, "Number of files for asynchronous insertion into Distributed tables that has been marked as broken. This metric will starts from 0 on start. Number of files for every shard is summed.") \
     M(TablesToDropQueueSize, "Number of dropped tables, that are waiting for background data removal.") \
     M(MaxDDLEntryID, "Max processed DDL entry of DDLWorker.") \
-    M(MaxPushedDDLEntryID, "Max DDL entry of DDLWorker that pushed to zookeeper.") \
     M(PartsTemporary, "The part is generating now, it is not in data_parts list.") \
     M(PartsPreCommitted, "The part is in data_parts, but not used for SELECTs.") \
     M(PartsCommitted, "Active data part, used by current and upcoming SELECTs.") \
@@ -71,13 +66,6 @@
     M(PartsWide, "Wide parts.") \
     M(PartsCompact, "Compact parts.") \
     M(PartsInMemory, "In-memory parts.") \
-    M(MMappedFiles, "Total number of mmapped files.") \
-    M(MMappedFileBytes, "Sum size of mmapped file regions.") \
-    M(AsyncDrainedConnections, "Number of connections drained asynchronously.") \
-    M(ActiveAsyncDrainedConnections, "Number of active connections drained asynchronously.") \
-    M(SyncDrainedConnections, "Number of connections drained synchronously.") \
-    M(ActiveSyncDrainedConnections, "Number of active connections drained synchronously.") \
-    M(AsynchronousReadWait, "Number of threads waiting for asynchronous read.") \
 
 namespace CurrentMetrics
 {

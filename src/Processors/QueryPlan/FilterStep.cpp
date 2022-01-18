@@ -1,10 +1,9 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/Transforms/FilterTransform.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
-#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -32,11 +31,7 @@ FilterStep::FilterStep(
     bool remove_filter_column_)
     : ITransformingStep(
         input_stream_,
-        FilterTransform::transformHeader(
-            input_stream_.header,
-            *actions_dag_,
-            filter_column_name_,
-            remove_filter_column_),
+        FilterTransform::transformHeader(input_stream_.header, std::make_shared<ExpressionActions>(actions_dag_), filter_column_name_, remove_filter_column_),
         getTraits(actions_dag_))
     , actions_dag(std::move(actions_dag_))
     , filter_column_name(std::move(filter_column_name_))
@@ -50,11 +45,7 @@ void FilterStep::updateInputStream(DataStream input_stream, bool keep_header)
 {
     Block out_header = std::move(output_stream->header);
     if (keep_header)
-        out_header = FilterTransform::transformHeader(
-            input_stream.header,
-            *actions_dag,
-            filter_column_name,
-            remove_filter_column);
+        out_header = FilterTransform::transformHeader(input_stream.header, std::make_shared<ExpressionActions>(actions_dag), filter_column_name, remove_filter_column);
 
     output_stream = createOutputStream(
             input_stream,
@@ -65,13 +56,12 @@ void FilterStep::updateInputStream(DataStream input_stream, bool keep_header)
     input_streams.emplace_back(std::move(input_stream));
 }
 
-void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
+void FilterStep::transformPipeline(QueryPipeline & pipeline)
 {
-    auto expression = std::make_shared<ExpressionActions>(actions_dag, settings.getActionsSettings());
-
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type)
+    auto expression = std::make_shared<ExpressionActions>(actions_dag);
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
     {
-        bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
+        bool on_totals = stream_type == QueryPipeline::StreamType::Totals;
         return std::make_shared<FilterTransform>(header, expression, filter_column_name, remove_filter_column, on_totals);
     });
 
@@ -81,7 +71,7 @@ void FilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQ
                 pipeline.getHeader().getColumnsWithTypeAndName(),
                 output_stream->header.getColumnsWithTypeAndName(),
                 ActionsDAG::MatchColumnsMode::Name);
-        auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag, settings.getActionsSettings());
+        auto convert_actions = std::make_shared<ExpressionActions>(convert_actions_dag);
 
         pipeline.addSimpleTransform([&](const Block & header)
         {
@@ -113,15 +103,6 @@ void FilterStep::describeActions(FormatSettings & settings) const
     for (const auto & pos : expression->getResultPositions())
         settings.out << ' ' << pos;
     settings.out << '\n';
-}
-
-void FilterStep::describeActions(JSONBuilder::JSONMap & map) const
-{
-    map.add("Filter Column", filter_column_name);
-    map.add("Removes Filter", remove_filter_column);
-
-    auto expression = std::make_shared<ExpressionActions>(actions_dag);
-    map.add("Expression", expression->toTree());
 }
 
 }

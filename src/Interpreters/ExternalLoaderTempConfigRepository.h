@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <Poco/Timestamp.h>
 
@@ -13,7 +13,7 @@ class ExternalLoaderTempConfigRepository : public IExternalLoaderConfigRepositor
 public:
     ExternalLoaderTempConfigRepository(const String & repository_name_, const String & path_, const LoadablesConfigurationPtr & config_);
 
-    String getName() const override { return name; }
+    const String & getName() const override { return name; }
     bool isTemporary() const override { return true; }
 
     std::set<String> getAllLoadablesDefinitionNames() override;

@@ -35,8 +35,6 @@ public:
         size_t value_column_num;
         size_t version_column_num;
 
-        DataTypePtr time_column_type;
-
         /// All columns other than 'time', 'value', 'version'. They are unmodified during rollup.
         ColumnNumbers unmodified_column_numbers;
     };

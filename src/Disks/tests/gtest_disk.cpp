@@ -1,17 +1,13 @@
 #include <gtest/gtest.h>
+
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include "gtest_disk.h"
-#include <filesystem>
 
-namespace fs = std::filesystem;
-
-
-#if !defined(__clang__)
+#if !__clang__
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Wsuggest-override"
 #endif
-
 
 template <typename T>
 DB::DiskPtr createDisk();
@@ -25,7 +21,7 @@ DB::DiskPtr createDisk<DB::DiskMemory>()
 template <>
 DB::DiskPtr createDisk<DB::DiskLocal>()
 {
-    fs::create_directory("tmp/");
+    Poco::File("tmp/").createDirectory();
     return std::make_shared<DB::DiskLocal>("local_disk", "tmp/", 0);
 }
 
@@ -46,7 +42,7 @@ template <>
 void destroyDisk<DB::DiskLocal>(DB::DiskPtr & disk)
 {
     disk.reset();
-    fs::remove_all("tmp/");
+    Poco::File("tmp/").remove(true);
 }
 
 

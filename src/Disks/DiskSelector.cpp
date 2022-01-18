@@ -4,7 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Interpreters/Context.h>
 
 #include <set>
@@ -18,7 +18,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_DISK;
 }
 
-DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context)
+DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Context & context)
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
@@ -37,15 +37,15 @@ DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, con
 
         auto disk_config_prefix = config_prefix + "." + disk_name;
 
-        disks.emplace(disk_name, factory.create(disk_name, config, disk_config_prefix, context, disks));
+        disks.emplace(disk_name, factory.create(disk_name, config, disk_config_prefix, context));
     }
     if (!has_default_disk)
-        disks.emplace(default_disk_name, std::make_shared<DiskLocal>(default_disk_name, context->getPath(), 0));
+        disks.emplace(default_disk_name, std::make_shared<DiskLocal>(default_disk_name, context.getPath(), 0));
 }
 
 
 DiskSelectorPtr DiskSelector::updateFromConfig(
-    const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr context) const
+    const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Context & context) const
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
@@ -55,25 +55,28 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
     std::shared_ptr<DiskSelector> result = std::make_shared<DiskSelector>(*this);
 
     constexpr auto default_disk_name = "default";
-    DisksMap old_disks_minus_new_disks (result->getDisksMap());
+    std::set<String> old_disks_minus_new_disks;
+    for (const auto & [disk_name, _] : result->getDisksMap())
+    {
+        old_disks_minus_new_disks.insert(disk_name);
+    }
 
     for (const auto & disk_name : keys)
     {
         if (!std::all_of(disk_name.begin(), disk_name.end(), isWordCharASCII))
             throw Exception("Disk name can contain only alphanumeric and '_' (" + disk_name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
-        auto disk_config_prefix = config_prefix + "." + disk_name;
         if (result->getDisksMap().count(disk_name) == 0)
         {
-            result->addToDiskMap(disk_name, factory.create(disk_name, config, disk_config_prefix, context, result->getDisksMap()));
+            auto disk_config_prefix = config_prefix + "." + disk_name;
+            result->addToDiskMap(disk_name, factory.create(disk_name, config, disk_config_prefix, context));
         }
         else
         {
-            auto disk = old_disks_minus_new_disks[disk_name];
-
-            disk->applyNewSettings(config, context, disk_config_prefix, result->getDisksMap());
-
             old_disks_minus_new_disks.erase(disk_name);
+
+            /// TODO: Ideally ClickHouse shall complain if disk has changed, but
+            /// implementing that may appear as not trivial task.
         }
     }
 
@@ -88,7 +91,7 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
             writeString("Disks ", warning);
 
         int index = 0;
-        for (const auto & [name, _] : old_disks_minus_new_disks)
+        for (const String & name : old_disks_minus_new_disks)
         {
             if (index++ > 0)
                 writeString(", ", warning);

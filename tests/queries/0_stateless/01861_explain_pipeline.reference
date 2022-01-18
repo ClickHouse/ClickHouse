@@ -1,11 +1,14 @@
 (Expression)
 ExpressionTransform
   (SettingQuotaAndLimits)
-    (ReadFromMergeTree)
+    (Expression)
     ExpressionTransform
+      (MergingFinal)
       ReplacingSorted 2 → 1
+        (Expression)
         ExpressionTransform × 2
-          MergeTreeInOrder × 2 0 → 1
+          (ReadFromStorage)
+          MergeTree × 2 0 → 1
 0	0
 1	1
 2	2
@@ -16,10 +19,13 @@ ExpressionTransform
 (Expression)
 ExpressionTransform × 2
   (SettingQuotaAndLimits)
-    (ReadFromMergeTree)
+    (Expression)
     ExpressionTransform × 2
+      (MergingFinal)
       ReplacingSorted × 2 2 → 1
         Copy × 2 1 → 2
           AddingSelector × 2
+            (Expression)
             ExpressionTransform × 2
-              MergeTreeInOrder × 2 0 → 1
+              (ReadFromStorage)
+              MergeTree × 2 0 → 1

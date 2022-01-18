@@ -11,7 +11,6 @@
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -61,8 +60,6 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
-
     void create(AggregateDataPtr __restrict place) const override
     {
         if (std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= throw_probability)
@@ -84,13 +81,13 @@ public:
     {
     }
 
-    void serialize(ConstAggregateDataPtr, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr, WriteBuffer & buf) const override
     {
         char c = 0;
         buf.write(c);
     }
 
-    void deserialize(AggregateDataPtr /* place */, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr, ReadBuffer & buf, Arena *) const override
     {
         char c = 0;
         buf.read(c);
@@ -106,7 +103,7 @@ public:
 
 void registerAggregateFunctionAggThrow(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("aggThrow", [](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+    factory.registerFunction("aggThrow", [](const std::string & name, const DataTypes & argument_types, const Array & parameters)
     {
         Float64 throw_probability = 1.0;
         if (parameters.size() == 1)
@@ -119,3 +116,4 @@ void registerAggregateFunctionAggThrow(AggregateFunctionFactory & factory)
 }
 
 }
+

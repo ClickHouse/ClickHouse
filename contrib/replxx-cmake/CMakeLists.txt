@@ -8,7 +8,7 @@ if (NOT ENABLE_REPLXX)
     add_library(replxx INTERFACE)
     target_compile_definitions(replxx INTERFACE USE_REPLXX=0)
 
-    message (STATUS "Not using replxx")
+    message (STATUS "Not using replxx (Beware! Runtime fallback to readline is possible!)")
     return()
 endif()
 
@@ -62,7 +62,7 @@ if (NOT LIBRARY_REPLXX OR NOT INCLUDE_REPLXX OR NOT EXTERNAL_REPLXX_WORKS)
     )
 
     add_library (replxx ${SRCS})
-    target_include_directories(replxx SYSTEM PUBLIC "${LIBRARY_DIR}/include")
+    target_include_directories(replxx SYSTEM PUBLIC ${LIBRARY_DIR}/include)
 endif ()
 
 if (COMPILER_CLANG)

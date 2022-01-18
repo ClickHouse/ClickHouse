@@ -25,7 +25,7 @@ public:
     /** Get the text that identifies this element. */
     String getID(char delim) const override
     {
-        return "OptimizeQuery" + (delim + getDatabase()) + delim + getTable() + (final ? "_final" : "") + (deduplicate ? "_deduplicate" : "");
+        return "OptimizeQuery" + (delim + database) + delim + table + (final ? "_final" : "") + (deduplicate ? "_deduplicate" : "");
     }
 
     ASTPtr clone() const override

@@ -3,7 +3,6 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 
 #include <cassert>
-#include <iostream>
 #include <type_traits>
 
 #include <Poco/Util/Application.h>
@@ -75,8 +74,6 @@ void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
 {
     std::lock_guard lock(mutex);
     queue_size = value;
-    /// Reserve memory to get rid of allocations
-    jobs.reserve(queue_size);
 }
 
 
@@ -84,7 +81,7 @@ template <typename Thread>
 template <typename ReturnType>
 ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::optional<uint64_t> wait_microseconds)
 {
-    auto on_error = [&](const std::string & reason)
+    auto on_error = [&]
     {
         if constexpr (std::is_same_v<ReturnType, void>)
         {
@@ -94,9 +91,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
                 std::swap(exception, first_exception);
                 std::rethrow_exception(exception);
             }
-            throw DB::Exception(DB::ErrorCodes::CANNOT_SCHEDULE_TASK,
-                "Cannot schedule a task: {} (threads={}, jobs={})", reason,
-                threads.size(), scheduled_jobs);
+            throw DB::Exception("Cannot schedule a task", DB::ErrorCodes::CANNOT_SCHEDULE_TASK);
         }
         else
             return false;
@@ -110,13 +105,13 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
         if (wait_microseconds)  /// Check for optional. Condition is true if the optional is set and the value is zero.
         {
             if (!job_finished.wait_for(lock, std::chrono::microseconds(*wait_microseconds), pred))
-                return on_error(fmt::format("no free thread (timeout={})", *wait_microseconds));
+                return on_error();
         }
         else
             job_finished.wait(lock, pred);
 
         if (shutdown)
-            return on_error("shutdown");
+            return on_error();
 
         /// We must not to allocate any memory after we emplaced a job in a queue.
         /// Because if an exception would be thrown, we won't notify a thread about job occurrence.
@@ -131,7 +126,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
             catch (...)
             {
                 /// Most likely this is a std::bad_alloc exception
-                return on_error("cannot allocate thread slot");
+                return on_error();
             }
 
             try
@@ -141,7 +136,7 @@ ReturnType ThreadPoolImpl<Thread>::scheduleImpl(Job job, int priority, std::opti
             catch (...)
             {
                 threads.pop_front();
-                return on_error("cannot allocate thread");
+                return on_error();
             }
         }
 
@@ -194,10 +189,6 @@ void ThreadPoolImpl<Thread>::wait()
 template <typename Thread>
 ThreadPoolImpl<Thread>::~ThreadPoolImpl()
 {
-    /// Note: should not use logger from here,
-    /// because it can be an instance of GlobalThreadPool that is a global variable
-    /// and the destruction order of global variables is unspecified.
-
     finalize();
 }
 
@@ -250,7 +241,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
             if (!jobs.empty())
             {
-                /// boost::priority_queue does not provide interface for getting non-const reference to an element
+                /// std::priority_queue does not provide interface for getting non-const reference to an element
                 /// to prevent us from modifying its priority. We have to use const_cast to force move semantics on JobWithPriority::job.
                 job = std::move(const_cast<Job &>(jobs.top().job));
                 jobs.pop();
@@ -260,7 +251,6 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                 /// shutdown is true, simply finish the thread.
                 return;
             }
-
         }
 
         if (!need_shutdown)
@@ -320,7 +310,7 @@ template class ThreadPoolImpl<ThreadFromGlobalPool>;
 
 std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
 
-void GlobalThreadPool::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size)
+void GlobalThreadPool::initialize(size_t max_threads)
 {
     if (the_instance)
     {
@@ -328,7 +318,9 @@ void GlobalThreadPool::initialize(size_t max_threads, size_t max_free_threads, s
             "The global thread pool is initialized twice");
     }
 
-    the_instance.reset(new GlobalThreadPool(max_threads, max_free_threads, queue_size, false /*shutdown_on_exception*/));
+    the_instance.reset(new GlobalThreadPool(max_threads,
+        1000 /*max_free_threads*/, 10000 /*max_queue_size*/,
+        false /*shutdown_on_exception*/));
 }
 
 GlobalThreadPool & GlobalThreadPool::instance()

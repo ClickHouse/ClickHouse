@@ -17,10 +17,7 @@ void MarkdownRowOutputFormat::writePrefix()
     for (size_t i = 0; i < columns; ++i)
     {
         writeEscapedString(header.safeGetByPosition(i).name, out);
-        if (i == (columns - 1))
-            writeCString(" |", out);
-        else
-            writeCString(" | ", out);
+        writeCString(" | ", out);
     }
     writeCString("\n|", out);
     String left_alignment = ":-|";
@@ -50,14 +47,14 @@ void MarkdownRowOutputFormat::writeRowEndDelimiter()
     writeCString(" |\n", out);
 }
 
-void MarkdownRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
+void MarkdownRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
-    serialization.serializeTextEscaped(column, row_num, out, format_settings);
+    type.serializeAsTextEscaped(column, row_num, out, format_settings);
 }
 
-void registerOutputFormatMarkdown(FormatFactory & factory)
+void registerOutputFormatProcessorMarkdown(FormatFactory & factory)
 {
-    factory.registerOutputFormat("Markdown", [](
+    factory.registerOutputFormatProcessor("Markdown", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,
@@ -65,8 +62,6 @@ void registerOutputFormatMarkdown(FormatFactory & factory)
     {
         return std::make_shared<MarkdownRowOutputFormat>(buf, sample, params, settings);
     });
-
-    factory.markOutputFormatSupportsParallelFormatting("Markdown");
 }
 
 }

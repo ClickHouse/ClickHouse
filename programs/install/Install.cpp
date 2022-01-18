@@ -20,8 +20,8 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/hex.h>
-#include <base/getResource.h>
-#include <base/sleep.h>
+#include <common/getResource.h>
+#include <common/sleep.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFile.h>
@@ -66,28 +66,11 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int SYSTEM_ERROR;
     extern const int NOT_ENOUGH_SPACE;
-    extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_KILL;
 }
 
 }
 
-/// ANSI escape sequence for intense color in terminal.
-#define HILITE "\033[1m"
-#define END_HILITE "\033[0m"
-
-#if defined(OS_DARWIN)
-/// Until createUser() and createGroup() are implemented, only sudo-less installations are supported/default for macOS.
-static constexpr auto DEFAULT_CLICKHOUSE_SERVER_USER = "";
-static constexpr auto DEFAULT_CLICKHOUSE_SERVER_GROUP = "";
-static constexpr auto DEFAULT_CLICKHOUSE_BRIDGE_USER = "";
-static constexpr auto DEFAULT_CLICKHOUSE_BRIDGE_GROUP = "";
-#else
-static constexpr auto DEFAULT_CLICKHOUSE_SERVER_USER = "clickhouse";
-static constexpr auto DEFAULT_CLICKHOUSE_SERVER_GROUP = "clickhouse";
-static constexpr auto DEFAULT_CLICKHOUSE_BRIDGE_USER = "clickhouse-bridge";
-static constexpr auto DEFAULT_CLICKHOUSE_BRIDGE_GROUP = "clickhouse-bridge";
-#endif
 
 using namespace DB;
 namespace po = boost::program_options;
@@ -138,83 +121,37 @@ static bool filesEqual(std::string path1, std::string path2)
         && 0 == memcmp(in1.buffer().begin(), in2.buffer().begin(), in1.buffer().size());
 }
 
-static void changeOwnership(const String & file_name, const String & user_name, const String & group_name = {}, bool recursive = true)
-{
-    if (!user_name.empty() || !group_name.empty())
-    {
-        std::string command = fmt::format("chown {} {}:{} '{}'", (recursive ? "-R" : ""), user_name, group_name, file_name);
-        fmt::print(" {}\n", command);
-        executeScript(command);
-    }
-}
-
-static void createGroup(const String & group_name)
-{
-    if (!group_name.empty())
-    {
-#if defined(OS_DARWIN)
-
-        // TODO: implement.
-
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unable to create a group in macOS");
-#else
-        std::string command = fmt::format("groupadd -r {}", group_name);
-        fmt::print(" {}\n", command);
-        executeScript(command);
-#endif
-    }
-}
-
-static void createUser(const String & user_name, [[maybe_unused]] const String & group_name)
-{
-    if (!user_name.empty())
-    {
-#if defined(OS_DARWIN)
-
-        // TODO: implement.
-
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unable to create a user in macOS");
-#else
-        std::string command = group_name.empty()
-            ? fmt::format("useradd -r --shell /bin/false --home-dir /nonexistent --user-group {}", user_name)
-            : fmt::format("useradd -r --shell /bin/false --home-dir /nonexistent -g {} {}", group_name, user_name);
-        fmt::print(" {}\n", command);
-        executeScript(command);
-#endif
-    }
-}
-
 
 int mainEntryClickHouseInstall(int argc, char ** argv)
 {
+    po::options_description desc;
+    desc.add_options()
+        ("help,h", "produce help message")
+        ("prefix", po::value<std::string>()->default_value(""), "prefix for all paths")
+        ("binary-path", po::value<std::string>()->default_value("/usr/bin"), "where to install binaries")
+        ("config-path", po::value<std::string>()->default_value("/etc/clickhouse-server"), "where to install configs")
+        ("log-path", po::value<std::string>()->default_value("/var/log/clickhouse-server"), "where to create log directory")
+        ("data-path", po::value<std::string>()->default_value("/var/lib/clickhouse"), "directory for data")
+        ("pid-path", po::value<std::string>()->default_value("/var/run/clickhouse-server"), "directory for pid file")
+        ("user", po::value<std::string>()->default_value("clickhouse"), "clickhouse user to create")
+        ("group", po::value<std::string>()->default_value("clickhouse"), "clickhouse group to create")
+    ;
+
+    po::variables_map options;
+    po::store(po::parse_command_line(argc, argv, desc), options);
+
+    if (options.count("help"))
+    {
+        std::cout << "Usage: "
+            << (getuid() == 0 ? "" : "sudo ")
+            << argv[0]
+            << " install [options]\n";
+        std::cout << desc << '\n';
+        return 1;
+    }
+
     try
     {
-        po::options_description desc;
-        desc.add_options()
-            ("help,h", "produce help message")
-            ("prefix", po::value<std::string>()->default_value("/"), "prefix for all paths")
-            ("binary-path", po::value<std::string>()->default_value("usr/bin"), "where to install binaries")
-            ("config-path", po::value<std::string>()->default_value("etc/clickhouse-server"), "where to install configs")
-            ("log-path", po::value<std::string>()->default_value("var/log/clickhouse-server"), "where to create log directory")
-            ("data-path", po::value<std::string>()->default_value("var/lib/clickhouse"), "directory for data")
-            ("pid-path", po::value<std::string>()->default_value("var/run/clickhouse-server"), "directory for pid file")
-            ("user", po::value<std::string>()->default_value(DEFAULT_CLICKHOUSE_SERVER_USER), "clickhouse user to create")
-            ("group", po::value<std::string>()->default_value(DEFAULT_CLICKHOUSE_SERVER_GROUP), "clickhouse group to create")
-        ;
-
-        po::variables_map options;
-        po::store(po::parse_command_line(argc, argv, desc), options);
-
-        if (options.count("help"))
-        {
-            std::cout << "Usage: "
-                << (getuid() == 0 ? "" : "sudo ")
-                << argv[0]
-                << " install [options]\n";
-            std::cout << desc << '\n';
-            return 1;
-        }
-
         /// We need to copy binary to the binary directory.
         /// The binary is currently run. We need to obtain its path from procfs (on Linux).
 
@@ -228,9 +165,6 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         auto res = _NSGetExecutablePath(&path[0], &path_length);
         if (res != 0)
             Exception(ErrorCodes::FILE_DOESNT_EXIST, "Cannot obtain path to the binary");
-
-        if (path.back() == '\0')
-            path.pop_back();
 
         fs::path binary_self_path(path);
 #else
@@ -247,8 +181,8 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         /// TODO An option to link instead of copy - useful for developers.
 
-        fs::path prefix = options["prefix"].as<std::string>();
-        fs::path bin_dir = prefix / options["binary-path"].as<std::string>();
+        fs::path prefix = fs::path(options["prefix"].as<std::string>());
+        fs::path bin_dir = prefix / fs::path(options["binary-path"].as<std::string>());
 
         fs::path main_bin_path = bin_dir / "clickhouse";
         fs::path main_bin_tmp_path = bin_dir / "clickhouse.new";
@@ -286,12 +220,6 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         }
         else
         {
-            if (!fs::exists(bin_dir))
-            {
-                fmt::print("Creating binary directory {}.\n", bin_dir.string());
-                fs::create_directories(bin_dir);
-            }
-
             size_t available_space = fs::space(bin_dir).available;
             if (available_space < binary_size)
                 throw Exception(ErrorCodes::NOT_ENOUGH_SPACE, "Not enough space for clickhouse binary in {}, required {}, available {}.",
@@ -357,7 +285,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 bool is_symlink = fs::is_symlink(symlink_path);
                 fs::path points_to;
                 if (is_symlink)
-                    points_to = fs::weakly_canonical(fs::read_symlink(symlink_path));
+                    points_to = fs::absolute(fs::read_symlink(symlink_path));
 
                 if (is_symlink && points_to == main_bin_path)
                 {
@@ -395,16 +323,24 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 
         if (!group.empty())
         {
-            fmt::print("Creating clickhouse group if it does not exist.\n");
-            createGroup(group);
+            {
+                fmt::print("Creating clickhouse group if it does not exist.\n");
+                std::string command = fmt::format("groupadd -r {}", group);
+                fmt::print(" {}\n", command);
+                executeScript(command);
+            }
         }
         else
-            fmt::print("Will not create a dedicated clickhouse group.\n");
+            fmt::print("Will not create clickhouse group");
 
         if (!user.empty())
         {
             fmt::print("Creating clickhouse user if it does not exist.\n");
-            createUser(user, group);
+            std::string command = group.empty()
+                ? fmt::format("useradd -r --shell /bin/false --home-dir /nonexistent --user-group {}", user)
+                : fmt::format("useradd -r --shell /bin/false --home-dir /nonexistent -g {} {}", group, user);
+            fmt::print(" {}\n", command);
+            executeScript(command);
 
             if (group.empty())
                 group = user;
@@ -412,11 +348,6 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             /// Setting ulimits.
             try
             {
-#if defined(OS_DARWIN)
-
-                /// TODO Set ulimits on macOS.
-
-#else
                 fs::path ulimits_dir = "/etc/security/limits.d";
                 fs::path ulimits_file = ulimits_dir / fmt::format("{}.conf", user);
                 fmt::print("Will set ulimits for {} user in {}.\n", user, ulimits_file.string());
@@ -430,15 +361,16 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 out.write(ulimits_content.data(), ulimits_content.size());
                 out.sync();
                 out.finalize();
-#endif
             }
             catch (...)
             {
                 std::cerr << "Cannot set ulimits: " << getCurrentExceptionMessage(false) << "\n";
             }
+
+            /// TODO Set ulimits on Mac OS X
         }
         else
-            fmt::print("Will not create a dedicated clickhouse user.\n");
+            fmt::print("Will not create clickhouse user.\n");
 
         /// Creating configuration files and directories.
 
@@ -455,9 +387,9 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         fs::path config_d = config_dir / "config.d";
         fs::path users_d = config_dir / "users.d";
 
-        fs::path log_path = prefix / options["log-path"].as<std::string>();
-        fs::path data_path = prefix / options["data-path"].as<std::string>();
-        fs::path pid_path = prefix / options["pid-path"].as<std::string>();
+        std::string log_path = prefix / options["log-path"].as<std::string>();
+        std::string data_path = prefix / options["data-path"].as<std::string>();
+        std::string pid_path = prefix / options["pid-path"].as<std::string>();
 
         bool has_password_for_default_user = false;
 
@@ -482,86 +414,10 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             }
             else
             {
-                {
-                    WriteBufferFromFile out(main_config_file.string());
-                    out.write(main_config_content.data(), main_config_content.size());
-                    out.sync();
-                    out.finalize();
-                }
-
-                /// Override the default paths.
-
-                /// Data paths.
-                const std::string data_file = config_d / "data-paths.xml";
-                if (!fs::exists(data_file))
-                {
-                    WriteBufferFromFile out(data_file);
-                    out << "<clickhouse>\n"
-                    "    <path>" << data_path.string() << "</path>\n"
-                    "    <tmp_path>" << (data_path / "tmp").string() << "</tmp_path>\n"
-                    "    <user_files_path>" << (data_path / "user_files").string() << "</user_files_path>\n"
-                    "    <format_schema_path>" << (data_path / "format_schemas").string() << "</format_schema_path>\n"
-                    "</clickhouse>\n";
-                    out.sync();
-                    out.finalize();
-                    fs::permissions(data_file, fs::perms::owner_read, fs::perm_options::replace);
-                    fmt::print("Data path configuration override is saved to file {}.\n", data_file);
-                }
-
-                /// Logger.
-                const std::string logger_file = config_d / "logger.xml";
-                if (!fs::exists(logger_file))
-                {
-                    WriteBufferFromFile out(logger_file);
-                    out << "<clickhouse>\n"
-                    "    <logger>\n"
-                    "        <log>" << (log_path / "clickhouse-server.log").string() << "</log>\n"
-                    "        <errorlog>" << (log_path / "clickhouse-server.err.log").string() << "</errorlog>\n"
-                    "    </logger>\n"
-                    "</clickhouse>\n";
-                    out.sync();
-                    out.finalize();
-                    fs::permissions(logger_file, fs::perms::owner_read, fs::perm_options::replace);
-                    fmt::print("Log path configuration override is saved to file {}.\n", logger_file);
-                }
-
-                /// User directories.
-                const std::string user_directories_file = config_d / "user-directories.xml";
-                if (!fs::exists(user_directories_file))
-                {
-                    WriteBufferFromFile out(user_directories_file);
-                    out << "<clickhouse>\n"
-                    "    <user_directories>\n"
-                    "        <local_directory>\n"
-                    "            <path>" << (data_path / "access").string() << "</path>\n"
-                    "        </local_directory>\n"
-                    "    </user_directories>\n"
-                    "</clickhouse>\n";
-                    out.sync();
-                    out.finalize();
-                    fs::permissions(user_directories_file, fs::perms::owner_read, fs::perm_options::replace);
-                    fmt::print("User directory path configuration override is saved to file {}.\n", user_directories_file);
-                }
-
-                /// OpenSSL.
-                const std::string openssl_file = config_d / "openssl.xml";
-                if (!fs::exists(openssl_file))
-                {
-                    WriteBufferFromFile out(openssl_file);
-                    out << "<clickhouse>\n"
-                    "    <openSSL>\n"
-                    "        <server>\n"
-                    "            <certificateFile>" << (config_dir / "server.crt").string() << "</certificateFile>\n"
-                    "            <privateKeyFile>" << (config_dir / "server.key").string() << "</privateKeyFile>\n"
-                    "            <dhParamsFile>" << (config_dir / "dhparam.pem").string() << "</dhParamsFile>\n"
-                    "        </server>\n"
-                    "    </openSSL>\n"
-                    "</clickhouse>\n";
-                    out.sync();
-                    out.finalize();
-                    fs::permissions(openssl_file, fs::perms::owner_read, fs::perm_options::replace);
-                    fmt::print("OpenSSL path configuration override is saved to file {}.\n", openssl_file);
-                }
+                WriteBufferFromFile out(main_config_file.string());
+                out.write(main_config_content.data(), main_config_content.size());
+                out.sync();
+                out.finalize();
             }
         }
         else
@@ -574,13 +430,13 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             if (configuration->has("path"))
             {
                 data_path = configuration->getString("path");
-                fmt::print("{} has {} as data path.\n", main_config_file.string(), data_path.string());
+                fmt::print("{} has {} as data path.\n", main_config_file.string(), data_path);
             }
 
             if (configuration->has("logger.log"))
             {
                 log_path = fs::path(configuration->getString("logger.log")).remove_filename();
-                fmt::print("{} has {} as log path.\n", main_config_file.string(), log_path.string());
+                fmt::print("{} has {} as log path.\n", main_config_file.string(), log_path);
             }
         }
 
@@ -616,44 +472,79 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             }
         }
 
+        /// Chmod and chown configs
+        {
+            std::string command = fmt::format("chown --recursive {}:{} '{}'", user, group, config_dir.string());
+            fmt::print(" {}\n", command);
+            executeScript(command);
+        }
+
+        /// Symlink "preprocessed_configs" is created by the server, so "write" is needed.
+        fs::permissions(config_dir, fs::perms::owner_all, fs::perm_options::replace);
+
+        /// Subdirectories, so "execute" is needed.
+        if (fs::exists(config_d))
+            fs::permissions(config_d, fs::perms::owner_read | fs::perms::owner_exec, fs::perm_options::replace);
+        if (fs::exists(users_d))
+            fs::permissions(users_d, fs::perms::owner_read | fs::perms::owner_exec, fs::perm_options::replace);
+
+        /// Readonly.
+        if (fs::exists(main_config_file))
+            fs::permissions(main_config_file, fs::perms::owner_read, fs::perm_options::replace);
+        if (fs::exists(users_config_file))
+            fs::permissions(users_config_file, fs::perms::owner_read, fs::perm_options::replace);
+
         /// Create directories for data and log.
 
         if (fs::exists(log_path))
         {
-            fmt::print("Log directory {} already exists.\n", log_path.string());
+            fmt::print("Log directory {} already exists.\n", log_path);
         }
         else
         {
-            fmt::print("Creating log directory {}.\n", log_path.string());
+            fmt::print("Creating log directory {}.\n", log_path);
             fs::create_directories(log_path);
         }
 
         if (fs::exists(data_path))
         {
-            fmt::print("Data directory {} already exists.\n", data_path.string());
+            fmt::print("Data directory {} already exists.\n", data_path);
         }
         else
         {
-            fmt::print("Creating data directory {}.\n", data_path.string());
+            fmt::print("Creating data directory {}.\n", data_path);
             fs::create_directories(data_path);
         }
 
         if (fs::exists(pid_path))
         {
-            fmt::print("Pid directory {} already exists.\n", pid_path.string());
+            fmt::print("Pid directory {} already exists.\n", pid_path);
         }
         else
         {
-            fmt::print("Creating pid directory {}.\n", pid_path.string());
+            fmt::print("Creating pid directory {}.\n", pid_path);
             fs::create_directories(pid_path);
         }
 
         /// Chmod and chown data and log directories
-        changeOwnership(log_path, user, group);
-        changeOwnership(pid_path, user, group);
+        {
+            std::string command = fmt::format("chown --recursive {}:{} '{}'", user, group, log_path);
+            fmt::print(" {}\n", command);
+            executeScript(command);
+        }
 
-        /// Not recursive, because there can be a huge number of files and it will be slow.
-        changeOwnership(data_path, user, group, /* recursive= */ false);
+        {
+            std::string command = fmt::format("chown --recursive {}:{} '{}'", user, group, pid_path);
+            fmt::print(" {}\n", command);
+            executeScript(command);
+        }
+
+        {
+            /// Not recursive, because there can be a huge number of files and it will be slow.
+            std::string command = fmt::format("chown {}:{} '{}'", user, group, data_path);
+            fmt::print(" {}\n", command);
+            executeScript(command);
+        }
 
         /// All users are allowed to read pid file (for clickhouse status command).
         fs::permissions(pid_path, fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read, fs::perm_options::replace);
@@ -664,49 +555,24 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         /// Data directory is not accessible to anyone except clickhouse.
         fs::permissions(data_path, fs::perms::owner_all, fs::perm_options::replace);
 
-        fs::path odbc_bridge_path = bin_dir / "clickhouse-odbc-bridge";
-        fs::path library_bridge_path = bin_dir / "clickhouse-library-bridge";
-
-        if (fs::exists(odbc_bridge_path) || fs::exists(library_bridge_path))
-        {
-            createGroup(DEFAULT_CLICKHOUSE_BRIDGE_GROUP);
-            createUser(DEFAULT_CLICKHOUSE_BRIDGE_USER, DEFAULT_CLICKHOUSE_BRIDGE_GROUP);
-
-            if (fs::exists(odbc_bridge_path))
-                changeOwnership(odbc_bridge_path, DEFAULT_CLICKHOUSE_BRIDGE_USER, DEFAULT_CLICKHOUSE_BRIDGE_GROUP);
-            if (fs::exists(library_bridge_path))
-                changeOwnership(library_bridge_path, DEFAULT_CLICKHOUSE_BRIDGE_USER, DEFAULT_CLICKHOUSE_BRIDGE_GROUP);
-        }
+        /// Set up password for default user.
 
         bool stdin_is_a_tty = isatty(STDIN_FILENO);
         bool stdout_is_a_tty = isatty(STDOUT_FILENO);
+        bool is_interactive = stdin_is_a_tty && stdout_is_a_tty;
 
-        /// dpkg or apt installers can ask for non-interactive work explicitly.
-
-        const char * debian_frontend_var = getenv("DEBIAN_FRONTEND");
-        bool noninteractive = debian_frontend_var && debian_frontend_var == std::string_view("noninteractive");
-
-        bool is_interactive = !noninteractive && stdin_is_a_tty && stdout_is_a_tty;
-
-        /// We can ask password even if stdin is closed/redirected but /dev/tty is available.
-        bool can_ask_password = !noninteractive && stdout_is_a_tty;
-
-        /// Set up password for default user.
         if (has_password_for_default_user)
         {
-            fmt::print(HILITE "Password for default user is already specified. To remind or reset, see {} and {}." END_HILITE "\n",
+            fmt::print("Password for default user is already specified. To remind or reset, see {} and {}.\n",
                        users_config_file.string(), users_d.string());
         }
-        else if (!can_ask_password)
+        else if (!is_interactive)
         {
-            fmt::print(HILITE "Password for default user is empty string. See {} and {} to change it." END_HILITE "\n",
+            fmt::print("Password for default user is empty string. See {} and {} to change it.\n",
                        users_config_file.string(), users_d.string());
         }
         else
         {
-            /// NOTE: When installing debian package with dpkg -i, stdin is not a terminal but we are still being able to enter password.
-            /// More sophisticated method with /dev/tty is used inside the `readpassphrase` function.
-
             char buf[1000] = {};
             std::string password;
             if (auto * result = readpassphrase("Enter password for default user: ", buf, sizeof(buf), 0))
@@ -724,33 +590,33 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 hash_hex.resize(64);
                 for (size_t i = 0; i < 32; ++i)
                     writeHexByteLowercase(hash[i], &hash_hex[2 * i]);
-                out << "<clickhouse>\n"
+                out << "<yandex>\n"
                     "    <users>\n"
                     "        <default>\n"
                     "            <password remove='1' />\n"
                     "            <password_sha256_hex>" << hash_hex << "</password_sha256_hex>\n"
                     "        </default>\n"
                     "    </users>\n"
-                    "</clickhouse>\n";
+                    "</yandex>\n";
                 out.sync();
                 out.finalize();
-                fmt::print(HILITE "Password for default user is saved in file {}." END_HILITE "\n", password_file);
+                fmt::print("Password for default user is saved in file {}.\n", password_file);
 #else
-                out << "<clickhouse>\n"
+                out << "<yandex>\n"
                     "    <users>\n"
                     "        <default>\n"
                     "            <password><![CDATA[" << password << "]]></password>\n"
                     "        </default>\n"
                     "    </users>\n"
-                    "</clickhouse>\n";
+                    "</yandex>\n";
                 out.sync();
                 out.finalize();
-                fmt::print(HILITE "Password for default user is saved in plaintext in file {}." END_HILITE "\n", password_file);
+                fmt::print("Password for default user is saved in plaintext in file {}.\n", password_file);
 #endif
                 has_password_for_default_user = true;
             }
             else
-                fmt::print(HILITE "Password for default user is empty string. See {} and {} to change it." END_HILITE "\n",
+                fmt::print("Password for default user is empty string. See {} and {} to change it.\n",
                            users_config_file.string(), users_d.string());
         }
 
@@ -769,13 +635,13 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 #if defined(__linux__)
         fmt::print("Setting capabilities for clickhouse binary. This is optional.\n");
         std::string command = fmt::format("command -v setcap >/dev/null"
-            " && command -v capsh >/dev/null"
-            " && capsh --has-p=cap_net_admin,cap_ipc_lock,cap_sys_nice+ep >/dev/null 2>&1"
-            " && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {0}"
+            " && echo > {0} && chmod a+x {0} && {0} && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {0} && {0} && rm {0}"
+            " && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {1}"
             " || echo \"Cannot set 'net_admin' or 'ipc_lock' or 'sys_nice' capability for clickhouse binary."
                 " This is optional. Taskstats accounting will be disabled."
                 " To enable taskstats accounting you may add the required capability later manually.\"",
-            fs::canonical(main_bin_path).string());
+            "/tmp/test_setcap.sh", fs::canonical(main_bin_path).string());
+        fmt::print(" {}\n", command);
         executeScript(command);
 #endif
 
@@ -786,59 +652,26 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             {
                 std::string listen_file = config_d / "listen.xml";
                 WriteBufferFromFile out(listen_file);
-                out << "<clickhouse>\n"
+                out << "<yandex>\n"
                     "    <listen_host>::</listen_host>\n"
-                    "</clickhouse>\n";
+                    "</yandex>\n";
                 out.sync();
                 out.finalize();
                 fmt::print("The choice is saved in file {}.\n", listen_file);
             }
         }
 
-        /// Chmod and chown configs
-        changeOwnership(config_dir, user, group);
-
-        /// Symlink "preprocessed_configs" is created by the server, so "write" is needed.
-        fs::permissions(config_dir, fs::perms::owner_all, fs::perm_options::replace);
-
-        /// Subdirectories, so "execute" is needed.
-        if (fs::exists(config_d))
-            fs::permissions(config_d, fs::perms::owner_read | fs::perms::owner_exec, fs::perm_options::replace);
-        if (fs::exists(users_d))
-            fs::permissions(users_d, fs::perms::owner_read | fs::perms::owner_exec, fs::perm_options::replace);
-
-        /// Readonly.
-        if (fs::exists(main_config_file))
-            fs::permissions(main_config_file, fs::perms::owner_read, fs::perm_options::replace);
-        if (fs::exists(users_config_file))
-            fs::permissions(users_config_file, fs::perms::owner_read, fs::perm_options::replace);
-
-
         std::string maybe_password;
         if (has_password_for_default_user)
             maybe_password = " --password";
 
-        fs::path pid_file = pid_path / "clickhouse-server.pid";
-        if (fs::exists(pid_file))
-        {
-            fmt::print(
-                "\nClickHouse has been successfully installed.\n"
-                "\nRestart clickhouse-server with:\n"
-                " sudo clickhouse restart\n"
-                "\nStart clickhouse-client with:\n"
-                " clickhouse-client{}\n\n",
-                maybe_password);
-        }
-        else
-        {
-            fmt::print(
-                "\nClickHouse has been successfully installed.\n"
-                "\nStart clickhouse-server with:\n"
-                " sudo clickhouse start\n"
-                "\nStart clickhouse-client with:\n"
-                " clickhouse-client{}\n\n",
-                maybe_password);
-        }
+        fmt::print(
+            "\nClickHouse has been successfully installed.\n"
+            "\nStart clickhouse-server with:\n"
+            " sudo clickhouse start\n"
+            "\nStart clickhouse-client with:\n"
+            " clickhouse-client{}\n\n",
+            maybe_password);
     }
     catch (const fs::filesystem_error &)
     {
@@ -893,7 +726,11 @@ namespace
             /// All users are allowed to read pid file (for clickhouse status command).
             fs::permissions(pid_path, fs::perms::owner_all | fs::perms::group_read | fs::perms::others_read, fs::perm_options::replace);
 
-            changeOwnership(pid_path, user);
+            {
+                std::string command = fmt::format("chown --recursive {} '{}'", user, pid_path.string());
+                fmt::print(" {}\n", command);
+                executeScript(command);
+            }
         }
 
         std::string command = fmt::format("{} --config-file {} --pid-file {} --daemon",
@@ -1003,8 +840,8 @@ namespace
                 fmt::print("The pidof command returned unusual output.\n");
             }
 
-            WriteBufferFromFileDescriptor std_err(STDERR_FILENO);
-            copyData(sh->err, std_err);
+            WriteBufferFromFileDescriptor stderr(STDERR_FILENO);
+            copyData(sh->err, stderr);
 
             sh->tryWait();
         }
@@ -1085,7 +922,7 @@ namespace
             if (isRunning(pid_file))
             {
                 throw Exception(ErrorCodes::CANNOT_KILL,
-                    "The server process still exists after {} tries (delay: {} ms)",
+                    "The server process still exists after %zu ms",
                     num_kill_check_tries, kill_check_delay_ms);
             }
         }
@@ -1097,36 +934,34 @@ namespace
 
 int mainEntryClickHouseStart(int argc, char ** argv)
 {
+    po::options_description desc;
+    desc.add_options()
+        ("help,h", "produce help message")
+        ("binary-path", po::value<std::string>()->default_value("/usr/bin"), "directory with binary")
+        ("config-path", po::value<std::string>()->default_value("/etc/clickhouse-server"), "directory with configs")
+        ("pid-path", po::value<std::string>()->default_value("/var/run/clickhouse-server"), "directory for pid file")
+        ("user", po::value<std::string>()->default_value("clickhouse"), "clickhouse user")
+    ;
+
+    po::variables_map options;
+    po::store(po::parse_command_line(argc, argv, desc), options);
+
+    if (options.count("help"))
+    {
+        std::cout << "Usage: "
+            << (getuid() == 0 ? "" : "sudo ")
+            << argv[0]
+            << " start\n";
+        return 1;
+    }
+
     try
     {
-        po::options_description desc;
-        desc.add_options()
-            ("help,h", "produce help message")
-            ("prefix", po::value<std::string>()->default_value("/"), "prefix for all paths")
-            ("binary-path", po::value<std::string>()->default_value("usr/bin"), "directory with binary")
-            ("config-path", po::value<std::string>()->default_value("etc/clickhouse-server"), "directory with configs")
-            ("pid-path", po::value<std::string>()->default_value("var/run/clickhouse-server"), "directory for pid file")
-            ("user", po::value<std::string>()->default_value(DEFAULT_CLICKHOUSE_SERVER_USER), "clickhouse user")
-        ;
-
-        po::variables_map options;
-        po::store(po::parse_command_line(argc, argv, desc), options);
-
-        if (options.count("help"))
-        {
-            std::cout << "Usage: "
-                << (getuid() == 0 ? "" : "sudo ")
-                << argv[0]
-                << " start\n";
-            return 1;
-        }
-
         std::string user = options["user"].as<std::string>();
 
-        fs::path prefix = options["prefix"].as<std::string>();
-        fs::path executable = prefix / options["binary-path"].as<std::string>() / "clickhouse-server";
-        fs::path config = prefix / options["config-path"].as<std::string>() / "config.xml";
-        fs::path pid_file = prefix / options["pid-path"].as<std::string>() / "clickhouse-server.pid";
+        fs::path executable = fs::path(options["binary-path"].as<std::string>()) / "clickhouse-server";
+        fs::path config = fs::path(options["config-path"].as<std::string>()) / "config.xml";
+        fs::path pid_file = fs::path(options["pid-path"].as<std::string>()) / "clickhouse-server.pid";
 
         return start(user, executable, config, pid_file);
     }
@@ -1140,30 +975,28 @@ int mainEntryClickHouseStart(int argc, char ** argv)
 
 int mainEntryClickHouseStop(int argc, char ** argv)
 {
+    po::options_description desc;
+    desc.add_options()
+        ("help,h", "produce help message")
+        ("pid-path", po::value<std::string>()->default_value("/var/run/clickhouse-server"), "directory for pid file")
+        ("force", po::bool_switch(), "Stop with KILL signal instead of TERM")
+    ;
+
+    po::variables_map options;
+    po::store(po::parse_command_line(argc, argv, desc), options);
+
+    if (options.count("help"))
+    {
+        std::cout << "Usage: "
+            << (getuid() == 0 ? "" : "sudo ")
+            << argv[0]
+            << " stop\n";
+        return 1;
+    }
+
     try
     {
-        po::options_description desc;
-        desc.add_options()
-            ("help,h", "produce help message")
-            ("prefix", po::value<std::string>()->default_value("/"), "prefix for all paths")
-            ("pid-path", po::value<std::string>()->default_value("var/run/clickhouse-server"), "directory for pid file")
-            ("force", po::bool_switch(), "Stop with KILL signal instead of TERM")
-        ;
-
-        po::variables_map options;
-        po::store(po::parse_command_line(argc, argv, desc), options);
-
-        if (options.count("help"))
-        {
-            std::cout << "Usage: "
-                << (getuid() == 0 ? "" : "sudo ")
-                << argv[0]
-                << " stop\n";
-            return 1;
-        }
-
-        fs::path prefix = options["prefix"].as<std::string>();
-        fs::path pid_file = prefix / options["pid-path"].as<std::string>() / "clickhouse-server.pid";
+        fs::path pid_file = fs::path(options["pid-path"].as<std::string>()) / "clickhouse-server.pid";
 
         return stop(pid_file, options["force"].as<bool>());
     }
@@ -1177,79 +1010,72 @@ int mainEntryClickHouseStop(int argc, char ** argv)
 
 int mainEntryClickHouseStatus(int argc, char ** argv)
 {
+    po::options_description desc;
+    desc.add_options()
+        ("help,h", "produce help message")
+        ("pid-path", po::value<std::string>()->default_value("/var/run/clickhouse-server"), "directory for pid file")
+    ;
+
+    po::variables_map options;
+    po::store(po::parse_command_line(argc, argv, desc), options);
+
+    if (options.count("help"))
+    {
+        std::cout << "Usage: "
+            << (getuid() == 0 ? "" : "sudo ")
+            << argv[0]
+            << " status\n";
+        return 1;
+    }
+
     try
     {
-        po::options_description desc;
-        desc.add_options()
-            ("help,h", "produce help message")
-            ("prefix", po::value<std::string>()->default_value("/"), "prefix for all paths")
-            ("pid-path", po::value<std::string>()->default_value("var/run/clickhouse-server"), "directory for pid file")
-        ;
-
-        po::variables_map options;
-        po::store(po::parse_command_line(argc, argv, desc), options);
-
-        if (options.count("help"))
-        {
-            std::cout << "Usage: "
-                << (getuid() == 0 ? "" : "sudo ")
-                << argv[0]
-                << " status\n";
-            return 1;
-        }
-
-        fs::path prefix = options["prefix"].as<std::string>();
-        fs::path pid_file = prefix / options["pid-path"].as<std::string>() / "clickhouse-server.pid";
-
+        fs::path pid_file = fs::path(options["pid-path"].as<std::string>()) / "clickhouse-server.pid";
         isRunning(pid_file);
+        return 0;
     }
     catch (...)
     {
         std::cerr << getCurrentExceptionMessage(false) << '\n';
         return getCurrentExceptionCode();
     }
-
-    return 0;
 }
 
 
 int mainEntryClickHouseRestart(int argc, char ** argv)
 {
+    po::options_description desc;
+    desc.add_options()
+        ("help,h", "produce help message")
+        ("binary-path", po::value<std::string>()->default_value("/usr/bin"), "directory with binary")
+        ("config-path", po::value<std::string>()->default_value("/etc/clickhouse-server"), "directory with configs")
+        ("pid-path", po::value<std::string>()->default_value("/var/run/clickhouse-server"), "directory for pid file")
+        ("user", po::value<std::string>()->default_value("clickhouse"), "clickhouse user")
+        ("force", po::value<bool>()->default_value(false), "Stop with KILL signal instead of TERM")
+    ;
+
+    po::variables_map options;
+    po::store(po::parse_command_line(argc, argv, desc), options);
+
+    if (options.count("help"))
+    {
+        std::cout << "Usage: "
+            << (getuid() == 0 ? "" : "sudo ")
+            << argv[0]
+            << " restart\n";
+        return 1;
+    }
+
     try
     {
-        po::options_description desc;
-        desc.add_options()
-            ("help,h", "produce help message")
-            ("prefix", po::value<std::string>()->default_value("/"), "prefix for all paths")
-            ("binary-path", po::value<std::string>()->default_value("usr/bin"), "directory with binary")
-            ("config-path", po::value<std::string>()->default_value("etc/clickhouse-server"), "directory with configs")
-            ("pid-path", po::value<std::string>()->default_value("var/run/clickhouse-server"), "directory for pid file")
-            ("user", po::value<std::string>()->default_value(DEFAULT_CLICKHOUSE_SERVER_USER), "clickhouse user")
-            ("force", po::value<bool>()->default_value(false), "Stop with KILL signal instead of TERM")
-        ;
-
-        po::variables_map options;
-        po::store(po::parse_command_line(argc, argv, desc), options);
-
-        if (options.count("help"))
-        {
-            std::cout << "Usage: "
-                << (getuid() == 0 ? "" : "sudo ")
-                << argv[0]
-                << " restart\n";
-            return 1;
-        }
-
         std::string user = options["user"].as<std::string>();
 
-        fs::path prefix = options["prefix"].as<std::string>();
-        fs::path executable = prefix / options["binary-path"].as<std::string>() / "clickhouse-server";
-        fs::path config = prefix / options["config-path"].as<std::string>() / "config.xml";
-        fs::path pid_file = prefix / options["pid-path"].as<std::string>() / "clickhouse-server.pid";
+        fs::path executable = fs::path(options["binary-path"].as<std::string>()) / "clickhouse-server";
+        fs::path config = fs::path(options["config-path"].as<std::string>()) / "config.xml";
+        fs::path pid_file = fs::path(options["pid-path"].as<std::string>()) / "clickhouse-server.pid";
 
         if (int res = stop(pid_file, options["force"].as<bool>()))
             return res;
-
         return start(user, executable, config, pid_file);
     }
     catch (...)

@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Common/config.h>
-
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -13,10 +11,13 @@
 #include <Poco/DOM/NodeList.h>
 #include <Poco/DOM/NamedNodeMap.h>
 #include <Poco/AutoPtr.h>
+#include <Poco/File.h>
+#include <Poco/Path.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <base/logger_useful.h>
+
+#include <common/logger_useful.h>
 
 
 namespace zkutil
@@ -59,6 +60,7 @@ public:
     /// 4) If zk_node_cache is non-NULL, replace elements matching the "<foo from_zk="/bar">" pattern with
     ///    "<foo>contents of the /bar ZooKeeper node</foo>".
     ///    If has_zk_includes is non-NULL and there are such elements, set has_zk_includes to true.
+    /// 5) (Yandex.Metrika-specific) Substitute "<layer/>" with "<layer>layer number from the hostname</layer>".
     XMLDocumentPtr processConfig(
         bool * has_zk_includes = nullptr,
         zkutil::ZooKeeperNodeCache * zk_node_cache = nullptr,
@@ -139,4 +141,3 @@ private:
 };
 
 }
-

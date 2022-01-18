@@ -156,7 +156,7 @@ void DataTypeFactory::registerSimpleDataTypeCustom(const String &name, SimpleCre
 
 const DataTypeFactory::Value & DataTypeFactory::findCreatorByName(const String & family_name) const
 {
-    ContextPtr query_context;
+    const Context * query_context = nullptr;
     if (CurrentThread::isInitialized())
         query_context = CurrentThread::get().getQueryContext();
 
@@ -194,7 +194,6 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeNumbers(*this);
     registerDataTypeDecimal(*this);
     registerDataTypeDate(*this);
-    registerDataTypeDate32(*this);
     registerDataTypeDateTime(*this);
     registerDataTypeString(*this);
     registerDataTypeFixedString(*this);
@@ -209,7 +208,6 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeInterval(*this);
     registerDataTypeLowCardinality(*this);
     registerDataTypeDomainIPv4AndIPv6(*this);
-    registerDataTypeDomainBool(*this);
     registerDataTypeDomainSimpleAggregateFunction(*this);
     registerDataTypeDomainGeo(*this);
     registerDataTypeMap(*this);

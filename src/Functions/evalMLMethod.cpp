@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -28,11 +28,11 @@ class FunctionEvalMLMethod : public IFunction
 {
 public:
     static constexpr auto name = "evalMLMethod";
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(const Context & context)
     {
         return std::make_shared<FunctionEvalMLMethod>(context);
     }
-    explicit FunctionEvalMLMethod(ContextPtr context_) : context(context_)
+    explicit FunctionEvalMLMethod(const Context & context_) : context(context_)
     {}
 
     String getName() const override
@@ -44,12 +44,6 @@ public:
     {
         return true;
     }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
-    {
-        return true;
-    }
-
     size_t getNumberOfArguments() const override
     {
         return 0;
@@ -87,7 +81,7 @@ public:
         return agg_function->predictValues(arguments, context);
     }
 
-    ContextPtr context;
+    const Context & context;
 };
 
 }

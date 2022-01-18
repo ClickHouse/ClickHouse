@@ -1,1 +1,0 @@
-create table test_table engine MergeTree order by a as select a_table.a, b_table.b_arr from (select arrayJoin(range(10000)) as a) a_table cross join (select range(10000) as b_arr) b_table settings max_memory_usage = 1; -- { serverError MEMORY_LIMIT_EXCEEDED }

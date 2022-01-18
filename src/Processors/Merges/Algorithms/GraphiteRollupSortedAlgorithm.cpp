@@ -1,9 +1,7 @@
 #include <Processors/Merges/Algorithms/GraphiteRollupSortedAlgorithm.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <base/DateLUTImpl.h>
-#include <base/DateLUT.h>
-#include <DataTypes/DataTypeDateTime.h>
-
+#include <common/DateLUTImpl.h>
+#include <common/DateLUT.h>
 
 namespace DB
 {
@@ -17,8 +15,6 @@ static GraphiteRollupSortedAlgorithm::ColumnsDefinition defineColumns(
     def.time_column_num = header.getPositionByName(params.time_column_name);
     def.value_column_num = header.getPositionByName(params.value_column_name);
     def.version_column_num = header.getPositionByName(params.version_column_name);
-
-    def.time_column_type = header.getByPosition(def.time_column_num).type;
 
     size_t num_columns = header.columns();
     for (size_t i = 0; i < num_columns; ++i)
@@ -126,8 +122,8 @@ UInt32 GraphiteRollupSortedAlgorithm::selectPrecision(const Graphite::Retentions
   * In this case, the date should not change. The date is calculated using the local time zone.
   *
   * If the rounding value is less than an hour,
-  *  then, assuming that time zones that differ from UTC by a multiple of 15-minute intervals
-  *  (that is true for all modern timezones but not true for historical timezones).
+  *  then, assuming that time zones that differ from UTC by a non-integer number of hours are not supported,
+  *  just simply round the unix timestamp down to a multiple of 3600.
   * And if the rounding value is greater,
   *  then we will round down the number of seconds from the beginning of the day in the local time zone.
   *
@@ -135,7 +131,7 @@ UInt32 GraphiteRollupSortedAlgorithm::selectPrecision(const Graphite::Retentions
   */
 static time_t roundTimeToPrecision(const DateLUTImpl & date_lut, time_t time, UInt32 precision)
 {
-    if (precision <= 900)
+    if (precision <= 3600)
     {
         return time / precision * precision;
     }
@@ -149,10 +145,7 @@ static time_t roundTimeToPrecision(const DateLUTImpl & date_lut, time_t time, UI
 
 IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
 {
-    /// Timestamp column can be DateTime or UInt32. If it is DateTime, we can use its timezone for calculations.
-    const TimezoneMixin * timezone = dynamic_cast<const TimezoneMixin *>(columns_definition.time_column_type.get());
-
-    const DateLUTImpl & date_lut = timezone ? timezone->getTimeZone() : DateLUT::instance();
+    const DateLUTImpl & date_lut = DateLUT::instance();
 
     /// Take rows in needed order and put them into `merged_data` until we get `max_block_size` rows.
     ///

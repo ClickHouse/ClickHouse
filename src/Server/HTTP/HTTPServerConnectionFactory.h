@@ -12,12 +12,12 @@ namespace DB
 class HTTPServerConnectionFactory : public Poco::Net::TCPServerConnectionFactory
 {
 public:
-    HTTPServerConnectionFactory(ContextPtr context, Poco::Net::HTTPServerParams::Ptr params, HTTPRequestHandlerFactoryPtr factory);
+    HTTPServerConnectionFactory(const Context & context, Poco::Net::HTTPServerParams::Ptr params, HTTPRequestHandlerFactoryPtr factory);
 
     Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket) override;
 
 private:
-    ContextPtr context;
+    Context context;
     Poco::Net::HTTPServerParams::Ptr params;
     HTTPRequestHandlerFactoryPtr factory;
 };

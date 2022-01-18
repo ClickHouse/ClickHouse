@@ -36,7 +36,7 @@ struct NullableValueSource;
 template <typename T>
 struct NumericArraySink : public ArraySinkImpl<NumericArraySink<T>>
 {
-    using ColVecType = ColumnVectorOrDecimal<T>;
+    using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
     using CompatibleArraySource = NumericArraySource<T>;
     using CompatibleValueSource = NumericValueSource<T>;
 

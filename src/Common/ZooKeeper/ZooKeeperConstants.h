@@ -23,8 +23,6 @@ enum class OpNum : int32_t
     Exists = 3,
     Get = 4,
     Set = 5,
-    GetACL = 6,
-    SetACL = 7,
     SimpleList = 8,
     Sync = 9,
     Heartbeat = 11,
@@ -32,7 +30,6 @@ enum class OpNum : int32_t
     Check = 13,
     Multi = 14,
     Auth = 100,
-    SessionID = 997, /// Special internal request
 };
 
 std::string toString(OpNum op_num);

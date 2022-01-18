@@ -31,13 +31,11 @@ class FunctionExtractGroups : public IFunction
 {
 public:
     static constexpr auto name = "extractGroups";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionExtractGroups>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionExtractGroups>(); }
 
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 2; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
@@ -45,8 +43,8 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"haystack", &isStringOrFixedString<IDataType>, nullptr, "const String or const FixedString"},
-            {"needle", &isStringOrFixedString<IDataType>, isColumnConst, "const String or const FixedString"},
+            {"haystack", isStringOrFixedString, nullptr, "const String or const FixedString"},
+            {"needle", isStringOrFixedString, isColumnConst, "const String or const FixedString"},
         };
         validateFunctionArgumentTypes(*this, arguments, args);
 
@@ -67,12 +65,12 @@ public:
         const auto & re2 = regexp->getRE2();
 
         if (!re2)
-            throw Exception("There are no groups in regexp: " + needle, ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("There is no groups in regexp: " + needle, ErrorCodes::BAD_ARGUMENTS);
 
         const size_t groups_count = re2->NumberOfCapturingGroups();
 
         if (!groups_count)
-            throw Exception("There are no groups in regexp: " + needle, ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("There is no groups in regexp: " + needle, ErrorCodes::BAD_ARGUMENTS);
 
         // Including 0-group, which is the whole regexp.
         PODArrayWithStackMemory<re2_st::StringPiece, 128> matched_groups(groups_count + 1);

@@ -1,3 +1,7 @@
+if (UNBUNDLED AND USE_STATIC_LIBRARIES)
+    set (ENABLE_LDAP OFF CACHE INTERNAL "")
+endif()
+
 option (ENABLE_LDAP "Enable LDAP" ${ENABLE_LIBRARIES})
 
 if (NOT ENABLE_LDAP)
@@ -7,11 +11,11 @@ if (NOT ENABLE_LDAP)
     return()
 endif()
 
-option (USE_INTERNAL_LDAP_LIBRARY "Set to FALSE to use system *LDAP library instead of bundled" ON)
+option (USE_INTERNAL_LDAP_LIBRARY "Set to FALSE to use system *LDAP library instead of bundled" ${NOT_UNBUNDLED})
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/openldap/README")
     if (USE_INTERNAL_LDAP_LIBRARY)
-        message (WARNING "Submodule contrib/openldap is missing. To fix try running:\n git submodule update --init")
+        message (WARNING "Submodule contrib/openldap is missing. To fix try running:\n git submodule update --init --recursive")
         message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal LDAP library")
     endif ()
 
@@ -58,11 +62,8 @@ if (NOT OPENLDAP_FOUND AND NOT MISSING_INTERNAL_LDAP_LIBRARY)
     if (
         ( "${_system_name}" STREQUAL "linux"   AND "${_system_processor}" STREQUAL "x86_64"  ) OR
         ( "${_system_name}" STREQUAL "linux"   AND "${_system_processor}" STREQUAL "aarch64" ) OR
-        ( "${_system_name}" STREQUAL "linux"   AND "${_system_processor}" STREQUAL "ppc64le" ) OR
         ( "${_system_name}" STREQUAL "freebsd" AND "${_system_processor}" STREQUAL "x86_64"  ) OR
-        ( "${_system_name}" STREQUAL "freebsd" AND "${_system_processor}" STREQUAL "aarch64" ) OR
-        ( "${_system_name}" STREQUAL "darwin"  AND "${_system_processor}" STREQUAL "x86_64"  ) OR
-        ( "${_system_name}" STREQUAL "darwin"  AND "${_system_processor}" STREQUAL "aarch64"   )
+        ( "${_system_name}" STREQUAL "darwin"  AND "${_system_processor}" STREQUAL "x86_64"  )
     )
         set (_ldap_supported_platform TRUE)
     endif ()

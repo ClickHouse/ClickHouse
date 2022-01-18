@@ -4,7 +4,7 @@
 # https://github.com/ClickHouse/ClickHouse/issues/19353
 
 log_user 0
-set timeout 60
+set timeout 5
 match_max 100000
 
 # A default timeout action is to fail
@@ -15,7 +15,7 @@ expect_after {
 }
 
 set basedir [file dirname $argv0]
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion -mn"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT -mn"
 expect "\n:) "
 
 send -- "DROP TABLE IF EXISTS t01565;\n"

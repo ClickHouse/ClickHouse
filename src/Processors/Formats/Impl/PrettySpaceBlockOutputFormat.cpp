@@ -24,10 +24,6 @@ void PrettySpaceBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind
     const auto & header = getPort(port_kind).getHeader();
     const auto & columns = chunk.getColumns();
 
-    Serializations serializations(num_columns);
-    for (size_t i = 0; i < num_columns; ++i)
-        serializations[i] = header.getByPosition(i).type->getSerialization(*columns[i]->getSerializationInfo());
-
     WidthsPerColumn widths;
     Widths max_widths;
     Widths name_widths;
@@ -91,8 +87,7 @@ void PrettySpaceBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind
 
             const auto & type = *header.getByPosition(column).type;
             auto & cur_width = widths[column].empty() ? max_widths[column] : widths[column][row];
-            writeValueWithPadding(*columns[column], *serializations[column],
-                row, cur_width, max_widths[column], type.shouldAlignRightInPrettyFormats());
+            writeValueWithPadding(*columns[column], type, row, cur_width, max_widths[column]);
         }
 
         writeChar('\n', out);
@@ -113,9 +108,9 @@ void PrettySpaceBlockOutputFormat::writeSuffix()
 }
 
 
-void registerOutputFormatPrettySpace(FormatFactory & factory)
+void registerOutputFormatProcessorPrettySpace(FormatFactory & factory)
 {
-    factory.registerOutputFormat("PrettySpace", [](
+    factory.registerOutputFormatProcessor("PrettySpace", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams &,
@@ -124,9 +119,7 @@ void registerOutputFormatPrettySpace(FormatFactory & factory)
         return std::make_shared<PrettySpaceBlockOutputFormat>(buf, sample, format_settings);
     });
 
-    factory.markOutputFormatSupportsParallelFormatting("PrettySpace");
-
-    factory.registerOutputFormat("PrettySpaceNoEscapes", [](
+    factory.registerOutputFormatProcessor("PrettySpaceNoEscapes", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams &,
@@ -136,8 +129,6 @@ void registerOutputFormatPrettySpace(FormatFactory & factory)
         changed_settings.pretty.color = false;
         return std::make_shared<PrettySpaceBlockOutputFormat>(buf, sample, changed_settings);
     });
-
-    factory.markOutputFormatSupportsParallelFormatting("PrettySpaceNoEscapes");
 }
 
 }

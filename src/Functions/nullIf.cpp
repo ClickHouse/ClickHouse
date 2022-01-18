@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -18,16 +18,16 @@ namespace
 class FunctionNullIf : public IFunction
 {
 private:
-    ContextPtr context;
+    const Context & context;
 public:
     static constexpr auto name = "nullIf";
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(const Context & context)
     {
         return std::make_shared<FunctionNullIf>(context);
     }
 
-    explicit FunctionNullIf(ContextPtr context_) : context(context_) {}
+    explicit FunctionNullIf(const Context & context_) : context(context_) {}
 
     std::string getName() const override
     {
@@ -37,7 +37,6 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -28,7 +28,7 @@ class FunctionIsDecimalOverflow : public IFunction
 public:
     static constexpr auto name = "isDecimalOverflow";
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionIsDecimalOverflow>();
     }
@@ -36,7 +36,6 @@ public:
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -86,7 +85,7 @@ public:
 
         auto result_column = ColumnUInt8::create();
 
-        auto call = [&](const auto & types) -> bool //-V657
+        auto call = [&](const auto & types) -> bool
         {
             using Types = std::decay_t<decltype(types)>;
             using Type = typename Types::RightType;
@@ -128,9 +127,10 @@ private:
             dst_data[i] = outOfDigits<T>(src_data[i], precision);
     }
 
-    template <is_decimal T>
+    template <typename T>
     static bool outOfDigits(T dec, UInt32 precision)
     {
+        static_assert(IsDecimalNumber<T>);
         using NativeT = typename T::NativeType;
 
         if (precision > DecimalUtils::max_precision<T>)

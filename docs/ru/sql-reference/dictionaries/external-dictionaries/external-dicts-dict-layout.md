@@ -1,6 +1,6 @@
 ---
 toc_priority: 41
-toc_title: "Хранение словарей в памяти"
+toc_title: "\u0425\u0440\u0430\u043d\u0435\u043d\u0438\u0435\u0020\u0441\u043b\u043e\u0432\u0430\u0440\u0435\u0439\u0020\u0432\u0020\u043f\u0430\u043c\u044f\u0442\u0438"
 ---
 
 # Хранение словарей в памяти {#dicts-external-dicts-dict-layout}
@@ -9,7 +9,7 @@ toc_title: "Хранение словарей в памяти"
 
 Рекомендуем [flat](#flat), [hashed](#dicts-external_dicts_dict_layout-hashed) и [complex_key_hashed](#complex-key-hashed). Скорость обработки словарей при этом максимальна.
 
-Размещение с кэшированием не рекомендуется использовать из-за потенциально низкой производительности и сложностей в подборе оптимальных параметров. Читайте об этом подробнее в разделе [cache](#cache).
+Размещение с кэшированием не рекомендуется использовать из-за потенциально низкой производительности и сложностей в подборе оптимальных параметров. Читайте об этом подробнее в разделе «[cache](#cache)».
 
 Повысить производительность словарей можно следующими способами:
 
@@ -26,7 +26,7 @@ toc_title: "Хранение словарей в памяти"
 Общий вид конфигурации:
 
 ``` xml
-<clickhouse>
+<yandex>
     <dictionary>
         ...
         <layout>
@@ -36,7 +36,7 @@ toc_title: "Хранение словарей в памяти"
         </layout>
         ...
     </dictionary>
-</clickhouse>
+</yandex>
 ```
 
 Соответствущий [DDL-запрос](../../statements/create/dictionary.md#create-dictionary-query):
@@ -48,32 +48,28 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 ...
 ```
 
-## Способы размещения словарей в памяти {#ways-to-store-dictionaries-in-memory}
+## Способы размещения словарей в памяти {#sposoby-razmeshcheniia-slovarei-v-pamiati}
 
 -   [flat](#flat)
 -   [hashed](#dicts-external_dicts_dict_layout-hashed)
 -   [sparse_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
--   [complex_key_hashed](#complex-key-hashed)
--   [complex_key_sparse_hashed](#complex-key-sparse-hashed)
--   [hashed_array](#dicts-external_dicts_dict_layout-hashed-array)
--   [complex_key_hashed_array](#complex-key-hashed-array)
--   [range_hashed](#range-hashed)
--   [complex_key_range_hashed](#complex-key-range-hashed)
 -   [cache](#cache)
--   [complex_key_cache](#complex-key-cache)
 -   [ssd_cache](#ssd-cache)
--   [complex_key_ssd_cache](#complex-key-ssd-cache)
+-   [ssd_complex_key_cache](#complex-key-ssd-cache)
 -   [direct](#direct)
+-   [range_hashed](#range-hashed)
+-   [complex_key_hashed](#complex-key-hashed)
+-   [complex_key_cache](#complex-key-cache)
 -   [complex_key_direct](#complex-key-direct)
 -   [ip_trie](#ip-trie)
 
 ### flat {#flat}
 
-Словарь полностью хранится в оперативной памяти в виде плоских массивов. Объём памяти, занимаемой словарём, пропорционален размеру самого большого ключа (по объему).
+Словарь полностью хранится в оперативной памяти в виде плоских массивов. Объём памяти, занимаемой словарём пропорционален размеру самого большого по размеру ключа.
 
-Ключ словаря имеет тип [UInt64](../../../sql-reference/data-types/int-uint.md) и его величина ограничена параметром `max_array_size` (значение по умолчанию — 500 000). Если при создании словаря обнаружен ключ больше, то ClickHouse бросает исключение и не создает словарь. Начальный размер плоских массивов словарей контролируется параметром initial_array_size (по умолчанию - 1024).
+Ключ словаря имеет тип `UInt64` и его величина ограничена 500 000. Если при создании словаря обнаружен ключ больше, то ClickHouse бросает исключение и не создает словарь.
 
-Поддерживаются все виды источников. При обновлении данные (из файла или из таблицы) считываются целиком.
+Поддерживаются все виды источников. При обновлении, данные (из файла, из таблицы) читаются целиком.
 
 Это метод обеспечивает максимальную производительность среди всех доступных способов размещения словаря.
 
@@ -81,51 +77,39 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 
 ``` xml
 <layout>
-  <flat>
-    <initial_array_size>50000</initial_array_size>
-    <max_array_size>5000000</max_array_size>
-  </flat>
+  <flat />
 </layout>
 ```
 
 или
 
 ``` sql
-LAYOUT(FLAT(INITIAL_ARRAY_SIZE 50000 MAX_ARRAY_SIZE 5000000))
+LAYOUT(FLAT())
 ```
 
 ### hashed {#dicts-external_dicts_dict_layout-hashed}
 
-Словарь полностью хранится в оперативной памяти в виде хэш-таблиц. Словарь может содержать произвольное количество элементов с произвольными идентификаторами. На практике количество ключей может достигать десятков миллионов элементов.
+Словарь полностью хранится в оперативной памяти в виде хэш-таблиц. Словарь может содержать произвольное количество элементов с произвольными идентификаторами. На практике, количество ключей может достигать десятков миллионов элементов.
 
-Если `preallocate` имеет значение `true` (по умолчанию `false`), хеш-таблица будет предварительно определена (это ускорит загрузку словаря). Используйте этот метод только в случае, если:
-
-- Источник поддерживает произвольное количество элементов (пока поддерживается только источником `ClickHouse`).
-- В данных нет дубликатов (иначе это может увеличить объем используемой памяти хеш-таблицы).
-
-Поддерживаются все виды источников. При обновлении данные (из файла, из таблицы) читаются целиком.
+Поддерживаются все виды источников. При обновлении, данные (из файла, из таблицы) читаются целиком.
 
 Пример конфигурации:
 
 ``` xml
 <layout>
-   <hashed>
-    <preallocate>0</preallocate>
-  </hashed>
+  <hashed />
 </layout>
 ```
 
 или
 
 ``` sql
-LAYOUT(HASHED(PREALLOCATE 0))
+LAYOUT(HASHED())
 ```
 
 ### sparse_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
 
 Аналогичен `hashed`, но при этом занимает меньше места в памяти и генерирует более высокую загрузку CPU.
-
-Для этого типа размещения также можно задать `preallocate` в значении `true`. В данном случае это более важно, чем для типа `hashed`.
 
 Пример конфигурации:
 
@@ -138,12 +122,12 @@ LAYOUT(HASHED(PREALLOCATE 0))
 или
 
 ``` sql
-LAYOUT(SPARSE_HASHED([PREALLOCATE 0]))
+LAYOUT(SPARSE_HASHED())
 ```
 
 ### complex_key_hashed {#complex-key-hashed}
 
-Тип размещения предназначен для использования с составными [ключами](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Аналогичен `hashed`.
+Тип размещения предназначен для использования с составными [ключами](external-dicts-dict-structure.md). Аналогичен `hashed`.
 
 Пример конфигурации:
 
@@ -157,63 +141,6 @@ LAYOUT(SPARSE_HASHED([PREALLOCATE 0]))
 
 ``` sql
 LAYOUT(COMPLEX_KEY_HASHED())
-```
-
-### complex_key_sparse_hashed {#complex-key-sparse-hashed}
-
-Тип размещения предназначен для использования с составными [ключами](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Аналогичен [sparse_hashed](#dicts-external_dicts_dict_layout-sparse_hashed).
-
-Пример конфигурации:
-
-``` xml
-<layout>
-  <complex_key_sparse_hashed />
-</layout>
-```
-
-или
-
-``` sql
-LAYOUT(COMPLEX_KEY_SPARSE_HASHED())
-```
-
-### hashed_array {#dicts-external_dicts_dict_layout-hashed-array}
-
-Словарь полностью хранится в оперативной памяти. Каждый атрибут хранится в массиве. Ключевой атрибут хранится в виде хеш-таблицы, где его значение является индексом в массиве атрибутов. Словарь может содержать произвольное количество элементов с произвольными идентификаторами. На практике количество ключей может достигать десятков миллионов элементов.
-
-Поддерживаются все виды источников. При обновлении данные (из файла, из таблицы) считываются целиком.
-
-Пример конфигурации:
-
-``` xml
-<layout>
-  <hashed_array>
-  </hashed_array>
-</layout>
-```
-
-или
-
-``` sql
-LAYOUT(HASHED_ARRAY())
-```
-
-### complex_key_hashed_array {#complex-key-hashed-array}
-
-Тип размещения предназначен для использования с составными [ключами](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Аналогичен [hashed_array](#dicts-external_dicts_dict_layout-hashed-array).
-
-Пример конфигурации:
-
-``` xml
-<layout>
-  <complex_key_hashed_array />
-</layout>
-```
-
-или
-
-``` sql
-LAYOUT(COMPLEX_KEY_HASHED_ARRAY())
 ```
 
 ### range_hashed {#range-hashed}
@@ -284,7 +211,7 @@ RANGE(MIN first MAX last)
 Пример конфигурации:
 
 ``` xml
-<clickhouse>
+<yandex>
         <dictionary>
 
                 ...
@@ -313,7 +240,7 @@ RANGE(MIN first MAX last)
                 </structure>
 
         </dictionary>
-</clickhouse>
+</yandex>
 ```
 
 или
@@ -329,41 +256,15 @@ PRIMARY KEY Abcdef
 RANGE(MIN StartTimeStamp MAX EndTimeStamp)
 ```
 
-### complex_key_range_hashed {#complex-key-range-hashed}
-
-Словарь хранится в оперативной памяти в виде хэш-таблицы с упорядоченным массивом диапазонов и соответствующих им значений (см. [range_hashed](#range-hashed)). Данный тип размещения предназначен для использования с составными [ключами](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md).
-
-Пример конфигурации:
-
-``` sql
-CREATE DICTIONARY range_dictionary
-(
-  CountryID UInt64,
-  CountryKey String,
-  StartDate Date,
-  EndDate Date,
-  Tax Float64 DEFAULT 0.2
-)
-PRIMARY KEY CountryID, CountryKey
-SOURCE(CLICKHOUSE(TABLE 'date_table'))
-LIFETIME(MIN 1 MAX 1000)
-LAYOUT(COMPLEX_KEY_RANGE_HASHED())
-RANGE(MIN StartDate MAX EndDate);
-```
-
 ### cache {#cache}
 
 Словарь хранится в кэше, состоящем из фиксированного количества ячеек. Ячейки содержат часто используемые элементы.
 
 При поиске в словаре сначала просматривается кэш. На каждый блок данных, все не найденные в кэше или устаревшие ключи запрашиваются у источника с помощью `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. Затем, полученные данные записываются в кэш.
 
-Если ключи не были найдены в словаре, то для обновления кэша создается задание и добавляется в очередь обновлений. Параметры очереди обновлений можно устанавливать настройками `max_update_queue_size`, `update_queue_push_timeout_milliseconds`, `query_wait_timeout_milliseconds`, `max_threads_for_updates`
+Для cache-словарей может быть задано время устаревания [lifetime](external-dicts-dict-lifetime.md) данных в кэше. Если от загрузки данных в ячейке прошло больше времени, чем `lifetime`, то значение не используется, и будет запрошено заново при следующей необходимости его использовать.
 
-Для cache-словарей при помощи настройки  `allow_read_expired_keys` может быть задано время устаревания [lifetime](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md) данных в кэше. Если с момента загрузки данных в ячейку прошло больше времени, чем `lifetime`, то значение не используется, а ключ устаревает. Ключ будет запрошен заново при следующей необходимости его использовать. 
-
-Это наименее эффективный из всех способов размещения словарей. Скорость работы кэша очень сильно зависит от правильности настройки и сценария использования. Словарь типа `cache` показывает высокую производительность лишь при достаточно большой частоте успешных обращений (рекомендуется 99% и выше). Посмотреть среднюю частоту успешных обращений (`hit rate`) можно в таблице [system.dictionaries](../../../operations/system-tables/dictionaries.md).
-
-Если параметр `allow_read_expired_keys` выставлен в 1 (0 по умолчанию), то словарь поддерживает асинхронные обновления. Если клиент запрашивает ключи, которые находятся в кэше, но при этом некоторые из них устарели, то словарь вернет устаревшие ключи клиенту и запросит их асинхронно у источника.
+Это наименее эффективный из всех способов размещения словарей. Скорость работы кэша очень сильно зависит от правильности настройки и сценария использования. Словарь типа cache показывает высокую производительность лишь при достаточно больших hit rate-ах (рекомендуется 99% и выше). Посмотреть средний hit rate можно в таблице `system.dictionaries`.
 
 Чтобы увеличить производительность кэша, используйте подзапрос с `LIMIT`, а снаружи вызывайте функцию со словарём.
 
@@ -376,16 +277,6 @@ RANGE(MIN StartDate MAX EndDate);
     <cache>
         <!-- Размер кэша в количестве ячеек. Округляется вверх до степени двух. -->
         <size_in_cells>1000000000</size_in_cells>
-        <!-- Позволить читать устаревшие ключи. -->
-        <allow_read_expired_keys>0</allow_read_expired_keys>
-        <!-- Максимальный размер очереди обновлений. -->
-        <max_update_queue_size>100000</max_update_queue_size>
-        <!-- Максимальное время (в миллисекундах) для отправки в очередь. -->
-        <update_queue_push_timeout_milliseconds>10</update_queue_push_timeout_milliseconds>
-        <!-- Максимальное время ожидания (в миллисекундах) для выполнения обновлений. -->
-        <query_wait_timeout_milliseconds>60000</query_wait_timeout_milliseconds>
-        <!-- Максимальное число потоков для обновления кэша словаря. -->
-        <max_threads_for_updates>4</max_threads_for_updates>
     </cache>
 </layout>
 ```
@@ -412,7 +303,7 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 
 ### ssd_cache {#ssd-cache}
 
-Похож на `cache`, но хранит данные на SSD, а индекс в оперативной памяти. Все параметры, относящиеся к очереди обновлений, могут также быть применены к SSD-кэш словарям.
+Похож на `cache`, но хранит данные на SSD и индекс в оперативной памяти.
 
 ``` xml
 <layout>
@@ -426,7 +317,9 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
         <!-- Size of RAM buffer in bytes for aggregating elements before flushing to SSD. -->
         <write_buffer_size>1048576</write_buffer_size>
         <!-- Path where cache file will be stored. -->
-        <path>/var/lib/clickhouse/user_files/test_dict</path>
+        <path>/var/lib/clickhouse/clickhouse_dictionaries/test_dict</path>
+        <!-- Max number on stored keys in the cache. Rounded up to a power of two. -->
+        <max_stored_keys>1048576</max_stored_keys>
     </ssd_cache>
 </layout>
 ```
@@ -434,8 +327,8 @@ LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 или
 
 ``` sql
-LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
-    PATH '/var/lib/clickhouse/user_files/test_dict'))
+LAYOUT(CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
+    PATH /var/lib/clickhouse/clickhouse_dictionaries/test_dict MAX_STORED_KEYS 1048576))
 ```
 
 ### complex_key_ssd_cache {#complex-key-ssd-cache}
@@ -549,3 +442,5 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 Никакие другие типы не поддерживаются. Функция возвращает атрибут для префикса, соответствующего данному IP-адресу. Если есть перекрывающиеся префиксы, возвращается наиболее специфический.
 
 Данные должны полностью помещаться в оперативной памяти.
+
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict_layout/) <!--hide-->

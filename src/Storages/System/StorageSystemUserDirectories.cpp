@@ -4,7 +4,8 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
-#include <Access/AccessControl.h>
+#include <Access/AccessControlManager.h>
+#include <ext/enumerate.h>
 
 
 namespace DB
@@ -21,9 +22,9 @@ NamesAndTypesList StorageSystemUserDirectories::getNamesAndTypes()
 }
 
 
-void StorageSystemUserDirectories::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemUserDirectories::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    const auto & access_control = context->getAccessControl();
+    const auto & access_control = context.getAccessControlManager();
     auto storages = access_control.getStorages();
 
     size_t column_index = 0;
@@ -44,11 +45,8 @@ void StorageSystemUserDirectories::fillData(MutableColumns & res_columns, Contex
         column_precedence.insert(precedence);
     };
 
-    for (size_t i = 0; i < storages.size(); ++i)
-    {
-        const auto & storage = storages[i];
+    for (auto [i, storage] : ext::enumerate(storages))
         add_row(*storage, i + 1);
-    }
 }
 
 }
