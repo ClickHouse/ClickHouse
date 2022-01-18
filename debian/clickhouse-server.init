@@ -5,7 +5,7 @@
 # Default-Stop:      0 1 6
 # Should-Start:      $time $network
 # Should-Stop:       $network
-# Short-Description: Yandex clickhouse-server daemon
+# Short-Description: clickhouse-server daemon
 ### END INIT INFO
 #
 # NOTES:
