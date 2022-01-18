@@ -131,13 +131,15 @@ namespace
             for (auto & info : tables | boost::adaptors::map_values)
             {
                 res.push_back(makeBackupEntryForMetadata(*info.create_query));
-
-                auto data_backup = info.storage->backup(info.partitions, context);
-                if (!data_backup.empty())
+                if (info.has_data)
                 {
-                    String data_path = getDataPathInBackup(*info.create_query);
-                    for (auto & [path_in_backup, backup_entry] : data_backup)
-                        res.emplace_back(data_path + path_in_backup, std::move(backup_entry));
+                    auto data_backup = info.storage->backup(info.partitions, context);
+                    if (!data_backup.empty())
+                    {
+                        String data_path = getDataPathInBackup(*info.create_query);
+                        for (auto & [path_in_backup, backup_entry] : data_backup)
+                            res.emplace_back(data_path + path_in_backup, std::move(backup_entry));
+                    }
                 }
             }
 
@@ -158,7 +160,17 @@ namespace
 
         void prepareToBackupTable(const DatabaseAndTableName & table_name_, const DatabaseAndTable & table_, const ASTs & partitions_)
         {
-            context->checkAccess(AccessType::SELECT, table_name_.first, table_name_.second);
+            context->checkAccess(AccessType::SHOW_TABLES, table_name_.first, table_name_.second);
+
+            const auto & database = table_.first;
+            const auto & storage = table_.second;
+
+            if (database->hasHollowBackup())
+                throw Exception(
+                    ErrorCodes::CANNOT_BACKUP_TABLE,
+                    "Couldn't backup table {}.{} because of the database's engine {} is hollow",
+                    backQuoteIfNeed(table_name_.first), backQuoteIfNeed(table_name_.second),
+                    database->getEngineName());
 
             /// Check that we are not trying to backup the same table again.
             DatabaseAndTableName new_table_name = renaming_config->getNewTableName(table_name_);
@@ -173,13 +185,18 @@ namespace
             }
 
             /// Make a create query for this table.
-            auto create_query = renameInCreateQuery(table_.first->getCreateTableQuery(table_name_.second, context));
+            auto create_query = renameInCreateQuery(database->getCreateTableQuery(table_name_.second, context));
+
+            bool has_data = !storage->hasHollowBackup();
+            if (has_data)
+                context->checkAccess(AccessType::SELECT, table_name_.first, table_name_.second);
 
             CreateTableInfo info;
             info.create_query = create_query;
-            info.storage = table_.second;
+            info.storage = storage;
             info.name_in_backup = new_table_name;
             info.partitions = partitions_;
+            info.has_data = has_data;
             tables[new_table_name] = std::move(info);
 
             /// If it's not system or temporary database then probably we need to backup the database's definition too.
@@ -188,7 +205,7 @@ namespace
                 if (!databases.contains(new_table_name.first))
                 {
                     /// Add a create query to backup the database if we haven't done it yet.
-                    auto create_db_query = renameInCreateQuery(table_.first->getCreateDatabaseQuery());
+                    auto create_db_query = renameInCreateQuery(database->getCreateDatabaseQuery());
                     create_db_query->setDatabase(new_table_name.first);
 
                     CreateDatabaseInfo info_db;
@@ -243,11 +260,14 @@ namespace
             }
 
             /// Backup tables in this database.
-            for (auto it = database_->getTablesIteratorForBackup(context); it->isValid(); it->next())
+            if (!database_->hasHollowBackup())
             {
-                if (except_list_.contains(it->name()))
-                    continue;
-                prepareToBackupTable({database_name_, it->name()}, {database_, it->table()}, {});
+                for (auto it = database_->getTablesIterator(context); it->isValid(); it->next())
+                {
+                    if (except_list_.contains(it->name()))
+                        continue;
+                    prepareToBackupTable({database_name_, it->name()}, {database_, it->table()}, {});
+                }
             }
         }
 
@@ -289,6 +309,7 @@ namespace
             StoragePtr storage;
             DatabaseAndTableName name_in_backup;
             ASTs partitions;
+            bool has_data = false;
         };
 
         /// Information which is used to make an instance of RestoreDatabaseFromBackupTask.
