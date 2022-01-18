@@ -29,13 +29,14 @@ TRUSTED_CONTRIBUTORS = {
         "achimbab",
         "adevyatova ",  # DOCSUP
         "Algunenano",  # Raúl Marín, Tinybird
+        "amosbird",
         "AnaUvarova",  # DOCSUP
         "anauvarova",  # technical writer, Yandex
         "annvsh",  # technical writer, Yandex
         "atereh",  # DOCSUP
         "azat",
         "bharatnc",  # Newbie, but already with many contributions.
-        "bobrik",  # Seasoned contributor, CloundFlare
+        "bobrik",  # Seasoned contributor, CloudFlare
         "BohuTANG",
         "codyrobert",  # Flickerbox engineer
         "cwurm",  # Employee
