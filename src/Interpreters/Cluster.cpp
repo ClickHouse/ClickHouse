@@ -5,6 +5,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/parseAddress.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
+#include <Common/Config/ConfigHelper.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -101,7 +102,7 @@ Cluster::Address::Address(
     user = config.getString(config_prefix + ".user", "default");
     password = config.getString(config_prefix + ".password", "");
     default_database = config.getString(config_prefix + ".default_database", "");
-    secure = config.getBool(config_prefix + ".secure", false) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
+    secure = ConfigHelper::getBool(config, config_prefix + ".secure", false, /* empty_as */true) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     priority = config.getInt(config_prefix + ".priority", 1);
     const char * port_type = secure == Protocol::Secure::Enable ? "tcp_port_secure" : "tcp_port";
     is_local = isLocal(config.getInt(port_type, 0));

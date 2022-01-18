@@ -4155,3 +4155,20 @@ Default value: `''`.
 Sets the character that is interpreted as a suffix after the result set for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
 
 Default value: `''`.
+
+## shutdown_wait_unfinished_queries
+
+Enables or disables waiting unfinished queries when shutdown server.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled. The wait time equal shutdown_wait_unfinished config.
+
+Default value: 0.
+
+## shutdown_wait_unfinished
+
+The waiting time in seconds for currently handled connections when shutdown server.
+
+Default Value: 5.

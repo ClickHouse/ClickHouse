@@ -345,9 +345,6 @@ void RangeHashedDictionary<dictionary_key_type>::calculateBytesAllocated()
             const auto & collection = std::get<CollectionType<ValueType>>(attribute.maps);
             bytes_allocated += sizeof(CollectionType<ValueType>) + collection.getBufferSizeInBytes();
             bucket_count = collection.getBufferSizeInCells();
-
-            if constexpr (std::is_same_v<ValueType, StringRef>)
-                bytes_allocated += sizeof(Arena) + attribute.string_arena->size();
         };
 
         callOnDictionaryAttributeType(attribute.type, type_call);
@@ -358,21 +355,20 @@ void RangeHashedDictionary<dictionary_key_type>::calculateBytesAllocated()
 
     if (update_field_loaded_block)
         bytes_allocated += update_field_loaded_block->allocatedBytes();
+
+    bytes_allocated += string_arena.size();
 }
 
 template <DictionaryKeyType dictionary_key_type>
 typename RangeHashedDictionary<dictionary_key_type>::Attribute RangeHashedDictionary<dictionary_key_type>::createAttribute(const DictionaryAttribute & dictionary_attribute)
 {
-    Attribute attribute{dictionary_attribute.underlying_type, dictionary_attribute.is_nullable, {}, {}};
+    Attribute attribute{dictionary_attribute.underlying_type, dictionary_attribute.is_nullable, {}};
 
     auto type_call = [&](const auto &dictionary_attribute_type)
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
         using ValueType = DictionaryValueType<AttributeType>;
-
-        if constexpr (std::is_same_v<AttributeType, String>)
-            attribute.string_arena = std::make_unique<Arena>();
 
         attribute.maps = CollectionType<ValueType>();
     };
@@ -544,7 +540,7 @@ void RangeHashedDictionary<dictionary_key_type>::blockToAttributes(const Block &
             }
 
             if constexpr (std::is_same_v<KeyType, StringRef>)
-                key = copyKeyInArena(key);
+                key = copyStringInArena(string_arena, key);
 
             setAttributeValue(attribute, key, Range{lower_bound, upper_bound}, attribute_column[key_index]);
             keys_extractor.rollbackCurrentKey();
@@ -572,8 +568,7 @@ void RangeHashedDictionary<dictionary_key_type>::setAttributeValueImpl(Attribute
         if constexpr (std::is_same_v<T, String>)
         {
             const auto & string = value.get<String>();
-            const auto * string_in_arena = attribute.string_arena->insert(string.data(), string.size());
-            const StringRef string_ref{string_in_arena, string.size()};
+            StringRef string_ref = copyStringInArena(string_arena, string);
             value_to_insert = Value<ValueType>{ range, { string_ref }};
         }
         else
@@ -672,16 +667,6 @@ void RangeHashedDictionary<dictionary_key_type>::getKeysAndDates(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-StringRef RangeHashedDictionary<dictionary_key_type>::copyKeyInArena(StringRef key)
-{
-    size_t key_size = key.size;
-    char * place_for_key = complex_key_arena.alloc(key_size);
-    memcpy(reinterpret_cast<void *>(place_for_key), reinterpret_cast<const void *>(key.data), key_size);
-    StringRef updated_key{place_for_key, key_size};
-    return updated_key;
-}
-
-template <DictionaryKeyType dictionary_key_type>
 template <typename RangeType>
 PaddedPODArray<Int64> RangeHashedDictionary<dictionary_key_type>::makeDateKeys(
     const PaddedPODArray<RangeType> & block_start_dates,
@@ -751,17 +736,10 @@ Pipe RangeHashedDictionary<dictionary_key_type>::read(const Names & column_names
     ColumnsWithTypeAndName data_columns = {std::move(range_min_column), std::move(range_max_column)};
 
     std::shared_ptr<const IDictionary> dictionary = shared_from_this();
-    auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns), std::move(data_columns), max_block_size);
+    auto coordinator = DictionarySourceCoordinator::create(dictionary, column_names, std::move(key_columns), std::move(data_columns), max_block_size);
+    auto result = coordinator->read(num_streams);
 
-    Pipes pipes;
-
-    for (size_t i = 0; i < num_streams; ++i)
-    {
-        auto source = std::make_shared<DictionarySource>(coordinator);
-        pipes.emplace_back(Pipe(std::move(source)));
-    }
-
-    return Pipe::unitePipes(std::move(pipes));
+    return result;
 }
 
 

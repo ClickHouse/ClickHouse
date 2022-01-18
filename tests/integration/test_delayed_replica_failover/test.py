@@ -79,7 +79,15 @@ SELECT sum(x) FROM distributed WITH TOTALS SETTINGS
         pm.drop_instance_zk_connections(node_1_2)
         pm.drop_instance_zk_connections(node_2_2)
 
-        time.sleep(4)  # allow pings to zookeeper to timeout (must be greater than ZK session timeout).
+        # allow pings to zookeeper to timeout (must be greater than ZK session timeout).
+        for _ in range(30):
+            try:
+                node_2_2.query("SELECT * FROM system.zookeeper where path = '/'")
+                time.sleep(0.5)
+            except:
+                break
+        else:
+            raise Exception("Connection with zookeeper was not lost")
 
         # At this point all replicas are stale, but the query must still go to second replicas which are the least stale ones.
         assert instance_with_dist_table.query('''
@@ -96,14 +104,20 @@ SELECT sum(x) FROM distributed SETTINGS
     max_replica_delay_for_distributed_queries=1
 ''').strip() == '3'
 
-        # If we forbid stale replicas, the query must fail.
-        with pytest.raises(Exception):
-            print(instance_with_dist_table.query('''
+        # If we forbid stale replicas, the query must fail. But sometimes we must have bigger timeouts.
+        for _ in range(20):
+            try:
+                instance_with_dist_table.query('''
 SELECT count() FROM distributed SETTINGS
     load_balancing='in_order',
     max_replica_delay_for_distributed_queries=1,
     fallback_to_stale_replicas_for_distributed_queries=0
-'''))
+''')
+                time.sleep(0.5)
+            except:
+                break
+        else:
+            raise Exception("Didn't raise when stale replicas are not allowed")
 
         # Now partition off the remote replica of the local shard and test that failover still works.
         pm.partition_instances(node_1_1, node_1_2, port=9000)

@@ -9,6 +9,8 @@
 #include <Core/SettingsEnums.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/NamesAndAliases.h>
 #include <Interpreters/SystemLog.h>
 #include <base/types.h>
 

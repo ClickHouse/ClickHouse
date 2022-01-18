@@ -62,7 +62,7 @@ struct FunctionDetectProgrammingLanguageImpl
                 /// Assume that all commands are split by spaces
                 if (isWhitespaceASCII(str[ind]))
                     continue;
-                
+
                 size_t prev_ind = ind;
                 while (ind < str_len && !isWhitespaceASCII(str[ind]))
                     ++ind;
