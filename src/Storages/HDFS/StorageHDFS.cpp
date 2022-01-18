@@ -72,8 +72,8 @@ namespace
 
         HDFSFileInfo ls;
         ls.file_info = hdfsListDirectory(fs.get(), prefix_without_globs.data(), &ls.length);
-        if (ls.file_info == nullptr && errno != ENOENT) {
-            // ignore file not found exception, keep throw other exception
+        if (ls.file_info == nullptr && errno != ENOENT) { // NOLINT
+            // ignore file not found exception, keep throw other exception, libhdfs3 doesn't have function to get exception type, so use errno.
             throw Exception(
                 ErrorCodes::ACCESS_DENIED, "Cannot list directory {}: {}", prefix_without_globs, String(hdfsGetLastError()));
         }
