@@ -1,3 +1,4 @@
+#include <Processors/Merges/Algorithms/Graphite.h>
 #include <Processors/Merges/Algorithms/GraphiteRollupSortedAlgorithm.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/DateLUTImpl.h>
@@ -50,62 +51,6 @@ GraphiteRollupSortedAlgorithm::GraphiteRollupSortedAlgorithm(
 
     merged_data.allocMemForAggregates(max_size_of_aggregate_state, max_alignment_of_aggregate_state);
     columns_definition = defineColumns(header, params);
-}
-
-Graphite::RollupRule GraphiteRollupSortedAlgorithm::selectPatternForPath(StringRef path) const
-{
-    const Graphite::Pattern * first_match = &undef_pattern;
-
-    for (const auto & pattern : params.patterns)
-    {
-        if (!pattern.regexp)
-        {
-            /// Default pattern
-            if (first_match->type == first_match->TypeUndef && pattern.type == pattern.TypeAll)
-            {
-                /// There is only default pattern for both retention and aggregation
-                return std::pair(&pattern, &pattern);
-            }
-            if (pattern.type != first_match->type)
-            {
-                if (first_match->type == first_match->TypeRetention)
-                {
-                    return std::pair(first_match, &pattern);
-                }
-                if (first_match->type == first_match->TypeAggregation)
-                {
-                    return std::pair(&pattern, first_match);
-                }
-            }
-        }
-        else if (pattern.regexp->match(path.data, path.size))
-        {
-            /// General pattern with matched path
-            if (pattern.type == pattern.TypeAll)
-            {
-                /// Only for not default patterns with both function and retention parameters
-                return std::pair(&pattern, &pattern);
-            }
-            if (first_match->type == first_match->TypeUndef)
-            {
-                first_match = &pattern;
-                continue;
-            }
-            if (pattern.type != first_match->type)
-            {
-                if (first_match->type == first_match->TypeRetention)
-                {
-                    return std::pair(first_match, &pattern);
-                }
-                if (first_match->type == first_match->TypeAggregation)
-                {
-                    return std::pair(&pattern, first_match);
-                }
-            }
-        }
-    }
-
-    return {nullptr, nullptr};
 }
 
 UInt32 GraphiteRollupSortedAlgorithm::selectPrecision(const Graphite::Retentions & retentions, time_t time) const
@@ -188,7 +133,7 @@ IMergingAlgorithm::Status GraphiteRollupSortedAlgorithm::merge()
 
             Graphite::RollupRule next_rule = merged_data.currentRule();
             if (new_path)
-                next_rule = selectPatternForPath(next_path);
+                next_rule = selectPatternForPath(this->params, next_path);
 
             const Graphite::RetentionPattern * retention_pattern = std::get<0>(next_rule);
             time_t next_time_rounded;

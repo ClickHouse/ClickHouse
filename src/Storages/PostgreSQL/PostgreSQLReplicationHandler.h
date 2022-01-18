@@ -29,7 +29,7 @@ public:
             bool is_materialized_postgresql_database_);
 
     /// Activate task to be run from a separate thread: wait until connection is available and call startReplication().
-    void startup();
+    void startup(bool delayed);
 
     /// Stop replication without cleanup.
     void shutdown();
@@ -87,7 +87,7 @@ private:
 
     void consumerFunc();
 
-    StoragePtr loadFromSnapshot(postgres::Connection & connection, std::string & snapshot_name, const String & table_name, StorageMaterializedPostgreSQL * materialized_storage);
+    StorageInfo loadFromSnapshot(postgres::Connection & connection, std::string & snapshot_name, const String & table_name, StorageMaterializedPostgreSQL * materialized_storage);
 
     void reloadFromSnapshot(const std::vector<std::pair<Int32, String>> & relation_data);
 

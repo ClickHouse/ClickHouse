@@ -71,6 +71,7 @@ function test_distributed_push_down_limit_with_query_log()
             where
                 event_date >= yesterday()
                 and query_kind = 'Select' /* exclude DESC TABLE */
+                and type = 'QueryFinish'
                 and initial_query_id = '$query_id' and initial_query_id != query_id;
     " | xargs # convert new lines to spaces
 }
