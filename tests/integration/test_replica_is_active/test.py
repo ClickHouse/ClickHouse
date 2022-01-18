@@ -30,12 +30,12 @@ def start_cluster():
 
 def test_replica_is_active(start_cluster):
     query_result = node1.query("select replica_is_active from system.replicas where table = 'test_table'")
-    assert query_result == '{\'node1\':1,\'node2\':1,\'node3\':1}\n'
+    assert eval(query_result) == eval('{\'node1\':1,\'node2\':1,\'node3\':1}\n')
 
     node3.stop()
     query_result = node1.query("select replica_is_active from system.replicas where table = 'test_table'")
-    assert query_result == '{\'node1\':1,\'node2\':1,\'node3\':0}\n'
+    assert eval(query_result) == eval('{\'node1\':1,\'node2\':1,\'node3\':0}\n')
 
     node2.stop()
     query_result = node1.query("select replica_is_active from system.replicas where table = 'test_table'")
-    assert query_result == '{\'node1\':1,\'node2\':0,\'node3\':0}\n'
+    assert eval(query_result) == eval('{\'node1\':1,\'node2\':0,\'node3\':0}\n')
