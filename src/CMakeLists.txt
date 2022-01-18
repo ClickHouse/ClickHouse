@@ -322,7 +322,6 @@ target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::re2)
 target_link_libraries(clickhouse_common_io
         PRIVATE
             ${EXECINFO_LIBRARIES}
-            cpuid
         PUBLIC
             boost::program_options
             boost::system
@@ -331,6 +330,10 @@ target_link_libraries(clickhouse_common_io
             pcg_random
             Poco::Foundation
 )
+
+if (TARGET ch_contrib::cpuid)
+    target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::cpuid)
+endif()
 
 # Make dbms depend on roaring instead of clickhouse_common_io so that roaring itself can depend on clickhouse_common_io
 # That way we we can redirect malloc/free functions avoiding circular dependencies
