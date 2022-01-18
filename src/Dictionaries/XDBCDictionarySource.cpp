@@ -18,6 +18,7 @@
 #include <Common/escapeForFileName.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Common/config.h>
 
 
 namespace DB

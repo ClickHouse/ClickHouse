@@ -42,6 +42,7 @@ const char * auto_config_build[]
     "USE_SSL", "@USE_SSL@",
     "USE_HYPERSCAN", "@ENABLE_HYPERSCAN@",
     "USE_SIMDJSON", "@USE_SIMDJSON@",
+    "USE_ODBC", "@USE_ODBC@",
     "USE_GRPC", "@USE_GRPC@",
     "USE_LDAP", "@USE_LDAP@",
     "TZDATA_VERSION", "@TZDATA_VERSION@",

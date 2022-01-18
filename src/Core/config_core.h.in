@@ -16,3 +16,4 @@
 #cmakedefine01 USE_NLP
 #cmakedefine01 USE_KRB5
 #cmakedefine01 USE_FILELOG
+#cmakedefine01 USE_ODBC

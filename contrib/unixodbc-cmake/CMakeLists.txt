@@ -303,6 +303,5 @@ target_compile_options (unixodbc
         -Wno-reserved-id-macro
         -O2
 )
-target_compile_definitions (unixodbc INTERFACE USE_ODBC=1)
 
 add_library (ch_contrib::unixodbc ALIAS unixodbc)
