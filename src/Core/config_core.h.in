@@ -8,7 +8,6 @@
 #cmakedefine01 USE_AMQPCPP
 #cmakedefine01 USE_EMBEDDED_COMPILER
 #cmakedefine01 USE_SSL
-#cmakedefine01 USE_OPENCL
 #cmakedefine01 USE_LDAP
 #cmakedefine01 USE_ROCKSDB
 #cmakedefine01 USE_LIBPQXX
