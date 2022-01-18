@@ -1,5 +1,6 @@
 #include <Backups/BackupRenamingConfig.h>
 #include <Parsers/ASTBackupQuery.h>
+#include <Interpreters/DatabaseCatalog.h>
 
 
 namespace DB
@@ -17,47 +18,52 @@ void BackupRenamingConfig::setNewDatabaseName(const String & old_database_name, 
     old_to_new_database_names[old_database_name] = new_database_name;
 }
 
-void BackupRenamingConfig::setNewTemporaryTableName(const String & old_temporary_table_name, const String & new_temporary_table_name)
+void BackupRenamingConfig::setFromBackupQuery(const ASTBackupQuery & backup_query, const String & current_database)
 {
-    old_to_new_temporary_table_names[old_temporary_table_name] = new_temporary_table_name;
+    setFromBackupQueryElements(backup_query.elements, current_database);
 }
 
-void BackupRenamingConfig::setFromBackupQuery(const ASTBackupQuery & backup_query)
-{
-    setFromBackupQueryElements(backup_query.elements);
-}
-
-void BackupRenamingConfig::setFromBackupQueryElements(const ASTBackupQuery::Elements & backup_query_elements)
+void BackupRenamingConfig::setFromBackupQueryElements(const ASTBackupQuery::Elements & backup_query_elements, const String & current_database)
 {
     for (const auto & element : backup_query_elements)
     {
         switch (element.type)
         {
-            case ElementType::TABLE: [[fallthrough]];
-            case ElementType::DICTIONARY:
+            case ElementType::TABLE:
             {
-                const auto & new_name = element.new_name.second.empty() ? element.name : element.new_name;
-                setNewTableName(element.name, new_name);
+                const String & table_name = element.name.second;
+                String database_name = element.name.first;
+                if (element.name_is_in_temp_db)
+                    database_name = DatabaseCatalog::TEMPORARY_DATABASE;
+                else if (database_name.empty())
+                    database_name = current_database;
+
+                const String & new_table_name = element.new_name.second;
+                String new_database_name = element.new_name.first;
+                if (element.new_name_is_in_temp_db)
+                    new_database_name = DatabaseCatalog::TEMPORARY_DATABASE;
+                else if (new_database_name.empty())
+                    new_database_name = current_database;
+
+                setNewTableName({database_name, table_name}, {new_database_name, new_table_name});
                 break;
             }
 
             case ASTBackupQuery::DATABASE:
             {
-                const auto & new_name = element.new_name.first.empty() ? element.name.first : element.new_name.first;
-                setNewDatabaseName(element.name.first, new_name);
-                break;
-            }
+                String database_name = element.name.first;
+                if (element.name_is_in_temp_db)
+                    database_name = DatabaseCatalog::TEMPORARY_DATABASE;
 
-            case ASTBackupQuery::TEMPORARY_TABLE:
-            {
-                const auto & new_name = element.new_name.second.empty() ? element.name.second : element.new_name.second;
-                setNewTemporaryTableName(element.name.second, new_name);
+                String new_database_name = element.new_name.first;
+                if (element.new_name_is_in_temp_db)
+                    new_database_name = DatabaseCatalog::TEMPORARY_DATABASE;
+
+                setNewDatabaseName(database_name, new_database_name);
                 break;
             }
 
             case ASTBackupQuery::ALL_DATABASES: break;
-            case ASTBackupQuery::ALL_TEMPORARY_TABLES: break;
-            case ASTBackupQuery::EVERYTHING: break;
         }
     }
 }
@@ -76,14 +82,6 @@ const String & BackupRenamingConfig::getNewDatabaseName(const String & old_datab
     if (it != old_to_new_database_names.end())
         return it->second;
     return old_database_name;
-}
-
-const String & BackupRenamingConfig::getNewTemporaryTableName(const String & old_temporary_table_name) const
-{
-    auto it = old_to_new_temporary_table_names.find(old_temporary_table_name);
-    if (it != old_to_new_temporary_table_names.end())
-        return it->second;
-    return old_temporary_table_name;
 }
 
 }
