@@ -1,5 +1,6 @@
 #include <Backups/BackupRenamingConfig.h>
 #include <Backups/renameInCreateQuery.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -47,26 +48,39 @@ namespace
         /// CREATE DICTIONARY or CREATE VIEW or CREATE TEMPORARY TABLE or CREATE DATABASE query.
         static void visitCreateQuery(ASTCreateQuery & create, const Data & data)
         {
-            if (create.temporary)
+            if (create.table)
             {
-                if (!create.table)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Table name specified in the CREATE TEMPORARY TABLE query must not be empty");
-                create.setTable(data.renaming_config->getNewTemporaryTableName(create.getTable()));
+                DatabaseAndTableName table_name;
+                table_name.second = create.getTable();
+                if (create.temporary)
+                    table_name.first = DatabaseCatalog::TEMPORARY_DATABASE;
+                else if (create.database)
+                    table_name.first = create.getDatabase();
+                else
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name specified in the CREATE TABLE query must not be empty");
+
+                table_name = data.renaming_config->getNewTableName(table_name);
+
+                if (table_name.first == DatabaseCatalog::TEMPORARY_DATABASE)
+                {
+                    create.temporary = true;
+                    create.setDatabase("");
+                }
+                else
+                {
+                    create.temporary = false;
+                    create.setDatabase(table_name.first);
+                }
+                create.setTable(table_name.second);
             }
-            else if (!create.table)
+            else if (create.database)
             {
-                if (!create.database)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name specified in the CREATE DATABASE query must not be empty");
-                create.setDatabase(data.renaming_config->getNewDatabaseName(create.getDatabase()));
+                String database_name = create.getDatabase();
+                database_name = data.renaming_config->getNewDatabaseName(database_name);
+                create.setDatabase(database_name);
             }
             else
-            {
-                if (!create.database)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name specified in the CREATE TABLE query must not be empty");
-                auto table_and_database_name = data.renaming_config->getNewTableName({create.getDatabase(), create.getTable()});
-                create.setDatabase(table_and_database_name.first);
-                create.setTable(table_and_database_name.second);
-            }
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name specified in the CREATE DATABASE query must not be empty");
 
             create.uuid = UUIDHelpers::Nil;
 
