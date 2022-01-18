@@ -51,7 +51,7 @@ Pipe StorageSystemDisks::read(
         col_free->insert(disk_ptr->getAvailableSpace());
         col_total->insert(disk_ptr->getTotalSpace());
         col_keep->insert(disk_ptr->getKeepingFreeSpace());
-        col_type->insert(toString(disk_ptr->getType()));
+        col_type->insert(DiskType::toString(disk_ptr->getType()));
     }
 
     Columns res_columns;

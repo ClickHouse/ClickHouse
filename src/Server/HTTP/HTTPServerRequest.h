@@ -30,8 +30,6 @@ public:
 
     bool checkPeerConnected() const;
 
-    bool isSecure() const { return secure; }
-
     /// Returns the client's address.
     const Poco::Net::SocketAddress & clientAddress() const { return client_address; }
 
@@ -55,8 +53,6 @@ private:
     Poco::Net::SocketImpl * socket;
     Poco::Net::SocketAddress client_address;
     Poco::Net::SocketAddress server_address;
-
-    bool secure;
 
     void readRequest(ReadBuffer & in);
 };

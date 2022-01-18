@@ -52,16 +52,6 @@ public:
             return nested_function->getName() + "OrDefault";
     }
 
-    bool isVersioned() const override
-    {
-        return nested_function->isVersioned();
-    }
-
-    size_t getDefaultVersion() const override
-    {
-        return nested_function->getDefaultVersion();
-    }
-
     bool isState() const override
     {
         return nested_function->isState();
@@ -219,16 +209,21 @@ public:
             (places[i] + place_offset)[size_of_data] |= rhs[i][size_of_data];
     }
 
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf, std::optional<size_t> version) const override
+    void serialize(
+        ConstAggregateDataPtr place,
+        WriteBuffer & buf) const override
     {
-        nested_function->serialize(place, buf, version);
+        nested_function->serialize(place, buf);
 
         writeChar(place[size_of_data], buf);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
+    void deserialize(
+        AggregateDataPtr place,
+        ReadBuffer & buf,
+        Arena * arena) const override
     {
-        nested_function->deserialize(place, buf, version, arena);
+        nested_function->deserialize(place, buf, arena);
 
         readChar(place[size_of_data], buf);
     }

@@ -4,11 +4,9 @@
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
 #include <Columns/ColumnVectorHelper.h>
-#include <base/unaligned.h>
+#include <common/unaligned.h>
 #include <Core/Field.h>
 #include <Common/assert_cast.h>
-#include <Core/TypeId.h>
-#include <base/TypeName.h>
 
 
 namespace DB
@@ -30,7 +28,6 @@ struct CompareHelper
 {
     static constexpr bool less(T a, U b, int /*nan_direction_hint*/) { return a < b; }
     static constexpr bool greater(T a, U b, int /*nan_direction_hint*/) { return a > b; }
-    static constexpr bool equals(T a, U b, int /*nan_direction_hint*/) { return a == b; }
 
     /** Compares two numbers. Returns a number less than zero, equal to zero, or greater than zero if a < b, a == b, a > b, respectively.
       * If one of the values is NaN, then
@@ -77,11 +74,6 @@ struct FloatCompareHelper
         return a > b;
     }
 
-    static constexpr bool equals(T a, T b, int nan_direction_hint)
-    {
-        return compare(a, b, nan_direction_hint) == 0;
-    }
-
     static constexpr int compare(T a, T b, int nan_direction_hint)
     {
         const bool isnan_a = std::isnan(a);
@@ -110,7 +102,7 @@ template <class U> struct CompareHelper<Float64, U> : public FloatCompareHelper<
 template <typename T>
 class ColumnVector final : public COWHelper<ColumnVectorHelper, ColumnVector<T>>
 {
-    static_assert(!is_decimal<T>);
+    static_assert(!IsDecimalNumber<T>);
 
 private:
     using Self = ColumnVector;
@@ -118,7 +110,6 @@ private:
 
     struct less;
     struct greater;
-    struct equals;
 
 public:
     using ValueType = T;
@@ -237,7 +228,7 @@ public:
         data.reserve(n);
     }
 
-    const char * getFamilyName() const override { return TypeName<T>.data(); }
+    const char * getFamilyName() const override { return TypeName<T>; }
     TypeIndex getDataType() const override { return TypeId<T>; }
 
     MutableColumnPtr cloneResized(size_t size) const override;
@@ -247,7 +238,6 @@ public:
         assert(n < data.size()); /// This assert is more strict than the corresponding assert inside PODArray.
         return data[n];
     }
-
 
     void get(size_t n, Field & res) const override
     {
@@ -294,8 +284,6 @@ public:
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 
-    void expand(const IColumn::Filter & mask, bool inverted) override;
-
     ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
 
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
@@ -328,24 +316,10 @@ public:
         return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
     }
 
-    bool isDefaultAt(size_t n) const override { return data[n] == T{}; }
-
     bool structureEquals(const IColumn & rhs) const override
     {
         return typeid(rhs) == typeid(ColumnVector<T>);
     }
-
-    double getRatioOfDefaultRows(double sample_ratio) const override
-    {
-        return this->template getRatioOfDefaultRowsImpl<Self>(sample_ratio);
-    }
-
-    void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override
-    {
-        return this->template getIndicesOfNonDefaultRowsImpl<Self>(indices, from, limit);
-    }
-
-    ColumnPtr createWithOffsets(const IColumn::Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const override;
 
     ColumnPtr compress() const override;
 
@@ -381,7 +355,12 @@ template <typename T>
 template <typename Type>
 ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    assert(limit <= indexes.size());
+    size_t size = indexes.size();
+
+    if (limit == 0)
+        limit = size;
+    else
+        limit = std::min(size, limit);
 
     auto res = this->create(limit);
     typename Self::Container & res_data = res->getData();

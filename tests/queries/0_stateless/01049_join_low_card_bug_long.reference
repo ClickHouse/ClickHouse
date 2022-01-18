@@ -1,4 +1,3 @@
--- join_algorithm = default, join_use_nulls = 0 --
 str	LowCardinality(String)
 	LowCardinality(String)
 str_r	LowCardinality(String)
@@ -99,7 +98,7 @@ LowCardinality(String)	LowCardinality(String)			Nullable(String)	Nullable(String
 LowCardinality(String)	LowCardinality(String)	str	str	Nullable(String)	Nullable(String)	str	str
 LowCardinality(String)	LowCardinality(String)			Nullable(String)	Nullable(String)	str_l	str_l
 LowCardinality(String)	LowCardinality(String)	str_r	str_r	Nullable(String)	Nullable(String)	\N	\N
--- join_algorithm = default, join_use_nulls = 1 --
+-- join_use_nulls --
 str	LowCardinality(Nullable(String))
 \N	LowCardinality(Nullable(String))
 str	LowCardinality(Nullable(String))
@@ -200,7 +199,6 @@ LowCardinality(Nullable(String))	LowCardinality(Nullable(String))	\N	\N	Nullable
 LowCardinality(Nullable(String))	LowCardinality(Nullable(String))	str	str	Nullable(String)	Nullable(String)	str	str
 LowCardinality(Nullable(String))	LowCardinality(Nullable(String))	\N	\N	Nullable(String)	Nullable(String)	str_l	str_l
 LowCardinality(Nullable(String))	LowCardinality(Nullable(String))	str_r	str_r	Nullable(String)	Nullable(String)	\N	\N
--- join_algorithm = partial_merge, join_use_nulls = 0 --
 str	LowCardinality(String)
 	LowCardinality(String)
 str_r	LowCardinality(String)
@@ -301,7 +299,7 @@ LowCardinality(String)	LowCardinality(String)			Nullable(String)	Nullable(String
 LowCardinality(String)	LowCardinality(String)	str	str	Nullable(String)	Nullable(String)	str	str
 LowCardinality(String)	LowCardinality(String)			Nullable(String)	Nullable(String)	str_l	str_l
 LowCardinality(String)	LowCardinality(String)	str_r	str_r	Nullable(String)	Nullable(String)	\N	\N
--- join_algorithm = partial_merge, join_use_nulls = 1 --
+-- join_use_nulls --
 str	LowCardinality(Nullable(String))
 \N	LowCardinality(Nullable(String))
 str	LowCardinality(Nullable(String))
@@ -402,12 +400,8 @@ LowCardinality(Nullable(String))	LowCardinality(Nullable(String))	\N	\N	Nullable
 LowCardinality(Nullable(String))	LowCardinality(Nullable(String))	str	str	Nullable(String)	Nullable(String)	str	str
 LowCardinality(Nullable(String))	LowCardinality(Nullable(String))	\N	\N	Nullable(String)	Nullable(String)	str_l	str_l
 LowCardinality(Nullable(String))	LowCardinality(Nullable(String))	str_r	str_r	Nullable(String)	Nullable(String)	\N	\N
---
 	LowCardinality(String)
 str	LowCardinality(String)
 
 
 str
-str	str	LowCardinality(Nullable(String))	LowCardinality(Nullable(String))
-str_r	str_r	LowCardinality(Nullable(String))	LowCardinality(Nullable(String))
-\N	\N	LowCardinality(Nullable(String))	LowCardinality(Nullable(String))

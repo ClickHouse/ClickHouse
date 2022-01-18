@@ -22,8 +22,6 @@ class MultiplexedConnections final : public IConnections
 public:
     /// Accepts ready connection.
     MultiplexedConnections(Connection & connection, const Settings & settings_, const ThrottlerPtr & throttler_);
-    /// Accepts ready connection and keep it alive before drain
-    MultiplexedConnections(std::shared_ptr<Connection> connection_, const Settings & settings_, const ThrottlerPtr & throttler_);
 
     /// Accepts a vector of connections to replicas of one shard already taken from pool.
     MultiplexedConnections(
@@ -38,11 +36,10 @@ public:
         const String & query,
         const String & query_id,
         UInt64 stage,
-        ClientInfo & client_info,
+        const ClientInfo & client_info,
         bool with_pending_data) override;
 
     void sendReadTaskResponse(const String &) override;
-    void sendMergeTreeReadTaskResponse(PartitionReadResponse response) override;
 
     Packet receivePacket() override;
 
@@ -63,9 +60,8 @@ public:
     /// Without locking, because sendCancel() does not change the state of the replicas.
     bool hasActiveConnections() const override { return active_connection_count > 0; }
 
-    void setReplicaInfo(ReplicaInfo value) override { replica_info = value; }
 private:
-    Packet receivePacketUnlocked(AsyncCallback async_callback, bool is_draining) override;
+    Packet receivePacketUnlocked(AsyncCallback async_callback) override;
 
     /// Internal version of `dumpAddresses` function without locking.
     std::string dumpAddressesUnlocked() const;
@@ -78,17 +74,13 @@ private:
     };
 
     /// Get a replica where you can read the data.
-    ReplicaState & getReplicaForReading(bool is_draining);
+    ReplicaState & getReplicaForReading();
 
     /// Mark the replica as invalid.
     void invalidateReplica(ReplicaState & replica_state);
 
+private:
     const Settings & settings;
-
-    /// The following two fields are from settings but can be referenced outside the lifetime of
-    /// settings when connection is drained asynchronously.
-    Poco::Timespan drain_timeout;
-    Poco::Timespan receive_timeout;
 
     /// The current number of valid connections to the replicas of this shard.
     size_t active_connection_count = 0;
@@ -98,13 +90,9 @@ private:
 
     /// Connection that received last block.
     Connection * current_connection = nullptr;
-    /// Shared connection, may be empty. Used to keep object alive before draining.
-    std::shared_ptr<Connection> connection_ptr;
 
     bool sent_query = false;
     bool cancelled = false;
-
-    ReplicaInfo replica_info;
 
     /// A mutex for the sendCancel function to execute safely
     /// in separate thread.

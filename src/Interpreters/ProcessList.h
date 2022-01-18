@@ -1,12 +1,11 @@
 #pragma once
 
 #include <Core/Defines.h>
+#include <DataStreams/BlockIO.h>
 #include <IO/Progress.h>
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/QueryPriorities.h>
-#include <QueryPipeline/BlockIO.h>
-#include <QueryPipeline/ExecutionSpeedLimits.h>
 #include <Storages/IStorage_fwd.h>
 #include <Poco/Condition.h>
 #include <Common/CurrentMetrics.h>
@@ -23,15 +22,18 @@
 #include <mutex>
 #include <shared_mutex>
 #include <unordered_map>
-#include <vector>
 
+
+namespace CurrentMetrics
+{
+    extern const Metric Query;
+}
 
 namespace DB
 {
 
 struct Settings;
 class IAST;
-class PipelineExecutor;
 
 struct ProcessListForUser;
 class QueryStatus;
@@ -62,7 +64,7 @@ struct QueryStatusInfo
 
     /// Optional fields, filled by query
     std::vector<UInt64> thread_ids;
-    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
+    std::shared_ptr<ProfileEvents::Counters> profile_counters;
     std::shared_ptr<Settings> query_settings;
     std::string current_database;
 };
@@ -89,12 +91,9 @@ protected:
     /// Progress of output stream
     Progress progress_out;
 
-    /// Used to externally check for the query time limits
-    /// They are saved in the constructor to limit the overhead of each call to checkTimeLimit()
-    ExecutionSpeedLimits limits;
-    OverflowMode overflow_mode;
-
     QueryPriorities::Handle priority_handle;
+
+    CurrentMetrics::Increment num_queries_increment{CurrentMetrics::Query};
 
     std::atomic<bool> is_killed { false };
 
@@ -102,10 +101,13 @@ protected:
     /// Be careful using it. For example, queries field of ProcessListForUser could be modified concurrently.
     const ProcessListForUser * getUserProcessList() const { return user_process_list; }
 
-    mutable std::mutex executors_mutex;
+    mutable std::mutex query_streams_mutex;
 
-    /// Array of PipelineExecutors to be cancelled when a cancelQuery is received
-    std::vector<PipelineExecutor *> executors;
+    /// Streams with query results, point to BlockIO from executeQuery()
+    /// This declaration is compatible with notes about BlockIO::process_list_entry:
+    ///  there are no cyclic dependencies: BlockIO::in,out point to objects inside ProcessListElement (not whole object)
+    BlockInputStreamPtr query_stream_in;
+    BlockOutputStreamPtr query_stream_out;
 
     enum QueryStreamsStatus
     {
@@ -166,20 +168,21 @@ public:
 
     QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
+    /// Copies pointers to in/out streams
+    void setQueryStreams(const BlockIO & io);
+
+    /// Frees in/out streams
+    void releaseQueryStreams();
+
+    /// It means that ProcessListEntry still exists, but stream was already destroyed
+    bool streamsAreReleased();
+
+    /// Get query in/out pointers from BlockIO
+    bool tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStreamPtr & out) const;
+
     CancellationCode cancelQuery(bool kill);
 
     bool isKilled() const { return is_killed; }
-
-    /// Adds a pipeline to the QueryStatus
-    void addPipelineExecutor(PipelineExecutor * e);
-
-    /// Removes a pipeline to the QueryStatus
-    void removePipelineExecutor(PipelineExecutor * e);
-
-    /// Checks the query time limits (cancelled or timeout)
-    bool checkTimeLimit();
-    /// Same as checkTimeLimit but it never throws
-    [[nodiscard]] bool checkTimeLimitSoft();
 };
 
 
@@ -190,7 +193,7 @@ struct ProcessListForUserInfo
     Int64 peak_memory_usage;
 
     // Optional field, filled by request.
-    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
+    std::shared_ptr<ProfileEvents::Counters> profile_counters;
 };
 
 

@@ -26,7 +26,7 @@ void PrettySpaceBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind
 
     Serializations serializations(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
-        serializations[i] = header.getByPosition(i).type->getSerialization(*columns[i]->getSerializationInfo());
+        serializations[i] = header.getByPosition(i).type->getDefaultSerialization();
 
     WidthsPerColumn widths;
     Widths max_widths;
@@ -113,9 +113,9 @@ void PrettySpaceBlockOutputFormat::writeSuffix()
 }
 
 
-void registerOutputFormatPrettySpace(FormatFactory & factory)
+void registerOutputFormatProcessorPrettySpace(FormatFactory & factory)
 {
-    factory.registerOutputFormat("PrettySpace", [](
+    factory.registerOutputFormatProcessor("PrettySpace", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams &,
@@ -124,9 +124,7 @@ void registerOutputFormatPrettySpace(FormatFactory & factory)
         return std::make_shared<PrettySpaceBlockOutputFormat>(buf, sample, format_settings);
     });
 
-    factory.markOutputFormatSupportsParallelFormatting("PrettySpace");
-
-    factory.registerOutputFormat("PrettySpaceNoEscapes", [](
+    factory.registerOutputFormatProcessor("PrettySpaceNoEscapes", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams &,
@@ -136,8 +134,6 @@ void registerOutputFormatPrettySpace(FormatFactory & factory)
         changed_settings.pretty.color = false;
         return std::make_shared<PrettySpaceBlockOutputFormat>(buf, sample, changed_settings);
     });
-
-    factory.markOutputFormatSupportsParallelFormatting("PrettySpaceNoEscapes");
 }
 
 }

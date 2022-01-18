@@ -17,7 +17,7 @@ if (NOT ENABLE_HYPERSCAN)
     return()
 endif()
 
-option (USE_INTERNAL_HYPERSCAN_LIBRARY "Use internal hyperscan library" ON)
+option (USE_INTERNAL_HYPERSCAN_LIBRARY "Use internal hyperscan library" ${NOT_UNBUNDLED})
 
 if (NOT USE_INTERNAL_HYPERSCAN_LIBRARY)
     find_library (LIBRARY_HYPERSCAN hs)

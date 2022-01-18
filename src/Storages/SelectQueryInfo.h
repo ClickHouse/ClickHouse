@@ -39,12 +39,6 @@ using ReadInOrderOptimizerPtr = std::shared_ptr<const ReadInOrderOptimizer>;
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
 
-struct MergeTreeDataSelectAnalysisResult;
-using MergeTreeDataSelectAnalysisResultPtr = std::shared_ptr<MergeTreeDataSelectAnalysisResult>;
-
-struct SubqueryForSet;
-using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
-
 struct PrewhereInfo
 {
     /// Actions which are executed in order to alias columns are used for prewhere actions.
@@ -89,10 +83,9 @@ struct InputOrderInfo
 {
     SortDescription order_key_prefix_descr;
     int direction;
-    UInt64 limit;
 
-    InputOrderInfo(const SortDescription & order_key_prefix_descr_, int direction_, UInt64 limit_)
-        : order_key_prefix_descr(order_key_prefix_descr_), direction(direction_), limit(limit_) {}
+    InputOrderInfo(const SortDescription & order_key_prefix_descr_, int direction_)
+        : order_key_prefix_descr(order_key_prefix_descr_), direction(direction_) {}
 
     bool operator ==(const InputOrderInfo & other) const
     {
@@ -109,7 +102,7 @@ using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 // The projection selected to execute current query
 struct ProjectionCandidate
 {
-    ProjectionDescriptionRawPtr desc{};
+    const ProjectionDescription * desc{};
     PrewhereInfoPtr prewhere_info;
     ActionsDAGPtr before_where;
     String where_column_name;
@@ -124,9 +117,6 @@ struct ProjectionCandidate
     ReadInOrderOptimizerPtr order_optimizer;
     InputOrderInfoPtr input_order_info;
     ManyExpressionActions group_by_elements_actions;
-    std::shared_ptr<SubqueriesForSets> subqueries_for_sets;
-    MergeTreeDataSelectAnalysisResultPtr merge_tree_projection_select_result_ptr;
-    MergeTreeDataSelectAnalysisResultPtr merge_tree_normal_select_result_ptr;
 };
 
 /** Query along with some additional data,
@@ -137,7 +127,6 @@ struct SelectQueryInfo
 {
     ASTPtr query;
     ASTPtr view_query; /// Optimized VIEW query
-    ASTPtr original_query; /// Unmodified query for projection analysis
 
     /// Cluster for the query.
     ClusterPtr cluster;
@@ -168,9 +157,6 @@ struct SelectQueryInfo
     std::optional<ProjectionCandidate> projection;
     bool ignore_projections = false;
     bool is_projection_query = false;
-    bool merge_tree_empty_result = false;
-    Block minmax_count_projection_block;
-    MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
 };
 
 }

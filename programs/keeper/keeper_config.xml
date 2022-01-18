@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <logger>
         <!-- Possible levels [1]:
 
@@ -49,7 +49,7 @@
 
                     <!-- Internal port and hostname -->
                     <hostname>localhost</hostname>
-                    <port>9234</port>
+                    <port>44444</port>
                 </server>
 
                 <!-- Add more servers here -->
@@ -78,4 +78,4 @@
         </server>
     </openSSL>
 
-</clickhouse>
+</yandex>

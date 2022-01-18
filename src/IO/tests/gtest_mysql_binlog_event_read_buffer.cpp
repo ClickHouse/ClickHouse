@@ -33,16 +33,19 @@ TEST(MySQLBinlogEventReadBuffer, NiceBufferSize)
 TEST(MySQLBinlogEventReadBuffer, BadBufferSizes)
 {
     char res[4];
-    ConcatReadBuffer concat_buffer;
+    std::vector<ReadBufferPtr> buffers;
+    std::vector<ReadBuffer *> nested_buffers;
     std::vector<std::shared_ptr<std::vector<char>>> memory_buffers_data;
     std::vector<size_t> bad_buffers_size = {2, 1, 2, 3};
 
     for (const auto & bad_buffer_size : bad_buffers_size)
     {
         memory_buffers_data.emplace_back(std::make_shared<std::vector<char>>(bad_buffer_size, 0x01));
-        concat_buffer.appendBuffer(std::make_unique<ReadBufferFromMemory>(memory_buffers_data.back()->data(), bad_buffer_size));
+        buffers.emplace_back(std::make_shared<ReadBufferFromMemory>(memory_buffers_data.back()->data(), bad_buffer_size));
+        nested_buffers.emplace_back(buffers.back().get());
     }
 
+    ConcatReadBuffer concat_buffer(nested_buffers);
     MySQLBinlogEventReadBuffer binlog_in(concat_buffer, 4);
     binlog_in.readStrict(res, 4);
 
@@ -55,17 +58,19 @@ TEST(MySQLBinlogEventReadBuffer, BadBufferSizes)
 TEST(MySQLBinlogEventReadBuffer, NiceAndBadBufferSizes)
 {
     char res[12];
-    ConcatReadBuffer::Buffers nested_buffers;
+    std::vector<ReadBufferPtr> buffers;
+    std::vector<ReadBuffer *> nested_buffers;
     std::vector<std::shared_ptr<std::vector<char>>> memory_buffers_data;
     std::vector<size_t> buffers_size = {6, 1, 3, 6};
 
     for (const auto & bad_buffer_size : buffers_size)
     {
         memory_buffers_data.emplace_back(std::make_shared<std::vector<char>>(bad_buffer_size, 0x01));
-        nested_buffers.emplace_back(std::make_unique<ReadBufferFromMemory>(memory_buffers_data.back()->data(), bad_buffer_size));
+        buffers.emplace_back(std::make_shared<ReadBufferFromMemory>(memory_buffers_data.back()->data(), bad_buffer_size));
+        nested_buffers.emplace_back(buffers.back().get());
     }
 
-    ConcatReadBuffer concat_buffer(std::move(nested_buffers));
+    ConcatReadBuffer concat_buffer(nested_buffers);
     MySQLBinlogEventReadBuffer binlog_in(concat_buffer, 4);
     binlog_in.readStrict(res, 12);
 

@@ -1,11 +1,21 @@
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnConst.h>
 
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationFixedString.h>
 
+#include <IO/WriteBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/VarInt.h>
+
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
+
+#include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 
 
 namespace DB

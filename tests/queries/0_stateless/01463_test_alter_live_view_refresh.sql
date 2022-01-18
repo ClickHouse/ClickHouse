@@ -1,5 +1,3 @@
--- Tags: no-replicated-database, no-parallel, no-fasttest
-
 CREATE TABLE test0 (
         c0 UInt64
     ) ENGINE = MergeTree() PARTITION BY c0 ORDER BY c0;

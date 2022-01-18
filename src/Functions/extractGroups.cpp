@@ -37,16 +37,14 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
     bool useDefaultImplementationForConstants() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"haystack", &isStringOrFixedString<IDataType>, nullptr, "const String or const FixedString"},
-            {"needle", &isStringOrFixedString<IDataType>, isColumnConst, "const String or const FixedString"},
+            {"haystack", isStringOrFixedString, nullptr, "const String or const FixedString"},
+            {"needle", isStringOrFixedString, isColumnConst, "const String or const FixedString"},
         };
         validateFunctionArgumentTypes(*this, arguments, args);
 

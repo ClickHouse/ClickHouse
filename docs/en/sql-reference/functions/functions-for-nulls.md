@@ -211,7 +211,7 @@ SELECT nullIf(1, 2);
 
 ## assumeNotNull {#assumenotnull}
 
-Results in an equivalent non-`Nullable` value for a [Nullable](../../sql-reference/data-types/nullable.md) type. In case the original value is `NULL` the result is undetermined. See also `ifNull` and `coalesce` functions.
+Results in a value of type [Nullable](../../sql-reference/data-types/nullable.md) for a non- `Nullable`, if the value is not `NULL`.
 
 ``` sql
 assumeNotNull(x)

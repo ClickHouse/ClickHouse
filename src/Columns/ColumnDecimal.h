@@ -6,16 +6,13 @@
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
 #include <Common/typeid_cast.h>
-#include <base/sort.h>
-#include <Core/TypeId.h>
-#include <base/TypeName.h>
+#include <common/sort.h>
 
 #include <cmath>
 
 
 namespace DB
 {
-
 /// PaddedPODArray extended by Decimal scale
 template <typename T>
 class DecimalPaddedPODArray : public PaddedPODArray<T>
@@ -62,9 +59,11 @@ extern template class DecimalPaddedPODArray<Decimal256>;
 extern template class DecimalPaddedPODArray<DateTime64>;
 
 /// A ColumnVector for Decimals
-template <is_decimal T>
+template <typename T>
 class ColumnDecimal final : public COWHelper<ColumnVectorHelper, ColumnDecimal<T>>
 {
+    static_assert(IsDecimalNumber<T>);
+
 private:
     using Self = ColumnDecimal;
     friend class COWHelper<ColumnVectorHelper, Self>;
@@ -86,7 +85,7 @@ private:
     {}
 
 public:
-    const char * getFamilyName() const override { return TypeName<T>.data(); }
+    const char * getFamilyName() const override { return TypeName<T>; }
     TypeIndex getDataType() const override { return TypeId<T>; }
 
     bool isNumeric() const override { return false; }
@@ -152,8 +151,6 @@ public:
     bool isDefaultAt(size_t n) const override { return data[n].value == 0; }
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
-    void expand(const IColumn::Filter & mask, bool inverted) override;
-
     ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
 
@@ -177,17 +174,8 @@ public:
         return false;
     }
 
-    double getRatioOfDefaultRows(double sample_ratio) const override
-    {
-        return this->template getRatioOfDefaultRowsImpl<Self>(sample_ratio);
-    }
-
-    void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override
-    {
-        return this->template getIndicesOfNonDefaultRowsImpl<Self>(indices, from, limit);
-    }
-
     ColumnPtr compress() const override;
+
 
     void insertValue(const T value) { data.push_back(value); }
     Container & getData() { return data; }
@@ -220,16 +208,16 @@ protected:
     }
 };
 
-template <class> class ColumnVector;
-template <class T> struct ColumnVectorOrDecimalT { using Col = ColumnVector<T>; };
-template <is_decimal T> struct ColumnVectorOrDecimalT<T> { using Col = ColumnDecimal<T>; };
-template <class T> using ColumnVectorOrDecimal = typename ColumnVectorOrDecimalT<T>::Col;
-
-template <is_decimal T>
+template <typename T>
 template <typename Type>
 ColumnPtr ColumnDecimal<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    assert(limit <= indexes.size());
+    size_t size = indexes.size();
+
+    if (limit == 0)
+        limit = size;
+    else
+        limit = std::min(size, limit);
 
     auto res = this->create(limit, scale);
     typename Self::Container & res_data = res->getData();

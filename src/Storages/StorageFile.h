@@ -1,11 +1,11 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 #include <atomic>
 #include <shared_mutex>
-#include <base/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 
 namespace DB
@@ -16,9 +16,7 @@ class StorageFileBlockOutputStream;
 
 class StorageFile final : public shared_ptr_helper<StorageFile>, public IStorage
 {
-friend struct shared_ptr_helper<StorageFile>;
-friend class PartitionedStorageFileSink;
-
+    friend struct shared_ptr_helper<StorageFile>;
 public:
     std::string getName() const override { return "File"; }
 
@@ -31,7 +29,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    SinkToStoragePtr write(
+    BlockOutputStreamPtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr context) override;
@@ -68,11 +66,9 @@ public:
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
     bool isColumnOriented() const;
 
-    bool supportsPartitionBy() const override { return true; }
-
 protected:
     friend class StorageFileSource;
-    friend class StorageFileSink;
+    friend class StorageFileBlockOutputStream;
 
     /// From file descriptor
     StorageFile(int table_fd_, CommonArguments args);
@@ -99,8 +95,10 @@ private:
     std::string base_path;
     std::vector<std::string> paths;
 
-    bool is_db_table = true;        /// Table is stored in real database, not user's file
-    bool use_table_fd = false;      /// Use table_fd instead of path
+    bool is_db_table = true;                     /// Table is stored in real database, not user's file
+    bool use_table_fd = false;                    /// Use table_fd instead of path
+    std::atomic<bool> table_fd_was_used{false}; /// To detect repeating reads from stdin
+    off_t table_fd_init_offset = -1;            /// Initial position of fd, used for repeating reads
 
     mutable std::shared_timed_mutex rwlock;
 
@@ -108,8 +106,6 @@ private:
 
     /// Total number of bytes to read (sums for multiple files in case of globs). Needed for progress bar.
     size_t total_bytes_to_read = 0;
-
-    String path_for_partitioned_write;
 };
 
 }

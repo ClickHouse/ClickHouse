@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 set allow_experimental_bigint_types=1;
 drop database if exists db_01721;
 drop table if exists db_01721.table_decimal_dict;

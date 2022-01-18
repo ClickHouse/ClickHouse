@@ -12,7 +12,7 @@ Calculates the sum of the numbers and counts the number of rows at the same time
 sumCount(x)
 ```
 
-**Arguments**
+**Arguments** 
 
 -   `x` — Input value, must be [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md), or [Decimal](../../../sql-reference/data-types/decimal.md).
 
@@ -43,4 +43,4 @@ Result:
 
 **See also**
 
-- [optimize_syntax_fuse_functions](../../../operations/settings/settings.md#optimize_syntax_fuse_functions) setting.
+- [optimize_fuse_sum_count_avg](../../../operations/settings/settings.md#optimize_fuse_sum_count_avg) setting.

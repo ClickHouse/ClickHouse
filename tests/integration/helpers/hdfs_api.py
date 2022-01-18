@@ -102,7 +102,6 @@ class HDFSApi(object):
                 return response_data
             else:
                 logging.error(f"unexpected response_data.status_code {response_data.status_code} != {expected_code}")
-                time.sleep(1)
         response_data.raise_for_status()
 
 

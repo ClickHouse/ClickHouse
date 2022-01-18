@@ -13,7 +13,7 @@ To revoke privileges, use the [REVOKE](../../sql-reference/statements/revoke.md)
 ## Granting Privilege Syntax {#grant-privigele-syntax}
 
 ``` sql
-GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
+GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION]
 ```
 
 -   `privilege` — Type of privilege.
@@ -21,19 +21,17 @@ GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.ta
 -   `user` — ClickHouse user account.
 
 The `WITH GRANT OPTION` clause grants `user` or `role` with permission to execute the `GRANT` query. Users can grant privileges of the same scope they have and less.
-The `WITH REPLACE OPTION` clause replace old privileges by new privileges for the `user` or `role`, if not specified it is append privileges.
 
 ## Assigning Role Syntax {#assign-role-syntax}
 
 ``` sql
-GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION] [WITH REPLACE OPTION]
+GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION]
 ```
 
 -   `role` — ClickHouse user role.
 -   `user` — ClickHouse user account.
 
 The `WITH ADMIN OPTION` clause grants [ADMIN OPTION](#admin-option-privilege) privilege to `user` or `role`.
-The `WITH REPLACE OPTION` clause replace old roles by new role for the `user` or `role`, if not specified it is append roles.
 
 ## Usage {#grant-usage}
 
@@ -107,13 +105,11 @@ Hierarchy of privileges:
         -   `CREATE TEMPORARY TABLE`
     -   `CREATE VIEW`
     -   `CREATE DICTIONARY`
-    -   `CREATE FUNCTION`
 -   [DROP](#grant-drop)
     -   `DROP DATABASE`
     -   `DROP TABLE`
     -   `DROP VIEW`
     -   `DROP DICTIONARY`
-    -   `DROP FUNCTION`
 -   [TRUNCATE](#grant-truncate)
 -   [OPTIMIZE](#grant-optimize)
 -   [SHOW](#grant-show)
@@ -155,8 +151,6 @@ Hierarchy of privileges:
         -   `SYSTEM RELOAD CONFIG`
         -   `SYSTEM RELOAD DICTIONARY`
             -   `SYSTEM RELOAD EMBEDDED DICTIONARIES`
-        -   `SYSTEM RELOAD FUNCTION`
-        -   `SYSTEM RELOAD FUNCTIONS`
     -   `SYSTEM MERGES`
     -   `SYSTEM TTL MERGES`
     -   `SYSTEM FETCHES`

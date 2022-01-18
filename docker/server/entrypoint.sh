@@ -86,8 +86,8 @@ done
 if [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CLICKHOUSE_PASSWORD" ]; then
     echo "$0: create new user '$CLICKHOUSE_USER' instead 'default'"
     cat <<EOT > /etc/clickhouse-server/users.d/default-user.xml
-    <clickhouse>
-      <!-- Docs: <https://clickhouse.com/docs/en/operations/settings/settings_users/> -->
+    <yandex>
+      <!-- Docs: <https://clickhouse.tech/docs/en/operations/settings/settings_users/> -->
       <users>
         <!-- Remove default user -->
         <default remove="remove">
@@ -103,7 +103,7 @@ if [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CL
           <access_management>${CLICKHOUSE_ACCESS_MANAGEMENT}</access_management>
         </${CLICKHOUSE_USER}>
       </users>
-    </clickhouse>
+    </yandex>
 EOT
 fi
 
@@ -164,10 +164,6 @@ fi
 
 # if no args passed to `docker run` or first argument start with `--`, then the user is passing clickhouse-server arguments
 if [[ $# -lt 1 ]] || [[ "$1" == "--"* ]]; then
-    # Watchdog is launched by default, but does not send SIGINT to the main process,
-    # so the container can't be finished by ctrl+c
-    CLICKHOUSE_WATCHDOG_ENABLE=${CLICKHOUSE_WATCHDOG_ENABLE:-0}
-    export CLICKHOUSE_WATCHDOG_ENABLE
     exec $gosu /usr/bin/clickhouse-server --config-file="$CLICKHOUSE_CONFIG" "$@"
 fi
 

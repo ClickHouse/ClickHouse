@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Poco/Event.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <thread>
 #include <atomic>
 

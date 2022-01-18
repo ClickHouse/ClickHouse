@@ -492,7 +492,7 @@ Problem: Generate a report that shows only keywords that produced at least 5 uni
 Solution: Write in the GROUP BY query SearchPhrase HAVING uniqUpTo(4)(UserID) >= 5
 ```
 
-[元の記事](https://clickhouse.com/docs/en/query_language/agg_functions/parametric_functions/) <!--hide-->
+[元の記事](https://clickhouse.tech/docs/en/query_language/agg_functions/parametric_functions/) <!--hide-->
 
 ## sumMapFiltered(keys_to_keep)(キー,値) {#summapfilteredkeys-to-keepkeys-values}
 

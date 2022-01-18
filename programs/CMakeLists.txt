@@ -11,28 +11,28 @@ option (ENABLE_CLICKHOUSE_SERVER "Server mode (main mode)" ${ENABLE_CLICKHOUSE_A
 option (ENABLE_CLICKHOUSE_CLIENT "Client mode (interactive tui/shell that connects to the server)"
     ${ENABLE_CLICKHOUSE_ALL})
 
-# https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/
+# https://clickhouse.tech/docs/en/operations/utilities/clickhouse-local/
 option (ENABLE_CLICKHOUSE_LOCAL "Local files fast processing mode" ${ENABLE_CLICKHOUSE_ALL})
 
-# https://clickhouse.com/docs/en/operations/utilities/clickhouse-benchmark/
+# https://clickhouse.tech/docs/en/operations/utilities/clickhouse-benchmark/
 option (ENABLE_CLICKHOUSE_BENCHMARK "Queries benchmarking mode" ${ENABLE_CLICKHOUSE_ALL})
 
 option (ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG "Configs processor (extract values etc.)" ${ENABLE_CLICKHOUSE_ALL})
 
-# https://clickhouse.com/docs/en/operations/utilities/clickhouse-compressor/
+# https://clickhouse.tech/docs/en/operations/utilities/clickhouse-compressor/
 option (ENABLE_CLICKHOUSE_COMPRESSOR "Data compressor and decompressor" ${ENABLE_CLICKHOUSE_ALL})
 
-# https://clickhouse.com/docs/en/operations/utilities/clickhouse-copier/
+# https://clickhouse.tech/docs/en/operations/utilities/clickhouse-copier/
 option (ENABLE_CLICKHOUSE_COPIER "Inter-cluster data copying mode" ${ENABLE_CLICKHOUSE_ALL})
 
 option (ENABLE_CLICKHOUSE_FORMAT "Queries pretty-printer and formatter with syntax highlighting"
     ${ENABLE_CLICKHOUSE_ALL})
 
-# https://clickhouse.com/docs/en/operations/utilities/clickhouse-obfuscator/
+# https://clickhouse.tech/docs/en/operations/utilities/clickhouse-obfuscator/
 option (ENABLE_CLICKHOUSE_OBFUSCATOR "Table data obfuscator (convert real data to benchmark-ready one)"
     ${ENABLE_CLICKHOUSE_ALL})
 
-# https://clickhouse.com/docs/en/operations/utilities/odbc-bridge/
+# https://clickhouse.tech/docs/en/operations/utilities/odbc-bridge/
 # TODO Also needs NANODBC.
 if (ENABLE_ODBC)
     option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "HTTP-server working like a proxy to ODBC driver"
@@ -44,10 +44,10 @@ endif ()
 option (ENABLE_CLICKHOUSE_LIBRARY_BRIDGE "HTTP-server working like a proxy to Library dictionary source"
     ${ENABLE_CLICKHOUSE_ALL})
 
-# https://presentations.clickhouse.com/matemarketing_2020/
-option (ENABLE_CLICKHOUSE_GIT_IMPORT "A tool to analyze Git repositories" ${ENABLE_CLICKHOUSE_ALL})
+# https://presentations.clickhouse.tech/matemarketing_2020/
+option (ENABLE_CLICKHOUSE_GIT_IMPORT "A tool to analyze Git repositories"
+    ${ENABLE_CLICKHOUSE_ALL})
 
-option (ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER "A tool to export table data files to be later put to a static files web server" ${ENABLE_CLICKHOUSE_ALL})
 
 option (ENABLE_CLICKHOUSE_KEEPER "ClickHouse alternative to ZooKeeper" ${ENABLE_CLICKHOUSE_ALL})
 
@@ -227,7 +227,6 @@ add_subdirectory (obfuscator)
 add_subdirectory (install)
 add_subdirectory (git-import)
 add_subdirectory (bash-completion)
-add_subdirectory (static-files-disk-uploader)
 
 if (ENABLE_CLICKHOUSE_KEEPER)
     add_subdirectory (keeper)
@@ -259,8 +258,7 @@ if (CLICKHOUSE_ONE_SHARED)
     ${CLICKHOUSE_GIT_IMPORT_SOURCES}
     ${CLICKHOUSE_ODBC_BRIDGE_SOURCES}
     ${CLICKHOUSE_KEEPER_SOURCES}
-    ${CLICKHOUSE_KEEPER_CONVERTER_SOURCES}
-    ${CLICKHOUSE_STATIC_FILES_DISK_UPLOADER_SOURCES})
+    ${CLICKHOUSE_KEEPER_CONVERTER_SOURCES})
 
     target_link_libraries(clickhouse-lib
       ${CLICKHOUSE_SERVER_LINK}
@@ -275,8 +273,7 @@ if (CLICKHOUSE_ONE_SHARED)
       ${CLICKHOUSE_GIT_IMPORT_LINK}
       ${CLICKHOUSE_ODBC_BRIDGE_LINK}
       ${CLICKHOUSE_KEEPER_LINK}
-      ${CLICKHOUSE_KEEPER_CONVERTER_LINK}
-      ${CLICKHOUSE_STATIC_FILES_DISK_UPLOADER_LINK})
+      ${CLICKHOUSE_KEEPER_CONVERTER_LINK})
 
     target_include_directories(clickhouse-lib
       ${CLICKHOUSE_SERVER_INCLUDE}
@@ -309,7 +306,6 @@ if (CLICKHOUSE_SPLIT_BINARY)
         clickhouse-obfuscator
         clickhouse-git-import
         clickhouse-copier
-        clickhouse-static-files-disk-uploader
     )
 
     if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
@@ -375,9 +371,6 @@ else ()
     if (ENABLE_CLICKHOUSE_GIT_IMPORT)
         clickhouse_target_link_split_lib(clickhouse git-import)
     endif ()
-    if (ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER)
-        clickhouse_target_link_split_lib(clickhouse static-files-disk-uploader)
-    endif ()
     if (ENABLE_CLICKHOUSE_KEEPER)
         clickhouse_target_link_split_lib(clickhouse keeper)
     endif()
@@ -439,11 +432,6 @@ else ()
         install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-git-import" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
         list(APPEND CLICKHOUSE_BUNDLE clickhouse-git-import)
     endif ()
-    if (ENABLE_CLICKHOUSE_STATIC_FILES_DISK_UPLOADER)
-        add_custom_target (clickhouse-static-files-disk-uploader ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-static-files-disk-uploader DEPENDS clickhouse)
-        install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-static-files-disk-uploader" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
-        list(APPEND CLICKHOUSE_BUNDLE clickhouse-static-files-disk-uploader)
-    endif ()
     if (ENABLE_CLICKHOUSE_KEEPER)
         add_custom_target (clickhouse-keeper ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-keeper DEPENDS clickhouse)
         install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-keeper" DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
@@ -473,7 +461,3 @@ if (ENABLE_TESTS AND USE_GTEST)
     add_custom_target (clickhouse-tests ALL DEPENDS ${CLICKHOUSE_UNIT_TESTS_TARGETS})
     add_dependencies(clickhouse-bundle clickhouse-tests)
 endif()
-
-if (ENABLE_FUZZING)
-    add_compile_definitions(FUZZING_MODE=1)
-endif ()

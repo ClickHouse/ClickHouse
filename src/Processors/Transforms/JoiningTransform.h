@@ -8,7 +8,8 @@ namespace DB
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
-class NotJoinedBlocks;
+class IBlockInputStream;
+using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 
 /// Join rows to chunk form left table.
 /// This transform usually has two input ports and one output.
@@ -75,7 +76,7 @@ private:
     ExtraBlockPtr not_processed;
 
     FinishCounterPtr finish_counter;
-    std::shared_ptr<NotJoinedBlocks> non_joined_blocks;
+    BlockInputStreamPtr non_joined_stream;
     size_t max_block_size;
 
     Block readExecute(Chunk & chunk);
@@ -83,7 +84,7 @@ private:
 
 /// Fills Join with block from right table.
 /// Has single input and single output port.
-/// Output port has empty header. It is closed when all data is inserted in join.
+/// Output port has empty header. It is closed when al data is inserted in join.
 class FillingRightJoinSideTransform : public IProcessor
 {
 public:

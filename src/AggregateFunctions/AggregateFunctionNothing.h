@@ -62,11 +62,11 @@ public:
     {
     }
 
-    void serialize(ConstAggregateDataPtr __restrict, WriteBuffer &, std::optional<size_t>) const override
+    void serialize(ConstAggregateDataPtr, WriteBuffer &) const override
     {
     }
 
-    void deserialize(AggregateDataPtr, ReadBuffer &, std::optional<size_t>, Arena *) const override
+    void deserialize(AggregateDataPtr, ReadBuffer &, Arena *) const override
     {
     }
 

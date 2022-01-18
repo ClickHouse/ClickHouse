@@ -30,7 +30,3 @@ def test_detach_part_wrong_partition_id(start_cluster):
 
     num_detached = node_21_6.query("select count() from  system.detached_parts")
     assert num_detached == '1\n'
-
-    node_21_6.restart_with_original_version()
-
-    node_21_6.query("drop table tab SYNC")

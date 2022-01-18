@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context_fwd.h>
-#include <base/range.h>
+#include <common/range.h>
 
 
 namespace DB
@@ -36,11 +36,6 @@ public:
     size_t getNumberOfArguments() const override
     {
         return 1;
-    }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
-    {
-        return false;
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

@@ -15,8 +15,8 @@ avgWeighted(x, weight)
 
 **参数**
 
--   `x` — 值。
--   `weight` — 值的加权。
+-   `x` — 值。 
+-   `weight` — 值的加权。 
 
 `x` 和 `weight` 的类型必须是
 [整数](../../../sql-reference/data-types/int-uint.md), 或

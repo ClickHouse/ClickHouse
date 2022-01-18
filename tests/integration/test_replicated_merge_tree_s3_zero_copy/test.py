@@ -65,6 +65,7 @@ def create_table(cluster, additional_settings=None):
 
     list(cluster.instances.values())[0].query(create_table_statement)
 
+
 @pytest.fixture(autouse=True)
 def drop_table(cluster):
     yield

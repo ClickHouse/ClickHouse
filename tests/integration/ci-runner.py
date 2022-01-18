@@ -630,7 +630,7 @@ class ClickhouseIntegrationTestsRunner:
             random.shuffle(items_to_run)
 
         for group, tests in items_to_run:
-            logging.info("Running test group %s containing %s tests", group, len(tests))
+            logging.info("Running test group %s countaining %s tests", group, len(tests))
             group_counters, group_test_times, log_paths = self.try_run_test_group(repo_path, group, tests, MAX_RETRY, NUM_WORKERS)
             total_tests = 0
             for counter, value in group_counters.items():

@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<clickhouse>
+<yandex>
     <remote_servers>
         <node>
             <shard>
@@ -20,4 +20,4 @@
             </shard>
         </node_another_bucket>
     </remote_servers>
-</clickhouse>
+</yandex>

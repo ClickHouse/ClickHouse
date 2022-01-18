@@ -1,31 +1,34 @@
 #include <Storages/Kafka/KafkaBlockOutputStream.h>
 
 #include <Formats/FormatFactory.h>
-#include <Processors/Formats/IOutputFormat.h>
 #include <Storages/Kafka/WriteBufferToKafkaProducer.h>
 
 namespace DB
 {
 
-KafkaSink::KafkaSink(
+KafkaBlockOutputStream::KafkaBlockOutputStream(
     StorageKafka & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
     const ContextPtr & context_)
-    : SinkToStorage(metadata_snapshot_->getSampleBlockNonMaterialized())
-    , storage(storage_)
+    : storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
     , context(context_)
 {
 }
 
-void KafkaSink::onStart()
+Block KafkaBlockOutputStream::getHeader() const
+{
+    return metadata_snapshot->getSampleBlockNonMaterialized();
+}
+
+void KafkaBlockOutputStream::writePrefix()
 {
     buffer = storage.createWriteBuffer(getHeader());
 
     auto format_settings = getFormatSettings(context);
     format_settings.protobuf.allow_multiple_rows_without_delimiter = true;
 
-    format = FormatFactory::instance().getOutputFormat(storage.getFormatName(), *buffer,
+    child = FormatFactory::instance().getOutputStream(storage.getFormatName(), *buffer,
         getHeader(), context,
         [this](const Columns & columns, size_t row)
         {
@@ -34,17 +37,20 @@ void KafkaSink::onStart()
         format_settings);
 }
 
-void KafkaSink::consume(Chunk chunk)
+void KafkaBlockOutputStream::write(const Block & block)
 {
-    format->write(getHeader().cloneWithColumns(chunk.detachColumns()));
+    child->write(block);
 }
 
-void KafkaSink::onFinish()
+void KafkaBlockOutputStream::writeSuffix()
 {
-    if (format)
-        format->finalize();
-    //flush();
+    if (child)
+        child->writeSuffix();
+    flush();
+}
 
+void KafkaBlockOutputStream::flush()
+{
     if (buffer)
         buffer->flush();
 }

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <atomic>
-#include <base/types.h>
+#include <common/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/VariableContext.h>
 
@@ -14,12 +14,12 @@
 /// outside of try/catch block of thread functions. ALLOW_ALLOCATIONS_IN_SCOPE cancels effect of
 /// DENY_ALLOCATIONS_IN_SCOPE in the inner scope. In Release builds these macros do nothing.
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
-#include <base/scope_guard.h>
-extern thread_local bool memory_tracker_always_throw_logical_error_on_allocation;
+#include <common/scope_guard.h>
+extern thread_local bool _memory_tracker_always_throw_logical_error_on_allocation;
 #define ALLOCATIONS_IN_SCOPE_IMPL_CONCAT(n, val) \
-        bool _allocations_flag_prev_val##n = memory_tracker_always_throw_logical_error_on_allocation; \
-        memory_tracker_always_throw_logical_error_on_allocation = val; \
-        SCOPE_EXIT({ memory_tracker_always_throw_logical_error_on_allocation = _allocations_flag_prev_val##n; })
+        bool _allocations_flag_prev_val##n = _memory_tracker_always_throw_logical_error_on_allocation; \
+        _memory_tracker_always_throw_logical_error_on_allocation = val; \
+        SCOPE_EXIT({ _memory_tracker_always_throw_logical_error_on_allocation = _allocations_flag_prev_val##n; })
 #define ALLOCATIONS_IN_SCOPE_IMPL(n, val) ALLOCATIONS_IN_SCOPE_IMPL_CONCAT(n, val)
 #define DENY_ALLOCATIONS_IN_SCOPE ALLOCATIONS_IN_SCOPE_IMPL(__LINE__, true)
 #define ALLOW_ALLOCATIONS_IN_SCOPE ALLOCATIONS_IN_SCOPE_IMPL(__LINE__, false)
@@ -58,17 +58,12 @@ private:
     /// This description will be used as prefix into log messages (if isn't nullptr)
     std::atomic<const char *> description_ptr = nullptr;
 
-    bool updatePeak(Int64 will_be, bool log_memory_usage);
+    void updatePeak(Int64 will_be, bool log_memory_usage);
     void logMemoryUsage(Int64 current) const;
 
-    void setOrRaiseProfilerLimit(Int64 value);
-
 public:
-
-    static constexpr auto USAGE_EVENT_NAME = "MemoryTrackerUsage";
-
-    explicit MemoryTracker(VariableContext level_ = VariableContext::Thread);
-    explicit MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Thread);
+    MemoryTracker(VariableContext level_ = VariableContext::Thread);
+    MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Thread);
 
     ~MemoryTracker();
 
@@ -111,6 +106,7 @@ public:
       * Otherwise, set limit to new value, if new value is greater than previous limit.
       */
     void setOrRaiseHardLimit(Int64 value);
+    void setOrRaiseProfilerLimit(Int64 value);
 
     void setFaultProbability(double value)
     {
@@ -125,7 +121,6 @@ public:
     void setProfilerStep(Int64 value)
     {
         profiler_step = value;
-        setOrRaiseProfilerLimit(value);
     }
 
     /// next should be changed only once: from nullptr to some value.
@@ -144,11 +139,6 @@ public:
     void setMetric(CurrentMetrics::Metric metric_)
     {
         metric.store(metric_, std::memory_order_relaxed);
-    }
-
-    CurrentMetrics::Metric getMetric()
-    {
-        return metric.load(std::memory_order_relaxed);
     }
 
     void setDescription(const char * description)
@@ -172,17 +162,17 @@ public:
     struct BlockerInThread
     {
     private:
+        BlockerInThread(const BlockerInThread &) = delete;
+        BlockerInThread & operator=(const BlockerInThread &) = delete;
+
         static thread_local uint64_t counter;
         static thread_local VariableContext level;
 
         VariableContext previous_level;
     public:
         /// level_ - block in level and above
-        explicit BlockerInThread(VariableContext level_ = VariableContext::User);
+        BlockerInThread(VariableContext level_ = VariableContext::User);
         ~BlockerInThread();
-
-        BlockerInThread(const BlockerInThread &) = delete;
-        BlockerInThread & operator=(const BlockerInThread &) = delete;
 
         static bool isBlocked(VariableContext current_level)
         {
@@ -205,6 +195,9 @@ public:
     struct LockExceptionInThread
     {
     private:
+        LockExceptionInThread(const LockExceptionInThread &) = delete;
+        LockExceptionInThread & operator=(const LockExceptionInThread &) = delete;
+
         static thread_local uint64_t counter;
         static thread_local VariableContext level;
         static thread_local bool block_fault_injections;
@@ -214,11 +207,8 @@ public:
     public:
         /// level_ - block in level and above
         /// block_fault_injections_ - block in fault injection too
-        explicit LockExceptionInThread(VariableContext level_ = VariableContext::User, bool block_fault_injections_ = true);
+        LockExceptionInThread(VariableContext level_ = VariableContext::User, bool block_fault_injections_ = true);
         ~LockExceptionInThread();
-
-        LockExceptionInThread(const LockExceptionInThread &) = delete;
-        LockExceptionInThread & operator=(const LockExceptionInThread &) = delete;
 
         static bool isBlocked(VariableContext current_level, bool fault_injection)
         {

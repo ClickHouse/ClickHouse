@@ -18,18 +18,13 @@ OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION I
 
 Может применяться к таблицам семейства [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md), [MaterializedView](../../engines/table-engines/special/materializedview.md) и [Buffer](../../engines/table-engines/special/buffer.md). Другие движки таблиц не поддерживаются.
 
-Если запрос `OPTIMIZE` применяется к таблицам семейства [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md), ClickHouse создаёт задачу на слияние и ожидает её исполнения на всех репликах (если значение настройки [replication_alter_partitions_sync](../../operations/settings/settings.md#replication-alter-partitions-sync) равно `2`) или на текущей реплике (если значение настройки [replication_alter_partitions_sync](../../operations/settings/settings.md#replication-alter-partitions-sync) равно `1`).
+Если запрос `OPTIMIZE` применяется к таблицам семейства [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md), ClickHouse создаёт задачу на слияние и ожидает её исполнения на всех узлах (если активирована настройка `replication_alter_partitions_sync`).
 
 -   По умолчанию, если запросу `OPTIMIZE` не удалось выполнить слияние, то
 ClickHouse не оповещает клиента. Чтобы включить оповещения, используйте настройку [optimize_throw_if_noop](../../operations/settings/settings.md#setting-optimize_throw_if_noop).
 -   Если указать `PARTITION`, то оптимизация выполняется только для указанной партиции. [Как задавать имя партиции в запросах](alter/index.md#alter-how-to-specify-part-expr).
 -   Если указать `FINAL`, то оптимизация выполняется даже в том случае, если все данные уже лежат в одном куске данных. Кроме того, слияние является принудительным, даже если выполняются параллельные слияния.
 -   Если указать `DEDUPLICATE`, то произойдет схлопывание полностью одинаковых строк (сравниваются значения во всех столбцах), имеет смысл только для движка MergeTree.
-
-Вы можете указать время ожидания (в секундах) выполнения запросов `OPTIMIZE` для неактивных реплик с помощью настройки [replication_wait_for_inactive_replica_timeout](../../operations/settings/settings.md#replication-wait-for-inactive-replica-timeout).
-
-!!! info "Примечание"
-    Если значение настройки `replication_alter_partitions_sync` равно `2` и некоторые реплики не активны больше времени, заданного настройкой `replication_wait_for_inactive_replica_timeout`, то генерируется исключение `UNFINISHED`.
 
 ## Выражение BY {#by-expression}
 
@@ -67,12 +62,12 @@ CREATE TABLE example (
     materialized_value UInt32 MATERIALIZED 12345,
     aliased_value UInt32 ALIAS 2,
     PRIMARY KEY primary_key
-) ENGINE=MergeTree
+) ENGINE=MergeTree　
 PARTITION BY partition_key
 ORDER BY (primary_key, secondary_key);
 ```
 ``` sql
-INSERT INTO example (primary_key, secondary_key, value, partition_key)
+INSERT INTO example (primary_key, secondary_key, value, partition_key) 
 VALUES (0, 0, 0, 0), (0, 0, 0, 0), (1, 1, 2, 2), (1, 1, 2, 3), (1, 1, 3, 3);
 ```
 ``` sql

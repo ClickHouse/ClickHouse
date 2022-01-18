@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: race, no-parallel
 
 # This is a monkey test used to trigger sanitizers.
 
@@ -7,8 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT --query="DROP DATABASE IF EXISTS dictdb_01076;"
-$CLICKHOUSE_CLIENT --query="CREATE DATABASE dictdb_01076;"
+$CLICKHOUSE_CLIENT --query="CREATE DATABASE IF NOT EXISTS dictdb_01076; "
 
 $CLICKHOUSE_CLIENT --query="
 CREATE TABLE dictdb_01076.table_datarace
@@ -67,6 +65,6 @@ wait
 
 echo OK
 
-$CLICKHOUSE_CLIENT --query="DROP DICTIONARY dictdb_01076.dict_datarace;"
 $CLICKHOUSE_CLIENT --query="DROP TABLE dictdb_01076.table_datarace;"
+$CLICKHOUSE_CLIENT --query="DROP DICTIONARY dictdb_01076.dict_datarace;"
 $CLICKHOUSE_CLIENT --query="DROP DATABASE dictdb_01076;"

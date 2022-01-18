@@ -4,7 +4,7 @@
 
 Столбцы:
 
--   `trace_id` ([UUID](../../sql-reference/data-types/uuid.md)) — идентификатор трассировки для выполненного запроса.
+-   `trace_id` ([UUID](../../sql-reference/data-types/uuid.md) — идентификатор трассировки для выполненного запроса.
 
 -   `span_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — идентификатор `trace span`.
 

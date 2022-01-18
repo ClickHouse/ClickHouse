@@ -16,7 +16,7 @@ option(USE_INTERNAL_HDFS3_LIBRARY "Set to FALSE to use system HDFS3 instead of b
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libhdfs3/include/hdfs/hdfs.h")
     if(USE_INTERNAL_HDFS3_LIBRARY)
-        message(WARNING "submodule contrib/libhdfs3 is missing. to fix try run: \n git submodule update --init")
+        message(WARNING "submodule contrib/libhdfs3 is missing. to fix try run: \n git submodule update --init --recursive")
         message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use internal HDFS3 library")
         set(USE_INTERNAL_HDFS3_LIBRARY 0)
     endif()

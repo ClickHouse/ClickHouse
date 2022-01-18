@@ -1,5 +1,3 @@
--- Tags: shard
-
 SET max_rows_to_group_by = 100000;
 SET group_by_overflow_mode = 'any';
 

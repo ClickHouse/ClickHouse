@@ -10,83 +10,16 @@ toc_title: Strings
 
 ## empty {#empty}
 
-Checks whether the input string is empty.
-
-**Syntax**
-
-``` sql
-empty(x)
-```
-
+Returns 1 for an empty string or 0 for a non-empty string.
+The result type is UInt8.
 A string is considered non-empty if it contains at least one byte, even if this is a space or a null byte.
-
-The function also works for [arrays](array-functions.md#function-empty) or [UUID](uuid-functions.md#empty).
-
-**Arguments**
-
--   `x` — Input value. [String](../data-types/string.md).
-
-**Returned value**
-
--   Returns `1` for an empty string or `0` for a non-empty string.
-
-Type: [UInt8](../data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT empty('');
-```
-
-Result:
-
-```text
-┌─empty('')─┐
-│         1 │
-└───────────┘
-```
+The function also works for arrays.
 
 ## notEmpty {#notempty}
 
-Checks whether the input string is non-empty.
-
-**Syntax**
-
-``` sql
-notEmpty(x)
-```
-
-A string is considered non-empty if it contains at least one byte, even if this is a space or a null byte.
-
-The function also works for [arrays](array-functions.md#function-notempty) or [UUID](uuid-functions.md#notempty).
-
-**Arguments**
-
--   `x` — Input value. [String](../data-types/string.md).
-
-**Returned value**
-
--   Returns `1` for a non-empty string or `0` for an empty string string.
-
-Type: [UInt8](../data-types/int-uint.md).
-
-**Example**
-
-Query:
-
-```sql
-SELECT notEmpty('text');
-```
-
-Result:
-
-```text
-┌─notEmpty('text')─┐
-│                1 │
-└──────────────────┘
-```
+Returns 0 for an empty string or 1 for a non-empty string.
+The result type is UInt8.
+The function also works for arrays.
 
 ## length {#length}
 
@@ -108,158 +41,6 @@ The result type is UInt64.
 
 Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it does not throw an exception).
 The result type is UInt64.
-
-## leftPad {#leftpad}
-
-Pads the current string from the left with spaces or a specified string (multiple times, if needed) until the resulting string reaches the given length. Similarly to the MySQL `LPAD` function.
-
-**Syntax**
-
-``` sql
-leftPad('string', 'length'[, 'pad_string'])
-```
-
-**Arguments**
-
--   `string` — Input string that needs to be padded. [String](../data-types/string.md).
--   `length` — The length of the resulting string. [UInt](../data-types/int-uint.md). If the value is less than the input string length, then the input string is returned as-is.
--   `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
-
-**Returned value**
-
--   The resulting string of the given length.
-
-Type: [String](../data-types/string.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT leftPad('abc', 7, '*'), leftPad('def', 7);
-```
-
-Result:
-
-``` text
-┌─leftPad('abc', 7, '*')─┬─leftPad('def', 7)─┐
-│ ****abc                │     def           │
-└────────────────────────┴───────────────────┘
-```
-
-## leftPadUTF8 {#leftpadutf8}
-
-Pads the current string from the left with spaces or a specified string (multiple times, if needed) until the resulting string reaches the given length. Similarly to the MySQL `LPAD` function. While in the [leftPad](#leftpad) function the length is measured in bytes, here in the `leftPadUTF8` function it is measured in code points.
-
-**Syntax**
-
-``` sql
-leftPadUTF8('string','length'[, 'pad_string'])
-```
-
-**Arguments**
-
--   `string` — Input string that needs to be padded. [String](../data-types/string.md).
--   `length` — The length of the resulting string. [UInt](../data-types/int-uint.md). If the value is less than the input string length, then the input string is returned as-is.
--   `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
-
-**Returned value**
-
--   The resulting string of the given length.
-
-Type: [String](../data-types/string.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT leftPadUTF8('абвг', 7, '*'), leftPadUTF8('дежз', 7);
-```
-
-Result:
-
-``` text
-┌─leftPadUTF8('абвг', 7, '*')─┬─leftPadUTF8('дежз', 7)─┐
-│ ***абвг                     │    дежз                │
-└─────────────────────────────┴────────────────────────┘
-```
-
-## rightPad {#rightpad}
-
-Pads the current string from the right with spaces or a specified string (multiple times, if needed) until the resulting string reaches the given length. Similarly to the MySQL `RPAD` function.
-
-**Syntax**
-
-``` sql
-rightPad('string', 'length'[, 'pad_string'])
-```
-
-**Arguments**
-
--   `string` — Input string that needs to be padded. [String](../data-types/string.md).
--   `length` — The length of the resulting string. [UInt](../data-types/int-uint.md). If the value is less than the input string length, then the input string is returned as-is.
--   `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
-
-**Returned value**
-
--   The resulting string of the given length.
-
-Type: [String](../data-types/string.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT rightPad('abc', 7, '*'), rightPad('abc', 7);
-```
-
-Result:
-
-``` text
-┌─rightPad('abc', 7, '*')─┬─rightPad('abc', 7)─┐
-│ abc****                 │ abc                │
-└─────────────────────────┴────────────────────┘
-```
-
-## rightPadUTF8 {#rightpadutf8}
-
-Pads the current string from the right with spaces or a specified string (multiple times, if needed) until the resulting string reaches the given length. Similarly to the MySQL `RPAD` function. While in the [rightPad](#rightpad) function the length is measured in bytes, here in the `rightPadUTF8` function it is measured in code points.
-
-**Syntax**
-
-``` sql
-rightPadUTF8('string','length'[, 'pad_string'])
-```
-
-**Arguments**
-
--   `string` — Input string that needs to be padded. [String](../data-types/string.md).
--   `length` — The length of the resulting string. [UInt](../data-types/int-uint.md). If the value is less than the input string length, then the input string is returned as-is.
--   `pad_string` — The string to pad the input string with. [String](../data-types/string.md). Optional. If not specified, then the input string is padded with spaces.
-
-**Returned value**
-
--   The resulting string of the given length.
-
-Type: [String](../data-types/string.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT rightPadUTF8('абвг', 7, '*'), rightPadUTF8('абвг', 7);
-```
-
-Result:
-
-``` text
-┌─rightPadUTF8('абвг', 7, '*')─┬─rightPadUTF8('абвг', 7)─┐
-│ абвг***                      │ абвг                    │
-└──────────────────────────────┴─────────────────────────┘
-```
 
 ## lower, lcase {#lower}
 
@@ -722,7 +503,7 @@ Replaces literals, sequences of literals and complex aliases with placeholders.
 normalizeQuery(x)
 ```
 
-**Arguments**
+**Arguments** 
 
 -   `x` — Sequence of characters. [String](../../sql-reference/data-types/string.md).
 
@@ -752,13 +533,13 @@ Result:
 
 Returns identical 64bit hash values without the values of literals for similar queries. It helps to analyze query log.
 
-**Syntax**
+**Syntax** 
 
 ``` sql
 normalizedQueryHash(x)
 ```
 
-**Arguments**
+**Arguments** 
 
 -   `x` — Sequence of characters. [String](../../sql-reference/data-types/string.md).
 
@@ -784,163 +565,19 @@ Result:
 └─────┘
 ```
 
-## normalizeUTF8NFC {#normalizeutf8nfc}
-
-Converts a string to [NFC normalized form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms), assuming the string contains a set of bytes that make up a UTF-8 encoded text.
-
-**Syntax**
-
-``` sql
-normalizeUTF8NFC(words)
-```
-
-**Arguments**
-
--   `words` — Input string that contains UTF-8 encoded text. [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
--   String transformed to NFC normalization form.
-
-Type: [String](../../sql-reference/data-types/string.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT length('â'), normalizeUTF8NFC('â') AS nfc, length(nfc) AS nfc_len;
-```
-
-Result:
-
-``` text
-┌─length('â')─┬─nfc─┬─nfc_len─┐
-│           2 │ â   │       2 │
-└─────────────┴─────┴─────────┘
-```
-
-## normalizeUTF8NFD {#normalizeutf8nfd}
-
-Converts a string to [NFD normalized form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms), assuming the string contains a set of bytes that make up a UTF-8 encoded text.
-
-**Syntax**
-
-``` sql
-normalizeUTF8NFD(words)
-```
-
-**Arguments**
-
--   `words` — Input string that contains UTF-8 encoded text. [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
--   String transformed to NFD normalization form.
-
-Type: [String](../../sql-reference/data-types/string.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT length('â'), normalizeUTF8NFD('â') AS nfd, length(nfd) AS nfd_len;
-```
-
-Result:
-
-``` text
-┌─length('â')─┬─nfd─┬─nfd_len─┐
-│           2 │ â   │       3 │
-└─────────────┴─────┴─────────┘
-```
-
-## normalizeUTF8NFKC {#normalizeutf8nfkc}
-
-Converts a string to [NFKC normalized form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms), assuming the string contains a set of bytes that make up a UTF-8 encoded text.
-
-**Syntax**
-
-``` sql
-normalizeUTF8NFKC(words)
-```
-
-**Arguments**
-
--   `words` — Input string that contains UTF-8 encoded text. [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
--   String transformed to NFKC normalization form.
-
-Type: [String](../../sql-reference/data-types/string.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT length('â'), normalizeUTF8NFKC('â') AS nfkc, length(nfkc) AS nfkc_len;
-```
-
-Result:
-
-``` text
-┌─length('â')─┬─nfkc─┬─nfkc_len─┐
-│           2 │ â    │        2 │
-└─────────────┴──────┴──────────┘
-```
-
-## normalizeUTF8NFKD {#normalizeutf8nfkd}
-
-Converts a string to [NFKD normalized form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms), assuming the string contains a set of bytes that make up a UTF-8 encoded text.
-
-**Syntax**
-
-``` sql
-normalizeUTF8NFKD(words)
-```
-
-**Arguments**
-
--   `words` — Input string that contains UTF-8 encoded text. [String](../../sql-reference/data-types/string.md).
-
-**Returned value**
-
--   String transformed to NFKD normalization form.
-
-Type: [String](../../sql-reference/data-types/string.md).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT length('â'), normalizeUTF8NFKD('â') AS nfkd, length(nfkd) AS nfkd_len;
-```
-
-Result:
-
-``` text
-┌─length('â')─┬─nfkd─┬─nfkd_len─┐
-│           2 │ â    │        3 │
-└─────────────┴──────┴──────────┘
-```
-
 ## encodeXMLComponent {#encode-xml-component}
 
 Escapes characters to place string into XML text node or attribute.
 
 The following five XML predefined entities will be replaced: `<`, `&`, `>`, `"`, `'`.
 
-**Syntax**
+**Syntax** 
 
 ``` sql
 encodeXMLComponent(x)
 ```
 
-**Arguments**
+**Arguments** 
 
 -   `x` — The sequence of characters. [String](../../sql-reference/data-types/string.md).
 
@@ -1003,7 +640,7 @@ SELECT decodeXMLComponent('&lt; &#x3A3; &gt;');
 Result:
 
 ``` text
-'foo'
+'foo' 
 < Σ >
 ```
 
@@ -1045,7 +682,7 @@ extractTextFromHTML(x)
 
 **Arguments**
 
--   `x` — input text. [String](../../sql-reference/data-types/string.md).
+-   `x` — input text. [String](../../sql-reference/data-types/string.md). 
 
 **Returned value**
 

@@ -1,5 +1,3 @@
--- Tags: distributed
-
 DROP TABLE IF EXISTS distr0;
 DROP TABLE IF EXISTS distr1;
 DROP TABLE IF EXISTS distr2;

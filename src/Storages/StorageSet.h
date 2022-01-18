@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
@@ -18,12 +18,12 @@ using SetPtr = std::shared_ptr<Set>;
   */
 class StorageSetOrJoinBase : public IStorage
 {
-    friend class SetOrJoinSink;
+    friend class SetOrJoinBlockOutputStream;
 
 public:
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {path}; }

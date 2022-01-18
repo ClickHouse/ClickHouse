@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 
-from env_helper import GITHUB_REPOSITORY
-
+import os
 
 def get_commit(gh, commit_sha):
-    repo = gh.get_repo(GITHUB_REPOSITORY)
+    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
     commit = repo.get_commit(commit_sha)
     return commit
 

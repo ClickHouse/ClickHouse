@@ -5,6 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
+#include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 
@@ -56,9 +57,7 @@ void WriteBufferFromPocoSocket::nextImpl()
         }
         catch (const Poco::TimeoutException &)
         {
-            throw NetException(fmt::format("Timeout exceeded while writing to socket ({}, {} ms)",
-                peer_address.toString(),
-                socket.impl()->getSendTimeout().totalMilliseconds()), ErrorCodes::SOCKET_TIMEOUT);
+            throw NetException("Timeout exceeded while writing to socket (" + peer_address.toString() + ")", ErrorCodes::SOCKET_TIMEOUT);
         }
         catch (const Poco::IOException & e)
         {
@@ -82,7 +81,9 @@ WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_
 
 WriteBufferFromPocoSocket::~WriteBufferFromPocoSocket()
 {
-    finalize();
+    /// FIXME move final flush into the caller
+    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
+    next();
 }
 
 }

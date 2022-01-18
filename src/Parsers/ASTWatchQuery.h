@@ -26,14 +26,13 @@ public:
     bool is_watch_events;
 
     ASTWatchQuery() = default;
-    String getID(char) const override { return "WatchQuery_" + getDatabase() + "_" + getTable(); }
+    String getID(char) const override { return "WatchQuery_" + database + "_" + table; }
 
     ASTPtr clone() const override
     {
         std::shared_ptr<ASTWatchQuery> res = std::make_shared<ASTWatchQuery>(*this);
         res->children.clear();
         cloneOutputOptions(*res);
-        cloneTableOptions(*res);
         return res;
     }
 
@@ -43,7 +42,7 @@ protected:
         std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');
 
         s.ostr << (s.hilite ? hilite_keyword : "") << "WATCH " << (s.hilite ? hilite_none : "")
-            << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
+            << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
 
         if (is_watch_events)
         {

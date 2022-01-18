@@ -92,8 +92,8 @@ ClickHouseサーバーにいくつかのサンプルデータを入れてみま�
 ### テーブルデータのダウンロードと展開 {#download-and-extract-table-data}
 
 ``` bash
-curl https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
-curl https://datasets.clickhouse.com/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
+curl https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
+curl https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
 ```
 
 展開されたファイルのサイズは約10GBです。
@@ -687,4 +687,4 @@ INSERT INTO tutorial.hits_replica SELECT * FROM tutorial.hits_local;
 他のレプリカはデータを同期させ、再びアクティブになると整合性を修復します。
 この方法では、最近挿入されたデータが失われる可能性が低いことに注意してください。
 
-[元の記事](https://clickhouse.com/docs/en/getting_started/tutorial/) <!--hide-->
+[元の記事](https://clickhouse.tech/docs/en/getting_started/tutorial/) <!--hide-->

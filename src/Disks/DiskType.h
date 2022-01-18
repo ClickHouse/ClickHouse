@@ -1,41 +1,34 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 
 namespace DB
 {
 
-enum class DiskType
+struct DiskType
 {
-    Local,
-    RAM,
-    S3,
-    HDFS,
-    Encrypted,
-    WebServer,
-    AzureBlobStorage,
-};
-
-inline String toString(DiskType disk_type)
-{
-    switch (disk_type)
+    enum class Type
     {
-        case DiskType::Local:
-            return "local";
-        case DiskType::RAM:
-            return "memory";
-        case DiskType::S3:
-            return "s3";
-        case DiskType::HDFS:
-            return "hdfs";
-        case DiskType::Encrypted:
-            return "encrypted";
-        case DiskType::WebServer:
-            return "web";
-        case DiskType::AzureBlobStorage:
-            return "azure_blob_storage";
+        Local,
+        RAM,
+        S3,
+        HDFS
+    };
+    static String toString(Type disk_type)
+    {
+        switch (disk_type)
+        {
+            case Type::Local:
+                return "local";
+            case Type::RAM:
+                return "memory";
+            case Type::S3:
+                return "s3";
+            case Type::HDFS:
+                return "hdfs";
+        }
+        __builtin_unreachable();
     }
-    __builtin_unreachable();
-}
+};
 
 }

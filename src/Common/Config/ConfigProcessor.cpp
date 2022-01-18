@@ -1,4 +1,6 @@
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+    #include <Common/config.h>
+#endif
 #include "ConfigProcessor.h"
 #include "YAMLParser.h"
 
@@ -18,8 +20,8 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
-#include <base/getResource.h>
-#include <base/errnoToString.h>
+#include <common/getResource.h>
+#include <common/errnoToString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -41,6 +43,24 @@ namespace ErrorCodes
 /// For cutting preprocessed path to this base
 static std::string main_config_path;
 
+/// Extracts from a string the first encountered number consisting of at least two digits.
+static std::string numberFromHost(const std::string & s)
+{
+    for (size_t i = 0; i < s.size(); ++i)
+    {
+        std::string res;
+        size_t j = i;
+        while (j < s.size() && isNumericASCII(s[j]))
+            res += s[j++];
+        if (res.size() >= 2)
+        {
+            while (res[0] == '0')
+                res.erase(res.begin());
+            return res;
+        }
+    }
+    return "";
+}
 
 bool ConfigProcessor::isPreprocessedFile(const std::string & path)
 {
@@ -210,21 +230,23 @@ void ConfigProcessor::merge(XMLDocumentPtr config, XMLDocumentPtr with)
     Node * config_root = getRootNode(config.get());
     Node * with_root = getRootNode(with.get());
 
-    std::string config_root_node_name = config_root->nodeName();
-    std::string merged_root_node_name = with_root->nodeName();
-
-    /// For compatibility, we treat 'yandex' and 'clickhouse' equivalent.
-    /// See https://clickhouse.com/blog/en/2021/clickhouse-inc/
-
-    if (config_root_node_name != merged_root_node_name
-        && !((config_root_node_name == "yandex" || config_root_node_name == "clickhouse")
-            && (merged_root_node_name == "yandex" || merged_root_node_name == "clickhouse")))
-    {
-        throw Poco::Exception("Root element doesn't have the corresponding root element as the config file."
-            " It must be <" + config_root->nodeName() + ">");
-    }
+    if (config_root->nodeName() != with_root->nodeName())
+        throw Poco::Exception("Root element doesn't have the corresponding root element as the config file. It must be <" + config_root->nodeName() + ">");
 
     mergeRecursive(config, config_root, with_root);
+}
+
+static std::string layerFromHost()
+{
+    struct utsname buf;
+    if (uname(&buf))
+        throw Poco::Exception(std::string("uname failed: ") + errnoToString(errno));
+
+    std::string layer = numberFromHost(buf.nodename);
+    if (layer.empty())
+        throw Poco::Exception(std::string("no layer in host name: ") + buf.nodename);
+
+    return layer;
 }
 
 void ConfigProcessor::doIncludesRecursive(
@@ -257,6 +279,18 @@ void ConfigProcessor::doIncludesRecursive(
     if (node->nodeType() != Node::ELEMENT_NODE)
         return;
 
+    /// Substitute <layer> for the number extracted from the hostname only if there is an
+    /// empty <layer> tag without attributes in the original file.
+    if (node->nodeName() == "layer"
+        && !node->hasAttributes()
+        && !node->hasChildNodes()
+        && node->nodeValue().empty())
+    {
+        NodePtr new_node = config->createTextNode(layerFromHost());
+        node->appendChild(new_node);
+        return;
+    }
+
     std::map<std::string, const Node *> attr_nodes;
     NamedNodeMapPtr attributes = node->attributes();
     size_t substs_count = 0;
@@ -264,19 +298,11 @@ void ConfigProcessor::doIncludesRecursive(
     {
         const auto * subst = attributes->getNamedItem(attr_name);
         attr_nodes[attr_name] = subst;
-        substs_count += static_cast<size_t>(subst != nullptr);
+        substs_count += static_cast<size_t>(subst == nullptr);
     }
 
-    if (substs_count > 1) /// only one substitution is allowed
-        throw Poco::Exception("More than one substitution attribute is set for element <" + node->nodeName() + ">");
-
-    if (node->nodeName() == "include")
-    {
-        if (node->hasChildNodes())
-            throw Poco::Exception("<include> element must have no children");
-        if (substs_count == 0)
-            throw Poco::Exception("No substitution attributes set for element <include>, must have exactly one");
-    }
+    if (substs_count < SUBSTITUTION_ATTRS.size() - 1) /// only one substitution is allowed
+        throw Poco::Exception("several substitutions attributes set for element <" + node->nodeName() + ">");
 
     /// Replace the original contents, not add to it.
     bool replace = attributes->getNamedItem("replace");
@@ -294,57 +320,37 @@ void ConfigProcessor::doIncludesRecursive(
             else if (throw_on_bad_incl)
                 throw Poco::Exception(error_msg + name);
             else
-            {
-                if (node->nodeName() == "include")
-                    node->parentNode()->removeChild(node);
-
                 LOG_WARNING(log, "{}{}", error_msg, name);
-            }
         }
         else
         {
-            /// Replace the whole node not just contents.
-            if (node->nodeName() == "include")
+            Element & element = dynamic_cast<Element &>(*node);
+
+            for (const auto & attr_name : SUBSTITUTION_ATTRS)
+                element.removeAttribute(attr_name);
+
+            if (replace)
             {
-                const NodeListPtr children = node_to_include->childNodes();
-                for (size_t i = 0, size = children->length(); i < size; ++i)
-                {
-                    NodePtr new_node = config->importNode(children->item(i), true);
-                    node->parentNode()->insertBefore(new_node, node);
-                }
+                while (Node * child = node->firstChild())
+                    node->removeChild(child);
 
-                node->parentNode()->removeChild(node);
+                element.removeAttribute("replace");
             }
-            else
+
+            const NodeListPtr children = node_to_include->childNodes();
+            for (size_t i = 0, size = children->length(); i < size; ++i)
             {
-                Element & element = dynamic_cast<Element &>(*node);
-
-                for (const auto & attr_name : SUBSTITUTION_ATTRS)
-                    element.removeAttribute(attr_name);
-
-                if (replace)
-                {
-                    while (Node * child = node->firstChild())
-                        node->removeChild(child);
-
-                    element.removeAttribute("replace");
-                }
-
-                const NodeListPtr children = node_to_include->childNodes();
-                for (size_t i = 0, size = children->length(); i < size; ++i)
-                {
-                    NodePtr new_node = config->importNode(children->item(i), true);
-                    node->appendChild(new_node);
-                }
-
-                const NamedNodeMapPtr from_attrs = node_to_include->attributes();
-                for (size_t i = 0, size = from_attrs->length(); i < size; ++i)
-                {
-                    element.setAttributeNode(dynamic_cast<Attr *>(config->importNode(from_attrs->item(i), true)));
-                }
-
-                included_something = true;
+                NodePtr new_node = config->importNode(children->item(i), true);
+                node->appendChild(new_node);
             }
+
+            const NamedNodeMapPtr from_attrs = node_to_include->attributes();
+            for (size_t i = 0, size = from_attrs->length(); i < size; ++i)
+            {
+                element.setAttributeNode(dynamic_cast<Attr *>(config->importNode(from_attrs->item(i), true)));
+            }
+
+            included_something = true;
         }
     };
 
@@ -352,7 +358,7 @@ void ConfigProcessor::doIncludesRecursive(
     {
         auto get_incl_node = [&](const std::string & name)
         {
-            return include_from ? getRootNode(include_from.get())->getNodeByPath(name) : nullptr;
+            return include_from ? include_from->getNodeByPath("yandex/" + name) : nullptr;
         };
 
         process_include(attr_nodes["incl"], get_incl_node, "Include not found: ");
@@ -543,8 +549,7 @@ XMLDocumentPtr ConfigProcessor::processConfig(
     std::unordered_set<std::string> contributing_zk_paths;
     try
     {
-        Node * node = getRootNode(config.get())->getNodeByPath("include_from");
-
+        Node * node = config->getNodeByPath("yandex/include_from");
         XMLDocumentPtr include_from;
         std::string include_from_path;
         if (node)

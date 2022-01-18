@@ -47,7 +47,7 @@ Parameters:
 ## Format of Zookeeper.xml {#format-of-zookeeper-xml}
 
 ``` xml
-<clickhouse>
+<yandex>
     <logger>
         <level>trace</level>
         <size>100M</size>
@@ -60,21 +60,21 @@ Parameters:
             <port>2181</port>
         </node>
     </zookeeper>
-</clickhouse>
+</yandex>
 ```
 
 ## Configuration of Copying Tasks {#configuration-of-copying-tasks}
 
 ``` xml
-<clickhouse>
+<yandex>
     <!-- Configuration of clusters as in an ordinary server config -->
     <remote_servers>
         <source_cluster>
             <!--
                 source cluster & destination clusters accept exactly the same
                 parameters as parameters for the usual Distributed table
-                see https://clickhouse.com/docs/en/engines/table-engines/special/distributed/
-            -->
+                see https://clickhouse.tech/docs/en/engines/table-engines/special/distributed/
+            --> 
             <shard>
                 <internal_replication>false</internal_replication>
                     <replica>
@@ -179,9 +179,9 @@ Parameters:
         </table_visits>
         ...
     </tables>
-</clickhouse>
+</yandex>
 ```
 
 `clickhouse-copier` tracks the changes in `/task/path/description` and applies them on the fly. For instance, if you change the value of `max_workers`, the number of processes running tasks will also change.
 
-[Original article](https://clickhouse.com/docs/en/operations/utils/clickhouse-copier/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/utils/clickhouse-copier/) <!--hide-->

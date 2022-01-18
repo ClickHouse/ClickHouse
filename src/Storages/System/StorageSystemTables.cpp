@@ -1,4 +1,5 @@
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -9,7 +10,6 @@
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/queryToString.h>
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -17,7 +17,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Disks/IStoragePolicy.h>
 #include <Processors/Sources/SourceWithProgress.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Pipe.h>
 #include <DataTypes/DataTypeUUID.h>
 
 
@@ -47,7 +47,6 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"dependencies_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"create_table_query", std::make_shared<DataTypeString>()},
         {"engine_full", std::make_shared<DataTypeString>()},
-        {"as_select", std::make_shared<DataTypeString>()},
         {"partition_key", std::make_shared<DataTypeString>()},
         {"sorting_key", std::make_shared<DataTypeString>()},
         {"primary_key", std::make_shared<DataTypeString>()},
@@ -58,13 +57,6 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"lifetime_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"lifetime_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"comment", std::make_shared<DataTypeString>()},
-        {"has_own_data", std::make_shared<DataTypeUInt8>()},
-        {"loading_dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"loading_dependencies_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"loading_dependent_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"loading_dependent_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-    }, {
-        {"table", std::make_shared<DataTypeString>(), "name"}
     }));
     setInMemoryMetadata(storage_metadata);
 }
@@ -217,10 +209,45 @@ protected:
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(table.second->getName());
 
-                        /// Fill the rest columns with defaults
-                        while (src_index < columns_mask.size())
-                            if (columns_mask[src_index++])
-                                res_columns[res_index++]->insertDefault();
+                        // partition_key
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // sorting_key
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // primary_key
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // sampling_key
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // storage_policy
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // total_rows
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // total_bytes
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // lifetime_rows
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // lifetime_bytes
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // comment
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
                     }
                 }
 
@@ -328,15 +355,15 @@ protected:
                         res_columns[res_index++]->insert(dependencies_table_name_array);
                 }
 
-                if (columns_mask[src_index] || columns_mask[src_index + 1] || columns_mask[src_index + 2])
+                if (columns_mask[src_index] || columns_mask[src_index + 1])
                 {
                     ASTPtr ast = database->tryGetCreateTableQuery(table_name, context);
-                    auto * ast_create = ast ? ast->as<ASTCreateQuery>() : nullptr;
 
-                    if (ast_create && !context->getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil)
+                    if (ast && !context->getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil)
                     {
-                        ast_create->uuid = UUIDHelpers::Nil;
-                        ast_create->to_inner_uuid = UUIDHelpers::Nil;
+                        auto & create = ast->as<ASTCreateQuery &>();
+                        create.uuid = UUIDHelpers::Nil;
+                        create.to_inner_uuid = UUIDHelpers::Nil;
                     }
 
                     if (columns_mask[src_index++])
@@ -346,28 +373,24 @@ protected:
                     {
                         String engine_full;
 
-                        if (ast_create && ast_create->storage)
+                        if (ast)
                         {
-                            engine_full = queryToString(*ast_create->storage);
+                            const auto & ast_create = ast->as<ASTCreateQuery &>();
+                            if (ast_create.storage)
+                            {
+                                engine_full = queryToString(*ast_create.storage);
 
-                            static const char * const extra_head = " ENGINE = ";
-                            if (startsWith(engine_full, extra_head))
-                                engine_full = engine_full.substr(strlen(extra_head));
+                                static const char * const extra_head = " ENGINE = ";
+                                if (startsWith(engine_full, extra_head))
+                                    engine_full = engine_full.substr(strlen(extra_head));
+                            }
                         }
 
                         res_columns[res_index++]->insert(engine_full);
                     }
-
-                    if (columns_mask[src_index++])
-                    {
-                        String as_select;
-                        if (ast_create && ast_create->select)
-                            as_select = queryToString(*ast_create->select);
-                        res_columns[res_index++]->insert(as_select);
-                    }
                 }
                 else
-                    src_index += 3;
+                    src_index += 2;
 
                 StorageMetadataPtr metadata_snapshot;
                 if (table)
@@ -459,50 +482,6 @@ protected:
                         res_columns[res_index++]->insert(metadata_snapshot->comment);
                     else
                         res_columns[res_index++]->insertDefault();
-                }
-
-                if (columns_mask[src_index++])
-                {
-                    if (table)
-                        res_columns[res_index++]->insert(table->storesDataOnDisk());
-                    else
-                        res_columns[res_index++]->insertDefault();
-                }
-
-                if (columns_mask[src_index] || columns_mask[src_index + 1] || columns_mask[src_index + 2] || columns_mask[src_index + 3])
-                {
-                    DependenciesInfo info = DatabaseCatalog::instance().getLoadingDependenciesInfo({database_name, table_name});
-
-                    Array loading_dependencies_databases;
-                    Array loading_dependencies_tables;
-                    loading_dependencies_databases.reserve(info.dependencies.size());
-                    loading_dependencies_tables.reserve(info.dependencies.size());
-                    for (auto && dependency : info.dependencies)
-                    {
-                        loading_dependencies_databases.push_back(std::move(dependency.database));
-                        loading_dependencies_tables.push_back(std::move(dependency.table));
-                    }
-
-                    Array loading_dependent_databases;
-                    Array loading_dependent_tables;
-                    loading_dependent_databases.reserve(info.dependencies.size());
-                    loading_dependent_tables.reserve(info.dependencies.size());
-                    for (auto && dependent : info.dependent_database_objects)
-                    {
-                        loading_dependent_databases.push_back(std::move(dependent.database));
-                        loading_dependent_tables.push_back(std::move(dependent.table));
-                    }
-
-                    if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(loading_dependencies_databases);
-                    if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(loading_dependencies_tables);
-
-                    if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(loading_dependent_databases);
-                    if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(loading_dependent_tables);
-
                 }
             }
         }

@@ -32,7 +32,7 @@ def test_extra_yaml_mix():
                 'configs/users.d/log_queries.yaml']
 
     node = cluster.add_instance('node', base_config_dir='configs', main_configs=all_confd, user_configs=all_userd, with_zookeeper=False,
-                                users_config_name="users.yaml", copy_common_configs=False, config_root_name="clickhouse")
+    users_config_name="users.yaml", copy_common_configs=False)
 
     try:
         cluster.start()

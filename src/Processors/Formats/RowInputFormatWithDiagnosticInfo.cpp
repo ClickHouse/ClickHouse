@@ -29,15 +29,15 @@ void RowInputFormatWithDiagnosticInfo::updateDiagnosticInfo()
     ++row_num;
 
     bytes_read_at_start_of_buffer_on_prev_row = bytes_read_at_start_of_buffer_on_current_row;
-    bytes_read_at_start_of_buffer_on_current_row = in->count() - in->offset();
+    bytes_read_at_start_of_buffer_on_current_row = in.count() - in.offset();
 
     offset_of_prev_row = offset_of_current_row;
-    offset_of_current_row = in->offset();
+    offset_of_current_row = in.offset();
 }
 
 String RowInputFormatWithDiagnosticInfo::getDiagnosticInfo()
 {
-    if (in->eof())
+    if (in.eof())
         return "Buffer has gone, cannot extract information about what has been parsed.";
 
     WriteBufferFromOwnString out;
@@ -46,7 +46,7 @@ String RowInputFormatWithDiagnosticInfo::getDiagnosticInfo()
     MutableColumns columns = header.cloneEmptyColumns();
 
     /// It is possible to display detailed diagnostics only if the last and next to last rows are still in the read buffer.
-    size_t bytes_read_at_start_of_buffer = in->count() - in->offset();
+    size_t bytes_read_at_start_of_buffer = in.count() - in.offset();
     if (bytes_read_at_start_of_buffer != bytes_read_at_start_of_buffer_on_prev_row)
     {
         out << "Could not print diagnostic info because two last rows aren't in buffer (rare case)\n";
@@ -65,9 +65,9 @@ String RowInputFormatWithDiagnosticInfo::getDiagnosticInfo()
 
     /// Roll back the cursor to the beginning of the previous or current row and parse all over again. But now we derive detailed information.
 
-    if (offset_of_prev_row <= in->buffer().size())
+    if (offset_of_prev_row <= in.buffer().size())
     {
-        in->position() = in->buffer().begin() + offset_of_prev_row;
+        in.position() = in.buffer().begin() + offset_of_prev_row;
 
         out << "\nRow " << (row_num - 1) << ":\n";
         if (!parseRowAndPrintDiagnosticInfo(columns, out))
@@ -75,13 +75,13 @@ String RowInputFormatWithDiagnosticInfo::getDiagnosticInfo()
     }
     else
     {
-        if (in->buffer().size() < offset_of_current_row)
+        if (in.buffer().size() < offset_of_current_row)
         {
             out << "Could not print diagnostic info because parsing of data hasn't started.\n";
             return out.str();
         }
 
-        in->position() = in->buffer().begin() + offset_of_current_row;
+        in.position() = in.buffer().begin() + offset_of_current_row;
     }
 
     out << "\nRow " << row_num << ":\n";
@@ -101,7 +101,7 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
         << "name: " << alignedName(col_name, max_length_of_column_name)
         << "type: " << alignedName(type->getName(), max_length_of_data_type_name);
 
-    auto * prev_position = in->position();
+    auto * prev_position = in.position();
     std::exception_ptr exception;
 
     try
@@ -112,7 +112,7 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
     {
         exception = std::current_exception();
     }
-    auto * curr_position = in->position();
+    auto * curr_position = in.position();
 
     if (curr_position < prev_position)
         throw Exception("Logical error: parsing is non-deterministic.", ErrorCodes::LOGICAL_ERROR);
@@ -123,7 +123,7 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
         if (curr_position == prev_position)
         {
             out << "ERROR: text ";
-            verbosePrintString(prev_position, std::min(prev_position + 10, in->buffer().end()), out);
+            verbosePrintString(prev_position, std::min(prev_position + 10, in.buffer().end()), out);
             out << " is not like " << type->getName() << "\n";
             return false;
         }
@@ -152,7 +152,7 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
         if (isGarbageAfterField(file_column, curr_position))
         {
             out << "ERROR: garbage after " << type->getName() << ": ";
-            verbosePrintString(curr_position, std::min(curr_position + 10, in->buffer().end()), out);
+            verbosePrintString(curr_position, std::min(curr_position + 10, in.buffer().end()), out);
             out << "\n";
 
             if (type->getName() == "DateTime")

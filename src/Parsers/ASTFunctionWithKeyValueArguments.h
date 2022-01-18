@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <base/types.h>
+#include <common/types.h>
 
 namespace DB
 {

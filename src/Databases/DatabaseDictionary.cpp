@@ -3,7 +3,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Storages/StorageDictionary.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -52,7 +52,7 @@ DatabaseDictionary::DatabaseDictionary(const String & name_, ContextPtr context_
 {
 }
 
-Tables DatabaseDictionary::listTables(const FilterByNameFunction & filter_by_name) const
+Tables DatabaseDictionary::listTables(const FilterByNameFunction & filter_by_name)
 {
     Tables tables;
     auto load_results = getContext()->getExternalDictionariesLoader().getLoadResults(filter_by_name);
@@ -77,7 +77,7 @@ StoragePtr DatabaseDictionary::tryGetTable(const String & table_name, ContextPtr
     return createStorageDictionary(getDatabaseName(), load_result, getContext());
 }
 
-DatabaseTablesIteratorPtr DatabaseDictionary::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name) const
+DatabaseTablesIteratorPtr DatabaseDictionary::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name)
 {
     return std::make_unique<DatabaseTablesSnapshotIterator>(listTables(filter_by_table_name), getDatabaseName());
 }
@@ -126,8 +126,6 @@ ASTPtr DatabaseDictionary::getCreateDatabaseQuery() const
     {
         WriteBufferFromString buffer(query);
         buffer << "CREATE DATABASE " << backQuoteIfNeed(getDatabaseName()) << " ENGINE = Dictionary";
-        if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
-            buffer << " COMMENT " << backQuote(comment_value);
     }
     auto settings = getContext()->getSettingsRef();
     ParserCreateQuery parser;

@@ -335,14 +335,14 @@ SELECT * FROM system.metrics LIMIT 10
 メトリック履歴の収集を有効にするには `system.metric_log`,作成 `/etc/clickhouse-server/config.d/metric_log.xml` 次の内容を使って:
 
 ``` xml
-<clickhouse>
+<yandex>
     <metric_log>
         <database>system</database>
         <table>metric_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
     </metric_log>
-</clickhouse>
+</yandex>
 ```
 
 **例**
@@ -1162,4 +1162,4 @@ path:           /clickhouse/tables/01-08/visits/replicas
 
 ストレージポリシーに複数のボリュームが含まれている場合は、各ボリュームの情報がテーブルの個々の行に格納されます。
 
-[元の記事](https://clickhouse.com/docs/en/operations/system_tables/) <!--hide-->
+[元の記事](https://clickhouse.tech/docs/en/operations/system_tables/) <!--hide-->

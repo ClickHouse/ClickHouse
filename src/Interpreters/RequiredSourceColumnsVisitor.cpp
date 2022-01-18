@@ -123,17 +123,6 @@ void RequiredSourceColumnsMatcher::visit(const ASTSelectQuery & select, const AS
             data.addColumnAliasIfAny(*node);
     }
 
-    if (const auto & with = select.with())
-    {
-        for (auto & node : with->children)
-        {
-            if (const auto * identifier = node->as<ASTIdentifier>())
-                data.addColumnIdentifier(*identifier);
-            else
-                data.addColumnAliasIfAny(*node);
-        }
-    }
-
     std::vector<ASTPtr *> out;
     for (const auto & node : select.children)
     {

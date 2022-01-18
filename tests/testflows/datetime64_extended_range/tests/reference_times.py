@@ -3,6 +3,7 @@ from datetime import datetime
 
 from testflows.core import *
 from datetime64_extended_range.common import *
+from datetime64_extended_range.tests.common import select_check_datetime
 from datetime64_extended_range.requirements.requirements import *
 from datetime64_extended_range.tests.common import *
 

@@ -11,14 +11,13 @@ node2 = cluster.add_instance('node2', main_configs=['configs/wide_parts_only.xml
 def start_cluster():
     try:
         cluster.start()
-        create_query = '''CREATE TABLE t(date Date, id UInt32)
-            ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/t', '{}')
-            PARTITION BY toYYYYMM(date)
-            ORDER BY id'''
-        node1.query(create_query.format(1))
-        node1.query("DETACH TABLE t")   # stop being leader
-        node2.query(create_query.format(2))
-        node1.query("ATTACH TABLE t")
+        for i, node in enumerate([node1, node2]):
+            node.query_with_retry(
+                '''CREATE TABLE t(date Date, id UInt32)
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/t', '{}')
+                PARTITION BY toYYYYMM(date)
+                ORDER BY id'''.format(i))
+
         yield cluster
 
     finally:

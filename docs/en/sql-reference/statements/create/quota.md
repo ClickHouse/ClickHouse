@@ -24,7 +24,7 @@ Parameters `queries`, `query_selects`, `query_inserts`, `errors`, `result_rows`,
 
 `ON CLUSTER` clause allows creating quotas on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
 
-**Examples**
+**Examples** 
 
 Limit the maximum number of queries for the current user with 123 queries in 15 months constraint:
 

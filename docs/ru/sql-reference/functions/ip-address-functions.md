@@ -53,7 +53,7 @@ LIMIT 10
 ### IPv6NumToString(x) {#ipv6numtostringx}
 
 Принимает значение типа FixedString(16), содержащее IPv6-адрес в бинарном виде. Возвращает строку, содержащую этот адрес в текстовом виде.
-IPv6-mapped IPv4 адреса выводится в формате ::ffff:111.222.33.44.
+IPv6-mapped IPv4 адреса выводится в формате ::ffff:111.222.33.44. 
 
 Примеры: `INET6_NTOA`.
 
@@ -137,7 +137,7 @@ HEX может быть в любом регистре.
 IPv6StringToNum(string)
 ```
 
-**Аргумент**
+**Аргумент** 
 
 -   `string` — IP адрес. [String](../../sql-reference/data-types/string.md).
 
@@ -281,7 +281,7 @@ toIPv6(string)
 
 **Возвращаемое значение**
 
--   IP адрес.
+-   IP адрес. 
 
 Тип: [IPv6](../../sql-reference/data-types/domains/ipv6.md).
 

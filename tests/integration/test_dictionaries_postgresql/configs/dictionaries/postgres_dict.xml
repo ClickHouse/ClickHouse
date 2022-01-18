@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<clickhouse>
+<yandex>
    <dictionary>
       <name>dict0</name>
       <source>
@@ -19,10 +19,10 @@
       <structure>
          <id>
             <name>id</name>
-            <!--<type>UInt32</type>-->
+            <type>UInt32</type>
          </id>
          <attribute>
-            <name>key</name>
+            <name>id</name>
             <type>UInt32</type>
             <null_value></null_value>
          </attribute>
@@ -65,10 +65,10 @@
       <structure>
          <id>
             <name>id</name>
-            <!--<type>UInt32</type>-->
+            <type>UInt32</type>
          </id>
          <attribute>
-            <name>key</name>
+            <name>id</name>
             <type>UInt32</type>
             <null_value></null_value>
          </attribute>
@@ -80,4 +80,4 @@
       </structure>
       <lifetime>1</lifetime>
   </dictionary>
-</clickhouse>
+</yandex>

@@ -38,7 +38,9 @@ A table for the Graphite data should have the following columns for the followin
 
 -   Value of the metric. Data type: any numeric.
 
--   Version of the metric. Data type: any numeric (ClickHouse saves the rows with the highest version or the last written if versions are the same. Other rows are deleted during the merge of data parts).
+-   Version of the metric. Data type: any numeric.
+
+    ClickHouse saves the rows with the highest version or the last written if versions are the same. Other rows are deleted during the merge of data parts.
 
 The names of these columns should be set in the rollup configuration.
 
@@ -130,7 +132,7 @@ Fields for `pattern` and `default` sections:
 -   `regexp`– A pattern for the metric name.
 -   `age` – The minimum age of the data in seconds.
 -   `precision`– How precisely to define the age of the data in seconds. Should be a divisor for 86400 (seconds in a day).
--   `function` – The name of the aggregating function to apply to data whose age falls within the range `[age, age + precision]`. Accepted functions: min / max / any / avg. The average is calculated imprecisely, like the average of the averages. 
+-   `function` – The name of the aggregating function to apply to data whose age falls within the range `[age, age + precision]`.
 
 ### Configuration Example {#configuration-example}
 
@@ -167,7 +169,4 @@ Fields for `pattern` and `default` sections:
 </graphite_rollup>
 ```
 
-!!! warning "Warning"
-    Data rollup is performed during merges. Usually, for old partitions, merges are not started, so for rollup it is necessary to trigger an unscheduled merge using [optimize](../../../sql-reference/statements/optimize.md). Or use additional tools, for example [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer).
-
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/graphitemergetree/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/graphitemergetree/) <!--hide-->

@@ -7,7 +7,6 @@
 #include <cassert>
 
 #include <Common/Exception.h>
-#include <Common/MemoryTracker.h>
 #include <IO/BufferBase.h>
 
 
@@ -17,7 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_WRITE_AFTER_END_OF_BUFFER;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -60,8 +58,8 @@ public:
         pos = working_buffer.begin();
     }
 
-    /** it is desirable in the derived classes to place the finalize() call in the destructor,
-      * so that the last data is written (if finalize() wasn't called explicitly)
+    /** it is desirable in the derived classes to place the next() call in the destructor,
+      * so that the last data is written
       */
     virtual ~WriteBuffer() = default;
 
@@ -74,9 +72,6 @@ public:
 
     void write(const char * from, size_t n)
     {
-        if (finalized)
-            throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot write to finalized buffer"};
-
         size_t bytes_copied = 0;
 
         /// Produces endless loop
@@ -95,9 +90,6 @@ public:
 
     inline void write(char x)
     {
-        if (finalized)
-            throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot write to finalized buffer"};
-
         nextIfAtEnd();
         *pos = x;
         ++pos;
@@ -108,34 +100,10 @@ public:
         next();
     }
 
-    /// Write the last data.
-    void finalize()
-    {
-        if (finalized)
-            return;
-
-        /// finalize() is often called from destructors.
-        MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-        try
-        {
-            finalizeImpl();
-            finalized = true;
-        }
-        catch (...)
-        {
-            pos = working_buffer.begin();
-            finalized = true;
-            throw;
-        }
-    }
-
-protected:
-    virtual void finalizeImpl()
+    virtual void finalize()
     {
         next();
     }
-
-    bool finalized = false;
 
 private:
     /** Write the data in the buffer (from the beginning of the buffer to the current position).

@@ -9,9 +9,9 @@ toc_title: Date
 
 Дата хранится без учёта часового пояса.
 
-**Пример**
+## Примеры {#examples}
 
-Создание таблицы и добавление в неё данных:
+**1.** Создание таблицы и добавление в неё данных:
 
 ``` sql
 CREATE TABLE dt
@@ -24,6 +24,9 @@ ENGINE = TinyLog;
 
 ``` sql
 INSERT INTO dt Values (1546300800, 1), ('2019-01-01', 2);
+```
+
+``` sql
 SELECT * FROM dt;
 ```
 
@@ -34,7 +37,7 @@ SELECT * FROM dt;
 └────────────┴──────────┘
 ```
 
-**См. также**
+## Смотрите также {#see-also}
 
 -   [Функции для работы с датой и временем](../../sql-reference/functions/date-time-functions.md)
 -   [Операторы для работы с датой и временем](../../sql-reference/operators/index.md#operators-datetime)

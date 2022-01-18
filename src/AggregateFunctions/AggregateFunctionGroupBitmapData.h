@@ -44,7 +44,7 @@ private:
 
     void toLarge()
     {
-        rb = std::make_shared<RoaringBitmap>();
+        rb = std::make_unique<RoaringBitmap>();
         for (const auto & x : small)
             rb->add(static_cast<Value>(x.getValue()));
         small.clear();
@@ -114,7 +114,7 @@ public:
             readVarUInt(size, in);
             std::unique_ptr<char[]> buf(new char[size]);
             in.readStrict(buf.get(), size);
-            rb = std::make_shared<RoaringBitmap>(RoaringBitmap::read(buf.get()));
+            rb = std::make_unique<RoaringBitmap>(RoaringBitmap::read(buf.get()));
         }
     }
 
@@ -141,7 +141,7 @@ public:
      */
     std::shared_ptr<RoaringBitmap> getNewRoaringBitmapFromSmall() const
     {
-        std::shared_ptr<RoaringBitmap> ret = std::make_shared<RoaringBitmap>();
+        std::shared_ptr<RoaringBitmap> ret = std::make_unique<RoaringBitmap>();
         for (const auto & x : small)
             ret->add(static_cast<Value>(x.getValue()));
         return ret;
@@ -575,37 +575,6 @@ public:
                 else
                     break;
             }
-            return count;
-        }
-    }
-
-    UInt64 rb_offset_limit(UInt64 offset, UInt64 limit, RoaringBitmapWithSmallSet & r1) const
-    {
-        if (limit == 0 || offset >= size())
-            return 0;
-
-        if (isSmall())
-        {
-            UInt64 count = 0;
-            UInt64 offset_count = 0;
-            auto it = small.begin();
-            for (;it != small.end() && offset_count < offset; ++it)
-                ++offset_count;
-
-            for (;it != small.end() && count < limit; ++it, ++count)
-                r1.add(it->getValue());
-            return count;
-        }
-        else
-        {
-            UInt64 count = 0;
-            UInt64 offset_count = 0;
-            auto it = rb->begin();
-            for (;it != rb->end() && offset_count < offset; ++it)
-                ++offset_count;
-
-            for (;it != rb->end() && count < limit; ++it, ++count)
-                r1.add(*it);
             return count;
         }
     }

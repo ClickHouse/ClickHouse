@@ -79,8 +79,6 @@ public:
       */
     operator private_bool_type() const { return row == nullptr ? nullptr : &Row::row; }
 
-    enum enum_field_types getFieldType(size_t i);
-
 private:
     MYSQL_ROW row{};
     ResultBase * res{};

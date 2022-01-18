@@ -45,7 +45,6 @@ set (CAPNP_SRCS
     "${CAPNPROTO_SOURCE_DIR}/capnp/serialize-packed.c++"
 
     "${CAPNPROTO_SOURCE_DIR}/capnp/schema.c++"
-    "${CAPNPROTO_SOURCE_DIR}/capnp/stream.capnp.c++"
     "${CAPNPROTO_SOURCE_DIR}/capnp/schema-loader.c++"
     "${CAPNPROTO_SOURCE_DIR}/capnp/dynamic.c++"
     "${CAPNPROTO_SOURCE_DIR}/capnp/stringify.c++"
@@ -64,7 +63,6 @@ set (CAPNPC_SRCS
     "${CAPNPROTO_SOURCE_DIR}/capnp/compiler/lexer.c++"
     "${CAPNPROTO_SOURCE_DIR}/capnp/compiler/grammar.capnp.c++"
     "${CAPNPROTO_SOURCE_DIR}/capnp/compiler/parser.c++"
-    "${CAPNPROTO_SOURCE_DIR}/capnp/compiler/generics.c++"
     "${CAPNPROTO_SOURCE_DIR}/capnp/compiler/node-translator.c++"
     "${CAPNPROTO_SOURCE_DIR}/capnp/compiler/compiler.c++"
     "${CAPNPROTO_SOURCE_DIR}/capnp/schema-parser.c++"

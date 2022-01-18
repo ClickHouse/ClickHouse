@@ -37,8 +37,11 @@ public:
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
-        const ReadSettings & settings,
-        std::optional<size_t> size) const override;
+        size_t buf_size,
+        size_t estimated_size,
+        size_t aio_threshold,
+        size_t mmap_threshold,
+        MMappedFileCache * mmap_cache) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -61,14 +64,12 @@ public:
     void sync(int fd) const;
     String getUniqueId(const String & path) const override { return delegate->getUniqueId(path); }
     bool checkUniqueId(const String & id) const override { return delegate->checkUniqueId(id); }
-    DiskType getType() const override { return delegate->getType(); }
-    bool isRemote() const override { return delegate->isRemote(); }
-    bool supportZeroCopyReplication() const override { return delegate->supportZeroCopyReplication(); }
+    DiskType::Type getType() const override { return delegate->getType(); }
     void onFreeze(const String & path) override;
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override;
     void shutdown() override;
     void startup() override;
-    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
+    void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context) override;
 
 protected:
     Executor & getExecutor() override;

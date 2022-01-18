@@ -23,7 +23,7 @@ position(haystack, needle[, start_pos])
 
 ``` sql
 position(needle IN haystack)
-```
+``` 
 
 Алиас: `locate(haystack, needle[, start_pos])`.
 
@@ -93,7 +93,7 @@ SELECT 1 = position('абв' IN 'абв');
 └───────────────────────────────────┘
 ```
 
-Запрос:
+Запрос: 
 
 ```sql
 SELECT 0 = position('абв' IN '');
@@ -357,7 +357,7 @@ Result:
 
 ## multiFuzzyMatchAny(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\]) {#multifuzzymatchanyhaystack-distance-pattern1-pattern2-patternn}
 
-То же, что и `multiMatchAny`, но возвращает 1 если любой шаблон соответствует haystack в пределах константного [редакционного расстояния](https://en.wikipedia.org/wiki/Edit_distance). Эта функция основана на экспериментальной библиотеке [hyperscan](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching) и может быть медленной для некоторых частных случаев. Производительность зависит от значения редакционного расстояния и используемых шаблонов, но всегда медленнее по сравнению с non-fuzzy вариантами.
+То же, что и `multiMatchAny`, но возвращает 1 если любой pattern соответствует haystack в пределах константного [редакционного расстояния](https://en.wikipedia.org/wiki/Edit_distance). Эта функция также находится в экспериментальном режиме и может быть очень медленной. За подробностями обращайтесь к [документации hyperscan](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching).
 
 ## multiFuzzyMatchAnyIndex(haystack, distance, \[pattern<sub>1</sub>, pattern<sub>2</sub>, …, pattern<sub>n</sub>\]) {#multifuzzymatchanyindexhaystack-distance-pattern1-pattern2-patternn}
 
@@ -383,27 +383,27 @@ Result:
 
 ## extractAllGroupsHorizontal {#extractallgroups-horizontal}
 
-Разбирает строку `haystack` на фрагменты, соответствующие группам регулярного выражения `pattern`. Возвращает массив массивов, где первый массив содержит все фрагменты, соответствующие первой группе регулярного выражения, второй массив - соответствующие второй группе, и т.д.
+Разбирает строку `haystack` на фрагменты, соответствующие группам регулярного выражения `pattern`. Возвращает массив массивов, где первый массив содержит все фрагменты, соответствующие первой группе регулярного выражения, второй массив - соответствующие второй группе, и т.д.  
 
 !!! note "Замечание"
     Функция `extractAllGroupsHorizontal` работает медленнее, чем функция [extractAllGroupsVertical](#extractallgroups-vertical).
 
-**Синтаксис**
+**Синтаксис** 
 
 ``` sql
 extractAllGroupsHorizontal(haystack, pattern)
 ```
 
-**Аргументы**
+**Аргументы** 
 
 -   `haystack` — строка для разбора. Тип: [String](../../sql-reference/data-types/string.md).
--   `pattern` — регулярное выражение, построенное по синтаксическим правилам [re2](https://github.com/google/re2/wiki/Syntax). Выражение должно содержать группы, заключенные в круглые скобки. Если выражение не содержит групп, генерируется исключение. Тип: [String](../../sql-reference/data-types/string.md).
+-   `pattern` — регулярное выражение, построенное по синтаксическим правилам [re2](https://github.com/google/re2/wiki/Syntax). Выражение должно содержать группы, заключенные в круглые скобки. Если выражение не содержит групп, генерируется исключение. Тип: [String](../../sql-reference/data-types/string.md). 
 
 **Возвращаемое значение**
 
 -   Тип: [Array](../../sql-reference/data-types/array.md).
 
-Если в строке `haystack` нет групп, соответствующих регулярному выражению `pattern`, возвращается массив пустых массивов.
+Если в строке `haystack` нет групп, соответствующих регулярному выражению `pattern`, возвращается массив пустых массивов. 
 
 **Пример**
 
@@ -429,13 +429,13 @@ SELECT extractAllGroupsHorizontal('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=(
 
 Разбирает строку `haystack` на фрагменты, соответствующие группам регулярного выражения `pattern`. Возвращает массив массивов, где каждый массив содержит по одному фрагменту, соответствующему каждой группе регулярного выражения. Фрагменты группируются в массивы в соответствии с порядком появления в исходной строке.
 
-**Синтаксис**
+**Синтаксис** 
 
 ``` sql
 extractAllGroupsVertical(haystack, pattern)
 ```
 
-**Аргументы**
+**Аргументы** 
 
 -   `haystack` — строка для разбора. Тип: [String](../../sql-reference/data-types/string.md).
 -   `pattern` — регулярное выражение, построенное по синтаксическим правилам [re2](https://github.com/google/re2/wiki/Syntax). Выражение должно содержать группы, заключенные в круглые скобки. Если выражение не содержит групп, генерируется исключение. Тип: [String](../../sql-reference/data-types/string.md).
@@ -444,7 +444,7 @@ extractAllGroupsVertical(haystack, pattern)
 
 -   Тип: [Array](../../sql-reference/data-types/array.md).
 
-Если в строке `haystack` нет групп, соответствующих регулярному выражению `pattern`, возвращается пустой массив.
+Если в строке `haystack` нет групп, соответствующих регулярному выражению `pattern`, возвращается пустой массив. 
 
 **Пример**
 
@@ -486,7 +486,7 @@ SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[
 
 ## ilike {#ilike}
 
-Нечувствительный к регистру вариант функции [like](https://clickhouse.com/docs/ru/sql-reference/functions/string-search-functions/#function-like). Вы можете использовать оператор `ILIKE` вместо функции `ilike`.
+Нечувствительный к регистру вариант функции [like](https://clickhouse.tech/docs/ru/sql-reference/functions/string-search-functions/#function-like). Вы можете использовать оператор `ILIKE` вместо функции `ilike`.
 
 **Синтаксис**
 
@@ -542,7 +542,7 @@ SELECT * FROM Months WHERE ilike(name, '%j%');
 
 **Смотрите также**
 
--   [like](https://clickhouse.com/docs/ru/sql-reference/functions/string-search-functions/#function-like) <!--hide-->
+-   [like](https://clickhouse.tech/docs/ru/sql-reference/functions/string-search-functions/#function-like) <!--hide-->
 
 ## ngramDistance(haystack, needle) {#ngramdistancehaystack-needle}
 
@@ -558,7 +558,7 @@ SELECT * FROM Months WHERE ilike(name, '%j%');
 
 !!! note "Примечание"
     Для случая UTF-8 мы используем триграммное расстояние. Вычисление n-граммного расстояния не совсем честное. Мы используем 2-х байтные хэши для хэширования n-грамм, а затем вычисляем (не)симметрическую разность между хэш таблицами – могут возникнуть коллизии. В формате UTF-8 без учета регистра мы не используем честную функцию `tolower` – мы обнуляем 5-й бит (нумерация с нуля) каждого байта кодовой точки, а также первый бит нулевого байта, если байтов больше 1 – это работает для латиницы и почти для всех кириллических букв.
-
+	
 ## countMatches(haystack, pattern) {#countmatcheshaystack-pattern}
 
 Возвращает количество совпадений, найденных в строке `haystack`, для регулярного выражения `pattern`.

@@ -124,10 +124,6 @@ class FindResultImpl : public FindResultImplBase, public FindResultImplOffsetBas
     Mapped * value;
 
 public:
-    FindResultImpl()
-        : FindResultImplBase(false), FindResultImplOffsetBase<need_offset>(0)
-    {}
-
     FindResultImpl(Mapped * value_, bool found_, size_t off)
         : FindResultImplBase(found_), FindResultImplOffsetBase<need_offset>(off), value(value_) {}
     Mapped & getMapped() const { return *value; }

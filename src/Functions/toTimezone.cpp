@@ -19,73 +19,20 @@ namespace ErrorCodes
 
 namespace
 {
-class ExecutableFunctionToTimeZone : public IExecutableFunction
-{
-public:
-    explicit ExecutableFunctionToTimeZone() = default;
-
-    String getName() const override { return "toTimezone"; }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
-    {
-        return arguments[0].column;
-    }
-};
-
-class FunctionBaseToTimeZone : public IFunctionBase
-{
-public:
-    FunctionBaseToTimeZone(
-        bool is_constant_timezone_,
-        DataTypes argument_types_,
-        DataTypePtr return_type_)
-        : is_constant_timezone(is_constant_timezone_)
-        , argument_types(std::move(argument_types_))
-        , return_type(std::move(return_type_)) {}
-
-    String getName() const override { return "toTimezone"; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
-    const DataTypes & getArgumentTypes() const override
-    {
-        return argument_types;
-    }
-
-    const DataTypePtr & getResultType() const override
-    {
-        return return_type;
-    }
-
-    ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName & /*arguments*/) const override
-    {
-        return std::make_unique<ExecutableFunctionToTimeZone>();
-    }
-
-    bool hasInformationAboutMonotonicity() const override { return is_constant_timezone; }
-
-    Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const override
-    {
-        const bool b = is_constant_timezone;
-        return { .is_monotonic = b, .is_positive = b, .is_always_monotonic = b };
-    }
-
-private:
-    bool is_constant_timezone;
-    DataTypes argument_types;
-    DataTypePtr return_type;
-};
 
 /// Just changes time zone information for data type. The calculation is free.
-class ToTimeZoneOverloadResolver : public IFunctionOverloadResolver
+class FunctionToTimezone : public IFunction
 {
 public:
     static constexpr auto name = "toTimezone";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionToTimezone>(); }
 
-    String getName() const override { return name; }
+    String getName() const override
+    {
+        return name;
+    }
 
     size_t getNumberOfArguments() const override { return 2; }
-    static FunctionOverloadResolverPtr create(ContextPtr) { return std::make_unique<ToTimeZoneOverloadResolver>(); }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -107,17 +54,9 @@ public:
         return std::make_shared<DataTypeDateTime64>(date_time64->getScale(), time_zone_name);
     }
 
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
-        bool is_constant_timezone = false;
-        if (arguments[1].column)
-            is_constant_timezone = isColumnConst(*arguments[1].column);
-
-        DataTypes data_types(arguments.size());
-        for (size_t i = 0; i < arguments.size(); ++i)
-            data_types[i] = arguments[i].type;
-
-        return std::make_unique<FunctionBaseToTimeZone>(is_constant_timezone, data_types, result_type);
+        return arguments[0].column;
     }
 };
 
@@ -125,7 +64,7 @@ public:
 
 void registerFunctionToTimeZone(FunctionFactory & factory)
 {
-    factory.registerFunction<ToTimeZoneOverloadResolver>();
+    factory.registerFunction<FunctionToTimezone>();
     factory.registerAlias("toTimeZone", "toTimezone");
 }
 

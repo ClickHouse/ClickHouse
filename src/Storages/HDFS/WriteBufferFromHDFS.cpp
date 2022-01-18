@@ -2,6 +2,7 @@
 
 #if USE_HDFS
 
+#include <Interpreters/Context.h>
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <Storages/HDFS/HDFSCommon.h>
 #include <hdfs/hdfs.h>
@@ -29,7 +30,6 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     explicit WriteBufferFromHDFSImpl(
             const std::string & hdfs_uri_,
             const Poco::Util::AbstractConfiguration & config_,
-            int replication_,
             int flags)
         : hdfs_uri(hdfs_uri_)
         , builder(createHDFSBuilder(hdfs_uri, config_))
@@ -44,7 +44,7 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
         if (!hdfsExists(fs.get(), path.c_str()))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "File {} already exists", path);
 
-        fout = hdfsOpenFile(fs.get(), path.c_str(), flags, 0, replication_, 0);     /// O_WRONLY meaning create or overwrite i.e., implies O_TRUNCAT here
+        fout = hdfsOpenFile(fs.get(), path.c_str(), flags, 0, 0, 0);     /// O_WRONLY meaning create or overwrite i.e., implies O_TRUNCAT here
 
         if (fout == nullptr)
         {
@@ -83,11 +83,10 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
 WriteBufferFromHDFS::WriteBufferFromHDFS(
         const std::string & hdfs_name_,
         const Poco::Util::AbstractConfiguration & config_,
-        int replication_,
         size_t buf_size_,
         int flags_)
     : BufferWithOwnMemory<WriteBuffer>(buf_size_)
-    , impl(std::make_unique<WriteBufferFromHDFSImpl>(hdfs_name_, config_, replication_, flags_))
+    , impl(std::make_unique<WriteBufferFromHDFSImpl>(hdfs_name_, config_, flags_))
 {
 }
 
@@ -110,7 +109,7 @@ void WriteBufferFromHDFS::sync()
 }
 
 
-void WriteBufferFromHDFS::finalizeImpl()
+void WriteBufferFromHDFS::finalize()
 {
     try
     {

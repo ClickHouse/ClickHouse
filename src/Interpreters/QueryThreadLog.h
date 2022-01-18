@@ -45,7 +45,7 @@ struct QueryThreadLogElement
 
     ClientInfo client_info;
 
-    std::shared_ptr<ProfileEvents::Counters::Snapshot> profile_counters;
+    std::shared_ptr<ProfileEvents::Counters> profile_counters;
 
     static std::string name() { return "QueryThreadLog"; }
 

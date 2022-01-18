@@ -4,7 +4,7 @@
 #include <Common/Stopwatch.h>
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 
-#include <base/scope_guard.h>
+#include <common/scope_guard.h>
 
 #include <iostream>
 
@@ -26,7 +26,7 @@ try
     auto config = processor.loadConfig().configuration;
     String root_path = argv[2];
 
-    zkutil::ZooKeeper zk(*config, "zookeeper", nullptr);
+    zkutil::ZooKeeper zk(*config, "zookeeper");
 
     String temp_path = root_path + "/temp";
     String blocks_path = root_path + "/block_numbers";

@@ -3,7 +3,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/ResizeProcessor.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Pipe.h>
 
 namespace DB
 {
@@ -11,6 +11,13 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+
+struct ChunksToMerge : public ChunkInfo
+{
+    std::unique_ptr<Chunks> chunks;
+    Int32 bucket_num = -1;
+    bool is_overflows = false;
+};
 
 GroupingAggregatedTransform::GroupingAggregatedTransform(
     const Block & header_, size_t num_inputs_, AggregatingTransformParamsPtr params_)

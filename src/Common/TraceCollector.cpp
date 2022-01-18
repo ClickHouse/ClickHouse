@@ -12,7 +12,7 @@
 #include <Common/PipeFDs.h>
 #include <Common/StackTrace.h>
 #include <Common/setThreadName.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -153,7 +153,7 @@ void TraceCollector::run()
         Array trace;
         trace.reserve(trace_size);
 
-        for (size_t i = 0; i < trace_size; ++i)
+        for (size_t i = 0; i < trace_size; i++)
         {
             uintptr_t addr = 0;
             readPODBinary(addr, in);

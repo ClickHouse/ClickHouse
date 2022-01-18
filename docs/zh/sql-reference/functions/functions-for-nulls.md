@@ -249,4 +249,4 @@
     │ Nullable(UInt8)            │
     └────────────────────────────┘
 
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/functions_for_nulls/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/query_language/functions/functions_for_nulls/) <!--hide-->

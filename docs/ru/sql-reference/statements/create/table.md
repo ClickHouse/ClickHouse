@@ -74,7 +74,7 @@ SELECT x, toTypeName(x) FROM t1;
 
 ## Модификатор NULL или NOT NULL {#null-modifiers}
 
-Модификатор `NULL` или `NOT NULL`, указанный после типа данных в определении столбца, позволяет или не позволяет типу данных быть [Nullable](../../../sql-reference/data-types/nullable.md#data_type-nullable).
+Модификатор `NULL` или `NOT NULL`, указанный после типа данных в определении столбца, позволяет или не позволяет типу данных быть [Nullable](../../../sql-reference/data-types/nullable.md#data_type-nullable). 
 
 Если тип не `Nullable` и указан модификатор `NULL`, то столбец будет иметь тип `Nullable`; если `NOT NULL`, то не `Nullable`. Например, `INT NULL` то же, что и `Nullable(INT)`. Если тип `Nullable` и указаны модификаторы `NULL` или `NOT NULL`, то будет вызвано исключение.
 
@@ -129,11 +129,11 @@ SELECT x, toTypeName(x) FROM t1;
 - в списке столбцов:
 
 ``` sql
-CREATE TABLE db.table_name
-(
-    name1 type1, name2 type2, ...,
+CREATE TABLE db.table_name 
+( 
+    name1 type1, name2 type2, ..., 
     PRIMARY KEY(expr1[, expr2,...])]
-)
+) 
 ENGINE = engine;
 ```
 
@@ -141,9 +141,9 @@ ENGINE = engine;
 
 ``` sql
 CREATE TABLE db.table_name
-(
+( 
     name1 type1, name2 type2, ...
-)
+) 
 ENGINE = engine
 PRIMARY KEY(expr1[, expr2,...]);
 ```
@@ -183,7 +183,7 @@ CREATE TABLE codec_example
     dt Date CODEC(ZSTD),
     ts DateTime CODEC(LZ4HC),
     float_value Float32 CODEC(NONE),
-    double_value Float64 CODEC(LZ4HC(9)),
+    double_value Float64 CODEC(LZ4HC(9))
     value Float32 CODEC(Delta, ZSTD)
 )
 ENGINE = <Engine>
@@ -199,7 +199,9 @@ ENGINE = <Engine>
 ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 ```
 
-Кодеки можно последовательно комбинировать, например, `CODEC(Delta, Default)`.
+Кодеки можно последовательно комбинировать, например, `CODEC(Delta, Default)`. 
+
+Чтобы выбрать наиболее подходящую для вашего проекта комбинацию кодеков, необходимо провести сравнительные тесты, подобные тем, что описаны в статье Altinity [New Encodings to Improve ClickHouse Efficiency](https://www.altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse). Для столбцов типа `ALIAS` кодеки не применяются.
 
 !!! warning "Предупреждение"
     Нельзя распаковать базу данных ClickHouse с помощью сторонних утилит наподобие `lz4`. Необходимо использовать специальную утилиту [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor).
@@ -245,7 +247,6 @@ CREATE TABLE codec_example
 )
 ENGINE = MergeTree()
 ```
-
 ## Временные таблицы {#temporary-tables}
 
 ClickHouse поддерживает временные таблицы со следующими характеристиками:
@@ -351,7 +352,7 @@ SELECT * FROM base.t1;
 
 !!!note "Замечание"
     Комментарий поддерживается для всех движков таблиц, кроме [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) и [EmbeddedRocksDB](../../../engines/table-engines/integrations/embedded-rocksdb.md).
-
+	
 **Синтаксис**
 
 ``` sql
@@ -362,7 +363,7 @@ CREATE TABLE db.table_name
 ENGINE = engine
 COMMENT 'Comment'
 ```
-
+	
 **Пример**
 
 Запрос:

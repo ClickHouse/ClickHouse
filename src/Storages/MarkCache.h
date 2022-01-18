@@ -6,7 +6,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Interpreters/AggregationCommon.h>
-#include <Formats/MarkInCompressedFile.h>
+#include <DataStreams/MarkInCompressedFile.h>
 
 
 namespace ProfileEvents

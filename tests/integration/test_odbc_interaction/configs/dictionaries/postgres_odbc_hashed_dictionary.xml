@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
    <dictionary>
        <name>postgres_odbc_hashed</name>
        <source>
@@ -18,7 +18,7 @@
 
        <structure>
            <id>
-               <name>id</name>
+               <name>column1</name>
            </id>
 
            <attribute>
@@ -35,4 +35,4 @@
 
        </structure>
    </dictionary>
-</clickhouse>
+</yandex>

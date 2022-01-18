@@ -6,7 +6,6 @@ disk_types = {
     "disk_s3": "s3",
     "disk_memory": "memory",
     "disk_hdfs": "hdfs",
-    "disk_encrypted": "encrypted",
 }
 
 

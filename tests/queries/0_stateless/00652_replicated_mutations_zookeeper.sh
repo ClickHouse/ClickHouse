@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: replica, no-replicated-database, no-parallel, no-fasttest
-# Tag no-replicated-database: Old syntax is not allowed
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -44,7 +42,7 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM SYNC REPLICA mutations_r2"
 ${CLICKHOUSE_CLIENT} --query="SELECT d, x, s, m FROM mutations_r2 ORDER BY d, x"
 # Check the contents of the system.mutations table.
 ${CLICKHOUSE_CLIENT} --query="SELECT mutation_id, command, block_numbers.partition_id, block_numbers.number, parts_to_do, is_done \
-    FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' and table = 'mutations_r2' ORDER BY mutation_id"
+    FROM system.mutations WHERE table = 'mutations_r2' ORDER BY mutation_id"
 
 
 ${CLICKHOUSE_CLIENT} --query="SELECT '*** Test mutations cleaner ***'"
@@ -63,7 +61,7 @@ ${CLICKHOUSE_CLIENT} --query="CREATE TABLE mutations_cleaner_r2(x UInt32) ENGINE
     cleanup_delay_period_random_add = 0"
 
 # Insert some data
-${CLICKHOUSE_CLIENT} --query="INSERT INTO mutations_cleaner_r1(x) VALUES (1), (2), (3), (4), (5)"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO mutations_cleaner_r1(x) VALUES (1), (2), (3), (4)"
 
 # Add some mutations and wait for their execution
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations_cleaner_r1 DELETE WHERE x = 1 SETTINGS mutations_sync = 2"
@@ -78,7 +76,7 @@ ${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations_cleaner_r1 DELETE WHERE x = 
 sleep 1.5
 
 # Check that the first mutation is cleaned
-${CLICKHOUSE_CLIENT} --query="SELECT mutation_id, command, is_done FROM system.mutations WHERE database = '$CLICKHOUSE_DATABASE' and table = 'mutations_cleaner_r2' ORDER BY mutation_id"
+${CLICKHOUSE_CLIENT} --query="SELECT mutation_id, command, is_done FROM system.mutations WHERE table = 'mutations_cleaner_r2' ORDER BY mutation_id"
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE mutations_r1"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE mutations_r2"

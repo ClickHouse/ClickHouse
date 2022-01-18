@@ -111,4 +111,4 @@ URL的层级与URLHierarchy中的层级相同。 此函数被用于Yandex.Metric
 接受一个String类型的参数。返回UInt64或UInt32。
 有关更多信息，请参见链接：[xxHash](http://cyan4973.github.io/xxHash/)
 
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/hash_functions/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/query_language/functions/hash_functions/) <!--hide-->

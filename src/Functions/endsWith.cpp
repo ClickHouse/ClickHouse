@@ -12,6 +12,5 @@ void registerFunctionEndsWith(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionEndsWith>();
 }
-
 }
 

@@ -23,7 +23,7 @@ $ sudo apt-get install git cmake python ninja-build
 
 Or cmake3 instead of cmake on older systems.
 
-### Install clang-13 (recommended) {#install-clang-13}
+### Install clang-11 (recommended) {#install-clang-11}
 
 On Ubuntu/Debian you can use the automatic installation script (check [official webpage](https://apt.llvm.org/))
 
@@ -33,11 +33,11 @@ sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 
 For other Linux distribution - check the availability of the [prebuild packages](https://releases.llvm.org/download.html) or build clang [from sources](https://clang.llvm.org/get_started.html).
 
-#### Use clang-13 for Builds
+#### Use clang-11 for Builds
 
 ``` bash
-$ export CC=clang-13
-$ export CXX=clang++-13
+$ export CC=clang-11
+$ export CXX=clang++-11
 ```
 
 Gcc can also be used though it is discouraged.
@@ -74,7 +74,7 @@ The build requires the following components:
 -   Git (is used only to checkout the sources, it’s not needed for the build)
 -   CMake 3.10 or newer
 -   Ninja
--   C++ compiler: clang-13 or newer
+-   C++ compiler: clang-11 or newer
 -   Linker: lld
 -   Python (is only used inside LLVM build and it is optional)
 
@@ -134,10 +134,10 @@ $ ./release
 
 ## Faster builds for development
 
-Normally all tools of the ClickHouse bundle, such as `clickhouse-server`, `clickhouse-client` etc., are linked into a single static executable, `clickhouse`. This executable must be re-linked on every change, which might be slow. One common way to improve build time is to use the 'split' build configuration, which builds a separate binary for every tool, and further splits the code into several shared libraries. To enable this tweak, pass the following flags to `cmake`:
+Normally all tools of the ClickHouse bundle, such as `clickhouse-server`, `clickhouse-client` etc., are linked into a single static executable, `clickhouse`. This executable must be re-linked on every change, which might be slow. Two common ways to improve linking time are to use `lld` linker, and use the 'split' build configuration, which builds a separate binary for every tool, and further splits the code into several shared libraries. To enable these tweaks, pass the following flags to `cmake`:
 
 ```
--DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1
+-DCMAKE_C_FLAGS="--ld-path=lld" -DCMAKE_CXX_FLAGS="--ld-path=lld" -DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1
 ```
 
 ## You Don’t Have to Build ClickHouse {#you-dont-have-to-build-clickhouse}
@@ -155,10 +155,6 @@ Normally ClickHouse is statically linked into a single static `clickhouse` binar
 -DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1
 ```
 
-Note that the split build has several drawbacks:
-* There is no single `clickhouse` binary, and you have to run `clickhouse-server`, `clickhouse-client`, etc.
-* Risk of segfault if you run any of the programs while rebuilding the project.
-* You cannot run the integration tests since they only work a single complete binary.
-* You can't easily copy the binaries elsewhere. Instead of moving a single binary you'll need to copy all binaries and libraries.
+Note that in this configuration there is no single `clickhouse` binary, and you have to run `clickhouse-server`, `clickhouse-client` etc.
 
-[Original article](https://clickhouse.com/docs/en/development/build/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/development/build/) <!--hide-->

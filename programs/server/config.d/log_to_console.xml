@@ -1,7 +1,7 @@
-<clickhouse>
+<yandex>
     <logger>
         <console>true</console>
         <log remove="remove"/>
         <errorlog remove="remove"/>
     </logger>
-</clickhouse>
+</yandex>

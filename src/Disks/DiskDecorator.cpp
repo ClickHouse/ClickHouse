@@ -115,9 +115,9 @@ void DiskDecorator::listFiles(const String & path, std::vector<String> & file_na
 
 std::unique_ptr<ReadBufferFromFileBase>
 DiskDecorator::readFile(
-    const String & path, const ReadSettings & settings, std::optional<size_t> size) const
+    const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold, MMappedFileCache * mmap_cache) const
 {
-    return delegate->readFile(path, settings, size);
+    return delegate->readFile(path, buf_size, estimated_size, aio_threshold, mmap_threshold, mmap_cache);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
@@ -206,9 +206,9 @@ void DiskDecorator::startup()
     delegate->startup();
 }
 
-void DiskDecorator::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map)
+void DiskDecorator::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context)
 {
-    delegate->applyNewSettings(config, context, config_prefix, map);
+    delegate->applyNewSettings(config, context);
 }
 
 }

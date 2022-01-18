@@ -1,4 +1,3 @@
-#include <IO/Operators.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>

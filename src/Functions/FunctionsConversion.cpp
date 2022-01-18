@@ -7,8 +7,6 @@ namespace DB
 
 void registerFunctionFixedString(FunctionFactory & factory);
 
-void registerCastOverloadResolvers(FunctionFactory & factory);
-
 void registerFunctionsConversion(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionToUInt8>();
@@ -34,7 +32,7 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToDate>();
     /// MysQL compatibility alias.
     factory.registerFunction<FunctionToDate>("DATE", FunctionFactory::CaseInsensitive);
-    factory.registerFunction<FunctionToDate32>();
+
     factory.registerFunction<FunctionToDateTime>();
     factory.registerFunction<FunctionToDateTime32>();
     factory.registerFunction<FunctionToDateTime64>();
@@ -45,7 +43,9 @@ void registerFunctionsConversion(FunctionFactory & factory)
 
     factory.registerFunction<FunctionToUnixTimestamp>();
 
-    registerCastOverloadResolvers(factory);
+    factory.registerFunction<CastOverloadResolver<CastType::nonAccurate>>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<CastOverloadResolver<CastType::accurate>>();
+    factory.registerFunction<CastOverloadResolver<CastType::accurateOrNull>>();
 
     factory.registerFunction<FunctionToUInt8OrZero>();
     factory.registerFunction<FunctionToUInt16OrZero>();
@@ -62,7 +62,6 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToFloat32OrZero>();
     factory.registerFunction<FunctionToFloat64OrZero>();
     factory.registerFunction<FunctionToDateOrZero>();
-    factory.registerFunction<FunctionToDate32OrZero>();
     factory.registerFunction<FunctionToDateTimeOrZero>();
     factory.registerFunction<FunctionToDateTime64OrZero>();
 
@@ -88,7 +87,6 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToFloat32OrNull>();
     factory.registerFunction<FunctionToFloat64OrNull>();
     factory.registerFunction<FunctionToDateOrNull>();
-    factory.registerFunction<FunctionToDate32OrNull>();
     factory.registerFunction<FunctionToDateTimeOrNull>();
     factory.registerFunction<FunctionToDateTime64OrNull>();
 
