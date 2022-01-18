@@ -76,3 +76,6 @@ endif()
 if (TARGET ch_contrib::aws_s3)
     set(USE_AWS_S3 1)
 endif()
+if (TARGET ch_contrib::mariadbclient) # ch::mysqlxx
+    set(USE_MYSQL 1)
+endif()

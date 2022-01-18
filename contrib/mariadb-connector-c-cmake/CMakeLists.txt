@@ -1,3 +1,14 @@
+if(OS_LINUX AND TARGET OpenSSL::SSL)
+    option(ENABLE_MYSQL "Enable MySQL" ${ENABLE_LIBRARIES})
+else ()
+    option(ENABLE_MYSQL "Enable MySQL" FALSE)
+endif ()
+
+if(NOT ENABLE_MYSQL)
+    message (STATUS "Build without mysqlclient (support for MYSQL dictionary source will be disabled)")
+    return()
+endif()
+
 if (GLIBC_COMPATIBILITY)
     set(LIBM glibc-compatibility)
 endif()
@@ -235,3 +246,5 @@ target_include_directories(mariadbclient PRIVATE ${CC_BINARY_DIR}/include-privat
 target_include_directories(mariadbclient SYSTEM PUBLIC ${CC_BINARY_DIR}/include-public ${CC_SOURCE_DIR}/include ${CC_SOURCE_DIR}/libmariadb)
 
 set_target_properties(mariadbclient PROPERTIES IMPORTED_INTERFACE_LINK_LIBRARIES "${SYSTEM_LIBS}")
+
+add_library(ch_contrib::mariadbclient ALIAS mariadbclient)

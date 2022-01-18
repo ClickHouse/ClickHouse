@@ -366,10 +366,13 @@ dbms_target_link_libraries (
         Poco::MongoDB
         string_utils
     PUBLIC
-        ${MYSQLXX_LIBRARY}
         boost::system
         clickhouse_common_io
 )
+
+if (TARGET ch::mysqlxx)
+    dbms_target_link_libraries (PUBLIC ch::mysqlxx)
+endif()
 
 dbms_target_link_libraries (
     PUBLIC
