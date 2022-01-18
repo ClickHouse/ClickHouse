@@ -200,7 +200,6 @@ namespace
         {
             String window_id_name;
             String window_id_alias;
-            Aliases * aliases;
         };
 
         static bool needChildVisit(ASTPtr &, const ASTPtr &) { return true; }
