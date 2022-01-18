@@ -1,10 +1,3 @@
-option(ENABLE_XZ "Enable xz/liblzma" ${ENABLE_LIBRARIES})
-
-if (NOT ENABLE_XZ)
-    message(STATUS "Not using xz")
-    return()
-endif()
-
 set (SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/xz")
 
 # Author: Lasse Collin
