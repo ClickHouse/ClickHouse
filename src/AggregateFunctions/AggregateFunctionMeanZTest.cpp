@@ -27,6 +27,7 @@ struct MeanZTestData : public ZTestMoments<Float64>
         Float64 mean_x = getMeanX();
         Float64 mean_y = getMeanY();
 
+        /// z = \frac{\bar{X_{1}} - \bar{X_{2}}}{\sqrt{\frac{\sigma_{1}^{2}}{n_{1}} + \frac{\sigma_{2}^{2}}{n_{2}}}}
         Float64 zstat = (mean_x - mean_y) / getStandardError(pop_var_x, pop_var_y);
         if (!std::isfinite(zstat))
         {

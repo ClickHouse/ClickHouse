@@ -410,11 +410,13 @@ struct ZTestMoments
 
     Float64 getStandardError(Float64 pop_var_x, Float64 pop_var_y) const
     {
+        /// \sqrt{\frac{\sigma_{1}^{2}}{n_{1}} + \frac{\sigma_{2}^{2}}{n_{2}}}
         return std::sqrt(pop_var_x / nx + pop_var_y / ny);
     }
 
     std::pair<Float64, Float64> getConfidenceIntervals(Float64 pop_var_x, Float64 pop_var_y, Float64 confidence_level) const
     {
+        /// (\bar{x_{1}} - \bar{x_{2}}) \pm zscore \times \sqrt{\frac{\sigma_{1}^{2}}{n_{1}} + \frac{\sigma_{2}^{2}}{n_{2}}}
         Float64 mean_x = getMeanX();
         Float64 mean_y = getMeanY();
 
