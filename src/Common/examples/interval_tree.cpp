@@ -20,7 +20,7 @@ int main(int, char **)
         tree.emplace(Int64Interval(0, 5));
         tree.emplace(Int64Interval(10, 15));
 
-        tree.construct();
+        tree.build();
 
         for (const auto & interval : tree)
         {
@@ -33,7 +33,7 @@ int main(int, char **)
         tree.emplace(Int64Interval(0, 5), "value1");
         tree.emplace(Int64Interval(10, 15), "value2");
 
-        tree.construct();
+        tree.build();
 
         for (const auto & [interval, value] : tree)
         {
@@ -48,7 +48,7 @@ int main(int, char **)
             tree.emplace(Int64Interval(0, i));
         }
 
-        tree.construct();
+        tree.build();
 
         for (const auto & interval : tree)
         {
@@ -71,7 +71,7 @@ int main(int, char **)
             tree.emplace(Int64Interval(0, i), "Value " + std::to_string(i));
         }
 
-        tree.construct();
+        tree.build();
 
         for (const auto & [interval, value] : tree)
         {

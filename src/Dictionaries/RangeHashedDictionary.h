@@ -149,7 +149,7 @@ private:
 
     void blockToAttributes(const Block & block);
 
-    void constructAttributeIntervalTrees();
+    void buildAttributeIntervalTrees();
 
     template <typename T>
     void setAttributeValueImpl(Attribute & attribute, KeyType key, const RangeInterval & interval, const Field & value);

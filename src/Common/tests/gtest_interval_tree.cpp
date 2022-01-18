@@ -125,7 +125,7 @@ TEST(IntervalTree, IntervalSetBasic)
             ASSERT_TRUE(set.has(expected_interval.right));
         }
 
-        set.construct();
+        set.build();
 
         ASSERT_TRUE(intervalSetToSet(set) == expected);
 
@@ -179,7 +179,7 @@ TEST(IntervalTree, IntervalSetPoints)
             ASSERT_TRUE(set.has(expected_interval.right));
         }
 
-        set.construct();
+        set.build();
 
         ASSERT_TRUE(intervalSetToSet(set) == expected);
 
@@ -227,7 +227,7 @@ TEST(IntervalTree, IntervalSetIntersectingIntervals)
             ASSERT_TRUE(set.has(expected_interval.right));
         }
 
-        set.construct();
+        set.build();
 
         ASSERT_TRUE(intervalSetToSet(set) == expected);
 
@@ -249,7 +249,7 @@ TEST(IntervalTree, IntervalSetIterators)
         IntervalSet<Int64Interval> set;
         ASSERT_TRUE(set.begin() == set.end());
         ASSERT_TRUE(set.cbegin() == set.cend());
-        set.construct();
+        set.build();
         ASSERT_TRUE(set.begin() == set.end());
         ASSERT_TRUE(set.cbegin() == set.cend());
     }
@@ -344,7 +344,7 @@ TEST(IntervalTree, IntervalMapBasic)
             ASSERT_TRUE(map.has(expected_interval.right));
         }
 
-        map.construct();
+        map.build();
 
         ASSERT_TRUE(intervalMapToMap(map) == expected);
 
@@ -401,7 +401,7 @@ TEST(IntervalTree, IntervalMapPoints)
             ASSERT_TRUE(map.has(expected_interval.right));
         }
 
-        map.construct();
+        map.build();
 
         ASSERT_TRUE(intervalMapToMap(map) == expected);
 
@@ -453,7 +453,7 @@ TEST(IntervalTree, IntervalMapIntersectingIntervals)
             ASSERT_TRUE(map.has(expected_interval.right));
         }
 
-        map.construct();
+        map.build();
 
         ASSERT_TRUE(intervalMapToMap(map) == expected);
 
@@ -476,7 +476,7 @@ TEST(IntervalTree, IntervalMapIterators)
         IntervalMap<Int64Interval, std::string> map;
         ASSERT_TRUE(map.begin() == map.end());
         ASSERT_TRUE(map.cbegin() == map.cend());
-        map.construct();
+        map.build();
         ASSERT_TRUE(map.begin() == map.end());
         ASSERT_TRUE(map.cbegin() == map.cend());
     }
