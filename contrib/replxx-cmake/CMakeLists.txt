@@ -1,9 +1,6 @@
 option (ENABLE_REPLXX "Enable replxx support" ${ENABLE_LIBRARIES})
 
 if (NOT ENABLE_REPLXX)
-    add_library(replxx INTERFACE)
-    target_compile_definitions(replxx INTERFACE USE_REPLXX=0)
-
     message (STATUS "Not using replxx")
     return()
 endif()
@@ -29,7 +26,5 @@ target_include_directories(replxx SYSTEM PUBLIC "${LIBRARY_DIR}/include")
 if (COMPILER_CLANG)
     target_compile_options(replxx PRIVATE -Wno-documentation)
 endif ()
-
-target_compile_definitions(replxx PUBLIC USE_REPLXX=1)
 
 add_library(ch_contrib::replxx ALIAS replxx)
