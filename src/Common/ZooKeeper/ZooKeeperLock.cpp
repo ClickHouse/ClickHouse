@@ -55,9 +55,8 @@ void ZooKeeperLock::unlock()
     }
 
     Coordination::Stat stat;
-    std::string dummy;
     /// NOTE It will throw if session expired after we checked it above
-    bool result = zookeeper->tryGet(lock_path, dummy, &stat);
+    bool result = zookeeper->exists(lock_path, &stat);
 
     if (result && stat.ephemeralOwner == zookeeper->getClientID())
         zookeeper->remove(lock_path, -1);
@@ -70,8 +69,7 @@ void ZooKeeperLock::unlock()
 
 bool ZooKeeperLock::tryLock()
 {
-    std::string dummy;
-    Coordination::Error code = zookeeper->tryCreate(lock_path, lock_message, zkutil::CreateMode::Ephemeral, dummy);
+    Coordination::Error code = zookeeper->tryCreate(lock_path, lock_message, zkutil::CreateMode::Ephemeral);
 
     if (code == Coordination::Error::ZOK)
     {
