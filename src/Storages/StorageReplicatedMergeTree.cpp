@@ -7321,12 +7321,12 @@ std::optional<ZeroCopyLock> StorageReplicatedMergeTree::tryCreateZeroCopyExclusi
     String zc_zookeeper_path = getZeroCopyPartPath(*getSettings(), disk->getType(), getTableSharedID(),
         part->name, zookeeper_path)[0];
 
-    /// Just recursively create ancestors for lock with retries
-    createZeroCopyLockNode(zookeeper, zc_zookeeper_path);
+    /// Just recursively create ancestors for lock
+    zookeeper->createAncestors(zc_zookeeper_path);
+    zookeeper->createIfNotExists(zc_zookeeper_path, "");
 
-    String zookeeper_node = fs::path(zc_zookeeper_path);
     /// Create actual lock
-    ZeroCopyLock lock(zookeeper, zookeeper_node);
+    ZeroCopyLock lock(zookeeper, zc_zookeeper_path);
     if (lock.lock->tryLock())
         return lock;
     else

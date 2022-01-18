@@ -5518,6 +5518,7 @@ bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagge
 
     const auto settings = getSettings();
 
+    bool result = true;
     for (const auto & moving_part : moving_tagger->parts_to_move)
     {
         Stopwatch stopwatch;
@@ -5548,7 +5549,7 @@ bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagge
             /// common for ordinary merge tree. So it's a bad design and should
             /// be fixed.
             auto disk = moving_part.reserved_space->getDisk();
-            if (disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication)
+            if (supportsReplication() && disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication)
             {
                 /// If we acuqired lock than let's try to move. After one
                 /// replica will actually move the part from disk to some
@@ -5563,7 +5564,8 @@ bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagge
                 {
                     /// Move will be retried but with backoff.
                     LOG_DEBUG(log, "Move of part {} postponed, because zero copy mode enabled and someone other moving this part right now", moving_part.part->name);
-                    return false;
+                    result = false;
+                    continue;
                 }
             }
             else /// Ordinary move as it should be
@@ -5582,7 +5584,7 @@ bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagge
             throw;
         }
     }
-    return true;
+    return result;
 }
 
 bool MergeTreeData::partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right)
