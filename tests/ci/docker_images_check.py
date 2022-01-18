@@ -58,7 +58,7 @@ def get_changed_docker_images(
     images_dict = {}
     path_to_images_file = os.path.join(repo_path, image_file_path)
     if os.path.exists(path_to_images_file):
-        with open(path_to_images_file, "r") as dict_file:
+        with open(path_to_images_file, "rb") as dict_file:
             images_dict = json.load(dict_file)
     else:
         logging.info(
@@ -159,10 +159,7 @@ def build_and_push_one_image(
         image.full_path,
     )
     build_log = os.path.join(
-        TEMP_PATH,
-        "build_and_push_log_{}_{}".format(
-            str(image.repo).replace("/", "_"), version_string
-        ),
+        TEMP_PATH, f"build_and_push_log_{image.repo.replace('/', '_')}_{version_string}"
     )
     push_arg = ""
     if push:
@@ -172,7 +169,7 @@ def build_and_push_one_image(
     if child:
         from_tag_arg = f"--build-arg FROM_TAG={version_string} "
 
-    with open(build_log, "w") as bl:
+    with open(build_log, "wb") as bl:
         cmd = (
             "docker buildx build --builder default "
             f"{from_tag_arg}"
@@ -247,7 +244,7 @@ def process_test_results(
             build_url = s3_client.upload_test_report_to_s3(
                 build_log, s3_path_prefix + "/" + os.path.basename(build_log)
             )
-            url_part += '<a href="{}">build_log</a>'.format(build_url)
+            url_part += f'<a href="{build_url}">build_log</a>'
         if url_part:
             test_name = image + " (" + url_part + ")"
         else:
@@ -353,7 +350,7 @@ def main():
     if len(description) >= 140:
         description = description[:136] + "..."
 
-    with open(changed_json, "w") as images_file:
+    with open(changed_json, "w", encoding="utf-8") as images_file:
         json.dump(result_images, images_file)
 
     s3_helper = S3Helper("https://s3.amazonaws.com")
@@ -367,8 +364,8 @@ def main():
 
     url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [], NAME)
 
-    print("::notice ::Report url: {}".format(url))
-    print('::set-output name=url_output::"{}"'.format(url))
+    print(f"::notice ::Report url: {url}")
+    print(f'::set-output name=url_output::"{url}"')
 
     if args.no_reports:
         return
