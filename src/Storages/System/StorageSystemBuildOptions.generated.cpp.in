@@ -33,7 +33,7 @@ const char * auto_config_build[]
     "USE_RDKAFKA", "@USE_RDKAFKA@",
     "USE_CAPNP", "@USE_CAPNP@",
     "USE_BASE64", "@USE_BASE64@",
-    "USE_XXHASH",
+    "USE_XXHASH", "@USE_XXHASH@",
     "USE_HDFS", "@USE_HDFS@",
     "USE_SNAPPY", "@USE_SNAPPY@",
     "USE_PARQUET", "@USE_PARQUET@",
