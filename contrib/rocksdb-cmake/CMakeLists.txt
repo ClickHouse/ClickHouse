@@ -49,9 +49,9 @@ else()
     # but it does not have all the jemalloc files in include/...
     set(WITH_JEMALLOC ON)
   else()
-    if(WITH_JEMALLOC)
+    if(WITH_JEMALLOC AND TARGET ch_contrib::jemalloc)
       add_definitions(-DROCKSDB_JEMALLOC -DJEMALLOC_NO_DEMANGLE)
-      list(APPEND THIRDPARTY_LIBS jemalloc)
+      list(APPEND THIRDPARTY_LIBS ch_contrib::jemalloc)
     endif()
   endif()
 
