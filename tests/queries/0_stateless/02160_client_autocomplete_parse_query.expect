@@ -34,7 +34,8 @@ while {$is_done == 0} {
     }
 }
 set timeout 60
-send -- ""
+# Ctrl-C
+send -- "\3"
 expect ":) "
 
 # Generate UIUD to avoid matching old database/tables/columns from previous test runs.
@@ -54,21 +55,24 @@ send -- "new_${uuid}_data"
 expect "new_${uuid}_data"
 send -- "\t"
 expect "base"
-send -- ""
+# Ctrl-C
+send -- "\3"
 expect ":) "
 
 send -- "new_${uuid}_ta"
 expect "new_${uuid}_ta"
 send -- "\t"
 expect "ble"
-send -- ""
+# Ctrl-C
+send -- "\3"
 expect ":) "
 
 send -- "new_${uuid}_col"
 expect "new_${uuid}_col"
 send -- "\t"
 expect "umn"
-send -- ""
+# Ctrl-C
+send -- "\3"
 expect ":) "
 
 # Cleanup
@@ -77,5 +81,6 @@ expect ":) "
 send -- "drop table new_${uuid}_table\r"
 expect ":) "
 
-send -- ""
+# Ctrl-D
+send -- "\4"
 expect eof
