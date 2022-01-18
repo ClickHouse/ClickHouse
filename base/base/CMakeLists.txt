@@ -40,10 +40,6 @@ else ()
     target_compile_definitions(common PUBLIC WITH_COVERAGE=0)
 endif ()
 
-if (USE_INTERNAL_CCTZ)
-    set_source_files_properties(DateLUTImpl.cpp PROPERTIES COMPILE_DEFINITIONS USE_INTERNAL_CCTZ)
-endif()
-
 target_include_directories(common PUBLIC .. "${CMAKE_CURRENT_BINARY_DIR}/..")
 
 if (OS_DARWIN AND NOT MAKE_STATIC_LIBRARIES)
@@ -60,7 +56,7 @@ target_link_libraries (common
         Poco::Util
         Poco::Foundation
         replxx
-        cctz
+        ch_contrib::cctz
         fmt
         magic_enum
 )
