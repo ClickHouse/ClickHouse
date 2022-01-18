@@ -33,6 +33,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/parseQuery.h>
@@ -44,6 +45,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
@@ -55,6 +57,7 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Functions/IFunction.h>
 
+#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
