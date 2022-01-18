@@ -17,26 +17,18 @@
 
 namespace orc
 {
-class Reader;
+class Statistics;
+class ColumnStatistics;
 }
 
-namespace parquet
+namespace parquet::arrow
 {
-class ParquetFileReader;
-namespace arrow
-{
-    class FileReader;
-}
+class FileReader;
 }
 
-namespace arrow
+namespace arrow::adapters::orc
 {
-namespace io
-{
-    class RandomAccessFile;
-}
-
-class Buffer;
+class ORCFileReader;
 }
 
 namespace DB
@@ -46,6 +38,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+class ReadBufferFromHDFS;
 class IHiveFile : public WithContext
 {
 public:
@@ -230,7 +223,8 @@ protected:
     virtual void prepareReader();
     virtual void prepareColumnMapping();
 
-    std::shared_ptr<orc::Reader> reader;
+    std::unique_ptr<ReadBufferFromHDFS> in;
+    std::unique_ptr<arrow::adapters::orc::ORCFileReader> reader;
     std::map<String, size_t> orc_column_positions;
 };
 
@@ -259,8 +253,8 @@ public:
 protected:
     virtual void prepareReader();
 
-    std::shared_ptr<arrow::fs::FileSystem> fs;
-    std::shared_ptr<parquet::ParquetFileReader> reader;
+    std::unique_ptr<ReadBufferFromHDFS> in;
+    std::unique_ptr<parquet::arrow::FileReader> reader;
     std::map<String, size_t> parquet_column_positions;
 };
 }
