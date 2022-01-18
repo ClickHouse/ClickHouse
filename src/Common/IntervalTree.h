@@ -9,6 +9,9 @@
 namespace DB
 {
 
+/** Structure that holds closed interval with left and right.
+  * Example: [1, 1] is valid interval, that contain point 1.
+  */
 template <typename TIntervalStorageType>
 struct Interval
 {
@@ -61,6 +64,56 @@ struct IntervalTreeVoidValue
 {
 };
 
+/** Tree structure that allow to efficiently retrieve all intervals that intersect specific point.
+  * https://en.wikipedia.org/wiki/Interval_tree
+  *
+  * Search for all intervals intersecting point has complexity O(log(n) + k), k is count of intervals that intersect point.
+  * If we need to only check if there are some interval intersecting point such operation has complexity O(log(n)).
+  *
+  * Explanation:
+  *
+  * IntervalTree structure is balanced tree. Each node contains:
+  * 1. Point
+  * 2. Intervals sorted by left ascending that intersect that point.
+  * 3. Intervals sorted by right descending that intersect that point.
+  *
+  * Build:
+  *
+  * To keep tree relatively balanced we can use median of all segment points.
+  * On each step build tree node with intervals. For root node input intervals are all intervals.
+  * First split intervals in 4 groups.
+  * 1. Intervals that lie that are less than median point. Interval right is less than median point.
+  * 2. Intervals that lie that are greater than median point. Interval right is less than median point.
+  * 3. Intervals that intersect node sorted by left ascending.
+  * 4. Intervals that intersect node sorted by right ascending.
+  *
+  * If intervals in 1 group are not empty. Continue build left child recursively with intervals from 1 group.
+  * If intervals in 2 group are not empty. Continue build right child recursively with intervals from 2 group.
+  *
+  * Search:
+  *
+  * Search for intervals intersecting point is started from root node.
+  * If search point is less than point in node, then we check intervals sorted by left ascending
+  * until left is greater than search point.
+  * If there is left child, continue search recursively in left child.
+  *
+  * If search point is greater than point in node, then we check intervals sorted by right descending
+  * until right is less than search point.
+  * If there is right child, continue search recursively in right child.
+  *
+  * If search point is equal to point in node, then we can emit all intervals that intersect current tree node
+  * and stop searching.
+  *
+  * Additional details:
+  * 1. To improve cache locality tree is stored implicitly in array, after build method is called
+  * other intervals cannot be added to the tree.
+  * 2. Additionaly to improve cache locality in tree node we store sorted intervals for all nodes in separate
+  * array. In node we store only start of its sorted intervals, and also size of intersecting intervals.
+  * If we need to retrieve intervals sorted by left ascending they will be stored in indexes
+  * [sorted_intervals_start_index, sorted_intervals_start_index + intersecting_intervals_size).
+  * If we need to retrieve intervals sorted by right descending they will be store in indexes
+  * [sorted_intervals_start_index + intersecting_intervals_size, sorted_intervals_start_index + intersecting_intervals_size * 2).
+  */
 template <typename Interval, typename Value>
 class IntervalTree
 {
@@ -74,7 +127,7 @@ public:
     template <typename TValue = Value, std::enable_if_t<std::is_same_v<TValue, IntervalTreeVoidValue>, bool> = true>
     void emplace(Interval interval)
     {
-        assert(!tree_constructed);
+        assert(!tree_is_build);
         sorted_intervals.emplace_back(interval);
         increaseIntervalsSize();
     }
@@ -82,7 +135,7 @@ public:
     template <typename TValue = Value, std::enable_if_t<!std::is_same_v<TValue, IntervalTreeVoidValue>, bool> = true, typename... Args>
     void emplace(Interval interval, Args &&... args)
     {
-        assert(!tree_constructed);
+        assert(!tree_is_build);
         sorted_intervals.emplace_back(
             std::piecewise_construct, std::forward_as_tuple(interval), std::forward_as_tuple(std::forward<Args>(args)...));
         increaseIntervalsSize();
@@ -91,7 +144,7 @@ public:
     template <typename TValue = Value, std::enable_if_t<std::is_same_v<TValue, IntervalTreeVoidValue>, bool> = true>
     void insert(Interval interval)
     {
-        assert(!tree_constructed);
+        assert(!tree_is_build);
         sorted_intervals.emplace_back(interval);
         increaseIntervalsSize();
     }
@@ -99,7 +152,7 @@ public:
     template <typename TValue = Value, std::enable_if_t<!std::is_same_v<TValue, IntervalTreeVoidValue>, bool> = true>
     void insert(Interval interval, const Value & value)
     {
-        assert(!tree_constructed);
+        assert(!tree_is_build);
         sorted_intervals.emplace_back(std::piecewise_construct, interval, value);
         increaseIntervalsSize();
     }
@@ -107,24 +160,52 @@ public:
     template <typename TValue = Value, std::enable_if_t<!std::is_same_v<TValue, IntervalTreeVoidValue>, bool> = true>
     void insert(Interval interval, Value && value)
     {
-        assert(!tree_constructed);
+        assert(!tree_is_build);
         sorted_intervals.emplace_back(std::piecewise_construct, interval, std::move(value));
         increaseIntervalsSize();
     }
 
-    void construct()
+    /// Build tree, after that intervals cannot be inserted, and only search or iteration can be performed.
+    void build()
     {
-        assert(!tree_constructed);
+        assert(!tree_is_build);
         nodes.clear();
         nodes.reserve(sorted_intervals.size());
         buildTree();
-        tree_constructed = true;
+        tree_is_build = true;
     }
+
+    /** Find all intervals intersecting point.
+      *
+      * Callback interface for IntervalSet:
+      *
+      * template <typename IntervalType>
+      * struct IntervalSetCallback
+      * {
+      *     bool operator()(const IntervalType & interval)
+      *     {
+      *         bool should_continue_interval_iteration = false;
+      *         return should_continue_interval_iteration;
+      *     }
+      * };
+      *
+      * Callback interface for IntervalMap:
+      *
+      * template <typename IntervalType, typename Value>
+      * struct IntervalMapCallback
+      * {
+      *     bool operator()(const IntervalType & interval, const Value & value)
+      *     {
+      *         bool should_continue_interval_iteration = false;
+      *         return should_continue_interval_iteration;
+      *     }
+      * };
+      */
 
     template <typename IntervalCallback>
     void find(IntervalStorageType point, IntervalCallback && callback) const
     {
-        if (unlikely(!tree_constructed))
+        if (unlikely(!tree_is_build))
         {
             findIntervalsNonConstructedImpl(point, callback);
             return;
@@ -133,6 +214,7 @@ public:
         findIntervalsImpl(point, callback);
     }
 
+    /// Check if there is an interval intersecting point
     bool has(IntervalStorageType point) const
     {
         bool has_intervals = false;
@@ -395,8 +477,11 @@ private:
 
             size_t sorted_intervals_range_start_index = sorted_intervals.size();
 
-            sorted_intervals.insert(sorted_intervals.end(), intervals_sorted_by_left_asc.begin(), intervals_sorted_by_left_asc.end());
-            sorted_intervals.insert(sorted_intervals.end(), intervals_sorted_by_right_desc.begin(), intervals_sorted_by_right_desc.end());
+            for (auto && interval_sorted_by_left_asc : intervals_sorted_by_left_asc)
+                sorted_intervals.emplace_back(std::move(interval_sorted_by_left_asc));
+
+            for (auto && interval_sorted_by_right_desc : intervals_sorted_by_right_desc)
+                sorted_intervals.emplace_back(std::move(interval_sorted_by_right_desc));
 
             auto & node = nodes[current_index];
             node.middle_element = median;
@@ -471,6 +556,7 @@ private:
                 }
                 else
                 {
+                    /// This is case when point == middle_element.
                     break;
                 }
             }
@@ -524,6 +610,7 @@ private:
 
     inline void increaseIntervalsSize()
     {
+        /// Before tree is build we store all intervals size in our first node to allow tree iteration.
         ++intervals_size;
         nodes[0].sorted_intervals_range_size = intervals_size;
     }
@@ -531,7 +618,7 @@ private:
     std::vector<Node> nodes;
     std::vector<IntervalWithValue> sorted_intervals;
     size_t intervals_size = 0;
-    bool tree_constructed = false;
+    bool tree_is_build = false;
 
     static inline const Interval & getInterval(const IntervalWithValue & interval_with_value)
     {

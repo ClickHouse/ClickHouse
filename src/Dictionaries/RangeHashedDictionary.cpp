@@ -307,7 +307,7 @@ void RangeHashedDictionary<dictionary_key_type>::loadData()
         updateData();
     }
 
-    constructAttributeIntervalTrees();
+    buildAttributeIntervalTrees();
 
     if (require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
@@ -546,7 +546,7 @@ void RangeHashedDictionary<dictionary_key_type>::blockToAttributes(const Block &
 }
 
 template <DictionaryKeyType dictionary_key_type>
-void RangeHashedDictionary<dictionary_key_type>::constructAttributeIntervalTrees()
+void RangeHashedDictionary<dictionary_key_type>::buildAttributeIntervalTrees()
 {
     for (auto & attribute : attributes)
     {
@@ -558,7 +558,7 @@ void RangeHashedDictionary<dictionary_key_type>::constructAttributeIntervalTrees
 
             auto & collection = std::get<CollectionType<ValueType>>(attribute.maps);
             for (auto & [_, ranges] : collection)
-                ranges.construct();
+                ranges.build();
         };
 
         callOnDictionaryAttributeType(attribute.type, type_call);
