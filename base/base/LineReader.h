@@ -1,10 +1,11 @@
 #pragma once
 
-#include <base/types.h>
-
+#include <mutex>
 #include <atomic>
 #include <vector>
 #include <optional>
+
+#include <base/types.h>
 
 class LineReader
 {
@@ -12,15 +13,16 @@ public:
     struct Suggest
     {
         using Words = std::vector<std::string>;
-        using WordsRange = std::pair<Words::const_iterator, Words::const_iterator>;
 
+        /// Get vector for the matched range of words if any.
+        Words getCompletions(const String & prefix, size_t prefix_length);
+        void addWords(Words && new_words);
+
+    private:
         Words words;
         Words words_no_case;
-        std::atomic<bool> ready{false};
 
-        /// Get iterators for the matched range of words if any.
-        std::optional<WordsRange> getCompletions(const String & prefix, size_t prefix_length) const;
-        void addWords(const std::vector<std::string> & new_words);
+        std::mutex mutex;
     };
 
     using Patterns = std::vector<const char *>;
