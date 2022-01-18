@@ -370,7 +370,7 @@ void FlatDictionary::loadData()
         updateData();
 
     if (configuration.require_nonempty && 0 == element_count)
-        throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY, "{}: dictionary source is empty and 'require_nonempty' property is set.", full_name);
+        throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY, "{}: dictionary source is empty and 'require_nonempty' property is set.", getFullName());
 }
 
 void FlatDictionary::calculateBytesAllocated()
@@ -478,7 +478,7 @@ void FlatDictionary::resize(Attribute & attribute, UInt64 key)
     if (key >= configuration.max_array_size)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
             "{}: identifier should be less than {}",
-            full_name,
+            getFullName(),
             toString(configuration.max_array_size));
 
     auto & container = std::get<ContainerType<T>>(attribute.container);
