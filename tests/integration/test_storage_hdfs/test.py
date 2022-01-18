@@ -361,6 +361,10 @@ def test_hdfsCluster(started_cluster):
     assert actual == expected
     fs.delete(dir, recursive=True)
 
+def testHdfsDirectoryNotExist(started_cluster):
+    ddl ="create table HDFSStorageWithNotExistDir (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/dir1/empty', 'TSV')";
+    node1.query(ddl)
+    assert "Cannot list directory" in node1.query_and_get_error("select * from HDFSStorageWithNotExistDir")
 
 if __name__ == '__main__':
     cluster.start()
