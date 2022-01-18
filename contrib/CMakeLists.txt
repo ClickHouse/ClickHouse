@@ -84,13 +84,13 @@ add_contrib (thrift-cmake thrift)
 # parquet/arrow/orc
 add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion
 add_contrib (avro-cmake avro) # requires: snappy
-add_contrib (hive-metastore-cmake hive-metastore) # requires: thrift/avro/arrow
+add_contrib (protobuf-cmake protobuf)
+add_contrib (libhdfs3-cmake libhdfs3) # requires: protobuf
+add_contrib (hive-metastore-cmake hive-metastore) # requires: thrift/avro/arrow/libhdfs3
 add_contrib (librdkafka-cmake librdkafka)
 add_contrib (cppkafka-cmake cppkafka)
 add_contrib (openldap-cmake openldap)
 add_contrib (grpc-cmake grpc)
-add_contrib (protobuf-cmake protobuf)
-add_contrib (libhdfs3-cmake libhdfs3) # requires: protobuf
 add_contrib (msgpack-c-cmake msgpack-c)
 
 if (ENABLE_FUZZING)

@@ -1,4 +1,8 @@
-option(ENABLE_HIVE "Enable Hive" ${ENABLE_LIBRARIES})
+if (TARGET ch_contrib::hdfs)
+    option(ENABLE_HIVE "Enable Hive" ${ENABLE_LIBRARIES})
+elseif(ENABLE_HIVE)
+    message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use Hive without HDFS")
+endif()
 
 if (NOT ENABLE_HIVE)
     message("Hive disabled")
