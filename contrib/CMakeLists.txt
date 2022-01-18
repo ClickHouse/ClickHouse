@@ -110,18 +110,9 @@ if (USE_EMBEDDED_COMPILER)
     add_llvm()
 endif ()
 
-add_subdirectory(libgsasl-cmake)
-add_subdirectory(libxml2-cmake)
-
-if (USE_INTERNAL_AWS_S3_LIBRARY)
-    add_subdirectory(aws-s3-cmake)
-
-    # The library is large - avoid bloat.
-    target_compile_options (aws_s3 PRIVATE -g0)
-    target_compile_options (aws_s3_checksums PRIVATE -g0)
-
-endif ()
-
+add_subdirectory (libgsasl-cmake)
+add_subdirectory (libxml2-cmake)
+add_subdirectory (aws-s3-cmake)
 add_subdirectory (base64-cmake)
 add_subdirectory (simdjson-cmake)
 add_subdirectory (rapidjson-cmake)
