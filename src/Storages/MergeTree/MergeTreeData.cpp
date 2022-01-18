@@ -1116,14 +1116,15 @@ void MergeTreeData::loadDataPartsFromDisk(
     if (suspicious_broken_parts > settings->max_suspicious_broken_parts && !skip_sanity_checks)
         throw Exception(ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS,
             "Suspiciously many ({} parts {} in total) broken parts to remove while maximum allowed broken parts count is {}. You can change the maximum value "
-            "with merge tree setting 'max_suspicious_broken_parts' in <merge_tree> configuration section or in table settings in .sql file",
+                        "with merge tree setting 'max_suspicious_broken_parts' in <merge_tree> configuration section or in table settings in .sql file "
+                        "(don't forget to return setting back to default value)",
             suspicious_broken_parts, formatReadableSizeWithBinarySuffix(suspicious_broken_parts_bytes), settings->max_suspicious_broken_parts);
 
     if (suspicious_broken_parts_bytes > settings->max_suspicious_broken_parts_bytes && !skip_sanity_checks)
         throw Exception(ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS,
             "Suspiciously big size ({} parts {} in total) of all broken parts to remove while maximum allowed broken parts size is {}. "
             "You can change the maximum value with merge tree setting 'max_suspicious_broken_parts_bytes' in <merge_tree> configuration "
-            "section or in table settings in .sql file",
+            "section or in table settings in .sql file (don't forget to return setting back to default value)",
             suspicious_broken_parts, formatReadableSizeWithBinarySuffix(suspicious_broken_parts_bytes),
             formatReadableSizeWithBinarySuffix(settings->max_suspicious_broken_parts_bytes));
 }
