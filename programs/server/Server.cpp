@@ -22,7 +22,7 @@
 #include <base/getMemoryAmount.h>
 #include <base/errnoToString.h>
 #include <base/coverage.h>
-#include "Common/MemoryTracker.h"
+#include <Common/MemoryTracker.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
 #include <Common/CurrentMetrics.h>

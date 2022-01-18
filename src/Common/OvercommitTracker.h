@@ -3,12 +3,14 @@
 #include <base/logger_useful.h>
 #include <base/types.h>
 #include <boost/core/noncopyable.hpp>
+#include <Poco/Logger.h>
 #include <cassert>
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
 #include <unordered_map>
 
+// This struct is used for the comparison of query memory usage.
 struct OvercommitRatio
 {
     OvercommitRatio(Int64 committed_, Int64 soft_limit_)
@@ -16,7 +18,7 @@ struct OvercommitRatio
         , soft_limit(soft_limit_)
     {}
 
-    friend bool operator<(OvercommitRatio const& lhs, OvercommitRatio const& rhs) noexcept
+    friend bool operator<(OvercommitRatio const & lhs, OvercommitRatio const & rhs) noexcept
     {
         // (a / b < c / d) <=> (a * d < c * b)
         return (lhs.committed * rhs.soft_limit) < (rhs.committed * lhs.soft_limit)
@@ -24,12 +26,21 @@ struct OvercommitRatio
             || (lhs.committed == 0 && rhs.committed == 0 && lhs.soft_limit > rhs.soft_limit);
     }
 
+    // actual query memory usage
     Int64 committed;
+    // guaranteed amount of memory query can use
     Int64 soft_limit;
 };
 
 class MemoryTracker;
 
+// Usually it's hard to set some reasonable hard memory limit
+// (especially, the default value). This class introduces new
+// mechanisim for the limiting of memory usage.
+// Soft limit represents guaranteed amount of memory query/user
+// may use. It's allowed to exceed this limit. But if hard limit
+// is reached, query with the biggest overcommit ratio
+// is killed to free memory.
 struct OvercommitTracker : boost::noncopyable
 {
     OvercommitTracker();
@@ -63,6 +74,8 @@ protected:
     MemoryTracker * picked_tracker;
     QueryCancelationState cancelation_state;
 
+    virtual Poco::Logger * getLogger() = 0;
+
 private:
 
     void pickQueryToExclude()
@@ -92,6 +105,7 @@ struct UserOvercommitTracker : OvercommitTracker
 protected:
     void pickQueryToExcludeImpl() override final;
 
+    Poco::Logger * getLogger() override final { return logger; }
 private:
     DB::ProcessListForUser * user_process_list;
     Poco::Logger * logger = &Poco::Logger::get("UserOvercommitTracker");
@@ -108,11 +122,16 @@ struct GlobalOvercommitTracker : OvercommitTracker
 protected:
     void pickQueryToExcludeImpl() override final;
 
+    Poco::Logger * getLogger() override final { return logger; }
 private:
     DB::ProcessList * process_list;
     Poco::Logger * logger = &Poco::Logger::get("GlobalOvercommitTracker");
 };
 
+// UserOvercommitTracker requires to check the whole list of user's queries
+// to pick one to stop. BlockQueryIfMemoryLimit struct allows to wait until
+// query selection is finished. It's used in ProcessList to make user query
+// list immutable when UserOvercommitTracker reads it.
 struct BlockQueryIfMemoryLimit
 {
     BlockQueryIfMemoryLimit(OvercommitTracker const & overcommit_tracker)

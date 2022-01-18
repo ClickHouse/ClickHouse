@@ -14,7 +14,7 @@ OvercommitTracker::OvercommitTracker()
 
 void OvercommitTracker::setMaxWaitTime(UInt64 wait_time)
 {
-    std::unique_lock<std::mutex> lk(overcommit_m);
+    std::lock_guard guard(overcommit_m);
     max_wait_time = wait_time * 1us;
 }
 
@@ -25,6 +25,8 @@ bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker)
     pickQueryToExclude();
     assert(cancelation_state == QueryCancelationState::RUNNING);
 
+    // If no query was chosen we need to stop current query.
+    // This may happen if no soft limit is set.
     if (picked_tracker == nullptr)
     {
         cancelation_state = QueryCancelationState::NONE;
@@ -32,7 +34,7 @@ bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker)
     }
     if (picked_tracker == tracker)
         return true;
-    return cv.wait_for(lk, max_wait_time, [this]()
+    return !cv.wait_for(lk, max_wait_time, [this]()
     {
         return cancelation_state == QueryCancelationState::NONE;
     });
@@ -43,7 +45,7 @@ void OvercommitTracker::unsubscribe(MemoryTracker * tracker)
     std::unique_lock<std::mutex> lk(overcommit_m);
     if (picked_tracker == tracker)
     {
-        LOG_DEBUG(&Poco::Logger::get("OvercommitTracker"), "Picked query stopped");
+        LOG_DEBUG(getLogger(), "Picked query stopped");
 
         picked_tracker = nullptr;
         cancelation_state = QueryCancelationState::NONE;
@@ -57,9 +59,10 @@ UserOvercommitTracker::UserOvercommitTracker(DB::ProcessListForUser * user_proce
 
 void UserOvercommitTracker::pickQueryToExcludeImpl()
 {
-    MemoryTracker * current_tracker = nullptr;
+    MemoryTracker * query_tracker = nullptr;
     OvercommitRatio current_ratio{0, 0};
-    // At this moment query list must be read only
+    // At this moment query list must be read only.
+    // BlockQueryIfMemoryLimit is used in ProcessList to guarantee this.
     auto & queries = user_process_list->queries;
     LOG_DEBUG(logger, "Trying to choose query to stop from {} queries", queries.size());
     for (auto const & query : queries)
@@ -75,18 +78,18 @@ void UserOvercommitTracker::pickQueryToExcludeImpl()
         LOG_DEBUG(logger, "Query has ratio {}/{}", ratio.committed, ratio.soft_limit);
         if (ratio.soft_limit != 0 && current_ratio < ratio)
         {
-            current_tracker = memory_tracker;
+            query_tracker = memory_tracker;
             current_ratio   = ratio;
         }
     }
     LOG_DEBUG(logger, "Selected to stop query with overcommit ratio {}/{}",
         current_ratio.committed, current_ratio.soft_limit);
-    picked_tracker = current_tracker;
+    picked_tracker = query_tracker;
 }
 
 void GlobalOvercommitTracker::pickQueryToExcludeImpl()
 {
-    MemoryTracker * current_tracker = nullptr;
+    MemoryTracker * query_tracker = nullptr;
     OvercommitRatio current_ratio{0, 0};
     process_list->processEachQueryStatus([&](DB::QueryStatus const & query)
     {
@@ -106,11 +109,11 @@ void GlobalOvercommitTracker::pickQueryToExcludeImpl()
         LOG_DEBUG(logger, "Query has ratio {}/{}", ratio.committed, ratio.soft_limit);
         if (current_ratio < ratio)
         {
-            current_tracker = memory_tracker;
+            query_tracker = memory_tracker;
             current_ratio   = ratio;
         }
     });
     LOG_DEBUG(logger, "Selected to stop query with overcommit ratio {}/{}",
         current_ratio.committed, current_ratio.soft_limit);
-    picked_tracker = current_tracker;
+    picked_tracker = query_tracker;
 }

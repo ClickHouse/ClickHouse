@@ -2,7 +2,7 @@
 
 #include <IO/WriteHelpers.h>
 #include "Common/TraceCollector.h"
-#include "Common/VariableContext.h"
+#include <Common/VariableContext.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <base/logger_useful.h>
@@ -223,7 +223,8 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
     if (unlikely(current_hard_limit && will_be > current_hard_limit) && memoryTrackerCanThrow(level, false) && throw_if_memory_exceeded)
     {
         bool need_to_throw = true;
-        if (!!overcommit_tracker && !!query_tracker)
+        bool try_to_free_momory = overcommit_tracker != nullptr && query_tracker != nullptr;
+        if (try_to_free_momory)
             need_to_throw = overcommit_tracker->needToStopQuery(query_tracker);
 
         if (need_to_throw)

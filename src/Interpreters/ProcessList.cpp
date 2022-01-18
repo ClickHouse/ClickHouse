@@ -8,7 +8,6 @@
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/PipelineExecutor.h>
-#include "Common/tests/gtest_global_context.h"
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
