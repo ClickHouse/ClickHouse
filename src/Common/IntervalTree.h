@@ -221,14 +221,16 @@ public:
 
         if constexpr (is_empty_value)
         {
-            find(point, [&](auto &) {
+            find(point, [&](auto &)
+            {
                 has_intervals = true;
                 return false;
             });
         }
         else
         {
-            find(point, [&](auto &, auto &) {
+            find(point, [&](auto &, auto &)
+            {
                 has_intervals = true;
                 return false;
             });
@@ -250,7 +252,11 @@ public:
     iterator end()
     {
         size_t end_index = findLastIteratorNodeIndex();
-        size_t last_interval_index = end_index < nodes.size() ? nodes[end_index].sorted_intervals_range_size : 0;
+        size_t last_interval_index = 0;
+
+        if (likely(end_index < nodes.size()))
+            nodes[end_index].sorted_intervals_range_size;
+
         return Iterator(end_index, last_interval_index, this);
     }
 
@@ -263,7 +269,10 @@ public:
     const_iterator end() const
     {
         size_t end_index = findLastIteratorNodeIndex();
-        size_t last_interval_index = end_index < nodes.size() ? nodes[end_index].sorted_intervals_range_size : 0;
+        size_t last_interval_index = 0;
+
+        if (likely(end_index < nodes.size()))
+            nodes[end_index].sorted_intervals_range_size;
 
         return Iterator(end_index, last_interval_index, this);
     }
@@ -463,13 +472,15 @@ private:
                 }
             }
 
-            std::sort(intervals_sorted_by_left_asc.begin(), intervals_sorted_by_left_asc.end(), [](auto & lhs, auto & rhs) {
+            std::sort(intervals_sorted_by_left_asc.begin(), intervals_sorted_by_left_asc.end(), [](auto & lhs, auto & rhs)
+            {
                 auto & lhs_interval = getInterval(lhs);
                 auto & rhs_interval = getInterval(rhs);
                 return lhs_interval.left < rhs_interval.left;
             });
 
-            std::sort(intervals_sorted_by_right_desc.begin(), intervals_sorted_by_right_desc.end(), [](auto & lhs, auto & rhs) {
+            std::sort(intervals_sorted_by_right_desc.begin(), intervals_sorted_by_right_desc.end(), [](auto & lhs, auto & rhs)
+            {
                 auto & lhs_interval = getInterval(lhs);
                 auto & rhs_interval = getInterval(rhs);
                 return lhs_interval.right > rhs_interval.right;
