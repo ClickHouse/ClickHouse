@@ -169,6 +169,7 @@ struct SelectQueryInfo
     bool ignore_projections = false;
     bool is_projection_query = false;
     bool merge_tree_empty_result = false;
+    bool settings_limit_offset_done = false;
     Block minmax_count_projection_block;
     MergeTreeDataSelectAnalysisResultPtr merge_tree_select_result_ptr;
 };
