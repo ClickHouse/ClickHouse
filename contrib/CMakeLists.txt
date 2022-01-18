@@ -21,108 +21,129 @@ endif()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
 
-macro(add_contrib folder)
-    if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${folder}/CMakeLists.txt")
-        message(STATUS "submodule ${folder} is missing (no CMakeLists.txt). to fix try run:")
-        message(STATUS "    git submodule update --init")
+# add_contrib cmake_folder[ base_folder1[, ...base_folderN]]
+function(add_contrib cmake_folder)
+    if (ARGN)
+        set(base_folders ${ARGN})
     else()
-        message(STATUS "Adding contrib module ${folder}")
-        add_subdirectory (${folder})
+        set(base_folders ${cmake_folder})
     endif()
-endmacro()
 
-add_contrib (miniselect-cmake)
-add_contrib (pdqsort-cmake)
-add_contrib (sparsehash-c11-cmake)
-add_contrib (abseil-cpp-cmake)
-add_contrib (magic-enum-cmake)
-add_contrib (boost-cmake)
-add_contrib (cctz-cmake)
+    foreach (base_folder ${base_folders})
+        # some typos in the code
+        if (NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/${base_folder}")
+            message(FATAL_ERROR "No such base folder '${base_folder}' (for '${cmake_folder}' cmake folder). Typo in the base folder name?")
+        endif()
+
+        file(GLOB contrib_files "${base_folder}/*")
+        if (NOT contrib_files)
+            message(STATUS "submodule ${base_folder} is missing or empty. to fix try run:")
+            message(STATUS "    git submodule update --init")
+            return()
+        endif()
+    endforeach()
+
+    message(STATUS "Adding contrib module ${base_folders} (configuring with ${cmake_folder})")
+    add_subdirectory (${cmake_folder})
+endfunction()
+
+add_contrib (miniselect-cmake miniselect)
+add_contrib (pdqsort-cmake pdqsort)
+add_contrib (sparsehash-c11-cmake sparsehash-c11)
+add_contrib (abseil-cpp-cmake abseil-cpp)
+add_contrib (magic-enum-cmake magic_enum)
+add_contrib (boost-cmake boost)
+add_contrib (cctz-cmake cctz)
 add_contrib (consistent-hashing)
-add_contrib (dragonbox-cmake)
-add_contrib (hyperscan-cmake)
-add_contrib (jemalloc-cmake)
-add_contrib (libcpuid-cmake)
+add_contrib (dragonbox-cmake dragonbox)
+add_contrib (hyperscan-cmake hyperscan)
+add_contrib (jemalloc-cmake jemalloc)
+add_contrib (libcpuid-cmake libcpuid)
 add_contrib (libdivide)
 add_contrib (libmetrohash)
-add_contrib (lz4-cmake)
+add_contrib (lz4-cmake lz4)
 add_contrib (murmurhash)
-add_contrib (replxx-cmake)
-add_contrib (unixodbc-cmake)
-add_contrib (nanodbc-cmake)
-add_contrib (capnproto-cmake)
-add_contrib (yaml-cpp-cmake)
-add_contrib (re2-cmake)
-add_contrib (xz-cmake)
-add_contrib (brotli-cmake)
-add_contrib (double-conversion-cmake)
-add_contrib (boringssl-cmake)
-add_contrib (poco-cmake)
-add_contrib (croaring-cmake)
-add_contrib (zstd-cmake)
-add_contrib (zlib-ng-cmake)
-add_contrib (bzip2-cmake)
-add_contrib (snappy-cmake)
-add_contrib (rocksdb-cmake)
-add_contrib (thrift-cmake)
+add_contrib (replxx-cmake replxx)
+add_contrib (unixodbc-cmake unixodbc)
+add_contrib (nanodbc-cmake nanodbc)
+add_contrib (capnproto-cmake capnproto)
+add_contrib (yaml-cpp-cmake yaml-cpp)
+add_contrib (re2-cmake re2)
+add_contrib (xz-cmake xz)
+add_contrib (brotli-cmake brotli)
+add_contrib (double-conversion-cmake double-conversion)
+add_contrib (boringssl-cmake boringssl)
+add_contrib (poco-cmake poco)
+add_contrib (croaring-cmake croaring)
+add_contrib (zstd-cmake zstd)
+add_contrib (zlib-ng-cmake zlib-ng)
+add_contrib (bzip2-cmake bzip2)
+add_contrib (snappy-cmake snappy)
+add_contrib (rocksdb-cmake rocksdb)
+add_contrib (thrift-cmake thrift)
 # parquet/arrow/orc
-add_contrib (arrow-cmake) # requires: snappy, thrift, double-conversion
-add_contrib (avro-cmake) # requires: snappy
-add_contrib (hive-metastore-cmake) # requires: thrift/avro/arrow
-add_contrib (librdkafka-cmake)
-add_contrib (cppkafka-cmake)
-add_contrib (openldap-cmake)
-add_contrib (grpc-cmake)
-add_contrib (protobuf-cmake)
-add_contrib (libhdfs3-cmake) # requires: protobuf
-add_contrib (msgpack-c-cmake)
+add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion
+add_contrib (avro-cmake avro) # requires: snappy
+add_contrib (hive-metastore-cmake hive-metastore) # requires: thrift/avro/arrow
+add_contrib (librdkafka-cmake librdkafka)
+add_contrib (cppkafka-cmake cppkafka)
+add_contrib (openldap-cmake openldap)
+add_contrib (grpc-cmake grpc)
+add_contrib (protobuf-cmake protobuf)
+add_contrib (libhdfs3-cmake libhdfs3) # requires: protobuf
+add_contrib (msgpack-c-cmake msgpack-c)
 
 if (ENABLE_FUZZING)
-    add_contrib (libprotobuf-mutator-cmake)
+    add_contrib (libprotobuf-mutator-cmake libprotobuf-mutator)
 endif()
 
 add_contrib (cityhash102)
 add_contrib (libfarmhash)
-add_contrib (icu-cmake)
-add_contrib (h3-cmake)
-add_contrib (mariadb-connector-c-cmake)
+add_contrib (icu-cmake icu)
+add_contrib (h3-cmake h3)
+add_contrib (mariadb-connector-c-cmake mariadb-connector-c)
 
 if (ENABLE_TESTS)
-    add_contrib (googletest-cmake)
+    add_contrib (googletest-cmake googletest)
 endif()
 
-add_contrib (llvm-cmake)
-add_contrib (libgsasl-cmake)
-add_contrib (libxml2-cmake)
-add_contrib (aws-s3-cmake)
-add_contrib (base64-cmake)
-add_contrib (simdjson-cmake)
-add_contrib (rapidjson-cmake)
-add_contrib (fastops-cmake)
-add_contrib (libuv-cmake)
-add_contrib (amqpcpp-cmake) # requires: libuv
-add_contrib (cassandra-cmake) # requires: libuv
-add_contrib (curl-cmake)
-add_contrib (azure-cmake)
-add_contrib (sentry-native-cmake) # requires: curl
-add_contrib (fmtlib-cmake)
-add_contrib (krb5-cmake)
-add_contrib (cyrus-sasl-cmake) # for krb5
-add_contrib (libpqxx-cmake)
-add_contrib (libpq-cmake)
-add_contrib (nuraft-cmake)
-add_contrib (fast_float-cmake)
-add_contrib (datasketches-cpp-cmake)
+add_contrib (llvm-cmake llvm)
+add_contrib (libgsasl-cmake libgsasl)
+add_contrib (libxml2-cmake libxml2)
+add_contrib (aws-s3-cmake
+    aws
+    aws-c-common
+    aws-c-event-stream
+    aws-checksums
+)
+add_contrib (base64-cmake base64)
+add_contrib (simdjson-cmake simdjson)
+add_contrib (rapidjson-cmake rapidjson)
+add_contrib (fastops-cmake fastops)
+add_contrib (libuv-cmake libuv)
+add_contrib (amqpcpp-cmake AMQP-CPP) # requires: libuv
+add_contrib (cassandra-cmake cassandra) # requires: libuv
+add_contrib (curl-cmake curl)
+add_contrib (azure-cmake azure)
+add_contrib (sentry-native-cmake sentry-native) # requires: curl
+add_contrib (fmtlib-cmake fmtlib)
+add_contrib (krb5-cmake krb5)
+add_contrib (cyrus-sasl-cmake cyrus-sasl) # for krb5
+add_contrib (libpqxx-cmake libpqxx)
+add_contrib (libpq-cmake libpq)
+add_contrib (nuraft-cmake NuRaft)
+add_contrib (fast_float-cmake fast_float)
+add_contrib (datasketches-cpp-cmake datasketches-cpp)
 
 option(ENABLE_NLP "Enable NLP functions support" ${ENABLE_LIBRARIES})
 if (ENABLE_NLP)
-    add_contrib (libstemmer-c-cmake) # ENABLE_NLP
-    add_contrib (wordnet-blast-cmake) # ENABLE_NLP
-    add_contrib (lemmagen-c-cmake) # ENABLE_NLP
+    add_contrib (libstemmer-c-cmake libstemmer_c)
+    add_contrib (wordnet-blast-cmake wordnet-blast)
+    add_contrib (lemmagen-c-cmake lemmagen-c)
 endif()
 
-add_contrib (sqlite-cmake)
-add_contrib (s2geometry-cmake)
+add_contrib (sqlite-cmake sqlite-amalgamation)
+add_contrib (s2geometry-cmake s2geometry)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear
