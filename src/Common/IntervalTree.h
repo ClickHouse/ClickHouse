@@ -255,7 +255,7 @@ public:
         size_t last_interval_index = 0;
 
         if (likely(end_index < nodes.size()))
-            nodes[end_index].sorted_intervals_range_size;
+            last_interval_index = nodes[end_index].sorted_intervals_range_size;
 
         return Iterator(end_index, last_interval_index, this);
     }
@@ -272,7 +272,7 @@ public:
         size_t last_interval_index = 0;
 
         if (likely(end_index < nodes.size()))
-            nodes[end_index].sorted_intervals_range_size;
+            last_interval_index = nodes[end_index].sorted_intervals_range_size;
 
         return Iterator(end_index, last_interval_index, this);
     }
