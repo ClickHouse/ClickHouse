@@ -361,10 +361,10 @@ def test_hdfsCluster(started_cluster):
     assert actual == expected
     fs.delete(dir, recursive=True)
 
-def testHdfsDirectoryNotExist(started_cluster):
-    ddl ="create table HDFSStorageWithNotExistDir (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/dir1/empty', 'TSV')";
+def test_hdfs_directory_not_exist(started_cluster):
+    ddl ="create table HDFSStorageWithNotExistDir (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/data/not_eixst', 'TSV')";
     node1.query(ddl)
-    assert "Cannot list directory" in node1.query_and_get_error("select * from HDFSStorageWithNotExistDir")
+    assert "" == node1.query("select * from HDFSStorageWithNotExistDir")
 
 def test_format_detection(started_cluster):
     node1.query(f"create table arrow_table (x UInt64) engine=HDFS('hdfs://hdfs1:9000/data.arrow')")
