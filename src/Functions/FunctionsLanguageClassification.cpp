@@ -6,6 +6,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/isValidUTF8.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -75,11 +76,20 @@ struct FunctionDetectLanguageImpl
 
         for (size_t i = 0; i < offsets.size(); ++i)
         {
-            const char * str = reinterpret_cast<const char *>(data.data() + offsets[i - 1]);
+            const UInt8 * str = data.data() + offsets[i - 1];
             const size_t str_len = offsets[i] - offsets[i - 1] - 1;
 
-            auto lang = CLD2::DetectLanguage(str, str_len, true, &is_reliable);
-            auto res = codeISO(LanguageCode(lang));
+            std::string_view res;
+
+            if (UTF8::isValidUTF8(str, str_len))
+            {
+                auto lang = CLD2::DetectLanguage(reinterpret_cast<const char *>(str), str_len, true, &is_reliable);
+                res = codeISO(LanguageCode(lang));
+            }
+            else
+            {
+                res = "un";
+            }
 
             res_data.resize(res_offset + res.size() + 1);
             memcpy(&res_data[res_offset], res.data(), res.size());
@@ -163,21 +173,35 @@ public:
         IColumn::Offset current_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const char * str = reinterpret_cast<const char *>(input_data.data() + input_offsets[i - 1]);
+            const UInt8 * str = input_data.data() + input_offsets[i - 1];
             const size_t str_len = input_offsets[i] - input_offsets[i - 1] - 1;
 
-            CLD2::DetectLanguageSummary(str, str_len, true, result_lang_top3, pc, bytes, &is_reliable);
-
-            for (size_t j = 0; j < top_N; ++j)
+            if (UTF8::isValidUTF8(str, str_len))
             {
-                auto res_str = FunctionDetectLanguageImpl::codeISO(LanguageCode(result_lang_top3[j]));
-                Float32 res_float = static_cast<Float32>(pc[j]) / 100;
+                CLD2::DetectLanguageSummary(reinterpret_cast<const char *>(str), str_len, true, result_lang_top3, pc, bytes, &is_reliable);
+
+                for (size_t j = 0; j < top_N; ++j)
+                {
+                    if (pc[j] == 0 && j != 0)
+                        break;
+
+                    auto res_str = FunctionDetectLanguageImpl::codeISO(LanguageCode(result_lang_top3[j]));
+                    Float32 res_float = static_cast<Float32>(pc[j]) / 100;
+
+                    keys_data->insertData(res_str.data(), res_str.size());
+                    values_data->insertData(reinterpret_cast<const char *>(&res_float), sizeof(res_float));
+                    ++current_offset;
+                }
+            }
+            else
+            {
+                std::string_view res_str = "un";
+                Float32 res_float = 0;
 
                 keys_data->insertData(res_str.data(), res_str.size());
                 values_data->insertData(reinterpret_cast<const char *>(&res_float), sizeof(res_float));
+                ++current_offset;
             }
-
-            current_offset += top_N;
             offsets->insert(current_offset);
         }
 
