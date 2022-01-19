@@ -66,6 +66,13 @@ public:
     void shutdown() override;
 
     String getPostgreSQLDatabaseName() const { return remote_database_name; }
+    
+    void detachTablePermanently(ContextPtr /*context*/, const String & /*name*/) override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "DETACH PERMANENTLY does the same as simple DETACH (permanent removal of PostgeSQL table from replication). "
+                        "Please, use DETACH for engine {}", getEngineName());
+    }
 
 protected:
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const override;
