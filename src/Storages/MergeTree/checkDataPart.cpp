@@ -153,7 +153,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
                         [&](const ISerialization::SubstreamPath & substream_path)
                         {
                             String projection_file_name = ISerialization::getFileNameForStream(projection_column, substream_path) + ".bin";
-                            checksums_data.files[projection_file_name] = checksum_compressed_file(disk, projection_path + projection_file_name);
+                            projection_checksums_data.files[projection_file_name] = checksum_compressed_file(disk, projection_path + projection_file_name);
                         });
                 }
             }
