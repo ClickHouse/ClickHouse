@@ -21,4 +21,4 @@
 </clickhouse>
 ```
 
-Для правильной работы SSL `trust chain` важно также убедиться в правильной настройке параметра [`caConfig`](../server-configuration-parameters/settings.md#server_configuration_parameters-openssl)
+Для правильной работы SSL [`chain of trust`](https://en.wikipedia.org/wiki/Chain_of_trust) важно также убедиться в правильной настройке параметра [`caConfig`](../server-configuration-parameters/settings.md#server_configuration_parameters-openssl)
