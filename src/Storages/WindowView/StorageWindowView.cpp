@@ -488,7 +488,8 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     auto pipe = QueryPipelineBuilder::getPipe(std::move(builder));
     pipes.emplace_back(std::move(pipe));
 
-    auto creator = [&](const StorageID & blocks_id_global) {
+    auto creator = [&](const StorageID & blocks_id_global)
+    {
         auto parent_table_metadata = getParentStorage()->getInMemoryMetadataPtr();
         auto required_columns = parent_table_metadata->getColumns();
         required_columns.add(ColumnDescription("____timestamp", std::make_shared<DataTypeDateTime>()));
@@ -1245,7 +1246,8 @@ void StorageWindowView::writeIntoWindowView(
     Pipes pipes;
     pipes.emplace_back(std::move(pipe));
 
-    auto creator = [&](const StorageID & blocks_id_global) {
+    auto creator = [&](const StorageID & blocks_id_global)
+    {
         auto parent_metadata = window_view.getParentStorage()->getInMemoryMetadataPtr();
         auto required_columns = parent_metadata->getColumns();
         required_columns.add(ColumnDescription("____timestamp", std::make_shared<DataTypeDateTime>()));
@@ -1261,7 +1263,8 @@ void StorageWindowView::writeIntoWindowView(
         QueryProcessingStage::WithMergeableState);
 
     builder = select_block.buildQueryPipeline();
-    builder.addSimpleTransform([&](const Block & current_header) {
+    builder.addSimpleTransform([&](const Block & current_header)
+    {
         return std::make_shared<SquashingChunksTransform>(
             current_header,
             local_context->getSettingsRef().min_insert_block_size_rows,
