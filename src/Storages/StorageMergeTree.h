@@ -141,7 +141,6 @@ private:
 
     std::atomic<bool> shutdown_called {false};
 
-private:
     void loadMutations();
 
     /// Load and initialize deduplication logs. Even if deduplication setting

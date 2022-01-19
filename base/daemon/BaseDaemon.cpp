@@ -51,6 +51,7 @@
 #include <Common/getExecutablePath.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/Elf.h>
+#include <Common/setThreadName.h>
 #include <filesystem>
 
 #include <loggers/OwnFormattingChannel.h>

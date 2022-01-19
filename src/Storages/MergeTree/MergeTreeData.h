@@ -24,9 +24,10 @@
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Interpreters/PartLog.h>
 #include <Disks/StoragePolicy.h>
-#include <Interpreters/Aggregator.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
+#include <Storages/MergeTree/ZeroCopyLock.h>
+
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -44,6 +45,7 @@ class MutationCommands;
 class Context;
 struct JobAndPool;
 class MergeTreeTransaction;
+struct ZeroCopyLock;
 
 /// Auxiliary struct holding information about the future merged or mutated part.
 struct EmergingPartInfo
@@ -410,15 +412,7 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
-    bool supportsFinal() const override
-    {
-        return merging_params.mode == MergingParams::Collapsing
-            || merging_params.mode == MergingParams::Summing
-            || merging_params.mode == MergingParams::Aggregating
-            || merging_params.mode == MergingParams::Replacing
-            || merging_params.mode == MergingParams::Graphite
-            || merging_params.mode == MergingParams::VersionedCollapsing;
-    }
+    bool supportsFinal() const override;
 
     bool supportsSubcolumns() const override { return true; }
 
@@ -447,6 +441,7 @@ public:
 
     /// Returns parts in Active state
     DataParts getDataPartsForInternalUsage() const;
+
     DataPartsVector getDataPartsVector() const;
 
     void filterVisibleDataParts(DataPartsVector & maybe_visible_parts, Snapshot snapshot_version, TransactionID current_tid) const;
@@ -1210,6 +1205,10 @@ private:
         DataPartsVector & duplicate_parts_to_remove,
         MutableDataPartsVector & parts_from_wal,
         DataPartsLock & part_lock);
+
+    /// Create zero-copy exclusive lock for part and disk. Useful for coordination of
+    /// distributed operations which can lead to data duplication. Implemented only in ReplicatedMergeTree.
+    virtual std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const DataPartPtr &, const DiskPtr &) { return std::nullopt; }
 };
 
 /// RAII struct to record big parts that are submerging or emerging.
