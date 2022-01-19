@@ -6,4 +6,4 @@ set(SRCS
 )
 
 add_library(lemmagen STATIC ${SRCS})
-target_include_directories(lemmagen PUBLIC "${LEMMAGEN_INCLUDE_DIR}")
+target_include_directories(lemmagen SYSTEM PUBLIC "${LEMMAGEN_INCLUDE_DIR}")

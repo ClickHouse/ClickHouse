@@ -98,7 +98,7 @@ getExternalDataSourceConfigurationByPriority(const Poco::Util::AbstractConfigura
 struct URLBasedDataSourceConfiguration
 {
     String url;
-    String format;
+    String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
 

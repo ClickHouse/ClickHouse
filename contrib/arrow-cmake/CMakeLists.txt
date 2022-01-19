@@ -17,57 +17,8 @@ else()
     set(ARROW_FULL_SO_VERSION "${ARROW_SO_VERSION}.${ARROW_VERSION_PATCH}.0")
 endif()
 
-# === thrift
-
-set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp")
-# contrib/thrift/lib/cpp/CMakeLists.txt
-set(thriftcpp_SOURCES
-        "${LIBRARY_DIR}/src/thrift/TApplicationException.cpp"
-        "${LIBRARY_DIR}/src/thrift/TOutput.cpp"
-        "${LIBRARY_DIR}/src/thrift/async/TAsyncChannel.cpp"
-        "${LIBRARY_DIR}/src/thrift/async/TAsyncProtocolProcessor.cpp"
-        "${LIBRARY_DIR}/src/thrift/async/TConcurrentClientSyncInfo.h"
-        "${LIBRARY_DIR}/src/thrift/async/TConcurrentClientSyncInfo.cpp"
-        "${LIBRARY_DIR}/src/thrift/concurrency/ThreadManager.cpp"
-        "${LIBRARY_DIR}/src/thrift/concurrency/TimerManager.cpp"
-        "${LIBRARY_DIR}/src/thrift/concurrency/Util.cpp"
-        "${LIBRARY_DIR}/src/thrift/processor/PeekProcessor.cpp"
-        "${LIBRARY_DIR}/src/thrift/protocol/TBase64Utils.cpp"
-        "${LIBRARY_DIR}/src/thrift/protocol/TDebugProtocol.cpp"
-        "${LIBRARY_DIR}/src/thrift/protocol/TJSONProtocol.cpp"
-        "${LIBRARY_DIR}/src/thrift/protocol/TMultiplexedProtocol.cpp"
-        "${LIBRARY_DIR}/src/thrift/protocol/TProtocol.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/TTransportException.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/TFDTransport.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/TSimpleFileTransport.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/THttpTransport.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/THttpClient.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/THttpServer.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/TSocket.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/TSocketPool.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/TServerSocket.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/TTransportUtils.cpp"
-        "${LIBRARY_DIR}/src/thrift/transport/TBufferTransports.cpp"
-        "${LIBRARY_DIR}/src/thrift/server/TConnectedClient.cpp"
-        "${LIBRARY_DIR}/src/thrift/server/TServerFramework.cpp"
-        "${LIBRARY_DIR}/src/thrift/server/TSimpleServer.cpp"
-        "${LIBRARY_DIR}/src/thrift/server/TThreadPoolServer.cpp"
-        "${LIBRARY_DIR}/src/thrift/server/TThreadedServer.cpp"
-        )
-set(thriftcpp_threads_SOURCES
-        "${LIBRARY_DIR}/src/thrift/concurrency/ThreadFactory.cpp"
-        "${LIBRARY_DIR}/src/thrift/concurrency/Thread.cpp"
-        "${LIBRARY_DIR}/src/thrift/concurrency/Monitor.cpp"
-        "${LIBRARY_DIR}/src/thrift/concurrency/Mutex.cpp"
-        )
-add_library(${THRIFT_LIBRARY} ${thriftcpp_SOURCES} ${thriftcpp_threads_SOURCES})
-set_target_properties(${THRIFT_LIBRARY} PROPERTIES CXX_STANDARD 14) # REMOVE after https://github.com/apache/thrift/pull/1641
-target_include_directories(${THRIFT_LIBRARY} SYSTEM PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src")
-target_link_libraries (${THRIFT_LIBRARY} PRIVATE boost::headers_only)
-
 
 # === orc
-
 set(ORC_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/orc/c++")
 set(ORC_INCLUDE_DIR "${ORC_SOURCE_DIR}/include")
 set(ORC_SOURCE_SRC_DIR "${ORC_SOURCE_DIR}/src")
@@ -394,7 +345,7 @@ if (USE_INTERNAL_PROTOBUF_LIBRARY)
     add_dependencies(${ARROW_LIBRARY} protoc)
 endif ()
 
-target_include_directories(${ARROW_LIBRARY} SYSTEM PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src")
+target_include_directories(${ARROW_LIBRARY} SYSTEM PUBLIC ${ARROW_SRC_DIR})
 target_include_directories(${ARROW_LIBRARY} SYSTEM PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/cpp/src")
 target_link_libraries(${ARROW_LIBRARY} PRIVATE ${DOUBLE_CONVERSION_LIBRARIES} ${Protobuf_LIBRARY})
 target_link_libraries(${ARROW_LIBRARY} PRIVATE lz4)
@@ -409,16 +360,15 @@ if (ARROW_WITH_ZSTD)
     target_include_directories(${ARROW_LIBRARY} SYSTEM BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
 endif ()
 
-target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_INCLUDE_DIR})
-target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_SOURCE_SRC_DIR})
-target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_SOURCE_WRAP_DIR})
-target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${GOOGLE_PROTOBUF_DIR})
-target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_BUILD_SRC_DIR})
-target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_BUILD_INCLUDE_DIR})
-target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ORC_ADDITION_SOURCE_DIR})
-target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${ARROW_SRC_DIR})
-target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${FLATBUFFERS_INCLUDE_DIR})
-target_include_directories(${ARROW_LIBRARY} PRIVATE SYSTEM ${HDFS_INCLUDE_DIR})
+target_include_directories(${ARROW_LIBRARY} SYSTEM PRIVATE ${ORC_INCLUDE_DIR})
+target_include_directories(${ARROW_LIBRARY} SYSTEM PRIVATE ${ORC_SOURCE_SRC_DIR})
+target_include_directories(${ARROW_LIBRARY} SYSTEM PRIVATE ${ORC_SOURCE_WRAP_DIR})
+target_include_directories(${ARROW_LIBRARY} SYSTEM PRIVATE ${GOOGLE_PROTOBUF_DIR})
+target_include_directories(${ARROW_LIBRARY} SYSTEM PRIVATE ${ORC_BUILD_SRC_DIR})
+target_include_directories(${ARROW_LIBRARY} SYSTEM PRIVATE ${ORC_BUILD_INCLUDE_DIR})
+target_include_directories(${ARROW_LIBRARY} SYSTEM PRIVATE ${ORC_ADDITION_SOURCE_DIR})
+target_include_directories(${ARROW_LIBRARY} SYSTEM PRIVATE ${FLATBUFFERS_INCLUDE_DIR})
+target_include_directories(${ARROW_LIBRARY} SYSTEM PRIVATE ${HDFS_INCLUDE_DIR})
 
 # === parquet
 
@@ -463,49 +413,6 @@ set(PARQUET_SRCS
 #list(TRANSFORM PARQUET_SRCS PREPEND "${LIBRARY_DIR}/") # cmake 3.12
 add_library(${PARQUET_LIBRARY} ${PARQUET_SRCS})
 target_include_directories(${PARQUET_LIBRARY} SYSTEM PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src" "${CMAKE_CURRENT_SOURCE_DIR}/cpp/src" PRIVATE ${OPENSSL_INCLUDE_DIR})
-
-set (HAVE_ARPA_INET_H 1)
-set (HAVE_FCNTL_H 1)
-set (HAVE_GETOPT_H 1)
-set (HAVE_INTTYPES_H 1)
-set (HAVE_NETDB_H 1)
-set (HAVE_NETINET_IN_H 1)
-set (HAVE_SIGNAL_H 1)
-set (HAVE_STDINT_H 1)
-set (HAVE_UNISTD_H 1)
-set (HAVE_PTHREAD_H 1)
-set (HAVE_SYS_IOCTL_H 1)
-set (HAVE_SYS_PARAM_H 1)
-set (HAVE_SYS_RESOURCE_H 1)
-set (HAVE_SYS_SOCKET_H 1)
-set (HAVE_SYS_STAT_H 1)
-set (HAVE_SYS_TIME_H 1)
-set (HAVE_SYS_UN_H 1)
-set (HAVE_POLL_H 1)
-set (HAVE_SYS_POLL_H 1)
-set (HAVE_SYS_SELECT_H 1)
-set (HAVE_SCHED_H 1)
-set (HAVE_STRING_H 1)
-set (HAVE_STRINGS_H 1)
-set (HAVE_GETHOSTBYNAME 1)
-set (HAVE_STRERROR_R 1)
-set (HAVE_SCHED_GET_PRIORITY_MAX 1)
-set (HAVE_SCHED_GET_PRIORITY_MIN 1)
-
-if (OS_LINUX AND NOT USE_MUSL)
-    set (STRERROR_R_CHAR_P 1)
-endif ()
-
-#set(PACKAGE ${PACKAGE_NAME})
-#set(PACKAGE_STRING "${PACKAGE_NAME} ${PACKAGE_VERSION}")
-#set(VERSION ${thrift_VERSION})
-
-# generate a config.h file
-configure_file("${CMAKE_CURRENT_SOURCE_DIR}/build/cmake/config.h.in" "${CMAKE_CURRENT_BINARY_DIR}/thrift/config.h")
-
-include_directories("${CMAKE_CURRENT_BINARY_DIR}")
-
-
 target_link_libraries(${PARQUET_LIBRARY} PUBLIC ${ARROW_LIBRARY} PRIVATE ${THRIFT_LIBRARY} boost::headers_only boost::regex ${OPENSSL_LIBRARIES})
 
 if (SANITIZE STREQUAL "undefined")
