@@ -182,7 +182,7 @@ public:
 
                 for (size_t j = 0; j < top_N; ++j)
                 {
-                    if (pc[j] == 0 && j != 0)
+                    if (pc[j] == 0)
                         break;
 
                     auto res_str = FunctionDetectLanguageImpl::codeISO(LanguageCode(result_lang_top3[j]));
