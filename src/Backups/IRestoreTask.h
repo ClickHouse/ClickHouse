@@ -8,14 +8,14 @@ namespace DB
 {
 
 /// Represents a task of restoring something (database / table / table's part) from backup.
-class IRestoreFromBackupTask
+class IRestoreTask
 {
 public:
-    IRestoreFromBackupTask() = default;
-    virtual ~IRestoreFromBackupTask() = default;
+    IRestoreTask() = default;
+    virtual ~IRestoreTask() = default;
 
     /// Perform restoring, the function also can return a list of nested tasks that should be run later.
-    virtual std::vector<std::unique_ptr<IRestoreFromBackupTask>> run() = 0;
+    virtual std::vector<std::unique_ptr<IRestoreTask>> run() = 0;
 
     /// Is it necessary to run this task sequentially?
     /// Sequential tasks are executed first and strictly in one thread.
@@ -25,7 +25,7 @@ public:
     virtual void rollback() {}
 };
 
-using RestoreFromBackupTaskPtr = std::unique_ptr<IRestoreFromBackupTask>;
-using RestoreFromBackupTasks = std::vector<RestoreFromBackupTaskPtr>;
+using RestoreTaskPtr = std::unique_ptr<IRestoreTask>;
+using RestoreTasks = std::vector<RestoreTaskPtr>;
 
 }

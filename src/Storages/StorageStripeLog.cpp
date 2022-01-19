@@ -38,7 +38,7 @@
 #include <Backups/BackupEntryFromImmutableFile.h>
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/IBackup.h>
-#include <Backups/IRestoreFromBackupTask.h>
+#include <Backups/IRestoreTask.h>
 #include <Disks/TemporaryFileOnDisk.h>
 
 #include <base/insertAtEnd.h>
@@ -553,7 +553,7 @@ BackupEntries StorageStripeLog::backup(const ASTs & partitions, ContextPtr conte
     return backup_entries;
 }
 
-class StripeLogRestoreTask : public IRestoreFromBackupTask
+class StripeLogRestoreTask : public IRestoreTask
 {
     using WriteLock = StorageStripeLog::WriteLock;
 
@@ -567,7 +567,7 @@ public:
     {
     }
 
-    RestoreFromBackupTasks run() override
+    RestoreTasks run() override
     {
         WriteLock lock{storage->rwlock, getLockTimeout(context)};
         if (!lock)
@@ -637,7 +637,7 @@ private:
 };
 
 
-RestoreFromBackupTaskPtr StorageStripeLog::restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context)
+RestoreTaskPtr StorageStripeLog::restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context)
 {
     if (!partitions.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
