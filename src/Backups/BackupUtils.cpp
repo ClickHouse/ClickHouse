@@ -32,7 +32,7 @@ namespace
     class BackupEntriesBuilder
     {
     public:
-        BackupEntriesBuilder(ContextPtr context_) : context(context_) { }
+        BackupEntriesBuilder(const ContextPtr & context_, const BackupSettings &) : context(context_) { }
 
         /// Prepares internal structures for making backup entries.
         void prepare(const ASTBackupQuery::Elements & elements)
@@ -91,7 +91,7 @@ namespace
                 res.push_back(makeBackupEntryForMetadata(*info.create_query));
                 if (info.has_data)
                 {
-                    auto data_backup = info.storage->backup(info.partitions, context);
+                    auto data_backup = info.storage->backup(context, info.partitions);
                     if (!data_backup.empty())
                     {
                         String data_path = getDataPathInBackup(*info.create_query);
@@ -288,7 +288,6 @@ namespace
         };
 
         ContextPtr context;
-        BackupMutablePtr backup;
         DDLRenamingSettings renaming_settings;
         std::map<String, CreateDatabaseInfo> databases;
         std::map<DatabaseAndTableName, CreateTableInfo> tables;
@@ -296,9 +295,9 @@ namespace
 }
 
 
-BackupEntries makeBackupEntries(const Elements & elements, const ContextPtr & context)
+BackupEntries makeBackupEntries(const ContextPtr & context, const Elements & elements, const BackupSettings & backup_settings)
 {
-    BackupEntriesBuilder builder{context};
+    BackupEntriesBuilder builder{context, backup_settings};
     builder.prepare(elements);
     return builder.makeBackupEntries();
 }

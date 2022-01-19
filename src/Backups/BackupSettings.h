@@ -1,16 +1,18 @@
 #pragma once
 
-#include <Core/BaseSettings.h>
+#include <memory>
 
 
 namespace DB
 {
+class ASTBackupQuery;
+struct BackupInfo;
 
-#define LIST_OF_BACKUP_SETTINGS(M) \
-    M(Bool, dummy, false, "", 0) \
-
-DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(BackupSettingsTraits, LIST_OF_BACKUP_SETTINGS)
-
-struct BackupSettings : public BaseSettings<BackupSettingsTraits> {};
+/// Settings specified in the "SETTINGS" clause of a BACKUP query.
+struct BackupSettings
+{
+    std::shared_ptr<const BackupInfo> base_backup_info;
+    static BackupSettings fromBackupQuery(const ASTBackupQuery & query);
+};
 
 }

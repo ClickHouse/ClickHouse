@@ -216,12 +216,12 @@ bool IStorage::isStaticStorage() const
     return false;
 }
 
-BackupEntries IStorage::backup(const ASTs &, ContextPtr)
+BackupEntries IStorage::backup(ContextPtr, const ASTs &)
 {
     throw Exception("Table engine " + getName() + " doesn't support backups", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-RestoreTaskPtr IStorage::restoreFromBackup(const BackupPtr &, const String &, const ASTs &, ContextMutablePtr)
+RestoreTaskPtr IStorage::restoreFromBackup(ContextMutablePtr, const ASTs &, const BackupPtr &, const String &, const StorageRestoreSettings &)
 {
     throw Exception("Table engine " + getName() + " doesn't support restoring", ErrorCodes::NOT_IMPLEMENTED);
 }
