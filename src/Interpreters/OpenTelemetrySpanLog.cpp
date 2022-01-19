@@ -202,7 +202,6 @@ bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & trace
 
     ++data;
     UInt128 trace_id_128 = readHex<UInt128>(data);
-    trace_id = trace_id_128;
     data += 32;
 
     if (*data != '-')
@@ -212,7 +211,7 @@ bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & trace
     }
 
     ++data;
-    span_id = readHex<UInt64>(data);
+    UInt64 span_id_64 = readHex<UInt64>(data);
     data += 16;
 
     if (*data != '-')
@@ -222,7 +221,9 @@ bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & trace
     }
 
     ++data;
-    trace_flags = readHex<UInt8>(data);
+    this->trace_flags = readHex<UInt8>(data);
+    this->trace_id = trace_id_128;
+    this->span_id = span_id_64;
     return true;
 }
 
