@@ -404,6 +404,20 @@ uint64_t KeeperStateMachine::getApproximateDataSize() const
     return storage->getApproximateDataSize();
 }
 
+uint64_t KeeperStateMachine::getKeyArenaSize() const
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    return storage->getArenaDataSize();
+}
+
+uint64_t KeeperStateMachine::getLatestSnapshotBufSize() const
+{
+    std::lock_guard lock(snapshots_lock);
+    if (latest_snapshot_buf)
+        return latest_snapshot_buf->size();
+    return 0;
+}
+
 ClusterConfigPtr KeeperStateMachine::getClusterConfig() const
 {
     std::lock_guard lock(cluster_config_lock);

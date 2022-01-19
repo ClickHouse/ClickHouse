@@ -242,7 +242,7 @@ std::unique_ptr<IGenerator> getGenerator(const std::string & name)
     }
     else if (name == "create_small_data")
     {
-        return std::make_unique<CreateRequestGenerator>("/create_generator", 5, 32);
+        return std::make_unique<CreateRequestGenerator>("/create_generator", 50, 32);
     }
     else if (name == "create_medium_data")
     {

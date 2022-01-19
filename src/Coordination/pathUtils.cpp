@@ -21,18 +21,18 @@ static size_t findLastSlash(StringRef path)
     return std::string::npos;
 }
 
-std::string parentPath(StringRef path)
+StringRef parentPath(StringRef path)
 {
     auto rslash_pos = findLastSlash(path);
     if (rslash_pos > 0)
-        return std::string{path.data, rslash_pos};
+        return StringRef{path.data, rslash_pos};
     return "/";
 }
 
-std::string getBaseName(StringRef path)
+StringRef getBaseName(StringRef path)
 {
     size_t basename_start = findLastSlash(path);
-    return std::string{path.data + basename_start + 1, path.size - basename_start - 1};
+    return StringRef{path.data + basename_start + 1, path.size - basename_start - 1};
 }
 
 }
