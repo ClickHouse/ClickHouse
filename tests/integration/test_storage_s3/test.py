@@ -453,15 +453,16 @@ def test_remote_host_filter(started_cluster):
     assert "not allowed in configuration file" in instance.query_and_get_error(query)
 
 
-@pytest.mark.parametrize("s3_storage_args", [
-    pytest.param("''", id="1_argument"),
-    pytest.param("'','','','','',''", id="6_arguments"),
-])
-def test_wrong_s3_syntax(started_cluster, s3_storage_args):
+def test_wrong_s3_syntax(started_cluster):
     instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
     expected_err_msg = "Code: 42"  # NUMBER_OF_ARGUMENTS_DOESNT_MATCH
 
-    query = "create table test_table_s3_syntax (id UInt32) ENGINE = S3({})".format(s3_storage_args)
+    query = "create table test_table_s3_syntax (id UInt32) ENGINE = S3('', '', '', '', '', '')"
+    assert expected_err_msg in instance.query_and_get_error(query)
+
+    expected_err_msg = "Code: 36"  # BAD_ARGUMENTS
+
+    query = "create table test_table_s3_syntax (id UInt32) ENGINE = S3('')"
     assert expected_err_msg in instance.query_and_get_error(query)
 
 
@@ -914,4 +915,17 @@ def test_empty_file(started_cluster):
     table_function = f"s3('{url}', 'CSV', 'id Int32')"
     result = instance.query(f"SELECT count() FROM {table_function}")
     assert(int(result) == 0)
+
+
+def test_format_detection(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+
+    instance.query(f"create table arrow_table_s3 (x UInt64) engine=S3(s3_arrow)")
+    instance.query(f"insert into arrow_table_s3 select 1")
+    result = instance.query(f"select * from s3(s3_arrow)")
+    assert(int(result) == 1)
+
+    result = instance.query(f"select * from url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow')")
+    assert(int(result) == 1)
 
