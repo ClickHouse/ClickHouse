@@ -4,7 +4,7 @@
 template <typename T>
 T radians(T d)
 {
-    return (d * M_PI) / 180;
+    return d * (M_PI / 180);
 }
 
 namespace DB
