@@ -55,8 +55,8 @@ set(SRCS
 
 add_library(libpq ${SRCS})
 
-target_include_directories (libpq PUBLIC ${LIBPQ_SOURCE_DIR})
-target_include_directories (libpq PUBLIC "${LIBPQ_SOURCE_DIR}/include")
-target_include_directories (libpq PRIVATE "${LIBPQ_SOURCE_DIR}/configs")
+target_include_directories (libpq SYSTEM PUBLIC ${LIBPQ_SOURCE_DIR})
+target_include_directories (libpq SYSTEM PUBLIC "${LIBPQ_SOURCE_DIR}/include")
+target_include_directories (libpq SYSTEM PRIVATE "${LIBPQ_SOURCE_DIR}/configs")
 
 target_link_libraries (libpq PRIVATE ssl)
