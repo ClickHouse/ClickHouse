@@ -65,6 +65,33 @@ const std::unordered_map<String, std::tuple<TypeIndex, String, decltype(&transfo
 
 }
 
+void FindIdentifiersForbiddenToReplaceToSubcolumnsMatcher::visit(const ASTPtr & ast, Data & data)
+{
+    if (const auto * function = ast->as<ASTFunction>())
+    {
+        bool is_probably_good =
+            unary_function_to_subcolumn.contains(function->name)
+            || binary_function_to_subcolumn.contains(function->name)
+            || function->name == "tupleElement";
+
+        for (const auto & child : function->arguments->children)
+        {
+            if (!child->as<ASTIdentifier>() || !is_probably_good)
+                visit(child, data);
+        }
+    }
+    else if (ast->as<ASTIdentifier>())
+    {
+        data.forbidden_identifiers.insert(ast->getColumnName());
+    }
+}
+
+bool FindIdentifiersForbiddenToReplaceToSubcolumnsMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &)
+{
+    /// Will handle ASTFunction customly.
+    return !node->as<ASTFunction>();
+}
+
 void RewriteFunctionToSubcolumnData::visit(ASTFunction & function, ASTPtr & ast) const
 {
     const auto & arguments = function.arguments->children;

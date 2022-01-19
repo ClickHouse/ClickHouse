@@ -666,7 +666,6 @@ void optimizeFunctionsToSubcolumns(ASTPtr & query, const TreeRewriterResult & re
     if (!result.storage || !result.storage->supportsSubcolumns() || !result.metadata_snapshot)
         return;
 
-    IdentifierNameSet forbidden_identifiers;
     const auto & select_query = assert_cast<const ASTSelectQuery &>(*query);
 
     /// For queries with FINAL converting function to subcolumn may alter
@@ -674,27 +673,25 @@ void optimizeFunctionsToSubcolumns(ASTPtr & query, const TreeRewriterResult & re
     if (select_query.final())
         return;
 
-    /// Do not optimize GROUP BY keys, because otherwise it may be produced column,
-    /// which is not under aggregate function and not in GROUP BY.
-    if (select_query.groupBy())
-        select_query.groupBy()->collectIdentifierNames(forbidden_identifiers);
+    FindIdentifiersForbiddenToReplaceToSubcolumnsVisitor::Data data;
+    FindIdentifiersForbiddenToReplaceToSubcolumnsVisitor(data).visit(query);
 
     /// Do not optimize index columns (primary, min-max, secondary),
     /// because otherwise analysis of indexes may be broken.
     const auto & primary_key_columns = result.metadata_snapshot->getColumnsRequiredForPrimaryKey();
-    forbidden_identifiers.insert(primary_key_columns.begin(), primary_key_columns.end());
+    data.forbidden_identifiers.insert(primary_key_columns.begin(), primary_key_columns.end());
 
     const auto & partition_key_columns = result.metadata_snapshot->getColumnsRequiredForPartitionKey();
-    forbidden_identifiers.insert(partition_key_columns.begin(), partition_key_columns.end());
+    data.forbidden_identifiers.insert(partition_key_columns.begin(), partition_key_columns.end());
 
     for (const auto & index : result.metadata_snapshot->getSecondaryIndices())
     {
         const auto & index_columns = index.expression->getRequiredColumns();
-        forbidden_identifiers.insert(index_columns.begin(), index_columns.end());
+        data.forbidden_identifiers.insert(index_columns.begin(), index_columns.end());
     }
 
-    RewriteFunctionToSubcolumnVisitor::Data data{result.metadata_snapshot, forbidden_identifiers};
-    RewriteFunctionToSubcolumnVisitor(data).visit(query);
+    RewriteFunctionToSubcolumnVisitor::Data rewrite_data{result.metadata_snapshot, data.forbidden_identifiers};
+    RewriteFunctionToSubcolumnVisitor(rewrite_data).visit(query);
 }
 
 std::shared_ptr<ASTFunction> getQuantileFuseCandidate(const String & func_name, std::vector<ASTPtr *> & functions)
