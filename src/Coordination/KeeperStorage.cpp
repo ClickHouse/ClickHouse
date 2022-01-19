@@ -143,12 +143,12 @@ static KeeperStorage::ResponsesForSessions processWatchesImpl(const String & pat
     Strings paths_to_check_for_list_watches;
     if (event_type == Coordination::Event::CREATED)
     {
-        paths_to_check_for_list_watches.push_back(parent_path); /// Trigger list watches for parent
+        paths_to_check_for_list_watches.push_back(parent_path.toString()); /// Trigger list watches for parent
     }
     else if (event_type == Coordination::Event::DELETED)
     {
         paths_to_check_for_list_watches.push_back(path); /// Trigger both list watches for this path
-        paths_to_check_for_list_watches.push_back(parent_path); /// And for parent path
+        paths_to_check_for_list_watches.push_back(parent_path.toString()); /// And for parent path
     }
     /// CHANGED event never trigger list wathes
 
@@ -285,8 +285,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
             response.error = Coordination::Error::ZNODEEXISTS;
             return { response_ptr, undo };
         }
-        auto child_path = getBaseName(path_created);
-        if (child_path.empty())
+        if (getBaseName(path_created).size == 0)
         {
             response.error = Coordination::Error::ZBADARGUMENTS;
             return { response_ptr, undo };
@@ -318,15 +317,17 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         created_node.data = request.data;
         created_node.is_sequental = request.is_sequential;
 
+        auto [map_key, _] = container.insert(path_created, std::move(created_node));
+        auto child_path = getBaseName(map_key);
+
         int32_t parent_cversion = request.parent_cversion;
         int64_t prev_parent_zxid;
         int32_t prev_parent_cversion;
         container.updateValue(parent_path, [child_path, zxid, &prev_parent_zxid,
                                             parent_cversion, &prev_parent_cversion] (KeeperStorage::Node & parent)
         {
-
             parent.children.insert(child_path);
-            parent.size_bytes += child_path.size();
+            parent.size_bytes += child_path.size;
             prev_parent_cversion = parent.stat.cversion;
             prev_parent_zxid = parent.stat.pzxid;
 
@@ -344,14 +345,12 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         });
 
         response.path_created = path_created;
-        container.insert(path_created, std::move(created_node));
 
         if (request.is_ephemeral)
             ephemerals[session_id].emplace(path_created);
 
         undo = [&storage, prev_parent_zxid, prev_parent_cversion, session_id, path_created, is_ephemeral = request.is_ephemeral, parent_path, child_path, acl_id]
         {
-            storage.container.erase(path_created);
             storage.acl_map.removeUsage(acl_id);
 
             if (is_ephemeral)
@@ -364,8 +363,10 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
                 undo_parent.stat.cversion = prev_parent_cversion;
                 undo_parent.stat.pzxid = prev_parent_zxid;
                 undo_parent.children.erase(child_path);
-                undo_parent.size_bytes -= child_path.size();
+                undo_parent.size_bytes -= child_path.size;
             });
+
+            storage.container.erase(path_created);
         };
 
         response.error = Coordination::Error::ZOK;
@@ -498,27 +499,27 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
                 --parent.stat.numChildren;
                 ++parent.stat.cversion;
                 parent.children.erase(child_basename);
-                parent.size_bytes -= child_basename.size();
+                parent.size_bytes -= child_basename.size;
             });
 
             response.error = Coordination::Error::ZOK;
 
             container.erase(request.path);
 
-            undo = [prev_node, &storage, path = request.path, child_basename]
+            undo = [prev_node, &storage, path = request.path]
             {
                 if (prev_node.stat.ephemeralOwner != 0)
                     storage.ephemerals[prev_node.stat.ephemeralOwner].emplace(path);
 
                 storage.acl_map.addUsage(prev_node.acl_id);
 
-                storage.container.insert(path, prev_node);
-                storage.container.updateValue(parentPath(path), [&child_basename] (KeeperStorage::Node & parent)
+                auto [map_key, _] = storage.container.insert(path, prev_node);
+                storage.container.updateValue(parentPath(path), [child_name = getBaseName(map_key)] (KeeperStorage::Node & parent)
                 {
                     ++parent.stat.numChildren;
                     --parent.stat.cversion;
-                    parent.children.insert(child_basename);
-                    parent.size_bytes += child_basename.size();
+                    parent.children.insert(child_name);
+                    parent.size_bytes += child_name.size;
                 });
             };
         }
@@ -671,7 +672,12 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
             if (path_prefix.empty())
                 throw DB::Exception("Logical error: path cannot be empty", ErrorCodes::LOGICAL_ERROR);
 
-            response.names.insert(response.names.end(), it->value.children.begin(), it->value.children.end());
+            response.names.reserve(it->value.children.size());
+
+            for (const auto child : it->value.children)
+            {
+                response.names.push_back(child.toString());
+            }
 
             response.stat = it->value.stat;
             response.error = Coordination::Error::ZOK;
@@ -1087,7 +1093,7 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
                     ++parent.stat.cversion;
                     auto base_name = getBaseName(ephemeral_path);
                     parent.children.erase(base_name);
-                    parent.size_bytes -= base_name.size();
+                    parent.size_bytes -= base_name.size;
                 });
 
                 auto responses = processWatchesImpl(ephemeral_path, watches, list_watches, Coordination::Event::DELETED);

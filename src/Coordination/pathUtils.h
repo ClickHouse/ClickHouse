@@ -6,8 +6,8 @@
 namespace DB
 {
 
-std::string parentPath(StringRef path);
+StringRef parentPath(StringRef path);
 
-std::string getBaseName(StringRef path);
+StringRef getBaseName(StringRef path);
 
 }

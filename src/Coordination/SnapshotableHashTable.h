@@ -10,7 +10,6 @@
 namespace DB
 {
 
-
 template<typename V>
 struct ListNode
 {
@@ -20,7 +19,6 @@ struct ListNode
     bool active_in_map{true};
     bool free_key{false};
 };
-
 
 template <class V>
 class SnapshotableHashTable
@@ -128,11 +126,9 @@ public:
 
     using iterator = typename List::iterator;
     using const_iterator = typename List::const_iterator;
-    using reverse_iterator = typename List::reverse_iterator;
-    using const_reverse_iterator = typename List::const_reverse_iterator;
     using ValueUpdater = std::function<void(V & value)>;
 
-    bool insert(const std::string & key, const V & value)
+    std::pair<StringRef, bool> insert(const std::string & key, const V & value)
     {
         size_t hash_value = map.hash(key);
         auto it = map.find(key, hash_value);
@@ -147,10 +143,10 @@ public:
 
             it->getMapped() = itr;
             updateDataSize(INSERT, key.size(), value.sizeInBytes(), 0);
-            return true;
+            return std::make_pair(it->getKey(), true);
         }
 
-        return false;
+        return std::make_pair(it->getKey(), false);
     }
 
     void insertOrReplace(const std::string & key, const V & value)
@@ -216,7 +212,7 @@ public:
         return map.find(key) != map.end();
     }
 
-    const_iterator updateValue(const std::string & key, ValueUpdater updater)
+    const_iterator updateValue(StringRef key, ValueUpdater updater)
     {
         size_t hash_value = map.hash(key);
         auto it = map.find(key, hash_value);
@@ -243,11 +239,11 @@ public:
             ret = list_itr;
         }
 
-        updateDataSize(UPDATE_VALUE, key.size(), ret->value.sizeInBytes(), old_value_size);
+        updateDataSize(UPDATE_VALUE, key.size, ret->value.sizeInBytes(), old_value_size);
         return ret;
     }
 
-    const_iterator find(const std::string & key) const
+    const_iterator find(StringRef key) const
     {
         auto map_it = map.find(key);
         if (map_it != map.end())
@@ -256,7 +252,7 @@ public:
     }
 
 
-    const V & getValue(const std::string & key) const
+    const V & getValue(StringRef key) const
     {
         auto it = map.find(key);
         assert(it);
@@ -318,15 +314,15 @@ public:
         return approximate_data_size;
     }
 
+    uint64_t keyArenaSize() const
+    {
+        return arena.size();
+    }
+
     iterator begin() { return list.begin(); }
     const_iterator begin() const { return list.cbegin(); }
     iterator end() { return list.end(); }
     const_iterator end() const { return list.cend(); }
-
-    reverse_iterator rbegin() { return list.rbegin(); }
-    const_reverse_iterator rbegin() const { return list.crbegin(); }
-    reverse_iterator rend() { return list.rend(); }
-    const_reverse_iterator rend() const { return list.crend(); }
 };
 
 

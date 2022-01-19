@@ -17,7 +17,7 @@ namespace DB
 struct KeeperStorageRequestProcessor;
 using KeeperStorageRequestProcessorPtr = std::shared_ptr<KeeperStorageRequestProcessor>;
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
-using ChildrenSet = std::unordered_set<std::string>;
+using ChildrenSet = std::unordered_set<StringRef>;
 using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
 
 struct KeeperStorageSnapshot;
@@ -28,6 +28,7 @@ struct KeeperStorageSnapshot;
 class KeeperStorage
 {
 public:
+
     struct Node
     {
         String data;
@@ -202,6 +203,12 @@ public:
     {
         return container.getApproximateDataSize();
     }
+
+    uint64_t getArenaDataSize() const
+    {
+        return container.keyArenaSize();
+    }
+
 
     uint64_t getTotalWatchesCount() const;
 
