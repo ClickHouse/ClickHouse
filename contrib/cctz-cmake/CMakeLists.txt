@@ -57,7 +57,7 @@ if (NOT EXTERNAL_CCTZ_LIBRARY_FOUND OR NOT EXTERNAL_CCTZ_LIBRARY_WORKS)
     )
 
     add_library (cctz ${SRCS})
-    target_include_directories (cctz PUBLIC "${LIBRARY_DIR}/include")
+    target_include_directories (cctz SYSTEM PUBLIC "${LIBRARY_DIR}/include")
 
     if (OS_FREEBSD)
         # yes, need linux, because bsd check inside linux in time_zone_libc.cc:24
