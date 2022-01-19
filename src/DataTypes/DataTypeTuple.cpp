@@ -53,9 +53,6 @@ static std::optional<Exception> checkTupleNames(const Strings & names)
         if (name.empty())
             return Exception("Names of tuple elements cannot be empty", ErrorCodes::BAD_ARGUMENTS);
 
-        if (isNumericASCII(name[0]))
-            return Exception("Explicitly specified names of tuple elements cannot start with digit", ErrorCodes::BAD_ARGUMENTS);
-
         if (!names_set.insert(name).second)
             return Exception("Names of tuple elements must be unique", ErrorCodes::DUPLICATE_COLUMN);
     }
@@ -63,8 +60,8 @@ static std::optional<Exception> checkTupleNames(const Strings & names)
     return {};
 }
 
-DataTypeTuple::DataTypeTuple(const DataTypes & elems_, const Strings & names_, bool serialize_names_)
-    : elems(elems_), names(names_), have_explicit_names(true), serialize_names(serialize_names_)
+DataTypeTuple::DataTypeTuple(const DataTypes & elems_, const Strings & names_)
+    : elems(elems_), names(names_), have_explicit_names(true)
 {
     size_t size = elems.size();
     if (names.size() != size)
@@ -90,7 +87,7 @@ std::string DataTypeTuple::doGetName() const
         if (i != 0)
             s << ", ";
 
-        if (have_explicit_names && serialize_names)
+        if (have_explicit_names)
             s << backQuoteIfNeed(names[i]) << ' ';
 
         s << elems[i]->getName();
@@ -253,31 +250,29 @@ size_t DataTypeTuple::getSizeOfValueInMemory() const
 SerializationPtr DataTypeTuple::doGetDefaultSerialization() const
 {
     SerializationTuple::ElementSerializations serializations(elems.size());
-    bool use_explicit_names = have_explicit_names && serialize_names;
     for (size_t i = 0; i < elems.size(); ++i)
     {
-        String elem_name = use_explicit_names ? names[i] : toString(i + 1);
+        String elem_name = have_explicit_names ? names[i] : toString(i + 1);
         auto serialization = elems[i]->getDefaultSerialization();
         serializations[i] = std::make_shared<SerializationNamed>(serialization, elem_name);
     }
 
-    return std::make_shared<SerializationTuple>(std::move(serializations), use_explicit_names);
+    return std::make_shared<SerializationTuple>(std::move(serializations), have_explicit_names);
 }
 
 SerializationPtr DataTypeTuple::getSerialization(const SerializationInfo & info) const
 {
     SerializationTuple::ElementSerializations serializations(elems.size());
     const auto & info_tuple = assert_cast<const SerializationInfoTuple &>(info);
-    bool use_explicit_names = have_explicit_names && serialize_names;
 
     for (size_t i = 0; i < elems.size(); ++i)
     {
-        String elem_name = use_explicit_names ? names[i] : toString(i + 1);
+        String elem_name = have_explicit_names ? names[i] : toString(i + 1);
         auto serialization = elems[i]->getSerialization(*info_tuple.getElementInfo(i));
         serializations[i] = std::make_shared<SerializationNamed>(serialization, elem_name);
     }
 
-    return std::make_shared<SerializationTuple>(std::move(serializations), use_explicit_names);
+    return std::make_shared<SerializationTuple>(std::move(serializations), have_explicit_names);
 }
 
 MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const SerializationInfo::Settings & settings) const

@@ -22,12 +22,11 @@ private:
     DataTypes elems;
     Strings names;
     bool have_explicit_names;
-    bool serialize_names = true;
 public:
     static constexpr bool is_parametric = true;
 
     DataTypeTuple(const DataTypes & elems);
-    DataTypeTuple(const DataTypes & elems, const Strings & names, bool serialize_names_ = true);
+    DataTypeTuple(const DataTypes & elems, const Strings & names);
 
     static bool canBeCreatedWithNames(const Strings & names);
 
@@ -66,7 +65,6 @@ public:
     String getNameByPosition(size_t i) const;
 
     bool haveExplicitNames() const { return have_explicit_names; }
-    bool serializeNames() const { return serialize_names; }
 };
 
 }
