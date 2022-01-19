@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexFullText.h>
 
+#include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <IO/WriteHelpers.h>
