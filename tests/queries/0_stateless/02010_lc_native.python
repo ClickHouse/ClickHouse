@@ -321,7 +321,6 @@ def insertLowCardinalityRowWithIncorrectAdditionalKeys():
         ba.extend([0] * 8) # UInt64 index (0 for 'hello')
         s.sendall(ba)
 
-        assertPacket(readVarUInt(s), 2)
         print(readException(s))
         s.close()
 
