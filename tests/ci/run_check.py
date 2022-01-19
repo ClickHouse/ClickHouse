@@ -29,13 +29,14 @@ TRUSTED_CONTRIBUTORS = {
         "achimbab",
         "adevyatova ",  # DOCSUP
         "Algunenano",  # Raúl Marín, Tinybird
+        "amosbird",
         "AnaUvarova",  # DOCSUP
         "anauvarova",  # technical writer, Yandex
         "annvsh",  # technical writer, Yandex
         "atereh",  # DOCSUP
         "azat",
         "bharatnc",  # Newbie, but already with many contributions.
-        "bobrik",  # Seasoned contributor, CloundFlare
+        "bobrik",  # Seasoned contributor, CloudFlare
         "BohuTANG",
         "codyrobert",  # Flickerbox engineer
         "cwurm",  # Employee
@@ -127,13 +128,10 @@ def should_run_checks_for_pr(pr_info):
 def check_pr_description(pr_info):
     description = pr_info.body
 
-    lines = [
-        line
-        for line in map(
-            lambda x: x.strip(), description.split("\n") if description else []
-        )
-    ]
-    lines = [re.sub(r"\s+", " ", l) for l in lines]
+    lines = list(
+        map(lambda x: x.strip(), description.split("\n") if description else [])
+    )
+    lines = [re.sub(r"\s+", " ", line) for line in lines]
 
     category = ""
     entry = ""
@@ -198,7 +196,7 @@ def check_pr_description(pr_info):
         return ""
 
     if not entry:
-        return "Changelog entry required for category '{}'".format(category)
+        return f"Changelog entry required for category '{category}'"
 
     return ""
 

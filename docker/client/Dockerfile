@@ -5,7 +5,7 @@ ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
 ARG repository="deb https://repo.clickhouse.com/deb/stable/ main/"
-ARG version=21.13.1.*
+ARG version=22.1.1.*
 
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \

@@ -150,7 +150,6 @@ if (USE_INTERNAL_PARQUET_LIBRARY)
 
     # The library is large - avoid bloat.
     target_compile_options (${ARROW_LIBRARY} PRIVATE -g0)
-    target_compile_options (${THRIFT_LIBRARY} PRIVATE -g0)
     target_compile_options (${PARQUET_LIBRARY} PRIVATE -g0)
 endif()
 
@@ -204,6 +203,10 @@ endif ()
 
 if (USE_INTERNAL_PROTOBUF_LIBRARY)
     add_subdirectory(protobuf-cmake)
+endif ()
+
+if (USE_INTERNAL_THRIFT_LIBRARY)
+    add_subdirectory(thrift-cmake)
 endif ()
 
 if (USE_INTERNAL_HDFS3_LIBRARY)
@@ -297,6 +300,10 @@ endif()
 
 if (USE_S2_GEOMETRY)
     add_subdirectory(s2geometry-cmake)
+endif()
+
+if (USE_HIVE)
+    add_subdirectory (hive-metastore-cmake)
 endif()
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
