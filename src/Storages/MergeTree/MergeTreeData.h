@@ -654,7 +654,7 @@ public:
     static BackupEntries backupDataParts(const DataPartsVector & data_parts);
 
     /// Extract data from the backup and put it to the storage.
-    RestoreFromBackupTaskPtr restoreDataPartsFromBackup(
+    RestoreTaskPtr restoreDataPartsFromBackup(
         const BackupPtr & backup,
         const String & data_path_in_backup,
         const std::unordered_set<String> & partition_ids,

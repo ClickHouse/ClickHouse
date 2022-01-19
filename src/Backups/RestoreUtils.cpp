@@ -1,8 +1,9 @@
+#include <Backups/RestoreUtils.h>
 #include <Backups/BackupUtils.h>
 #include <Backups/DDLRenamingVisitor.h>
 #include <Backups/IBackup.h>
 #include <Backups/IBackupEntry.h>
-#include <Backups/IRestoreFromBackupTask.h>
+#include <Backups/IRestoreTask.h>
 #include <Backups/hasCompatibleDataToRestoreTable.h>
 #include <Common/escapeForFileName.h>
 #include <Databases/IDatabase.h>
@@ -36,16 +37,16 @@ namespace
     using ElementType = ASTBackupQuery::ElementType;
 
     /// Restores a database (without tables inside), should be executed before executing
-    /// RestoreTableFromBackupTask.
-    class RestoreDatabaseFromBackupTask : public IRestoreFromBackupTask
+    /// RestoreTableTask.
+    class RestoreDatabaseTask : public IRestoreTask
     {
     public:
-        RestoreDatabaseFromBackupTask(ContextMutablePtr context_, const ASTPtr & create_query_)
+        RestoreDatabaseTask(ContextMutablePtr context_, const ASTPtr & create_query_)
             : context(context_), create_query(typeid_cast<std::shared_ptr<ASTCreateQuery>>(create_query_))
         {
         }
 
-        RestoreFromBackupTasks run() override
+        RestoreTasks run() override
         {
             createDatabase();
             return {};
@@ -66,10 +67,10 @@ namespace
 
 
     /// Restores a table and fills it with data.
-    class RestoreTableFromBackupTask : public IRestoreFromBackupTask
+    class RestoreTableTask : public IRestoreTask
     {
     public:
-        RestoreTableFromBackupTask(
+        RestoreTableTask(
             ContextMutablePtr context_,
             const ASTPtr & create_query_,
             const ASTs & partitions_,
@@ -83,11 +84,11 @@ namespace
                 table_name.first = DatabaseCatalog::TEMPORARY_DATABASE;
         }
 
-        RestoreFromBackupTasks run() override
+        RestoreTasks run() override
         {
             createStorage();
             auto storage = getStorage();
-            RestoreFromBackupTasks tasks;
+            RestoreTasks tasks;
             if (auto task = insertDataIntoStorage(storage))
                 tasks.push_back(std::move(task));
             return tasks;
@@ -145,7 +146,7 @@ namespace
             throw Exception(error_message, ErrorCodes::CANNOT_RESTORE_TABLE);
         }
 
-        RestoreFromBackupTaskPtr insertDataIntoStorage(StoragePtr storage)
+        RestoreTaskPtr insertDataIntoStorage(StoragePtr storage)
         {
             if (storage->hasHollowBackup())
                 return {};
@@ -208,7 +209,7 @@ namespace
         }
 
         /// Makes tasks for restoring, should be called after prepare().
-        RestoreFromBackupTasks makeTasks() const
+        RestoreTasks makeTasks() const
         {
             /// Check that there are not `different_create_query`. (If it's set it means error.)
             for (auto & info : databases | boost::adaptors::map_values)
@@ -219,13 +220,13 @@ namespace
                                     serializeAST(*info.create_query), serializeAST(*info.different_create_query));
             }
 
-            RestoreFromBackupTasks res;
+            RestoreTasks res;
             for (auto & info : databases | boost::adaptors::map_values)
-                res.push_back(std::make_unique<RestoreDatabaseFromBackupTask>(context, info.create_query));
+                res.push_back(std::make_unique<RestoreDatabaseTask>(context, info.create_query));
 
             /// TODO: We need to restore tables according to their dependencies.
             for (auto & info : tables | boost::adaptors::map_values)
-                res.push_back(std::make_unique<RestoreTableFromBackupTask>(context, info.create_query, info.partitions, backup, info.name_in_backup));
+                res.push_back(std::make_unique<RestoreTableTask>(context, info.create_query, info.partitions, backup, info.name_in_backup));
 
             return res;
         }
@@ -412,7 +413,7 @@ namespace
             return (database_name == DatabaseCatalog::SYSTEM_DATABASE) || (database_name == DatabaseCatalog::TEMPORARY_DATABASE);
         }
 
-        /// Information which is used to make an instance of RestoreTableFromBackupTask.
+        /// Information which is used to make an instance of RestoreTableTask.
         struct CreateTableInfo
         {
             ASTPtr create_query;
@@ -420,7 +421,7 @@ namespace
             ASTs partitions;
         };
 
-        /// Information which is used to make an instance of RestoreDatabaseFromBackupTask.
+        /// Information which is used to make an instance of RestoreDatabaseTask.
         struct CreateDatabaseInfo
         {
             ASTPtr create_query;
@@ -446,7 +447,7 @@ namespace
 
 
     /// Reverts completed restore tasks (in reversed order).
-    void rollbackRestoreTasks(RestoreFromBackupTasks && restore_tasks)
+    void rollbackRestoreTasks(RestoreTasks && restore_tasks)
     {
         for (auto & restore_task : restore_tasks | boost::adaptors::reversed)
         {
@@ -463,7 +464,7 @@ namespace
 }
 
 
-RestoreFromBackupTasks makeRestoreTasks(ContextMutablePtr context, const BackupPtr & backup, const Elements & elements)
+RestoreTasks makeRestoreTasks(ContextMutablePtr context, const BackupPtr & backup, const Elements & elements)
 {
     RestoreTasksBuilder builder{context, backup};
     builder.prepare(elements);
@@ -471,12 +472,12 @@ RestoreFromBackupTasks makeRestoreTasks(ContextMutablePtr context, const BackupP
 }
 
 
-void executeRestoreTasks(RestoreFromBackupTasks && restore_tasks, size_t num_threads)
+void executeRestoreTasks(RestoreTasks && restore_tasks, size_t num_threads)
 {
     if (!num_threads)
         num_threads = 1;
 
-    RestoreFromBackupTasks completed_tasks;
+    RestoreTasks completed_tasks;
     bool need_rollback_completed_tasks = true;
 
     SCOPE_EXIT({
@@ -484,8 +485,8 @@ void executeRestoreTasks(RestoreFromBackupTasks && restore_tasks, size_t num_thr
             rollbackRestoreTasks(std::move(completed_tasks));
     });
 
-    std::deque<std::unique_ptr<IRestoreFromBackupTask>> sequential_tasks;
-    std::deque<std::unique_ptr<IRestoreFromBackupTask>> enqueued_tasks;
+    std::deque<std::unique_ptr<IRestoreTask>> sequential_tasks;
+    std::deque<std::unique_ptr<IRestoreTask>> enqueued_tasks;
 
     /// There are two kinds of restore tasks: sequential and non-sequential ones.
     /// Sequential tasks are executed first and always in one thread.
@@ -503,7 +504,7 @@ void executeRestoreTasks(RestoreFromBackupTasks && restore_tasks, size_t num_thr
         auto current_task = std::move(sequential_tasks.front());
         sequential_tasks.pop_front();
 
-        RestoreFromBackupTasks new_tasks = current_task->run();
+        RestoreTasks new_tasks = current_task->run();
 
         completed_tasks.push_back(std::move(current_task));
         for (auto & task : new_tasks)
@@ -516,7 +517,7 @@ void executeRestoreTasks(RestoreFromBackupTasks && restore_tasks, size_t num_thr
     }
 
     /// Non-sequential tasks.
-    std::unordered_map<IRestoreFromBackupTask *, std::unique_ptr<IRestoreFromBackupTask>> running_tasks;
+    std::unordered_map<IRestoreTask *, std::unique_ptr<IRestoreTask>> running_tasks;
     std::vector<ThreadFromGlobalPool> threads;
     std::mutex mutex;
     std::condition_variable cond;
@@ -524,7 +525,7 @@ void executeRestoreTasks(RestoreFromBackupTasks && restore_tasks, size_t num_thr
 
     while (true)
     {
-        IRestoreFromBackupTask * current_task = nullptr;
+        IRestoreTask * current_task = nullptr;
         {
             std::unique_lock lock{mutex};
             cond.wait(lock, [&]
@@ -554,7 +555,7 @@ void executeRestoreTasks(RestoreFromBackupTasks && restore_tasks, size_t num_thr
                     return;
             }
 
-            RestoreFromBackupTasks new_tasks;
+            RestoreTasks new_tasks;
             std::exception_ptr new_exception;
             try
             {

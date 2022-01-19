@@ -222,7 +222,7 @@ BackupEntries IStorage::backup(const ASTs &, ContextPtr)
     throw Exception("Table engine " + getName() + " doesn't support backups", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-RestoreFromBackupTaskPtr IStorage::restoreFromBackup(const BackupPtr &, const String &, const ASTs &, ContextMutablePtr)
+RestoreTaskPtr IStorage::restoreFromBackup(const BackupPtr &, const String &, const ASTs &, ContextMutablePtr)
 {
     throw Exception("Table engine " + getName() + " doesn't support restoring", ErrorCodes::NOT_IMPLEMENTED);
 }
