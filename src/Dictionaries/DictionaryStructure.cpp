@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Formats/FormatSettings.h>
 #include <IO/WriteHelpers.h>
@@ -123,25 +124,35 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
         access_to_key_from_attributes = true;
 }
 
+DataTypes DictionaryStructure::getKeyTypes() const
+{
+    if (id)
+        return {std::make_shared<DataTypeUInt64>()};
+
+    const auto & key_attributes = *key;
+    size_t key_attributes_size = key_attributes.size();
+
+    DataTypes result;
+    result.reserve(key_attributes_size);
+
+    for (size_t i = 0; i < key_attributes_size; ++i)
+        result.emplace_back(key_attributes[i].type);
+
+    return result;
+}
 
 void DictionaryStructure::validateKeyTypes(const DataTypes & key_types) const
 {
-    size_t key_types_size = key_types.size();
-    if (key_types_size != getKeysSize())
-        throw Exception(ErrorCodes::TYPE_MISMATCH, "Key structure does not match, expected {}", getKeyDescription());
+    auto key_attributes_types = getKeyTypes();
+    size_t key_attributes_types_size = key_attributes_types.size();
 
-    if (id && !isUInt64(key_types[0]))
-    {
-        throw Exception(ErrorCodes::TYPE_MISMATCH,
-            "Key type for simple key does not match, expected {}, found {}",
-            std::to_string(0),
-            "UInt64",
-            key_types[0]->getName());
-    }
+    size_t key_types_size = key_types.size();
+    if (key_types_size != key_attributes_types_size)
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Key structure does not match, expected {}", getKeyDescription());
 
     for (size_t i = 0; i < key_types_size; ++i)
     {
-        const auto & expected_type = (*key)[i].type;
+        const auto & expected_type = key_attributes_types[i];
         const auto & actual_type = key_types[i];
 
         if (!areTypesEqual(expected_type, actual_type))

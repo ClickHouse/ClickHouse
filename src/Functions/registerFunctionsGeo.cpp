@@ -43,8 +43,6 @@ void registerFunctionH3HexAreaM2(FunctionFactory &);
 void registerFunctionH3IsResClassIII(FunctionFactory &);
 void registerFunctionH3IsPentagon(FunctionFactory &);
 void registerFunctionH3GetFaces(FunctionFactory &);
-void registerFunctionH3DegsToRads(FunctionFactory &);
-void registerFunctionH3RadsToDegs(FunctionFactory &);
 void registerFunctionH3HexAreaKm2(FunctionFactory &);
 void registerFunctionH3CellAreaM2(FunctionFactory &);
 void registerFunctionH3CellAreaRads2(FunctionFactory &);
@@ -105,8 +103,6 @@ void registerFunctionsGeo(FunctionFactory & factory)
     registerFunctionH3IsResClassIII(factory);
     registerFunctionH3IsPentagon(factory);
     registerFunctionH3GetFaces(factory);
-    registerFunctionH3DegsToRads(factory);
-    registerFunctionH3RadsToDegs(factory);
     registerFunctionH3HexAreaKm2(factory);
     registerFunctionH3CellAreaM2(factory);
     registerFunctionH3CellAreaRads2(factory);

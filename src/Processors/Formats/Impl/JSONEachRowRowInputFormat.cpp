@@ -340,6 +340,8 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
         return std::make_shared<JSONEachRowRowInputFormat>(buf, sample, std::move(params), settings, false);
     });
 
+    factory.registerFileExtension("ndjson", "JSONEachRow");
+
     factory.registerInputFormat("JSONStringsEachRow", [](
         ReadBuffer & buf,
         const Block & sample,

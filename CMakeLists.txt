@@ -415,13 +415,14 @@ else ()
 endif ()
 
 if (WERROR)
-    add_warning(error)
+    # Don't pollute CMAKE_CXX_FLAGS with -Werror as it will break some CMake checks.
+    # Instead, adopt modern cmake usage requirement.
+    target_compile_options(global-libs INTERFACE "-Werror")
 endif ()
 
 # Make this extra-checks for correct library dependencies.
 if (OS_LINUX AND NOT SANITIZE)
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-undefined")
-    set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-undefined")
+    target_link_options(global-libs INTERFACE "-Wl,--no-undefined")
 endif ()
 
 # Increase stack size on Musl. We need big stack for our recursive-descend parser.
@@ -511,6 +512,7 @@ include (cmake/find/h3.cmake)
 include (cmake/find/libxml2.cmake)
 include (cmake/find/brotli.cmake)
 include (cmake/find/protobuf.cmake)
+include (cmake/find/thrift.cmake)
 include (cmake/find/grpc.cmake)
 include (cmake/find/pdqsort.cmake)
 include (cmake/find/miniselect.cmake)
@@ -520,7 +522,7 @@ include (cmake/find/curl.cmake)
 include (cmake/find/s3.cmake)
 include (cmake/find/blob_storage.cmake)
 include (cmake/find/base64.cmake)
-include (cmake/find/parquet.cmake)
+include (cmake/find/parquet.cmake) # uses protobuf and thrift
 include (cmake/find/simdjson.cmake)
 include (cmake/find/fast_float.cmake)
 include (cmake/find/rapidjson.cmake)
@@ -548,6 +550,7 @@ include (cmake/find/cassandra.cmake)
 include (cmake/find/sentry.cmake)
 include (cmake/find/datasketches.cmake)
 include (cmake/find/libprotobuf-mutator.cmake)
+include (cmake/find/hive-metastore.cmake)
 
 set (USE_INTERNAL_CITYHASH_LIBRARY ON CACHE INTERNAL "")
 find_contrib_lib(cityhash)
