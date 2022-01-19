@@ -131,8 +131,6 @@ if(BUILD_SHARED_LIBS)
   set(CMAKE_POSITION_INDEPENDENT_CODE TRUE)
 endif()
 
-include_directories("${BORINGSSL_SOURCE_DIR}/include")
-
 set(
   CRYPTO_ios_aarch64_SOURCES
 
