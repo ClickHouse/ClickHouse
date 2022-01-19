@@ -4,6 +4,7 @@
 #include <Backups/IBackup.h>
 #include <Backups/IBackupEntry.h>
 #include <Backups/IRestoreTask.h>
+#include <Backups/RestoreSettings.h>
 #include <Backups/hasCompatibleDataToRestoreTable.h>
 #include <Common/escapeForFileName.h>
 #include <Databases/IDatabase.h>
@@ -41,7 +42,7 @@ namespace
     class RestoreDatabaseTask : public IRestoreTask
     {
     public:
-        RestoreDatabaseTask(ContextMutablePtr context_, const ASTPtr & create_query_)
+        RestoreDatabaseTask(ContextMutablePtr context_, const ASTPtr & create_query_, const RestoreSettings &)
             : context(context_), create_query(typeid_cast<std::shared_ptr<ASTCreateQuery>>(create_query_))
         {
         }
@@ -75,9 +76,11 @@ namespace
             const ASTPtr & create_query_,
             const ASTs & partitions_,
             const BackupPtr & backup_,
-            const DatabaseAndTableName & table_name_in_backup_)
+            const DatabaseAndTableName & table_name_in_backup_,
+            const RestoreSettings & restore_settings_)
             : context(context_), create_query(typeid_cast<std::shared_ptr<ASTCreateQuery>>(create_query_)),
-              partitions(partitions_), backup(backup_), table_name_in_backup(table_name_in_backup_)
+              partitions(partitions_), backup(backup_), table_name_in_backup(table_name_in_backup_),
+              restore_settings(restore_settings_)
         {
             table_name = DatabaseAndTableName{create_query->getDatabase(), create_query->getTable()};
             if (create_query->temporary)
@@ -152,7 +155,7 @@ namespace
                 return {};
             context->checkAccess(AccessType::INSERT, table_name.first, table_name.second);
             String data_path_in_backup = getDataPathInBackup(table_name_in_backup);
-            return storage->restoreFromBackup(backup, data_path_in_backup, partitions, context);
+            return storage->restoreFromBackup(context, partitions, backup, data_path_in_backup, restore_settings);
         }
 
         ContextMutablePtr context;
@@ -161,6 +164,7 @@ namespace
         ASTs partitions;
         BackupPtr backup;
         DatabaseAndTableName table_name_in_backup;
+        RestoreSettings restore_settings;
     };
 
 
@@ -169,8 +173,8 @@ namespace
     class RestoreTasksBuilder
     {
     public:
-        RestoreTasksBuilder(ContextMutablePtr context_, const BackupPtr & backup_)
-            : context(context_), backup(backup_) {}
+        RestoreTasksBuilder(ContextMutablePtr context_, const BackupPtr & backup_, const RestoreSettings & restore_settings_)
+            : context(context_), backup(backup_), restore_settings(restore_settings_) {}
 
         /// Prepares internal structures for making tasks for restoring.
         void prepare(const ASTBackupQuery::Elements & elements)
@@ -222,11 +226,11 @@ namespace
 
             RestoreTasks res;
             for (auto & info : databases | boost::adaptors::map_values)
-                res.push_back(std::make_unique<RestoreDatabaseTask>(context, info.create_query));
+                res.push_back(std::make_unique<RestoreDatabaseTask>(context, info.create_query, restore_settings));
 
             /// TODO: We need to restore tables according to their dependencies.
             for (auto & info : tables | boost::adaptors::map_values)
-                res.push_back(std::make_unique<RestoreTableTask>(context, info.create_query, info.partitions, backup, info.name_in_backup));
+                res.push_back(std::make_unique<RestoreTableTask>(context, info.create_query, info.partitions, backup, info.name_in_backup, restore_settings));
 
             return res;
         }
@@ -440,6 +444,7 @@ namespace
 
         ContextMutablePtr context;
         BackupPtr backup;
+        RestoreSettings restore_settings;
         DDLRenamingSettings renaming_settings;
         std::map<String, CreateDatabaseInfo> databases;
         std::map<DatabaseAndTableName, CreateTableInfo> tables;
@@ -464,9 +469,9 @@ namespace
 }
 
 
-RestoreTasks makeRestoreTasks(ContextMutablePtr context, const BackupPtr & backup, const Elements & elements)
+RestoreTasks makeRestoreTasks(ContextMutablePtr context, const BackupPtr & backup, const Elements & elements, const RestoreSettings & restore_settings)
 {
-    RestoreTasksBuilder builder{context, backup};
+    RestoreTasksBuilder builder{context, backup, restore_settings};
     builder.prepare(elements);
     return builder.makeTasks();
 }
