@@ -52,7 +52,6 @@ public:
     }
 
 private:
-    Block res_block;
     Pipes pipes;
     QueryProcessingStage::Enum to_stage;
 };
