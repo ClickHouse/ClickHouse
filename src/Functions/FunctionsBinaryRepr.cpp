@@ -519,7 +519,7 @@ public:
                 char * begin = reinterpret_cast<char *>(&out_vec[pos]);
                 char * end = begin;
 
-                // use executeOnUInt instead of using executeOneString 
+                // use executeOnUInt instead of using executeOneString
                 // because the latter one outputs the string in the memory order
                 Impl::executeOneUInt(uuid[i].toUnderType().items[0], end, false, false);
                 Impl::executeOneUInt(uuid[i].toUnderType().items[1], end, false, true);
