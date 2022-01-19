@@ -695,7 +695,7 @@ void HashedArrayDictionary<dictionary_key_type>::loadData()
     if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
             "{}: dictionary source is empty and 'require_nonempty' property is set.",
-            full_name);
+            getFullName());
 }
 
 template <DictionaryKeyType dictionary_key_type>
