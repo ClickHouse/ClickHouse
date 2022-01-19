@@ -94,6 +94,43 @@ class TestDockerImageCheck(unittest.TestCase):
         )
         self.assertFalse(result)
 
+    @patch("docker_images_check.build_and_push_one_image")
+    def test_process_image_with_parents(self, mock_build):
+        mock_build.side_effect = lambda w, x, y, z: (True, f"{w.repo}_{x}.log")
+        im1 = di.DockerImage("path1", "repo1")
+        im2 = di.DockerImage("path2", "repo2", im1)
+        im3 = di.DockerImage("path3", "repo3", im2)
+        im4 = di.DockerImage("path4", "repo4", im1)
+        # We use list to have determined order of image builgings
+        images = [im4, im1, im3, im2, im1]
+        results = [
+            di.process_image_with_parents(im, ["v1", "v2", "latest"], True)
+            for im in images
+        ]
+
+        expected = [
+            [  # repo4 -> repo1
+                ("repo1:v1", "repo1_v1.log", "OK"),
+                ("repo1:v2", "repo1_v2.log", "OK"),
+                ("repo1:latest", "repo1_latest.log", "OK"),
+                ("repo4:v1", "repo4_v1.log", "OK"),
+                ("repo4:v2", "repo4_v2.log", "OK"),
+                ("repo4:latest", "repo4_latest.log", "OK"),
+            ],
+            [],  # repo1 is built
+            [  # repo3 -> repo2 -> repo1
+                ("repo2:v1", "repo2_v1.log", "OK"),
+                ("repo2:v2", "repo2_v2.log", "OK"),
+                ("repo2:latest", "repo2_latest.log", "OK"),
+                ("repo3:v1", "repo3_v1.log", "OK"),
+                ("repo3:v2", "repo3_v2.log", "OK"),
+                ("repo3:latest", "repo3_latest.log", "OK"),
+            ],
+            [],  # repo2 -> repo1 are built
+            [],  # repo1 is built
+        ]
+        self.assertEqual(results, expected)
+
 
 if __name__ == "__main__":
     unittest.main()
