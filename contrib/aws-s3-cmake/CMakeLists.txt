@@ -81,7 +81,7 @@ set(S3_INCLUDES
 )
 
 add_library(aws_s3_checksums ${AWS_CHECKSUMS_SOURCES})
-target_include_directories(aws_s3_checksums PUBLIC "${AWS_CHECKSUMS_LIBRARY_DIR}/include/")
+target_include_directories(aws_s3_checksums SYSTEM PUBLIC "${AWS_CHECKSUMS_LIBRARY_DIR}/include/")
 if(CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
     target_compile_definitions(aws_s3_checksums PRIVATE "-DDEBUG_BUILD")
 endif()
@@ -93,7 +93,7 @@ add_library(aws_s3 ${S3_UNIFIED_SRC})
 target_compile_definitions(aws_s3 PUBLIC "AWS_SDK_VERSION_MAJOR=1")
 target_compile_definitions(aws_s3 PUBLIC "AWS_SDK_VERSION_MINOR=7")
 target_compile_definitions(aws_s3 PUBLIC "AWS_SDK_VERSION_PATCH=231")
-target_include_directories(aws_s3 PUBLIC ${S3_INCLUDES})
+target_include_directories(aws_s3 SYSTEM PUBLIC ${S3_INCLUDES})
 
 if (OPENSSL_FOUND)
     target_compile_definitions(aws_s3 PUBLIC -DENABLE_OPENSSL_ENCRYPTION)
