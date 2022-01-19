@@ -15,10 +15,13 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <base/JSON.h>
 #include <base/logger_useful.h>
 #include <Compression/getCompressionCodecForFile.h>
+#include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
@@ -615,7 +618,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     /// Memory should not be limited during ATTACH TABLE query.
     /// This is already true at the server startup but must be also ensured for manual table ATTACH.
     /// Motivation: memory for index is shared between queries - not belong to the query itself.
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
 
     loadUUID();
     loadColumns(require_columns_checksums);
@@ -1159,6 +1162,14 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     storage.lockSharedData(*this);
 }
 
+void IMergeTreeDataPart::cleanupOldName(const String & old_part_name) const
+{
+    if (name == old_part_name)
+        return;
+
+    storage.unlockSharedData(*this, old_part_name);
+}
+
 std::optional<bool> IMergeTreeDataPart::keepSharedDataInDecoupledStorage() const
 {
     /// NOTE: It's needed for zero-copy replication
@@ -1618,6 +1629,12 @@ String IMergeTreeDataPart::getUniqueId() const
 
     String id = disk->getUniqueId(fs::path(getFullRelativePath()) / "checksums.txt");
     return id;
+}
+
+
+UInt32 IMergeTreeDataPart::getNumberOfRefereneces() const
+{
+    return volume->getDisk()->getRefCount(fs::path(getFullRelativePath()) / "checksums.txt");
 }
 
 

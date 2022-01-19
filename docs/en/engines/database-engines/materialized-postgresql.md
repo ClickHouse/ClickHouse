@@ -7,7 +7,7 @@ toc_title: MaterializedPostgreSQL
 
 Creates a ClickHouse database with tables from PostgreSQL database. Firstly, database with engine `MaterializedPostgreSQL` creates a snapshot of PostgreSQL database and loads required tables. Required tables can include any subset of tables from any subset of schemas from specified database. Along with the snapshot database engine acquires LSN and once initial dump of tables is performed - it starts pulling updates from WAL. After database is created, newly added tables to PostgreSQL database are not automatically added to replication. They have to be added manually with `ATTACH TABLE db.table` query.
 
-Replication is implemented with PostgreSQL Logical Replication Protocol, which does not allow to replicate DDL, but allows to know whether replication breaking changes happened (column type changes, adding/removing columns). Such changes are detected and according tables stop receiving updates. Such tables can be automatically reloaded in the background in case required setting is turned on. Safest way for now is to use `ATTACH`/ `DETACH` queries to reload table completely. If DDL does not break replication (for example, renaming a column) table will still receive updates (insertion is done by position).
+Replication is implemented with PostgreSQL Logical Replication Protocol, which does not allow to replicate DDL, but allows to know whether replication breaking changes happened (column type changes, adding/removing columns). Such changes are detected and according tables stop receiving updates. Such tables can be automatically reloaded in the background in case required setting is turned on (can be used starting from 22.1). Safest way for now is to use `ATTACH`/ `DETACH` queries to reload table completely. If DDL does not break replication (for example, renaming a column) table will still receive updates (insertion is done by position).
 
 ## Creating a Database {#creating-a-database}
 
@@ -26,7 +26,7 @@ ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password') [SE
 ## Example of Use {#example-of-use}
 
 ``` sql
-CREATE DATABASE postgresql;
+CREATE DATABASE postgres_db
 ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password');
 
 SHOW TABLES FROM postgres_db;
@@ -46,7 +46,7 @@ After `MaterializedPostgreSQL` database is created, it does not automatically de
 ATTACH TABLE postgres_database.new_table;
 ```
 
-Warning: before version 21.13 adding table to replication left unremoved temprorary replication slot (named `{db_name}_ch_replication_slot_tmp`). If attaching tables in clickhouse version before 21.13, make sure to delete it manually (`SELECT pg_drop_replication_slot('{db_name}_ch_replication_slot_tmp')`). Otherwise disk usage will grow. Issue is fixed in 21.13.
+Warning: before version 22.1 adding table to replication left unremoved temprorary replication slot (named `{db_name}_ch_replication_slot_tmp`). If attaching tables in clickhouse version before 22.1, make sure to delete it manually (`SELECT pg_drop_replication_slot('{db_name}_ch_replication_slot_tmp')`). Otherwise disk usage will grow. Issue is fixed in 22.1.
 
 ## Dynamically removing tables from replication {#dynamically-removing-table-from-replication}
 
@@ -155,6 +155,8 @@ Default value: empty string. (Default schema is used)
 Default value: empty list. (Default schema is used)
 
 4. materialized_postgresql_allow_automatic_update {#materialized-postgresql-allow-automatic-update}
+
+Do not use this setting before 22.1 version.
 
 Allows reloading table in the background, when schema changes are detected. DDL queries on the PostgreSQL side are not replicated via ClickHouse [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) engine, because it is not allowed with PostgreSQL logical replication protocol, but the fact of DDL changes is detected transactionally. In this case, the default behaviour is to stop replicating those tables once DDL is detected. However, if this setting is enabled, then, instead of stopping the replication of those tables, they will be reloaded in the background via database snapshot without data losses and replication will continue for them.
 

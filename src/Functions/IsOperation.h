@@ -57,10 +57,7 @@ struct IsOperation
 
     static constexpr bool division = div_floating || div_int || div_int_or_zero;
 
-    static constexpr bool allow_decimal =
-        plus || minus || multiply ||
-        div_floating || div_int || div_int_or_zero ||
-        least || greatest;
+    static constexpr bool allow_decimal = plus || minus || multiply || division || least || greatest;
 };
 
 }
