@@ -241,7 +241,7 @@ add_library(liblzma
     ${SRC_DIR}/src/liblzma/simple/x86.c
 )
 
-target_include_directories(liblzma PRIVATE
+target_include_directories(liblzma SYSTEM PUBLIC
     ${SRC_DIR}/src/liblzma/api
     ${SRC_DIR}/src/liblzma/common
     ${SRC_DIR}/src/liblzma/check
