@@ -270,7 +270,6 @@ IMergeTreeDataPart::Checksums checkDataPart(
 
     if (require_checksums || !checksums_txt.files.empty())
         checksums_txt.checkEqual(checksums_data, check_uncompressed);
-
     return checksums_data;
 }
 
