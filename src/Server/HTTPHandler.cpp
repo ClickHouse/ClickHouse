@@ -10,10 +10,7 @@
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
-#include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromFile.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromTemporaryFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
@@ -27,7 +24,6 @@
 #include <base/logger_useful.h>
 #include <Common/SettingsChanges.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 
@@ -41,13 +37,11 @@
 #include <Poco/Base64Encoder.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPStream.h>
-#include <Poco/Net/NetException.h>
 #include <Poco/MemoryStream.h>
 #include <Poco/StreamCopier.h>
 #include <Poco/String.h>
 
 #include <chrono>
-#include <iomanip>
 #include <sstream>
 
 
@@ -56,7 +50,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_PARSE_TEXT;
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;

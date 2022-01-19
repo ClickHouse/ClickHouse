@@ -23,6 +23,7 @@ set (SRCS_LTDL
 add_library (ltdl ${SRCS_LTDL})
 
 target_include_directories(ltdl
+    SYSTEM
     PRIVATE
         linux_x86_64/libltdl
     PUBLIC
@@ -276,6 +277,7 @@ target_link_libraries (unixodbc PRIVATE ltdl)
 # SYSTEM_FILE_PATH was changed to /etc
 
 target_include_directories (unixodbc
+    SYSTEM
     PRIVATE
         linux_x86_64/private
     PUBLIC
