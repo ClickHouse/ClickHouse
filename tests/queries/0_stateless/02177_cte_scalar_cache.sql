@@ -4,7 +4,7 @@ WITH
     ( SELECT sleep(0.0001) FROM system.one ) as a3,
     ( SELECT sleep(0.0001) FROM system.one ) as a4,
     ( SELECT sleep(0.0001) FROM system.one ) as a5
-SELECT '02177_CTE_GLOBAL_ON', a5
+SELECT '02177_CTE_GLOBAL_ON', a5 FROM system.numbers LIMIT 100
 FORMAT Null
 SETTINGS enable_global_with_statement = 1;
 
@@ -14,7 +14,7 @@ WITH
     ( SELECT sleep(0.0001) FROM system.one ) as a3,
     ( SELECT sleep(0.0001) FROM system.one ) as a4,
     ( SELECT sleep(0.0001) FROM system.one ) as a5
-SELECT '02177_CTE_GLOBAL_OFF', a5
+SELECT '02177_CTE_GLOBAL_OFF', a5 FROM system.numbers LIMIT 100
         FORMAT Null
 SETTINGS enable_global_with_statement = 0;
 

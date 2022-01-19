@@ -867,9 +867,6 @@ const Block & Context::getScalar(const String & name) const
     auto it = scalars.find(name);
     if (scalars.end() == it)
     {
-        it = local_scalars.find(name);
-        if (it != local_scalars.end())
-            return it->second;
         // This should be a logical error, but it fails the sql_fuzz test too
         // often, so 'bad arguments' for now.
         throw Exception("Scalar " + backQuoteIfNeed(name) + " doesn't exist (internal bug)", ErrorCodes::BAD_ARGUMENTS);
@@ -965,7 +962,7 @@ bool Context::hasScalar(const String & name) const
     if (isGlobalContext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
 
-    return scalars.count(name) || local_scalars.count(name);
+    return scalars.count(name);
 }
 
 
