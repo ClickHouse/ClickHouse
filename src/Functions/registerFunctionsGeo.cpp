@@ -36,6 +36,7 @@ void registerFunctionH3KRing(FunctionFactory &);
 void registerFunctionH3GetBaseCell(FunctionFactory &);
 void registerFunctionH3ToParent(FunctionFactory &);
 void registerFunctionH3ToChildren(FunctionFactory &);
+void registerFunctionH3ToCenterChild(FunctionFactory &);
 void registerFunctionH3IndexesAreNeighbors(FunctionFactory &);
 void registerFunctionStringToH3(FunctionFactory &);
 void registerFunctionH3ToString(FunctionFactory &);
@@ -96,6 +97,7 @@ void registerFunctionsGeo(FunctionFactory & factory)
     registerFunctionH3GetBaseCell(factory);
     registerFunctionH3ToParent(factory);
     registerFunctionH3ToChildren(factory);
+    registerFunctionH3ToCenterChild(factory);
     registerFunctionH3IndexesAreNeighbors(factory);
     registerFunctionStringToH3(factory);
     registerFunctionH3ToString(factory);
