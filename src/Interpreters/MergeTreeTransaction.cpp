@@ -148,7 +148,7 @@ bool MergeTreeTransaction::rollback() noexcept
     for (const auto & part : creating_parts)
         part->versions.mincsn.store(Tx::RolledBackCSN);
 
-    for (const auto & part : removing_parts)
+    for (const auto & part : removing_parts)    /// TODO update metadata file
         part->versions.unlockMaxTID(tid, TransactionInfoContext{part->storage.getStorageID(), part->name});
 
     /// FIXME const_cast

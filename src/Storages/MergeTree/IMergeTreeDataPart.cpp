@@ -1122,6 +1122,7 @@ void IMergeTreeDataPart::storeVersionMetadata() const
 }
 
 void IMergeTreeDataPart::loadVersionMetadata() const
+try
 {
     String version_file_name = fs::path(getFullRelativePath()) / TXN_VERSION_METADATA_FILE_NAME;
     String tmp_version_file_name = version_file_name + ".tmp";
@@ -1175,6 +1176,11 @@ void IMergeTreeDataPart::loadVersionMetadata() const
     versions.setMinTID(Tx::DummyTID, txn_context);
     versions.mincsn = Tx::RolledBackCSN;
     remove_tmp_file();
+}
+catch (Exception & e)
+{
+    e.addMessage("While loading version metadata from table {} part {}", storage.getStorageID().getNameForLogs(), name);
+    throw;
 }
 
 

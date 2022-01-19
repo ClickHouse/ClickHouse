@@ -87,6 +87,7 @@
 #include <Interpreters/SynonymsExtensions.h>
 #include <Interpreters/Lemmatizers.h>
 #include <Interpreters/ClusterDiscovery.h>
+#include <Interpreters/TransactionLog.h>
 #include <filesystem>
 
 
@@ -340,6 +341,8 @@ struct ContextSharedPart
             moves_executor->wait();
         if (common_executor)
             common_executor->wait();
+
+        TransactionLog::shutdownIfAny();
 
         std::unique_ptr<SystemLogs> delete_system_logs;
         {
