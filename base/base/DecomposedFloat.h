@@ -157,11 +157,11 @@ struct DecomposedFloat
 
         bool large_and_always_integer = normalized_exponent() >= static_cast<int16_t>(Traits::mantissa_bits);
 
-        UInt a = large_and_always_integer
-            ? static_cast<UInt>(mantissa()) << (normalized_exponent() - Traits::mantissa_bits)
-            : static_cast<UInt>(mantissa()) >> (Traits::mantissa_bits - normalized_exponent());
+        UInt64 a = large_and_always_integer
+            ? static_cast<UInt64>(mantissa()) << (normalized_exponent() - Traits::mantissa_bits)
+            : static_cast<UInt64>(mantissa()) >> (Traits::mantissa_bits - normalized_exponent());
 
-        UInt b = uint_rhs - (static_cast<UInt>(1) << normalized_exponent());
+        UInt64 b = uint_rhs - (static_cast<UInt64>(1) << normalized_exponent());
 
         if (a < b)
             return is_negative() ? 1 : -1;
