@@ -1,4 +1,4 @@
-database engine:Ordinary; table engine:MergeTree; use metadata cache:false; use projection:false
+database engine:Ordinary; table engine:MergeTree; use metadata cache:false; use projection:false; use_compact_data_part:false
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
 INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
@@ -40,7 +40,7 @@ CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
-database engine:Ordinary; table engine:MergeTree; use metadata cache:false; use projection:true
+database engine:Ordinary; table engine:MergeTree; use metadata cache:false; use projection:false; use_compact_data_part:true
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
 INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
@@ -82,7 +82,7 @@ CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
-database engine:Ordinary; table engine:MergeTree; use metadata cache:true; use projection:false
+database engine:Ordinary; table engine:MergeTree; use metadata cache:false; use projection:true; use_compact_data_part:false
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
 INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
@@ -124,7 +124,7 @@ CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
-database engine:Ordinary; table engine:MergeTree; use metadata cache:true; use projection:true
+database engine:Ordinary; table engine:MergeTree; use metadata cache:false; use projection:true; use_compact_data_part:true
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
 INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
@@ -166,7 +166,7 @@ CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
-database engine:Atomic; table engine:MergeTree; use metadata cache:false; use projection:false
+database engine:Ordinary; table engine:MergeTree; use metadata cache:true; use projection:false; use_compact_data_part:false
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
 INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
@@ -208,7 +208,7 @@ CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
-database engine:Atomic; table engine:MergeTree; use metadata cache:false; use projection:true
+database engine:Ordinary; table engine:MergeTree; use metadata cache:true; use projection:false; use_compact_data_part:true
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
 INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
@@ -250,7 +250,7 @@ CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
-database engine:Atomic; table engine:MergeTree; use metadata cache:true; use projection:false
+database engine:Ordinary; table engine:MergeTree; use metadata cache:true; use projection:true; use_compact_data_part:false
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
 INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
@@ -292,7 +292,7 @@ CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
-database engine:Atomic; table engine:MergeTree; use metadata cache:true; use projection:true
+database engine:Ordinary; table engine:MergeTree; use metadata cache:true; use projection:true; use_compact_data_part:true
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
 INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
@@ -334,7 +334,7 @@ CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
-database engine:Ordinary; table engine:ReplicatedMergeTree; use metadata cache:false; use projection:false
+database engine:Atomic; table engine:MergeTree; use metadata cache:false; use projection:false; use_compact_data_part:false
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
 INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
@@ -376,7 +376,7 @@ CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
-database engine:Ordinary; table engine:ReplicatedMergeTree; use metadata cache:false; use projection:true
+database engine:Atomic; table engine:MergeTree; use metadata cache:false; use projection:false; use_compact_data_part:true
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
 INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
@@ -418,7 +418,7 @@ CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
-database engine:Ordinary; table engine:ReplicatedMergeTree; use metadata cache:true; use projection:false
+database engine:Atomic; table engine:MergeTree; use metadata cache:false; use projection:true; use_compact_data_part:false
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
 INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
@@ -460,7 +460,7 @@ CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
-database engine:Ordinary; table engine:ReplicatedMergeTree; use metadata cache:true; use projection:true
+database engine:Atomic; table engine:MergeTree; use metadata cache:false; use projection:true; use_compact_data_part:true
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
 INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
@@ -502,7 +502,7 @@ CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
-database engine:Atomic; table engine:ReplicatedMergeTree; use metadata cache:false; use projection:false
+database engine:Atomic; table engine:MergeTree; use metadata cache:true; use projection:false; use_compact_data_part:false
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
 INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
@@ -544,7 +544,7 @@ CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
-database engine:Atomic; table engine:ReplicatedMergeTree; use metadata cache:false; use projection:true
+database engine:Atomic; table engine:MergeTree; use metadata cache:true; use projection:false; use_compact_data_part:true
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
 INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
@@ -586,7 +586,7 @@ CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
-database engine:Atomic; table engine:ReplicatedMergeTree; use metadata cache:true; use projection:false
+database engine:Atomic; table engine:MergeTree; use metadata cache:true; use projection:true; use_compact_data_part:false
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
 INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
@@ -628,7 +628,679 @@ CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
-database engine:Atomic; table engine:ReplicatedMergeTree; use metadata cache:true; use projection:true
+database engine:Atomic; table engine:MergeTree; use metadata cache:true; use projection:true; use_compact_data_part:true
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 5, 1000, 2000), ('2018-05-16', 6, 3000, 4000), ('2018-05-17', 7, 5000, 6000), ('2018-05-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v1 = 2001  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v2 = 4002  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 8 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-06-15', 5, 1000, 2000), ('2018-06-16', 6, 3000, 4000), ('2018-06-17', 7, 5000, 6000), ('2018-06-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop partition 201805 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache add column v3 UInt64 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop column v3 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 10 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 15 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+database engine:Ordinary; table engine:ReplicatedMergeTree; use metadata cache:false; use projection:false; use_compact_data_part:false
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 5, 1000, 2000), ('2018-05-16', 6, 3000, 4000), ('2018-05-17', 7, 5000, 6000), ('2018-05-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v1 = 2001  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v2 = 4002  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 8 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-06-15', 5, 1000, 2000), ('2018-06-16', 6, 3000, 4000), ('2018-06-17', 7, 5000, 6000), ('2018-06-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop partition 201805 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache add column v3 UInt64 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop column v3 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 10 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 15 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+database engine:Ordinary; table engine:ReplicatedMergeTree; use metadata cache:false; use projection:false; use_compact_data_part:true
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 5, 1000, 2000), ('2018-05-16', 6, 3000, 4000), ('2018-05-17', 7, 5000, 6000), ('2018-05-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v1 = 2001  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v2 = 4002  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 8 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-06-15', 5, 1000, 2000), ('2018-06-16', 6, 3000, 4000), ('2018-06-17', 7, 5000, 6000), ('2018-06-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop partition 201805 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache add column v3 UInt64 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop column v3 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 10 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 15 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+database engine:Ordinary; table engine:ReplicatedMergeTree; use metadata cache:false; use projection:true; use_compact_data_part:false
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 5, 1000, 2000), ('2018-05-16', 6, 3000, 4000), ('2018-05-17', 7, 5000, 6000), ('2018-05-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v1 = 2001  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v2 = 4002  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 8 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-06-15', 5, 1000, 2000), ('2018-06-16', 6, 3000, 4000), ('2018-06-17', 7, 5000, 6000), ('2018-06-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop partition 201805 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache add column v3 UInt64 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop column v3 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 10 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 15 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+database engine:Ordinary; table engine:ReplicatedMergeTree; use metadata cache:false; use projection:true; use_compact_data_part:true
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 5, 1000, 2000), ('2018-05-16', 6, 3000, 4000), ('2018-05-17', 7, 5000, 6000), ('2018-05-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v1 = 2001  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v2 = 4002  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 8 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-06-15', 5, 1000, 2000), ('2018-06-16', 6, 3000, 4000), ('2018-06-17', 7, 5000, 6000), ('2018-06-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop partition 201805 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache add column v3 UInt64 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop column v3 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 10 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 15 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+database engine:Ordinary; table engine:ReplicatedMergeTree; use metadata cache:true; use projection:false; use_compact_data_part:false
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 5, 1000, 2000), ('2018-05-16', 6, 3000, 4000), ('2018-05-17', 7, 5000, 6000), ('2018-05-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v1 = 2001  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v2 = 4002  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 8 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-06-15', 5, 1000, 2000), ('2018-06-16', 6, 3000, 4000), ('2018-06-17', 7, 5000, 6000), ('2018-06-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop partition 201805 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache add column v3 UInt64 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop column v3 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 10 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 15 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+database engine:Ordinary; table engine:ReplicatedMergeTree; use metadata cache:true; use projection:false; use_compact_data_part:true
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 5, 1000, 2000), ('2018-05-16', 6, 3000, 4000), ('2018-05-17', 7, 5000, 6000), ('2018-05-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v1 = 2001  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v2 = 4002  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 8 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-06-15', 5, 1000, 2000), ('2018-06-16', 6, 3000, 4000), ('2018-06-17', 7, 5000, 6000), ('2018-06-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop partition 201805 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache add column v3 UInt64 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop column v3 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 10 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 15 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+database engine:Ordinary; table engine:ReplicatedMergeTree; use metadata cache:true; use projection:true; use_compact_data_part:false
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 5, 1000, 2000), ('2018-05-16', 6, 3000, 4000), ('2018-05-17', 7, 5000, 6000), ('2018-05-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v1 = 2001  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v2 = 4002  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 8 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-06-15', 5, 1000, 2000), ('2018-06-16', 6, 3000, 4000), ('2018-06-17', 7, 5000, 6000), ('2018-06-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop partition 201805 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache add column v3 UInt64 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop column v3 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 10 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 15 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+database engine:Ordinary; table engine:ReplicatedMergeTree; use metadata cache:true; use projection:true; use_compact_data_part:true
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 5, 1000, 2000), ('2018-05-16', 6, 3000, 4000), ('2018-05-17', 7, 5000, 6000), ('2018-05-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v1 = 2001  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v2 = 4002  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 8 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-06-15', 5, 1000, 2000), ('2018-06-16', 6, 3000, 4000), ('2018-06-17', 7, 5000, 6000), ('2018-06-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop partition 201805 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache add column v3 UInt64 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop column v3 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 10 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 15 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+database engine:Atomic; table engine:ReplicatedMergeTree; use metadata cache:false; use projection:false; use_compact_data_part:false
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 5, 1000, 2000), ('2018-05-16', 6, 3000, 4000), ('2018-05-17', 7, 5000, 6000), ('2018-05-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v1 = 2001  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v2 = 4002  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 8 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-06-15', 5, 1000, 2000), ('2018-06-16', 6, 3000, 4000), ('2018-06-17', 7, 5000, 6000), ('2018-06-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop partition 201805 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache add column v3 UInt64 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop column v3 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 10 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 15 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+database engine:Atomic; table engine:ReplicatedMergeTree; use metadata cache:false; use projection:false; use_compact_data_part:true
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 5, 1000, 2000), ('2018-05-16', 6, 3000, 4000), ('2018-05-17', 7, 5000, 6000), ('2018-05-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v1 = 2001  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v2 = 4002  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 8 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-06-15', 5, 1000, 2000), ('2018-06-16', 6, 3000, 4000), ('2018-06-17', 7, 5000, 6000), ('2018-06-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop partition 201805 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache add column v3 UInt64 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop column v3 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 10 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 15 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+database engine:Atomic; table engine:ReplicatedMergeTree; use metadata cache:false; use projection:true; use_compact_data_part:false
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 5, 1000, 2000), ('2018-05-16', 6, 3000, 4000), ('2018-05-17', 7, 5000, 6000), ('2018-05-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v1 = 2001  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v2 = 4002  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 8 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-06-15', 5, 1000, 2000), ('2018-06-16', 6, 3000, 4000), ('2018-06-17', 7, 5000, 6000), ('2018-06-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop partition 201805 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache add column v3 UInt64 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop column v3 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 10 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 15 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+database engine:Atomic; table engine:ReplicatedMergeTree; use metadata cache:false; use projection:true; use_compact_data_part:true
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 5, 1000, 2000), ('2018-05-16', 6, 3000, 4000), ('2018-05-17', 7, 5000, 6000), ('2018-05-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v1 = 2001  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v2 = 4002  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 8 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-06-15', 5, 1000, 2000), ('2018-06-16', 6, 3000, 4000), ('2018-06-17', 7, 5000, 6000), ('2018-06-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop partition 201805 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache add column v3 UInt64 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop column v3 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 10 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 15 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+database engine:Atomic; table engine:ReplicatedMergeTree; use metadata cache:true; use projection:false; use_compact_data_part:false
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 5, 1000, 2000), ('2018-05-16', 6, 3000, 4000), ('2018-05-17', 7, 5000, 6000), ('2018-05-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v1 = 2001  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v2 = 4002  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 8 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-06-15', 5, 1000, 2000), ('2018-06-16', 6, 3000, 4000), ('2018-06-17', 7, 5000, 6000), ('2018-06-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop partition 201805 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache add column v3 UInt64 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop column v3 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 10 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 15 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+database engine:Atomic; table engine:ReplicatedMergeTree; use metadata cache:true; use projection:false; use_compact_data_part:true
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 5, 1000, 2000), ('2018-05-16', 6, 3000, 4000), ('2018-05-17', 7, 5000, 6000), ('2018-05-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v1 = 2001  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v2 = 4002  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 8 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-06-15', 5, 1000, 2000), ('2018-06-16', 6, 3000, 4000), ('2018-06-17', 7, 5000, 6000), ('2018-06-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop partition 201805 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache add column v3 UInt64 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop column v3 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 10 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 15 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+database engine:Atomic; table engine:ReplicatedMergeTree; use metadata cache:true; use projection:true; use_compact_data_part:false
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 5, 1000, 2000), ('2018-05-16', 6, 3000, 4000), ('2018-05-17', 7, 5000, 6000), ('2018-05-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v1 = 2001  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache update  v2 = 4002  where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 1 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache delete where k = 8 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-06-15', 5, 1000, 2000), ('2018-06-16', 6, 3000, 4000), ('2018-06-17', 7, 5000, 6000), ('2018-06-18', 8, 7000, 8000);
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop partition 201805 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache add column v3 UInt64 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache drop column v3 settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 10 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+ALTER TABLE test_metadata_cache.check_part_metadata_cache modify TTL p + INTERVAL 15 YEAR settings mutations_sync = 1, replication_alter_partitions_sync = 1;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+TRUNCATE TABLE test_metadata_cache.check_part_metadata_cache;
+CHECK TABLE test_metadata_cache.check_part_metadata_cache;
+1
+database engine:Atomic; table engine:ReplicatedMergeTree; use metadata cache:true; use projection:true; use_compact_data_part:true
 CHECK TABLE test_metadata_cache.check_part_metadata_cache;
 1
 INSERT INTO test_metadata_cache.check_part_metadata_cache (p, k, v1, v2) VALUES ('2018-05-15', 1, 1000, 2000), ('2018-05-16', 2, 3000, 4000), ('2018-05-17', 3, 5000, 6000), ('2018-05-18', 4, 7000, 8000);
