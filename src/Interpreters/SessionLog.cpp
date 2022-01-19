@@ -21,6 +21,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Access/SettingsProfilesInfo.h>
+#include <Interpreters/Context.h>
 
 #include <cassert>
 
