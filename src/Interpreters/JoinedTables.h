@@ -7,8 +7,6 @@
 #include <Interpreters/StorageID.h>
 #include <Storages/IStorage_fwd.h>
 
-#include <tuple>
-
 namespace DB
 {
 
@@ -24,13 +22,11 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 class JoinedTables
 {
 public:
-    using storage_is_view_source = std::pair<bool, StoragePtr>;
-
     JoinedTables(ContextPtr context, const ASTSelectQuery & select_query, bool include_all_columns_ = false);
 
     void reset(const ASTSelectQuery & select_query);
 
-    JoinedTables::storage_is_view_source getLeftTableStorage();
+    StoragePtr getLeftTableStorage();
     bool resolveTables();
 
     /// Make fake tables_with_columns[0] in case we have predefined input in InterpreterSelectQuery

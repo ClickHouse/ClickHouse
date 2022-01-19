@@ -64,8 +64,9 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 
-#include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
+#include <Storages/StorageValues.h>
 #include <Storages/StorageView.h>
 
 #include <Functions/IFunction.h>
@@ -313,7 +314,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     bool got_storage_from_query = false;
     if (!has_input && !storage)
     {
-        std::tie(uses_view_source, storage) = joined_tables.getLeftTableStorage();
+        storage = joined_tables.getLeftTableStorage();
+        uses_view_source |= storage && storage == context->getViewSource();
         got_storage_from_query = true;
     }
 
@@ -335,6 +337,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         joined_tables.reset(getSelectQuery());
         joined_tables.resolveTables();
+        if (auto view_source = context->getViewSource())
+        {
+            const auto & storage_values = static_cast<const StorageValues &>(*view_source);
+            auto tmp_table_id = storage_values.getStorageID();
+            for (auto & t : joined_tables.tablesWithColumns())
+                uses_view_source |= (t.table.database == tmp_table_id.database_name && t.table.table == tmp_table_id.table_name);
+        }
 
         if (storage && joined_tables.isLeftTableSubquery())
         {
@@ -350,7 +359,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     {
         interpreter_subquery = joined_tables.makeLeftTableSubquery(options.subquery());
         if (interpreter_subquery)
+        {
             source_header = interpreter_subquery->getSampleBlock();
+            uses_view_source |= interpreter_subquery->usesViewSource();
+        }
     }
 
     joined_tables.rewriteDistributedInAndJoins(query_ptr);
@@ -477,6 +489,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             /// If there is an aggregation in the outer query, WITH TOTALS is ignored in the subquery.
             if (query_analyzer->hasAggregation())
                 interpreter_subquery->ignoreWithTotals();
+            uses_view_source = interpreter_subquery->usesViewSource();
         }
 
         required_columns = syntax_analyzer_result->requiredSourceColumns();

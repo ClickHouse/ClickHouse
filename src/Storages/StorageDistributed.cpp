@@ -721,8 +721,7 @@ QueryPipelineBuilderPtr StorageDistributed::distributedWrite(const ASTInsertQuer
 
             if (joined_tables.tablesCount() == 1)
             {
-                auto [ignore, storage] = joined_tables.getLeftTableStorage();
-                storage_src = std::dynamic_pointer_cast<StorageDistributed>(storage);
+                storage_src = std::dynamic_pointer_cast<StorageDistributed>(joined_tables.getLeftTableStorage());
                 if (storage_src)
                 {
                     const auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();

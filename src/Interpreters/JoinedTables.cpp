@@ -186,13 +186,13 @@ std::unique_ptr<InterpreterSelectWithUnionQuery> JoinedTables::makeLeftTableSubq
     return std::make_unique<InterpreterSelectWithUnionQuery>(left_table_expression, context, select_options);
 }
 
-JoinedTables::storage_is_view_source JoinedTables::getLeftTableStorage()
+StoragePtr JoinedTables::getLeftTableStorage()
 {
     if (isLeftTableSubquery())
         return {};
 
     if (isLeftTableFunction())
-        return {false, context->getQueryContext()->executeTableFunction(left_table_expression)};
+        return context->getQueryContext()->executeTableFunction(left_table_expression);
 
     StorageID table_id = StorageID::createEmpty();
     if (left_db_and_table)
@@ -204,20 +204,19 @@ JoinedTables::storage_is_view_source JoinedTables::getLeftTableStorage()
         table_id = StorageID("system", "one");
     }
 
-    auto view_source = context->getViewSource();
-    if (view_source)
+    if (auto view_source = context->getViewSource())
     {
         const auto & storage_values = static_cast<const StorageValues &>(*view_source);
         auto tmp_table_id = storage_values.getStorageID();
         if (tmp_table_id.database_name == table_id.database_name && tmp_table_id.table_name == table_id.table_name)
         {
             /// Read from view source.
-            return {true, view_source};
+            return context->getViewSource();
         }
     }
 
     /// Read from table. Even without table expression (implicit SELECT ... FROM system.one).
-    return {false, DatabaseCatalog::instance().getTable(table_id, context)};
+    return DatabaseCatalog::instance().getTable(table_id, context);
 }
 
 bool JoinedTables::resolveTables()
