@@ -87,14 +87,14 @@ set(SRCS
   "${RDKAFKA_SOURCE_DIR}/tinycthread_extra.c"
 )
 
-if(${ENABLE_CYRUS_SASL})
+if(TARGET ch_contrib::sasl2)
     message (STATUS "librdkafka with SASL support")
     set(WITH_SASL_CYRUS 1)
 endif()
 
 message (STATUS "librdkafka with SSL support")
 set(WITH_SSL 1)
-if(${ENABLE_CYRUS_SASL})
+if(WITH_SASL_CYRUS)
    set(WITH_SASL_SCRAM 1)
    set(WITH_SASL_OAUTHBEARER 1)
 endif()
@@ -127,7 +127,7 @@ target_link_libraries(_rdkafka
     ch_contrib::zstd
     OpenSSL::Crypto OpenSSL::SSL
 )
-if(${ENABLE_CYRUS_SASL})
+if(WITH_SASL_CYRUS)
     target_link_libraries(_rdkafka PRIVATE ch_contrib::sasl2)
 endif()
 

@@ -85,10 +85,6 @@ add_contrib (thrift-cmake thrift)
 add_contrib (arrow-cmake arrow) # requires: snappy, thrift, double-conversion
 add_contrib (avro-cmake avro) # requires: snappy
 add_contrib (protobuf-cmake protobuf)
-add_contrib (libhdfs3-cmake libhdfs3) # requires: protobuf
-add_contrib (hive-metastore-cmake hive-metastore) # requires: thrift/avro/arrow/libhdfs3
-add_contrib (librdkafka-cmake librdkafka)
-add_contrib (cppkafka-cmake cppkafka)
 add_contrib (openldap-cmake openldap)
 add_contrib (grpc-cmake grpc)
 add_contrib (msgpack-c-cmake msgpack-c)
@@ -108,7 +104,6 @@ if (ENABLE_TESTS)
 endif()
 
 add_contrib (llvm-cmake llvm)
-add_contrib (libgsasl-cmake libgsasl)
 add_contrib (libxml2-cmake libxml2)
 add_contrib (aws-s3-cmake
     aws
@@ -129,6 +124,11 @@ add_contrib (sentry-native-cmake sentry-native) # requires: curl
 add_contrib (fmtlib-cmake fmtlib)
 add_contrib (krb5-cmake krb5)
 add_contrib (cyrus-sasl-cmake cyrus-sasl) # for krb5
+add_contrib (libgsasl-cmake libgsasl) # requires krb5
+add_contrib (librdkafka-cmake librdkafka) # requires: libgsasl
+add_contrib (libhdfs3-cmake libhdfs3) # requires: protobuf, krb5
+add_contrib (hive-metastore-cmake hive-metastore) # requires: thrift/avro/arrow/libhdfs3
+add_contrib (cppkafka-cmake cppkafka)
 add_contrib (libpqxx-cmake libpqxx)
 add_contrib (libpq-cmake libpq)
 add_contrib (nuraft-cmake NuRaft)
