@@ -28,7 +28,7 @@
 #include <Backups/BackupEntryFromImmutableFile.h>
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/IBackup.h>
-#include <Backups/IRestoreFromBackupTask.h>
+#include <Backups/IRestoreTask.h>
 #include <Disks/TemporaryFileOnDisk.h>
 
 #include <cassert>
@@ -953,7 +953,7 @@ BackupEntries StorageLog::backup(const ASTs & partitions, ContextPtr context)
     return backup_entries;
 }
 
-class LogRestoreTask : public IRestoreFromBackupTask
+class LogRestoreTask : public IRestoreTask
 {
     using WriteLock = StorageLog::WriteLock;
     using Mark = StorageLog::Mark;
@@ -965,7 +965,7 @@ public:
     {
     }
 
-    RestoreFromBackupTasks run() override
+    RestoreTasks run() override
     {
         auto lock_timeout = getLockTimeout(context);
         WriteLock lock{storage->rwlock, lock_timeout};
@@ -1063,7 +1063,7 @@ private:
     ContextMutablePtr context;
 };
 
-RestoreFromBackupTaskPtr StorageLog::restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context)
+RestoreTaskPtr StorageLog::restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context)
 {
     if (!partitions.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());

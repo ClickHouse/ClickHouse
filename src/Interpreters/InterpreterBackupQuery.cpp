@@ -1,13 +1,13 @@
 #include <Interpreters/InterpreterBackupQuery.h>
+#include <Backups/IBackup.h>
+#include <Backups/IBackupEntry.h>
+#include <Backups/IRestoreTask.h>
 #include <Backups/BackupFactory.h>
 #include <Backups/BackupSettings.h>
 #include <Backups/BackupUtils.h>
-#include <Backups/RestoreFromBackupUtils.h>
-#include <Backups/IBackup.h>
-#include <Backups/IBackupEntry.h>
-#include <Backups/IRestoreFromBackupTask.h>
-#include <Parsers/ASTSetQuery.h>
+#include <Backups/RestoreUtils.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTSetQuery.h>
 
 
 namespace DB

@@ -53,7 +53,7 @@ public:
     ColumnSizeByName getColumnSizes() const override;
 
     BackupEntries backup(const ASTs & partitions, ContextPtr context) override;
-    RestoreFromBackupTaskPtr restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context) override;
+    RestoreTaskPtr restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context) override;
 
 protected:
     /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
