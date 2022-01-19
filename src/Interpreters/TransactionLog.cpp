@@ -130,7 +130,7 @@ void TransactionLog::loadEntries(Strings::const_iterator beg, Strings::const_ite
         latest_snapshot = loaded.back().second;
     };
 
-    MemoryTracker::LockExceptionInThread blocker(VariableContext::Global);
+    LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
     std::lock_guard lock{commit_mutex};
     insert();
 }
