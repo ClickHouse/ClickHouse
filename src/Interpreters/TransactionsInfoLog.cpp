@@ -1,6 +1,8 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <Common/TransactionID.h>
+#include <Common/CurrentThread.h>
+#include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
