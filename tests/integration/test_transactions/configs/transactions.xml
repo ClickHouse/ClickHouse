@@ -1,0 +1,12 @@
+<clickhouse>
+    <_enable_experimental_mvcc_prototype_test_helper_dev>42</_enable_experimental_mvcc_prototype_test_helper_dev>
+
+    <merge_tree>
+    </merge_tree>
+
+    <transactions_info_log>
+        <database>system</database>
+        <table>transactions_info_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </transactions_info_log>
+</clickhouse>

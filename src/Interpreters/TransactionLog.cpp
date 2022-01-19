@@ -38,12 +38,6 @@ catch (...)
     tryLogCurrentException(log);
 }
 
-TransactionLog & TransactionLog::instance()
-{
-    /// Use unique_ptr to avoid races on initialization retries if exceptions was thrown from ctor
-    static std::unique_ptr<TransactionLog> inst = std::make_unique<TransactionLog>();
-    return *inst;
-}
 
 TransactionLog::TransactionLog()
     : log(&Poco::Logger::get("TransactionLog"))
@@ -58,8 +52,15 @@ TransactionLog::TransactionLog()
 
 TransactionLog::~TransactionLog()
 {
-    stop_flag.store(true);
+    shutdown();
+}
+
+void TransactionLog::shutdown()
+{
+    if (stop_flag.exchange(true))
+        return;
     log_updated_event->set();
+    latest_snapshot.notify_all();
     updating_thread.join();
 }
 
@@ -269,7 +270,7 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn)
         /// Wait for committed changes to become actually visible, so the next transaction will see changes
         /// TODO it's optional, add a setting for this
         auto current_latest_snapshot = latest_snapshot.load();
-        while (current_latest_snapshot < new_csn)
+        while (current_latest_snapshot < new_csn && !stop_flag)
         {
             latest_snapshot.wait(current_latest_snapshot);
             current_latest_snapshot = latest_snapshot.load();

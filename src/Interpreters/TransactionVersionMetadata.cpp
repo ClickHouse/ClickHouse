@@ -113,7 +113,7 @@ bool VersionMetadata::tryLockMaxTID(const TransactionID & tid, const Transaction
 
 void VersionMetadata::unlockMaxTID(const TransactionID & tid, const TransactionInfoContext & context)
 {
-    LOG_TEST(log, "Unlocking maxtid by {}", tid);
+    LOG_TEST(log, "Unlocking maxtid by {}, table: {}, part: {}", tid, context.table.getNameForLogs(), context.part_name);
     assert(!tid.isEmpty());
     TIDHash max_lock_value = tid.getHash();
     TIDHash locked_by = maxtid_lock.load();
@@ -289,8 +289,10 @@ void VersionMetadata::write(WriteBuffer & buf) const
         writeText(min, buf);
     }
 
-    if (!maxtid.isEmpty())
+    if (maxtid_lock)
     {
+        assert(!maxtid.isEmpty());
+        assert(maxtid.getHash() == maxtid_lock);
         writeCString("\nmaxtid: ", buf);
         TransactionID::write(maxtid, buf);
         if (CSN max = maxcsn.load())
@@ -322,20 +324,22 @@ void VersionMetadata::read(ReadBuffer & buf)
         mincsn = min;
         if (buf.eof())
             return;
+
+        assertChar('\n', buf);
+        buf.readStrict(name.data(), size);
     }
 
-    assertChar('\n', buf);
-    buf.readStrict(name.data(), size);
     if (name == "maxtid: ")
     {
         maxtid = TransactionID::read(buf);
         maxtid_lock = maxtid.getHash();
         if (buf.eof())
             return;
+
+        assertChar('\n', buf);
+        buf.readStrict(name.data(), size);
     }
 
-    assertChar('\n', buf);
-    buf.readStrict(name.data(), size);
     if (name == "maxcsn: ")
     {
         if (maxtid.isEmpty())

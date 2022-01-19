@@ -64,7 +64,6 @@ void TransactionsInfoLogElement::fillCommonFields(const TransactionInfoContext *
 void TransactionsInfoLogElement::appendToBlock(MutableColumns & columns) const
 {
     assert(type != UNKNOWN);
-    assert(!tid.isEmpty());
     size_t i = 0;
 
     columns[i++]->insert(type);

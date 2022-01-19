@@ -2085,7 +2085,8 @@ class ClickHouseInstance:
         else:
             params = params.copy()
 
-        params["query"] = sql
+        if sql is not None:
+            params["query"] = sql
 
         auth = None
         if user and password:
