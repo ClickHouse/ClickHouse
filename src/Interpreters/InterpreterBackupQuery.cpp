@@ -5,49 +5,42 @@
 #include <Backups/BackupFactory.h>
 #include <Backups/BackupSettings.h>
 #include <Backups/BackupUtils.h>
+#include <Backups/RestoreSettings.h>
 #include <Backups/RestoreUtils.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTSetQuery.h>
 
 
 namespace DB
 {
 namespace
 {
-    BackupMutablePtr createBackup(const ASTBackupQuery & query, const ContextPtr & context)
+    BackupMutablePtr createBackup(
+            const BackupInfo & backup_info,
+            IBackup::OpenMode open_mode,
+            const BackupInfo * base_backup_info,
+            const ContextPtr & context)
     {
         BackupFactory::CreateParams params;
-        params.open_mode = (query.kind == ASTBackupQuery::BACKUP) ? IBackup::OpenMode::WRITE : IBackup::OpenMode::READ;
+        params.open_mode = open_mode;
         params.context = context;
-
-        params.backup_info = BackupInfo::fromAST(*query.backup_name);
-        if (query.base_backup_name)
-            params.base_backup_info = BackupInfo::fromAST(*query.base_backup_name);
-
+        params.backup_info = backup_info;
+        params.base_backup_info = base_backup_info ? *base_backup_info : std::optional<BackupInfo>{};
         return BackupFactory::instance().createBackup(params);
     }
 
-#if 0
-    void getBackupSettings(const ASTBackupQuery & query, BackupSettings & settings, std::optional<BaseBackupInfo> & base_backup)
+    void executeBackup(const ContextPtr & context, const ASTBackupQuery & query)
     {
-        settings = {};
-        if (query.settings)
-            settings.applyChanges(query.settings->as<const ASTSetQuery &>().changes);
-        return settings;
-    }
-#endif
-
-    void executeBackup(const ASTBackupQuery & query, const ContextPtr & context)
-    {
-        BackupMutablePtr backup = createBackup(query, context);
-        auto backup_entries = makeBackupEntries(query.elements, context);
+        auto backup_settings = BackupSettings::fromBackupQuery(query);
+        BackupMutablePtr backup = createBackup(BackupInfo::fromAST(*query.backup_name), IBackup::OpenMode::WRITE, backup_settings.base_backup_info.get(), context);
+        auto backup_entries = makeBackupEntries(context, query.elements, backup_settings);
         writeBackupEntries(backup, std::move(backup_entries), context->getSettingsRef().max_backup_threads);
     }
 
-    void executeRestore(const ASTBackupQuery & query, ContextMutablePtr context)
+    void executeRestore(ContextMutablePtr context, const ASTBackupQuery & query)
     {
-        BackupPtr backup = createBackup(query, context);
-        auto restore_tasks = makeRestoreTasks(context, backup, query.elements);
+        auto restore_settings = RestoreSettings::fromRestoreQuery(query);
+        BackupPtr backup = createBackup(BackupInfo::fromAST(*query.backup_name), IBackup::OpenMode::READ, restore_settings.base_backup_info.get(), context);
+        auto restore_tasks = makeRestoreTasks(context, backup, query.elements, restore_settings);
         executeRestoreTasks(std::move(restore_tasks), context->getSettingsRef().max_backup_threads);
     }
 }
@@ -56,9 +49,9 @@ BlockIO InterpreterBackupQuery::execute()
 {
     const auto & query = query_ptr->as<const ASTBackupQuery &>();
     if (query.kind == ASTBackupQuery::BACKUP)
-        executeBackup(query, context);
+        executeBackup(context, query);
     else if (query.kind == ASTBackupQuery::RESTORE)
-        executeRestore(query, context);
+        executeRestore(context, query);
     return {};
 }
 

@@ -888,7 +888,7 @@ IStorage::ColumnSizeByName StorageLog::getColumnSizes() const
 }
 
 
-BackupEntries StorageLog::backup(const ASTs & partitions, ContextPtr context)
+BackupEntries StorageLog::backup(ContextPtr context, const ASTs & partitions)
 {
     if (!partitions.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
@@ -1063,7 +1063,7 @@ private:
     ContextMutablePtr context;
 };
 
-RestoreTaskPtr StorageLog::restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context)
+RestoreTaskPtr StorageLog::restoreFromBackup(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings &)
 {
     if (!partitions.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
