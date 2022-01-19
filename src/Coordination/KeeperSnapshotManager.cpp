@@ -335,8 +335,8 @@ KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, uint64_t 
     , session_id(storage->session_id_counter)
     , cluster_config(cluster_config_)
 {
-    storage->enableSnapshotMode();
     snapshot_container_size = storage->container.snapshotSize();
+    storage->enableSnapshotMode(snapshot_container_size);
     begin = storage->getSnapshotIteratorBegin();
     session_and_timeout = storage->getActiveSessions();
     acl_map = storage->acl_map.getMapping();
@@ -349,8 +349,8 @@ KeeperStorageSnapshot::KeeperStorageSnapshot(KeeperStorage * storage_, const Sna
     , session_id(storage->session_id_counter)
     , cluster_config(cluster_config_)
 {
-    storage->enableSnapshotMode();
     snapshot_container_size = storage->container.snapshotSize();
+    storage->enableSnapshotMode(snapshot_container_size);
     begin = storage->getSnapshotIteratorBegin();
     session_and_timeout = storage->getActiveSessions();
     acl_map = storage->acl_map.getMapping();

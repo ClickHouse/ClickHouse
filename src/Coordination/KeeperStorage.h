@@ -159,9 +159,9 @@ public:
     /// Set of methods for creating snapshots
 
     /// Turn on snapshot mode, so data inside Container is not deleted, but replaced with new version.
-    void enableSnapshotMode()
+    void enableSnapshotMode(size_t up_to_size)
     {
-        container.enableSnapshotMode();
+        container.enableSnapshotMode(up_to_size);
     }
 
     /// Turn off snapshot mode.

@@ -33,6 +33,7 @@ private:
     List list;
     IndexMap map;
     bool snapshot_mode{false};
+    size_t snapshot_up_to_size = 0;
     ArenaWithFreeLists arena;
 
     uint64_t approximate_data_size{0};
@@ -225,13 +226,22 @@ public:
 
         if (snapshot_mode)
         {
-            auto elem_copy = *(list_itr);
-            list_itr->active_in_map = false;
+            size_t distance = std::distance(list.begin(), list_itr);
 
-            updater(elem_copy.value);
-            auto itr = list.insert(list.end(), elem_copy);
-            it->getMapped() = itr;
-            ret = itr;
+            if (distance < snapshot_up_to_size)
+            {
+                auto elem_copy = *(list_itr);
+                list_itr->active_in_map = false;
+                updater(elem_copy.value);
+                auto itr = list.insert(list.end(), elem_copy);
+                it->getMapped() = itr;
+                ret = itr;
+            }
+            else
+            {
+                updater(list_itr->value);
+                ret = list_itr;
+            }
         }
         else
         {
@@ -289,14 +299,16 @@ public:
         updateDataSize(CLEAR, 0, 0, 0);
     }
 
-    void enableSnapshotMode()
+    void enableSnapshotMode(size_t up_to_size)
     {
         snapshot_mode = true;
+        snapshot_up_to_size = up_to_size;
     }
 
     void disableSnapshotMode()
     {
         snapshot_mode = false;
+        snapshot_up_to_size = 0;
     }
 
     size_t size() const
