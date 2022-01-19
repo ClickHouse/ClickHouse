@@ -162,6 +162,8 @@ def sendEmptyBlock(s):
     writeVarUInt(0, ba) # columns
     s.sendall(ba)
 
+def assertPacket(packet, expected):
+    assert(packet == expected), packet
 
 def readHeader(s):
     readVarUInt(s) # Data
