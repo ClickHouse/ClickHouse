@@ -6,6 +6,7 @@
 #include <Coordination/SessionExpiryQueue.h>
 #include <Coordination/ACLMap.h>
 #include <Coordination/SnapshotableHashTable.h>
+#include <IO/WriteBufferFromString.h>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
