@@ -74,8 +74,6 @@ public:
         dst_offsets.resize(input_rows_count);
         auto current_offset = 0;
 
-        std::vector<H3Index> hindex_vec;
-
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 parent_hindex = col_hindex->getUInt(row);
@@ -94,6 +92,7 @@ public:
                     "The result of function {} (array of {} elements) will be too large with resolution argument = {}",
                     getName(), toString(vec_size), toString(child_resolution));
 
+            std::vector<H3Index> hindex_vec;
             hindex_vec.resize(vec_size);
             cellToChildren(parent_hindex, child_resolution, hindex_vec.data());
 
@@ -107,7 +106,6 @@ public:
                 }
             }
             dst_offsets[row] = current_offset;
-            hindex_vec.clear();
         }
 
         return dst;
