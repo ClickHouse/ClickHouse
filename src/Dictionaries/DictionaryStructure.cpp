@@ -1,17 +1,20 @@
-#include "DictionaryStructure.h"
+#include <Dictionaries/DictionaryStructure.h>
+
+#include <numeric>
+#include <unordered_map>
+#include <unordered_set>
+
+#include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
+
+#include <Common/StringUtils/StringUtils.h>
+
+#include <Formats/FormatSettings.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionHelpers.h>
-#include <Formats/FormatSettings.h>
-#include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
-#include <Common/StringUtils/StringUtils.h>
-
-#include <numeric>
-#include <unordered_map>
-#include <unordered_set>
 
 
 namespace DB
@@ -38,13 +41,14 @@ DictionaryTypedSpecialAttribute makeDictionaryTypedSpecialAttribute(
     return DictionaryTypedSpecialAttribute{std::move(name), std::move(expression), DataTypeFactory::instance().get(type_name)};
 }
 
-std::optional<AttributeUnderlyingType> maybeGetAttributeUnderlyingType(TypeIndex index)
+std::optional<AttributeUnderlyingType> tryGetAttributeUnderlyingType(TypeIndex index)
 {
     switch (index) /// Special cases which do not map TypeIndex::T -> AttributeUnderlyingType::T
     {
         case TypeIndex::Date:       return AttributeUnderlyingType::UInt16;
+        case TypeIndex::Date32:     return AttributeUnderlyingType::Int32;
         case TypeIndex::DateTime:   return AttributeUnderlyingType::UInt32;
-        case TypeIndex::DateTime64: return AttributeUnderlyingType::UInt64;
+        case TypeIndex::DateTime64: return AttributeUnderlyingType::Int64;
         default: break;
     }
 
@@ -296,7 +300,7 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
 
         auto non_nullable_type = removeNullable(initial_type);
 
-        const auto underlying_type_opt = maybeGetAttributeUnderlyingType(non_nullable_type->getTypeId());
+        const auto underlying_type_opt = tryGetAttributeUnderlyingType(non_nullable_type->getTypeId());
 
         if (!underlying_type_opt)
             throw Exception(ErrorCodes::UNKNOWN_TYPE,
