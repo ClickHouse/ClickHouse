@@ -139,7 +139,6 @@ if (ENABLE_FUZZING)
     set (ENABLE_CLICKHOUSE_ODBC_BRIDGE OFF)
     set (ENABLE_LIBRARIES 0)
     set (ENABLE_SSL 1)
-    set (USE_INTERNAL_SSL_LIBRARY 1)
     set (USE_UNWIND ON)
     set (ENABLE_EMBEDDED_COMPILER 0)
     set (ENABLE_EXAMPLES 0)
@@ -152,7 +151,6 @@ if (ENABLE_FUZZING)
 
     # For codegen_select_fuzzer
     set (ENABLE_PROTOBUF 1)
-    set (USE_INTERNAL_PROTOBUF_LIBRARY 1)
 endif()
 
 # Global libraries
@@ -487,82 +485,6 @@ message (STATUS
     CCACHE=${CCACHE_FOUND} ${CCACHE_VERSION}")
 
 include (GNUInstallDirs)
-include (cmake/contrib_finder.cmake)
-
-find_contrib_lib(double-conversion) # Must be before parquet
-include (cmake/find/ssl.cmake)
-include (cmake/find/ldap.cmake) # after ssl
-include (cmake/find/icu.cmake)
-include (cmake/find/xz.cmake)
-include (cmake/find/zlib.cmake)
-include (cmake/find/zstd.cmake)
-include (cmake/find/ltdl.cmake) # for odbc
-# openssl, zlib before poco
-include (cmake/find/sparsehash.cmake)
-include (cmake/find/re2.cmake)
-include (cmake/find/krb5.cmake)
-include (cmake/find/libgsasl.cmake)
-include (cmake/find/cyrus-sasl.cmake)
-include (cmake/find/rdkafka.cmake)
-include (cmake/find/libuv.cmake) # for amqpcpp and cassandra
-include (cmake/find/amqpcpp.cmake)
-include (cmake/find/capnp.cmake)
-include (cmake/find/llvm.cmake)
-include (cmake/find/h3.cmake)
-include (cmake/find/libxml2.cmake)
-include (cmake/find/brotli.cmake)
-include (cmake/find/protobuf.cmake)
-include (cmake/find/thrift.cmake)
-include (cmake/find/grpc.cmake)
-include (cmake/find/pdqsort.cmake)
-include (cmake/find/miniselect.cmake)
-include (cmake/find/hdfs3.cmake) # uses protobuf
-include (cmake/find/poco.cmake)
-include (cmake/find/curl.cmake)
-include (cmake/find/s3.cmake)
-include (cmake/find/blob_storage.cmake)
-include (cmake/find/base64.cmake)
-include (cmake/find/parquet.cmake) # uses protobuf and thrift
-include (cmake/find/simdjson.cmake)
-include (cmake/find/fast_float.cmake)
-include (cmake/find/rapidjson.cmake)
-include (cmake/find/fastops.cmake)
-include (cmake/find/odbc.cmake)
-include (cmake/find/nanodbc.cmake)
-include (cmake/find/sqlite.cmake)
-include (cmake/find/rocksdb.cmake)
-include (cmake/find/libpqxx.cmake)
-include (cmake/find/nuraft.cmake)
-include (cmake/find/yaml-cpp.cmake)
-include (cmake/find/s2geometry.cmake)
-include (cmake/find/nlp.cmake)
-include (cmake/find/bzip2.cmake)
-include (cmake/find/filelog.cmake)
-
-if(NOT USE_INTERNAL_PARQUET_LIBRARY)
-    set (ENABLE_ORC OFF CACHE INTERNAL "")
-endif()
-include (cmake/find/orc.cmake)
-
-include (cmake/find/avro.cmake)
-include (cmake/find/msgpack.cmake)
-include (cmake/find/cassandra.cmake)
-include (cmake/find/sentry.cmake)
-include (cmake/find/datasketches.cmake)
-include (cmake/find/libprotobuf-mutator.cmake)
-include (cmake/find/hive-metastore.cmake)
-
-set (USE_INTERNAL_CITYHASH_LIBRARY ON CACHE INTERNAL "")
-find_contrib_lib(cityhash)
-
-find_contrib_lib(farmhash)
-
-if (ENABLE_TESTS)
-    include (cmake/find/gtest.cmake)
-endif ()
-
-# Need to process before "contrib" dir:
-include (cmake/find/mysqlclient.cmake)
 
 # When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.
 
