@@ -24,7 +24,9 @@ namespace ErrorCodes
 
 BlockIO InterpreterCreateFunctionQuery::execute()
 {
-    FunctionNameNormalizer().visit(query_ptr.get());
+    auto current_context = getContext();
+    if (current_context->getSettingsRef().normalize_function_names)
+        FunctionNameNormalizer().visit(query_ptr.get());
     ASTCreateFunctionQuery & create_function_query = query_ptr->as<ASTCreateFunctionQuery &>();
 
     AccessRightsElements access_rights_elements;
@@ -36,7 +38,6 @@ BlockIO InterpreterCreateFunctionQuery::execute()
     if (!create_function_query.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, getContext(), access_rights_elements);
 
-    auto current_context = getContext();
     current_context->checkAccess(access_rights_elements);
 
     auto & user_defined_function_factory = UserDefinedSQLFunctionFactory::instance();

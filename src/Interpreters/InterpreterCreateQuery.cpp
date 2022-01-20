@@ -1317,7 +1317,8 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 
 BlockIO InterpreterCreateQuery::execute()
 {
-    FunctionNameNormalizer().visit(query_ptr.get());
+    if (getContext()->getSettingsRef().normalize_function_names)
+        FunctionNameNormalizer().visit(query_ptr.get());
     auto & create = query_ptr->as<ASTCreateQuery &>();
     if (!create.cluster.empty())
     {

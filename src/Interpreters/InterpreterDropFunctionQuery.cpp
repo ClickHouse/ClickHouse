@@ -14,7 +14,9 @@ namespace DB
 
 BlockIO InterpreterDropFunctionQuery::execute()
 {
-    FunctionNameNormalizer().visit(query_ptr.get());
+    auto current_context = getContext();
+    if (current_context->getSettingsRef().normalize_function_names)
+        FunctionNameNormalizer().visit(query_ptr.get());
     ASTDropFunctionQuery & drop_function_query = query_ptr->as<ASTDropFunctionQuery &>();
 
     AccessRightsElements access_rights_elements;
@@ -23,7 +25,6 @@ BlockIO InterpreterDropFunctionQuery::execute()
     if (!drop_function_query.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, getContext(), access_rights_elements);
 
-    auto current_context = getContext();
     current_context->checkAccess(access_rights_elements);
 
     UserDefinedSQLFunctionFactory::instance().unregisterFunction(current_context, drop_function_query.function_name, drop_function_query.if_exists);

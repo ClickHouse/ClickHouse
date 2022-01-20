@@ -64,3 +64,5 @@ SELECT
     varSamp(1),
     toWeek(toDate('2020-10-24')),
     toYearWeek(toDate('2020-10-24'))
+CREATE MATERIALIZED VIEW test_01705.mv_01705 TO test_01705.dst\n(\n    `day` Date,\n    `cast(sum(number), \'String\')` String\n) AS\nSELECT\n    toDate(itime) AS day,\n    cast(sum(number), \'String\')\nFROM test_01705.src\nGROUP BY day
+CREATE MATERIALIZED VIEW test_01705.mv_01705 TO test_01705.dst\n(\n    `day` Date,\n    `CAST(sum(number), \'String\')` String\n) AS\nSELECT\n    toDate(itime) AS day,\n    CAST(sum(number), \'String\')\nFROM test_01705.src\nGROUP BY day
