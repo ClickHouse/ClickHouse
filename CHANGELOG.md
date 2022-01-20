@@ -23,7 +23,6 @@
 * Added function `arrayLast`. Closes [#33390](https://github.com/ClickHouse/ClickHouse/issues/33390). [#33415](https://github.com/ClickHouse/ClickHouse/pull/33415) Added function `arrayLastIndex`. [#33465](https://github.com/ClickHouse/ClickHouse/pull/33465) ([Maksim Kita](https://github.com/kitaisreal)).
 * Add function `decodeURLFormComponent` slightly different to `decodeURLComponent`. Close [#10298](https://github.com/ClickHouse/ClickHouse/issues/10298). [#33451](https://github.com/ClickHouse/ClickHouse/pull/33451) ([SuperDJY](https://github.com/cmsxbc)).
 * Allow to split `GraphiteMergeTree` rollup rules for plain/tagged metrics (optional rule_type field). [#33494](https://github.com/ClickHouse/ClickHouse/pull/33494) ([Michail Safronov](https://github.com/msaf1980)).
-* Potential issue, cannot be exploited: integer overflow may happen in array resize. [#33024](https://github.com/ClickHouse/ClickHouse/pull/33024) ([varadarajkumar](https://github.com/varadarajkumar)).
 
 
 #### Performance Improvement
@@ -100,6 +99,7 @@
 * Use `--database` option for clickhouse-local. [#32797](https://github.com/ClickHouse/ClickHouse/pull/32797) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * Fix surprisingly bad code in SQL ordinary function `file`. Now it supports symlinks. [#32640](https://github.com/ClickHouse/ClickHouse/pull/32640) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * Updating `modification_time` for data part in `system.parts` after part movement [#32964](https://github.com/ClickHouse/ClickHouse/issues/32964). [#32965](https://github.com/ClickHouse/ClickHouse/pull/32965) ([save-my-heart](https://github.com/save-my-heart)).
+* Potential issue, cannot be exploited: integer overflow may happen in array resize. [#33024](https://github.com/ClickHouse/ClickHouse/pull/33024) ([varadarajkumar](https://github.com/varadarajkumar)).
 
 
 #### Build/Testing/Packaging Improvement
