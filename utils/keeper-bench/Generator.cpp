@@ -136,6 +136,33 @@ ZooKeeperRequestPtr CreateRequestGenerator::generate()
 }
 
 
+void SetRequestGenerator::startup(Coordination::ZooKeeper & zookeeper)
+{
+    removeRecursive(zookeeper, path_prefix);
+
+    auto promise = std::make_shared<std::promise<void>>();
+    auto future = promise->get_future();
+    auto create_callback = [promise] (const CreateResponse & response)
+    {
+        if (response.error != Coordination::Error::ZOK)
+            promise->set_exception(std::make_exception_ptr(zkutil::KeeperException(response.error)));
+        else
+            promise->set_value();
+    };
+    zookeeper.create(path_prefix, "", false, false, default_acls, create_callback);
+    future.get();
+}
+
+ZooKeeperRequestPtr SetRequestGenerator::generate()
+{
+    auto request = std::make_shared<ZooKeeperSetRequest>();
+    request->path = path_prefix;
+    request->data = generateRandomData(data_size);
+
+    return request;
+}
+
+
 void GetRequestGenerator::startup(Coordination::ZooKeeper & zookeeper)
 {
     auto promise = std::make_shared<std::promise<void>>();
@@ -242,7 +269,7 @@ std::unique_ptr<IGenerator> getGenerator(const std::string & name)
     }
     else if (name == "create_small_data")
     {
-        return std::make_unique<CreateRequestGenerator>("/create_generator", 50, 32);
+        return std::make_unique<CreateRequestGenerator>("/create_generator", 5, 32);
     }
     else if (name == "create_medium_data")
     {
@@ -284,6 +311,11 @@ std::unique_ptr<IGenerator> getGenerator(const std::string & name)
     {
         return std::make_unique<ListRequestGenerator>("/list_generator", 100000, 5);
     }
+    else if (name == "set_small_data")
+    {
+        return std::make_unique<SetRequestGenerator>("/set_generator", 5);
+    }
+
 
     throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unknown generator {}", name);
 }
