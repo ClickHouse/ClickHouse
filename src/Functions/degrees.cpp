@@ -1,11 +1,7 @@
+#include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionMathUnary.h>
 
-template <typename T>
-T degrees(T r)
-{
-    return r * (180 / M_PI);
-}
 
 namespace DB
 {
@@ -15,8 +11,15 @@ namespace
     {
         static constexpr auto name = "degrees";
     };
-    using FunctionDegrees = FunctionMathUnary<UnaryFunctionVectorized<DegreesName, degrees>>;
 
+    template <typename T>
+    Float64 degrees(T r)
+    {
+        Float64 degrees = r * (180 / M_PI);
+        return degrees;
+    }
+
+    using FunctionDegrees = FunctionMathUnary<UnaryFunctionVectorized<DegreesName, degrees>>;
 }
 
 void registerFunctionDegrees(FunctionFactory & factory)
