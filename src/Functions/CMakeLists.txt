@@ -18,7 +18,7 @@ target_link_libraries(clickhouse_functions
         clickhouse_dictionaries
         clickhouse_dictionaries_embedded
         clickhouse_parsers
-        consistent-hashing
+        ch_contrib::consistent_hashing
         dbms
         metrohash
         murmurhash
