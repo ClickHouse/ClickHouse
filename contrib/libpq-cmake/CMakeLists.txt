@@ -1,3 +1,7 @@
+if (NOT ENABLE_LIBPQXX)
+    return()
+endif()
+
 set(LIBPQ_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libpq")
 
 set(SRCS
@@ -60,3 +64,5 @@ target_include_directories (libpq SYSTEM PUBLIC "${LIBPQ_SOURCE_DIR}/include")
 target_include_directories (libpq SYSTEM PRIVATE "${LIBPQ_SOURCE_DIR}/configs")
 
 target_link_libraries (libpq PRIVATE ssl)
+
+add_library(ch_contrib::libpq ALIAS libpq)
