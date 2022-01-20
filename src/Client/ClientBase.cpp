@@ -13,15 +13,16 @@
 #include <Common/MemoryTracker.h>
 #include <base/LineReader.h>
 #include <base/scope_guard_safe.h>
-#include "Common/Exception.h"
-#include "Common/getNumberOfPhysicalCPUCores.h"
-#include "Common/tests/gtest_global_context.h"
-#include "Common/typeid_cast.h"
-#include "Columns/ColumnString.h"
-#include "Columns/ColumnsNumber.h"
-#include "Core/Block.h"
-#include "Core/Protocol.h"
-#include "Formats/FormatFactory.h"
+#include <Common/Exception.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/tests/gtest_global_context.h>
+#include <Common/typeid_cast.h>
+#include <Common/config.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Core/Block.h>
+#include <Core/Protocol.h>
+#include <Formats/FormatFactory.h>
 
 #include <Common/config_version.h>
 #include <Common/UTF8Helpers.h>
@@ -1194,7 +1195,7 @@ bool ClientBase::receiveEndOfQuery()
 
             case Protocol::Server::Progress:
                 onProgress(packet.progress);
-                return true;
+                break;
 
             default:
                 throw NetException(

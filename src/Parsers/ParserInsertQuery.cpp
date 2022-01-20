@@ -132,7 +132,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     Pos before_values = pos;
     String format_str;
-    bool values = false;
 
     /// VALUES or FORMAT or SELECT or WITH or WATCH.
     /// After FROM INFILE we expect FORMAT, SELECT, WITH or nothing.
@@ -141,7 +140,6 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// If VALUES is defined in query, everything except setting will be parsed as data
         data = pos->begin;
         format_str = "Values";
-        values = true;
     }
     else if (s_format.ignore(pos, expected))
     {
@@ -186,7 +184,9 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ParserSetQuery parser_settings(true);
         if (!parser_settings.parse(pos, settings_ast, expected))
             return false;
-        if (values)
+        /// In case of INSERT INTO ... VALUES SETTINGS ... (...), (...), ...
+        /// we should move data pointer after all settings.
+        if (data != nullptr)
             data = pos->begin;
     }
 

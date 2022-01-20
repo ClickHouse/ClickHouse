@@ -1,3 +1,10 @@
+option(ENABLE_LIBPQXX "Enalbe libpqxx" ${ENABLE_LIBRARIES})
+
+if (NOT ENABLE_LIBPQXX)
+    message(STATUS "Not using libpqxx")
+    return()
+endif()
+
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/libpqxx")
 
 set (SRCS
@@ -65,6 +72,7 @@ set (HDRS
 
 add_library(libpqxx ${SRCS} ${HDRS})
 
-target_link_libraries(libpqxx PUBLIC ${LIBPQ_LIBRARY})
-target_include_directories (libpqxx SYSTEM PRIVATE "${LIBRARY_DIR}/include")
+target_link_libraries(libpqxx PUBLIC ch_contrib::libpq)
+target_include_directories (libpqxx SYSTEM BEFORE PUBLIC "${LIBRARY_DIR}/include")
 
+add_library(ch_contrib::libpqxx ALIAS libpqxx)
