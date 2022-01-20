@@ -60,10 +60,10 @@ def test_restore_table_into_existing_table(engine):
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO {backup_name}")
 
-    instance.query(f"RESTORE TABLE test.table INTO test.table FROM {backup_name}")
+    instance.query(f"RESTORE TABLE test.table INTO test.table FROM {backup_name} SETTINGS throw_if_table_exists=0")
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "200\t9900\n"
 
-    instance.query(f"RESTORE TABLE test.table INTO test.table FROM {backup_name}")
+    instance.query(f"RESTORE TABLE test.table INTO test.table FROM {backup_name} SETTINGS throw_if_table_exists=0")
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "300\t14850\n"
 
 
