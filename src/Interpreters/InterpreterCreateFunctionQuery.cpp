@@ -41,7 +41,7 @@ BlockIO InterpreterCreateFunctionQuery::execute()
 
     auto & user_defined_function_factory = UserDefinedSQLFunctionFactory::instance();
 
-    auto & function_name = create_function_query.function_name;
+    auto function_name = create_function_query.getFunctionName();
 
     bool if_not_exists = create_function_query.if_not_exists;
     bool replace = create_function_query.or_replace;

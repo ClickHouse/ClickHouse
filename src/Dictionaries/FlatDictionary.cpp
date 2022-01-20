@@ -547,7 +547,8 @@ Pipe FlatDictionary::read(const Names & column_names, size_t max_block_size, siz
         if (loaded_keys[key_index])
             keys.push_back(key_index);
 
-    ColumnsWithTypeAndName key_columns = {ColumnWithTypeAndName(getColumnFromPODArray(keys), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
+    auto keys_column = getColumnFromPODArray(std::move(keys));
+    ColumnsWithTypeAndName key_columns = {ColumnWithTypeAndName(std::move(keys_column), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
 
     std::shared_ptr<const IDictionary> dictionary = shared_from_this();
     auto coordinator = DictionarySourceCoordinator::create(dictionary, column_names, std::move(key_columns), max_block_size);

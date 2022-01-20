@@ -1,5 +1,6 @@
 #include "getNumberOfPhysicalCPUCores.h"
 
+#include <Common/config.h>
 #if USE_CPUID
 #    include <libcpuid/libcpuid.h>
 #endif
