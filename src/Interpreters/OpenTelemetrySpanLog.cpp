@@ -8,8 +8,10 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <Interpreters/Context.h>
 
 #include <Common/hex.h>
+#include <Common/CurrentThread.h>
 
 
 namespace DB
@@ -185,11 +187,6 @@ bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & trace
     UInt64 trace_id_lower_64 = unhexUInt<UInt64>(data + 16);
     data += 32;
 
-    // store the 128-bit trace id in big-endian order
-    trace_id.toUnderType().items[0] = trace_id_higher_64;
-    trace_id.toUnderType().items[1] = trace_id_lower_64;
-    
-
     if (*data != '-')
     {
         error = fmt::format("Malformed traceparant header: {}", traceparent);
@@ -197,7 +194,7 @@ bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & trace
     }
 
     ++data;
-    span_id = unhexUInt<UInt64>(data);
+    UInt64 span_id_64 = unhexUInt<UInt64>(data);
     data += 16;
 
     if (*data != '-')
@@ -205,10 +202,14 @@ bool OpenTelemetryTraceContext::parseTraceparentHeader(const std::string & trace
         error = fmt::format("Malformed traceparant header: {}", traceparent);
         return false;
     }
-    
 
     ++data;
-    trace_flags = unhex2(data);
+    this->trace_flags = unhex2(data);
+
+    // store the 128-bit trace id in big-endian order
+    this->trace_id.toUnderType().items[0] = trace_id_higher_64;
+    this->trace_id.toUnderType().items[1] = trace_id_lower_64;
+    this->span_id = span_id_64;
     return true;
 }
 
