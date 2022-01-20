@@ -218,11 +218,14 @@ std::string OpenTelemetryTraceContext::composeTraceparentHeader() const
 {
     // This span is a parent for its children, so we specify this span_id as a
     // parent id.
-    return fmt::format("00-{:032x}-{:016x}-{:02x}", __uint128_t(trace_id.toUnderType()),
-        span_id,
-        // This cast is needed because fmt is being weird and complaining that
-        // "mixing character types is not allowed".
-        static_cast<uint8_t>(trace_flags));
+    return fmt::format("00-{:016x}{:016x}-{:016x}-{:02x}",
+                       // Output the trace id in network byte order
+                       trace_id.toUnderType().items[0],
+                       trace_id.toUnderType().items[1],
+                       span_id,
+                       // This cast is needed because fmt is being weird and complaining that
+                       // "mixing character types is not allowed".
+                       static_cast<uint8_t>(trace_flags));
 }
 
 
