@@ -62,6 +62,16 @@ void TransactionLog::shutdown()
     log_updated_event->set();
     latest_snapshot.notify_all();
     updating_thread.join();
+
+    std::lock_guard lock{mutex};
+    /// This is required to... you'll never guess - avoid race condition inside Poco::Logger (Coordination::ZooKeeper::log)
+    zookeeper.reset();
+}
+
+ZooKeeperPtr TransactionLog::getZooKeeper() const
+{
+    std::lock_guard lock{mutex};
+    return zookeeper;
 }
 
 UInt64 TransactionLog::parseCSN(const String & csn_node_name)
@@ -131,7 +141,7 @@ void TransactionLog::loadEntries(Strings::const_iterator beg, Strings::const_ite
     };
 
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-    std::lock_guard lock{commit_mutex};
+    std::lock_guard lock{mutex};
     insert();
 }
 
@@ -184,7 +194,11 @@ void TransactionLog::runUpdatingThread()
                 return;
 
             if (!zookeeper)
-                zookeeper = global_context->getZooKeeper();
+            {
+                auto new_zookeeper = global_context->getZooKeeper();
+                std::lock_guard lock{mutex};
+                zookeeper = new_zookeeper;
+            }
 
             loadNewEntries();
         }
@@ -194,7 +208,10 @@ void TransactionLog::runUpdatingThread()
             /// TODO better backoff
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
             if (Coordination::isHardwareError(e.code))
-                zookeeper = nullptr;
+            {
+                std::lock_guard lock{mutex};
+                zookeeper.reset();
+            }
             log_updated_event->set();
         }
         catch (...)
@@ -261,7 +278,8 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn)
         LOG_TEST(log, "Committing transaction {}{}", txn->tid, txn->dumpDescription());
         /// TODO handle connection loss
         /// TODO support batching
-        String path_created = zookeeper->create(zookeeper_path + "/csn-", writeTID(txn->tid), zkutil::CreateMode::PersistentSequential);    /// Commit point
+        auto current_zookeeper = getZooKeeper();
+        String path_created = current_zookeeper->create(zookeeper_path + "/csn-", writeTID(txn->tid), zkutil::CreateMode::PersistentSequential);    /// Commit point
         new_csn = parseCSN(path_created.substr(zookeeper_path.size() + 1));
 
         LOG_INFO(log, "Transaction {} committed with CSN={}", txn->tid, new_csn);
@@ -328,7 +346,7 @@ CSN TransactionLog::getCSN(const TIDHash & tid) const
     if (tid == Tx::PrehistoricTID.getHash())
         return Tx::PrehistoricCSN;
 
-    std::lock_guard lock{commit_mutex};
+    std::lock_guard lock{mutex};
     auto it = tid_to_csn.find(tid);
     if (it == tid_to_csn.end())
         return Tx::UnknownCSN;

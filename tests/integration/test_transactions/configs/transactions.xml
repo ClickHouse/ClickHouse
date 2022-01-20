@@ -2,6 +2,7 @@
     <_enable_experimental_mvcc_prototype_test_helper_dev>42</_enable_experimental_mvcc_prototype_test_helper_dev>
 
     <merge_tree>
+        <old_parts_lifetime>100500</old_parts_lifetime>
     </merge_tree>
 
     <transactions_info_log>

@@ -88,14 +88,15 @@ private:
     static TransactionID parseTID(const String & csn_node_content);
     static String writeTID(const TransactionID & tid);
 
+    ZooKeeperPtr getZooKeeper() const;
+
     ContextPtr global_context;
     Poco::Logger * log;
 
     std::atomic<CSN> latest_snapshot;
     std::atomic<LocalTID> local_tid_counter;
 
-    /// FIXME Transactions: it's probably a bad idea to use global mutex here
-    mutable std::mutex commit_mutex;
+    mutable std::mutex mutex;
     std::unordered_map<TIDHash, CSN> tid_to_csn;
 
     mutable std::mutex running_list_mutex;
