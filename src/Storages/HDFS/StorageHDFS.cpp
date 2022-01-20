@@ -80,10 +80,10 @@ namespace
                 ErrorCodes::ACCESS_DENIED, "Cannot list directory {}: {}", prefix_without_globs, String(hdfsGetLastError()));
         }
         Strings result;
+        if (!ls.file_info && ls.length > 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "file_info shouldn't be null");
         for (int i = 0; i < ls.length; ++i)
         {
-            if (ls.file_info == nullptr)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "file_info shouldn't be null");
             const String full_path = String(ls.file_info[i].mName);
             const size_t last_slash = full_path.rfind('/');
             const String file_name = full_path.substr(last_slash);
