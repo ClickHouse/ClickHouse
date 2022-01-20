@@ -316,7 +316,7 @@ target_link_libraries (clickhouse_common_io
         PUBLIC
             common
             ch_contrib::double_conversion
-            dragonbox_to_chars
+            ch_contrib::dragonbox_to_chars
 )
 
 # Use X86 AVX2/AVX512 instructions to accelerate filter operations
