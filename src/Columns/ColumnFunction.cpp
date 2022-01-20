@@ -3,8 +3,10 @@
 #include <Columns/ColumnsCommon.h>
 #include <Common/PODArray.h>
 #include <Common/ProfileEvents.h>
+#include <Common/assert_cast.h>
 #include <IO/WriteHelpers.h>
 #include <Functions/IFunction.h>
+
 
 namespace ProfileEvents
 {
@@ -57,6 +59,40 @@ ColumnPtr ColumnFunction::cut(size_t start, size_t length) const
         column.column = column.column->cut(start, length);
 
     return ColumnFunction::create(length, function, capture, is_short_circuit_argument, is_function_compiled);
+}
+
+void ColumnFunction::insertFrom(const IColumn & src, size_t n)
+{
+    const ColumnFunction & src_func = assert_cast<const ColumnFunction &>(src);
+
+    size_t num_captured_columns = captured_columns.size();
+    assert(num_captured_columns == src_func.captured_columns.size());
+
+    for (size_t i = 0; i < num_captured_columns; ++i)
+    {
+        auto mut_column = IColumn::mutate(std::move(captured_columns[i].column));
+        mut_column->insertFrom(*src_func.captured_columns[i].column, n);
+        captured_columns[i].column = std::move(mut_column);
+    }
+
+    ++size_;
+}
+
+void ColumnFunction::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+{
+    const ColumnFunction & src_func = assert_cast<const ColumnFunction &>(src);
+
+    size_t num_captured_columns = captured_columns.size();
+    assert(num_captured_columns == src_func.captured_columns.size());
+
+    for (size_t i = 0; i < num_captured_columns; ++i)
+    {
+        auto mut_column = IColumn::mutate(std::move(captured_columns[i].column));
+        mut_column->insertRangeFrom(*src_func.captured_columns[i].column, start, length);
+        captured_columns[i].column = std::move(mut_column);
+    }
+
+    size_ += length;
 }
 
 ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint) const

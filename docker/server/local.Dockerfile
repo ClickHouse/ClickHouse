@@ -6,7 +6,7 @@
 # Middle steps are performed by the bash script.
 
 FROM ubuntu:18.04 as clickhouse-server-base
-ARG gosu_ver=1.10
+ARG gosu_ver=1.14
 
 VOLUME /packages/
 

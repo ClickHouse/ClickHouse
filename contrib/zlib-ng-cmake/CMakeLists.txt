@@ -158,4 +158,4 @@ if (ARCH_AMD64 OR ARCH_AARCH64)
     target_compile_definitions (zlib PUBLIC X86_64 UNALIGNED_OK)
 endif ()
 
-target_include_directories(zlib PUBLIC ${SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories(zlib SYSTEM PUBLIC ${SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})

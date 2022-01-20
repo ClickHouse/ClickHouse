@@ -68,12 +68,3 @@ add_library(libpqxx ${SRCS} ${HDRS})
 target_link_libraries(libpqxx PUBLIC ${LIBPQ_LIBRARY})
 target_include_directories (libpqxx SYSTEM PRIVATE "${LIBRARY_DIR}/include")
 
-# crutch
-set(CM_CONFIG_H_IN "${LIBRARY_DIR}/include/pqxx/config.h.in")
-set(CM_CONFIG_PUB "${LIBRARY_DIR}/include/pqxx/config-public-compiler.h")
-set(CM_CONFIG_INT "${LIBRARY_DIR}/include/pqxx/config-internal-compiler.h")
-set(CM_CONFIG_PQ "${LIBRARY_DIR}/include/pqxx/config-internal-libpq.h")
-
-configure_file("${CM_CONFIG_H_IN}" "${CM_CONFIG_INT}" @ONLY)
-configure_file("${CM_CONFIG_H_IN}" "${CM_CONFIG_PUB}" @ONLY)
-configure_file("${CM_CONFIG_H_IN}" "${CM_CONFIG_PQ}" @ONLY)
