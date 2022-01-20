@@ -131,6 +131,8 @@ public:
     void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos = {});
 
     const NamesAndTypesList & getColumns() const { return columns; }
+    NamesAndTypesList & getColumns() { return columns; }
+
     const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
     SerializationInfoByName & getSerializationInfos() { return serialization_infos; }
     SerializationPtr getSerialization(const NameAndTypePair & column) const;

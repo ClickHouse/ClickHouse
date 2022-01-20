@@ -81,8 +81,10 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     if (reset_columns)
         new_part->setColumns(part_columns, new_serialization_infos);
 
+    removeEmptyColumnsFromPart(new_part, new_part->getColumns(), new_part->getSerializationInfos(), checksums);
+
     if (new_part->isStoredOnDisk())
-        finalizePartOnDisk(new_part, part_columns, new_part->getSerializationInfos(), checksums, sync);
+        finalizePartOnDisk(new_part, checksums, sync);
 
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
@@ -98,9 +100,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
 }
 
 void MergedBlockOutputStream::finalizePartOnDisk(
-    const MergeTreeData::MutableDataPartPtr & new_part,
-    NamesAndTypesList & part_columns,
-    SerializationInfoByName & serialization_infos,
+    const MergeTreeData::DataPartPtr & new_part,
     MergeTreeData::DataPart::Checksums & checksums,
     bool sync)
 {
@@ -167,13 +167,11 @@ void MergedBlockOutputStream::finalizePartOnDisk(
             out->sync();
     }
 
-    removeEmptyColumnsFromPart(new_part, part_columns, serialization_infos, checksums);
-
-    if (!serialization_infos.empty())
+    if (!new_part->getSerializationInfos().empty())
     {
         auto out = volume->getDisk()->writeFile(part_path + IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096);
         HashingWriteBuffer out_hashing(*out);
-        serialization_infos.writeJSON(out_hashing);
+        new_part->getSerializationInfos().writeJSON(out_hashing);
         checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
         checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
         out->finalize();
@@ -184,7 +182,7 @@ void MergedBlockOutputStream::finalizePartOnDisk(
     {
         /// Write a file with a description of columns.
         auto out = volume->getDisk()->writeFile(fs::path(part_path) / "columns.txt", 4096);
-        part_columns.writeText(*out);
+        new_part->getColumns().writeText(*out);
         out->finalize();
         if (sync)
             out->sync();
