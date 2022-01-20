@@ -25,7 +25,6 @@
 #include <QueryPipeline/printPipeline.h>
 
 #include <Common/JSONBuilder.h>
-#include "Parsers/formatAST.h"
 
 namespace DB
 {
