@@ -24,6 +24,12 @@ struct RestoreSettings : public StorageRestoreSettings
     /// without the data of tables.
     bool structure_only = false;
 
+    /// Whether RESTORE DATABASE will throw an exception if a destination database already exists.
+    bool throw_if_database_exists = true;
+
+    /// Whether RESTORE TABLE will throw an exception if a destination table already exists.
+    bool throw_if_table_exists = true;
+
     static RestoreSettings fromRestoreQuery(const ASTBackupQuery & query);
 };
 

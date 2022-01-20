@@ -25,6 +25,10 @@ RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)
         {
             if (setting.name == "structure_only")
                 res.structure_only = setting.value.safeGet<bool>();
+            else if (setting.name == "throw_if_database_exists")
+                res.throw_if_database_exists = setting.value.safeGet<bool>();
+            else if (setting.name == "throw_if_table_exists")
+                res.throw_if_table_exists = setting.value.safeGet<bool>();
             else
                 throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting {}", setting.name);
         }
