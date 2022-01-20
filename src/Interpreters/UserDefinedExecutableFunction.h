@@ -10,26 +10,13 @@
 namespace DB
 {
 
-enum class UserDefinedExecutableFunctionType
-{
-    executable,
-    executable_pool
-};
-
 struct UserDefinedExecutableFunctionConfiguration
 {
-    UserDefinedExecutableFunctionType type = UserDefinedExecutableFunctionType::executable;
     std::string name;
-    std::string script_path;
-    std::string format;
+    std::string command;
+    std::vector<std::string> command_arguments;
     std::vector<DataTypePtr> argument_types;
     DataTypePtr result_type;
-    /// Pool settings
-    size_t pool_size = 0;
-    size_t command_termination_timeout = 0;
-    size_t max_command_execution_time = 0;
-    /// Send number_of_rows\n before sending chunk to process
-    bool send_chunk_header = false;
 };
 
 class UserDefinedExecutableFunction final : public IExternalLoadable
@@ -38,15 +25,15 @@ public:
 
     UserDefinedExecutableFunction(
         const UserDefinedExecutableFunctionConfiguration & configuration_,
-        const ExternalLoadableLifetime & lifetime_,
-        std::shared_ptr<ProcessPool> process_pool_ = nullptr);
+        std::shared_ptr<ShellCommandSourceCoordinator> coordinator_,
+        const ExternalLoadableLifetime & lifetime_);
 
     const ExternalLoadableLifetime & getLifetime() const override
     {
         return lifetime;
     }
 
-    const std::string & getLoadableName() const override
+    std::string getLoadableName() const override
     {
         return configuration.name;
     }
@@ -63,7 +50,7 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<UserDefinedExecutableFunction>(configuration, lifetime, process_pool);
+        return std::make_shared<UserDefinedExecutableFunction>(configuration, coordinator, lifetime);
     }
 
     const UserDefinedExecutableFunctionConfiguration & getConfiguration() const
@@ -71,9 +58,9 @@ public:
         return configuration;
     }
 
-    std::shared_ptr<ProcessPool> getProcessPool() const
+    std::shared_ptr<ShellCommandSourceCoordinator> getCoordinator() const
     {
-        return process_pool;
+        return coordinator;
     }
 
     std::shared_ptr<UserDefinedExecutableFunction> shared_from_this()
@@ -87,13 +74,9 @@ public:
     }
 
 private:
-    UserDefinedExecutableFunction(const UserDefinedExecutableFunctionConfiguration & configuration_,
-        std::shared_ptr<ProcessPool> process_pool_,
-        const ExternalLoadableLifetime & lifetime_);
-
     UserDefinedExecutableFunctionConfiguration configuration;
+    std::shared_ptr<ShellCommandSourceCoordinator> coordinator;
     ExternalLoadableLifetime lifetime;
-    std::shared_ptr<ProcessPool> process_pool;
 };
 
 }

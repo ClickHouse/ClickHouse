@@ -48,6 +48,10 @@ SkipList=(
 for TESTPATH in "$CURDIR"/*.sql;
 do
     TESTNAME=$(basename $TESTPATH)
+    NUM=$(echo "${TESTNAME}" | grep -o -P '^\d+' | sed 's/^0*//')
+    if [[ "${NUM}" -ge 168 ]]; then
+        continue
+    fi
 
     if [[ " ${SkipList[*]} " =~ ${TESTNAME} ]]; then
         echo  "Skipping $TESTNAME "
@@ -72,7 +76,7 @@ do
 
     if [[ "$expected" != "$actual" ]]; then
         FAILED+=("$TESTNAME")
-        echo "Failed! ❌ "
+        echo "Failed! ❌"
         echo "Plain:"
         cat $TESTNAME_RESULT
         echo "Distributed:"

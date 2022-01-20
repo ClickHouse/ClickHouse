@@ -83,7 +83,6 @@ public:
     bool group_by_with_rollup = false;
     bool group_by_with_cube = false;
     bool group_by_with_constant_keys = false;
-    bool group_by_with_grouping_sets = false;
     bool limit_with_ties = false;
 
     ASTPtr & refSelect()    { return getExpression(Expression::SELECT); }
@@ -136,7 +135,7 @@ public:
 
     void setFinal();
 
-    const char * getQueryKindString() const override { return "Select"; }
+    virtual QueryKind getQueryKind() const override { return QueryKind::Select; }
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

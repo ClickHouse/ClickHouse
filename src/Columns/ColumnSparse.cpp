@@ -8,6 +8,7 @@
 #include <Processors/Transforms/ColumnGathererTransform.h>
 
 #include <algorithm>
+#include <bit>
 
 namespace DB
 {
