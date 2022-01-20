@@ -522,7 +522,7 @@ if (TARGET ch_contrib::rapidjson)
     dbms_target_link_libraries(PRIVATE ch_contrib::rapidjson)
 endif()
 
-dbms_target_link_libraries(PUBLIC consistent-hashing)
+dbms_target_link_libraries(PUBLIC ch_contrib::consistent_hashing)
 
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
 
