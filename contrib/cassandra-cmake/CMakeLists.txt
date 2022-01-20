@@ -53,16 +53,16 @@ endif()
 list(APPEND SOURCES ${CASS_SRC_DIR}/atomic/atomic_std.hpp)
 
 
-add_library(curl_hostcheck OBJECT ${CASS_SRC_DIR}/third_party/curl/hostcheck.cpp)
-add_library(hdr_histogram OBJECT ${CASS_SRC_DIR}/third_party/hdr_histogram/hdr_histogram.cpp)
-add_library(http-parser OBJECT ${CASS_SRC_DIR}/third_party/http-parser/http_parser.c)
-add_library(minizip OBJECT
+add_library(_curl_hostcheck OBJECT ${CASS_SRC_DIR}/third_party/curl/hostcheck.cpp)
+add_library(_hdr_histogram OBJECT ${CASS_SRC_DIR}/third_party/hdr_histogram/hdr_histogram.cpp)
+add_library(_http-parser OBJECT ${CASS_SRC_DIR}/third_party/http-parser/http_parser.c)
+add_library(_minizip OBJECT
     ${CASS_SRC_DIR}/third_party/minizip/ioapi.c
     ${CASS_SRC_DIR}/third_party/minizip/zip.c
     ${CASS_SRC_DIR}/third_party/minizip/unzip.c)
 
-target_link_libraries(minizip ch_contrib::zlib)
-target_compile_definitions(minizip PRIVATE "-Dz_crc_t=unsigned long")
+target_link_libraries(_minizip ch_contrib::zlib)
+target_compile_definitions(_minizip PRIVATE "-Dz_crc_t=unsigned long")
 
 list(APPEND INCLUDE_DIRS
   ${CASS_SRC_DIR}/third_party/curl
@@ -121,10 +121,10 @@ configure_file(
 
 add_library(_cassandra
     ${SOURCES}
-    $<TARGET_OBJECTS:curl_hostcheck>
-    $<TARGET_OBJECTS:hdr_histogram>
-    $<TARGET_OBJECTS:http-parser>
-    $<TARGET_OBJECTS:minizip>)
+    $<TARGET_OBJECTS:_curl_hostcheck>
+    $<TARGET_OBJECTS:_hdr_histogram>
+    $<TARGET_OBJECTS:_http-parser>
+    $<TARGET_OBJECTS:_minizip>)
 
 target_link_libraries(_cassandra ch_contrib::zlib)
 target_include_directories(_cassandra PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${INCLUDE_DIRS})
