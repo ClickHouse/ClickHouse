@@ -239,12 +239,12 @@ endif()
 set(LIBMARIADB_SOURCES ${LIBMARIADB_SOURCES} ${CC_SOURCE_DIR}/libmariadb/mariadb_async.c ${CC_SOURCE_DIR}/libmariadb/ma_context.c)
 
 
-add_library(mariadbclient STATIC ${LIBMARIADB_SOURCES})
-target_link_libraries(mariadbclient ${SYSTEM_LIBS})
+add_library(_mariadbclient STATIC ${LIBMARIADB_SOURCES})
+target_link_libraries(_mariadbclient ${SYSTEM_LIBS})
 
-target_include_directories(mariadbclient PRIVATE ${CC_BINARY_DIR}/include-private)
-target_include_directories(mariadbclient SYSTEM PUBLIC ${CC_BINARY_DIR}/include-public ${CC_SOURCE_DIR}/include ${CC_SOURCE_DIR}/libmariadb)
+target_include_directories(_mariadbclient PRIVATE ${CC_BINARY_DIR}/include-private)
+target_include_directories(_mariadbclient SYSTEM PUBLIC ${CC_BINARY_DIR}/include-public ${CC_SOURCE_DIR}/include ${CC_SOURCE_DIR}/libmariadb)
 
-set_target_properties(mariadbclient PROPERTIES IMPORTED_INTERFACE_LINK_LIBRARIES "${SYSTEM_LIBS}")
+set_target_properties(_mariadbclient PROPERTIES IMPORTED_INTERFACE_LINK_LIBRARIES "${SYSTEM_LIBS}")
 
-add_library(ch_contrib::mariadbclient ALIAS mariadbclient)
+add_library(ch_contrib::mariadbclient ALIAS _mariadbclient)
