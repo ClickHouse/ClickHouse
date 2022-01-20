@@ -252,28 +252,36 @@ namespace DB
 
         if (!client->isConnected())
         {
-            client->connect(host, port);
-
-            if (!password.empty())
+            try
             {
-                RedisCommand command("AUTH");
-                command << password;
-                String reply = client->execute<String>(command);
-                if (reply != "OK")
-                    throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR,
-                        "Authentication failed with reason {}", reply);
+                client->connect(host, port);
+
+                if (!password.empty())
+                {
+                    RedisCommand command("AUTH");
+                    command << password;
+                    String reply = client->execute<String>(command);
+                    if (reply != "OK")
+                        throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR,
+                            "Authentication failed with reason {}", reply);
+                }
+
+                if (db_index != 0)
+                {
+                    RedisCommand command("SELECT");
+                    command << std::to_string(db_index);
+                    String reply = client->execute<String>(command);
+                    if (reply != "OK")
+                        throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR,
+                            "Selecting database with index {} failed with reason {}",
+                            DB::toString(db_index),
+                            reply);
+                }
             }
-
-            if (db_index != 0)
+            catch (...)
             {
-                RedisCommand command("SELECT");
-                command << std::to_string(db_index);
-                String reply = client->execute<String>(command);
-                if (reply != "OK")
-                    throw Exception(ErrorCodes::INTERNAL_REDIS_ERROR,
-                        "Selecting database with index {} failed with reason {}",
-                        DB::toString(db_index),
-                        reply);
+                pool->returnObject(std::move(client));
+                throw;
             }
         }
 
