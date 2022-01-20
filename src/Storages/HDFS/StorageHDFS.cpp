@@ -53,6 +53,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ACCESS_DENIED;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+    extern const int LOGICAL_ERROR;
 }
 namespace
 {
@@ -72,7 +73,15 @@ namespace
 
         HDFSFileInfo ls;
         ls.file_info = hdfsListDirectory(fs.get(), prefix_without_globs.data(), &ls.length);
+        if (ls.file_info == nullptr && errno != ENOENT) // NOLINT
+        {
+            // ignore file not found exception, keep throw other exception, libhdfs3 doesn't have function to get exception type, so use errno.
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED, "Cannot list directory {}: {}", prefix_without_globs, String(hdfsGetLastError()));
+        }
         Strings result;
+        if (!ls.file_info && ls.length > 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "file_info shouldn't be null");
         for (int i = 0; i < ls.length; ++i)
         {
             const String full_path = String(ls.file_info[i].mName);
