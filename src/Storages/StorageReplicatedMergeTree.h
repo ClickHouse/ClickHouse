@@ -322,7 +322,7 @@ private:
     /// If true, the table is offline and can not be written to it.
     std::atomic_bool is_readonly {false};
     /// If false - ZooKeeper is available, but there is no table metadata. It's safe to drop table in this case.
-    bool has_metadata_in_zookeeper = true;
+    std::optional<bool> has_metadata_in_zookeeper;
 
     static constexpr auto default_zookeeper_name = "default";
     String zookeeper_name;

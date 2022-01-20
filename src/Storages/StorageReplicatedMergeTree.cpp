@@ -774,7 +774,8 @@ void StorageReplicatedMergeTree::drop()
     /// or metadata of staled replica were removed manually,
     /// in this case, has_metadata_in_zookeeper = false, and we also permit to drop the table.
 
-    if (has_metadata_in_zookeeper)
+    bool maybe_has_metadata_in_zookeeper = !has_metadata_in_zookeeper.has_value() || *has_metadata_in_zookeeper;
+    if (maybe_has_metadata_in_zookeeper)
     {
         /// Table can be shut down, restarting thread is not active
         /// and calling StorageReplicatedMergeTree::getZooKeeper()/getAuxiliaryZooKeeper() won't suffice.
@@ -4801,12 +4802,22 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
 void StorageReplicatedMergeTree::restoreMetadataInZooKeeper()
 {
     LOG_INFO(log, "Restoring replica metadata");
+    if (!is_readonly)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica must be readonly");
 
-    if (!is_readonly || has_metadata_in_zookeeper)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "It's a bug: replica is not readonly");
+    if (getZooKeeper()->exists(replica_path))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Replica path is present at {} - nothing to restore. "
+                        "If you are sure that metadata is lost and replica path contain some garbage, "
+                        "then use SYSTEM DROP REPLICA query first.", replica_path);
+
+    if (has_metadata_in_zookeeper.has_value() && *has_metadata_in_zookeeper)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Replica has metadata in ZooKeeper: "
+                                                   "it's a bug or a result of manual intervention into ZooKeeper");
 
     if (are_restoring_replica.exchange(true))
         throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Replica restoration in progress");
+    SCOPE_EXIT({ are_restoring_replica.store(false); });
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
 
@@ -4847,8 +4858,6 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper()
     LOG_INFO(log, "Attached all partitions, starting table");
 
     startup();
-
-    are_restoring_replica.store(false);
 }
 
 void StorageReplicatedMergeTree::dropPartNoWaitNoThrow(const String & part_name)
