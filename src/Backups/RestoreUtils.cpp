@@ -253,7 +253,7 @@ namespace
 
             /// Make a create query for this table.
             auto create_query = renameInCreateQuery(readCreateQueryFromBackup(table_name_));
-            create_query->if_not_exists = true;
+            create_query->if_not_exists = !restore_settings.throw_if_table_exists;
 
             CreateTableInfo info;
             info.create_query = create_query;
@@ -339,7 +339,7 @@ namespace
                     db_name_in_backup.clear();
                 }
 
-                create_db_query->if_not_exists = true;
+                create_db_query->if_not_exists = !restore_settings.throw_if_database_exists;
 
                 CreateDatabaseInfo info_db;
                 info_db.create_query = create_db_query;
