@@ -24,6 +24,9 @@ def test_rollback_unfinished_on_restart(start_cluster):
     node.query('insert into mt values (1, 10), (2, 20)')
     tid0 = "(1,1,'00000000-0000-0000-0000-000000000000')"
 
+    # it will hold a snapshot and avoid parts cleanup
+    tx(0, 'begin transaction')
+
     tx(1, 'begin transaction')
     tid1 = tx(1, 'select transactionID()').strip()
     tx(1, "alter table mt drop partition id '1'")
@@ -65,6 +68,7 @@ def test_rollback_unfinished_on_restart(start_cluster):
                   "0_2_4_1\t0\ttid4\tcsn18446744073709551615\t(0,0,'00000000-0000-0000-0000-000000000000')\tcsn0\n" \
                   "0_4_4_0\t1\ttid2\tcsn_2\t(0,0,'00000000-0000-0000-0000-000000000000')\tcsn0\n" \
                   "0_7_7_0\t0\ttid5\tcsn18446744073709551615\t(0,0,'00000000-0000-0000-0000-000000000000')\tcsn0\n" \
+                  "1_1_1_0\t0\ttid0\tcsn1\ttid1\tcsn_1\n" \
                   "1_3_3_0\t1\ttid2\tcsn_2\t(0,0,'00000000-0000-0000-0000-000000000000')\tcsn0\n" \
                   "1_3_3_0_6\t0\ttid3\tcsn18446744073709551615\t(0,0,'00000000-0000-0000-0000-000000000000')\tcsn0\n" \
                   "1_5_5_0\t0\ttid3\tcsn18446744073709551615\t(0,0,'00000000-0000-0000-0000-000000000000')\tcsn0\n" \
