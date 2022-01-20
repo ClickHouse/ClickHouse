@@ -21,7 +21,7 @@ target_link_libraries(clickhouse_functions
         ch_contrib::consistent_hashing
         dbms
         ch_contrib::metrohash
-        murmurhash
+        ch_contrib::murmurhash
 
     PRIVATE
         ch_contrib::zlib
