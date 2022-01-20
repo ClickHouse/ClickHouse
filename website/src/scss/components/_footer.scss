@@ -1,7 +1,6 @@
-.footer-copy {
-	white-space: nowrap;
-}
-
-.footer-menu {
-	border-top: 2px solid $gray-100;
+.footer {
+	&-copy,
+	&-links {
+		white-space: nowrap;
+	}
 }
