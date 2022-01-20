@@ -30,12 +30,12 @@ set(SRCS
 
 configure_file("${H3_SOURCE_DIR}/include/h3api.h.in" "${H3_BINARY_DIR}/include/h3api.h")
 
-add_library(h3 ${SRCS})
-target_include_directories(h3 SYSTEM PUBLIC "${H3_SOURCE_DIR}/include")
-target_include_directories(h3 SYSTEM PUBLIC "${H3_BINARY_DIR}/include")
-target_compile_definitions(h3 PRIVATE H3_HAVE_VLA)
+add_library(_h3 ${SRCS})
+target_include_directories(_h3 SYSTEM PUBLIC "${H3_SOURCE_DIR}/include")
+target_include_directories(_h3 SYSTEM PUBLIC "${H3_BINARY_DIR}/include")
+target_compile_definitions(_h3 PRIVATE H3_HAVE_VLA)
 if(M_LIBRARY)
-    target_link_libraries(h3 PRIVATE ${M_LIBRARY})
+    target_link_libraries(_h3 PRIVATE ${M_LIBRARY})
 endif()
 
-add_library(ch_contrib::h3 ALIAS h3)
+add_library(ch_contrib::h3 ALIAS _h3)
