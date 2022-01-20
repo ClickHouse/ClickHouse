@@ -1,5 +1,6 @@
 #include <Backups/BackupUtils.h>
 #include <Backups/BackupEntryFromMemory.h>
+#include <Backups/BackupSettings.h>
 #include <Backups/DDLRenamingVisitor.h>
 #include <Backups/IBackup.h>
 #include <Common/escapeForFileName.h>
@@ -32,7 +33,10 @@ namespace
     class BackupEntriesBuilder
     {
     public:
-        BackupEntriesBuilder(const ContextPtr & context_, const BackupSettings &) : context(context_) { }
+        BackupEntriesBuilder(const ContextPtr & context_, const BackupSettings & backup_settings_)
+            : context(context_), backup_settings(backup_settings_)
+        {
+        }
 
         /// Prepares internal structures for making backup entries.
         void prepare(const ASTBackupQuery::Elements & elements)
@@ -145,7 +149,7 @@ namespace
             /// Make a create query for this table.
             auto create_query = renameInCreateQuery(database->getCreateTableQuery(table_name_.second, context));
 
-            bool has_data = !storage->hasHollowBackup();
+            bool has_data = !storage->hasHollowBackup() && !backup_settings.structure_only;
             if (has_data)
                 context->checkAccess(AccessType::SELECT, table_name_.first, table_name_.second);
 
@@ -288,6 +292,7 @@ namespace
         };
 
         ContextPtr context;
+        BackupSettings backup_settings;
         DDLRenamingSettings renaming_settings;
         std::map<String, CreateDatabaseInfo> databases;
         std::map<DatabaseAndTableName, CreateTableInfo> tables;
