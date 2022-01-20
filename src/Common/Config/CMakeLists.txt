@@ -27,7 +27,7 @@ target_link_libraries(clickhouse_common_config_no_zookeeper_log
         string_utils
 )
 
-if (USE_YAML_CPP)
-    target_link_libraries(clickhouse_common_config PRIVATE yaml-cpp)
-    target_link_libraries(clickhouse_common_config_no_zookeeper_log PRIVATE yaml-cpp)
+if (TARGET ch_contrib::yaml_cpp)
+    target_link_libraries(clickhouse_common_config PRIVATE ch_contrib::yaml_cpp)
+    target_link_libraries(clickhouse_common_config_no_zookeeper_log PRIVATE ch_contrib::yaml_cpp)
 endif()
