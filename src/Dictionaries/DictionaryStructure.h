@@ -7,13 +7,14 @@
 
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <base/EnumReflection.h>
+
 #include <Core/Field.h>
 #include <Core/TypeId.h>
 #include <IO/ReadBufferFromString.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/IExternalLoadable.h>
-#include <base/EnumReflection.h>
-#include <Core/TypeId.h>
+
 
 #if defined(__GNUC__)
     /// GCC mistakenly warns about the names in enum class.
