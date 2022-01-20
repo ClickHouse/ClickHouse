@@ -18,3 +18,4 @@ set (SRCS
 
 add_library(fmt ${SRCS})
 target_include_directories(fmt SYSTEM PUBLIC ../fmtlib/include)
+add_library(ch_contrib::fmt ALIAS fmt)

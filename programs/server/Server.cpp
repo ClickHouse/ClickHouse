@@ -98,9 +98,7 @@
 #endif
 
 #if USE_SSL
-#    if USE_INTERNAL_SSL_LIBRARY
-#        include <Compression/CompressionCodecEncrypted.h>
-#    endif
+#    include <Compression/CompressionCodecEncrypted.h>
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
 #endif
@@ -112,10 +110,6 @@
 #if USE_NURAFT
 #    include <Coordination/FourLetterCommand.h>
 #    include <Server/KeeperTCPHandlerFactory.h>
-#endif
-
-#if USE_BASE64
-#   include <turbob64.h>
 #endif
 
 #if USE_JEMALLOC
