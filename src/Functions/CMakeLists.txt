@@ -20,7 +20,7 @@ target_link_libraries(clickhouse_functions
         clickhouse_parsers
         ch_contrib::consistent_hashing
         dbms
-        metrohash
+        ch_contrib::metrohash
         murmurhash
 
     PRIVATE
