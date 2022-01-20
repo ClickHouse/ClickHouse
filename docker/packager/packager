@@ -156,7 +156,6 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
         result.append('ENABLE_TESTS=1')
         result.append('BINARY_OUTPUT=tests')
         cmake_flags.append('-DENABLE_TESTS=1')
-        cmake_flags.append('-DUSE_GTEST=1')
 
     if split_binary:
         cmake_flags.append('-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1')
@@ -168,7 +167,6 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
     if clang_tidy:
         cmake_flags.append('-DENABLE_CLANG_TIDY=1')
         cmake_flags.append('-DENABLE_UTILS=1')
-        cmake_flags.append('-DUSE_GTEST=1')
         cmake_flags.append('-DENABLE_TESTS=1')
         cmake_flags.append('-DENABLE_EXAMPLES=1')
         # Don't stop on first error to find more clang-tidy errors in one run.

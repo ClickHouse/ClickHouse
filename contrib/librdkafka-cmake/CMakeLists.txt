@@ -1,3 +1,10 @@
+option (ENABLE_KAFKA "Enable kafka" ${ENABLE_LIBRARIES})
+
+if (NOT ENABLE_KAFKA)
+    message(STATUS "Not using librdkafka")
+    return()
+endif()
+
 set(RDKAFKA_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/librdkafka/src")
 
 set(SRCS
@@ -80,24 +87,18 @@ set(SRCS
   "${RDKAFKA_SOURCE_DIR}/tinycthread_extra.c"
 )
 
-if(${ENABLE_CYRUS_SASL})
+if(TARGET ch_contrib::sasl2)
     message (STATUS "librdkafka with SASL support")
     set(WITH_SASL_CYRUS 1)
 endif()
 
-if(OPENSSL_FOUND)
-    message (STATUS "librdkafka with SSL support")
-    set(WITH_SSL 1)
-
-    if(${ENABLE_CYRUS_SASL})
-       set(WITH_SASL_SCRAM 1)
-       set(WITH_SASL_OAUTHBEARER 1)
-    endif()
+message (STATUS "librdkafka with SSL support")
+set(WITH_SSL 1)
+if(WITH_SASL_CYRUS)
+   set(WITH_SASL_SCRAM 1)
+   set(WITH_SASL_OAUTHBEARER 1)
 endif()
-
-if(WITH_SSL)
-  list(APPEND SRCS "${RDKAFKA_SOURCE_DIR}/rdkafka_ssl.c")
-endif()
+list(APPEND SRCS "${RDKAFKA_SOURCE_DIR}/rdkafka_ssl.c")
 
 if(WITH_SASL_CYRUS)
   list(APPEND SRCS "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_cyrus.c") # needed to support Kerberos, requires cyrus-sasl
@@ -111,19 +112,23 @@ if(WITH_SASL_OAUTHBEARER)
   list(APPEND SRCS "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_oauthbearer.c")
 endif()
 
-add_library(rdkafka ${SRCS})
-target_compile_options(rdkafka PRIVATE -fno-sanitize=undefined)
-# target_include_directories(rdkafka SYSTEM PUBLIC include)
-target_include_directories(rdkafka SYSTEM PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")  # for "librdkafka/rdkafka.h"
-target_include_directories(rdkafka SYSTEM PUBLIC ${RDKAFKA_SOURCE_DIR})         # Because weird logic with "include_next" is used.
-target_include_directories(rdkafka SYSTEM PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/auxdir")  # for "../config.h"
-target_include_directories(rdkafka SYSTEM PRIVATE "${ZSTD_INCLUDE_DIR}/common")   # Because wrong path to "zstd_errors.h" is used.
-target_link_libraries(rdkafka PRIVATE lz4 ${ZLIB_LIBRARIES} ${ZSTD_LIBRARY})
-if(OPENSSL_SSL_LIBRARY AND OPENSSL_CRYPTO_LIBRARY)
-    target_link_libraries(rdkafka PRIVATE ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
-endif()
-if(${ENABLE_CYRUS_SASL})
-    target_link_libraries(rdkafka PRIVATE ${CYRUS_SASL_LIBRARY})
+add_library(_rdkafka ${SRCS})
+add_library(ch_contrib::rdkafka ALIAS _rdkafka)
+
+target_compile_options(_rdkafka PRIVATE -fno-sanitize=undefined)
+# target_include_directories(_rdkafka SYSTEM PUBLIC include)
+target_include_directories(_rdkafka SYSTEM PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include") # for "librdkafka/rdkafka.h"
+target_include_directories(_rdkafka SYSTEM PUBLIC ${RDKAFKA_SOURCE_DIR})                 # Because weird logic with "include_next" is used.
+target_include_directories(_rdkafka SYSTEM PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/auxdir")  # for "../config.h"
+target_link_libraries(_rdkafka
+  PRIVATE
+    ch_contrib::lz4
+    ch_contrib::zlib
+    ch_contrib::zstd
+    OpenSSL::Crypto OpenSSL::SSL
+)
+if(WITH_SASL_CYRUS)
+    target_link_libraries(_rdkafka PRIVATE ch_contrib::sasl2)
 endif()
 
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/auxdir")
