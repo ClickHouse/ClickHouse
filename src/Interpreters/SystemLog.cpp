@@ -642,5 +642,6 @@ template class SystemLog<SessionLogElement>;
 template class SystemLog<TraceLogElement>;
 template class SystemLog<ZooKeeperLogElement>;
 template class SystemLog<TextLogElement>;
+template class SystemLog<TransactionsInfoLogElement>;
 
 }
