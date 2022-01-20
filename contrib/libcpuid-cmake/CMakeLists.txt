@@ -23,12 +23,12 @@ set (SRCS
     "${LIBRARY_DIR}/libcpuid/recog_intel.c"
 )
 
-add_library (cpuid ${SRCS})
+add_library (_cpuid ${SRCS})
 
-target_include_directories (cpuid SYSTEM PUBLIC "${LIBRARY_DIR}")
-target_compile_definitions (cpuid PRIVATE VERSION="v0.4.1")
+target_include_directories (_cpuid SYSTEM PUBLIC "${LIBRARY_DIR}")
+target_compile_definitions (_cpuid PRIVATE VERSION="v0.4.1")
 if (COMPILER_CLANG)
-    target_compile_options (cpuid PRIVATE -Wno-reserved-id-macro)
+    target_compile_options (_cpuid PRIVATE -Wno-reserved-id-macro)
 endif ()
 
-add_library(ch_contrib::cpuid ALIAS cpuid)
+add_library(ch_contrib::cpuid ALIAS _cpuid)
