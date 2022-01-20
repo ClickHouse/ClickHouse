@@ -224,7 +224,6 @@ public:
         bool need_parens = false;
         bool expression_list_always_start_on_new_line = false;  /// Line feed and indent before expression list even if it's of single element.
         bool expression_list_prepend_whitespace = false; /// Prepend whitespace (if it is required)
-        bool surround_each_list_element_with_parens = false;
         const IAST * current_select = nullptr;
     };
 
@@ -246,10 +245,23 @@ public:
 
     void cloneChildren();
 
-    // Return query_kind string representation of this AST query.
-    virtual const char * getQueryKindString() const { return ""; }
+    enum class QueryKind : uint8_t
+    {
+        None = 0,
+        Alter,
+        Create,
+        Drop,
+        Grant,
+        Insert,
+        Rename,
+        Revoke,
+        SelectIntersectExcept,
+        Select,
+        System,
+    };
+    /// Return QueryKind of this AST query.
+    virtual QueryKind getQueryKind() const { return QueryKind::None; }
 
-public:
     /// For syntax highlighting.
     static const char * hilite_keyword;
     static const char * hilite_identifier;

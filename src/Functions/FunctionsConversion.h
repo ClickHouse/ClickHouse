@@ -182,6 +182,7 @@ struct ConvertImpl
                 vec_null_map_to = &col_null_map_to->getData();
             }
 
+            bool result_is_bool = isBool(result_type);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 if constexpr (std::is_same_v<FromDataType, DataTypeUUID> != std::is_same_v<ToDataType, DataTypeUUID>)
@@ -267,6 +268,12 @@ struct ConvertImpl
                         {
                             vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
                         }
+                    }
+
+                    if constexpr (std::is_same_v<ToDataType, DataTypeUInt8>)
+                    {
+                        if (result_is_bool)
+                            vec_to[i] = static_cast<bool>(vec_to[i]);
                     }
                 }
             }
@@ -1352,6 +1359,18 @@ struct ConvertImpl<std::enable_if_t<!T::is_parametric, T>, T, Name, ConvertDefau
     }
 };
 
+template <typename Name>
+struct ConvertImpl<DataTypeUInt8, DataTypeUInt8, Name, ConvertDefaultBehaviorTag>
+{
+    template <typename Additions = void *>
+    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/,
+                             Additions additions [[maybe_unused]] = Additions())
+    {
+
+        return arguments[0].column;
+    }
+};
+
 
 /** Conversion from FixedString to String.
   * Cutting sequences of zero bytes from end of strings.
@@ -1721,7 +1740,10 @@ private:
                     throw Exception("Wrong UUID conversion", ErrorCodes::CANNOT_CONVERT_TYPE);
                 }
                 else
-                    result_column = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag>::execute(arguments, result_type, input_rows_count);
+                {
+                    result_column
+                        = ConvertImpl<LeftDataType, RightDataType, Name, SpecialTag>::execute(arguments, result_type, input_rows_count);
+                }
             }
             else
             {
@@ -1813,6 +1835,8 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
+
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
@@ -2551,6 +2575,7 @@ private:
         {
             /// In case when converting to Nullable type, we apply different parsing rule,
             /// that will not throw an exception but return NULL in case of malformed input.
+
             FunctionPtr function = FunctionConvertFromString<ToDataType, FunctionName, ConvertFromStringExceptionMode::Null>::create();
             return createFunctionAdaptor(function, from_type);
         }
@@ -2607,6 +2632,37 @@ private:
             }
 
             return result_column;
+        };
+    }
+
+    template <typename ToDataType>
+    WrapperType createBoolWrapper(const DataTypePtr & from_type, const ToDataType * const to_type, bool requested_result_is_nullable) const
+    {
+        if (checkAndGetDataType<DataTypeString>(from_type.get()))
+        {
+            return &ConvertImplGenericFromString<ColumnString>::execute;
+        }
+
+        return createWrapper<ToDataType>(from_type, to_type, requested_result_is_nullable);
+    }
+
+    WrapperType createUInt8ToUInt8Wrapper(const DataTypePtr from_type, const DataTypePtr to_type) const
+    {
+        return [from_type, to_type] (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t /*input_rows_count*/) -> ColumnPtr
+        {
+            if (isBool(from_type) || !isBool(to_type))
+                return arguments.front().column;
+
+            /// Special case when we convert UInt8 column to Bool column.
+            /// both columns have type UInt8, but we shouldn't use identity wrapper,
+            /// because Bool column can contain only 0 and 1.
+            auto res_column = to_type->createColumn();
+            const auto & data_from = checkAndGetColumn<ColumnUInt8>(arguments[0].column.get())->getData();
+            auto & data_to = assert_cast<ColumnUInt8 *>(res_column.get())->getData();
+            data_to.resize(data_from.size());
+            for (size_t i = 0; i != data_from.size(); ++i)
+                data_to[i] = static_cast<bool>(data_from[i]);
+            return res_column;
         };
     }
 
@@ -3266,7 +3322,12 @@ private:
     WrapperType prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type, bool requested_result_is_nullable) const
     {
         if (from_type->equals(*to_type))
+        {
+            if (isUInt8(from_type))
+                return createUInt8ToUInt8Wrapper(from_type, to_type);
+
             return createIdentityWrapper(from_type);
+        }
         else if (WhichDataType(from_type).isNothing())
             return createNothingWrapper(to_type.get());
 
@@ -3278,7 +3339,6 @@ private:
             using ToDataType = typename Types::LeftType;
 
             if constexpr (
-                std::is_same_v<ToDataType, DataTypeUInt8> ||
                 std::is_same_v<ToDataType, DataTypeUInt16> ||
                 std::is_same_v<ToDataType, DataTypeUInt32> ||
                 std::is_same_v<ToDataType, DataTypeUInt64> ||
@@ -3298,6 +3358,14 @@ private:
                 std::is_same_v<ToDataType, DataTypeUUID>)
             {
                 ret = createWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()), requested_result_is_nullable);
+                return true;
+            }
+            if constexpr (std::is_same_v<ToDataType, DataTypeUInt8>)
+            {
+                if (isBool(to_type))
+                    ret = createBoolWrapper<ToDataType>(from_type, checkAndGetDataType<ToDataType>(to_type.get()), requested_result_is_nullable);
+                else
+                    ret = createWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()), requested_result_is_nullable);
                 return true;
             }
             if constexpr (

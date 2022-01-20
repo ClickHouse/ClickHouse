@@ -12,7 +12,6 @@ from stopwatch import Stopwatch
 from upload_result_helper import upload_results
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
-from pr_info import PRInfo
 from commit_status_helper import post_commit_status
 from docker_pull_helper import get_image_with_version
 from tee_popen import TeePopen
@@ -32,8 +31,6 @@ if __name__ == "__main__":
     stopwatch = Stopwatch()
 
     temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
-
-    pr_info = PRInfo()
 
     gh = Github(get_best_robot_token())
 
@@ -71,8 +68,8 @@ if __name__ == "__main__":
 
     test_results = [(index_html, "Look at the report")]
 
-    report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [], NAME)
+    report_url = upload_results(s3_helper, 0, os.getenv("GITHUB_SHA"), test_results, [], NAME)
 
     print(f"::notice ::Report url: {report_url}")
 
-    post_commit_status(gh, pr_info.sha, NAME, "Report built", "success", report_url)
+    post_commit_status(gh, os.getenv("GITHUB_SHA"), NAME, "Report built", "success", report_url)

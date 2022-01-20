@@ -377,6 +377,8 @@ struct WhichDataType
     constexpr bool isNullable() const { return idx == TypeIndex::Nullable; }
     constexpr bool isFunction() const { return idx == TypeIndex::Function; }
     constexpr bool isAggregateFunction() const { return idx == TypeIndex::AggregateFunction; }
+
+    constexpr bool isLowCarnality() const { return idx == TypeIndex::LowCardinality; }
 };
 
 /// IDataType helpers (alternative for IDataType virtual methods with single point of truth)
@@ -504,12 +506,17 @@ inline bool isNotCreatable(const T & data_type)
 inline bool isNotDecimalButComparableToDecimal(const DataTypePtr & data_type)
 {
     WhichDataType which(data_type);
-    return which.isInt() || which.isUInt();
+    return which.isInt() || which.isUInt() || which.isFloat();
 }
 
 inline bool isCompilableType(const DataTypePtr & data_type)
 {
     return data_type->isValueRepresentedByNumber() && !isDecimal(data_type);
+}
+
+inline bool isBool(const DataTypePtr & data_type)
+{
+    return data_type->getName() == "Bool";
 }
 
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;

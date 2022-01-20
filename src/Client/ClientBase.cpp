@@ -8,19 +8,21 @@
 #include <unordered_map>
 
 #include <base/argsToConfig.h>
-#include <base/DateLUT.h>
-#include <base/LocalDate.h>
+#include <Common/DateLUT.h>
+#include <Common/LocalDate.h>
+#include <Common/MemoryTracker.h>
 #include <base/LineReader.h>
 #include <base/scope_guard_safe.h>
-#include "Common/Exception.h"
-#include "Common/getNumberOfPhysicalCPUCores.h"
-#include "Common/tests/gtest_global_context.h"
-#include "Common/typeid_cast.h"
-#include "Columns/ColumnString.h"
-#include "Columns/ColumnsNumber.h"
-#include "Core/Block.h"
-#include "Core/Protocol.h"
-#include "Formats/FormatFactory.h"
+#include <Common/Exception.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/tests/gtest_global_context.h>
+#include <Common/typeid_cast.h>
+#include <Common/config.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Core/Block.h>
+#include <Core/Protocol.h>
+#include <Formats/FormatFactory.h>
 
 #include <Common/config_version.h>
 #include <Common/UTF8Helpers.h>
@@ -64,6 +66,11 @@
 namespace fs = std::filesystem;
 using namespace std::literals;
 
+
+namespace CurrentMetrics
+{
+    extern const Metric MemoryTracking;
+}
 
 namespace DB
 {
@@ -457,12 +464,13 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
         /// The query can specify output format or output file.
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
         {
+            String out_file;
             if (query_with_output->out_file)
             {
                 select_into_file = true;
 
                 const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
-                const auto & out_file = out_file_node.value.safeGet<std::string>();
+                out_file = out_file_node.value.safeGet<std::string>();
 
                 std::string compression_method;
                 if (query_with_output->compression)
@@ -487,6 +495,12 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
                     throw Exception("Output format already specified", ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED);
                 const auto & id = query_with_output->format->as<ASTIdentifier &>();
                 current_format = id.name();
+            }
+            else if (query_with_output->out_file)
+            {
+                const auto & format_name = FormatFactory::instance().getFormatFromFileName(out_file);
+                if (!format_name.empty())
+                    current_format = format_name;
             }
         }
 
@@ -800,7 +814,7 @@ void ClientBase::onProfileEvents(Block & block)
     if (rows == 0)
         return;
 
-    if (progress_indication.print_hardware_utilization)
+    if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
     {
         const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
         const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
@@ -834,25 +848,25 @@ void ClientBase::onProfileEvents(Block & block)
         }
         auto elapsed_time = profile_events.watch.elapsedMicroseconds();
         progress_indication.updateThreadEventData(thread_times, elapsed_time);
-    }
 
-    if (profile_events.print)
-    {
-        if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms)
+        if (profile_events.print)
         {
-            initLogsOutputStream();
-            progress_indication.clearProgressOutput();
-            logs_out_stream->writeProfileEvents(block);
-            logs_out_stream->flush();
+            if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms)
+            {
+                initLogsOutputStream();
+                progress_indication.clearProgressOutput();
+                logs_out_stream->writeProfileEvents(block);
+                logs_out_stream->flush();
 
-            profile_events.last_block = {};
+                profile_events.last_block = {};
+            }
+            else
+            {
+                incrementProfileEventsBlock(profile_events.last_block, block);
+            }
         }
-        else
-        {
-            incrementProfileEventsBlock(profile_events.last_block, block);
-        }
+        profile_events.watch.restart();
     }
-    profile_events.watch.restart();
 }
 
 
@@ -1002,11 +1016,15 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             compression_method = compression_method_node.value.safeGet<std::string>();
         }
 
+        String current_format = parsed_insert_query->format;
+        if (current_format.empty())
+            current_format = FormatFactory::instance().getFormatFromFileName(in_file, true);
+
         /// Create temporary storage file, to support globs and parallel reading
         StorageFile::CommonArguments args{
             WithContext(global_context),
             parsed_insert_query->table_id,
-            parsed_insert_query->format,
+            current_format,
             getFormatSettings(global_context),
             compression_method,
             columns_description_for_query,
@@ -1177,7 +1195,7 @@ bool ClientBase::receiveEndOfQuery()
 
             case Protocol::Server::Progress:
                 onProgress(packet.progress);
-                return true;
+                break;
 
             default:
                 throw NetException(
@@ -1812,6 +1830,7 @@ void ClientBase::init(int argc, char ** argv)
 
         ("interactive", "Process queries-file or --query query and start interactive mode")
         ("pager", po::value<std::string>(), "Pipe all output into this command (less or similar)")
+        ("max_memory_usage_in_client", po::value<int>(), "Set memory limit in client/local server")
     ;
 
     addOptions(options_description);
@@ -1909,8 +1928,6 @@ void ClientBase::init(int argc, char ** argv)
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
     if (options.count("server_logs_file"))
         server_logs_file = options["server_logs_file"].as<std::string>();
-    if (options.count("hardware-utilization"))
-        progress_indication.print_hardware_utilization = true;
 
     query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
     profile_events.print = options.count("print-profile-events");
@@ -1919,6 +1936,15 @@ void ClientBase::init(int argc, char ** argv)
     processOptions(options_description, options, external_tables_arguments);
     argsToConfig(common_arguments, config(), 100);
     clearPasswordFromCommandLine(argc, argv);
+
+    /// Limit on total memory usage
+    size_t max_client_memory_usage = config().getInt64("max_memory_usage_in_client", 0 /*default value*/);
+    if (max_client_memory_usage != 0)
+    {
+        total_memory_tracker.setHardLimit(max_client_memory_usage);
+        total_memory_tracker.setDescription("(total)");
+        total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+    }
 }
 
 }
