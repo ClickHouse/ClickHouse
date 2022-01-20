@@ -78,15 +78,11 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     else
         part_columns = *total_columns_list;
 
-    auto & serialization_infos = reset_columns
-        ? new_serialization_infos
-        : new_part->getSerializationInfos();
+    if (reset_columns)
+        new_part->setColumns(part_columns, new_serialization_infos);
 
     if (new_part->isStoredOnDisk())
-        finalizePartOnDisk(new_part, part_columns, serialization_infos, checksums, sync);
-
-    if (reset_columns)
-        new_part->setColumns(part_columns, serialization_infos);
+        finalizePartOnDisk(new_part, part_columns, new_part->getSerializationInfos(), checksums, sync);
 
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
