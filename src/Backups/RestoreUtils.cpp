@@ -151,7 +151,7 @@ namespace
 
         RestoreTaskPtr insertDataIntoStorage(StoragePtr storage)
         {
-            if (storage->hasHollowBackup())
+            if (storage->hasHollowBackup() || restore_settings.structure_only)
                 return {};
             context->checkAccess(AccessType::INSERT, table_name.first, table_name.second);
             String data_path_in_backup = getDataPathInBackup(table_name_in_backup);
