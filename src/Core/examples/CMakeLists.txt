@@ -1,5 +1,5 @@
 add_executable (string_pool string_pool.cpp)
-target_link_libraries (string_pool PRIVATE clickhouse_common_io)
+target_link_libraries (string_pool PRIVATE clickhouse_common_io ch_contrib::sparsehash)
 
 add_executable (field field.cpp)
 target_link_libraries (field PRIVATE dbms)
