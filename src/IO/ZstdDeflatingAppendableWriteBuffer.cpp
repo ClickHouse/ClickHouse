@@ -84,6 +84,8 @@ void ZstdDeflatingAppendableWriteBuffer::finalizeImpl()
 {
     if (first_write)
     {
+        /// To free cctx
+        finalizeAfter();
         /// Nothing was written
         return;
     }
