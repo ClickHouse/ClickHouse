@@ -1195,7 +1195,7 @@ bool ClientBase::receiveEndOfQuery()
 
             case Protocol::Server::Progress:
                 onProgress(packet.progress);
-                return true;
+                break;
 
             default:
                 throw NetException(
