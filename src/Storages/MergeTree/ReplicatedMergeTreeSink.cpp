@@ -32,6 +32,17 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+struct ReplicatedMergeTreeSink::PrevPart
+{
+    struct Partition
+    {
+        MergeTreeDataWriter::TempPart temp_part;
+        UInt64 elapsed_ns;
+        String block_id;
+    };
+
+    std::vector<Partition> partitions;
+};
 
 ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
     StorageReplicatedMergeTree & storage_,
@@ -59,6 +70,8 @@ ReplicatedMergeTreeSink::ReplicatedMergeTreeSink(
     if (quorum == 1)
         quorum = 0;
 }
+
+ReplicatedMergeTreeSink::~ReplicatedMergeTreeSink() = default;
 
 
 /// Allow to verify that the session in ZooKeeper is still alive.
@@ -140,6 +153,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
         checkQuorumPrecondition(zookeeper);
 
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
+    std::vector<ReplicatedMergeTreeSink::PrevPart::Partition> partitions;
 
     for (auto & current_block : part_blocks)
     {
@@ -169,22 +183,42 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
             LOG_DEBUG(log, "Wrote block with {} rows", current_block.block.rows());
         }
 
-        for (auto & stream : temp_part.streams)
-            stream.stream->finish(std::move(stream.finalizer));
+        UInt64 elapsed_ns = watch.elapsed();
 
-        auto & part = temp_part.part;
+        partitions.emplace_back(ReplicatedMergeTreeSink::PrevPart::Partition{
+            .temp_part = std::move(temp_part),
+            .elapsed_ns = elapsed_ns,
+            .block_id = block_id
+        });
+    }
+
+    finishPrevPart(zookeeper);
+    prev_part = std::make_unique<ReplicatedMergeTreeSink::PrevPart>();
+    prev_part->partitions = std::move(partitions);
+}
+
+void ReplicatedMergeTreeSink::finishPrevPart(zkutil::ZooKeeperPtr & zookeeper)
+{
+    if (!prev_part)
+        return;
+
+    for (auto & partition : prev_part->partitions)
+    {
+        partition.temp_part.finalize();
+
+        auto & part = partition.temp_part.part;
 
         try
         {
-            commitPart(zookeeper, part, block_id);
+            commitPart(zookeeper, part, partition.block_id);
 
             /// Set a special error code if the block is duplicate
             int error = (deduplicate && last_block_is_duplicate) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
-            PartLog::addNewPart(storage.getContext(), part, watch.elapsed(), ExecutionStatus(error));
+            PartLog::addNewPart(storage.getContext(), part, partition.elapsed_ns, ExecutionStatus(error));
         }
         catch (...)
         {
-            PartLog::addNewPart(storage.getContext(), part, watch.elapsed(), ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
+            PartLog::addNewPart(storage.getContext(), part, partition.elapsed_ns, ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
             throw;
         }
     }
@@ -522,6 +556,12 @@ void ReplicatedMergeTreeSink::onStart()
     storage.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event);
 }
 
+void ReplicatedMergeTreeSink::onFinish()
+{
+    auto zookeeper = storage.getZooKeeper();
+    assertSessionIsNotExpired(zookeeper);
+    finishPrevPart(zookeeper);
+}
 
 void ReplicatedMergeTreeSink::waitForQuorum(
     zkutil::ZooKeeperPtr & zookeeper,

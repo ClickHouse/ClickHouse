@@ -35,8 +35,11 @@ public:
         // needed to set the special LogEntryType::ATTACH_PART
         bool is_attach_ = false);
 
+    ~ReplicatedMergeTreeSink() override;
+
     void onStart() override;
     void consume(Chunk chunk) override;
+    void onFinish() override;
 
     String getName() const override { return "ReplicatedMergeTreeSink"; }
 
@@ -89,6 +92,11 @@ private:
     Poco::Logger * log;
 
     ContextPtr context;
+
+    struct PrevPart;
+    std::unique_ptr<PrevPart> prev_part;
+
+    void finishPrevPart(zkutil::ZooKeeperPtr & zookeeper);
 };
 
 }
