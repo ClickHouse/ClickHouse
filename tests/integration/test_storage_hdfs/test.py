@@ -310,6 +310,7 @@ def test_seekable_formats(started_cluster):
     result = node1.query(f"SELECT count() FROM {table_function}")
     assert(int(result) == 5000000)
 
+
 def test_read_table_with_default(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
@@ -321,6 +322,22 @@ def test_read_table_with_default(started_cluster):
     assert node1.query(
         "select * from hdfs('hdfs://hdfs1:9000/simple_table_function', 'TSVWithNames', 'n UInt32, m UInt32 DEFAULT n * 2') FORMAT TSVWithNames") == output
 
+
+def test_schema_inference(started_cluster):
+    node1.query(f"insert into table function hdfs('hdfs://hdfs1:9000/native', 'Native', 'a Int32, b String') SELECT number, randomString(100) FROM numbers(5000000)")
+
+    result = node1.query(f"desc hdfs('hdfs://hdfs1:9000/native', 'Native')")
+    assert result == "a\tInt32\t\t\t\t\t\nb\tString\t\t\t\t\t\n"
+
+    result = node1.query(f"select count(*) from hdfs('hdfs://hdfs1:9000/native', 'Native')")
+    assert(int(result) == 5000000)
+
+    node1.query(f"create table schema_inference engine=HDFS('hdfs://hdfs1:9000/native', 'Native')")
+    result = node1.query(f"desc schema_inference")
+    assert result == "a\tInt32\t\t\t\t\t\nb\tString\t\t\t\t\t\n"
+
+    result = node1.query(f"select count(*) from schema_inference")
+    assert(int(result) == 5000000)
 
 
 def test_hdfsCluster(started_cluster):
@@ -343,6 +360,17 @@ def test_hdfsCluster(started_cluster):
     expected = "1\tfile1\thdfs://hdfs1:9000/test_hdfsCluster/file1\n2\tfile2\thdfs://hdfs1:9000/test_hdfsCluster/file2\n3\tfile3\thdfs://hdfs1:9000/test_hdfsCluster/file3\n"
     assert actual == expected
     fs.delete(dir, recursive=True)
+
+def test_hdfs_directory_not_exist(started_cluster):
+    ddl ="create table HDFSStorageWithNotExistDir (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/data/not_eixst', 'TSV')";
+    node1.query(ddl)
+    assert "" == node1.query("select * from HDFSStorageWithNotExistDir")
+
+def test_format_detection(started_cluster):
+    node1.query(f"create table arrow_table (x UInt64) engine=HDFS('hdfs://hdfs1:9000/data.arrow')")
+    node1.query(f"insert into arrow_table select 1")
+    result = node1.query(f"select * from hdfs('hdfs://hdfs1:9000/data.arrow')")
+    assert(int(result) == 1)
 
 
 if __name__ == '__main__':

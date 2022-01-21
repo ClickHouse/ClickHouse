@@ -33,5 +33,7 @@ bool FieldVisitorSum::operator() (AggregateFunctionStateData &) const
     throw Exception("Cannot sum AggregateFunctionStates", ErrorCodes::LOGICAL_ERROR);
 }
 
+bool FieldVisitorSum::operator() (bool &) const { throw Exception("Cannot sum Bools", ErrorCodes::LOGICAL_ERROR); }
+
 }
 

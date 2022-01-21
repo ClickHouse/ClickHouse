@@ -83,7 +83,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         }
     }
 
-    if (num_children == 1 && settings_limit_offset_needed)
+    if (num_children == 1 && settings_limit_offset_needed && !options.settings_limit_offset_done)
     {
         const ASTPtr first_select_ast = ast->list_of_selects->children.at(0);
         ASTSelectQuery * select_query = dynamic_cast<ASTSelectQuery *>(first_select_ast.get());
@@ -127,7 +127,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
                 select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(new_limit_length_ast));
             }
 
-            settings_limit_offset_done = true;
+            options.settings_limit_offset_done = true;
         }
     }
 
@@ -305,7 +305,7 @@ void InterpreterSelectWithUnionQuery::buildQueryPlan(QueryPlan & query_plan)
         }
     }
 
-    if (settings_limit_offset_needed && !settings_limit_offset_done)
+    if (settings_limit_offset_needed && !options.settings_limit_offset_done)
     {
         if (settings.limit > 0)
         {

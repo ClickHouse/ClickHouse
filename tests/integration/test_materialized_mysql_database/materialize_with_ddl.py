@@ -1079,8 +1079,40 @@ def table_overrides(clickhouse_node, mysql_node, service_name):
     check_query(clickhouse_node, "SELECT count() FROM table_overrides.t1", "1000\n")
     mysql_node.query("INSERT INTO table_overrides.t1 VALUES(1001, '2021-10-01 00:00:00', 42.0)")
     check_query(clickhouse_node, "SELECT count() FROM table_overrides.t1", "1001\n")
+
+    explain_with_table_func = f"EXPLAIN TABLE OVERRIDE mysql('{service_name}:3306', 'table_overrides', 't1', 'root', 'clickhouse')"
+
+    for what in ['ORDER BY', 'PRIMARY KEY', 'SAMPLE BY', 'PARTITION BY', 'TTL']:
+        with pytest.raises(QueryRuntimeException) as exc:
+            clickhouse_node.query(f"{explain_with_table_func} {what} temperature")
+        assert f'{what} override refers to nullable column `temperature`' in \
+            str(exc.value)
+        assert f"{what} uses columns: `temperature` Nullable(Float32)" in \
+            clickhouse_node.query(f"{explain_with_table_func} {what} assumeNotNull(temperature)")
+
+    for testcase in [
+        ('COLUMNS (temperature Nullable(Float32) MATERIALIZED 1.0)',
+         'column `temperature`: modifying default specifier is not allowed'),
+        ('COLUMNS (sensor_id UInt64 ALIAS 42)',
+         'column `sensor_id`: modifying default specifier is not allowed')
+    ]:
+        with pytest.raises(QueryRuntimeException) as exc:
+            clickhouse_node.query(f"{explain_with_table_func} {testcase[0]}")
+        assert testcase[1] in str(exc.value)
+
+    for testcase in [
+        ('COLUMNS (temperature Nullable(Float64))',
+         'Modified columns: `temperature` Nullable(Float32) -> Nullable(Float64)'),
+        ('COLUMNS (temp_f Nullable(Float32) ALIAS if(temperature IS NULL, NULL, (temperature * 9.0 / 5.0) + 32),\
+                   temp_k Nullable(Float32) ALIAS if(temperature IS NULL, NULL, temperature + 273.15))',
+         'Added columns: `temp_f` Nullable(Float32), `temp_k` Nullable(Float32)')
+    ]:
+        assert testcase[1] in clickhouse_node.query(
+            f"{explain_with_table_func} {testcase[0]}")
+
     clickhouse_node.query("DROP DATABASE IF EXISTS table_overrides")
     mysql_node.query("DROP DATABASE IF EXISTS table_overrides")
+
 
 def materialized_database_support_all_kinds_of_mysql_datatype(clickhouse_node, mysql_node, service_name):
     mysql_node.query("DROP DATABASE IF EXISTS test_database_datatype")
