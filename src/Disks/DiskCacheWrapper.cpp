@@ -114,15 +114,16 @@ std::unique_ptr<ReadBufferFromFileBase>
 DiskCacheWrapper::readFile(
     const String & path,
     const ReadSettings & settings,
-    std::optional<size_t> size) const
+    std::optional<size_t> read_hint,
+    std::optional<size_t> file_size) const
 {
     if (!cache_file_predicate(path))
-        return DiskDecorator::readFile(path, settings, size);
+        return DiskDecorator::readFile(path, settings, read_hint, file_size);
 
     LOG_TEST(log, "Read file {} from cache", backQuote(path));
 
     if (cache_disk->exists(path))
-        return cache_disk->readFile(path, settings, size);
+        return cache_disk->readFile(path, settings, read_hint, file_size);
 
     auto metadata = acquireDownloadMetadata(path);
 
@@ -156,7 +157,7 @@ DiskCacheWrapper::readFile(
 
                 auto tmp_path = path + ".tmp";
                 {
-                    auto src_buffer = DiskDecorator::readFile(path, settings, size);
+                    auto src_buffer = DiskDecorator::readFile(path, settings, read_hint, file_size);
                     auto dst_buffer = cache_disk->writeFile(tmp_path, settings.local_fs_buffer_size, WriteMode::Rewrite);
                     copyData(*src_buffer, *dst_buffer);
                 }
@@ -180,9 +181,9 @@ DiskCacheWrapper::readFile(
     }
 
     if (metadata->status == DOWNLOADED)
-        return cache_disk->readFile(path, settings, size);
+        return cache_disk->readFile(path, settings, read_hint, file_size);
 
-    return DiskDecorator::readFile(path, settings, size);
+    return DiskDecorator::readFile(path, settings, read_hint, file_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
@@ -202,7 +203,7 @@ DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode
         [this, path]()
         {
             /// Copy file from cache to actual disk when cached buffer is finalized.
-            return cache_disk->readFile(path, ReadSettings(), /* size= */ {});
+            return cache_disk->readFile(path, ReadSettings(), /* read_hint= */ {}, /* file_size= */ {});
         },
         [this, path, buf_size, mode]()
         {

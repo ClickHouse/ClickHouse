@@ -1,3 +1,10 @@
+option (ENABLE_CAPNP "Enable Cap'n Proto" ${ENABLE_LIBRARIES})
+
+if (NOT ENABLE_CAPNP)
+    message(STATUS "Not using Cap'n Proto library")
+    return()
+endif()
+
 set (CAPNPROTO_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/capnproto/c++/src")
 
 set (CMAKE_CXX_STANDARD 17)
@@ -85,3 +92,5 @@ endif ()
 target_compile_options(kj PRIVATE ${SUPPRESS_WARNINGS} ${CAPNP_PRIVATE_CXX_FLAGS})
 target_compile_options(capnp PRIVATE ${SUPPRESS_WARNINGS} ${CAPNP_PRIVATE_CXX_FLAGS})
 target_compile_options(capnpc PRIVATE ${SUPPRESS_WARNINGS} ${CAPNP_PRIVATE_CXX_FLAGS})
+
+add_library(ch_contrib::capnp ALIAS capnpc)

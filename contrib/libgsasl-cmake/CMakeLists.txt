@@ -1,3 +1,10 @@
+option(ENABLE_GSASL_LIBRARY "Enable gsasl library" ${ENABLE_LIBRARIES})
+
+if (NOT ENABLE_GSASL_LIBRARY)
+    message(STATUS "Not using gsasl library")
+    return()
+endif()
+
 set (SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/libgsasl")
 
 set(SRCS
@@ -84,7 +91,7 @@ set(SRCS
     ${SRC_DIR}/login/server.c
 )
 
-if (USE_KRB5)
+if (TARGET ch_contrib::krb5)
     set(SRCS ${SRCS}
         ${SRC_DIR}/gssapi/client.c
         ${SRC_DIR}/gssapi/mechinfo.c
@@ -97,11 +104,13 @@ target_include_directories(gsasl PUBLIC ${SRC_DIR})
 target_include_directories(gsasl PUBLIC ${SRC_DIR}/gl)
 target_include_directories(gsasl PUBLIC ${SRC_DIR}/src)
 target_include_directories(gsasl PUBLIC ${SRC_DIR}/digest-md5)
-target_include_directories(gsasl PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/libgsasl-cmake/linux_x86_64/include")
+target_include_directories(gsasl PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/libgsasl-cmake/linux_x86_64/include")
 
 target_compile_definitions (gsasl PRIVATE HAVE_CONFIG_H=1)
 
-if (USE_KRB5)
-    target_link_libraries(gsasl PUBLIC ${KRB5_LIBRARY})
+if (TARGET ch_contrib::krb5)
+    target_link_libraries(gsasl PUBLIC ch_contrib::krb5)
     target_compile_definitions (gsasl PRIVATE HAVE_GSSAPI_H=1 USE_GSSAPI=1)
 endif()
+
+add_library(ch_contrib::gsasl ALIAS gsasl)
