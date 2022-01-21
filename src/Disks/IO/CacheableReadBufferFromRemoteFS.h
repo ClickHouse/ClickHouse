@@ -25,10 +25,16 @@ public:
 
     off_t getPosition() override;
 
+    ~CacheableReadBufferFromRemoteFS() override;
+
 private:
     void initialize(size_t offset, size_t size);
+
+    SeekableReadBufferPtr createCacheReadBuffer(size_t offset) const;
     SeekableReadBufferPtr createReadBuffer(FileSegmentPtr file_segment);
+
     size_t getTotalSizeToRead();
+    void completeFileSegmentAndGetNext();
 
     Poco::Logger * log;
     FileCache::Key key;
@@ -39,11 +45,10 @@ private:
     size_t read_until_position;
     size_t file_offset_of_buffer_end = 0;
 
+    String query_id;
+
     std::optional<FileSegmentsHolder> file_segments_holder;
     FileSegments::iterator current_file_segment_it;
-
-    std::unique_ptr<WriteBufferFromFile> download_buffer;
-    String download_path;
 
     SeekableReadBufferPtr impl;
     bool initialized = false;
@@ -57,6 +62,19 @@ private:
     };
 
     ReadType read_type = ReadType::REMOTE_FS_READ;
+
+    static String toString(ReadType type)
+    {
+        switch (type)
+        {
+            case ReadType::CACHE:
+                return "CACHE";
+            case ReadType::REMOTE_FS_READ:
+                return "REMOTE_FS_READ";
+            case ReadType::REMOTE_FS_READ_AND_DOWNLOAD:
+                return "REMOTE_FS_READ_AND_DOWNLOAD";
+        }
+    }
 };
 
 }
