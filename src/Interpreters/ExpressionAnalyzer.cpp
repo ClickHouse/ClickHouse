@@ -43,9 +43,12 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
+
 #include <Core/ColumnNumbers.h>
 #include <Core/Names.h>
 #include <Core/NamesAndTypes.h>
+#include <Common/logger_useful.h>
+
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -64,6 +67,7 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Parsers/formatAST.h>
+#include <Poco/Logger.h>
 
 namespace DB
 {
@@ -1066,24 +1070,24 @@ static ActionsDAGPtr createJoinedBlockActions(ContextPtr context, const TableJoi
     return ExpressionAnalyzer(expression_list, syntax_result, context).getActionsDAG(true, false);
 }
 
-static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> analyzed_join, const Block & sample_block, ContextPtr context)
+static std::shared_ptr<IJoin> chooseJoinAlgorithm(std::shared_ptr<TableJoin> analyzed_join, const Block & right_sample_block, ContextPtr context)
 {
     /// HashJoin with Dictionary optimisation
-    if (analyzed_join->tryInitDictJoin(sample_block, context))
-        return std::make_shared<HashJoin>(analyzed_join, sample_block);
+    if (analyzed_join->tryInitDictJoin(right_sample_block, context))
+        return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
 
     bool allow_merge_join = analyzed_join->allowMergeJoin();
     if (analyzed_join->forceHashJoin() || (analyzed_join->preferMergeJoin() && !allow_merge_join))
     {
         if (analyzed_join->allowParallelHashJoin())
         {
-            return std::make_shared<ConcurrentHashJoin>(context, analyzed_join, context->getSettings().max_threads, sample_block);
+            return std::make_shared<ConcurrentHashJoin>(context, analyzed_join, context->getSettings().max_threads, right_sample_block);
         }
-        return std::make_shared<HashJoin>(analyzed_join, sample_block);
+        return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
     else if (analyzed_join->forceMergeJoin() || (analyzed_join->preferMergeJoin() && allow_merge_join))
-        return std::make_shared<MergeJoin>(analyzed_join, sample_block);
-    return std::make_shared<JoinSwitcher>(analyzed_join, sample_block);
+        return std::make_shared<MergeJoin>(analyzed_join, right_sample_block);
+    return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block);
 }
 
 static std::unique_ptr<QueryPlan> buildJoinedPlan(
@@ -1160,9 +1164,18 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
         return storage->getJoinLocked(analyzed_join, getContext());
     }
 
+    const Block & right_sample_block = joined_plan->getCurrentDataStream().header;
+    if (auto storage = analyzed_join->getStorageKeyValue())
+    {
+        LOG_DEBUG(&Poco::Logger::get("XXXX"), "DirectKeyValueJoin");
+        std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, {});
+        /// TODO: (vdimir@) check that we can perform this join (keys and so on)
+        return std::make_shared<DirectKeyValueJoin>(analyzed_join, right_sample_block, storage);
+    }
+
     joined_plan = buildJoinedPlan(getContext(), join_element, *analyzed_join, query_options);
 
-    const ColumnsWithTypeAndName & right_columns = joined_plan->getCurrentDataStream().header.getColumnsWithTypeAndName();
+    const ColumnsWithTypeAndName & right_columns = right_sample_block.getColumnsWithTypeAndName();
     std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, right_columns);
     if (right_convert_actions)
     {
@@ -1171,7 +1184,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
         joined_plan->addStep(std::move(converting_step));
     }
 
-    JoinPtr join = chooseJoinAlgorithm(analyzed_join, joined_plan->getCurrentDataStream().header, getContext());
+    JoinPtr join = chooseJoinAlgorithm(analyzed_join, right_sample_block, getContext());
 
     /// Do not make subquery for join over dictionary.
     if (analyzed_join->getDictionaryReader())

@@ -685,6 +685,11 @@ ActionsDAGPtr TableJoin::applyKeyConvertToTable(
     return dag_stage1;
 }
 
+void TableJoin::setStorageJoin(std::shared_ptr<IKeyValueStorage> storage)
+{
+    right_kv_storage = storage;
+}
+
 void TableJoin::setStorageJoin(std::shared_ptr<StorageJoin> storage)
 {
     if (right_storage_dictionary)

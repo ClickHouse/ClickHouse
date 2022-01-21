@@ -9,7 +9,8 @@
 #include <Interpreters/asof.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/getLeastSupertype.h>
-#include <Storages/IStorage_fwd.h>
+#include <Storages/IKVStorage.h>
+
 #include <Common/Exception.h>
 #include <Parsers/IAST_fwd.h>
 
@@ -31,6 +32,7 @@ class Block;
 class DictionaryReader;
 class StorageJoin;
 class StorageDictionary;
+class IKeyValueStorage;
 
 struct ColumnWithTypeAndName;
 using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
@@ -147,6 +149,8 @@ private:
 
     std::shared_ptr<StorageDictionary> right_storage_dictionary;
     std::shared_ptr<DictionaryReader> dictionary_reader;
+
+    std::shared_ptr<IKeyValueStorage> right_kv_storage;
 
     Names requiredJoinedNames() const;
 
@@ -294,6 +298,7 @@ public:
 
     std::unordered_map<String, String> leftToRightKeyRemap() const;
 
+    void setStorageJoin(std::shared_ptr<IKeyValueStorage> storage);
     void setStorageJoin(std::shared_ptr<StorageJoin> storage);
     void setStorageJoin(std::shared_ptr<StorageDictionary> storage);
 
@@ -303,6 +308,8 @@ public:
 
     bool isSpecialStorage() const { return right_storage_dictionary || right_storage_join; }
     const DictionaryReader * getDictionaryReader() const { return dictionary_reader.get(); }
+
+    std::shared_ptr<IKeyValueStorage> getStorageKeyValue() { return right_kv_storage; }
 };
 
 }

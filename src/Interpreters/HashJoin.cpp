@@ -22,9 +22,10 @@
 #include <Interpreters/DictionaryReader.h>
 
 #include <Storages/StorageDictionary.h>
-
+#include <Storages/IStorage.h>
 
 #include <Core/ColumnNumbers.h>
+#include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
@@ -2137,5 +2138,31 @@ const ColumnWithTypeAndName & HashJoin::rightAsofKeyColumn() const
     /// It should be nullable when right side is nullable
     return savedBlockSample().getByName(table_join->getOnlyClause().key_names_right.back());
 }
+
+void DirectKeyValueJoin::joinBlock(Block & block, std::shared_ptr<ExtraBlock> &)
+{
+    const String & key_name = storage->getPrimaryKey();
+    const auto & key_col = block.getByName(key_name);
+    FieldVector keys;
+    keys.reserve(key_col.column->size());
+    for (size_t i = 0; i < key_col.column->size(); ++i)
+    {
+        key_col.column->get(i, keys.emplace_back());
+    }
+
+    Chunk joined_chunk;
+    NullMap null_map(keys.size(), 0);
+    storage->getByKeys(keys.begin(), keys.end(), right_sample_block, joined_chunk, &null_map, 0);
+
+    // const auto & key_names_right = table_join->getOnlyClause().key_names_right;
+
+    sample_block_with_columns_to_add = materializeBlock(right_sample_block);
+
+    JoinCommon::createMissedColumns(sample_block_with_columns_to_add);
+    if (table_join->forceNullableRight())
+        JoinCommon::convertColumnsToNullable(sample_block_with_columns_to_add);
+
+}
+
 
 }
