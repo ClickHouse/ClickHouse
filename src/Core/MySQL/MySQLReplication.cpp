@@ -217,7 +217,6 @@ namespace MySQLReplication
                 case MYSQL_TYPE_DATETIME2:
                 case MYSQL_TYPE_TIME2:
                 case MYSQL_TYPE_BLOB:
-                case MYSQL_TYPE_JSON:
                 case MYSQL_TYPE_GEOMETRY:
                 {
                     column_meta.emplace_back(UInt16(meta[pos]));
@@ -437,19 +436,15 @@ namespace MySQLReplication
                         break;
                     }
                     case MYSQL_TYPE_YEAR: {
-                        Int32 val = 0;
+                        Int16 val = 0;
                         payload.readStrict(reinterpret_cast<char *>(&val), 1);
-
-                        String time_str;
-                        time_str.resize(4);
-                        sprintf(time_str.data(), "%04d", (val + 1900));
-                        row.push_back(Field{String{time_str}});
+                        row.push_back(Field{UInt16{static_cast<UInt16>(val + 1900)}});
                         break;
                     }
                     case MYSQL_TYPE_TIME2:
                     {
                         UInt64 uintpart = 0UL;
-                        UInt32 frac = 0U;
+                        Int32 frac = 0U;
                         Int64 ltime;
                         Int64 intpart;
                         switch (meta)
@@ -508,50 +503,28 @@ namespace MySQLReplication
                                 break;
                             }
                         }
-                        String hh, mm, ss, ff;
+                        Int64 hh, mm, ss;
                         bool negative = false;
                         if (intpart == 0)
                         {
-                            hh = "00";
-                            mm = "00";
-                            ss = "00";
+                            hh = 0;
+                            mm = 0;
+                            ss = 0;
                         }
                         else
                         {
                             if (ltime < 0) negative= true;
                             UInt64 ultime = std::abs(ltime);
                             intpart = ultime >> 24;
-                            UInt32 d = (intpart >> 12) % (1 << 10);
-                            if (d >= 100)
-                            {
-                                hh.resize(3);
-                                sprintf(hh.data(), "%3d", d);
-                            }
-                            else
-                            {
-                                hh.resize(2);
-                                sprintf(hh.data(), "%02d", d);
-                            }
-                            mm.resize(2);
-                            ss.resize(2);
-                            sprintf(mm.data(), "%02d", static_cast<int> (intpart >> 6) % (1 << 6));
-                            sprintf(ss.data(), "%02d", static_cast<int> (intpart % (1 << 6)));
+                            hh = (intpart >> 12) % (1 << 10);
+                            mm = (intpart >> 6) % (1 << 6);
+                            ss = intpart % (1 << 6);
                         }
-                        if (meta > 1)
-                        {
-                            ff.resize(6);
-                            sprintf(ff.data(), "%06d", frac);
-                        }
-                        String time_buff;
-                        if (negative) time_buff += '-';
-                        time_buff.append(hh).append(":");
-                        time_buff.append(mm).append(":");
-                        time_buff.append(ss);
-                        if (meta > 1)
-                        {
-                            time_buff.append(".").append(ff);
-                        }
-                        row.push_back(Field{String{time_buff}});
+
+                        Int64 time_micro = 0;
+                        time_micro = (hh * 3600  + mm * 60 + ss) * 1000000 + std::abs(frac);
+                        if (negative) time_micro = - time_micro;
+                        row.push_back(Field{Int64{time_micro}});
                         break;
                     }
                     case MYSQL_TYPE_DATETIME2:
@@ -715,10 +688,6 @@ namespace MySQLReplication
                         row.push_back(Field{UInt64{bitmap1.to_ulong()}});
                         break;
                     }
-                    //todo parse binlog from json type is is a little complex, Unless we find a library that we can use it to parse here.
-//                    case MYSQL_TYPE_JSON:
-//                    {
-//                    }
                     case MYSQL_TYPE_BIT:
                     {
                         UInt32 bits = ((meta >> 8) * 8) + (meta & 0xff);
