@@ -29,12 +29,14 @@
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/logger_useful.h>
+#include <Common/Exception.h>
 #include <base/sort.h>
 
 #include <rocksdb/db.h>
 #include <rocksdb/table.h>
 #include <rocksdb/convenience.h>
 
+#include <cstddef>
 #include <filesystem>
 #include <shared_mutex>
 
@@ -181,11 +183,10 @@ static void fillColumns(const K & key, const V & value, size_t key_pos, const Bl
 {
     ReadBufferFromString key_buffer(key);
     ReadBufferFromString value_buffer(value);
-    size_t idx = 0;
-    for (const auto & elem : header)
+    for (size_t i = 0; i < header.columns(); ++i)
     {
-        elem.type->getDefaultSerialization()->deserializeBinary(*columns[idx], idx == key_pos ? key_buffer : value_buffer);
-        ++idx;
+        const auto & serialization = header.getByPosition(i).type->getDefaultSerialization();
+        serialization->deserializeBinary(*columns[i], i == key_pos ? key_buffer : value_buffer);
     }
 }
 
@@ -236,7 +237,7 @@ public:
     {
         const auto & sample_block = getPort().getHeader();
         Chunk result;
-        it = storage.getByKeys(it, end, sample_block, result, max_block_size);
+        it = storage.getByKeys(it, end, sample_block, result, nullptr, max_block_size);
         return result;
     }
 
@@ -286,7 +287,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(const StorageID & table_id_,
         bool attach,
         ContextPtr context_,
         const String & primary_key_)
-    : IStorage(table_id_)
+    : IKeyValueStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , primary_key{primary_key_}
 {
@@ -497,6 +498,7 @@ FieldVector::const_iterator StorageEmbeddedRocksDB::getByKeys(
     FieldVector::const_iterator end,
     const Block & sample_block,
     Chunk & result,
+    PaddedPODArray<UInt8> * null_map,
     size_t max_block_size) const
 {
     if (begin >= end)
@@ -533,6 +535,21 @@ FieldVector::const_iterator StorageEmbeddedRocksDB::getByKeys(
         if (statuses[i].ok())
         {
             fillColumns(slices_keys[i], values[i], primary_key_pos, sample_block, columns);
+        }
+        else if (statuses[i].IsNotFound())
+        {
+            if (null_map)
+            {
+                (*null_map)[i] = 1;
+                for (size_t col_idx = 0; col_idx < sample_block.columns(); ++col_idx)
+                {
+                    columns[col_idx]->insert(sample_block.getByPosition(col_idx).type->getDefault());
+                }
+            }
+        }
+        else
+        {
+            throw DB::Exception(ErrorCodes::ROCKSDB_ERROR, "rocksdb error {}", statuses[i].ToString());
         }
     }
 
