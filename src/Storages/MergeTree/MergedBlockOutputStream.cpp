@@ -72,16 +72,17 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
             projection_part->checksums.getTotalSizeOnDisk(),
             projection_part->checksums.getTotalChecksumUInt128());
 
-    NamesAndTypesList part_columns;
-    if (!total_columns_list)
-        part_columns = columns_list;
-    else
-        part_columns = *total_columns_list;
-
     if (reset_columns)
-        new_part->setColumns(part_columns, new_serialization_infos);
+    {
+        auto part_columns = total_columns_list ? *total_columns_list : columns_list;
+        auto serialization_infos = new_part->getSerializationInfos();
 
-    removeEmptyColumnsFromPart(new_part, new_part->getColumns(), new_part->getSerializationInfos(), checksums);
+        serialization_infos.replaceData(new_serialization_infos);
+        removeEmptyColumnsFromPart(new_part, part_columns, serialization_infos, checksums);
+
+        new_part->setColumns(part_columns);
+        new_part->setSerializationInfos(serialization_infos);
+    }
 
     if (new_part->isStoredOnDisk())
         finalizePartOnDisk(new_part, checksums, sync);
