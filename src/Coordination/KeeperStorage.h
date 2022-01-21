@@ -8,8 +8,8 @@
 #include <Coordination/SnapshotableHashTable.h>
 #include <IO/WriteBufferFromString.h>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
+
 #include <absl/container/flat_hash_set.h>
 
 namespace DB
