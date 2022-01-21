@@ -117,7 +117,7 @@ namespace DB
                 const Float64 props_y = static_cast<Float64>(successes_y) / trials_y;
                 const Float64 diff = props_x - props_y;
                 const UInt64 trials_total = trials_x + trials_y;
-                const Float64 confidence_interval = arguments[4].column->getFloat64(row_num);
+                const Float64 confidence_level = arguments[4].column->getFloat64(row_num);
 
                 if ((successes_x == 0 || successes_y == 0)
                     || (successes_x > trials_x || successes_y > trials_y)
@@ -131,7 +131,8 @@ namespace DB
 
                 Float64 se = std::sqrt(props_x * (1.0 - props_x) / trials_x + props_y * (1.0 - props_y) / trials_y);
 
-                // z-statistics
+                /// z-statistics
+                /// z = \frac{ \bar{p_{1}} - \bar{p_{2}} }{ \sqrt{ \frac{ \bar{p_{1}} \left ( 1 - \bar{p_{1}} \right ) }{ n_{1} } \frac{ \bar{p_{2}} \left ( 1 - \bar{p_{2}} \right ) }{ n_{2} } } }
                 Float64 zstat;
                 if (usevar == UNPOOLED)
                 {
@@ -158,7 +159,7 @@ namespace DB
 
                 // Confidence intervals
                 Float64 d = props_x - props_y;
-                Float64 z = -boost::math::quantile(nd, (1.0 - confidence_interval) / 2.0);
+                Float64 z = -boost::math::quantile(nd, (1.0 - confidence_level) / 2.0);
                 Float64 dist = z * se;
                 Float64 ci_low = d - dist;
                 Float64 ci_high = d + dist;
