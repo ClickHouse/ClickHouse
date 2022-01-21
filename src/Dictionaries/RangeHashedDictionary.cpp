@@ -537,7 +537,9 @@ void RangeHashedDictionary<dictionary_key_type>::blockToAttributes(const Block &
             if constexpr (std::is_same_v<KeyType, StringRef>)
                 key = copyStringInArena(string_arena, key);
 
-            setAttributeValue(attribute, key, RangeInterval{lower_bound, upper_bound}, attribute_column[key_index]);
+            if (likely(lower_bound <= upper_bound))
+                setAttributeValue(attribute, key, RangeInterval{lower_bound, upper_bound}, attribute_column[key_index]);
+
             keys_extractor.rollbackCurrentKey();
         }
 

@@ -4070,9 +4070,19 @@ void StorageReplicatedMergeTree::startup()
     }
 }
 
+void StorageReplicatedMergeTree::flush()
+{
+    if (flush_called.exchange(true))
+        return;
+
+    flushAllInMemoryPartsIfNeeded();
+}
 
 void StorageReplicatedMergeTree::shutdown()
 {
+    if (shutdown_called.exchange(true))
+        return;
+
     /// Cancel fetches, merges and mutations to force the queue_task to finish ASAP.
     fetcher.blocker.cancelForever();
     merger_mutator.merges_blocker.cancelForever();
