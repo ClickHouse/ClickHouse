@@ -32,19 +32,6 @@ namespace ErrorCodes
 namespace
 {
 
-Array createEmptyArrayField(size_t num_dimensions)
-{
-    Array array;
-    Array * current_array = &array;
-    for (size_t i = 1; i < num_dimensions; ++i)
-    {
-        current_array->push_back(Array());
-        current_array = &current_array->back().get<Array &>();
-    }
-
-    return array;
-}
-
 ColumnPtr recreateColumnWithDefaultValues(
     const ColumnPtr & column, const DataTypePtr & scalar_type, size_t num_dimensions)
 {
@@ -269,7 +256,7 @@ void ColumnObject::Subcolumn::insert(Field field, FieldInfo info)
 {
     auto base_type = info.scalar_type;
 
-    if (isNothing(base_type) && (!is_nullable || !info.have_nulls))
+    if (isNothing(base_type) && info.num_dimensions == 0)
     {
         insertDefault();
         return;
@@ -467,9 +454,13 @@ ColumnObject::Subcolumn ColumnObject::Subcolumn::recreateWithDefaultValues(const
     new_subcolumn.num_of_defaults_in_prefix = num_of_defaults_in_prefix;
     new_subcolumn.data.reserve(data.size());
 
+    auto scalar_type = field_info.scalar_type;
+    if (new_subcolumn.is_nullable)
+        scalar_type = makeNullable(scalar_type);
+
     for (const auto & part : data)
         new_subcolumn.data.push_back(recreateColumnWithDefaultValues(
-            part, field_info.scalar_type, field_info.num_dimensions));
+            part, scalar_type, field_info.num_dimensions));
 
     return new_subcolumn;
 }
