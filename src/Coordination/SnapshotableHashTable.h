@@ -269,11 +269,11 @@ public:
         return it->getMapped()->value;
     }
 
-    void clearOutdatedNodes()
+    void clearOutdatedNodes(size_t up_to_size)
     {
         auto start = list.begin();
-        auto end = list.end();
-        for (auto itr = start; itr != end;)
+        size_t counter = 0;
+        for (auto itr = start; counter < up_to_size; ++counter)
         {
             if (!itr->active_in_map)
             {
@@ -288,6 +288,7 @@ public:
                 itr++;
             }
         }
+
     }
 
     void clear()

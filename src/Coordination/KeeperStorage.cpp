@@ -317,6 +317,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         created_node.is_sequental = request.is_sequential;
 
         auto [map_key, _] = container.insert(path_created, std::move(created_node));
+        /// Take child path from key owned by map.
         auto child_path = getBaseName(map_key->getKey());
 
         int32_t parent_cversion = request.parent_cversion;
@@ -492,8 +493,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
 
             storage.acl_map.removeUsage(prev_node.acl_id);
 
-            auto child_basename = getBaseName(it->key);
-            container.updateValue(parentPath(request.path), [&child_basename] (KeeperStorage::Node & parent)
+            container.updateValue(parentPath(request.path), [child_basename = getBaseName(it->key)] (KeeperStorage::Node & parent)
             {
                 --parent.stat.numChildren;
                 ++parent.stat.cversion;
@@ -502,7 +502,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
             });
 
             response.error = Coordination::Error::ZOK;
-
+            /// Erase full path from container after child removed from parent
             container.erase(request.path);
 
             undo = [prev_node, &storage, path = request.path]
@@ -512,6 +512,8 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
 
                 storage.acl_map.addUsage(prev_node.acl_id);
 
+                /// Dangerous place: we are adding StringRef to child into children unordered_hash set.
+                /// That's why we are taking getBaseName from inserted key, not from the path from request object.
                 auto [map_key, _] = storage.container.insert(path, prev_node);
                 storage.container.updateValue(parentPath(path), [child_name = getBaseName(map_key->getKey())] (KeeperStorage::Node & parent)
                 {
