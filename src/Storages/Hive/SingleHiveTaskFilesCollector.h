@@ -8,11 +8,11 @@
 #include <Storages/Hive/StorageHive.h>
 namespace DB
 {
-class SingleHiveTaskFilesCollector : IHiveTaskFilesCollector
+class SingleHiveTaskFilesCollector : public IHiveTaskFilesCollector
 {
 public:
     using Arguments = IHiveTaskFilesCollector::Arguments;
-    void init(const Arguments & args_) override;
+    void init_query_env(const Arguments & args_) override;
     HiveFiles collectHiveFiles() override;
 private:
     Arguments args;

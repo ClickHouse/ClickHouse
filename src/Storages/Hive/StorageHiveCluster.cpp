@@ -1,6 +1,8 @@
 #include <Storages/Hive/StorageHiveCluster.h>
 #if USE_HIVE
+#include <algorithm>
 #include <base/logger_useful.h>
+#include <Client/IConnections.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -63,7 +65,11 @@ Pipe StorageHiveCluster::read(
      * 
      */
     auto query_kind = context_->getClientInfo().query_kind;
-    LOG_TRACE(logger, "query kinkd: {}, processed stage: {}, query: {}", query_kind, processed_stage_, queryToString(query_info_.query));
+    LOG_TRACE(logger,
+        "query kinkd: {}, processed stage: {}, query: {}"
+        "task iterate policy:{}",
+        query_kind, processed_stage_, queryToString(query_info_.query),
+        context_->getSettings().getString("hive_cluster_task_iterate_policy"));
     // first stage. create remote executors pipeline
     if (query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
@@ -73,6 +79,22 @@ Pipe StorageHiveCluster::read(
         const Scalars & scalars = context_->hasQueryContext() ? context_->getQueryContext()->getScalars() : Scalars{};
         Pipes pipes;
         const bool add_agg_info = processed_stage_ == QueryProcessingStage::WithMergeableState;
+
+        std::vector<std::string> nodes;
+        std::map<std::string, size_t> node_idxes;
+        for (const auto & replicas : cluster->getShardsAddresses())
+        {
+            for (const auto & node : replicas)
+            {
+                nodes.emplace_back(node.host_name + std::to_string(node.port));
+            }
+        }
+        std::sort(nodes.begin(), nodes.end());
+        for(auto node : nodes)
+        {
+            size_t n = node_idxes.size();
+            node_idxes[node] = n;
+        }
         for (const auto & replicas : cluster->getShardsAddresses())
         {
             for (const auto & node : replicas)
@@ -81,6 +103,9 @@ Pipe StorageHiveCluster::read(
                     node.host_name, node.port, context_->getGlobalContext()->getCurrentDatabase(),
                     node.user, node.password, node.cluster, node.cluster_secret,
                     "HiveCluster", node.compression, node.secure);
+                auto replica_info = IConnections::ReplicaInfo{.all_replicas_count = node_idxes.size(), .number_of_current_replica = node_idxes[node.host_name + std::to_string(node.port)]};
+                LOG_TRACE(logger, "replica info. replicas_count:{}, current_replica:{}", replica_info.all_replicas_count, replica_info.number_of_current_replica);
+                auto task_iter_callback = std::make_shared<TaskIterator>([node](){ return node.host_name; });
                 auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                     connection,
                     queryToString(query_info_.query),
@@ -89,13 +114,21 @@ Pipe StorageHiveCluster::read(
                     nullptr,
                     scalars,
                     Tables(),
-                    processed_stage_);
+                    processed_stage_,
+                    RemoteQueryExecutor::Extension{.task_iterator=task_iter_callback, .replica_info = { replica_info} });
                 pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
             }
         }
         metadata_snapshot_->check(column_names_, getVirtuals(), getStorageID());
         return Pipe::unitePipes(std::move(pipes));
     }
+
+    auto & client_info = context_->getClientInfo();
+    LOG_TRACE(logger, "replica info. count_participating_replicas:{}, number_of_current_replica:{}",
+        client_info.count_participating_replicas, client_info.number_of_current_replica);
+
+    String task_resp = context_->getReadTaskCallback()();
+    LOG_TRACE(logger, "get task response:{}", task_resp);
     
     // second stage, create local hive storage reading pipeline
     auto local_storage_settings = std::make_unique<HiveSettings>();

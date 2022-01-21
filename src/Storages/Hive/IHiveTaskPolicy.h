@@ -1,6 +1,7 @@
 #pragma once
-#include <memory>
 #include <Common/config.h>
+#if USE_HIVE
+#include <memory>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
@@ -10,7 +11,6 @@
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/Hive/HiveFile.h>
 #include <Storages/SelectQueryInfo.h>
-#if USE_HIVE
 namespace DB
 {
 /**
@@ -48,7 +48,7 @@ public:
     virtual ~IHiveTaskFilesCollector() = default;
     struct Arguments
     {
-        Poco::JSON::Object::Ptr callback_config;
+        //Poco::JSON::Object::Ptr callback_config;
         ContextPtr context;
         SelectQueryInfo * query_info;
         String hive_metastore_url;
@@ -60,7 +60,7 @@ public:
         ASTPtr partition_by_ast;
         Arguments & operator = (const Arguments & args) = default;
     };
-    virtual void init(const Arguments &) = 0;
+    virtual void init_query_env(const Arguments &) = 0;
     virtual HiveFiles collectHiveFiles() = 0; 
 };
 } // namespace DB

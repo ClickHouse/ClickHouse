@@ -1,4 +1,5 @@
-#if 1
+#include <Storages/Hive/SingleHiveTaskFilesCollector.h>
+#if USE_HIVE
 #include <mutex>
 #include <base/logger_useful.h>
 #include <Common/ThreadPool.h>
@@ -12,16 +13,16 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <QueryPipeline/Pipe.h>
-#include <Storages/Hive/SingleHiveTaskFilesCollector.h>
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int INVALID_PARTITION_VALUE;
+    extern const int NOT_IMPLEMENTED;
 }
 
-void SingleHiveTaskFilesCollector::init(const Arguments & args_)
+void SingleHiveTaskFilesCollector::init_query_env(const Arguments & args_)
 {
     args = args_;
 
@@ -96,14 +97,14 @@ static String getHiveFileFormat(HiveMetastoreClient::HiveTableMetadataPtr & hive
 
 HiveFiles SingleHiveTaskFilesCollector::collectHiveFiles()
 {
-    auto hdfs_builder = createHDFSBuilder(args.hive_metastore_url, args.context->getGlobalContext()->getConfigRef());
-    auto hdfs_fs = createHDFSFS(hdfs_builder.get());
     auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(args.hive_metastore_url, args.context);
     auto hive_table_metadata = hive_metastore_client->getTableMetadata(args.hive_database, args.hive_table);
     auto partitions = hive_table_metadata->getPartitions();
+    hdfs_namenode_url = getNameNodeUrl(hive_table_metadata->getTable()->sd.location);
+    auto hdfs_builder = createHDFSBuilder(hdfs_namenode_url, args.context->getGlobalContext()->getConfigRef());
+    auto hdfs_fs = createHDFSFS(hdfs_builder.get());
 
     format_name = getHiveFileFormat(hive_table_metadata);
-    hdfs_namenode_url = getNameNodeUrl(hive_table_metadata->getTable()->sd.location);
 
     HiveFiles hive_files;
     std::mutex hive_files_mutex;
@@ -124,7 +125,7 @@ HiveFiles SingleHiveTaskFilesCollector::collectHiveFiles()
         }
         thread_pool.wait();
     }
-    else
+    else if (partition_name_and_types.empty())
     {
         auto file_infos = hive_table_metadata->getFilesByLocation(hdfs_fs, hive_table_metadata->getTable()->sd.location);
         for (const auto & file_info : file_infos)
@@ -141,6 +142,13 @@ HiveFiles SingleHiveTaskFilesCollector::collectHiveFiles()
         }
         thread_pool.wait();
 
+    }
+    else
+    {
+        throw Exception(
+            ErrorCodes::INVALID_PARTITION_VALUE,
+            "Invalid hive partition settings. partitions size:{}, partition_name_and_types size:{}",
+            partitions.size(), partition_name_and_types.size());
     }
     return hive_files;
 }
@@ -199,9 +207,11 @@ HiveFiles SingleHiveTaskFilesCollector::collectHiveFilesFromPartition(
     }
 
     const KeyCondition partition_key_condition(query_info_, args.context, partition_name_and_types.getNames(), partition_minmax_idx_expr);
-    if (partition_key_condition.checkInHyperrectangle(ranges, partition_name_and_types.getTypes()).can_be_true)
+    if (!partition_key_condition.checkInHyperrectangle(ranges, partition_name_and_types.getTypes()).can_be_true)
+    {
+        LOG_DEBUG(logger, "Partition condition check failed. partition:{}", write_buf.str());
         return {};
-    
+    }
     auto file_infos = hive_table_metadata_->getFilesByLocation(fs_, partition_.sd.location);
     std::vector<HiveFilePtr> hive_files;
     hive_files.reserve(file_infos.size());

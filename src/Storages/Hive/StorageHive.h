@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <Common/config.h>
 
 #if USE_HIVE
@@ -14,6 +15,7 @@
 #include <Storages/HDFS/HDFSCommon.h>
 #include <Storages/Hive/HiveCommon.h>
 #include <Storages/Hive/HiveFile.h>
+#include <Storages/Hive/IHiveTaskPolicy.h>
 
 namespace DB
 {
@@ -28,6 +30,7 @@ class StorageHive final : public shared_ptr_helper<StorageHive>, public IStorage
     friend struct shared_ptr_helper<StorageHive>;
 
 public:
+    using HiveTaskFilesCollectorBuilder = std::function<std::shared_ptr<IHiveTaskFilesCollector>()>;
     String getName() const override { return "Hive"; }
 
     bool supportsIndexForIn() const override { return true; }
@@ -65,28 +68,13 @@ protected:
         const String & comment_,
         const ASTPtr & partition_by_ast_,
         std::unique_ptr<HiveSettings> storage_settings_,
-        ContextPtr context_);
+        ContextPtr context_,
+        std::shared_ptr<HiveTaskFilesCollectorBuilder> hive_task_files_collector_builder_ = nullptr);
 
 private:
     using FileFormat = IHiveFile::FileFormat;
     using FileInfo = HiveMetastoreClient::FileInfo;
     using HiveTableMetadataPtr = HiveMetastoreClient::HiveTableMetadataPtr;
-
-    static ASTPtr extractKeyExpressionList(const ASTPtr & node);
-
-    static std::vector<FileInfo> listDirectory(const String & path, HiveTableMetadataPtr hive_table_metadata, const HDFSFSPtr & fs);
-
-    void initMinMaxIndexExpression();
-
-    std::vector<HiveFilePtr> collectHiveFilesFromPartition(
-        const Apache::Hadoop::Hive::Partition & partition,
-        SelectQueryInfo & query_info,
-        HiveTableMetadataPtr hive_table_metadata,
-        const HDFSFSPtr & fs,
-        ContextPtr context_);
-
-    HiveFilePtr
-    createHiveFileIfNeeded(const FileInfo & file_info, const FieldVector & fields, SelectQueryInfo & query_info, ContextPtr context_);
 
     String hive_metastore_url;
 
@@ -105,17 +93,17 @@ private:
 
     const ASTPtr partition_by_ast;
     NamesAndTypesList partition_name_types;
-    Names partition_names;
-    DataTypes partition_types;
-    ExpressionActionsPtr partition_key_expr;
-    ExpressionActionsPtr partition_minmax_idx_expr;
 
-    NamesAndTypesList hivefile_name_types;
-    ExpressionActionsPtr hivefile_minmax_idx_expr;
+    //NamesAndTypesList hivefile_name_types;
+    //ExpressionActionsPtr hivefile_minmax_idx_expr;
 
     std::shared_ptr<HiveSettings> storage_settings;
 
+    std::shared_ptr<HiveTaskFilesCollectorBuilder> hive_task_files_collector_builder;
+
     Poco::Logger * log = &Poco::Logger::get("StorageHive");
+
+    ASTPtr extractKeyExpressionList(const ASTPtr & node);
 };
 }
 
