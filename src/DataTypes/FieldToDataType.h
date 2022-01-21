@@ -44,6 +44,7 @@ public:
     DataTypePtr operator() (const AggregateFunctionStateData & x) const;
     DataTypePtr operator() (const UInt256 & x) const;
     DataTypePtr operator() (const Int256 & x) const;
+    DataTypePtr operator() (const bool & x) const;
 
 private:
     bool allow_convertion_to_string;

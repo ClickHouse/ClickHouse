@@ -129,6 +129,9 @@ world
 
 Каждый элемент структуры типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md) представляется как отдельный массив.
 
+Входящие параметры типа "перечисление" (`ENUM`) могут передаваться в виде значений или порядковых номеров. Сначала переданное значение будет сопоставляться с элементами перечисления. Если совпадение не будет найдено и при этом переданное значение является числом, оно будет трактоваться как порядковый номер в перечислении.
+Если входящие параметры типа `ENUM` содержат только порядковые номера, рекомендуется включить настройку [input_format_tsv_enum_as_number](../operations/settings/settings.md#settings-input_format_tsv_enum_as_number) для ускорения парсинга.
+
 Например:
 
 ``` sql
@@ -361,6 +364,9 @@ $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FOR
 `NULL` форматируется в виде `\N` или `NULL` или пустой неэкранированной строки (см. настройки [input_format_csv_unquoted_null_literal_as_null](../operations/settings/settings.md#settings-input_format_csv_unquoted_null_literal_as_null) и [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)).
 
 Если установлена настройка [input_format_defaults_for_omitted_fields = 1](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) и тип столбца не `Nullable(T)`, то пустые значения без кавычек заменяются значениями по умолчанию для типа данных столбца.
+
+Входящие параметры типа "перечисление" (`ENUM`) могут передаваться в виде значений или порядковых номеров. Сначала переданное значение будет сопоставляться с элементами перечисления. Если совпадение не будет найдено и при этом переданное значение является числом, оно будет трактоваться как порядковый номер в перечислении.
+Если входящие параметры типа `ENUM` содержат только порядковые номера, рекомендуется включить настройку [input_format_tsv_enum_as_number](../operations/settings/settings.md#settings-input_format_tsv_enum_as_number) для ускорения парсинга.
 
 Формат CSV поддерживает вывод totals и extremes аналогично `TabSeparated`.
 
@@ -693,7 +699,7 @@ CREATE TABLE IF NOT EXISTS example_table
 -   Если `input_format_defaults_for_omitted_fields = 1`, то значение по умолчанию для `x` равно `0`, а значение по умолчанию `a` равно `x * 2`.
 
 !!! note "Предупреждение"
-    Если `input_format_defaults_for_omitted_fields = 1`, то при обработке запросов ClickHouse потребляет больше вычислительных ресурсов, чем если `input_format_defaults_for_omitted_fields = 0`.
+    При добавлении данных с помощью `input_format_defaults_for_omitted_fields = 1`, ClickHouse потребляет больше вычислительных ресурсов по сравнению с `input_format_defaults_for_omitted_fields = 0`.
 
 ### Выборка данных {#vyborka-dannykh}
 

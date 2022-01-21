@@ -57,12 +57,12 @@ StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_stat
     {
         /// If has_state_column is requested, return all states.
         if (!has_state_column)
-            return data->getDataPartsVector({State::Committed, State::Outdated}, &state, require_projection_parts);
+            return data->getDataPartsVector({State::Active, State::Outdated}, &state, require_projection_parts);
 
         return data->getAllDataPartsVector(&state, require_projection_parts);
     }
 
-    return data->getDataPartsVector({State::Committed}, &state, require_projection_parts);
+    return data->getDataPartsVector({State::Active}, &state, require_projection_parts);
 }
 
 StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, ContextPtr context)

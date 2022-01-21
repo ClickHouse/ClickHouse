@@ -11,6 +11,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Parsers/ASTCreateQuery.h>
 
 
 namespace DB

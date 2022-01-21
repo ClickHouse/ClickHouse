@@ -56,7 +56,7 @@ public:
         return std::make_shared<IPAddressDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty);
     }
 
-    const IDictionarySource * getSource() const override { return source_ptr.get(); }
+    DictionarySourcePtr getSource() const override { return source_ptr; }
 
     const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
@@ -68,6 +68,8 @@ public:
     }
 
     DictionaryKeyType getKeyType() const override { return DictionaryKeyType::Complex; }
+
+    void convertKeyColumns(Columns & key_columns, DataTypes & key_types) const override;
 
     ColumnPtr getColumn(
         const std::string& attribute_name,

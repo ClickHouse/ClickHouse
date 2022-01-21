@@ -20,3 +20,4 @@ List of supported integrations:
 -   [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md)
 -   [PostgreSQL](../../../engines/table-engines/integrations/postgresql.md)
 -   [SQLite](../../../engines/table-engines/integrations/sqlite.md)
+-   [Hive](../../../engines/table-engines/integrations/hive.md)

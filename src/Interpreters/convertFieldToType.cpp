@@ -24,7 +24,7 @@
 #include <Common/NaNUtils.h>
 #include <Common/FieldVisitorToString.h>
 
-#include <base/DateLUT.h>
+#include <Common/DateLUT.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 
@@ -63,7 +63,7 @@ static Field convertNumericTypeImpl(const Field & from)
 template <typename To>
 static Field convertNumericType(const Field & from, const IDataType & type)
 {
-    if (from.getType() == Field::Types::UInt64)
+    if (from.getType() == Field::Types::UInt64 || from.getType() == Field::Types::Bool)
         return convertNumericTypeImpl<UInt64, To>(from);
     if (from.getType() == Field::Types::Int64)
         return convertNumericTypeImpl<Int64, To>(from);

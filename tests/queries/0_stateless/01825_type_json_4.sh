@@ -10,7 +10,7 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE t_json_4(id UInt64, data JSON) \
 ENGINE = MergeTree ORDER BY tuple()"
 
 echo '{"id": 1, "data": {"k1": "v1"}}, {"id": 2, "data": {"k1": [1, 2]}}' \
-    | $CLICKHOUSE_CLIENT  -q "INSERT INTO t_json_4 FORMAT JSONEachRow" 2>&1 | grep -o -m1 "Code: 635"
+    | $CLICKHOUSE_CLIENT  -q "INSERT INTO t_json_4 FORMAT JSONEachRow" 2>&1 | grep -o -m1 "Code: 641"
 
 echo '{"id": 1, "data": {"k1": "v1"}}, {"id": 2, "data": {"k1": [{"k2" : 1}, {"k2" : 2}]}}' \
     | $CLICKHOUSE_CLIENT  -q "INSERT INTO t_json_4 FORMAT JSONEachRow" 2>&1 | grep -o -m1 "Code: 15"

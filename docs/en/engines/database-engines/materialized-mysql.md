@@ -83,6 +83,7 @@ When working with the `MaterializedMySQL` database engine, [ReplacingMergeTree](
 | VARCHAR, VAR_STRING     | [String](../../sql-reference/data-types/string.md)           |
 | BLOB                    | [String](../../sql-reference/data-types/string.md)           |
 | BINARY                  | [FixedString](../../sql-reference/data-types/fixedstring.md) |
+| BIT                     | [UInt64](../../sql-reference/data-types/int-uint.md)         |
 
 [Nullable](../../sql-reference/data-types/nullable.md) is supported.
 
@@ -150,20 +151,38 @@ Table overrides can be used to customize the ClickHouse DDL queries, allowing yo
 application. This is especially useful for controlling partitioning, which is important for the overall performance of
 MaterializedMySQL.
 
+These are the schema conversion manipulations you can do with table overrides for MaterializedMySQL:
+
+ * Modify column type. Must be compatible with the original type, or replication will fail. For example,
+   you can modify a UInt32 column to UInt64, but you can not modify a String column to Array(String).
+ * Modify [column TTL](../table-engines/mergetree-family/mergetree/#mergetree-column-ttl).
+ * Modify [column compression codec](../../sql-reference/statements/create/table/#codecs).
+ * Add [ALIAS columns](../../sql-reference/statements/create/table/#alias).
+ * Add [skipping indexes](../table-engines/mergetree-family/mergetree/#table_engine-mergetree-data_skipping-indexes)
+ * Add [projections](../table-engines/mergetree-family/mergetree/#projections). Note that projection optimizations are
+   disabled when using `SELECT ... FINAL` (which MaterializedMySQL does by default), so their utility is limited here.
+   `INDEX ... TYPE hypothesis` as [described in the v21.12 blog post]](https://clickhouse.com/blog/en/2021/clickhouse-v21.12-released/)
+   may be more useful in this case.
+ * Modify [PARTITION BY](../table-engines/mergetree-family/custom-partitioning-key/)
+ * Modify [ORDER BY](../table-engines/mergetree-family/mergetree/#mergetree-query-clauses)
+ * Modify [PRIMARY KEY](../table-engines/mergetree-family/mergetree/#mergetree-query-clauses)
+ * Add [SAMPLE BY](../table-engines/mergetree-family/mergetree/#mergetree-query-clauses)
+ * Add [table TTL](../table-engines/mergetree-family/mergetree/#mergetree-query-clauses)
+
 ```sql
 CREATE DATABASE db_name ENGINE = MaterializedMySQL(...)
 [SETTINGS ...]
 [TABLE OVERRIDE table_name (
     [COLUMNS (
-        [name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1], ...]
-        [INDEX index_name1 expr1 TYPE type1(...) GRANULARITY value1, ...]
-        [PROJECTION projection_name_1 (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]), ...]
-	)]
-	[ORDER BY expr]
-	[PRIMARY KEY expr]
-	[PARTITION BY expr]
-	[SAMPLE BY expr]
-	[TTL expr]
+        [col_name [datatype] [ALIAS expr] [CODEC(...)] [TTL expr], ...]
+        [INDEX index_name expr TYPE indextype[(...)] GRANULARITY val, ...]
+        [PROJECTION projection_name (SELECT <COLUMN LIST EXPR> [GROUP BY] [ORDER BY]), ...]
+    )]
+    [ORDER BY expr]
+    [PRIMARY KEY expr]
+    [PARTITION BY expr]
+    [SAMPLE BY expr]
+    [TTL expr]
 ), ...]
 ```
 
@@ -173,34 +192,34 @@ Example:
 CREATE DATABASE db_name ENGINE = MaterializedMySQL(...)
 TABLE OVERRIDE table1 (
     COLUMNS (
-	    userid UUID,
-	    category LowCardinality(String),
-		timestamp DateTime CODEC(Delta, Default)
+        userid UUID,
+        category LowCardinality(String),
+        timestamp DateTime CODEC(Delta, Default)
     )
     PARTITION BY toYear(timestamp)
 ),
 TABLE OVERRIDE table2 (
     COLUMNS (
-	    ip_hash UInt32 MATERIALIZED xxHash32(client_ip),
-		client_ip String TTL created + INTERVAL 72 HOUR
-	)
-	SAMPLE BY ip_hash
+        client_ip String TTL created + INTERVAL 72 HOUR
+    )
+    SAMPLE BY ip_hash
 )
 ```
 
-The `COLUMNS` list is sparse; it contains only modified or extra (MATERIALIZED or ALIAS) columns. Modified columns with
-a different type must be assignable from the original type. There is currently no validation of this or similar issues
-when the `CREATE DATABASE` query executes, so extra care needs to be taken.
+The `COLUMNS` list is sparse; existing columns are modified as specified, extra ALIAS columns are added. It is not
+possible to add ordinary or MATERIALIZED columns.  Modified columns with a different type must be assignable from the
+original type. There is currently no validation of this or similar issues when the `CREATE DATABASE` query executes, so
+extra care needs to be taken.
 
 You may specify overrides for tables that do not exist yet.
 
-!!! note "Warning"
-    It is easy to break replication with TABLE OVERRIDEs if not used with care. For example:
+!!! warning "Warning"
+    It is easy to break replication with table overrides if not used with care. For example:
     
-    * If a column is added with a table override, but then later added to the source MySQL table, the converted ALTER TABLE
-      query in ClickHouse will fail because the column already exists.
+    * If an ALIAS column is added with a table override, and a column with the same name is later added to the source
+	    MySQL table, the converted ALTER TABLE query in ClickHouse will fail and replication stops.
     * It is currently possible to add overrides that reference nullable columns where not-nullable are required, such as in
-      `ORDER BY` or `PARTITION BY`.
+      `ORDER BY` or `PARTITION BY`. This will cause CREATE TABLE queries that will fail, also causing replication to stop.
 
 ## Examples of Use {#examples-of-use}
 
@@ -217,11 +236,9 @@ mysql> SELECT * FROM test;
 ```
 
 ```text
-+---+------+------+
-| a |    b |    c |
-+---+------+------+
-| 2 |  222 | Wow! |
-+---+------+------+
+┌─a─┬───b─┬─c────┐
+│ 2 │ 222 │ Wow! │
+└───┴─────┴──────┘
 ```
 
 Database in ClickHouse, exchanging data with the MySQL server:

@@ -71,6 +71,9 @@ public:
     StoragePtr getTargetTable() const;
     StoragePtr tryGetTargetTable() const;
 
+    /// Get the virtual column of the target table;
+    NamesAndTypesList getVirtuals() const override;
+
     ActionLock getActionLock(StorageActionBlockType type) override;
 
     Pipe read(

@@ -112,6 +112,12 @@ inline Field getBinaryValue(UInt8 type, ReadBuffer & buf)
             readStringBinary(value.data, buf);
             return value;
         }
+        case Field::Types::Bool:
+        {
+            UInt8 value;
+            readBinary(value, buf);
+            return bool(value);
+        }
     }
     return Field();
 }
@@ -384,6 +390,13 @@ Field Field::restoreFromDump(const std::string_view & dump_)
         ReadBufferFromString buf{dump};
         readQuoted(str, buf);
         return str;
+    }
+
+    prefix = std::string_view{"Bool_"};
+    if (dump.starts_with(prefix))
+    {
+        bool value = parseFromString<bool>(dump.substr(prefix.length()));
+        return value;
     }
 
     prefix = std::string_view{"Array_["};

@@ -162,7 +162,7 @@ public:
     {
         auto field_type = Field::TypeToEnum<NearestFieldType<T>>::value;
         field_types.insert(field_type);
-        type_indexes.insert(TypeId<NearestFieldType<T>>);
+        type_indexes.insert(TypeToTypeIndex<NearestFieldType<T>>);
     }
 
     DataTypePtr getScalarType() const { return getLeastSupertype(type_indexes, true); }

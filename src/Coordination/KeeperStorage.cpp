@@ -1,16 +1,18 @@
 #include <Coordination/KeeperStorage.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/setThreadName.h>
-#include <mutex>
-#include <functional>
-#include <base/logger_useful.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <sstream>
-#include <iomanip>
+#include <Common/hex.h>
+#include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 #include <Poco/SHA1Engine.h>
 #include <Poco/Base64Encoder.h>
 #include <boost/algorithm/string.hpp>
-#include <Common/hex.h>
+#include <sstream>
+#include <iomanip>
+#include <mutex>
+#include <functional>
+#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -91,8 +93,7 @@ static bool checkACL(int32_t permission, const Coordination::ACLs & node_acls, c
 static bool fixupACL(
     const std::vector<Coordination::ACL> & request_acls,
     const std::vector<KeeperStorage::AuthID> & current_ids,
-    std::vector<Coordination::ACL> & result_acls,
-    bool hash_acls)
+    std::vector<Coordination::ACL> & result_acls)
 {
     if (request_acls.empty())
         return true;
@@ -125,8 +126,6 @@ static bool fixupACL(
                 return false;
 
             valid_found = true;
-            if (hash_acls)
-                new_acl.id = generateDigest(new_acl.id);
             result_acls.push_back(new_acl);
         }
     }
@@ -310,7 +309,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         KeeperStorage::Node created_node;
 
         Coordination::ACLs node_acls;
-        if (!fixupACL(request.acls, session_auth_ids, node_acls, !request.restored_from_zookeeper_log))
+        if (!fixupACL(request.acls, session_auth_ids, node_acls))
         {
             response.error = Coordination::Error::ZINVALIDACL;
             return {response_ptr, {}};
@@ -778,7 +777,7 @@ struct KeeperStorageSetACLRequestProcessor final : public KeeperStorageRequestPr
             auto & session_auth_ids = storage.session_and_auth[session_id];
             Coordination::ACLs node_acls;
 
-            if (!fixupACL(request.acls, session_auth_ids, node_acls, !request.restored_from_zookeeper_log))
+            if (!fixupACL(request.acls, session_auth_ids, node_acls))
             {
                 response.error = Coordination::Error::ZINVALIDACL;
                 return {response_ptr, {}};

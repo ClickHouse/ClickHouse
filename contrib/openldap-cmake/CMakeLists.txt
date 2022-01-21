@@ -1,12 +1,36 @@
+option (ENABLE_LDAP "Enable LDAP" ${ENABLE_LIBRARIES})
+
+if (NOT ENABLE_LDAP)
+    message(STATUS "Not using ldap")
+    return()
+endif()
+
+string (TOLOWER "${CMAKE_SYSTEM_NAME}" _system_name)
+string (TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" _system_processor)
+if (
+    "${_system_processor}" STREQUAL "amd64" OR
+    "${_system_processor}" STREQUAL "x64"
+)
+    set (_system_processor "x86_64")
+elseif ("${_system_processor}" STREQUAL "arm64")
+    set (_system_processor "aarch64")
+endif ()
+if (NOT(
+    ( "${_system_name}" STREQUAL "linux"   AND "${_system_processor}" STREQUAL "x86_64"  ) OR
+    ( "${_system_name}" STREQUAL "linux"   AND "${_system_processor}" STREQUAL "aarch64" ) OR
+    ( "${_system_name}" STREQUAL "linux"   AND "${_system_processor}" STREQUAL "ppc64le" ) OR
+    ( "${_system_name}" STREQUAL "freebsd" AND "${_system_processor}" STREQUAL "x86_64"  ) OR
+    ( "${_system_name}" STREQUAL "freebsd" AND "${_system_processor}" STREQUAL "aarch64" ) OR
+    ( "${_system_name}" STREQUAL "darwin"  AND "${_system_processor}" STREQUAL "x86_64"  ) OR
+    ( "${_system_name}" STREQUAL "darwin"  AND "${_system_processor}" STREQUAL "aarch64"   )
+))
+    message (${RECONFIGURE_MESSAGE_LEVEL} "LDAP support using the bundled library is not implemented for ${CMAKE_SYSTEM_NAME} ${CMAKE_SYSTEM_PROCESSOR} platform.")
+endif ()
+
 set(OPENLDAP_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/openldap")
 
 # How these lists were generated?
 # I compiled the original OpenLDAP with it's original build system and copied the list of source files from build commands.
-
-set(_libs_type SHARED)
-if(OPENLDAP_USE_STATIC_LIBS)
-    set(_libs_type STATIC)
-endif()
 
 set(OPENLDAP_VERSION_STRING "2.5.X")
 
@@ -51,23 +75,22 @@ set(_lber_srcs
 
 mkversion(lber)
 
-add_library(lber ${_libs_type}
+add_library(_lber
     ${_lber_srcs}
     "${CMAKE_CURRENT_BINARY_DIR}/lber-version.c"
 )
 
-target_link_libraries(lber
-    PRIVATE ${OPENSSL_LIBRARIES}
+target_link_libraries(_lber
+    PRIVATE OpenSSL::Crypto OpenSSL::SSL
 )
 
-target_include_directories(lber
-    PRIVATE ${_extra_build_dir}/include
-    PRIVATE "${OPENLDAP_SOURCE_DIR}/include"
+target_include_directories(_lber SYSTEM
+    PUBLIC ${_extra_build_dir}/include
+    PUBLIC "${OPENLDAP_SOURCE_DIR}/include"
     PRIVATE "${OPENLDAP_SOURCE_DIR}/libraries/liblber"
-    PRIVATE ${OPENSSL_INCLUDE_DIR}
 )
 
-target_compile_definitions(lber
+target_compile_definitions(_lber
     PRIVATE LBER_LIBRARY
 )
 
@@ -141,24 +164,23 @@ set(_ldap_srcs
 
 mkversion(ldap)
 
-add_library(ldap ${_libs_type}
+add_library(_ldap
     ${_ldap_srcs}
     "${CMAKE_CURRENT_BINARY_DIR}/ldap-version.c"
 )
 
-target_link_libraries(ldap
-    PRIVATE lber
-    PRIVATE ${OPENSSL_LIBRARIES}
+target_link_libraries(_ldap
+    PRIVATE _lber
+    PRIVATE OpenSSL::Crypto OpenSSL::SSL
 )
 
-target_include_directories(ldap
-    PRIVATE ${_extra_build_dir}/include
-    PRIVATE "${OPENLDAP_SOURCE_DIR}/include"
+target_include_directories(_ldap SYSTEM
+    PUBLIC ${_extra_build_dir}/include
+    PUBLIC "${OPENLDAP_SOURCE_DIR}/include"
     PRIVATE "${OPENLDAP_SOURCE_DIR}/libraries/libldap"
-    PRIVATE ${OPENSSL_INCLUDE_DIR}
 )
 
-target_compile_definitions(ldap
+target_compile_definitions(_ldap
     PRIVATE LDAP_LIBRARY
 )
 
@@ -177,26 +199,28 @@ set(_ldap_r_specific_srcs
 
 mkversion(ldap_r)
 
-add_library(ldap_r ${_libs_type}
+add_library(_ldap_r
     ${_ldap_r_specific_srcs}
     ${_ldap_srcs}
     "${CMAKE_CURRENT_BINARY_DIR}/ldap_r-version.c"
 )
 
-target_link_libraries(ldap_r
-    PRIVATE lber
-    PRIVATE ${OPENSSL_LIBRARIES}
+target_link_libraries(_ldap_r
+    PRIVATE _lber
+    PRIVATE OpenSSL::Crypto OpenSSL::SSL
 )
 
-target_include_directories(ldap_r
-    PRIVATE ${_extra_build_dir}/include
-    PRIVATE "${OPENLDAP_SOURCE_DIR}/include"
+target_include_directories(_ldap_r SYSTEM
+    PUBLIC ${_extra_build_dir}/include
+    PUBLIC "${OPENLDAP_SOURCE_DIR}/include"
     PRIVATE "${OPENLDAP_SOURCE_DIR}/libraries/libldap_r"
     PRIVATE "${OPENLDAP_SOURCE_DIR}/libraries/libldap"
-    PRIVATE ${OPENSSL_INCLUDE_DIR}
 )
 
-target_compile_definitions(ldap_r
+target_compile_definitions(_ldap_r
     PRIVATE LDAP_R_COMPILE
     PRIVATE LDAP_LIBRARY
 )
+
+add_library(ch_contrib::ldap ALIAS _ldap_r)
+add_library(ch_contrib::lber ALIAS _lber)

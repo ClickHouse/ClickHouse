@@ -15,10 +15,13 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <base/JSON.h>
 #include <base/logger_useful.h>
 #include <Compression/getCompressionCodecForFile.h>
+#include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
@@ -28,6 +31,8 @@ namespace CurrentMetrics
     extern const Metric PartsTemporary;
     extern const Metric PartsPreCommitted;
     extern const Metric PartsCommitted;
+    extern const Metric PartsPreActive;
+    extern const Metric PartsActive;
     extern const Metric PartsOutdated;
     extern const Metric PartsDeleting;
     extern const Metric PartsDeleteOnDestroy;
@@ -189,10 +194,12 @@ static void incrementStateMetric(IMergeTreeDataPart::State state)
         case IMergeTreeDataPart::State::Temporary:
             CurrentMetrics::add(CurrentMetrics::PartsTemporary);
             return;
-        case IMergeTreeDataPart::State::PreCommitted:
+        case IMergeTreeDataPart::State::PreActive:
+            CurrentMetrics::add(CurrentMetrics::PartsPreActive);
             CurrentMetrics::add(CurrentMetrics::PartsPreCommitted);
             return;
-        case IMergeTreeDataPart::State::Committed:
+        case IMergeTreeDataPart::State::Active:
+            CurrentMetrics::add(CurrentMetrics::PartsActive);
             CurrentMetrics::add(CurrentMetrics::PartsCommitted);
             return;
         case IMergeTreeDataPart::State::Outdated:
@@ -214,10 +221,12 @@ static void decrementStateMetric(IMergeTreeDataPart::State state)
         case IMergeTreeDataPart::State::Temporary:
             CurrentMetrics::sub(CurrentMetrics::PartsTemporary);
             return;
-        case IMergeTreeDataPart::State::PreCommitted:
+        case IMergeTreeDataPart::State::PreActive:
+            CurrentMetrics::sub(CurrentMetrics::PartsPreActive);
             CurrentMetrics::sub(CurrentMetrics::PartsPreCommitted);
             return;
-        case IMergeTreeDataPart::State::Committed:
+        case IMergeTreeDataPart::State::Active:
+            CurrentMetrics::sub(CurrentMetrics::PartsActive);
             CurrentMetrics::sub(CurrentMetrics::PartsCommitted);
             return;
         case IMergeTreeDataPart::State::Outdated:
@@ -286,7 +295,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , parent_part(parent_part_)
 {
     if (parent_part)
-        state = State::Committed;
+        state = State::Active;
     incrementStateMetric(state);
     incrementTypeMetric(part_type);
 
@@ -311,7 +320,7 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , parent_part(parent_part_)
 {
     if (parent_part)
-        state = State::Committed;
+        state = State::Active;
     incrementStateMetric(state);
     incrementTypeMetric(part_type);
 
@@ -609,7 +618,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     /// Memory should not be limited during ATTACH TABLE query.
     /// This is already true at the server startup but must be also ensured for manual table ATTACH.
     /// Motivation: memory for index is shared between queries - not belong to the query itself.
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
 
     loadUUID();
     loadColumns(require_columns_checksums);
@@ -1153,6 +1162,14 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     storage.lockSharedData(*this);
 }
 
+void IMergeTreeDataPart::cleanupOldName(const String & old_part_name) const
+{
+    if (name == old_part_name)
+        return;
+
+    storage.unlockSharedData(*this, old_part_name);
+}
+
 std::optional<bool> IMergeTreeDataPart::keepSharedDataInDecoupledStorage() const
 {
     /// NOTE: It's needed for zero-copy replication
@@ -1293,7 +1310,7 @@ void IMergeTreeDataPart::remove() const
 
 void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_shared_data) const
 {
-    String to = parent_to + "/" + relative_path;
+    String to = fs::path(parent_to) / relative_path;
     auto disk = volume->getDisk();
     if (checksums.empty())
     {
@@ -1303,7 +1320,7 @@ void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_sh
             "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: checksums.txt is missing",
             fullPath(disk, to));
         /// If the part is not completely written, we cannot use fast path by listing files.
-        disk->removeSharedRecursive(to + "/", keep_shared_data);
+        disk->removeSharedRecursive(fs::path(to) / "", keep_shared_data);
     }
     else
     {
@@ -1316,15 +1333,15 @@ void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_sh
     #    pragma GCC diagnostic ignored "-Wunused-variable"
     #endif
             for (const auto & [file, _] : checksums.files)
-                disk->removeSharedFile(to + "/" + file, keep_shared_data);
+                disk->removeSharedFile(fs::path(to) / file, keep_shared_data);
     #if !defined(__clang__)
     #    pragma GCC diagnostic pop
     #endif
 
             for (const auto & file : {"checksums.txt", "columns.txt"})
-                disk->removeSharedFile(to + "/" + file, keep_shared_data);
-            disk->removeSharedFileIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME, keep_shared_data);
-            disk->removeSharedFileIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME, keep_shared_data);
+                disk->removeSharedFile(fs::path(to) / file, keep_shared_data);
+            disk->removeSharedFileIfExists(fs::path(to) / DEFAULT_COMPRESSION_CODEC_FILE_NAME, keep_shared_data);
+            disk->removeSharedFileIfExists(fs::path(to) / DELETE_ON_DESTROY_MARKER_FILE_NAME, keep_shared_data);
 
             disk->removeSharedRecursive(to, keep_shared_data);
         }
@@ -1334,7 +1351,7 @@ void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_sh
 
             LOG_ERROR(storage.log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(disk, to), getCurrentExceptionMessage(false));
 
-            disk->removeSharedRecursive(to + "/", keep_shared_data);
+            disk->removeSharedRecursive(fs::path(to) / "", keep_shared_data);
          }
      }
  }
@@ -1357,7 +1374,7 @@ String IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix, bool 
     else if (parent_part)
         full_relative_path /= parent_part->relative_path;
 
-    for (int try_no = 0; try_no < 10; try_no++)
+    for (int try_no = 0; try_no < 10; ++try_no)
     {
         res = (prefix.empty() ? "" : prefix + "_") + name + (try_no ? "_try" + DB::toString(try_no) : "");
 
@@ -1612,6 +1629,12 @@ String IMergeTreeDataPart::getUniqueId() const
 
     String id = disk->getUniqueId(fs::path(getFullRelativePath()) / "checksums.txt");
     return id;
+}
+
+
+UInt32 IMergeTreeDataPart::getNumberOfRefereneces() const
+{
+    return volume->getDisk()->getRefCount(fs::path(getFullRelativePath()) / "checksums.txt");
 }
 
 

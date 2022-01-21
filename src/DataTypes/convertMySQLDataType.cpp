@@ -91,6 +91,10 @@ DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
             res = std::make_shared<DataTypeDateTime64>(scale);
         }
     }
+    else if (type_name == "bit")
+    {
+        res = std::make_shared<DataTypeUInt64>();
+    }
     else if (type_support.isSet(MySQLDataTypesSupport::DECIMAL) && (type_name == "numeric" || type_name == "decimal"))
     {
         if (precision <= DecimalUtils::max_precision<Decimal32>)

@@ -121,7 +121,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     ctx->disk = global_ctx->space_reservation->getDisk();
 
     String local_part_path = global_ctx->data->relative_data_path;
-    String local_tmp_part_basename = local_tmp_prefix + global_ctx->future_part->name + (global_ctx->parent_part ? ".proj" : "");
+    String local_tmp_part_basename = local_tmp_prefix + global_ctx->future_part->name + local_tmp_suffix;
     String local_new_part_tmp_path = local_part_path + local_tmp_part_basename + "/";
 
     if (ctx->disk->exists(local_new_part_tmp_path))

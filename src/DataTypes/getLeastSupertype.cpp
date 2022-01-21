@@ -609,4 +609,16 @@ DataTypePtr getLeastSupertype(const TypeIndexSet & types, bool allow_conversion_
     return throw_or_return(getExceptionMessagePrefix(types), ErrorCodes::NO_COMMON_TYPE);
 }
 
+DataTypePtr tryGetLeastSupertype(const DataTypes & types)
+{
+    try
+    {
+        return getLeastSupertype(types);
+    }
+    catch (...)
+    {
+        return nullptr;
+    }
+}
+
 }
