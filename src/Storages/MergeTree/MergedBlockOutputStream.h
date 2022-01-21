@@ -61,9 +61,7 @@ private:
 
     using WrittenFiles = std::vector<std::unique_ptr<WriteBufferFromFileBase>>;
     WrittenFiles finalizePartOnDisk(
-            const MergeTreeData::MutableDataPartPtr & new_part,
-            NamesAndTypesList & part_columns,
-            SerializationInfoByName & serialization_infos,
+            const MergeTreeData::DataPartPtr & new_part,
             MergeTreeData::DataPart::Checksums & checksums);
 
     NamesAndTypesList columns_list;

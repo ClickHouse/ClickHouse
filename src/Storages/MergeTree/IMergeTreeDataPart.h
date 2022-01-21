@@ -128,11 +128,14 @@ public:
 
     String getTypeName() const { return getType().toString(); }
 
-    void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos = {});
+    void setColumns(const NamesAndTypesList & new_columns);
 
     const NamesAndTypesList & getColumns() const { return columns; }
+
+    void setSerializationInfos(const SerializationInfoByName & new_infos);
+
     const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
-    SerializationInfoByName & getSerializationInfos() { return serialization_infos; }
+
     SerializationPtr getSerialization(const NameAndTypePair & column) const;
 
     /// Throws an exception if part is not stored in on-disk format.

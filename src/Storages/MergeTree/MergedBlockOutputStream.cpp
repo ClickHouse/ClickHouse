@@ -86,24 +86,23 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePart(
             projection_part->checksums.getTotalSizeOnDisk(),
             projection_part->checksums.getTotalChecksumUInt128());
 
-    NamesAndTypesList part_columns;
-    if (!total_columns_list)
-        part_columns = columns_list;
-    else
-        part_columns = *total_columns_list;
+    if (reset_columns)
+    {
+        auto part_columns = total_columns_list ? *total_columns_list : columns_list;
+        auto serialization_infos = new_part->getSerializationInfos();
 
-    auto & serialization_infos = reset_columns
-        ? new_serialization_infos
-        : new_part->getSerializationInfos();
+        serialization_infos.replaceData(new_serialization_infos);
+        removeEmptyColumnsFromPart(new_part, part_columns, serialization_infos, checksums);
+
+        new_part->setColumns(part_columns);
+        new_part->setSerializationInfos(serialization_infos);
+    }
 
     auto finalizer = std::make_unique<Finalizer::Impl>();
     finalizer->sync = sync;
     finalizer->part = new_part;
     if (new_part->isStoredOnDisk())
-        finalizer->written_files = finalizePartOnDisk(new_part, part_columns, serialization_infos, checksums);
-
-    if (reset_columns)
-        new_part->setColumns(part_columns, serialization_infos);
+       finalizer->written_files = finalizePartOnDisk(new_part, checksums);
 
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
@@ -134,9 +133,7 @@ void MergedBlockOutputStream::finish(Finalizer finalizer)
 }
 
 MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDisk(
-    const MergeTreeData::MutableDataPartPtr & new_part,
-    NamesAndTypesList & part_columns,
-    SerializationInfoByName & serialization_infos,
+    const MergeTreeData::DataPartPtr & new_part,
     MergeTreeData::DataPart::Checksums & checksums)
 {
 
@@ -210,13 +207,11 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         written_files.emplace_back(std::move(out));
     }
 
-    removeEmptyColumnsFromPart(new_part, part_columns, serialization_infos, checksums);
-
-    if (!serialization_infos.empty())
+    if (!new_part->getSerializationInfos().empty())
     {
         auto out = volume->getDisk()->writeFile(part_path + IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096);
         HashingWriteBuffer out_hashing(*out);
-        serialization_infos.writeJSON(out_hashing);
+        new_part->getSerializationInfos().writeJSON(out_hashing);
         checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
         checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
         out->preFinalize();
@@ -226,7 +221,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     {
         /// Write a file with a description of columns.
         auto out = volume->getDisk()->writeFile(fs::path(part_path) / "columns.txt", 4096);
-        part_columns.writeText(*out);
+        new_part->getColumns().writeText(*out);
         out->preFinalize();
         written_files.emplace_back(std::move(out));
     }
