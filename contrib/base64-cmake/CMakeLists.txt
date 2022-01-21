@@ -1,3 +1,14 @@
+if(ARCH_AMD64 OR ARCH_ARM)
+    option (ENABLE_BASE64 "Enable base64" ${ENABLE_LIBRARIES})
+elseif(ENABLE_BASE64)
+    message (${RECONFIGURE_MESSAGE_LEVEL} "base64 library is only supported on x86_64 and aarch64")
+endif()
+
+if (NOT ENABLE_BASE64)
+    message(STATUS "Not using base64")
+    return()
+endif()
+
 SET(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/base64")
 
 add_library(base64_scalar OBJECT "${LIBRARY_DIR}/turbob64c.c" "${LIBRARY_DIR}/turbob64d.c")
@@ -41,3 +52,5 @@ if (XCODE OR XCODE_VERSION)
     endif ()
     target_sources(base64 PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/dummy.c")
 endif ()
+
+add_library(ch_contrib::base64 ALIAS base64)
