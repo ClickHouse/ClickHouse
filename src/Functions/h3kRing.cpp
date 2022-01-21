@@ -71,9 +71,7 @@ public:
         dst_offsets.resize(input_rows_count);
         auto current_offset = 0;
 
-        std::vector<H3Index> hindex_vec;
-
-        for (size_t row = 0; row < input_rows_count; row++)
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
             const H3Index origin_hindex = col_hindex->getUInt(row);
             const int k = col_k->getInt(row);
@@ -88,6 +86,7 @@ public:
                 throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Argument 'k' for {} function must be non negative", getName());
 
             const auto vec_size = maxGridDiskSize(k);
+            std::vector<H3Index> hindex_vec;
             hindex_vec.resize(vec_size);
             gridDisk(origin_hindex, k, hindex_vec.data());
 

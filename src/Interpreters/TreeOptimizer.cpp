@@ -743,8 +743,6 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (settings.optimize_functions_to_subcolumns && result.storage_snapshot && result.storage->supportsSubcolumns())
         optimizeFunctionsToSubcolumns(query, result.storage_snapshot->metadata);
 
-    optimizeIf(query, result.aliases, settings.optimize_if_chain_to_multiif);
-
     /// Move arithmetic operations out of aggregation functions
     if (settings.optimize_arithmetic_operations_in_aggregate_functions)
         optimizeAggregationFunctions(query);

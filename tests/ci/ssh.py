@@ -102,8 +102,15 @@ class SSHAgent:
             return stdout
 
 class SSHKey:
-    def __init__(self, key_name):
-        self.key = os.getenv(key_name)
+    def __init__(self, key_name=None, key_value=None):
+        if key_name is None and key_value is None:
+            raise Exception("Either key_name or key_value must be specified")
+        if key_name is not None and key_value is not None:
+            raise Exception("key_name or key_value must be specified")
+        if key_name is not None:
+            self.key = os.getenv(key_name)
+        else:
+            self.key = key_value
         self._key_pub = None
         self._ssh_agent = SSHAgent()
 

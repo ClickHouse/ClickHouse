@@ -18,4 +18,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types, bool allow_conversion_to_
 using TypeIndexSet = std::unordered_set<TypeIndex>;
 DataTypePtr getLeastSupertype(const TypeIndexSet & types, bool allow_conversion_to_string = false);
 
+/// Same as above but return nullptr instead of throwing exception.
+DataTypePtr tryGetLeastSupertype(const DataTypes & types);
+
 }

@@ -117,7 +117,7 @@ StorageMongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, C
     StorageMongoDBConfiguration configuration;
     if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context))
     {
-        auto [common_configuration, storage_specific_args] = named_collection.value();
+        auto [common_configuration, storage_specific_args, _] = named_collection.value();
         configuration.set(common_configuration);
 
         for (const auto & [arg_name, arg_value] : storage_specific_args)

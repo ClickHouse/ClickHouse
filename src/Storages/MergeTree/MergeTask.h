@@ -11,6 +11,7 @@
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Compression/CompressedReadBufferFromFile.h>
+#include <Common/filesystemHelpers.h>
 
 #include <memory>
 #include <list>

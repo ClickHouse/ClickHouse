@@ -17,7 +17,7 @@ public:
         Pos begin = pos;
         bool res = func();
         if (!res)
-          pos = begin;
+            pos = begin;
         return res;
     }
 
@@ -31,7 +31,7 @@ public:
         bool res = func();
         pos.decreaseDepth();
         if (!res)
-          pos = begin;
+            pos = begin;
         return res;
     }
 

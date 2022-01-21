@@ -69,7 +69,7 @@ public:
                 /// Conversion of infinite values to integer is undefined.
                 throw Exception("Cannot convert infinite value to integer type", ErrorCodes::CANNOT_CONVERT_TYPE);
             }
-            else if (x > std::numeric_limits<T>::max() || x < std::numeric_limits<T>::lowest())
+            else if (x > Float64(std::numeric_limits<T>::max()) || x < Float64(std::numeric_limits<T>::lowest()))
             {
                 throw Exception("Cannot convert out of range floating point value to integer type", ErrorCodes::CANNOT_CONVERT_TYPE);
             }
@@ -128,6 +128,8 @@ public:
         else
             return static_cast<T>(x);
     }
+
+    T operator() (const bool & x) const { return T(x); }
 };
 
 }

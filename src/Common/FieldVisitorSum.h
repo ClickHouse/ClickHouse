@@ -28,6 +28,7 @@ public:
     bool operator() (Object &) const;
     bool operator() (UUID &) const;
     bool operator() (AggregateFunctionStateData &) const;
+    bool operator() (bool &) const;
 
     template <typename T>
     bool operator() (DecimalField<T> & x) const

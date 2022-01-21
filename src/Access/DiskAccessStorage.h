@@ -24,22 +24,22 @@ public:
     bool isPathEqual(const String & directory_path_) const;
 
     void setReadOnly(bool readonly_) { readonly = readonly_; }
-    bool isReadOnly() const { return readonly; }
+    bool isReadOnly() const override { return readonly; }
+
+    bool exists(const UUID & id) const override;
+    bool hasSubscription(const UUID & id) const override;
+    bool hasSubscription(AccessEntityType type) const override;
 
 private:
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
-    bool existsImpl(const UUID & id) const override;
-    AccessEntityPtr readImpl(const UUID & id) const override;
-    String readNameImpl(const UUID & id) const override;
-    bool canInsertImpl(const AccessEntityPtr & entity) const override;
-    UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) override;
-    void removeImpl(const UUID & id) override;
-    void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
+    AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
+    std::optional<String> readNameImpl(const UUID & id, bool throw_if_not_exists) const override;
+    std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
+    bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
+    bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
     scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
     scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const override;
-    bool hasSubscriptionImpl(const UUID & id) const override;
-    bool hasSubscriptionImpl(AccessEntityType type) const override;
 
     void clear();
     bool readLists();
@@ -50,9 +50,9 @@ private:
     void listsWritingThreadFunc();
     void stopListsWritingThread();
 
-    void insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, Notifications & notifications);
-    void removeNoLock(const UUID & id, Notifications & notifications);
-    void updateNoLock(const UUID & id, const UpdateFunc & update_func, Notifications & notifications);
+    bool insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, Notifications & notifications);
+    bool removeNoLock(const UUID & id, bool throw_if_not_exists, Notifications & notifications);
+    bool updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists, Notifications & notifications);
 
     AccessEntityPtr readAccessEntityFromDisk(const UUID & id) const;
     void writeAccessEntityToDisk(const UUID & id, const IAccessEntity & entity) const;

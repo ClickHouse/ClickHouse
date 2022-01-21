@@ -9,6 +9,36 @@ get_property (BUILD_COMPILE_DEFINITIONS DIRECTORY ${ClickHouse_SOURCE_DIR} PROPE
 
 get_property(TZDATA_VERSION GLOBAL PROPERTY TZDATA_VERSION_PROP)
 
+
+find_package(Git)
+if(Git_FOUND)
+    # The commit's git hash, and whether the building workspace was dirty or not
+    execute_process(COMMAND
+      "${GIT_EXECUTABLE}" rev-parse HEAD
+      WORKING_DIRECTORY "${ClickHouse_SOURCE_DIR}"
+      OUTPUT_VARIABLE GIT_HASH
+      ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
+    # Git branch name
+    execute_process(COMMAND
+      "${GIT_EXECUTABLE}" rev-parse --abbrev-ref HEAD
+      WORKING_DIRECTORY "${ClickHouse_SOURCE_DIR}"
+      OUTPUT_VARIABLE GIT_BRANCH
+      ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
+    # The date of the commit
+    SET(ENV{TZ} "UTC")
+    execute_process(COMMAND
+      "${GIT_EXECUTABLE}" log -1 --format=%ad --date=iso-local
+      WORKING_DIRECTORY "${ClickHouse_SOURCE_DIR}"
+      OUTPUT_VARIABLE GIT_DATE
+      ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
+    # The subject of the commit
+    execute_process(COMMAND
+      "${GIT_EXECUTABLE}" log -1 --format=%s
+      WORKING_DIRECTORY "${ClickHouse_SOURCE_DIR}"
+      OUTPUT_VARIABLE GIT_COMMIT_SUBJECT
+      ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE)
+endif()
+
 configure_file (StorageSystemBuildOptions.generated.cpp.in ${CONFIG_BUILD})
 
 include("${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake")

@@ -5,6 +5,7 @@
 
 #include <Core/Block.h>
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
+#include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
 
 
@@ -25,9 +26,19 @@ public:
 
     String getName() const override { return "CSVRowInputFormat"; }
 
+protected:
+    explicit CSVRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
+                      bool with_names_, bool with_types_, const FormatSettings & format_settings_, std::unique_ptr<FormatWithNamesAndTypesReader> format_reader_);
+
 private:
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
+};
+
+class CSVFormatReader : public FormatWithNamesAndTypesReader
+{
+public:
+    CSVFormatReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
     bool parseFieldDelimiterWithDiagnosticInfo(WriteBuffer & out) override;
     bool parseRowEndWithDiagnosticInfo(WriteBuffer & out) override;
@@ -42,17 +53,34 @@ private:
     void skipField(size_t /*file_column*/) override { skipField(); }
     void skipField();
 
-    void skipHeaderRow() ;
+    void skipHeaderRow();
     void skipNames() override { skipHeaderRow(); }
     void skipTypes() override { skipHeaderRow(); }
     void skipFieldDelimiter() override;
     void skipRowEndDelimiter() override;
 
-    std::vector<String> readHeaderRow();
     std::vector<String> readNames() override { return readHeaderRow(); }
     std::vector<String> readTypes() override { return readHeaderRow(); }
+    std::vector<String> readHeaderRow() { return readRowImpl<true>(); }
+    std::vector<String> readRow() { return readRowImpl<false>(); }
 
-    String readFieldIntoString();
+    template <bool is_header>
+    std::vector<String> readRowImpl();
+
+    template <bool read_string>
+    String readCSVFieldIntoString();
+};
+
+class CSVSchemaReader : public FormatWithNamesAndTypesSchemaReader
+{
+public:
+    CSVSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, const FormatSettings & format_setting_, ContextPtr context_);
+
+private:
+    DataTypes readRowAndGetDataTypes() override;
+
+    CSVFormatReader reader;
+    ContextPtr context;
 };
 
 }

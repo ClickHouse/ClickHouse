@@ -390,7 +390,7 @@ StoragePostgreSQLConfiguration StoragePostgreSQL::getConfiguration(ASTs engine_a
     StoragePostgreSQLConfiguration configuration;
     if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context))
     {
-        auto [common_configuration, storage_specific_args] = named_collection.value();
+        auto [common_configuration, storage_specific_args, _] = named_collection.value();
 
         configuration.set(common_configuration);
         configuration.addresses = {std::make_pair(configuration.host, configuration.port)};

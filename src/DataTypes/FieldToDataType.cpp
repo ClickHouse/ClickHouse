@@ -160,4 +160,9 @@ DataTypePtr FieldToDataType::operator() (const AggregateFunctionStateData & x) c
     return DataTypeFactory::instance().get(name);
 }
 
+DataTypePtr FieldToDataType::operator()(const bool &) const
+{
+    return DataTypeFactory::instance().get("Bool");
+}
+
 }

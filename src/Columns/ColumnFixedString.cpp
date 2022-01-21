@@ -415,9 +415,9 @@ ColumnPtr ColumnFixedString::compress() const
     if (!compressed)
         return ColumnCompressed::wrap(this->getPtr());
 
-    size_t column_size = size();
-
-    return ColumnCompressed::create(column_size, compressed->size(),
+    const size_t column_size = size();
+    const size_t compressed_size = compressed->size();
+    return ColumnCompressed::create(column_size, compressed_size,
         [compressed = std::move(compressed), column_size, n = n]
         {
             size_t chars_size = n * column_size;

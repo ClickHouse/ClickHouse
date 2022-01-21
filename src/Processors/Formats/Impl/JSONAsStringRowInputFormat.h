@@ -1,8 +1,10 @@
 #pragma once
 
 #include <Processors/Formats/IRowInputFormat.h>
+#include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatFactory.h>
 #include <IO/PeekableReadBuffer.h>
+#include <DataTypes/DataTypeString.h>
 
 namespace DB
 {
@@ -58,6 +60,15 @@ public:
 private:
     void readJSONObject(IColumn & column) override;
     const FormatSettings format_settings;
+};
+
+class JSONAsStringExternalSchemaReader : public IExternalSchemaReader
+{
+public:
+    NamesAndTypesList readSchema() override
+    {
+        return {{"json", std::make_shared<DataTypeString>()}};
+    }
 };
 
 }

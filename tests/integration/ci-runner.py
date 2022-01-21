@@ -228,6 +228,7 @@ class ClickhouseIntegrationTestsRunner:
                 "clickhouse/mysql-java-client", "clickhouse/mysql-js-client",
                 "clickhouse/mysql-php-client", "clickhouse/postgresql-java-client",
                 "clickhouse/integration-test", "clickhouse/kerberos-kdc",
+                "clickhouse/dotnet-client",
                 "clickhouse/integration-helper", ]
 
 
@@ -252,7 +253,7 @@ class ClickhouseIntegrationTestsRunner:
                         logging.info("Executing installation cmd %s", cmd)
                         retcode = subprocess.Popen(cmd, shell=True, stderr=log, stdout=log).wait()
                         if retcode == 0:
-                            logging.info("Instsallation of %s successfull", full_path)
+                            logging.info("Installation of %s successfull", full_path)
                         else:
                             raise Exception("Installation of %s failed", full_path)
                     break
@@ -630,7 +631,7 @@ class ClickhouseIntegrationTestsRunner:
             random.shuffle(items_to_run)
 
         for group, tests in items_to_run:
-            logging.info("Running test group %s countaining %s tests", group, len(tests))
+            logging.info("Running test group %s containing %s tests", group, len(tests))
             group_counters, group_test_times, log_paths = self.try_run_test_group(repo_path, group, tests, MAX_RETRY, NUM_WORKERS)
             total_tests = 0
             for counter, value in group_counters.items():
