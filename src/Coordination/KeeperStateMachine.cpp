@@ -212,7 +212,7 @@ void KeeperStateMachine::create_snapshot(
             }
 
             {
-                LOG_TRACE(log, "Clearing grabage after snapshot");
+                LOG_TRACE(log, "Clearing garbage after snapshot");
                 /// Turn off "snapshot mode" and clear outdate part of storage state
                 storage->clearGarbageAfterSnapshot(snapshot->snapshot_container_size);
                 LOG_TRACE(log, "Cleared garbage after snapshot");
