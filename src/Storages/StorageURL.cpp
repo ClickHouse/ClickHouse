@@ -13,8 +13,9 @@
 #include <IO/ConnectionTimeoutsContext.h>
 
 #include <Formats/FormatFactory.h>
-#include <Processors/Formats/IOutputFormat.h>
+#include <Formats/ReadSchemaUtils.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Processors/Formats/IOutputFormat.h>
 
 #include <Common/parseRemoteDescription.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
@@ -40,7 +41,7 @@ namespace ErrorCodes
 
 IStorageURLBase::IStorageURLBase(
     const String & uri_,
-    ContextPtr /*context_*/,
+    ContextPtr context_,
     const StorageID & table_id_,
     const String & format_name_,
     const std::optional<FormatSettings> & format_settings_,
@@ -61,10 +62,46 @@ IStorageURLBase::IStorageURLBase(
     , partition_by(partition_by_)
 {
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
+    if (columns_.empty())
+    {
+        auto columns = getTableStructureFromData(format_name, uri, compression_method, headers, format_settings, context_);
+        storage_metadata.setColumns(columns);
+    }
+    else
+        storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
+}
+
+ColumnsDescription IStorageURLBase::getTableStructureFromData(
+    const String & format,
+    const String & uri,
+    const String & compression_method,
+    const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers,
+    const std::optional<FormatSettings> & format_settings,
+    ContextPtr context)
+{
+    auto read_buffer_creator = [&]()
+    {
+        auto parsed_uri = Poco::URI(uri);
+        return wrapReadBufferWithCompressionMethod(
+            std::make_unique<ReadWriteBufferFromHTTP>(
+                parsed_uri,
+                Poco::Net::HTTPRequest::HTTP_GET,
+                nullptr,
+                ConnectionTimeouts::getHTTPTimeouts(context),
+                Poco::Net::HTTPBasicCredentials{},
+                context->getSettingsRef().max_http_get_redirects,
+                DBMS_DEFAULT_BUFFER_SIZE,
+                context->getReadSettings(),
+                headers,
+                ReadWriteBufferFromHTTP::Range{},
+                context->getRemoteHostFilter()),
+            chooseCompressionMethod(parsed_uri.getPath(), compression_method));
+    };
+
+    return readSchemaFromFormat(format, format_settings, read_buffer_creator, context);
 }
 
 namespace
@@ -106,6 +143,12 @@ namespace
             std::atomic<size_t> next_uri_to_read = 0;
         };
         using URIInfoPtr = std::shared_ptr<URIInfo>;
+
+        void onCancel() override
+        {
+            if (reader)
+                reader->cancel();
+        }
 
         StorageURLSource(
             URIInfoPtr uri_info_,
@@ -581,19 +624,23 @@ URLBasedDataSourceConfiguration StorageURL::getConfiguration(ASTs & args, Contex
     }
     else
     {
-        if (args.size() != 2 && args.size() != 3)
+        if (args.empty() || args.size() > 3)
             throw Exception(
-                "Storage URL requires 2 or 3 arguments: url, name of used format and optional compression method.",
+                "Storage URL requires 1, 2 or 3 arguments: url, name of used format (taken from file extension by default) and optional compression method.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (auto & arg : args)
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, local_context);
 
         configuration.url = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-        configuration.format = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        if (args.size() > 1)
+            configuration.format = args[1]->as<ASTLiteral &>().value.safeGet<String>();
         if (args.size() == 3)
             configuration.compression_method = args[2]->as<ASTLiteral &>().value.safeGet<String>();
     }
+
+    if (configuration.format == "auto")
+        configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.url, true);
 
     return configuration;
 }
@@ -636,6 +683,7 @@ void registerStorageURL(StorageFactory & factory)
     },
     {
         .supports_settings = true,
+        .supports_schema_inference = true,
         .source_access_type = AccessType::URL,
     });
 }

@@ -151,7 +151,18 @@ ReturnType parseDateTimeBestEffortImpl(
         {
             num_digits = readDigits(digits, sizeof(digits), in);
 
-            if (num_digits == 10 && !year && !has_time)
+            if (num_digits == 13 && !year && !has_time)
+            {
+                /// This is unix timestamp with millisecond.
+                readDecimalNumber<10>(res, digits);
+                if (fractional)
+                {
+                    fractional->digits = 3;
+                    readDecimalNumber<3>(fractional->value, digits + 10);
+                }
+                return ReturnType(true);
+            }
+            else if (num_digits == 10 && !year && !has_time)
             {
                 /// This is unix timestamp.
                 readDecimalNumber<10>(res, digits);

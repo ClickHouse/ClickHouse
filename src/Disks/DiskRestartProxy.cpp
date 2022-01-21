@@ -190,10 +190,10 @@ void DiskRestartProxy::listFiles(const String & path, std::vector<String> & file
 }
 
 std::unique_ptr<ReadBufferFromFileBase> DiskRestartProxy::readFile(
-    const String & path, const ReadSettings & settings, std::optional<size_t> size) const
+    const String & path, const ReadSettings & settings, std::optional<size_t> read_hint, std::optional<size_t> file_size) const
 {
     ReadLock lock (mutex);
-    auto impl = DiskDecorator::readFile(path, settings, size);
+    auto impl = DiskDecorator::readFile(path, settings, read_hint, file_size);
     return std::make_unique<RestartAwareReadBuffer>(*this, std::move(impl));
 }
 

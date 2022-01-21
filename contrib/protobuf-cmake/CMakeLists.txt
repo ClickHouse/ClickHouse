@@ -1,3 +1,22 @@
+option(ENABLE_PROTOBUF "Enable protobuf" ${ENABLE_LIBRARIES})
+
+if(NOT ENABLE_PROTOBUF)
+  message(STATUS "Not using protobuf")
+  return()
+endif()
+
+set(Protobuf_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/protobuf/src")
+if(OS_FREEBSD AND SANITIZE STREQUAL "address")
+  # ../contrib/protobuf/src/google/protobuf/arena_impl.h:45:10: fatal error: 'sanitizer/asan_interface.h' file not found
+  # #include <sanitizer/asan_interface.h>
+  if(LLVM_INCLUDE_DIRS)
+    set(Protobuf_INCLUDE_DIR "${Protobuf_INCLUDE_DIR}" ${LLVM_INCLUDE_DIRS})
+  else()
+    message(${RECONFIGURE_MESSAGE_LEVEL} "Can't use protobuf on FreeBSD with address sanitizer without LLVM")
+    return()
+  endif()
+endif()
+
 set(protobuf_source_dir "${ClickHouse_SOURCE_DIR}/contrib/protobuf")
 set(protobuf_binary_dir "${ClickHouse_BINARY_DIR}/contrib/protobuf")
 
@@ -8,7 +27,6 @@ add_definitions(-DHAVE_PTHREAD)
 add_definitions(-DHAVE_ZLIB)
 
 include_directories(
-  ${ZLIB_INCLUDE_DIRECTORIES}
   ${protobuf_binary_dir}
   ${protobuf_source_dir}/src)
 
@@ -114,7 +132,7 @@ if (ENABLE_FUZZING)
     target_compile_options(libprotobuf PRIVATE "-fsanitize-recover=all")
 endif()
 target_link_libraries(libprotobuf pthread)
-target_link_libraries(libprotobuf ${ZLIB_LIBRARIES})
+target_link_libraries(libprotobuf ch_contrib::zlib)
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Android")
     target_link_libraries(libprotobuf log)
 endif()
@@ -297,3 +315,15 @@ else ()
     set_target_properties (protoc PROPERTIES IMPORTED_LOCATION "${PROTOC_BUILD_DIR}/protoc")
     add_dependencies(protoc "${PROTOC_BUILD_DIR}/protoc")
 endif ()
+
+include("${ClickHouse_SOURCE_DIR}/contrib/protobuf-cmake/protobuf_generate.cmake")
+
+add_library(_protobuf INTERFACE)
+target_link_libraries(_protobuf INTERFACE libprotobuf)
+target_include_directories(_protobuf INTERFACE "${Protobuf_INCLUDE_DIR}")
+add_library(ch_contrib::protobuf ALIAS _protobuf)
+
+add_library(_protoc INTERFACE)
+target_link_libraries(_protoc INTERFACE libprotoc libprotobuf)
+target_include_directories(_protoc INTERFACE "${Protobuf_INCLUDE_DIR}")
+add_library(ch_contrib::protoc ALIAS _protoc)

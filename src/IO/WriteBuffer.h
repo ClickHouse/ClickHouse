@@ -8,7 +8,7 @@
 #include <string.h>
 
 #include <Common/Exception.h>
-#include <Common/MemoryTracker.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <IO/BufferBase.h>
 
 
@@ -118,7 +118,7 @@ public:
             return;
 
         /// finalize() is often called from destructors.
-        MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
+        LockMemoryExceptionInThread lock(VariableContext::Global);
         try
         {
             finalizeImpl();

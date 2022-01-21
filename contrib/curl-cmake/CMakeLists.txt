@@ -1,4 +1,7 @@
-if (NOT USE_INTERNAL_CURL)
+option (ENABLE_CURL "Enable curl" ${ENABLE_LIBRARIES})
+
+if (NOT ENABLE_CURL)
+    message(STATUS "Not using curl")
     return()
 endif()
 
@@ -153,7 +156,7 @@ target_compile_definitions (curl PRIVATE
     libcurl_EXPORTS
     OS="${CMAKE_SYSTEM_NAME}"
 )
-target_include_directories (curl PUBLIC
+target_include_directories (curl SYSTEM PUBLIC
     "${LIBRARY_DIR}/include"
     "${LIBRARY_DIR}/lib"
     . # curl_config.h
@@ -166,8 +169,6 @@ target_compile_options (curl PRIVATE -g0)
 
 # find_package(CURL) compatibility for the following packages that uses
 # find_package(CURL)/include(FindCURL):
-# - mariadb-connector-c
-# - aws-s3-cmake
 # - sentry-native
 set (CURL_FOUND ON CACHE BOOL "")
 set (CURL_ROOT_DIR ${LIBRARY_DIR} CACHE PATH "")
@@ -176,4 +177,5 @@ set (CURL_INCLUDE_DIRS "${LIBRARY_DIR}/include" CACHE PATH "")
 set (CURL_LIBRARY curl CACHE STRING "")
 set (CURL_LIBRARIES ${CURL_LIBRARY} CACHE STRING "")
 set (CURL_VERSION_STRING 7.67.0 CACHE STRING "")
-add_library (CURL::libcurl ALIAS ${CURL_LIBRARY})
+# add_library (CURL::libcurl ALIAS ${CURL_LIBRARY})
+add_library (ch_contrib::curl ALIAS ${CURL_LIBRARY})
