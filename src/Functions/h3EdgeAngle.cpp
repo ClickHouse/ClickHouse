@@ -64,8 +64,9 @@ public:
             if (resolution > MAX_H3_RES)
                 throw Exception(
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is ",
-                    resolution, getName(), MAX_H3_RES);
+                    "The argument 'resolution' of function {} is out of bounds because the maximum resolution in H3 library is ",
+                    getName(),
+                    MAX_H3_RES);
 
             // Numerical constant is 180 degrees / pi / Earth radius, Earth radius is from h3 sources
             Float64 res = 8.99320592271288084e-6 * getHexagonEdgeLengthAvgM(resolution);

@@ -74,8 +74,7 @@ public:
             if (resolution > MAX_H3_RES)
                 throw Exception(
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is ",
-                    resolution,
+                    "The argument 'resolution' of function {} is out of bounds because the maximum resolution in H3 library is ",
                     getName(),
                     MAX_H3_RES);
 
