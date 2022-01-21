@@ -158,6 +158,19 @@ void SerializationInfoByName::add(const SerializationInfoByName & other)
     }
 }
 
+void SerializationInfoByName::replaceData(const SerializationInfoByName & other)
+{
+    for (const auto & [name, new_info] : other)
+    {
+        auto & old_info = (*this)[name];
+
+        if (old_info)
+            old_info->replaceData(*new_info);
+        else
+            old_info = new_info->clone();
+    }
+}
+
 void SerializationInfoByName::writeJSON(WriteBuffer & out) const
 {
     Poco::JSON::Object object;
