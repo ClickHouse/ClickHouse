@@ -8,7 +8,6 @@
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
-#include <base/range.h>
 
 #include <constants.h>
 #include <h3api.h>
@@ -70,7 +69,7 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const int resolution = data[row];
+            const UInt8 resolution = data[row];
             if (resolution > MAX_H3_RES)
                 throw Exception(
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND,
