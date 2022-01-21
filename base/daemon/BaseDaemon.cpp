@@ -81,6 +81,9 @@ static void call_default_signal_handler(int sig)
 
 static constexpr size_t max_query_id_size = 127;
 
+// equal to setting 'log_queries_cut_to_length'
+static constexpr size_t max_query_size = 100000;
+
 static const size_t signal_pipe_buf_size =
     sizeof(int)
     + sizeof(siginfo_t)
@@ -88,6 +91,7 @@ static const size_t signal_pipe_buf_size =
     + sizeof(StackTrace)
     + sizeof(UInt32)
     + max_query_id_size + 1    /// query_id + varint encoded length
+    + max_query_size + 1
     + sizeof(void*);
 
 
@@ -135,12 +139,21 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     StringRef query_id = DB::CurrentThread::getQueryId();   /// This is signal safe.
     query_id.size = std::min(query_id.size, max_query_id_size);
 
+    StringRef query;
+    if (auto thread_group = DB::CurrentThread::getGroup())
+    {
+        std::lock_guard lock_thread_group(thread_group->mutex);
+        query = thread_group->query;
+    }
+    query.size = std::min(query.size, max_query_size);
+
     DB::writeBinary(sig, out);
     DB::writePODBinary(*info, out);
     DB::writePODBinary(signal_context, out);
     DB::writePODBinary(stack_trace, out);
     DB::writeBinary(UInt32(getThreadId()), out);
     DB::writeStringBinary(query_id, out);
+    DB::writeStringBinary(query, out);
     DB::writePODBinary(DB::current_thread, out);
 
     out.next();
@@ -231,6 +244,7 @@ public:
                 StackTrace stack_trace(NoCapture{});
                 UInt32 thread_num{};
                 std::string query_id;
+                std::string query;
                 DB::ThreadStatus * thread_ptr{};
 
                 if (sig != SanitizerTrap)
@@ -242,11 +256,12 @@ public:
                 DB::readPODBinary(stack_trace, in);
                 DB::readBinary(thread_num, in);
                 DB::readBinary(query_id, in);
+                DB::readBinary(query, in);
                 DB::readPODBinary(thread_ptr, in);
 
                 /// This allows to receive more signals if failure happens inside onFault function.
                 /// Example: segfault while symbolizing stack trace.
-                std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_num, query_id, thread_ptr); }).detach();
+                std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_num, query_id, query, thread_ptr); }).detach();
             }
         }
     }
@@ -283,6 +298,7 @@ private:
         const StackTrace & stack_trace,
         UInt32 thread_num,
         const std::string & query_id,
+        const std::string & query,
         DB::ThreadStatus * thread_ptr) const
     {
         DB::ThreadStatus thread_status;
@@ -305,9 +321,9 @@ private:
         }
         else
         {
-            LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (query_id: {}) Received signal {} ({})",
+            LOG_FATAL(log, "(version {}{}, {}) (from thread {}) (query_id: {}) (query: {}) Received signal {} ({})",
                 VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info,
-                thread_num, query_id, strsignal(sig), sig);
+                thread_num, query_id, query, strsignal(sig), sig);
         }
 
         String error_message;
@@ -392,11 +408,20 @@ static void sanitizerDeathCallback()
     StringRef query_id = DB::CurrentThread::getQueryId();
     query_id.size = std::min(query_id.size, max_query_id_size);
 
+    StringRef query;
+    if (auto thread_group = DB::CurrentThread::getGroup())
+    {
+        std::lock_guard lock_thread_group(thread_group->mutex);
+        query = thread_group->query;
+    }
+    query.size = std::min(query.size, max_query_size);
+
     int sig = SignalListener::SanitizerTrap;
     DB::writeBinary(sig, out);
     DB::writePODBinary(stack_trace, out);
     DB::writeBinary(UInt32(getThreadId()), out);
     DB::writeStringBinary(query_id, out);
+    DB::writeStringBinary(query, out);
     DB::writePODBinary(DB::current_thread, out);
 
     out.next();
