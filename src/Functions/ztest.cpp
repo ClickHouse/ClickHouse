@@ -23,9 +23,6 @@ namespace DB
     class FunctionTwoSampleProportionsZTest : public IFunction
     {
     public:
-        static constexpr auto TWO_SIDED = "two-sided";
-        static constexpr auto LARGER = "larger";
-        static constexpr auto SMALLER  = "smaller";
         static constexpr auto POOLED = "pooled";
         static constexpr auto UNPOOLED  = "unpooled";
 
@@ -41,7 +38,7 @@ namespace DB
             return name;
         }
 
-        size_t getNumberOfArguments() const override { return 7; }
+        size_t getNumberOfArguments() const override { return 6; }
 
         bool useDefaultImplementationForNulls() const override { return false; }
         bool useDefaultImplementationForConstants() const override { return true; }
@@ -94,16 +91,19 @@ namespace DB
             return col_json_string;
         }
 
+        void nan(MutableColumnPtr & to) const
+        {
+            const Float64 nan = std::numeric_limits<Float64>::quiet_NaN();
+            Tuple tuple({nan, nan, nan, nan});
+            to->insert(tuple);
+        }
+
         ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
         {
             MutableColumnPtr to{getReturnType()->createColumn()};
             to->reserve(input_rows_count);
 
-            const auto * col_alternative = getColumnString(arguments[5]);
-            const ColumnString::Chars & alternative_chars = col_alternative->getChars();
-            const ColumnString::Offsets & alternative_offsets = col_alternative->getOffsets();
-
-            const auto * col_usevar = getColumnString(arguments[6]);
+            const auto * col_usevar = getColumnString(arguments[5]);
             const ColumnString::Chars & usevar_chars = col_usevar->getChars();
             const ColumnString::Offsets & usevar_offsets = col_usevar->getOffsets();
 
@@ -113,23 +113,21 @@ namespace DB
                 const UInt64 successes_y = arguments[1].column->getUInt(row_num);
                 const UInt64 trials_x = arguments[2].column->getUInt(row_num);
                 const UInt64 trials_y = arguments[3].column->getUInt(row_num);
-                const Float64 confidence_interval = arguments[4].column->getFloat64(row_num);
-
-                std::string_view alternative{reinterpret_cast<const char *>(&alternative_chars[alternative_offsets[row_num - 1]]), alternative_offsets[row_num] - alternative_offsets[row_num - 1] - 1};
-                std::string_view usevar{reinterpret_cast<const char *>(&usevar_chars[usevar_offsets[row_num - 1]]), usevar_offsets[row_num] - usevar_offsets[row_num - 1] - 1};
-
                 const Float64 props_x = static_cast<Float64>(successes_x) / trials_x;
                 const Float64 props_y = static_cast<Float64>(successes_y) / trials_y;
                 const Float64 diff = props_x - props_y;
-
                 const UInt64 trials_total = trials_x + trials_y;
-                if (trials_total == 0)
+                const Float64 confidence_interval = arguments[4].column->getFloat64(row_num);
+
+                if ((successes_x == 0 || successes_y == 0)
+                    || (successes_x > trials_x || successes_y > trials_y)
+                    || trials_total == 0)
                 {
-                    const Float64 nan = std::numeric_limits<Float64>::quiet_NaN();
-                    Tuple tuple({nan, nan, nan, nan});
-                    to->insert(tuple);
+                    nan(to);
                     continue;
                 }
+
+                std::string_view usevar{reinterpret_cast<const char *>(&usevar_chars[usevar_offsets[row_num - 1]]), usevar_offsets[row_num] - usevar_offsets[row_num - 1] - 1};
 
                 Float64 se = std::sqrt(props_x * (1.0 - props_x) / trials_x + props_y * (1.0 - props_y) / trials_y);
 
@@ -148,35 +146,15 @@ namespace DB
                 }
                 else
                 {
-                    const Float64 nan = std::numeric_limits<Float64>::quiet_NaN();
-                    Tuple tuple({nan, nan, nan, nan});
-                    to->insert(tuple);
+                    nan(to);
                     continue;
                 }
 
                 // pvalue
                 boost::math::normal_distribution<> nd(0.0, 1.0);
                 Float64 pvalue = 0;
-                if (alternative == TWO_SIDED)
-                {
-                    Float64 one_side = 1 - boost::math::cdf(nd, std::abs(zstat));
-                    pvalue = one_side * 2;
-                }
-                else if (alternative == LARGER)
-                {
-                    pvalue = 1.0 - boost::math::cdf(nd, std::abs(zstat));
-                }
-                else if (alternative == SMALLER)
-                {
-                    pvalue = boost::math::cdf(nd, std::abs(zstat));
-                }
-                else
-                {
-                    const Float64 nan = std::numeric_limits<Float64>::quiet_NaN();
-                    Tuple tuple({nan, nan, nan, nan});
-                    to->insert(tuple);
-                    continue;
-                }
+                Float64 one_side = 1 - boost::math::cdf(nd, std::abs(zstat));
+                pvalue = one_side * 2;
 
                 // Confidence intervals
                 Float64 d = props_x - props_y;
