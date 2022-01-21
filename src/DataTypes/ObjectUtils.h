@@ -14,6 +14,7 @@ size_t getNumberOfDimensions(const IDataType & type);
 size_t getNumberOfDimensions(const IColumn & column);
 DataTypePtr getBaseTypeOfArray(const DataTypePtr & type);
 DataTypePtr createArrayOfType(DataTypePtr type, size_t dimension);
+Array createEmptyArrayField(size_t num_dimensions);
 
 ColumnPtr getBaseColumnOfArray(const ColumnPtr & column);
 ColumnPtr createArrayOfColumn(const ColumnPtr & column, size_t num_dimensions);

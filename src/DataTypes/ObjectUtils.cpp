@@ -90,6 +90,19 @@ DataTypePtr createArrayOfType(DataTypePtr type, size_t dimension)
     return type;
 }
 
+Array createEmptyArrayField(size_t num_dimensions)
+{
+    Array array;
+    Array * current_array = &array;
+    for (size_t i = 1; i < num_dimensions; ++i)
+    {
+        current_array->push_back(Array());
+        current_array = &current_array->back().get<Array &>();
+    }
+
+    return array;
+}
+
 DataTypePtr getDataTypeByColumn(const IColumn & column)
 {
     auto idx = column.getDataType();

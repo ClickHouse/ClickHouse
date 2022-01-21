@@ -33,8 +33,8 @@ namespace
 class FieldVisitorReplaceScalars : public StaticVisitor<Field>
 {
 public:
-    explicit FieldVisitorReplaceScalars(const Field & replacement_)
-        : replacement(replacement_)
+    explicit FieldVisitorReplaceScalars(const Field & replacement_, size_t num_dimensions_to_keep_)
+        : replacement(replacement_), num_dimensions_to_keep(num_dimensions_to_keep_)
     {
     }
 
@@ -43,6 +43,9 @@ public:
     {
         if constexpr (std::is_same_v<T, Array>)
         {
+            if (num_dimensions_to_keep == 0)
+                return replacement;
+
             const size_t size = x.size();
             Array res(size);
             for (size_t i = 0; i < size; ++i)
@@ -55,6 +58,7 @@ public:
 
 private:
     const Field & replacement;
+    size_t num_dimensions_to_keep;
 };
 
 bool tryInsertDefaultFromNested(
@@ -63,21 +67,30 @@ bool tryInsertDefaultFromNested(
     if (!entry->path.hasNested())
         return false;
 
-    const auto * node = subcolumns.findLeaf(entry->path);
-    if (!node)
-        return false;
+    const ColumnObject::SubcolumnsTree::Node * node = subcolumns.findLeaf(entry->path);
+    const ColumnObject::SubcolumnsTree::Leaf * leaf = nullptr;
+    size_t num_skipped_nested = 0;
 
-    const auto * node_nested = subcolumns.findParent(node,
-        [](const auto & candidate) { return candidate.isNested(); });
+    while (node)
+    {
+        const auto * node_nested = subcolumns.findParent(node,
+            [](const auto & candidate) { return candidate.isNested(); });
 
-    if (!node_nested)
-        return false;
+        if (!node_nested)
+            break;
 
-    const auto * leaf = subcolumns.findLeaf(node_nested,
-        [&](const auto & candidate)
-        {
-            return candidate.column.size() == entry->column.size() + 1;
-        });
+        leaf = subcolumns.findLeaf(node_nested,
+            [&](const auto & candidate)
+            {
+                return candidate.column.size() == entry->column.size() + 1;
+            });
+
+        if (leaf)
+            break;
+
+        node = node_nested->parent;
+        ++num_skipped_nested;
+    }
 
     if (!leaf)
         return false;
@@ -86,9 +99,18 @@ bool tryInsertDefaultFromNested(
     if (last_field.isNull())
         return false;
 
-    auto default_scalar = getBaseTypeOfArray(leaf->column.getLeastCommonType())->getDefault();
-    auto default_field = applyVisitor(FieldVisitorReplaceScalars(default_scalar), last_field);
+    const auto & least_common_type = entry->column.getLeastCommonType();
+    size_t num_dimensions = getNumberOfDimensions(*least_common_type);
+    assert(num_skipped_nested < num_dimensions);
+
+    size_t num_dimensions_to_keep = num_dimensions - num_skipped_nested;
+    auto default_scalar = num_skipped_nested
+        ? createEmptyArrayField(num_skipped_nested)
+        : getBaseTypeOfArray(least_common_type)->getDefault();
+
+    auto default_field = applyVisitor(FieldVisitorReplaceScalars(default_scalar, num_dimensions_to_keep), last_field);
     entry->column.insert(std::move(default_field));
+
     return true;
 }
 
