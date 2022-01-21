@@ -53,6 +53,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ACCESS_DENIED;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+    extern const int LOGICAL_ERROR;
 }
 namespace
 {
@@ -72,7 +73,15 @@ namespace
 
         HDFSFileInfo ls;
         ls.file_info = hdfsListDirectory(fs.get(), prefix_without_globs.data(), &ls.length);
+        if (ls.file_info == nullptr && errno != ENOENT) // NOLINT
+        {
+            // ignore file not found exception, keep throw other exception, libhdfs3 doesn't have function to get exception type, so use errno.
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED, "Cannot list directory {}: {}", prefix_without_globs, String(hdfsGetLastError()));
+        }
         Strings result;
+        if (!ls.file_info && ls.length > 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "file_info shouldn't be null");
         for (int i = 0; i < ls.length; ++i)
         {
             const String full_path = String(ls.file_info[i].mName);
@@ -544,17 +553,23 @@ void registerStorageHDFS(StorageFactory & factory)
     {
         ASTs & engine_args = args.engine_args;
 
-        if (engine_args.size() != 2 && engine_args.size() != 3)
+        if (engine_args.empty() || engine_args.size() > 3)
             throw Exception(
-                "Storage HDFS requires 2 or 3 arguments: url, name of used format and optional compression method.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                "Storage HDFS requires 1, 2 or 3 arguments: url, name of used format (taken from file extension by default) and optional compression method.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.getLocalContext());
 
         String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
-        engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.getLocalContext());
+        String format_name = "auto";
+        if (engine_args.size() > 1)
+        {
+            engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.getLocalContext());
+            format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        }
 
-        String format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        if (format_name == "auto")
+            format_name = FormatFactory::instance().getFormatFromFileName(url, true);
 
         String compression_method;
         if (engine_args.size() == 3)

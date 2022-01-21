@@ -9,6 +9,8 @@
 #include <Common/getMaxFileDescriptorCount.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Coordination/Keeper4LWInfo.h>
+#include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
 
 #include <unistd.h>
 

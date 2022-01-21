@@ -8,36 +8,78 @@
 #include <base/logger_useful.h>
 #include <Storages/IStorage.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
 
 namespace DB
 {
 struct SettingChange;
 
+struct StorageInfo
+{
+    StoragePtr storage;
+    PostgreSQLTableStructure::Attributes attributes;
+
+    StorageInfo(StoragePtr storage_, const PostgreSQLTableStructure::Attributes & attributes_)
+        : storage(storage_), attributes(attributes_) {}
+};
+using StorageInfos = std::unordered_map<String, StorageInfo>;
+
 class MaterializedPostgreSQLConsumer
 {
-public:
-    using Storages = std::unordered_map<String, StoragePtr>;
+private:
+    struct StorageData
+    {
+        struct Buffer
+        {
+            ExternalResultDescription description;
+            MutableColumns columns;
 
+            /// Needed to pass to insert query columns list in syncTables().
+            std::shared_ptr<ASTExpressionList> columns_ast;
+            /// Needed for insertPostgreSQLValue() method to parse array
+            std::unordered_map<size_t, PostgreSQLArrayInfo> array_info;
+            /// To validate ddl.
+            PostgreSQLTableStructure::Attributes attributes;
+
+            Buffer(StorageMetadataPtr storage_metadata, const PostgreSQLTableStructure::Attributes & attributes_);
+
+            size_t getColumnsNum() const
+            {
+                const auto & sample_block = description.sample_block;
+                return sample_block.columns();
+            }
+        };
+
+        StoragePtr storage;
+        Buffer buffer;
+
+        explicit StorageData(const StorageInfo & storage_info);
+        StorageData(const StorageData & other) = delete;
+    };
+
+    using Storages = std::unordered_map<String, StorageData>;
+
+public:
     MaterializedPostgreSQLConsumer(
             ContextPtr context_,
             std::shared_ptr<postgres::Connection> connection_,
             const String & replication_slot_name_,
             const String & publication_name_,
             const String & start_lsn,
-            const size_t max_block_size_,
+            size_t max_block_size_,
             bool schema_as_a_part_of_table_name_,
             bool allow_automatic_update_,
-            Storages storages_,
+            StorageInfos storages_,
             const String & name_for_logger);
 
     bool consume(std::vector<std::pair<Int32, String>> & skipped_tables);
 
     /// Called from reloadFromSnapshot by replication handler. This method is needed to move a table back into synchronization
     /// process if it was skipped due to schema changes.
-    void updateNested(const String & table_name, StoragePtr nested_storage, Int32 table_id, const String & table_start_lsn);
+    void updateNested(const String & table_name, StorageInfo nested_storage_info, Int32 table_id, const String & table_start_lsn);
 
-    void addNested(const String & postgres_table_name, StoragePtr nested_storage, const String & table_start_lsn);
+    void addNested(const String & postgres_table_name, StorageInfo nested_storage_info, const String & table_start_lsn);
 
     void removeNested(const String & postgres_table_name);
 
@@ -55,25 +97,8 @@ private:
 
     bool isSyncAllowed(Int32 relation_id, const String & relation_name);
 
-    struct Buffer
-    {
-        ExternalResultDescription description;
-        MutableColumns columns;
-
-        /// Needed to pass to insert query columns list in syncTables().
-        std::shared_ptr<ASTExpressionList> columnsAST;
-
-        /// Needed for insertPostgreSQLValue() method to parse array
-        std::unordered_map<size_t, PostgreSQLArrayInfo> array_info;
-
-        Buffer(StoragePtr storage) { createEmptyBuffer(storage); }
-        void createEmptyBuffer(StoragePtr storage);
-    };
-
-    using Buffers = std::unordered_map<String, Buffer>;
-
-    static void insertDefaultValue(Buffer & buffer, size_t column_idx);
-    static void insertValue(Buffer & buffer, const std::string & value, size_t column_idx);
+    static void insertDefaultValue(StorageData::Buffer & buffer, size_t column_idx);
+    void insertValue(StorageData::Buffer & buffer, const std::string & value, size_t column_idx);
 
     enum class PostgreSQLQuery
     {
@@ -82,7 +107,7 @@ private:
         DELETE
     };
 
-    void readTupleData(Buffer & buffer, const char * message, size_t & pos, size_t size, PostgreSQLQuery type, bool old_value = false);
+    void readTupleData(StorageData::Buffer & buffer, const char * message, size_t & pos, size_t size, PostgreSQLQuery type, bool old_value = false);
 
     template<typename T>
     static T unhexN(const char * message, size_t pos, size_t n);
@@ -95,7 +120,7 @@ private:
     void markTableAsSkipped(Int32 relation_id, const String & relation_name);
 
     /// lsn - log sequnce nuumber, like wal offset (64 bit).
-    Int64 getLSNValue(const std::string & lsn)
+    static Int64 getLSNValue(const std::string & lsn)
     {
         UInt32 upper_half, lower_half;
         std::sscanf(lsn.data(), "%X/%X", &upper_half, &lower_half);
@@ -125,27 +150,10 @@ private:
     /// Holds `postgres_table_name` set.
     std::unordered_set<std::string> tables_to_sync;
 
-    /// `postgres_table_name` -> ReplacingMergeTree table.
+    /// `postgres_table_name` -> StorageData.
     Storages storages;
-    /// `postgres_table_name` -> In-memory buffer.
-    Buffers buffers;
 
     std::unordered_map<Int32, String> relation_id_to_name;
-
-    struct SchemaData
-    {
-        Int16 number_of_columns;
-        /// data_type_id and type_modifier
-        std::vector<std::pair<Int32, Int32>> column_identifiers;
-
-        SchemaData(Int16 number_of_columns_) : number_of_columns(number_of_columns_) {}
-    };
-
-    /// Cache for table schema data to be able to detect schema changes, because ddl is not
-    /// replicated with postgresql logical replication protocol, but some table schema info
-    /// is received if it is the first time we received dml message for given relation in current session or
-    /// if relation definition has changed since the last relation definition message.
-    std::unordered_map<Int32, SchemaData> schema_data;
 
     /// `postgres_relation_id` -> `start_lsn`
     /// skip_list contains relation ids for tables on which ddl was performed, which can break synchronization.

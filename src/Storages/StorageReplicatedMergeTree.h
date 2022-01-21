@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/shared_ptr_helper.h>
+#include <base/UUID.h>
 #include <atomic>
 #include <pcg_random.hpp>
 #include <Storages/IStorage.h>
@@ -86,6 +87,7 @@ class StorageReplicatedMergeTree final : public shared_ptr_helper<StorageReplica
 public:
     void startup() override;
     void shutdown() override;
+    void flush() override;
     ~StorageReplicatedMergeTree() override;
 
     std::string getName() const override { return "Replicated" + merging_params.getModeName() + "MergeTree"; }
@@ -236,6 +238,16 @@ public:
     /// Return false if data is still used by another node
     bool unlockSharedData(const IMergeTreeDataPart & part) const override;
 
+    /// Remove lock with old name for shared data part after rename
+    bool unlockSharedData(const IMergeTreeDataPart & part, const String & name) const override;
+
+    /// Unlock shared data part in zookeeper by part id
+    /// Return true if data unlocked
+    /// Return false if data is still used by another node
+    static bool unlockSharedDataByID(String part_id, const String & table_uuid, const String & part_name, const String & replica_name_,
+        DiskPtr disk, zkutil::ZooKeeperPtr zookeeper_, const MergeTreeSettings & settings, Poco::Logger * logger,
+        const String & zookeeper_path_old);
+
     /// Fetch part only if some replica has it on shared storage like S3
     bool tryToFetchIfShared(const IMergeTreeDataPart & part, const DiskPtr & disk, const String & path) override;
 
@@ -262,6 +274,12 @@ public:
     }
 
     bool createEmptyPartInsteadOfLost(zkutil::ZooKeeperPtr zookeeper, const String & lost_part_name);
+
+    // Return default or custom zookeeper name for table
+    String getZooKeeperName() const { return zookeeper_name; }
+
+    // Return table id, common for different replicas
+    String getTableSharedID() const;
 
     static const String getDefaultZooKeeperName() { return default_zookeeper_name; }
 
@@ -352,6 +370,9 @@ private:
     /// Event that is signalled (and is reset) by the restarting_thread when the ZooKeeper session expires.
     Poco::Event partial_shutdown_event {false};     /// Poco::Event::EVENT_MANUALRESET
 
+    std::atomic<bool> shutdown_called {false};
+    std::atomic<bool> flush_called {false};
+
     int metadata_version = 0;
     /// Threads.
 
@@ -392,6 +413,9 @@ private:
     /// speed.
     ThrottlerPtr replicated_fetches_throttler;
     ThrottlerPtr replicated_sends_throttler;
+
+    /// Global ID, synced via ZooKeeper between replicas
+    UUID table_shared_id;
 
     template <class Func>
     void foreachActiveParts(Func && func, bool select_sequential_consistency) const;
@@ -721,6 +745,26 @@ private:
 
     PartitionBlockNumbersHolder allocateBlockNumbersInAffectedPartitions(
         const MutationCommands & commands, ContextPtr query_context, const zkutil::ZooKeeperPtr & zookeeper) const;
+
+    static Strings getZeroCopyPartPath(const MergeTreeSettings & settings, DiskType disk_type, const String & table_uuid,
+        const String & part_name, const String & zookeeper_path_old);
+
+    static void createZeroCopyLockNode(const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_node);
+
+    bool removeDetachedPart(DiskPtr disk, const String & path, const String & part_name, bool is_freezed) override;
+
+    bool removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name, const String & table_uuid,
+        const String & zookeeper_name, const String & replica_name, const String & zookeeper_path);
+
+    /// Create freeze metadata for table and save in zookeeper. Required only if zero-copy replication enabled.
+    void createAndStoreFreezeMetadata(DiskPtr disk, DataPartPtr part, String backup_part_path) const override;
+
+    // Create table id if needed
+    void createTableSharedID();
+
+    /// Create ephemeral lock in zookeeper for part and disk which support zero copy replication.
+    /// If somebody already holding the lock -- return std::nullopt.
+    std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const DataPartPtr & part, const DiskPtr & disk) override;
 
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.

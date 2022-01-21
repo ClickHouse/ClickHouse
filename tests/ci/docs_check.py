@@ -57,6 +57,7 @@ if __name__ == "__main__":
     cmd = f"docker run --cap-add=SYS_PTRACE --volume={repo_path}:/repo_path --volume={test_output}:/output_path {docker_image}"
 
     run_log_path = os.path.join(test_output, 'runlog.log')
+    logging.info("Running command: '%s'", cmd)
 
     with TeePopen(cmd, run_log_path) as process:
         retcode = process.wait()

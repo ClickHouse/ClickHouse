@@ -650,7 +650,6 @@ public:
                 ".tmp_proj");
 
             next_level_parts.push_back(executeHere(tmp_part_merge_task));
-
             next_level_parts.back()->is_temp = true;
         }
 
@@ -1081,9 +1080,7 @@ private:
                 ctx->disk->createDirectories(destination);
                 for (auto p_it = ctx->disk->iterateDirectory(it->path()); p_it->isValid(); p_it->next())
                 {
-                    String p_destination = destination + "/";
-                    String p_file_name = p_it->name();
-                    p_destination += p_it->name();
+                    String p_destination = fs::path(destination) / p_it->name();
                     ctx->disk->createHardLink(p_it->path(), p_destination);
                 }
             }

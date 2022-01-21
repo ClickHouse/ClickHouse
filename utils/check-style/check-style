@@ -256,7 +256,7 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
 # Trailing whitespaces
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE_DIRS |
-    xargs grep -P ' $' | grep -P '.' && echo "^ Trailing whitespaces."
+    xargs grep -n -P ' $' | grep -n -P '.' && echo "^ Trailing whitespaces."
 
 # Forbid stringstream because it's easy to use them incorrectly and hard to debug possible issues
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
@@ -324,6 +324,11 @@ find $ROOT_PATH'/tests/integration' -name '*.py' |
 if [[ "$(grep -Po "M\([0-9]*," $ROOT_PATH/src/Common/ErrorCodes.cpp | wc -l)" != "$(grep -Po "M\([0-9]*," $ROOT_PATH/src/Common/ErrorCodes.cpp | sort | uniq | wc -l)" ]]
 then
     echo "ErrorCodes.cpp contains non-unique error codes"
+fi
+
+# Check that there is no system-wide libraries/headers in use.
+if git grep -e find_path -e find_library -- :**CMakeLists.txt; then
+    echo "There is find_path/find_library usage. ClickHouse should use everything bundled. Consider adding one more contrib module."
 fi
 
 # Forbid files that differ only by character case

@@ -1,4 +1,13 @@
-if (NOT USE_INTERNAL_ODBC_LIBRARY)
+option (ENABLE_ODBC "Enable ODBC library" ${ENABLE_LIBRARIES})
+if (NOT OS_LINUX)
+    if (ENABLE_ODBC)
+        message(STATUS "ODBC is only supported on Linux")
+    endif()
+    set (ENABLE_ODBC OFF CACHE INTERNAL "")
+endif ()
+
+if (NOT ENABLE_ODBC)
+    message(STATUS "Not using ODBC")
     return()
 endif()
 
@@ -23,6 +32,7 @@ set (SRCS_LTDL
 add_library (ltdl ${SRCS_LTDL})
 
 target_include_directories(ltdl
+    SYSTEM
     PRIVATE
         linux_x86_64/libltdl
     PUBLIC
@@ -276,6 +286,7 @@ target_link_libraries (unixodbc PRIVATE ltdl)
 # SYSTEM_FILE_PATH was changed to /etc
 
 target_include_directories (unixodbc
+    SYSTEM
     PRIVATE
         linux_x86_64/private
     PUBLIC
@@ -292,4 +303,5 @@ target_compile_options (unixodbc
         -Wno-reserved-id-macro
         -O2
 )
-target_compile_definitions (unixodbc INTERFACE USE_ODBC=1)
+
+add_library (ch_contrib::unixodbc ALIAS unixodbc)
