@@ -214,7 +214,7 @@ void DiskS3::moveFile(const String & from_path, const String & to_path, bool sen
     metadata_disk->moveFile(from_path, to_path);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, const ReadSettings & read_settings, std::optional<size_t>) const
+std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, const ReadSettings & read_settings, std::optional<size_t>, std::optional<size_t>) const
 {
     auto settings = current_settings.get();
     auto metadata = readMeta(path);
@@ -1002,6 +1002,7 @@ void DiskS3::restoreFileOperations(const RestoreInformation & restore_informatio
             if (metadata_disk->exists(to_path))
                 metadata_disk->removeRecursive(to_path);
 
+            createDirectories(directoryPath(to_path));
             metadata_disk->moveDirectory(from_path, to_path);
         }
     }

@@ -138,6 +138,21 @@ public:
 
     static AsynchronousReaderPtr getThreadPoolReader();
 
+    virtual std::unique_ptr<ReadBufferFromFileBase> readMetaFile(
+        const String & path,
+        const ReadSettings & settings,
+        std::optional<size_t> size) const override;
+
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeMetaFile(
+        const String & path,
+        size_t buf_size,
+        WriteMode mode) override;
+
+    virtual void removeMetaFileIfExists(
+        const String & path) override;
+
+    UInt32 getRefCount(const String & path) const override;
+
     static ThreadPool & getThreadPoolWriter();
 
 protected:
