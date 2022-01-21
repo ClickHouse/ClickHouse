@@ -37,6 +37,8 @@ void registerFunctionSign(FunctionFactory & factory);
 void registerFunctionMax2(FunctionFactory & factory);
 void registerFunctionMin2(FunctionFactory & factory);
 void registerVectorFunctions(FunctionFactory &);
+void registerFunctionDegrees(FunctionFactory & factory);
+void registerFunctionRadians(FunctionFactory & factory);
 
 
 void registerFunctionsMath(FunctionFactory & factory)
@@ -76,6 +78,8 @@ void registerFunctionsMath(FunctionFactory & factory)
     registerFunctionMax2(factory);
     registerFunctionMin2(factory);
     registerVectorFunctions(factory);
+    registerFunctionDegrees(factory);
+    registerFunctionRadians(factory);
 }
 
 }
