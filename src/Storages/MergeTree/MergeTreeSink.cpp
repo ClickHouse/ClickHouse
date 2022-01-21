@@ -36,8 +36,13 @@ void MergeTreeSink::onFinish()
 
 struct MergeTreeSink::PrevPart
 {
-    MergeTreeDataWriter::TempPart temp_part;
-    UInt64 elapsed_ns;
+    struct Partition
+    {
+        MergeTreeDataWriter::TempPart temp_part;
+        UInt64 elapsed_ns;
+    };
+
+    std::vector<Partition> partitions;
 };
 
 
@@ -46,6 +51,7 @@ void MergeTreeSink::consume(Chunk chunk)
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
 
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
+    std::vector<MergeTreeSink::PrevPart::Partition> partitions;
     for (auto & current_block : part_blocks)
     {
         Stopwatch watch;
@@ -61,35 +67,37 @@ void MergeTreeSink::consume(Chunk chunk)
         if (!temp_part.part)
             continue;
 
-        finishPrevPart();
-
-        prev_part = std::make_unique<MergeTreeSink::PrevPart>();
-        prev_part->temp_part = std::move(temp_part);
-        prev_part->elapsed_ns = elapsed_ns;
+        partitions.emplace_back(MergeTreeSink::PrevPart::Partition{.temp_part = std::move(temp_part), .elapsed_ns = elapsed_ns});
     }
+
+    finishPrevPart();
+    prev_part = std::make_unique<MergeTreeSink::PrevPart>();
+    prev_part->partitions = std::move(partitions);
 }
 
 void MergeTreeSink::finishPrevPart()
 {
-    if (prev_part)
+    if (!prev_part)
+        return;
+
+    for (auto & partition : prev_part->partitions)
     {
+        LOG_TRACE(&Poco::Logger::get("MergeTreeSink"), "Finalizing  part {}", partition.temp_part.part->getNameWithState());
+        partition.temp_part.finalize();
+        LOG_TRACE(&Poco::Logger::get("MergeTreeSink"), "Finalized part {}", partition.temp_part.part->getNameWithState());
 
-        LOG_TRACE(&Poco::Logger::get("MergeTreeSink"), "Finalizing  part {}", prev_part->temp_part.part->getNameWithState());
-        prev_part->temp_part.finalize();
-        LOG_TRACE(&Poco::Logger::get("MergeTreeSink"), "Finalized part {}", prev_part->temp_part.part->getNameWithState());
-
-        auto & part = prev_part->temp_part.part;
+        auto & part = partition.temp_part.part;
 
         /// Part can be deduplicated, so increment counters and add to part log only if it's really added
         if (storage.renameTempPartAndAdd(part, &storage.increment, nullptr, storage.getDeduplicationLog()))
         {
-            PartLog::addNewPart(storage.getContext(), part, prev_part->elapsed_ns);
+            PartLog::addNewPart(storage.getContext(), part, partition.elapsed_ns);
 
             /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
             storage.background_operations_assignee.trigger();
         }
 
-        LOG_TRACE(&Poco::Logger::get("MergeTreeSink"), "Renamed part {}", prev_part->temp_part.part->getNameWithState());
+        LOG_TRACE(&Poco::Logger::get("MergeTreeSink"), "Renamed part {}", partition.temp_part.part->getNameWithState());
     }
 
     prev_part.reset();
