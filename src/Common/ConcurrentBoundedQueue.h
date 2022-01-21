@@ -58,16 +58,16 @@ private:
         return true;
     }
 
-    bool popImpl(T & x, std::optional<UInt64> timeout_milliseconds)
+    bool popImpl(T & x, std::optional<UInt64> timeout_microseconds)
     {
         {
             std::unique_lock<std::mutex> queue_lock(queue_mutex);
 
             auto predicate = [&]() { return is_finished || !queue.empty(); };
 
-            if (timeout_milliseconds.has_value())
+            if (timeout_microseconds.has_value())
             {
-                bool wait_result = pop_condition.wait_for(queue_lock, std::chrono::milliseconds(timeout_milliseconds.value()), predicate);
+                bool wait_result = pop_condition.wait_for(queue_lock, std::chrono::microseconds(timeout_microseconds.value()), predicate);
 
                 if (!wait_result)
                     return false;
@@ -130,7 +130,12 @@ public:
     /// Returns false if queue is (finished and empty) or (object was not popped during timeout)
     [[nodiscard]] bool tryPop(T & x, UInt64 milliseconds = 0)
     {
-        return popImpl(x, milliseconds);
+        return popImpl(x, milliseconds * 1000);
+    }
+
+    [[nodiscard]] bool tryPopMicroms(T & x, UInt64 microseconds = 0)
+    {
+        return popImpl(x, microseconds);
     }
 
     /// Returns size of queue

@@ -130,6 +130,13 @@ public:
         return 0;
     }
 
+    std::string getLatestSnapshotPath() const
+    {
+        if (!existing_snapshots.empty())
+            return existing_snapshots.at(getLatestSnapshotIndex());
+        return "";
+    }
+
 private:
     void removeOutdatedSnapshotsIfNeeded();
 

@@ -20,6 +20,7 @@ struct KeeperStorageRequestProcessor;
 using KeeperStorageRequestProcessorPtr = std::shared_ptr<KeeperStorageRequestProcessor>;
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
 using ChildrenSet = std::shared_ptr<my_unordered_set<std::string>>;
+//using ChildrenSet = std::vector<std::string>;
 using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
 
 struct KeeperStorageSnapshot;
@@ -38,6 +39,7 @@ public:
         Coordination::Stat stat{};
         int32_t seq_num = 0;
         ChildrenSet children{nullptr};
+        //ChildrenSet children;
         uint32_t size_bytes; // save size to avoid calculate every time
 
         Node()
@@ -78,6 +80,38 @@ public:
         {
             return children ? children->end() : ChildrenSet::element_type::const_iterator();
         }
+
+        /*
+        bool addChild(const std::string& child)
+        {
+            children.push_back(child);
+            return true;
+        }
+        bool removeChild(const std::string& child)
+        {
+            for (auto it = children.begin(); it != children.end(); ++it)
+            {
+                if (*it == child)
+                {
+                    children.erase(it);
+                    return true;
+                }
+            }
+            return false;
+        }
+        size_t childSize() const
+        {
+            return children.size();
+        }
+        typename ChildrenSet::const_iterator childrenBegin() const
+        {
+            return children.begin();
+        }
+        typename ChildrenSet::const_iterator childrenEnd() const
+        {
+            return children.end();
+        }
+        */
 
         /// Object memory size
         uint64_t sizeInBytes() const

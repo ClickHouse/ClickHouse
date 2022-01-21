@@ -1,3 +1,9 @@
+#include <string>
+#include <iostream>
+#include <atomic>
+#include <thread>
+#include <asm-generic/errno.h>
+#include "Coordination/ACLMap.h"
 #include "Coordination/CoordinationSettings.h"
 #if defined(OS_LINUX)
 #   include <sys/sysinfo.h>
@@ -32,10 +38,54 @@ KeeperDispatcher::KeeperDispatcher()
 {
 }
 
+class Timer {
+public:
+    Timer() : duration_ms(0) {
+        reset();
+    }
+    uint64_t getTimeUs() {
+        auto cur = std::chrono::system_clock::now();
+        std::chrono::duration<double> elapsed = cur - start;
+        return static_cast<uint64_t>(elapsed.count() * 1000000);
+    }
+    void reset() {
+        start = std::chrono::system_clock::now();
+    }
+    void resetSec(size_t _duration_sec) {
+        duration_ms = _duration_sec * 1000;
+        reset();
+    }
+    void resetMs(size_t _duration_ms) {
+        duration_ms = _duration_ms;
+        reset();
+    }
+private:
+    std::chrono::time_point<std::chrono::system_clock> start;
+    size_t duration_ms;
+};
 
-void KeeperDispatcher::requestThread()
+void KeeperDispatcher::onResultReady(KeeperStorage::RequestsForSessions requests_for_sessions, std::shared_ptr<Timer> t,
+                    size_t myid, nuraft::cmd_result<nuraft::ptr<nuraft::buffer>>& result, nuraft::ptr<std::exception>& err)
 {
-    setThreadName("KeeperReqT");
+    pending_results[myid].fetch_sub(1);
+    if (result.get_result_code() != nuraft::cmd_result_code::OK)
+    {
+        // Something went wrong.
+        // This means committing this log failed,
+        // but the log itself is still in the log store.
+        std::cout << "failed: " << result.get_result_code() << ", time_us: " << t->getTimeUs() << ", err: " << err->what() << std::endl;
+    }
+    /// If we get some errors, than send them to clients
+    if (!result.get_accepted() || result.get_result_code() == nuraft::cmd_result_code::TIMEOUT)
+        addErrorResponses(requests_for_sessions, Coordination::Error::ZOPERATIONTIMEOUT);
+    else if (result.get_result_code() != nuraft::cmd_result_code::OK)
+        addErrorResponses(requests_for_sessions, Coordination::Error::ZCONNECTIONLOSS);
+    requests_for_sessions.clear();
+}
+
+void KeeperDispatcher::requestThread(size_t myid)
+{
+    setThreadName(("KeeperReqT" + std::to_string(myid)).c_str());
 #if defined(OS_LINUX)
     if (configuration_and_settings->coordination_settings->cpu_affinity)
     {
@@ -57,9 +107,10 @@ void KeeperDispatcher::requestThread()
     /// Requests from previous iteration. We store them to be able
     /// to send errors to the client.
     KeeperStorage::RequestsForSessions prev_batch;
-
+    size_t counter = 0;
     while (!shutdown_called)
     {
+        ++counter;
         KeeperStorage::RequestForSession request;
 
         auto coordination_settings = configuration_and_settings->coordination_settings;
@@ -73,7 +124,7 @@ void KeeperDispatcher::requestThread()
         /// read request. So reads are some kind of "separator" for writes.
         try
         {
-            if (requests_queue->tryPop(request, max_wait))
+            if (requests_queues[myid]->tryPop(request, max_wait))
             {
                 if (shutdown_called)
                     break;
@@ -91,10 +142,11 @@ void KeeperDispatcher::requestThread()
                     /// Waiting until previous append will be successful, or batch is big enough
                     /// has_result == false && get_result_code == OK means that our request still not processed.
                     /// Sometimes NuRaft set errorcode without setting result, so we check both here.
-                    while (prev_result && (!prev_result->has_result() && prev_result->get_result_code() == nuraft::cmd_result_code::OK) && current_batch.size() <= max_batch_size)
+                    //while (prev_result && (!prev_result->has_result() && prev_result->get_result_code() == nuraft::cmd_result_code::OK) && current_batch.size() <= max_batch_size)
+                    while (current_batch.size() <= max_batch_size)
                     {
                         /// Trying to get batch requests as fast as possible
-                        if (requests_queue->tryPop(request, 1))
+                        if (requests_queues[myid]->tryPopMicroms(request, 10))
                         {
                             /// Don't append read request into batch, we have to process them separately
                             if (!coordination_settings->quorum_reads && request.request->isReadRequest())
@@ -104,11 +156,11 @@ void KeeperDispatcher::requestThread()
                             }
                             else
                             {
-
                                 current_batch.emplace_back(request);
                             }
                         }
-
+                        else /// no more requests in queue
+                            break;
                         if (shutdown_called)
                             break;
                     }
@@ -118,10 +170,8 @@ void KeeperDispatcher::requestThread()
 
                 if (shutdown_called)
                     break;
-
-                /// Forcefully process all previous pending requests
-                if (prev_result)
-                    forceWaitAndProcessResult(prev_result, prev_batch);
+                if (counter % 10000 == 0)
+                    LOG_INFO(log, "KeeperDispatcher: requests_queues[{}] size: {}, batch {}", myid, requests_queues[myid]->size(), current_batch.size());
 
                 /// Process collected write requests batch
                 if (!current_batch.empty())
@@ -130,8 +180,16 @@ void KeeperDispatcher::requestThread()
 
                     if (result)
                     {
+                        pending_results[myid].fetch_add(1);
                         if (has_read_request) /// If we will execute read request next, than we have to process result now
-                            forceWaitAndProcessResult(result, current_batch);
+                        {
+                            while (pending_results[myid].load() > 0)
+                                std::this_thread::yield();
+                        }
+                        auto t = std::make_shared<Timer>();
+                        result->when_ready([this, current_batch, myid, t](nuraft::cmd_result<nuraft::ptr<nuraft::buffer>>& res, nuraft::ptr<std::exception>& err) {
+                            onResultReady(current_batch, t, myid, res, err);
+                        });
                     }
                     else
                     {
@@ -283,10 +341,10 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     /// Put close requests without timeouts
     if (request->getOpNum() == Coordination::OpNum::Close)
     {
-        if (!requests_queue->push(std::move(request_info)))
+        if (!requests_queues[session_id % thread_num]->push(std::move(request_info)))
             throw Exception("Cannot push request to queue", ErrorCodes::SYSTEM_ERROR);
     }
-    else if (!requests_queue->tryPush(std::move(request_info), configuration_and_settings->coordination_settings->operation_timeout_ms.totalMilliseconds()))
+    else if (!requests_queues[session_id % thread_num]->tryPush(std::move(request_info), configuration_and_settings->coordination_settings->operation_timeout_ms.totalMilliseconds()))
     {
         throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
     }
@@ -298,9 +356,14 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     LOG_DEBUG(log, "Initializing storage dispatcher");
 
     configuration_and_settings = KeeperConfigurationAndSettings::loadFromConfig(config, standalone_keeper);
-    requests_queue = std::make_unique<RequestsQueue>(configuration_and_settings->coordination_settings->max_requests_batch_size * 2);
+    for (size_t i = 0; i < thread_num; ++i)
+    {
+        requests_queues.emplace_back(std::make_unique<RequestsQueue>(configuration_and_settings->coordination_settings->max_requests_batch_size * 10));
+        request_threads.emplace_back(ThreadFromGlobalPool([this, i] { requestThread(i); }));
+    }
+    //requests_queue = std::make_unique<RequestsQueue>(configuration_and_settings->coordination_settings->max_requests_batch_size * 2);
+    //request_thread = ThreadFromGlobalPool([this] { requestThread(); });
 
-    request_thread = ThreadFromGlobalPool([this] { requestThread(); });
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
 
@@ -352,12 +415,16 @@ void KeeperDispatcher::shutdown()
             if (session_cleaner_thread.joinable())
                 session_cleaner_thread.join();
 
-            if (requests_queue)
+            //if (requests_queue)
             {
-                requests_queue->finish();
+                for (auto && queue : requests_queues)
+                    queue->finish();
+                //requests_queue->finish();
 
-                if (request_thread.joinable())
-                    request_thread.join();
+                for (auto && thread : request_threads)
+                    thread.join();
+                //if (request_thread.joinable())
+                //    request_thread.join();
             }
 
             responses_queue.finish();
@@ -379,11 +446,15 @@ void KeeperDispatcher::shutdown()
         KeeperStorage::RequestForSession request_for_session;
 
         /// Set session expired for all pending requests
-        while (requests_queue && requests_queue->tryPop(request_for_session))
+        //while (requests_queue && requests_queue->tryPop(request_for_session))
+        for (auto && queue : requests_queues)
         {
-            auto response = request_for_session.request->makeResponse();
-            response->error = Coordination::Error::ZSESSIONEXPIRED;
-            setResponse(request_for_session.session_id, response);
+            while (queue->tryPop(request_for_session))
+            {
+                auto response = request_for_session.request->makeResponse();
+                response->error = Coordination::Error::ZSESSIONEXPIRED;
+                setResponse(request_for_session.session_id, response);
+            }
         }
 
         /// Clear all registered sessions
@@ -436,7 +507,7 @@ void KeeperDispatcher::sessionCleanerTask()
                     request_info.session_id = dead_session;
                     {
                         std::lock_guard lock(push_request_mutex);
-                        if (!requests_queue->push(std::move(request_info)))
+                        if (!requests_queues[dead_session % thread_num]->push(std::move(request_info)))
                             LOG_INFO(log, "Cannot push close request to queue while cleaning outdated sessions");
                     }
 
@@ -540,7 +611,7 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
     /// Push new session request to queue
     {
         std::lock_guard lock(push_request_mutex);
-        if (!requests_queue->tryPush(std::move(request_info), session_timeout_ms))
+        if (!requests_queues[request_info.session_id % thread_num]->tryPush(std::move(request_info), session_timeout_ms))
             throw Exception("Cannot push session id request to queue within session timeout", ErrorCodes::TIMEOUT_EXCEEDED);
     }
 
@@ -666,7 +737,9 @@ Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
     result.has_leader = hasLeader();
     {
         std::lock_guard lock(push_request_mutex);
-        result.outstanding_requests_count = requests_queue->size();
+        for (auto && queue : requests_queues)
+            result.outstanding_requests_count += queue->size();
+        //result.outstanding_requests_count = requests_queue->size();
     }
     {
         std::lock_guard lock(session_to_response_callback_mutex);

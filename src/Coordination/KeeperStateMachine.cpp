@@ -77,6 +77,7 @@ void KeeperStateMachine::init()
             //latest_snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(latest_log_index);
             //auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_buf);
             auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(snapshot_manager.deserializeSnapshotBufferFromDisk(latest_log_index));
+            latest_snapshot_path = snapshot_manager.getLatestSnapshotPath();
             storage = std::move(snapshot_deserialization_result.storage);
             latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
             cluster_config = snapshot_deserialization_result.cluster_config;
@@ -322,6 +323,7 @@ int KeeperStateMachine::read_logical_snp_obj(
             return -1;
         }
         int fd = ::open(latest_snapshot_path.c_str(), O_RDONLY);
+        LOG_INFO(log, "Opening file {} for read_logical_snp_obj", latest_snapshot_path);
         if (fd < 0)
         {
             LOG_WARNING(log, "Error opening {}.", latest_snapshot_path);
