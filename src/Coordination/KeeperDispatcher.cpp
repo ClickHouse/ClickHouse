@@ -38,24 +38,30 @@ KeeperDispatcher::KeeperDispatcher()
 {
 }
 
-class Timer {
+class Timer
+{
 public:
-    Timer() : duration_ms(0) {
+    Timer() : duration_ms(0)
+    {
         reset();
     }
-    uint64_t getTimeUs() {
+    uint64_t getTimeUs()
+    {
         auto cur = std::chrono::system_clock::now();
         std::chrono::duration<double> elapsed = cur - start;
         return static_cast<uint64_t>(elapsed.count() * 1000000);
     }
-    void reset() {
+    void reset()
+    {
         start = std::chrono::system_clock::now();
     }
-    void resetSec(size_t _duration_sec) {
+    void resetSec(size_t _duration_sec)
+    {
         duration_ms = _duration_sec * 1000;
         reset();
     }
-    void resetMs(size_t _duration_ms) {
+    void resetMs(size_t _duration_ms)
+    {
         duration_ms = _duration_ms;
         reset();
     }
@@ -65,7 +71,7 @@ private:
 };
 
 void KeeperDispatcher::onResultReady(KeeperStorage::RequestsForSessions requests_for_sessions, std::shared_ptr<Timer> t,
-                    size_t myid, nuraft::cmd_result<nuraft::ptr<nuraft::buffer>>& result, nuraft::ptr<std::exception>& err)
+                    size_t myid, RaftResult & result, nuraft::ptr<std::exception>& err)
 {
     pending_results[myid].fetch_sub(1);
     if (result.get_result_code() != nuraft::cmd_result_code::OK)
@@ -73,7 +79,7 @@ void KeeperDispatcher::onResultReady(KeeperStorage::RequestsForSessions requests
         // Something went wrong.
         // This means committing this log failed,
         // but the log itself is still in the log store.
-        std::cout << "failed: " << result.get_result_code() << ", time_us: " << t->getTimeUs() << ", err: " << err->what() << std::endl;
+        LOG_WARNING(log, "Failed: retcode {}, time us: {}, message: {}", result.get_result_code(), t->getTimeUs(), err->what());
     }
     /// If we get some errors, than send them to clients
     if (!result.get_accepted() || result.get_result_code() == nuraft::cmd_result_code::TIMEOUT)
@@ -187,7 +193,8 @@ void KeeperDispatcher::requestThread(size_t myid)
                                 std::this_thread::yield();
                         }
                         auto t = std::make_shared<Timer>();
-                        result->when_ready([this, current_batch, myid, t](nuraft::cmd_result<nuraft::ptr<nuraft::buffer>>& res, nuraft::ptr<std::exception>& err) {
+                        result->when_ready([this, current_batch, myid, t](RaftResult & res, nuraft::ptr<std::exception>& err)
+                        {
                             onResultReady(current_batch, t, myid, res, err);
                         });
                     }

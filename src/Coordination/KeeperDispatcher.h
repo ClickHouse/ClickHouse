@@ -33,6 +33,7 @@ private:
     using RequestsQueue = ConcurrentBoundedQueue<KeeperStorage::RequestForSession>;
     using SessionToResponseCallback = std::unordered_map<int64_t, ZooKeeperResponseCallback>;
     using UpdateConfigurationQueue = ConcurrentBoundedQueue<ConfigUpdateAction>;
+    using RaftResult = nuraft::cmd_result<nuraft::ptr<nuraft::buffer>>;
 
     /// Size depends on coordination settings
     //std::unique_ptr<RequestsQueue> requests_queue;
@@ -106,8 +107,7 @@ private:
     /// Clears both arguments
     void forceWaitAndProcessResult(RaftAppendResult & result, KeeperStorage::RequestsForSessions & requests_for_sessions);
 
-    void onResultReady(KeeperStorage::RequestsForSessions requests_for_sessions, std::shared_ptr<Timer>t, size_t myid, nuraft::cmd_result<nuraft::ptr<nuraft::buffer>>& result,
-                   nuraft::ptr<std::exception>& err);
+    void onResultReady(KeeperStorage::RequestsForSessions requests_for_sessions, std::shared_ptr<Timer>t, size_t myid, RaftResult & result, nuraft::ptr<std::exception>& err);
 public:
     /// Just allocate some objects, real initialization is done by `intialize method`
     KeeperDispatcher();
