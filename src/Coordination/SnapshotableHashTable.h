@@ -129,7 +129,7 @@ public:
     using const_iterator = typename List::const_iterator;
     using ValueUpdater = std::function<void(V & value)>;
 
-    std::pair<StringRef, bool> insert(const std::string & key, const V & value)
+    std::pair<typename IndexMap::LookupResult, bool> insert(const std::string & key, const V & value)
     {
         size_t hash_value = map.hash(key);
         auto it = map.find(key, hash_value);
@@ -144,10 +144,10 @@ public:
 
             it->getMapped() = itr;
             updateDataSize(INSERT, key.size(), value.sizeInBytes(), 0);
-            return std::make_pair(it->getKey(), true);
+            return std::make_pair(it, true);
         }
 
-        return std::make_pair(it->getKey(), false);
+        return std::make_pair(it, false);
     }
 
     void insertOrReplace(const std::string & key, const V & value)

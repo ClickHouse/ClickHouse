@@ -8,7 +8,6 @@
 #include <Poco/SHA1Engine.h>
 #include <Poco/Base64Encoder.h>
 #include <boost/algorithm/string.hpp>
-#include <Common/hex.h>
 #include <Coordination/pathUtils.h>
 #include <sstream>
 #include <iomanip>
@@ -318,7 +317,7 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
         created_node.is_sequental = request.is_sequential;
 
         auto [map_key, _] = container.insert(path_created, std::move(created_node));
-        auto child_path = getBaseName(map_key);
+        auto child_path = getBaseName(map_key->getKey());
 
         int32_t parent_cversion = request.parent_cversion;
         int64_t prev_parent_zxid;
@@ -514,7 +513,7 @@ struct KeeperStorageRemoveRequestProcessor final : public KeeperStorageRequestPr
                 storage.acl_map.addUsage(prev_node.acl_id);
 
                 auto [map_key, _] = storage.container.insert(path, prev_node);
-                storage.container.updateValue(parentPath(path), [child_name = getBaseName(map_key)] (KeeperStorage::Node & parent)
+                storage.container.updateValue(parentPath(path), [child_name = getBaseName(map_key->getKey())] (KeeperStorage::Node & parent)
                 {
                     ++parent.stat.numChildren;
                     --parent.stat.cversion;
