@@ -1,3 +1,10 @@
+option (ENABLE_H3 "Enable H3" ${ENABLE_LIBRARIES})
+
+if(NOT ENABLE_H3)
+    message(STATUS "Not using H3")
+    return()
+endif()
+
 set(H3_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/h3/src/h3lib")
 set(H3_BINARY_DIR "${ClickHouse_BINARY_DIR}/contrib/h3/src/h3lib")
 
@@ -30,3 +37,5 @@ target_compile_definitions(h3 PRIVATE H3_HAVE_VLA)
 if(M_LIBRARY)
     target_link_libraries(h3 PRIVATE ${M_LIBRARY})
 endif()
+
+add_library(ch_contrib::h3 ALIAS h3)

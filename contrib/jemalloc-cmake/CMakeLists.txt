@@ -12,9 +12,6 @@ else ()
 endif ()
 
 if (NOT ENABLE_JEMALLOC)
-    add_library(jemalloc INTERFACE)
-    target_compile_definitions(jemalloc INTERFACE USE_JEMALLOC=0)
-
     message (STATUS "Not using jemalloc")
     return()
 endif ()
@@ -140,6 +137,4 @@ target_compile_options(jemalloc PRIVATE -Wno-redundant-decls)
 # for RTLD_NEXT
 target_compile_options(jemalloc PRIVATE -D_GNU_SOURCE)
 
-set_property(TARGET jemalloc APPEND PROPERTY INTERFACE_COMPILE_DEFINITIONS USE_JEMALLOC=1)
-
-message (STATUS "Using jemalloc")
+add_library(ch_contrib::jemalloc ALIAS jemalloc)

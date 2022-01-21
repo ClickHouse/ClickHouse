@@ -44,9 +44,10 @@
 #include <base/sleep.h>
 #include <base/logger_useful.h>
 
+#include <Storages/LiveView/StorageBlocks.h>
+
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/WindowView/WindowViewSource.h>
-#include <Storages/WindowView/WindowViewProxyStorage.h>
 
 #include <QueryPipeline/printPipeline.h>
 
@@ -204,7 +205,6 @@ namespace
         {
             String window_id_name;
             String window_id_alias;
-            Aliases * aliases;
         };
 
         static bool needChildVisit(ASTPtr &, const ASTPtr &) { return true; }
@@ -239,6 +239,23 @@ namespace
             {
                 if (auto identifier = std::dynamic_pointer_cast<ASTIdentifier>(node_ptr))
                     identifier->setShortName(data.window_id_name);
+            }
+        }
+    };
+
+    struct DropTableIdentifierMatcher
+    {
+        using Visitor = InDepthNodeVisitor<DropTableIdentifierMatcher, true>;
+
+        struct Data{};
+
+        static bool needChildVisit(ASTPtr &, const ASTPtr &) { return true; }
+
+        static void visit(ASTPtr & ast, Data &)
+        {
+            if (auto * t = ast->as<ASTIdentifier>())
+            {
+                ast = std::make_shared<ASTIdentifier>(t->shortName());
             }
         }
     };
@@ -467,16 +484,27 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
             current_header, getWindowIDColumnPosition(current_header), window_column_name_and_type, window_value);
     });
 
+    Pipes pipes;
     auto pipe = QueryPipelineBuilder::getPipe(std::move(builder));
-    auto parent_table_metadata = getParentStorage()->getInMemoryMetadataPtr();
-    auto required_columns = parent_table_metadata->getColumns();
-    required_columns.add(ColumnDescription("____timestamp", std::make_shared<DataTypeDateTime>()));
-    auto proxy_storage = std::make_shared<WindowViewProxyStorage>(
-        StorageID(getStorageID().database_name, "WindowViewProxyStorage"), required_columns,
-        std::move(pipe), QueryProcessingStage::WithMergeableState);
+    pipes.emplace_back(std::move(pipe));
+
+    auto creator = [&](const StorageID & blocks_id_global)
+    {
+        auto parent_table_metadata = getParentStorage()->getInMemoryMetadataPtr();
+        auto required_columns = parent_table_metadata->getColumns();
+        required_columns.add(ColumnDescription("____timestamp", std::make_shared<DataTypeDateTime>()));
+        return StorageBlocks::createStorage(blocks_id_global, required_columns, std::move(pipes), QueryProcessingStage::WithMergeableState);
+    };
+
+    TemporaryTableHolder blocks_storage(window_view_context, creator);
 
     InterpreterSelectQuery select(
-        getFinalQuery(), window_view_context, proxy_storage, nullptr, SelectQueryOptions(QueryProcessingStage::Complete));
+        getFinalQuery(),
+        window_view_context,
+        blocks_storage.getTable(),
+        blocks_storage.getTable()->getInMemoryMetadataPtr(),
+        SelectQueryOptions(QueryProcessingStage::Complete));
+
     builder = select.buildQueryPipeline();
 
     builder.addSimpleTransform([&](const Block & current_header)
@@ -581,15 +609,15 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
 
     auto columns_list = std::make_shared<ASTExpressionList>();
 
+    String window_id_column_name;
     if (is_time_column_func_now)
     {
         auto column_window = std::make_shared<ASTColumnDeclaration>();
         column_window->name = window_id_name;
         column_window->type = std::make_shared<ASTIdentifier>("UInt32");
         columns_list->children.push_back(column_window);
+        window_id_column_name = window_id_name;
     }
-
-    bool has_window_id = false;
 
     for (const auto & column : t_sample_block.getColumnsWithTypeAndName())
     {
@@ -600,27 +628,16 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
         column_dec->name = column.name;
         column_dec->type = ast;
         columns_list->children.push_back(column_dec);
-        if (!is_time_column_func_now && !has_window_id)
+        if (!is_time_column_func_now && window_id_column_name.empty() && startsWith(column.name, "windowID"))
         {
-            if (startsWith(column.name, "windowID"))
-                has_window_id = true;
+            window_id_column_name = column.name;
         }
     }
 
-    if (!is_time_column_func_now && !has_window_id)
+    if (window_id_column_name.empty())
         throw Exception(
             "The first argument of time window function should not be a constant value.",
             ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
-
-    ToIdentifierMatcher::Data query_data;
-    query_data.window_id_name = window_id_name;
-    query_data.window_id_alias = window_id_alias;
-    ToIdentifierMatcher::Visitor to_identifier_visitor(query_data);
-
-    ReplaceFunctionNowData time_now_data;
-    ReplaceFunctionNowVisitor time_now_visitor(time_now_data);
-    ReplaceFunctionWindowMatcher::Data func_hop_data;
-    ReplaceFunctionWindowMatcher::Visitor func_window_visitor(func_hop_data);
 
     auto new_storage = std::make_shared<ASTStorage>();
     /// storage != nullptr in case create window view with ENGINE syntax
@@ -637,6 +654,19 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
                 "The ENGINE of WindowView must be MergeTree family of table engines "
                 "including the engines with replication support");
 
+        ToIdentifierMatcher::Data query_data;
+        query_data.window_id_name = window_id_name;
+        query_data.window_id_alias = window_id_alias;
+        ToIdentifierMatcher::Visitor to_identifier_visitor(query_data);
+
+        ReplaceFunctionNowData time_now_data;
+        ReplaceFunctionNowVisitor time_now_visitor(time_now_data);
+        ReplaceFunctionWindowMatcher::Data func_hop_data;
+        ReplaceFunctionWindowMatcher::Visitor func_window_visitor(func_hop_data);
+
+        DropTableIdentifierMatcher::Data drop_table_identifier_data;
+        DropTableIdentifierMatcher::Visitor drop_table_identifier_visitor(drop_table_identifier_data);
+
         new_storage->set(new_storage->engine, storage->engine->clone());
 
         auto visit = [&](const IAST * ast, IAST *& field)
@@ -644,23 +674,21 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
             if (ast)
             {
                 auto node = ast->clone();
+                QueryNormalizer(normalizer_data).visit(node);
                 /// now() -> ____timestamp
                 if (is_time_column_func_now)
                 {
                     time_now_visitor.visit(node);
                     function_now_timezone = time_now_data.now_timezone;
                 }
+                drop_table_identifier_visitor.visit(node);
                 /// tumble/hop -> windowID
                 func_window_visitor.visit(node);
                 to_identifier_visitor.visit(node);
-                QueryNormalizer(normalizer_data).visit(node);
                 node->setAlias("");
                 new_storage->set(field, node);
             }
         };
-
-        for (auto & [alias_name, ast] : aliases)
-            ast = std::make_shared<ASTIdentifier>(ast->getColumnName());
 
         visit(storage->partition_by, new_storage->partition_by);
         visit(storage->primary_key, new_storage->primary_key);
@@ -674,35 +702,8 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
     {
         new_storage->set(new_storage->engine, makeASTFunction("AggregatingMergeTree"));
 
-        for (auto & child : inner_select_query->groupBy()->children)
-            if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(child.get()))
-                ast_with_alias->setAlias("");
-
-        auto order_by = std::make_shared<ASTFunction>();
-        order_by->name = "tuple";
-        order_by->arguments = inner_select_query->groupBy();
-        order_by->children.push_back(order_by->arguments);
-
-        ASTPtr order_by_ptr = order_by;
-        if (is_time_column_func_now)
-        {
-            time_now_visitor.visit(order_by_ptr);
-            function_now_timezone = time_now_data.now_timezone;
-        }
-        to_identifier_visitor.visit(order_by_ptr);
-
-        for (auto & child : order_by->arguments->children)
-        {
-            if (child->getColumnName() == window_id_name)
-            {
-                ASTPtr tmp = child;
-                child = order_by->arguments->children[0];
-                order_by->arguments->children[0] = tmp;
-                break;
-            }
-        }
-        new_storage->set(new_storage->order_by, order_by_ptr);
-        new_storage->set(new_storage->primary_key, std::make_shared<ASTIdentifier>(window_id_name));
+        new_storage->set(new_storage->order_by, std::make_shared<ASTIdentifier>(window_id_column_name));
+        new_storage->set(new_storage->primary_key, std::make_shared<ASTIdentifier>(window_id_column_name));
     }
 
     auto new_columns = std::make_shared<ASTColumns>();
@@ -1240,35 +1241,38 @@ void StorageWindowView::writeIntoWindowView(
                 return std::make_shared<ExpressionTransform>(stream_header, adding_column_actions);
             });
         }
-
-        InterpreterSelectQuery select_block(
-            window_view.getMergeableQuery(), local_context, {std::move(pipe)},
-            QueryProcessingStage::WithMergeableState);
-
-        builder = select_block.buildQueryPipeline();
-        builder.addSimpleTransform([&](const Block & current_header)
-        {
-            return std::make_shared<SquashingChunksTransform>(
-                current_header,
-                local_context->getSettingsRef().min_insert_block_size_rows,
-                local_context->getSettingsRef().min_insert_block_size_bytes);
-        });
     }
-    else
+
+    Pipes pipes;
+    pipes.emplace_back(std::move(pipe));
+
+    auto creator = [&](const StorageID & blocks_id_global)
     {
-        InterpreterSelectQuery select_block(
-            window_view.getMergeableQuery(), local_context, {std::move(pipe)},
-            QueryProcessingStage::WithMergeableState);
+        auto parent_metadata = window_view.getParentStorage()->getInMemoryMetadataPtr();
+        auto required_columns = parent_metadata->getColumns();
+        required_columns.add(ColumnDescription("____timestamp", std::make_shared<DataTypeDateTime>()));
+        return StorageBlocks::createStorage(blocks_id_global, required_columns, std::move(pipes), QueryProcessingStage::FetchColumns);
+    };
+    TemporaryTableHolder blocks_storage(local_context, creator);
 
-        builder = select_block.buildQueryPipeline();
-        builder.addSimpleTransform([&](const Block & current_header)
-        {
-            return std::make_shared<SquashingChunksTransform>(
-                current_header,
-                local_context->getSettingsRef().min_insert_block_size_rows,
-                local_context->getSettingsRef().min_insert_block_size_bytes);
-        });
+    InterpreterSelectQuery select_block(
+        window_view.getMergeableQuery(),
+        local_context,
+        blocks_storage.getTable(),
+        blocks_storage.getTable()->getInMemoryMetadataPtr(),
+        QueryProcessingStage::WithMergeableState);
 
+    builder = select_block.buildQueryPipeline();
+    builder.addSimpleTransform([&](const Block & current_header)
+    {
+        return std::make_shared<SquashingChunksTransform>(
+            current_header,
+            local_context->getSettingsRef().min_insert_block_size_rows,
+            local_context->getSettingsRef().min_insert_block_size_bytes);
+    });
+
+    if (!window_view.is_proctime)
+    {
         UInt32 block_max_timestamp = 0;
         if (window_view.is_watermark_bounded || window_view.allowed_lateness)
         {
