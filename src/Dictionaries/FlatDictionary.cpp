@@ -302,12 +302,8 @@ void FlatDictionary::blockToAttributes(const Block & block)
         for (size_t i = 0; i < keys_size; ++i)
         {
             auto key = keys_extractor.extractCurrentKey();
-            if (unlikely(loaded_keys[key]))
-                continue;
 
             setAttributeValue(attribute, key, attribute_column[i]);
-            ++element_count;
-
             keys_extractor.rollbackCurrentKey();
         }
 
@@ -365,6 +361,12 @@ void FlatDictionary::loadData()
     }
     else
         updateData();
+
+    element_count = 0;
+
+    size_t loaded_keys_size = loaded_keys.size();
+    for (size_t i = 0; i < loaded_keys_size; ++i)
+        element_count += loaded_keys[i];
 
     if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY, "{}: dictionary source is empty and 'require_nonempty' property is set.", getFullName());
@@ -517,14 +519,11 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const UInt64 key, 
 
         resize<ValueType>(attribute, key);
 
-        if (attribute.is_nullable_set)
+        if (attribute.is_nullable_set && value.isNull())
         {
-            if (value.isNull())
-            {
-                attribute.is_nullable_set->insert(key);
-                loaded_keys[key] = true;
-                return;
-            }
+            attribute.is_nullable_set->insert(key);
+            loaded_keys[key] = true;
+            return;
         }
 
         setAttributeValueImpl<AttributeType>(attribute, key, value.get<AttributeType>());
