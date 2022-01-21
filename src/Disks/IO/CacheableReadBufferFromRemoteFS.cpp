@@ -1,8 +1,5 @@
 #include "CacheableReadBufferFromRemoteFS.h"
 #include <IO/createReadBufferFromFileBase.h>
-#include <filesystem>
-
-namespace fs = std::filesystem;
 
 namespace ProfileEvents
 {
@@ -27,7 +24,7 @@ CacheableReadBufferFromRemoteFS::CacheableReadBufferFromRemoteFS(
     const ReadSettings & settings_,
     size_t read_until_position_)
     : SeekableReadBuffer(nullptr, 0)
-    , log(&Poco::Logger::get("CacheableReadBufferFromRemoteFS"))
+    , log(&Poco::Logger::get("CacheableReadBufferFromRemoteFS" + path_ + ""))
     , key(cache_->hash(path_))
     , cache(cache_)
     , reader(reader_)
@@ -57,56 +54,77 @@ void CacheableReadBufferFromRemoteFS::initialize(size_t offset, size_t size)
     initialized = true;
 }
 
+SeekableReadBufferPtr CacheableReadBufferFromRemoteFS::createCacheReadBuffer(size_t offset) const
+{
+    return createReadBufferFromFileBase(cache->path(key, offset), settings);
+}
+
 SeekableReadBufferPtr CacheableReadBufferFromRemoteFS::createReadBuffer(FileSegmentPtr file_segment)
 {
     auto range = file_segment->range();
-    LOG_TEST(log, "Current file segment: {}", range.toString());
 
-    assert(!impl || range.left == file_offset_of_buffer_end);
+    assert((impl && range.left == file_offset_of_buffer_end) || (!impl && range.left <= file_offset_of_buffer_end));
 
     SeekableReadBufferPtr implementation_buffer;
-    switch (file_segment->state())
+
+    auto download_state = file_segment->state();
+    while (true)
     {
-        case FileSegment::State::DOWNLOADED:
+        switch (download_state)
         {
-            read_type = ReadType::CACHE;
-            implementation_buffer = createReadBufferFromFileBase(cache->path(key, file_offset_of_buffer_end), settings);
-            break;
-        }
-        case FileSegment::State::DOWNLOADING:
-        {
-            if (file_segment->isDownloader())
+            case FileSegment::State::DOWNLOADED:
             {
-                download_path = cache->path(key, file_offset_of_buffer_end);
-                download_buffer = std::make_unique<WriteBufferFromFile>(download_path);
+                read_type = ReadType::CACHE;
+                implementation_buffer = createCacheReadBuffer(range.left);
 
-                read_type = ReadType::REMOTE_FS_READ_AND_DOWNLOAD;
-                implementation_buffer = reader;
+                break;
             }
-            else
+            case FileSegment::State::DOWNLOADING:
             {
-                auto download_state = file_segment->wait();
-
-                if (download_state == FileSegment::State::DOWNLOADED)
+                auto downloader_id = file_segment->getOrSetDownloader();
+                if (downloader_id == file_segment->getCallerId())
                 {
-                    read_type = ReadType::CACHE;
-                    implementation_buffer = createReadBufferFromFileBase(cache->path(key, file_offset_of_buffer_end), settings);
-                }
+                    read_type = ReadType::REMOTE_FS_READ_AND_DOWNLOAD;
+                    implementation_buffer = reader;
 
+                    break;
+                }
+                else
+                {
+                    download_state = file_segment->wait();
+                    continue;
+                }
+            }
+            case FileSegment::State::EMPTY:
+            {
+                auto downloader_id = file_segment->getOrSetDownloader();
+                if (downloader_id == file_segment->getCallerId())
+                {
+                    /// Note: setDownloader() sets file_segment->state = State::DOWNLOADING under segment mutex.
+                    /// After setDownloader() succeeds, current thread remains a downloader until
+                    /// file_segment->complete() is called by downloader or until downloader's
+                    /// FileSegmentsHolder is destructed.
+
+                    download_state = FileSegment::State::DOWNLOADING;
+                }
+                else
+                    download_state = file_segment->wait();
+
+                continue;
+            }
+            case FileSegment::State::NO_SPACE:
+            {
                 read_type = ReadType::REMOTE_FS_READ;
                 implementation_buffer = reader;
+
+                break;
             }
-            break;
         }
-        case FileSegment::State::ERROR:
-        case FileSegment::State::EMPTY:
-        {
-            read_type = ReadType::REMOTE_FS_READ;
-            implementation_buffer = reader;
-            break;
-        }
+
+        break;
     }
 
+    LOG_TEST(log, "Current file segment: {}, read type: {}", range.toString(), toString(read_type));
     download_current_segment = read_type == ReadType::REMOTE_FS_READ_AND_DOWNLOAD;
 
     /// TODO: Add seek avoiding for s3 on the lowest level.
@@ -114,6 +132,20 @@ SeekableReadBufferPtr CacheableReadBufferFromRemoteFS::createReadBuffer(FileSegm
     implementation_buffer->seek(range.left, SEEK_SET);
 
     return implementation_buffer;
+}
+
+void CacheableReadBufferFromRemoteFS::completeFileSegmentAndGetNext()
+{
+    auto file_segment_it = current_file_segment_it++;
+    auto range = (*file_segment_it)->range();
+    assert(file_offset_of_buffer_end > range.right);
+
+    if (download_current_segment)
+        (*current_file_segment_it)->complete();
+
+    /// Do not hold pointer to file segment if it is not needed anymore
+    /// so can become releasable and can be evicted from cache.
+    file_segments_holder->file_segments.erase(file_segment_it);
 }
 
 bool CacheableReadBufferFromRemoteFS::nextImpl()
@@ -129,18 +161,11 @@ bool CacheableReadBufferFromRemoteFS::nextImpl()
         auto current_read_range = (*current_file_segment_it)->range();
         assert(current_read_range.left <= file_offset_of_buffer_end);
 
-        /// Previous file segment was read till the end.
         if (file_offset_of_buffer_end > current_read_range.right)
         {
-            if (download_current_segment)
-            {
-                (*current_file_segment_it)->complete(FileSegment::State::DOWNLOADED);
+            completeFileSegmentAndGetNext();
 
-                download_buffer.reset();
-                download_path.clear();
-            }
-
-            if (++current_file_segment_it == file_segments_holder->file_segments.end())
+            if (current_file_segment_it == file_segments_holder->file_segments.end())
                 return false;
 
             impl = createReadBuffer(*current_file_segment_it);
@@ -158,22 +183,30 @@ bool CacheableReadBufferFromRemoteFS::nextImpl()
     assert(current_read_range.right >= file_offset_of_buffer_end);
 
     swap(*impl);
+
     bool result;
+    auto & file_segment = *current_file_segment_it;
+
     try
     {
         result = impl->next();
-        LOG_TEST(log, "Read {} bytes. Remaining bytes to read = {}", impl->buffer().size(), remaining_size_to_read);
 
-        if (result)
+        if (result && download_current_segment)
         {
-            if (download_current_segment)
-                download_buffer->write(working_buffer.begin(), working_buffer.size());
+            size_t size = impl->buffer().size();
+
+            if (file_segment->reserve(size))
+                file_segment->write(impl->buffer().begin(), impl->buffer().size());
+            else
+                file_segment->complete();
         }
     }
     catch (...)
     {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+
         if (download_current_segment)
-            (*current_file_segment_it)->complete(FileSegment::State::ERROR);
+            file_segment->complete();
 
         /// Note: If exception happens in another place -- out of scope of this buffer, then
         /// downloader's FileSegmentsHolder is responsible to set ERROR state and call notify.
@@ -186,8 +219,9 @@ bool CacheableReadBufferFromRemoteFS::nextImpl()
     {
         /// TODO: This resize() is needed only for local fs read, so it is better to
         /// just implement setReadUntilPosition() for local filesysteam read buffer?
+
         impl->buffer().resize(std::min(impl->buffer().size(), remaining_size_to_read));
-        file_offset_of_buffer_end += working_buffer.size();
+        file_offset_of_buffer_end += impl->buffer().size();
 
         switch (read_type)
         {
@@ -212,7 +246,11 @@ bool CacheableReadBufferFromRemoteFS::nextImpl()
 
     swap(*impl);
 
-    LOG_TEST(log, "Returning with {} bytes", working_buffer.size());
+    if (file_offset_of_buffer_end > current_read_range.right)
+        completeFileSegmentAndGetNext();
+
+    LOG_TEST(log, "Returning with {} bytes, last range: {}, current offset: {}",
+             working_buffer.size(), current_read_range.toString(), file_offset_of_buffer_end);
     return result;
 }
 
@@ -249,6 +287,16 @@ size_t CacheableReadBufferFromRemoteFS::getTotalSizeToRead()
 off_t CacheableReadBufferFromRemoteFS::getPosition()
 {
     return file_offset_of_buffer_end - available();
+}
+
+CacheableReadBufferFromRemoteFS::~CacheableReadBufferFromRemoteFS()
+{
+    std::optional<FileSegment::Range> range;
+    if (download_current_segment
+        && current_file_segment_it != file_segments_holder->file_segments.end())
+        range = (*current_file_segment_it)->range();
+    LOG_TEST(log, "Buffer reset. Current offset: {}, last download range: {}, state: {}",
+             file_offset_of_buffer_end, range ? range->toString() : "None", (*current_file_segment_it)->state());
 }
 
 }

@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <boost/noncopyable.hpp>
+#include <IO/WriteBufferFromFile.h>
 #include <Core/Types.h>
 #include <map>
 #include <base/logger_useful.h>
@@ -19,6 +20,8 @@ class FileSegment;
 using FileSegmentPtr = std::shared_ptr<FileSegment>;
 using FileSegments = std::list<FileSegmentPtr>;
 struct FileSegmentsHolder;
+
+class WriteBufferFromFile;
 
 /**
  * Local cache for remote filesystem files, represented as a set of non-overlapping non-empty file segments.
@@ -49,24 +52,15 @@ public:
      *
      * Segments in returned list are ordered in ascending order and represent a full contiguous
      * interval (no holes). Each segment in returned list has state: DOWNLOADED, DOWNLOADING or EMPTY.
-     * DOWNLOADING means that either the segment is being downloaded by some other thread or that it
-     * is going to be downloaded by the caller (just space reservation happened).
-     * EMPTY means that the segment not in cache, not being downloaded and cannot be downloaded
-     * by the caller (because of not enough space or max elements limit reached). E.g. returned list is never empty.
      *
      * As long as pointers to returned file segments are hold
      * it is guaranteed that these file segments are not removed from cache.
-     *
-     * If there is no suitable file segment found in cache, create a cache cell for the whole
-     * bytes range [offset, offset + size) as a new file segment and return it with DOWNLOADING state.
-     * If there are some intersecting segments (either DOWNLOADED or DOWNLOADING),
-     * but not the full range (e.g. there are holes), try reserve space for them.
-     * For segments with successfully reserved space - mark their state as DOWNLOADING,
-     * for those which cannot possibly be downloaded mark state as EMPTY.
      */
     virtual FileSegmentsHolder getOrSet(const Key & key, size_t offset, size_t size) = 0;
 
     virtual void remove(const Key & key) = 0;
+
+    virtual String dump() { return ""; }
 
 protected:
     String cache_base_path;
@@ -75,8 +69,22 @@ protected:
 
     mutable std::mutex mutex;
 
+    virtual bool set(
+        const Key & key, size_t offset, size_t size,
+        [[maybe_unused]] std::lock_guard<std::mutex> & segment_lock,
+        [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) = 0;
+
+    virtual bool tryReserve(
+        size_t size,
+        [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) = 0;
+
     virtual void remove(
-        const FileSegment & file_segment, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) = 0;
+        Key key, size_t offset,
+        [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) = 0;
+
+    virtual size_t getUseCount(
+        const FileSegment & file_segment,
+        [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) = 0;
 };
 
 using FileCachePtr = std::shared_ptr<FileCache>;
@@ -90,14 +98,18 @@ public:
     {
         DOWNLOADED,
         DOWNLOADING,
-        ERROR,
         EMPTY,
+        NO_SPACE,
     };
 
-    FileSegment(size_t offset_, size_t size_, const FileCache::Key & key_, FileCache * cache_, bool empty_ = false)
+    FileSegment(size_t offset_, size_t size_, const FileCache::Key & key_, FileCache * cache_, State download_state_)
         : segment_range(offset_, offset_ + size_ - 1)
-        , download_state(empty_ ? State::EMPTY : State::DOWNLOADING)
-        , downloader(getThreadId()), file_key(key_) , cache(cache_) {}
+        , download_state(download_state_)
+        , file_key(key_) , cache(cache_)
+    {
+        assert(download_state == State::DOWNLOADED || download_state == State::EMPTY);
+        std::cerr << "new segment: " << range().toString() << " and state: " << toString(download_state) << "\n";
+    }
 
     /// Represents an interval [left, right] including both boundaries.
     struct Range
@@ -118,32 +130,40 @@ public:
         return download_state;
     }
 
-    void complete(State state);
-
-    State wait();
-
-    void release();
+    static String toString(FileSegment::State state);
 
     const Range & range() const { return segment_range; }
 
     const FileCache::Key & key() const { return file_key; }
 
-    /// State can be DOWNLOADING either if segment is being downloaded by some other thread
-    /// or if current thread should download it. This method allows to tell the caller that
-    /// he is the one who must do the downloading.
-    bool isDownloader() const { return getThreadId() == downloader; }
+    size_t size() const { return reserved_size; }
 
-    static FileSegmentPtr createEmpty(
-        size_t offset, size_t size, const FileCache::Key & key, FileCache * cache)
-    {
-        return std::make_shared<FileSegment>(offset, size, key, cache, true);
-    }
+    static String getCallerId();
+
+    String getOrSetDownloader();
+
+    bool isDownloader() const;
+
+    void write(const char * from, size_t size);
+
+    void complete();
+
+    bool reserve(size_t size);
+
+    State wait();
 
 private:
+    size_t available() const { return reserved_size - downloaded_size; }
+
     Range segment_range;
 
-    State download_state;
-    UInt64 downloader;
+    State download_state; /// Protected by mutex and cache->mutex
+    String downloader_id;
+
+    std::unique_ptr<WriteBufferFromFile> download_buffer;
+
+    size_t downloaded_size = 0;
+    size_t reserved_size = 0;
 
     mutable std::mutex mutex;
     std::condition_variable cv;
@@ -164,13 +184,12 @@ struct FileSegmentsHolder : boost::noncopyable
     {
         for (auto & segment : file_segments)
         {
-            /// Notify with either DOWNLOADED or ERROR.
-            /// In general this must be done manually by downloader by calling segment->complete(state)
+            /// In general file segment is completed by downloader by calling segment->complete()
             /// for each segment once it has been downloaded or failed to download.
             /// But if not done by downloader, downloader's holder will do that.
 
             if (segment && segment->isDownloader())
-                segment->release();
+            segment->complete();
         }
     }
 
@@ -195,18 +214,21 @@ private:
     struct FileSegmentCell : boost::noncopyable
     {
         FileSegmentPtr file_segment;
-        LRUQueueIterator queue_iterator;
+
+        /// Iterator is put here on first reservation attempt, if successful.
+        std::optional<LRUQueueIterator> queue_iterator;
 
         bool releasable() const { return file_segment.unique(); }
 
-        size_t size() const { return file_segment->range().size(); }
+        size_t size() const { return file_segment->size(); }
 
-        FileSegmentCell(FileSegmentPtr file_segment_, LRUQueueIterator && queue_iterator_)
-            : file_segment(file_segment_), queue_iterator(queue_iterator_) {}
+        FileSegmentCell(FileSegmentPtr file_segment_) : file_segment(file_segment_) {}
 
         FileSegmentCell(FileSegmentCell && other)
             : file_segment(std::move(other.file_segment))
             , queue_iterator(std::move(other.queue_iterator)) {}
+
+        std::pair<Key, size_t> getKeyAndOffset() const { return std::make_pair(file_segment->key(), file_segment->range().left); }
     };
 
     using FileSegmentsByOffset = std::map<size_t, FileSegmentCell>;
@@ -216,6 +238,11 @@ private:
     LRUQueue queue;
     size_t current_size = 0;
     Poco::Logger * log;
+    bool startup_restore_finished = false;
+
+    size_t available() const { return max_size - current_size; }
+
+    void restore();
 
     /**
      * Get list of file segments which intesect with `range`.
@@ -230,23 +257,35 @@ private:
      */
     FileSegmentCell * setImpl(
         const Key & key, size_t offset, size_t size,
-        [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock);
-
-    void remove(const FileSegment & file_segment, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override;
-
-    void removeImpl(const Key & key, size_t offset, const LRUQueueIterator & queue_iterator, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock);
-
-    void removeCell(const Key & key, size_t offset, const LRUQueueIterator & queue_iterator, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock);
-
-    void useCell(const FileSegmentCell & cell, FileSegments & result, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock);
-
-    bool tryReserve(size_t size, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock);
+        FileSegment::State state, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock);
 
     FileSegmentCell * getCell(const Key & key, size_t offset, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock);
 
-    size_t available() const { return max_size - current_size; }
+    FileSegmentCell * addCell(
+        const Key & key, size_t offset, size_t size,
+        FileSegment::State state,
+        [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock);
 
-    void restore();
+    void useCell(const FileSegmentCell & cell, FileSegments & result, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock);
+
+    bool set(
+        const Key & key, size_t offset, size_t size,
+        [[maybe_unused]] std::lock_guard<std::mutex> & segment_lock,
+        [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override;
+
+    bool tryReserve(
+        size_t size,
+        [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override;
+
+    void remove(
+        Key key, size_t offset,
+        [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override;
+
+    size_t getUseCount(
+        const FileSegment & file_segment,
+        [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override;
+
+    void removeFileKey(const Key & key);
 
 public:
     struct Stat
@@ -258,6 +297,8 @@ public:
     };
 
     Stat getStat();
+
+    String dump() override;
 };
 
 }

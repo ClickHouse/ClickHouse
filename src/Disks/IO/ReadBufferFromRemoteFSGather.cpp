@@ -35,9 +35,13 @@ SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const S
         client_ptr, bucket, fs::path(metadata.remote_fs_root_path) / path, max_single_read_retries,
         settings, use_external_buffer, read_until_position, true);
 
-    auto cache = settings.remote_fs_cache;
-    if (cache)
-        return std::make_shared<CacheableReadBufferFromRemoteFS>(path, std::move(cache), std::move(reader), settings, read_until_position);
+    /// For threadpool reads query id is attached in ThreadPoolRemoreFSReader.
+    if (CurrentThread::isInitialized() && CurrentThread::get().getQueryContext())
+    {
+        auto cache = settings.remote_fs_cache;
+        if (cache)
+            return std::make_shared<CacheableReadBufferFromRemoteFS>(path, std::move(cache), std::move(reader), settings, read_until_position);
+    }
 
     return std::move(reader);
 }
