@@ -17,28 +17,26 @@ IMAGE_MAP = {
 def check_image_exists_locally(image_name):
     try:
         output = subprocess.check_output(
-            "docker images -q {} 2> /dev/null".format(image_name), shell=True
+            f"docker images -q {image_name} 2> /dev/null", shell=True
         )
         return output != ""
-    except subprocess.CalledProcessError as ex:
+    except subprocess.CalledProcessError:
         return False
 
 
 def pull_image(image_name):
     try:
-        subprocess.check_call("docker pull {}".format(image_name), shell=True)
+        subprocess.check_call(f"docker pull {image_name}", shell=True)
         return True
-    except subprocess.CalledProcessError as ex:
-        logging.info("Cannot pull image {}".format(image_name))
+    except subprocess.CalledProcessError:
+        logging.info(f"Cannot pull image {image_name}".format())
         return False
 
 
 def build_image(image_name, filepath):
     context = os.path.dirname(filepath)
-    build_cmd = "docker build --network=host -t {} -f {} {}".format(
-        image_name, filepath, context
-    )
-    logging.info("Will build image with cmd: '{}'".format(build_cmd))
+    build_cmd = f"docker build --network=host -t {image_name} -f {filepath} {context}"
+    logging.info("Will build image with cmd: '%s'", build_cmd)
     subprocess.check_call(
         build_cmd,
         shell=True,
@@ -57,16 +55,13 @@ def run_docker_image_with_env(
     else:
         interactive = ""
 
-    cmd = "docker run --network=host --rm --volume={output_path}:/output --volume={ch_root}:/build --volume={ccache_dir}:/ccache {env} {interactive} {img_name}".format(
-        output_path=output,
-        ch_root=ch_root,
-        ccache_dir=ccache_dir,
-        env=env_part,
-        img_name=image_name + ":" + docker_image_version,
-        interactive=interactive
+    cmd = (
+        f"docker run --network=host --rm --volume={output}:/output "
+        f"--volume={ch_root}:/build --volume={ccache_dir}:/ccache {env_part} "
+        f"{interactive} {image_name}:{docker_image_version}"
     )
 
-    logging.info("Will build ClickHouse pkg with cmd: '{}'".format(cmd))
+    logging.info("Will build ClickHouse pkg with cmd: '%s'", cmd)
 
     subprocess.check_call(cmd, shell=True)
 
@@ -154,16 +149,16 @@ def parse_env_variables(
     cxx = cc.replace("gcc", "g++").replace("clang", "clang++")
 
     if image_type == "deb":
-        result.append("DEB_CC={}".format(cc))
-        result.append("DEB_CXX={}".format(cxx))
+        result.append(f"DEB_CC={cc}")
+        result.append(f"DEB_CXX={cxx}")
         # For building fuzzers
-        result.append("CC={}".format(cc))
-        result.append("CXX={}".format(cxx))
+        result.append(f"CC={cc}")
+        result.append(f"CXX={cxx}")
     elif image_type == "binary":
-        result.append("CC={}".format(cc))
-        result.append("CXX={}".format(cxx))
-        cmake_flags.append("-DCMAKE_C_COMPILER=`which {}`".format(cc))
-        cmake_flags.append("-DCMAKE_CXX_COMPILER=`which {}`".format(cxx))
+        result.append(f"CC={cc}")
+        result.append(f"CXX={cxx}")
+        cmake_flags.append(f"-DCMAKE_C_COMPILER=`which {cc}`")
+        cmake_flags.append(f"-DCMAKE_CXX_COMPILER=`which {cxx}`")
 
     # Create combined output archive for split build and for performance tests.
     if package_type == "performance":
@@ -173,12 +168,12 @@ def parse_env_variables(
         result.append("COMBINED_OUTPUT=shared_build")
 
     if sanitizer:
-        result.append("SANITIZER={}".format(sanitizer))
+        result.append(f"SANITIZER={sanitizer}")
     if build_type:
-        result.append("BUILD_TYPE={}".format(build_type))
+        result.append(f"BUILD_TYPE={build_type}")
 
     if cache == "distcc":
-        result.append("CCACHE_PREFIX={}".format(cache))
+        result.append(f"CCACHE_PREFIX={cache}")
 
     if cache:
         result.append("CCACHE_DIR=/ccache")
@@ -189,12 +184,12 @@ def parse_env_variables(
         # result.append("CCACHE_UMASK=777")
 
     if distcc_hosts:
-        hosts_with_params = ["{}/24,lzo".format(host) for host in distcc_hosts] + [
+        hosts_with_params = [f"{host}/24,lzo" for host in distcc_hosts] + [
             "localhost/`nproc`"
         ]
-        result.append('DISTCC_HOSTS="{}"'.format(" ".join(hosts_with_params)))
+        result.append('DISTCC_HOSTS="' + " ".join(hosts_with_params) + '"')
     elif cache == "distcc":
-        result.append('DISTCC_HOSTS="{}"'.format("localhost/`nproc`"))
+        result.append('DISTCC_HOSTS="localhost/`nproc`"')
 
     if alien_pkgs:
         result.append(
@@ -230,10 +225,10 @@ def parse_env_variables(
         cmake_flags.append("-DWITH_COVERAGE=1")
 
     if version:
-        result.append("VERSION_STRING='{}'".format(version))
+        result.append(f"VERSION_STRING='{version}'")
 
     if author:
-        result.append("AUTHOR='{}'".format(author))
+        result.append(f"AUTHOR='{author}'")
 
     if official:
         cmake_flags.append("-DYANDEX_OFFICIAL_BUILD=1")
@@ -324,7 +319,7 @@ if __name__ == "__main__":
         raise Exception("Can add additional binaries only in deb build")
 
     if args.with_binaries != "" and image_type == "deb":
-        logging.info("Should place {} to output".format(args.with_binaries))
+        logging.info("Should place %s to output", args.with_binaries)
 
     dockerfile = os.path.join(ch_root, "docker/packager", image_type, "Dockerfile")
     image_with_version = image_name + ":" + args.docker_image_version
@@ -361,4 +356,4 @@ if __name__ == "__main__":
         args.ccache_dir,
         args.docker_image_version,
     )
-    logging.info("Output placed into {}".format(args.output_dir))
+    logging.info("Output placed into %s", args.output_dir)
