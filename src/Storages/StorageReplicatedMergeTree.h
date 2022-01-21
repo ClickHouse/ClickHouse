@@ -87,6 +87,7 @@ class StorageReplicatedMergeTree final : public shared_ptr_helper<StorageReplica
 public:
     void startup() override;
     void shutdown() override;
+    void flush() override;
     ~StorageReplicatedMergeTree() override;
 
     std::string getName() const override { return "Replicated" + merging_params.getModeName() + "MergeTree"; }
@@ -243,7 +244,7 @@ public:
     /// Unlock shared data part in zookeeper by part id
     /// Return true if data unlocked
     /// Return false if data is still used by another node
-    static bool unlockSharedDataByID(String id, const String & table_uuid, const String & part_name, const String & replica_name_,
+    static bool unlockSharedDataByID(String part_id, const String & table_uuid, const String & part_name, const String & replica_name_,
         DiskPtr disk, zkutil::ZooKeeperPtr zookeeper_, const MergeTreeSettings & settings, Poco::Logger * logger,
         const String & zookeeper_path_old);
 
@@ -368,6 +369,9 @@ private:
 
     /// Event that is signalled (and is reset) by the restarting_thread when the ZooKeeper session expires.
     Poco::Event partial_shutdown_event {false};     /// Poco::Event::EVENT_MANUALRESET
+
+    std::atomic<bool> shutdown_called {false};
+    std::atomic<bool> flush_called {false};
 
     int metadata_version = 0;
     /// Threads.
@@ -757,6 +761,10 @@ private:
 
     // Create table id if needed
     void createTableSharedID();
+
+    /// Create ephemeral lock in zookeeper for part and disk which support zero copy replication.
+    /// If somebody already holding the lock -- return std::nullopt.
+    std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const DataPartPtr & part, const DiskPtr & disk) override;
 
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.

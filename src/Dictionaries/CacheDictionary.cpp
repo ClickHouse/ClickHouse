@@ -69,7 +69,7 @@ CacheDictionary<dictionary_key_type>::CacheDictionary(
     , rnd_engine(randomSeed())
 {
     if (!source_ptr->supportsSelectiveLoad())
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: source cannot be used with CacheDictionary", full_name);
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: source cannot be used with CacheDictionary", getFullName());
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -494,7 +494,8 @@ Pipe CacheDictionary<dictionary_key_type>::read(const Names & column_names, size
         if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
         {
             auto keys = cache_storage_ptr->getCachedSimpleKeys();
-            key_columns = {ColumnWithTypeAndName(getColumnFromPODArray(keys), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
+            auto keys_column = getColumnFromPODArray(std::move(keys));
+            key_columns = {ColumnWithTypeAndName(std::move(keys_column), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
         }
         else
         {

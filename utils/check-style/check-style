@@ -326,5 +326,10 @@ then
     echo "ErrorCodes.cpp contains non-unique error codes"
 fi
 
+# Check that there is no system-wide libraries/headers in use.
+if git grep -e find_path -e find_library -- :**CMakeLists.txt; then
+    echo "There is find_path/find_library usage. ClickHouse should use everything bundled. Consider adding one more contrib module."
+fi
+
 # Forbid files that differ only by character case
 find $ROOT_PATH | sort -f | uniq -i -c | awk '{ if ($1 > 1) print }'
