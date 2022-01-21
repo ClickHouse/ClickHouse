@@ -291,30 +291,27 @@ void FlatDictionary::blockToAttributes(const Block & block)
 
     DictionaryKeysArenaHolder<DictionaryKeyType::Simple> arena_holder;
     DictionaryKeysExtractor<DictionaryKeyType::Simple> keys_extractor({ keys_column }, arena_holder.getComplexKeyArena());
-    auto keys = keys_extractor.extractAllKeys();
+    size_t keys_size = keys_extractor.getKeysSize();
 
-    HashSet<UInt64> already_processed_keys;
-
-    size_t key_offset = 1;
+    static constexpr size_t key_offset = 1;
     for (size_t attribute_index = 0; attribute_index < attributes.size(); ++attribute_index)
     {
         const IColumn & attribute_column = *block.safeGetByPosition(attribute_index + key_offset).column;
         Attribute & attribute = attributes[attribute_index];
 
-        for (size_t i = 0; i < keys.size(); ++i)
+        for (size_t i = 0; i < keys_size; ++i)
         {
-            auto key = keys[i];
-
-            if (already_processed_keys.find(key) != nullptr)
+            auto key = keys_extractor.extractCurrentKey();
+            if (unlikely(loaded_keys[key]))
                 continue;
-
-            already_processed_keys.insert(key);
 
             setAttributeValue(attribute, key, attribute_column[i]);
             ++element_count;
+
+            keys_extractor.rollbackCurrentKey();
         }
 
-        already_processed_keys.clear();
+        keys_extractor.reset();
     }
 }
 
