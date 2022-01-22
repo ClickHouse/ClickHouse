@@ -1295,7 +1295,8 @@ bool MutateTask::prepare()
         ctx->source_part, ctx->updated_header, ctx->storage_columns,
         ctx->source_part->getSerializationInfos(), ctx->commands_for_part);
 
-    ctx->new_data_part->setColumns(new_columns, new_infos);
+    ctx->new_data_part->setColumns(new_columns);
+    ctx->new_data_part->setSerializationInfos(new_infos);
     ctx->new_data_part->partition.assign(ctx->source_part->partition);
 
     ctx->disk = ctx->new_data_part->volume->getDisk();

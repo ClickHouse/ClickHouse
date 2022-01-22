@@ -60,12 +60,14 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const int resolution = col_hindex->getUInt(row);
+            const UInt8 resolution = col_hindex->getUInt(row);
             if (resolution > MAX_H3_RES)
                 throw Exception(
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                     "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is ",
-                    resolution, getName(), MAX_H3_RES);
+                    toString(resolution),
+                    getName(),
+                    MAX_H3_RES);
 
             // Numerical constant is 180 degrees / pi / Earth radius, Earth radius is from h3 sources
             Float64 res = 8.99320592271288084e-6 * getHexagonEdgeLengthAvgM(resolution);
