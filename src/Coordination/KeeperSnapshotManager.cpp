@@ -20,7 +20,6 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT_VERSION;
     extern const int UNKNOWN_SNAPSHOT;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -171,7 +170,7 @@ void KeeperStorageSnapshot::serialize(const KeeperStorageSnapshot & snapshot, Wr
         const auto & node = it->value;
         /// Benign race condition possible while taking snapshot: NuRaft decide to create snapshot at some log id
         /// and only after some time we lock storage and enable snapshot mode. So snapshot_container_size can be
-        /// slighly bigger than required.
+        /// slightly bigger than required.
         if (static_cast<size_t>(node.stat.mzxid) > snapshot.snapshot_meta->get_last_log_idx())
             break;
 

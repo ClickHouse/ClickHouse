@@ -663,6 +663,7 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
         Coordination::ZooKeeperResponsePtr response_ptr = zk_request->makeResponse();
         Coordination::ZooKeeperListResponse & response = dynamic_cast<Coordination::ZooKeeperListResponse &>(*response_ptr);
         Coordination::ZooKeeperListRequest & request = dynamic_cast<Coordination::ZooKeeperListRequest &>(*zk_request);
+
         auto it = container.find(request.path);
         if (it == container.end())
         {
@@ -677,9 +678,7 @@ struct KeeperStorageListRequestProcessor final : public KeeperStorageRequestProc
             response.names.reserve(it->value.children.size());
 
             for (const auto child : it->value.children)
-            {
                 response.names.push_back(child.toString());
-            }
 
             response.stat = it->value.stat;
             response.error = Coordination::Error::ZOK;
@@ -1088,7 +1087,6 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
         {
             for (const auto & ephemeral_path : it->second)
             {
-                container.erase(ephemeral_path);
                 container.updateValue(parentPath(ephemeral_path), [&ephemeral_path] (KeeperStorage::Node & parent)
                 {
                     --parent.stat.numChildren;
@@ -1097,6 +1095,8 @@ KeeperStorage::ResponsesForSessions KeeperStorage::processRequest(const Coordina
                     parent.children.erase(base_name);
                     parent.size_bytes -= base_name.size;
                 });
+
+                container.erase(ephemeral_path);
 
                 auto responses = processWatchesImpl(ephemeral_path, watches, list_watches, Coordination::Event::DELETED);
                 results.insert(results.end(), responses.begin(), responses.end());
