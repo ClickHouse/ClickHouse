@@ -9,6 +9,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Common/HashTable/HashTable.h>
 #include <Storages/StatisticsDescription.h>
+#include <Storages/Statistics.h>
 
 constexpr auto PART_STATS_FILE_NAME = "part_stats";
 constexpr auto PART_STATS_FILE_EXT = "bin_stats";
@@ -16,45 +17,7 @@ constexpr auto PART_STATS_FILE_EXT = "bin_stats";
 namespace DB
 {
 
-class IMergeTreeStatistic {
-public:
-    virtual ~IMergeTreeStatistic() = default;
-
-    virtual const String& name() const = 0;
-
-    virtual bool empty() const = 0;
-    virtual void merge(const std::shared_ptr<IMergeTreeStatistic> & other) = 0;
-
-    virtual const String & getColumnsRequiredForStatisticCalculation() const = 0;
-
-    virtual void serializeBinary(WriteBuffer & ostr) const = 0;
-    virtual void deserializeBinary(ReadBuffer & istr) = 0;
-};
-
-enum class StatisticType
-{
-    COLUMN_DISRIBUTION = 1,
-    //COLUMN_MOST_FREQUENT, -- in list => bad selectivity
-    //COLUMN_DISTINCT_COUNT, -- for join/group by
-    //COLUMN_LOW_CARDINALITY_COUNT, -- exact per block stats for low cardinality
-    //COLUMN_COUNT_SKETCH, -- per block count
-    //COLUMN_NULL_COUNT, -- like postgres
-    //...
-};
-
-// Distribution statistic per one column
-class IMergeTreeColumnDistributionStatistic : public IMergeTreeStatistic {
-public:
-    // some quantile of value smaller than value
-    virtual double estimateQuantileLower(const Field& value) const = 0;
-    // some quantile of value greater than value
-    virtual double estimateQuantileUpper(const Field& value) const = 0;
-
-    // upper bound of probability of lower <= value <= upper
-    virtual double estimateProbability(const Field& lower, const Field& upper) const = 0;
-};
-
-using IMergeTreeColumnDistributionStatisticPtr = std::shared_ptr<IMergeTreeColumnDistributionStatistic>;
+using IMergeTreeColumnDistributionStatisticPtr = std::shared_ptr<IColumnDistributionStatistic>;
 using IMergeTreeColumnDistributionStatisticPtrs = std::vector<IMergeTreeColumnDistributionStatisticPtr>;
 
 class IMergeTreeColumnDistributionStatisticCollector {
@@ -76,39 +39,41 @@ public:
 using IMergeTreeColumnDistributionStatisticCollectorPtr = std::shared_ptr<IMergeTreeColumnDistributionStatisticCollector>;
 using IMergeTreeColumnDistributionStatisticCollectors = std::vector<IMergeTreeColumnDistributionStatisticCollectorPtr>;
 
-class MergeTreeColumnDistributionStatistics /*: public IMergeTreePerColumnStatistics */{
+class MergeTreeColumnDistributionStatistics : public IColumnDistributionStatistics {
 public:
-    bool empty() const;
+    bool empty() const override;
 
-    void merge(const MergeTreeColumnDistributionStatistics & other);
+    void merge(const std::shared_ptr<IColumnDistributionStatistics> & other)  override;
 
-    void serializeBinary(WriteBuffer & ostr) const;
-    void deserializeBinary(ReadBuffer & istr);
+    void serializeBinary(WriteBuffer & ostr) const  override;
+    void deserializeBinary(ReadBuffer & istr)  override;
 
-    std::optional<double> estimateProbability(const String & column, const Field & lower, const Field & upper) const;
-    void add(const String & name, const IMergeTreeColumnDistributionStatisticPtr & stat);
-    void remove(const String & name);
+    std::optional<double> estimateProbability(const String & column, const Field & lower, const Field & upper) const override;
+    void add(const String & name, const IMergeTreeColumnDistributionStatisticPtr & stat) override;
+    void remove(const String & name) override;
 
 private:
     std::unordered_map<String, IMergeTreeColumnDistributionStatisticPtr> column_to_stats;
 };
 
+using MergeTreeColumnDistributionStatisticsPtr = std::shared_ptr<MergeTreeColumnDistributionStatistics>;
+
 // Stats stored for each part
 // TODO: all stats, not only merge tree
-class MergeTreeStatistics {
+class MergeTreeStatistics : public IStatistics {
 public:
-    bool empty() const;
+    bool empty() const override;
 
-    void merge(const std::shared_ptr<MergeTreeStatistics>& other);
+    void merge(const std::shared_ptr<IStatistics>& other) override;
 
-    void serializeBinary(WriteBuffer & ostr) const;
-    void deserializeBinary(ReadBuffer & istr);
+    void serializeBinary(WriteBuffer & ostr) const override;
+    void deserializeBinary(ReadBuffer & istr) override;
 
-    void setColumnDistributionStatistics(MergeTreeColumnDistributionStatistics && stat);
-    const MergeTreeColumnDistributionStatistics & getColumnDistributionStatistics() const;
+    void setColumnDistributionStatistics(IColumnDistributionStatisticsPtr && stat) override;
+    IConstColumnDistributionStatisticsPtr getColumnDistributionStatistics() const override;
 
 private:
-    MergeTreeColumnDistributionStatistics column_distributions;
+    MergeTreeColumnDistributionStatisticsPtr column_distributions;
 };
 
 using MergeTreeStatisticsPtr = std::shared_ptr<MergeTreeStatistics>;

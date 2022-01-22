@@ -193,7 +193,7 @@ static double scoreSelectivity(const MergeTreeStatisticsPtr & stats, const ASTPt
             const auto & field = literal->value;
 
             // everything is converted to float
-            return stats->getColumnDistributionStatistics().estimateProbability(
+            return stats->getColumnDistributionStatistics()->estimateProbability(
                     ident->getColumnName(),
                     field,
                     field).value_or(1);

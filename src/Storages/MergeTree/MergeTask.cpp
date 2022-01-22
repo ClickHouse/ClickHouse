@@ -56,8 +56,8 @@ static void extractMergingAndGatheringColumns(
                   std::inserter(key_columns, key_columns.end()));
     }
 
-    /// just for now
     /// TODO: support vertical merge for stats (each stat is calculatated using one column).
+    /// Multiple stats files???
     for (const auto & stat : stats)
     {
         std::copy(stat.column_names.cbegin(), stat.column_names.cend(),

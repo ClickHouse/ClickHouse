@@ -348,10 +348,10 @@ void MergeTreeDataPartWriterOnDisk::finishStatisticsSerialization(MergeTreeData:
         WriteMode::Rewrite);
     auto stats_stream = std::make_unique<HashingWriteBuffer>(*stats_file_stream);
     
-    MergeTreeColumnDistributionStatistics column_distribution_stats;
+    auto column_distribution_stats = std::make_shared<MergeTreeColumnDistributionStatistics>();
     for (auto & stats_collector : stats_collectors)
     {
-        column_distribution_stats.add(stats_collector->column(), stats_collector->getStatisticAndReset());
+        column_distribution_stats->add(stats_collector->column(), stats_collector->getStatisticAndReset());
     }
 
     MergeTreeStatistics stats;

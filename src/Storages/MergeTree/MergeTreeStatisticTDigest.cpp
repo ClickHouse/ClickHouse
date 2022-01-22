@@ -38,7 +38,7 @@ bool MergeTreeColumnDistributionStatisticTDigest::empty() const
     return is_empty;
 }
 
-void MergeTreeColumnDistributionStatisticTDigest::merge(const std::shared_ptr<IMergeTreeStatistic> & other)
+void MergeTreeColumnDistributionStatisticTDigest::merge(const IStatisticPtr & other)
 {
     auto other_ptr = std::dynamic_pointer_cast<MergeTreeColumnDistributionStatisticTDigest>(other);
     if (other_ptr)

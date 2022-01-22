@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class MergeTreeColumnDistributionStatisticTDigest : public IMergeTreeColumnDistributionStatistic
+class MergeTreeColumnDistributionStatisticTDigest : public IColumnDistributionStatistic
 {
 public:
     explicit MergeTreeColumnDistributionStatisticTDigest(const String & column_name_);
@@ -17,7 +17,7 @@ public:
     const String& name() const override;
 
     bool empty() const override;
-    void merge(const std::shared_ptr<IMergeTreeStatistic> & other) override;
+    void merge(const IStatisticPtr & other) override;
 
     const String& getColumnsRequiredForStatisticCalculation() const override;
 
