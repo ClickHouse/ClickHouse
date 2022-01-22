@@ -606,13 +606,16 @@
     M(635, CANNOT_POLL) \
     M(636, CANNOT_EXTRACT_TABLE_STRUCTURE) \
     M(637, INVALID_TABLE_OVERRIDE) \
-    M(638, FILE_CACHE_ERROR) \
+    M(638, SNAPPY_UNCOMPRESS_FAILED) \
+    M(639, SNAPPY_COMPRESS_FAILED) \
+    M(640, NO_HIVEMETASTORE) \
     \
     M(999, KEEPER_EXCEPTION) \
     M(1000, POCO_EXCEPTION) \
     M(1001, STD_EXCEPTION) \
     M(1002, UNKNOWN_EXCEPTION) \
-
+    M(1003, FILE_CACHE_ERROR) \
+/// This ^ error code is here temporarily to avoid too often conflicts.
 /* See END */
 
 namespace DB

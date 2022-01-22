@@ -279,6 +279,8 @@
     \
     M(AsynchronousReadWaitMicroseconds, "Time spent in waiting for asynchronous reads.") \
     \
+    M(ExternalDataSourceLocalCacheReadBytes, "Bytes read from local cache buffer in RemoteReadBufferCache")\
+    \
     M(MainConfigLoads, "Number of times the main configuration was reloaded.") \
 
 namespace ProfileEvents

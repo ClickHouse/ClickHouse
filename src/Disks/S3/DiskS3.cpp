@@ -1001,6 +1001,7 @@ void DiskS3::restoreFileOperations(const RestoreInformation & restore_informatio
             if (metadata_disk->exists(to_path))
                 metadata_disk->removeRecursive(to_path);
 
+            createDirectories(directoryPath(to_path));
             metadata_disk->moveDirectory(from_path, to_path);
         }
     }

@@ -27,6 +27,9 @@ public:
 using AggregatorList = std::list<Aggregator>;
 using AggregatorListPtr = std::shared_ptr<AggregatorList>;
 
+using AggregatorList = std::list<Aggregator>;
+using AggregatorListPtr = std::shared_ptr<AggregatorList>;
+
 struct AggregatingTransformParams
 {
     Aggregator::Params params;

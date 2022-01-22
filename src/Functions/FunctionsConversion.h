@@ -185,6 +185,15 @@ struct ConvertImpl
             bool result_is_bool = isBool(result_type);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
+                if constexpr (std::is_same_v<ToDataType, DataTypeUInt8>)
+                {
+                    if (result_is_bool)
+                    {
+                        vec_to[i] = vec_from[i] != FromFieldType(0);
+                        continue;
+                    }
+                }
+
                 if constexpr (std::is_same_v<FromDataType, DataTypeUUID> != std::is_same_v<ToDataType, DataTypeUUID>)
                 {
                     throw Exception("Conversion between numeric types and UUID is not supported", ErrorCodes::NOT_IMPLEMENTED);
@@ -268,12 +277,6 @@ struct ConvertImpl
                         {
                             vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
                         }
-                    }
-
-                    if constexpr (std::is_same_v<ToDataType, DataTypeUInt8>)
-                    {
-                        if (result_is_bool)
-                            vec_to[i] = static_cast<bool>(vec_to[i]);
                     }
                 }
             }

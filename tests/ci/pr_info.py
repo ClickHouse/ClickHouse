@@ -2,8 +2,8 @@
 import json
 import os
 
-import requests
-from unidiff import PatchSet
+import requests  # type: ignore
+from unidiff import PatchSet  # type: ignore
 
 from env_helper import GITHUB_REPOSITORY, GITHUB_SERVER_URL, GITHUB_RUN_ID, GITHUB_EVENT_PATH
 
@@ -38,7 +38,12 @@ class PRInfo:
                 with open(GITHUB_EVENT_PATH, 'r', encoding='utf-8') as event_file:
                     github_event = json.load(event_file)
             else:
-                github_event = {'commits': 1, 'after': 'HEAD', 'ref': None}
+                github_event = {
+                    'commits': 1,
+                    'before': 'HEAD~',
+                    'after': 'HEAD',
+                    'ref': None,
+                }
         self.event = github_event
         self.changed_files = set([])
         self.body = ""
@@ -95,7 +100,8 @@ class PRInfo:
             self.task_url = f"{repo_prefix}/actions/runs/{GITHUB_RUN_ID or '0'}"
             self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
             self.repo_full_name = GITHUB_REPOSITORY
-            if pull_request is None or pull_request['state'] == 'closed':  # it's merged PR to master
+            if pull_request is None or pull_request['state'] == 'closed':
+                # it's merged PR to master
                 self.number = 0
                 self.labels = {}
                 self.pr_html_url = f"{repo_prefix}/commits/{ref}"

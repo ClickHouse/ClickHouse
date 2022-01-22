@@ -1,13 +1,14 @@
 #pragma once
 
 #include <memory>
-#include <Common/COW.h>
 #include <boost/noncopyable.hpp>
 #include <Core/Names.h>
 #include <Core/TypeId.h>
+#include <Common/COW.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+
 
 namespace DB
 {
@@ -475,7 +476,7 @@ template <typename T, typename DataType>
 inline bool isColumnedAsDecimalT(const DataType & data_type)
 {
     const WhichDataType which(data_type);
-    return (which.isDecimal() || which.isDateTime64()) && which.idx == TypeId<T>;
+    return (which.isDecimal() || which.isDateTime64()) && which.idx == TypeToTypeIndex<T>;
 }
 
 template <typename T>
@@ -506,7 +507,7 @@ inline bool isNotCreatable(const T & data_type)
 inline bool isNotDecimalButComparableToDecimal(const DataTypePtr & data_type)
 {
     WhichDataType which(data_type);
-    return which.isInt() || which.isUInt();
+    return which.isInt() || which.isUInt() || which.isFloat();
 }
 
 inline bool isCompilableType(const DataTypePtr & data_type)
