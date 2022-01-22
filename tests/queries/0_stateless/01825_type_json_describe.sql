@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 DROP TABLE IF EXISTS t_json_desc;
 
 CREATE TABLE t_json_desc (data JSON) ENGINE = MergeTree ORDER BY tuple();

@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 DROP TABLE IF EXISTS type_json_src;
 DROP TABLE IF EXISTS type_json_dst;
 
