@@ -13,7 +13,8 @@ sys.path.insert(0, os.path.join(CURDIR, 'helpers'))
 from pure_http_client import ClickHouseClient
 
 
-def ztest_proportion_two_samples(s1, s2, t1, t2, alpha):
+# unpooled variance z-test for proportions of two samples
+def twosample_proportion_ztest(s1, s2, t1, t2, alpha):
     p1 = s1 / t1
     p2 = s2 / t2
     se = sqrt(p1 * (1 - p1) / t1 + p2 * (1 - p2) / t2)
@@ -50,37 +51,37 @@ def test_and_check(name, z_stat, p_value, ci_lower, ci_upper, precision=1e-2):
 def test_mean_ztest():
     counts = [16, 16]
     nobs = [16, 18]
-    z_stat, p_value, ci_lower, ci_upper = ztest_proportion_two_samples(counts[0], counts[1], nobs[0], nobs[1], 0.05)
+    z_stat, p_value, ci_lower, ci_upper = twosample_proportion_ztest(counts[0], counts[1], nobs[0], nobs[1], 0.05)
     test_and_check("proportionsZTest(%d, %d, %d, %d, 0.95, 'unpooled')" % (counts[0], counts[1], nobs[0], nobs[1]), z_stat, p_value, ci_lower, ci_upper)
 
     counts = [10, 20]
     nobs = [30, 40]
-    z_stat, p_value, ci_lower, ci_upper = ztest_proportion_two_samples(counts[0], counts[1], nobs[0], nobs[1], 0.05)
+    z_stat, p_value, ci_lower, ci_upper = twosample_proportion_ztest(counts[0], counts[1], nobs[0], nobs[1], 0.05)
     test_and_check("proportionsZTest(%d, %d, %d, %d, 0.95, 'unpooled')" % (counts[0], counts[1], nobs[0], nobs[1]), z_stat, p_value, ci_lower, ci_upper)
 
     counts = [20, 10]
     nobs = [40, 30]
-    z_stat, p_value, ci_lower, ci_upper = ztest_proportion_two_samples(counts[0], counts[1], nobs[0], nobs[1], 0.05)
+    z_stat, p_value, ci_lower, ci_upper = twosample_proportion_ztest(counts[0], counts[1], nobs[0], nobs[1], 0.05)
     test_and_check("proportionsZTest(%d, %d, %d, %d, 0.95, 'unpooled')" % (counts[0], counts[1], nobs[0], nobs[1]), z_stat, p_value, ci_lower, ci_upper)
 
     counts = [randrange(10,20), randrange(10,20)]
     nobs = [randrange(counts[0], counts[0] * 2), randrange(counts[1], counts[1] * 2)]
-    z_stat, p_value, ci_lower, ci_upper = ztest_proportion_two_samples(counts[0], counts[1], nobs[0], nobs[1], 0.05)
+    z_stat, p_value, ci_lower, ci_upper = twosample_proportion_ztest(counts[0], counts[1], nobs[0], nobs[1], 0.05)
     test_and_check("proportionsZTest(%d, %d, %d, %d, 0.95, 'unpooled')" % (counts[0], counts[1], nobs[0], nobs[1]), z_stat, p_value, ci_lower, ci_upper)
 
     counts = [randrange(1,100), randrange(1,200)]
     nobs = [randrange(counts[0], counts[0] * 2), randrange(counts[1], counts[1] * 3)]
-    z_stat, p_value, ci_lower, ci_upper = ztest_proportion_two_samples(counts[0], counts[1], nobs[0], nobs[1], 0.05)
+    z_stat, p_value, ci_lower, ci_upper = twosample_proportion_ztest(counts[0], counts[1], nobs[0], nobs[1], 0.05)
     test_and_check("proportionsZTest(%d, %d, %d, %d, 0.95, 'unpooled')" % (counts[0], counts[1], nobs[0], nobs[1]), z_stat, p_value, ci_lower, ci_upper)
 
     counts = [randrange(1,200), randrange(1,100)]
     nobs = [randrange(counts[0], counts[0] * 3), randrange(counts[1], counts[1] * 2)]
-    z_stat, p_value, ci_lower, ci_upper = ztest_proportion_two_samples(counts[0], counts[1], nobs[0], nobs[1], 0.05)
+    z_stat, p_value, ci_lower, ci_upper = twosample_proportion_ztest(counts[0], counts[1], nobs[0], nobs[1], 0.05)
     test_and_check("proportionsZTest(%d, %d, %d, %d, 0.95, 'unpooled')" % (counts[0], counts[1], nobs[0], nobs[1]), z_stat, p_value, ci_lower, ci_upper)
 
     counts = [randrange(1,1000), randrange(1,1000)]
     nobs = [randrange(counts[0], counts[0] * 2), randrange(counts[1], counts[1] * 2)]
-    z_stat, p_value, ci_lower, ci_upper = ztest_proportion_two_samples(counts[0], counts[1], nobs[0], nobs[1], 0.05)
+    z_stat, p_value, ci_lower, ci_upper = twosample_proportion_ztest(counts[0], counts[1], nobs[0], nobs[1], 0.05)
     test_and_check("proportionsZTest(%d, %d, %d, %d, 0.95, 'unpooled')" % (counts[0], counts[1], nobs[0], nobs[1]), z_stat, p_value, ci_lower, ci_upper)
 
 
