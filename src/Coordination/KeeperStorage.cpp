@@ -231,7 +231,8 @@ struct KeeperStorageCreateRequestProcessor final : public KeeperStorageRequestPr
     bool checkAuth(KeeperStorage & storage, int64_t session_id) const override
     {
         auto & container = storage.container;
-        auto parent_path = parentPath(zk_request->getPath());
+        auto path = zk_request->getPath();
+        auto parent_path = parentPath(path);
 
         auto it = container.find(parent_path);
         if (it == container.end())
