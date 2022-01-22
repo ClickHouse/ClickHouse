@@ -175,15 +175,13 @@ xflags = {
 @Specifications(
     SRS_006_ClickHouse_Role_Based_Access_Control
 )
-def regression(self, local, clickhouse_binary_path, clickhouse_version, stress=None):
+def regression(self, local, clickhouse_binary_path, stress=None):
     """RBAC regression.
     """
     nodes = {
         "clickhouse":
             ("clickhouse1", "clickhouse2", "clickhouse3")
     }
-
-    self.context.clickhouse_version = clickhouse_version
 
     if stress is not None:
         self.context.stress = stress
