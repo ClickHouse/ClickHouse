@@ -370,7 +370,7 @@ void FlatDictionary::loadData()
         updateData();
 
     if (configuration.require_nonempty && 0 == element_count)
-        throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY, "{}: dictionary source is empty and 'require_nonempty' property is set.", full_name);
+        throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY, "{}: dictionary source is empty and 'require_nonempty' property is set.", getFullName());
 }
 
 void FlatDictionary::calculateBytesAllocated()
@@ -478,7 +478,7 @@ void FlatDictionary::resize(Attribute & attribute, UInt64 key)
     if (key >= configuration.max_array_size)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
             "{}: identifier should be less than {}",
-            full_name,
+            getFullName(),
             toString(configuration.max_array_size));
 
     auto & container = std::get<ContainerType<T>>(attribute.container);
@@ -547,20 +547,14 @@ Pipe FlatDictionary::read(const Names & column_names, size_t max_block_size, siz
         if (loaded_keys[key_index])
             keys.push_back(key_index);
 
-    ColumnsWithTypeAndName key_columns = {ColumnWithTypeAndName(getColumnFromPODArray(keys), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
+    auto keys_column = getColumnFromPODArray(std::move(keys));
+    ColumnsWithTypeAndName key_columns = {ColumnWithTypeAndName(std::move(keys_column), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
 
     std::shared_ptr<const IDictionary> dictionary = shared_from_this();
-    auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns), max_block_size);
+    auto coordinator = DictionarySourceCoordinator::create(dictionary, column_names, std::move(key_columns), max_block_size);
+    auto result = coordinator->read(num_streams);
 
-    Pipes pipes;
-
-    for (size_t i = 0; i < num_streams; ++i)
-    {
-        auto source = std::make_shared<DictionarySource>(coordinator);
-        pipes.emplace_back(Pipe(std::move(source)));
-    }
-
-    return Pipe::unitePipes(std::move(pipes));
+    return result;
 }
 
 void registerDictionaryFlat(DictionaryFactory & factory)

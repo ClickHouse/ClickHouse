@@ -41,7 +41,7 @@ BlockIO InterpreterCreateFunctionQuery::execute()
 
     auto & user_defined_function_factory = UserDefinedSQLFunctionFactory::instance();
 
-    auto & function_name = create_function_query.function_name;
+    auto function_name = create_function_query.getFunctionName();
 
     bool if_not_exists = create_function_query.if_not_exists;
     bool replace = create_function_query.or_replace;
@@ -66,7 +66,12 @@ void InterpreterCreateFunctionQuery::validateFunction(ASTPtr function, const Str
 
     for (const auto & argument : tuple_function_arguments.arguments->children)
     {
-        const auto & argument_name = argument->as<ASTIdentifier>()->name();
+        const auto * argument_identifier = argument->as<ASTIdentifier>();
+
+        if (!argument_identifier)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Lambda argument must be identifier");
+
+        const auto & argument_name = argument_identifier->name();
         auto [_, inserted] = arguments.insert(argument_name);
         if (!inserted)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Identifier {} already used as function parameter", argument_name);
