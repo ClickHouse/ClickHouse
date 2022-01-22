@@ -886,11 +886,11 @@ public:
     /// Mutex for currently_submerging_parts and currently_emerging_parts
     mutable std::mutex currently_submerging_emerging_mutex;
 
+protected:
     /// Get Statistics for prewhere planning
-    MergeTreeStatisticsPtr getStatisticsByPartitionPredicate(
+    MergeTreeStatisticsPtr getStatisticsByPartitionPredicateImpl(
         const SelectQueryInfo & query_info, ContextPtr local_context) const;
 
-protected:
     void updateStatisticsByPartition();
 
     /// Approximate and updated eventually

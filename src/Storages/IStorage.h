@@ -1,5 +1,9 @@
 #pragma once
 
+#include <Common/ActionLock.h>
+#include <Common/Exception.h>
+#include <Common/RWLock.h>
+#include <Common/TypePromotion.h>
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
 #include <Databases/IDatabase.h>
@@ -11,12 +15,9 @@
 #include <Storages/ColumnDependency.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryDescription.h>
+#include <Storages/Statistics.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/TableLockHolder.h>
-#include <Common/ActionLock.h>
-#include <Common/Exception.h>
-#include <Common/RWLock.h>
-#include <Common/TypePromotion.h>
 
 #include <optional>
 #include <shared_mutex>
@@ -570,6 +571,9 @@ public:
 
     /// Same as above but also take partition predicate into account.
     virtual std::optional<UInt64> totalRowsByPartitionPredicate(const SelectQueryInfo &, ContextPtr) const { return {}; }
+
+    /// Returns set of merged statistics for provided partitions.
+    virtual IStatisticsPtr getStatisticsByPartitionPredicate(const SelectQueryInfo &, ContextPtr) const { return nullptr; }
 
     /// If it is possible to quickly determine exact number of bytes for the table on storage:
     /// - memory (approximated, resident)

@@ -48,9 +48,10 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     , block_with_constants{KeyCondition::getBlockWithConstants(query_info.query->clone(), query_info.syntax_analyzer_result, context)}
     , log{log_}
     , column_sizes{std::move(column_sizes_)}
-    , stats(std::dynamic_pointer_cast<StorageMergeTree>(storage_)
-        ? std::dynamic_pointer_cast<StorageMergeTree>(storage_)->getStatisticsByPartitionPredicate(query_info, context)
-        : nullptr) // TODO: looks awful, use IStorage interface
+    , stats(storage_->getStatisticsByPartitionPredicate(query_info, context))
+    //, stats(std::dynamic_pointer_cast<StorageMergeTree>(storage_)
+    //    ? std::dynamic_pointer_cast<StorageMergeTree>(storage_)->getStatisticsByPartitionPredicate(query_info, context)
+    //    : nullptr) // TODO: looks awful, use IStorage interface
     , use_new_scoring(settings.allow_experimental_stats_for_prewhere_optimization && stats != nullptr)
 {
     LOG_DEBUG(&Poco::Logger::get("MergeTreeWhereOptimizer"), "kek = {}", storage_->getName());
@@ -159,7 +160,7 @@ static bool isConditionGoodNew(const ASTPtr & condition)
     return false;
 }
 
-static double scoreSelectivity(const MergeTreeStatisticsPtr & stats, const ASTPtr & condition)
+static double scoreSelectivity(const IStatisticsPtr & stats, const ASTPtr & condition)
 {
     const auto * function = condition->as<ASTFunction>();
     if (!function)

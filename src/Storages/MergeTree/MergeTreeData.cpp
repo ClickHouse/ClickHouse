@@ -890,7 +890,7 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     return res;
 }
 
-MergeTreeStatisticsPtr MergeTreeData::getStatisticsByPartitionPredicate(
+MergeTreeStatisticsPtr MergeTreeData::getStatisticsByPartitionPredicateImpl(
     const SelectQueryInfo & query_info, ContextPtr local_context) const
 {
     Poco::Logger::get("getStatisticsByPartitionPredicate").information("START");
