@@ -60,11 +60,17 @@ void InterpreterCreateFunctionQuery::validateFunction(ASTPtr function, const Str
     auto & lambda_function = function->as<ASTFunction &>();
     auto & lambda_function_expression_list = lambda_function.arguments->children;
 
-    const auto & tuple_function_arguments = lambda_function_expression_list.at(0)->as<ASTFunction &>();
+    const ASTFunction * tuple_function_arguments = nullptr;
+
+    if (!lambda_function_expression_list.empty())
+        tuple_function_arguments = lambda_function_expression_list[0]->as<ASTFunction>();
+
+    if (!tuple_function_arguments || !tuple_function_arguments->arguments)
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Lambda must have arguments");
 
     std::unordered_set<String> arguments;
 
-    for (const auto & argument : tuple_function_arguments.arguments->children)
+    for (const auto & argument : tuple_function_arguments->arguments->children)
     {
         const auto * argument_identifier = argument->as<ASTIdentifier>();
 
