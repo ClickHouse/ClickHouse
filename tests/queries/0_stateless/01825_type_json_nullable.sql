@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 DROP TABLE IF EXISTS t_json_null;
 
 CREATE TABLE t_json_null(id UInt64, data Object('JSON', 'Null'))

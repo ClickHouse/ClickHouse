@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 DROP TABLE IF EXISTS t_json_local;
 DROP TABLE IF EXISTS t_json_dist;
 

@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 DROP TABLE IF EXISTS t_json_field;
 
 CREATE TABLE t_json_field (id UInt32, data JSON)

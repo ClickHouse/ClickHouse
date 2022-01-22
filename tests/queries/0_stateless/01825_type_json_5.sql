@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 SELECT '{"a": {"b": 1, "c": 2}}'::JSON AS s;
 SELECT '{"a": {"b": 1, "c": 2}}'::JSON AS s format JSONEachRow;
 
