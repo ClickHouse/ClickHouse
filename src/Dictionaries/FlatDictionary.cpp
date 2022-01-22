@@ -293,8 +293,6 @@ void FlatDictionary::blockToAttributes(const Block & block)
     DictionaryKeysExtractor<DictionaryKeyType::Simple> keys_extractor({ keys_column }, arena_holder.getComplexKeyArena());
     size_t keys_size = keys_extractor.getKeysSize();
 
-    std::cerr << "FlatDictionary::blockToAttributes" << std::endl;
-
     static constexpr size_t key_offset = 1;
 
     size_t attributes_size = attributes.size();
