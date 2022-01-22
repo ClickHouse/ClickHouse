@@ -33,6 +33,7 @@ private:
 
     size_t getTotalSizeToRead();
     bool completeFileSegmentAndGetNext();
+    void checkForPartialDownload();
 
     Poco::Logger * log;
     FileCache::Key key;
@@ -50,11 +51,10 @@ private:
 
     SeekableReadBufferPtr impl;
     bool initialized = false;
-    bool download_current_segment = false;
 
     enum class ReadType
     {
-        CACHE,
+        CACHED,
         REMOTE_FS_READ,
         REMOTE_FS_READ_AND_DOWNLOAD,
     };
@@ -65,8 +65,8 @@ private:
     {
         switch (type)
         {
-            case ReadType::CACHE:
-                return "CACHE";
+            case ReadType::CACHED:
+                return "CACHED";
             case ReadType::REMOTE_FS_READ:
                 return "REMOTE_FS_READ";
             case ReadType::REMOTE_FS_READ_AND_DOWNLOAD:

@@ -4,6 +4,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 FileCacheFactory & FileCacheFactory::instance()
 {
     static FileCacheFactory ret;

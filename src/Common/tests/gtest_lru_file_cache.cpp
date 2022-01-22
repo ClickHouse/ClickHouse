@@ -17,14 +17,14 @@ namespace fs = std::filesystem;
 String cache_base_path = fs::current_path() / "test_lru_file_cache" / "";
 
 void assertRange(
-    size_t assert_n, DB::FileSegmentPtr file_segment,
+    [[maybe_unused]] size_t assert_n, DB::FileSegmentPtr file_segment,
     const DB::FileSegment::Range & expected_range, DB::FileSegment::State expected_state)
 {
     auto range = file_segment->range();
 
-    std::cerr << fmt::format("\nAssert #{} : {} == {} (state: {} == {})\n", assert_n,
-                             range.toString(), expected_range.toString(),
-                             toString(file_segment->state()), toString(expected_state));
+    // std::cerr << fmt::format("\nAssert #{} : {} == {} (state: {} == {})\n", assert_n,
+    //                          range.toString(), expected_range.toString(),
+    //                          toString(file_segment->state()), toString(expected_state));
 
     ASSERT_EQ(range.left, expected_range.left);
     ASSERT_EQ(range.right, expected_range.right);
@@ -71,7 +71,7 @@ void download(DB::FileSegmentPtr file_segment)
 void prepareAndDownload(DB::FileSegmentPtr file_segment)
 {
     ASSERT_TRUE(file_segment->getOrSetDownloader() == DB::FileSegment::getCallerId());
-    std::cerr << "Reserving: " << file_segment->range().size() << " for: " << file_segment->range().toString() << "\n";
+    // std::cerr << "Reserving: " << file_segment->range().size() << " for: " << file_segment->range().toString() << "\n";
     ASSERT_TRUE(file_segment->reserve(file_segment->range().size()));
     download(file_segment);
 }
@@ -434,7 +434,7 @@ TEST(LRUFileCache, get)
             cv.notify_one();
 
             segments_2[1]->wait();
-            ASSERT_TRUE(segments_2[1]->state() == DB::FileSegment::State::DOWNLOADING);
+            ASSERT_TRUE(segments_2[1]->state() == DB::FileSegment::State::PARTIALLY_DOWNLOADED);
             ASSERT_TRUE(segments_2[1]->getOrSetDownloader() == DB::FileSegment::getCallerId());
             prepareAndDownload(segments_2[1]);
         });
@@ -457,7 +457,6 @@ TEST(LRUFileCache, get)
         /// Test LRUCache::restore().
 
         auto cache2 = DB::LRUFileCache(cache_base_path, 30, 5);
-        std::cerr << cache2.dump() << "\n";
         ASSERT_EQ(cache2.getStat().downloaded_size, 5);
 
         auto holder1 = cache2.getOrSet(key, 2, 28); /// Get [2, 29]

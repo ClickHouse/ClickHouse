@@ -22,7 +22,7 @@ namespace ErrorCodes
 
 namespace
 {
-    String keyToStr(const FileCache::Key & key)
+    String keyToStr(const FileCacheKey & key)
     {
         return getHexUIntLowercase(key);
     }
@@ -33,7 +33,7 @@ FileCache::FileCache(const String & cache_base_path_, size_t max_size_, size_t m
 {
 }
 
-FileCache::Key FileCache::hash(const String & path)
+FileCacheKey FileCache::hash(const String & path)
 {
     return sipHash128(path.data(), path.size());
 }
@@ -90,6 +90,17 @@ LRUFileCache::FileSegmentCell * LRUFileCache::getCell(
         return nullptr;
 
     return &cell_it->second;
+}
+
+void LRUFileCache::removeCell(
+    const Key & key, size_t offset, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
+{
+    auto * cell = getCell(key, offset, cache_lock);
+    if (!cell)
+        throw Exception(ErrorCodes::FILE_CACHE_ERROR, "No cache cell for key: {}, offset: {}", keyToStr(key), offset);
+
+    if (cell->queue_iterator)
+        queue.erase(*cell->queue_iterator);
 }
 
 FileSegments LRUFileCache::getImpl(
@@ -256,6 +267,8 @@ FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t
 LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
     const Key & key, size_t offset, size_t size, FileSegment::State state, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
 {
+    /// Create a file segment cell and put it in `files` map by [key][offset].
+
     if (!size)
         return nullptr; /// Empty files are not cached.
 
@@ -264,7 +277,7 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
             "Cache already exists for key: `{}`, offset: {}, size: {}", keyToStr(key), offset, size);
 
     auto file_segment = std::make_shared<FileSegment>(offset, size, key, this, state);
-    FileSegmentCell cell(std::move(file_segment));
+    FileSegmentCell cell(std::move(file_segment), queue);
 
     auto & offsets = files[key];
 
@@ -281,20 +294,6 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
             "Failed to insert into cache key: `{}`, offset: {}, size: {}", keyToStr(key), offset, size);
 
     return &(it->second);
-}
-
-bool LRUFileCache::set(
-    const Key & key, size_t offset, size_t size,
-    [[maybe_unused]] std::lock_guard<std::mutex> & segment_lock,
-    [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
-{
-    auto * cell = getCell(key, offset, cache_lock);
-    if (!cell)
-        throw Exception(ErrorCodes::FILE_CACHE_ERROR,
-                        "Cannot set cell, because it was not created for key: {}, offset: {}", keyToStr(key), offset);
-
-    auto state = cell->file_segment->download_state;
-    return setImpl(key, offset, size, state, cache_lock) != nullptr;
 }
 
 LRUFileCache::FileSegmentCell * LRUFileCache::setImpl(
@@ -325,12 +324,7 @@ LRUFileCache::FileSegmentCell * LRUFileCache::setImpl(
                 throw Exception(ErrorCodes::FILE_CACHE_ERROR, "Setting DOWNLOADED state cell is allowed only at startup");
 
             if (tryReserve(size, cache_lock))
-            {
-                auto * cell = addCell(key, offset, size, state, cache_lock);
-                cell->queue_iterator = queue.insert(queue.end(), std::make_pair(key, offset));
-
-                return cell;
-            }
+                return addCell(key, offset, size, state, cache_lock);
 
             return nullptr;
         }
@@ -352,6 +346,20 @@ LRUFileCache::FileSegmentCell * LRUFileCache::setImpl(
         default:
             throw Exception(ErrorCodes::FILE_CACHE_ERROR, "Unexpected state: {}", FileSegment::toString(state));
     }
+}
+
+bool LRUFileCache::set(
+    const Key & key, size_t offset, size_t size,
+    [[maybe_unused]] std::lock_guard<std::mutex> & segment_lock,
+    [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
+{
+    auto * cell = getCell(key, offset, cache_lock);
+    if (!cell)
+        throw Exception(ErrorCodes::FILE_CACHE_ERROR,
+                        "Cannot set cell, because it was not created for key: {}, offset: {}", keyToStr(key), offset);
+
+    auto state = cell->file_segment->download_state;
+    return setImpl(key, offset, size, state, cache_lock) != nullptr;
 }
 
 bool LRUFileCache::tryReserve(size_t size, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
@@ -429,12 +437,7 @@ void LRUFileCache::remove(
 {
     LOG_TEST(log, "Remove. Key: {}, offset: {}", keyToStr(key), offset);
 
-    auto * cell = getCell(key, offset, cache_lock);
-    if (!cell)
-        throw Exception(ErrorCodes::FILE_CACHE_ERROR, "No cache cell for key: {}, offset: {}", keyToStr(key), offset);
-
-    if (cell->queue_iterator)
-        queue.erase(*cell->queue_iterator);
+    removeCell(key, offset, cache_lock);
 
     auto & offsets = files[key];
     offsets.erase(offset);
@@ -579,6 +582,36 @@ LRUFileCache::Stat LRUFileCache::getStat()
     return stat;
 }
 
+void LRUFileCache::reduceSizeToDownloaded(
+    const Key & key, size_t offset, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
+{
+    /**
+     * In case file was partially downloaded and it's download cannot be continued
+     * because of no space left in cache, we need to be able to cut cell's size to downloaded_size.
+     */
+
+    auto * cell = getCell(key, offset, cache_lock);
+
+    if (!cell)
+        throw Exception(ErrorCodes::FILE_CACHE_ERROR, "No cell found for key: {}, offset: {}", keyToStr(key), offset);
+
+    const auto & file_segment = cell->file_segment;
+
+    size_t downloaded_size = file_segment->downloaded_size;
+    if (downloaded_size == file_segment->range().size())
+        throw Exception(ErrorCodes::FILE_CACHE_ERROR,
+                        "Nothing to reduce, file segment fully downloaded, key: {}, offset: {}", keyToStr(key), offset);
+
+    file_segment->download_state = FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
+
+    /**
+     * Create a new file segment as file segment's size is static and cannot be changed. Size is static because
+     * there is an invariant, that list of shared pointers to file segments returned to users in FileSegmentsHolder
+     * represents a contiguous range without holes.
+     */
+    cell->file_segment = std::make_shared<FileSegment>(offset, downloaded_size, key, this, FileSegment::State::DOWNLOADED);
+}
+
 size_t LRUFileCache::getUseCount(const FileSegment & file_segment,
     [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
 {
@@ -587,194 +620,34 @@ size_t LRUFileCache::getUseCount(const FileSegment & file_segment,
     return cell->file_segment.use_count() - 1; /// Do not consider pointer which lies in cache itself.
 }
 
-String FileSegment::getCallerId()
+LRUFileCache::FileSegmentCell::FileSegmentCell(FileSegmentPtr file_segment_, LRUQueue & queue_)
+    : file_segment(file_segment_)
 {
-    if (!CurrentThread::isInitialized() || CurrentThread::getQueryId().size == 0)
-        throw Exception(ErrorCodes::FILE_CACHE_ERROR, "Cannot use cache without query id");
+    /**
+     * Cell can be created with either DOWNLOADED or EMPTY file segment's state.
+     * File segment aquires DOWNLOADING state and creates LRUQueue iterator on first
+     * successful getOrSetDownaloder call.
+     */
 
-    return CurrentThread::getQueryId().toString();
-}
-
-String FileSegment::getOrSetDownloader()
-{
-    std::lock_guard segment_lock(mutex);
-
-    if (downloader_id.empty())
+    switch (file_segment->download_state)
     {
-        downloader_id = getCallerId();
-        download_state = State::DOWNLOADING;
-    }
-
-    return downloader_id;
-}
-
-bool FileSegment::isDownloader() const
-{
-    std::lock_guard segment_lock(mutex);
-    return getCallerId() == downloader_id;
-}
-
-void FileSegment::write(const char * from, size_t size)
-{
-    if (available() < size)
-        throw Exception(
-            ErrorCodes::FILE_CACHE_ERROR,
-            "Not enough space is reserved. Available: {}, expected: {}", available(), size);
-
-    if (!download_buffer)
-    {
-        assert(!downloaded_size);
-        auto download_path = cache->path(key(), range().left);
-        download_buffer = std::make_unique<WriteBufferFromFile>(download_path);
-    }
-
-    download_buffer->write(from, size);
-    downloaded_size += size;
-}
-
-void FileSegment::complete()
-{
-    {
-        std::lock_guard segment_lock(mutex);
-
-        /// TODO: There is a gap between next thread will call getOrSetDownlaoder and no one will remove the cell during this gap.
-
-        if (downloader_id != getCallerId())
-            throw Exception(ErrorCodes::FILE_CACHE_ERROR,
-                            "File segment can be completed only by downloader or downloader's FileSegmentsHodler");
-        downloader_id.clear();
-        download_buffer.reset();
-
-        switch (download_state)
+        case FileSegment::State::DOWNLOADED:
         {
-            case State::EMPTY:
-            case State::DOWNLOADED:
-            {
-                /// Download not even started or already completed successfully.
-                break;
-            }
-            case State::NO_SPACE: /// Space reservation failed.
-            {
-                assert(!downloaded_size);
-                reserved_size = 0;
-
-                std::lock_guard cache_lock(cache->mutex);
-                cache->remove(key(), range().left, cache_lock);
-
-                break;
-            }
-            case State::DOWNLOADING:
-            {
-                if (downloaded_size == range().size())
-                {
-                    std::lock_guard cache_lock(cache->mutex);
-
-                    download_state = State::DOWNLOADED;
-                    reserved_size = downloaded_size;
-                }
-                else
-                {
-                    /**
-                    * If file segment downloader did not finish download completely, check if there is some other
-                    * thread holding the same file segment. It can finish download.
-                    * Since pointers to file segments are returned to users in FileSegmentsHolder,
-                    * which calls complete() on destruction, removal of failed file segments is guaranteed.
-                    */
-
-                    std::lock_guard cache_lock(cache->mutex);
-                    size_t users_count = cache->getUseCount(*this, cache_lock);
-                    assert(users_count >= 1);
-
-                    if (users_count == 1)
-                    {
-                        if (downloaded_size > 0)
-                        {
-                            segment_range.right = segment_range.left + downloaded_size - 1;
-                            reserved_size = downloaded_size;
-                            download_state = State::DOWNLOADED;
-                        }
-                        else
-                            cache->remove(key(), range().left, cache_lock);
-                    }
-                }
-            }
-        }
-
-        LOG_TEST(&Poco::Logger::get("kssenii"), "Complete on: {} with state: {}", range().toString(), FileSegment::toString(download_state));
-    }
-
-    cv.notify_all();
-}
-
-FileSegment::State FileSegment::wait()
-{
-    std::unique_lock segment_lock(mutex);
-
-    switch (download_state)
-    {
-        case State::DOWNLOADING:
-        {
-            LOG_TEST(&Poco::Logger::get("kssenii"), "Waiting on: {}", range().toString());
-
-            cv.wait_for(segment_lock, std::chrono::seconds(60)); /// TODO: use value defined by setting
+            queue_iterator = queue_.insert(queue_.end(), getKeyAndOffset());
             break;
         }
-        case State::DOWNLOADED:[[fallthrough]];
-        case State::NO_SPACE:
+        case FileSegment::State::EMPTY:
         {
             break;
         }
         default:
-        {
-            throw Exception(ErrorCodes::FILE_CACHE_ERROR, "Trying to wait for segment with incorrect");
-        }
+            throw Exception(ErrorCodes::FILE_CACHE_ERROR,
+                            "Can create cell with either DOWNLOADED or EMPTY state, got: {}",
+                            FileSegment::toString(file_segment->download_state));
     }
-
-    LOG_TEST(&Poco::Logger::get("kssenii"), "Waiting on: {} finished with state: {}", range().toString(), FileSegment::toString(download_state));
-    return download_state;
 }
 
-bool FileSegment::reserve(size_t size)
-{
-    if (!size)
-        throw Exception(ErrorCodes::FILE_CACHE_ERROR, "Zero space reservation is not allowed");
-
-    std::lock_guard segment_lock(mutex);
-
-    if (downloaded_size == range().size())
-        throw Exception(ErrorCodes::FILE_CACHE_ERROR,
-                        "Attempt to reserve space for fully downloaded file segment");
-
-    if (downloader_id != getCallerId())
-        throw Exception(ErrorCodes::FILE_CACHE_ERROR, "Space can be reserved only by downloader");
-
-    assert(reserved_size >= downloaded_size);
-
-    std::lock_guard cache_lock(cache->mutex);
-
-    /**
-     * It is possible to have downloaded_size < reserved_size when reserve is called
-     * in case previous downloader did not fully download current file_segment
-     * and the caller is going to continue;
-     */
-    size_t free_space = reserved_size - downloaded_size;
-    size_t size_to_reserve = size - free_space;
-
-    bool reserved;
-    if (downloaded_size)
-        reserved = cache->tryReserve(size_to_reserve, cache_lock);
-    else
-        reserved = cache->set(key(), range().left, size_to_reserve, segment_lock, cache_lock);
-
-    if (reserved)
-        reserved_size += size;
-    else
-        download_state = State::NO_SPACE;
-
-    return reserved;
-}
-
-String LRUFileCache::dump()
+String LRUFileCache::dumpStructure()
 {
     std::lock_guard cache_lock(mutex);
 
@@ -787,21 +660,6 @@ String LRUFileCache::dump()
         result << "(state: " << cell->file_segment->state() << ")";
     }
     return result.str();
-}
-
-String FileSegment::toString(FileSegment::State state)
-{
-    switch (state)
-    {
-        case FileSegment::State::DOWNLOADED:
-            return "DOWNLOADED";
-        case FileSegment::State::DOWNLOADING:
-            return "DOWNLOADING";
-        case FileSegment::State::EMPTY:
-            return "EMPTY";
-        case FileSegment::State::NO_SPACE:
-            return "NO_SPACE";
-    }
 }
 
 }
