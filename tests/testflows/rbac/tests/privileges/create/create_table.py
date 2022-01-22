@@ -840,6 +840,6 @@ def feature(self, stress=None, node="clickhouse1"):
     with Pool(10) as pool:
         try:
             for scenario in loads(current_module(), Scenario):
-                Scenario(test=scenario, parallel=True, executor=pool)
+                Scenario(run=scenario, parallel=True, executor=pool)
         finally:
             join()

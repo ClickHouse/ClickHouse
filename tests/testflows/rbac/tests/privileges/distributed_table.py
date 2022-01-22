@@ -1341,10 +1341,9 @@ def feature(self, node="clickhouse1"):
 
     with Pool(3) as pool:
         try:
-            Feature(test=cluster_tests, parallel=True, executor=pool)
-            Scenario(test=local_user, parallel=True, executor=pool)
-            Scenario(test=multiple_node_user, parallel=True, executor=pool)
+            Feature(run=cluster_tests, parallel=True, executor=pool)
+            Scenario(run=local_user, parallel=True, executor=pool)
+            Scenario(run=multiple_node_user, parallel=True, executor=pool)
 
         finally:
             join()
-

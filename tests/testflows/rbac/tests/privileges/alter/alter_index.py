@@ -446,7 +446,7 @@ def user_with_privileges_on_cluster(self, table_type, node=None):
     (key,) for key in table_types.keys()
 ])
 @Name("alter index")
-def feature(self, node="clickhouse1", stress=None, parallel=None):
+def feature(self, stress=None, parallel=None, node="clickhouse1"):
     self.context.node = self.context.cluster.node(node)
 
     if parallel is not None:

@@ -627,6 +627,7 @@ def select_with_revoked_select_privilege(self, user_name, grant_target_name, nod
     """Grant and revoke SELECT privilege on a view and check the user is unable to SELECT from it.
     """
     view_name = f"view_{getuid()}"
+    exitcode, message = errors.not_enough_privileges(name=f"{user_name}")
 
     if node is None:
         node = self.context.node
