@@ -361,6 +361,17 @@ def test_hdfsCluster(started_cluster):
     assert actual == expected
     fs.delete(dir, recursive=True)
 
+def test_hdfs_directory_not_exist(started_cluster):
+    ddl ="create table HDFSStorageWithNotExistDir (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs1:9000/data/not_eixst', 'TSV')";
+    node1.query(ddl)
+    assert "" == node1.query("select * from HDFSStorageWithNotExistDir")
+
+def test_format_detection(started_cluster):
+    node1.query(f"create table arrow_table (x UInt64) engine=HDFS('hdfs://hdfs1:9000/data.arrow')")
+    node1.query(f"insert into arrow_table select 1")
+    result = node1.query(f"select * from hdfs('hdfs://hdfs1:9000/data.arrow')")
+    assert(int(result) == 1)
+
 
 if __name__ == '__main__':
     cluster.start()

@@ -291,30 +291,23 @@ void FlatDictionary::blockToAttributes(const Block & block)
 
     DictionaryKeysArenaHolder<DictionaryKeyType::Simple> arena_holder;
     DictionaryKeysExtractor<DictionaryKeyType::Simple> keys_extractor({ keys_column }, arena_holder.getComplexKeyArena());
-    auto keys = keys_extractor.extractAllKeys();
+    size_t keys_size = keys_extractor.getKeysSize();
 
-    HashSet<UInt64> already_processed_keys;
-
-    size_t key_offset = 1;
+    static constexpr size_t key_offset = 1;
     for (size_t attribute_index = 0; attribute_index < attributes.size(); ++attribute_index)
     {
         const IColumn & attribute_column = *block.safeGetByPosition(attribute_index + key_offset).column;
         Attribute & attribute = attributes[attribute_index];
 
-        for (size_t i = 0; i < keys.size(); ++i)
+        for (size_t i = 0; i < keys_size; ++i)
         {
-            auto key = keys[i];
-
-            if (already_processed_keys.find(key) != nullptr)
-                continue;
-
-            already_processed_keys.insert(key);
+            auto key = keys_extractor.extractCurrentKey();
 
             setAttributeValue(attribute, key, attribute_column[i]);
-            ++element_count;
+            keys_extractor.rollbackCurrentKey();
         }
 
-        already_processed_keys.clear();
+        keys_extractor.reset();
     }
 }
 
@@ -369,8 +362,14 @@ void FlatDictionary::loadData()
     else
         updateData();
 
+    element_count = 0;
+
+    size_t loaded_keys_size = loaded_keys.size();
+    for (size_t i = 0; i < loaded_keys_size; ++i)
+        element_count += loaded_keys[i];
+
     if (configuration.require_nonempty && 0 == element_count)
-        throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY, "{}: dictionary source is empty and 'require_nonempty' property is set.", full_name);
+        throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY, "{}: dictionary source is empty and 'require_nonempty' property is set.", getFullName());
 }
 
 void FlatDictionary::calculateBytesAllocated()
@@ -478,7 +477,7 @@ void FlatDictionary::resize(Attribute & attribute, UInt64 key)
     if (key >= configuration.max_array_size)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
             "{}: identifier should be less than {}",
-            full_name,
+            getFullName(),
             toString(configuration.max_array_size));
 
     auto & container = std::get<ContainerType<T>>(attribute.container);
@@ -520,14 +519,11 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const UInt64 key, 
 
         resize<ValueType>(attribute, key);
 
-        if (attribute.is_nullable_set)
+        if (attribute.is_nullable_set && value.isNull())
         {
-            if (value.isNull())
-            {
-                attribute.is_nullable_set->insert(key);
-                loaded_keys[key] = true;
-                return;
-            }
+            attribute.is_nullable_set->insert(key);
+            loaded_keys[key] = true;
+            return;
         }
 
         setAttributeValueImpl<AttributeType>(attribute, key, value.get<AttributeType>());
@@ -547,20 +543,14 @@ Pipe FlatDictionary::read(const Names & column_names, size_t max_block_size, siz
         if (loaded_keys[key_index])
             keys.push_back(key_index);
 
-    ColumnsWithTypeAndName key_columns = {ColumnWithTypeAndName(getColumnFromPODArray(keys), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
+    auto keys_column = getColumnFromPODArray(std::move(keys));
+    ColumnsWithTypeAndName key_columns = {ColumnWithTypeAndName(std::move(keys_column), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
 
     std::shared_ptr<const IDictionary> dictionary = shared_from_this();
-    auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns), max_block_size);
+    auto coordinator = DictionarySourceCoordinator::create(dictionary, column_names, std::move(key_columns), max_block_size);
+    auto result = coordinator->read(num_streams);
 
-    Pipes pipes;
-
-    for (size_t i = 0; i < num_streams; ++i)
-    {
-        auto source = std::make_shared<DictionarySource>(coordinator);
-        pipes.emplace_back(Pipe(std::move(source)));
-    }
-
-    return Pipe::unitePipes(std::move(pipes));
+    return result;
 }
 
 void registerDictionaryFlat(DictionaryFactory & factory)

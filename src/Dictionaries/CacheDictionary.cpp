@@ -69,7 +69,7 @@ CacheDictionary<dictionary_key_type>::CacheDictionary(
     , rnd_engine(randomSeed())
 {
     if (!source_ptr->supportsSelectiveLoad())
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: source cannot be used with CacheDictionary", full_name);
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: source cannot be used with CacheDictionary", getFullName());
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -494,7 +494,8 @@ Pipe CacheDictionary<dictionary_key_type>::read(const Names & column_names, size
         if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
         {
             auto keys = cache_storage_ptr->getCachedSimpleKeys();
-            key_columns = {ColumnWithTypeAndName(getColumnFromPODArray(keys), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
+            auto keys_column = getColumnFromPODArray(std::move(keys));
+            key_columns = {ColumnWithTypeAndName(std::move(keys_column), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
         }
         else
         {
@@ -504,17 +505,10 @@ Pipe CacheDictionary<dictionary_key_type>::read(const Names & column_names, size
     }
 
     std::shared_ptr<const IDictionary> dictionary = shared_from_this();
-    auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns), max_block_size);
+    auto coordinator = DictionarySourceCoordinator::create(dictionary, column_names, std::move(key_columns), max_block_size);
+    auto result = coordinator->read(num_streams);
 
-    Pipes pipes;
-
-    for (size_t i = 0; i < num_streams; ++i)
-    {
-        auto source = std::make_shared<DictionarySource>(coordinator);
-        pipes.emplace_back(Pipe(std::move(source)));
-    }
-
-    return Pipe::unitePipes(std::move(pipes));
+    return result;
 }
 
 template <DictionaryKeyType dictionary_key_type>

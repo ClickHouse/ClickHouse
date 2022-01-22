@@ -15,10 +15,13 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <base/JSON.h>
 #include <base/logger_useful.h>
 #include <Compression/getCompressionCodecForFile.h>
+#include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
@@ -413,7 +416,7 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
 }
 
 
-void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos)
+void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns)
 {
     columns = new_columns;
 
@@ -422,21 +425,12 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
     size_t pos = 0;
 
     for (const auto & column : columns)
-    {
         column_name_to_position.emplace(column.name, pos++);
+}
 
-        auto it = new_infos.find(column.name);
-        if (it != new_infos.end())
-        {
-            auto & old_info = serialization_infos[column.name];
-            const auto & new_info = it->second;
-
-            if (old_info)
-                old_info->replaceData(*new_info);
-            else
-                old_info = new_info->clone();
-        }
-    }
+void IMergeTreeDataPart::setSerializationInfos(const SerializationInfoByName & new_infos)
+{
+    serialization_infos = new_infos;
 }
 
 SerializationPtr IMergeTreeDataPart::getSerialization(const NameAndTypePair & column) const
@@ -615,7 +609,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     /// Memory should not be limited during ATTACH TABLE query.
     /// This is already true at the server startup but must be also ensured for manual table ATTACH.
     /// Motivation: memory for index is shared between queries - not belong to the query itself.
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker(VariableContext::Global);
 
     loadUUID();
     loadColumns(require_columns_checksums);
@@ -1095,7 +1089,8 @@ void IMergeTreeDataPart::loadColumns(bool require)
     if (volume->getDisk()->exists(path))
         infos.readJSON(*volume->getDisk()->readFile(path));
 
-    setColumns(loaded_columns, infos);
+    setColumns(loaded_columns);
+    setSerializationInfos(infos);
 }
 
 bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const
@@ -1307,7 +1302,7 @@ void IMergeTreeDataPart::remove() const
 
 void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_shared_data) const
 {
-    String to = parent_to + "/" + relative_path;
+    String to = fs::path(parent_to) / relative_path;
     auto disk = volume->getDisk();
     if (checksums.empty())
     {
@@ -1317,7 +1312,7 @@ void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_sh
             "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: checksums.txt is missing",
             fullPath(disk, to));
         /// If the part is not completely written, we cannot use fast path by listing files.
-        disk->removeSharedRecursive(to + "/", keep_shared_data);
+        disk->removeSharedRecursive(fs::path(to) / "", keep_shared_data);
     }
     else
     {
@@ -1330,15 +1325,15 @@ void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_sh
     #    pragma GCC diagnostic ignored "-Wunused-variable"
     #endif
             for (const auto & [file, _] : checksums.files)
-                disk->removeSharedFile(to + "/" + file, keep_shared_data);
+                disk->removeSharedFile(fs::path(to) / file, keep_shared_data);
     #if !defined(__clang__)
     #    pragma GCC diagnostic pop
     #endif
 
             for (const auto & file : {"checksums.txt", "columns.txt"})
-                disk->removeSharedFile(to + "/" + file, keep_shared_data);
-            disk->removeSharedFileIfExists(to + "/" + DEFAULT_COMPRESSION_CODEC_FILE_NAME, keep_shared_data);
-            disk->removeSharedFileIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_FILE_NAME, keep_shared_data);
+                disk->removeSharedFile(fs::path(to) / file, keep_shared_data);
+            disk->removeSharedFileIfExists(fs::path(to) / DEFAULT_COMPRESSION_CODEC_FILE_NAME, keep_shared_data);
+            disk->removeSharedFileIfExists(fs::path(to) / DELETE_ON_DESTROY_MARKER_FILE_NAME, keep_shared_data);
 
             disk->removeSharedRecursive(to, keep_shared_data);
         }
@@ -1348,7 +1343,7 @@ void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_sh
 
             LOG_ERROR(storage.log, "Cannot quickly remove directory {} by removing files; fallback to recursive removal. Reason: {}", fullPath(disk, to), getCurrentExceptionMessage(false));
 
-            disk->removeSharedRecursive(to + "/", keep_shared_data);
+            disk->removeSharedRecursive(fs::path(to) / "", keep_shared_data);
          }
      }
  }
