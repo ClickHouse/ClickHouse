@@ -12,9 +12,9 @@ endif()
 
 set(CYRUS_SASL_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/cyrus-sasl")
 
-add_library(sasl2)
+add_library(_sasl2)
 
-target_sources(sasl2 PRIVATE
+target_sources(_sasl2 PRIVATE
     "${CYRUS_SASL_SOURCE_DIR}/plugins/gssapi.c"
     # "${CYRUS_SASL_SOURCE_DIR}/plugins/gssapiv2_init.c"
     "${CYRUS_SASL_SOURCE_DIR}/common/plugin_common.c"
@@ -32,11 +32,11 @@ target_sources(sasl2 PRIVATE
     "${CYRUS_SASL_SOURCE_DIR}/lib/checkpw.c"
 )
 
-target_include_directories(sasl2 PUBLIC
+target_include_directories(_sasl2 PUBLIC
     ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-target_include_directories(sasl2 PRIVATE
+target_include_directories(_sasl2 PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}  # for config.h
     "${CYRUS_SASL_SOURCE_DIR}/plugins"
     ${CYRUS_SASL_SOURCE_DIR}
@@ -50,7 +50,7 @@ target_include_directories(sasl2 PRIVATE
     "${CYRUS_SASL_SOURCE_DIR}/tests"
 )
 
-target_compile_definitions(sasl2 PUBLIC
+target_compile_definitions(_sasl2 PUBLIC
     HAVE_CONFIG_H
     # PLUGINDIR="/usr/local/lib/sasl2"
     PLUGINDIR=""
@@ -76,6 +76,6 @@ file(COPY
     DESTINATION ${CMAKE_CURRENT_BINARY_DIR}
 )
 
-target_link_libraries(sasl2 PUBLIC ch_contrib::krb5)
+target_link_libraries(_sasl2 PUBLIC ch_contrib::krb5)
 
-add_library(ch_contrib::sasl2 ALIAS sasl2)
+add_library(ch_contrib::sasl2 ALIAS _sasl2)

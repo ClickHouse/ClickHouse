@@ -63,13 +63,13 @@ set(libprotobuf_lite_files
   ${protobuf_source_dir}/src/google/protobuf/wire_format_lite.cc
 )
 
-add_library(libprotobuf-lite ${libprotobuf_lite_files})
-target_link_libraries(libprotobuf-lite pthread)
+add_library(_libprotobuf-lite ${libprotobuf_lite_files})
+target_link_libraries(_libprotobuf-lite pthread)
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Android")
-    target_link_libraries(libprotobuf-lite log)
+    target_link_libraries(_libprotobuf-lite log)
 endif()
-target_include_directories(libprotobuf-lite SYSTEM PUBLIC ${protobuf_source_dir}/src)
-add_library(protobuf::libprotobuf-lite ALIAS libprotobuf-lite)
+target_include_directories(_libprotobuf-lite SYSTEM PUBLIC ${protobuf_source_dir}/src)
+add_library(protobuf::libprotobuf-lite ALIAS _libprotobuf-lite)
 
 
 set(libprotobuf_files
@@ -127,17 +127,17 @@ set(libprotobuf_files
   ${protobuf_source_dir}/src/google/protobuf/wrappers.pb.cc
 )
 
-add_library(libprotobuf ${libprotobuf_lite_files} ${libprotobuf_files})
+add_library(_libprotobuf ${libprotobuf_lite_files} ${libprotobuf_files})
 if (ENABLE_FUZZING)
-    target_compile_options(libprotobuf PRIVATE "-fsanitize-recover=all")
+    target_compile_options(_libprotobuf PRIVATE "-fsanitize-recover=all")
 endif()
-target_link_libraries(libprotobuf pthread)
-target_link_libraries(libprotobuf ch_contrib::zlib)
+target_link_libraries(_libprotobuf pthread)
+target_link_libraries(_libprotobuf ch_contrib::zlib)
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Android")
-    target_link_libraries(libprotobuf log)
+    target_link_libraries(_libprotobuf log)
 endif()
-target_include_directories(libprotobuf SYSTEM PUBLIC ${protobuf_source_dir}/src)
-add_library(protobuf::libprotobuf ALIAS libprotobuf)
+target_include_directories(_libprotobuf SYSTEM PUBLIC ${protobuf_source_dir}/src)
+add_library(protobuf::libprotobuf ALIAS _libprotobuf)
 
 
 set(libprotoc_files
@@ -226,9 +226,9 @@ set(libprotoc_files
   ${protobuf_source_dir}/src/google/protobuf/compiler/zip_writer.cc
 )
 
-add_library(libprotoc ${libprotoc_files})
-target_link_libraries(libprotoc libprotobuf)
-add_library(protobuf::libprotoc ALIAS libprotoc)
+add_library(_libprotoc ${libprotoc_files})
+target_link_libraries(_libprotoc _libprotobuf)
+add_library(protobuf::libprotoc ALIAS _libprotoc)
 
 set(protoc_files ${protobuf_source_dir}/src/google/protobuf/compiler/main.cc)
 
@@ -236,7 +236,7 @@ if (CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
     AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
 
     add_executable(protoc ${protoc_files})
-    target_link_libraries(protoc libprotoc libprotobuf pthread)
+    target_link_libraries(protoc _libprotoc _libprotobuf pthread)
     add_executable(protobuf::protoc ALIAS protoc)
 
     if (ENABLE_FUZZING)
@@ -319,11 +319,11 @@ endif ()
 include("${ClickHouse_SOURCE_DIR}/contrib/protobuf-cmake/protobuf_generate.cmake")
 
 add_library(_protobuf INTERFACE)
-target_link_libraries(_protobuf INTERFACE libprotobuf)
+target_link_libraries(_protobuf INTERFACE _libprotobuf)
 target_include_directories(_protobuf INTERFACE "${Protobuf_INCLUDE_DIR}")
 add_library(ch_contrib::protobuf ALIAS _protobuf)
 
 add_library(_protoc INTERFACE)
-target_link_libraries(_protoc INTERFACE libprotoc libprotobuf)
+target_link_libraries(_protoc INTERFACE _libprotoc _libprotobuf)
 target_include_directories(_protoc INTERFACE "${Protobuf_INCLUDE_DIR}")
 add_library(ch_contrib::protoc ALIAS _protoc)

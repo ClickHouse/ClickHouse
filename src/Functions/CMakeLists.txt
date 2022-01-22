@@ -18,10 +18,10 @@ target_link_libraries(clickhouse_functions
         clickhouse_dictionaries
         clickhouse_dictionaries_embedded
         clickhouse_parsers
-        consistent-hashing
+        ch_contrib::consistent_hashing
         dbms
-        metrohash
-        murmurhash
+        ch_contrib::metrohash
+        ch_contrib::murmurhash
 
     PRIVATE
         ch_contrib::zlib
