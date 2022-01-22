@@ -320,6 +320,7 @@ set_source_files_properties(
         Columns/ColumnsCommon.cpp
         Columns/ColumnVector.cpp
         Columns/ColumnDecimal.cpp
+        Columns/ColumnString.cpp
         PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS}")
 
 target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::re2_st)
