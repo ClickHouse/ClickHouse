@@ -53,7 +53,10 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
     auto task = std::make_shared<std::packaged_task<Result()>>([request, running_group, query_context]
     {
         ThreadStatus thread_status;
-        thread_status.attachQueryContext(query_context);
+
+        if (query_context)
+            thread_status.attachQueryContext(query_context);
+
         thread_status.attachQuery(running_group);
         setThreadName("VFSRead");
 
