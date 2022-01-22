@@ -29,9 +29,9 @@ set (SRCS_LTDL
     "${LIBRARY_DIR}/libltdl/loaders/preopen.c"
 )
 
-add_library (ltdl ${SRCS_LTDL})
+add_library (_ltdl ${SRCS_LTDL})
 
-target_include_directories(ltdl
+target_include_directories(_ltdl
     SYSTEM
     PRIVATE
         linux_x86_64/libltdl
@@ -39,8 +39,8 @@ target_include_directories(ltdl
         "${LIBRARY_DIR}/libltdl"
         "${LIBRARY_DIR}/libltdl/libltdl"
 )
-target_compile_definitions(ltdl PRIVATE -DHAVE_CONFIG_H -DLTDL -DLTDLOPEN=libltdlc)
-target_compile_options(ltdl PRIVATE -Wno-constant-logical-operand -Wno-unknown-warning-option -O2)
+target_compile_definitions(_ltdl PRIVATE -DHAVE_CONFIG_H -DLTDL -DLTDLOPEN=libltdlc)
+target_compile_options(_ltdl PRIVATE -Wno-constant-logical-operand -Wno-unknown-warning-option -O2)
 
 # odbc
 
@@ -279,13 +279,13 @@ set (SRCS
     "${LIBRARY_DIR}/odbcinst/SQLWritePrivateProfileString.c"
 )
 
-add_library (unixodbc ${SRCS})
+add_library (_unixodbc ${SRCS})
 
-target_link_libraries (unixodbc PRIVATE ltdl)
+target_link_libraries (_unixodbc PRIVATE _ltdl)
 
 # SYSTEM_FILE_PATH was changed to /etc
 
-target_include_directories (unixodbc
+target_include_directories (_unixodbc
     SYSTEM
     PRIVATE
         linux_x86_64/private
@@ -293,8 +293,8 @@ target_include_directories (unixodbc
         linux_x86_64
         "${LIBRARY_DIR}/include"
 )
-target_compile_definitions (unixodbc PRIVATE -DHAVE_CONFIG_H)
-target_compile_options (unixodbc
+target_compile_definitions (_unixodbc PRIVATE -DHAVE_CONFIG_H)
+target_compile_options (_unixodbc
     PRIVATE
         -Wno-dangling-else
         -Wno-parentheses
@@ -304,4 +304,4 @@ target_compile_options (unixodbc
         -O2
 )
 
-add_library (ch_contrib::unixodbc ALIAS unixodbc)
+add_library (ch_contrib::unixodbc ALIAS _unixodbc)
