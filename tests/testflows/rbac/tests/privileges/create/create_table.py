@@ -829,20 +829,17 @@ def create_as_merge(self, node=None):
     RQ_SRS_006_RBAC_Privileges_CreateTable("1.0"),
 )
 @Name("create table")
-def feature(self, stress=None, parallel=None, node="clickhouse1"):
+def feature(self, stress=None, node="clickhouse1"):
     """Check the RBAC functionality of CREATE TABLE.
     """
     self.context.node = self.context.cluster.node(node)
 
     if stress is not None:
         self.context.stress = stress
-    if parallel is not None:
-        self.context.stress = parallel
 
-    tasks = []
     with Pool(10) as pool:
         try:
             for scenario in loads(current_module(), Scenario):
-                run_scenario(pool, tasks, scenario)
+                Scenario(run=scenario, parallel=True, executor=pool)
         finally:
-            join(tasks)
+            join()
