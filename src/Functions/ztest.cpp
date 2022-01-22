@@ -152,6 +152,12 @@ namespace DB
                     continue;
                 }
 
+                if (!std::isfinite(zstat))
+                {
+                    nan(to);
+                    continue;
+                }
+
                 // pvalue
                 boost::math::normal_distribution<> nd(0.0, 1.0);
                 Float64 pvalue = 0;
