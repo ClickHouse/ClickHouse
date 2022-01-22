@@ -238,7 +238,6 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, co
     }
     else
     {
-        /// TODO: Pass cache for non-asynchronous reader too.
         auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(s3_impl));
         return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings->min_bytes_for_seek);
     }

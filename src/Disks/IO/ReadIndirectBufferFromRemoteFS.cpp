@@ -13,7 +13,9 @@ namespace ErrorCodes
 
 
 ReadIndirectBufferFromRemoteFS::ReadIndirectBufferFromRemoteFS(
-    std::shared_ptr<ReadBufferFromRemoteFSGather> impl_) : impl(std::move(impl_))
+    std::shared_ptr<ReadBufferFromRemoteFSGather> impl_)
+    : ReadBufferFromFileBase(DBMS_DEFAULT_BUFFER_SIZE, nullptr, 0)
+    , impl(std::move(impl_))
 {
 }
 
@@ -72,6 +74,8 @@ off_t ReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence)
 
 bool ReadIndirectBufferFromRemoteFS::nextImpl()
 {
+    assert(!internal_buffer.empty());
+
     /// Transfer current position and working_buffer to actual ReadBuffer
     swap(*impl);
     /// Position and working_buffer will be updated in next() call

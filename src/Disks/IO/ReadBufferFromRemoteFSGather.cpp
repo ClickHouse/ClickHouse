@@ -27,8 +27,9 @@ namespace DB
 {
 
 #if USE_AWS_S3
-SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const String & path) const
+SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const String & path)
 {
+    current_path = path;
     bool use_external_buffer = settings.remote_fs_method == RemoteFSReadMethod::threadpool;
 
     auto reader = std::make_unique<ReadBufferFromS3>(
@@ -49,8 +50,9 @@ SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const S
 
 
 #if USE_AZURE_BLOB_STORAGE
-SeekableReadBufferPtr ReadBufferFromAzureBlobStorageGather::createImplementationBuffer(const String & path) const
+SeekableReadBufferPtr ReadBufferFromAzureBlobStorageGather::createImplementationBuffer(const String & path)
 {
+    current_path = path;
     bool use_external_buffer = settings.remote_fs_method == RemoteFSReadMethod::threadpool;
     return std::make_unique<ReadBufferFromAzureBlobStorage>(blob_container_client, path, max_single_read_retries,
         max_single_download_retries, settings.remote_fs_buffer_size, use_external_buffer, read_until_position);
@@ -58,15 +60,16 @@ SeekableReadBufferPtr ReadBufferFromAzureBlobStorageGather::createImplementation
 #endif
 
 
-SeekableReadBufferPtr ReadBufferFromWebServerGather::createImplementationBuffer(const String & path) const
+SeekableReadBufferPtr ReadBufferFromWebServerGather::createImplementationBuffer(const String & path)
 {
+    current_path = path;
     bool use_external_buffer = settings.remote_fs_method == RemoteFSReadMethod::threadpool;
     return std::make_unique<ReadBufferFromWebServer>(fs::path(uri) / path, context, settings, use_external_buffer, read_until_position);
 }
 
 
 #if USE_HDFS
-SeekableReadBufferPtr ReadBufferFromHDFSGather::createImplementationBuffer(const String & path) const
+SeekableReadBufferPtr ReadBufferFromHDFSGather::createImplementationBuffer(const String & path)
 {
     return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, fs::path(hdfs_directory) / path, config, buf_size);
 }
@@ -135,6 +138,8 @@ void ReadBufferFromRemoteFSGather::initialize()
 
 bool ReadBufferFromRemoteFSGather::nextImpl()
 {
+    assert(!internal_buffer.empty());
+
     /// Find first available buffer that fits to given offset.
     if (!current_buf)
         initialize();
@@ -210,7 +215,7 @@ void ReadBufferFromRemoteFSGather::reset()
 
 String ReadBufferFromRemoteFSGather::getFileName() const
 {
-    return canonical_path;
+    return current_path;
 }
 
 

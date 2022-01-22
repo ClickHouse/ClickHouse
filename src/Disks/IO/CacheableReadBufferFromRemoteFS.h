@@ -25,8 +25,6 @@ public:
 
     off_t getPosition() override;
 
-    ~CacheableReadBufferFromRemoteFS() override;
-
 private:
     void initialize(size_t offset, size_t size);
 
@@ -34,7 +32,7 @@ private:
     SeekableReadBufferPtr createReadBuffer(FileSegmentPtr file_segment);
 
     size_t getTotalSizeToRead();
-    void completeFileSegmentAndGetNext();
+    bool completeFileSegmentAndGetNext();
 
     Poco::Logger * log;
     FileCache::Key key;

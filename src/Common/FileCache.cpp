@@ -249,6 +249,7 @@ FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t
         }
     }
 
+    assert(!file_segments.empty());
     return FileSegmentsHolder(std::move(file_segments));
 }
 
@@ -303,7 +304,7 @@ LRUFileCache::FileSegmentCell * LRUFileCache::setImpl(
     if (!size)
         return nullptr;
 
-    LOG_TEST(log, "Set. Key: {}, offset: {}, size: {}", keyToStr(key), offset, size);
+    LOG_TEST(log, "SetImpl. Key: {}, offset: {}, size: {}", keyToStr(key), offset, size);
 
     switch (state)
     {
@@ -715,7 +716,7 @@ FileSegment::State FileSegment::wait()
         {
             LOG_TEST(&Poco::Logger::get("kssenii"), "Waiting on: {}", range().toString());
 
-            cv.wait_for(segment_lock, std::chrono::seconds(60));
+            cv.wait_for(segment_lock, std::chrono::seconds(60)); /// TODO: use value defined by setting
             break;
         }
         case State::DOWNLOADED:[[fallthrough]];
