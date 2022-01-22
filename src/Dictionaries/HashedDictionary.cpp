@@ -583,7 +583,7 @@ void HashedDictionary<dictionary_key_type, sparse>::loadData()
     if (configuration.require_nonempty && 0 == element_count)
         throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY,
             "{}: dictionary source is empty and 'require_nonempty' property is set.",
-            full_name);
+            getFullName());
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
@@ -661,22 +661,20 @@ Pipe HashedDictionary<dictionary_key_type, sparse>::read(const Names & column_na
     ColumnsWithTypeAndName key_columns;
 
     if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-        key_columns = {ColumnWithTypeAndName(getColumnFromPODArray(keys), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
-    else
-        key_columns = deserializeColumnsWithTypeAndNameFromKeys(dict_struct, keys, 0, keys.size());
-
-    std::shared_ptr<const IDictionary> dictionary = shared_from_this();
-    auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns), max_block_size);
-
-    Pipes pipes;
-
-    for (size_t i = 0; i < num_streams; ++i)
     {
-        auto source = std::make_shared<DictionarySource>(coordinator);
-        pipes.emplace_back(Pipe(std::move(source)));
+        auto keys_column = getColumnFromPODArray(std::move(keys));
+        key_columns = {ColumnWithTypeAndName(std::move(keys_column), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
+    }
+    else
+    {
+        key_columns = deserializeColumnsWithTypeAndNameFromKeys(dict_struct, keys, 0, keys.size());
     }
 
-    return Pipe::unitePipes(std::move(pipes));
+    std::shared_ptr<const IDictionary> dictionary = shared_from_this();
+    auto coordinator = DictionarySourceCoordinator::create(dictionary, column_names, std::move(key_columns), max_block_size);
+    auto result = coordinator->read(num_streams);
+
+    return result;
 }
 
 template <DictionaryKeyType dictionary_key_type, bool sparse>
