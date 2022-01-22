@@ -182,6 +182,9 @@ struct FileSegmentsHolder : boost::noncopyable
 
     ~FileSegmentsHolder()
     {
+        /// CacheableReadBufferFromRemoteFS removes completed file segments from FileSegmentsHolder, so
+        /// in destruction here remain only uncompleted file segments.
+
         for (auto & segment : file_segments)
         {
             /// In general file segment is completed by downloader by calling segment->complete()
