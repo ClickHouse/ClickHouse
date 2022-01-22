@@ -184,7 +184,7 @@ bool MergeTreeColumnDistributionStatisticCollectorTDigest::empty() const
     return !sketch.has_value();
 }
 
-IMergeTreeColumnDistributionStatisticPtr MergeTreeColumnDistributionStatisticCollectorTDigest::getStatisticAndReset()
+IColumnDistributionStatisticPtr MergeTreeColumnDistributionStatisticCollectorTDigest::getStatisticAndReset()
 {
     if (empty())
         throw Exception("TDigest collector is empty", ErrorCodes::LOGICAL_ERROR);
@@ -224,7 +224,7 @@ void MergeTreeColumnDistributionStatisticCollectorTDigest::granuleFinished()
     // do nothing
 }
 
-IMergeTreeColumnDistributionStatisticPtr creatorColumnDistributionStatisticTDigest(const StatisticDescription & stat)
+IColumnDistributionStatisticPtr creatorColumnDistributionStatisticTDigest(const StatisticDescription & stat)
 {
     return std::make_shared<MergeTreeColumnDistributionStatisticTDigest>(stat.column_names.front());
 }

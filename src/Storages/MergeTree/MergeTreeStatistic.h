@@ -17,9 +17,6 @@ constexpr auto PART_STATS_FILE_EXT = "bin_stats";
 namespace DB
 {
 
-using IMergeTreeColumnDistributionStatisticPtr = std::shared_ptr<IColumnDistributionStatistic>;
-using IMergeTreeColumnDistributionStatisticPtrs = std::vector<IMergeTreeColumnDistributionStatisticPtr>;
-
 class IMergeTreeColumnDistributionStatisticCollector {
 public:
     virtual ~IMergeTreeColumnDistributionStatisticCollector() = default;
@@ -27,7 +24,7 @@ public:
     virtual const String & name() const = 0;
     virtual const String & column() const = 0;
     virtual bool empty() const = 0;
-    virtual IMergeTreeColumnDistributionStatisticPtr getStatisticAndReset() = 0;
+    virtual IColumnDistributionStatisticPtr getStatisticAndReset() = 0;
 
     /// Updates the stored info using rows of the specified block.
     /// Reads no more than `limit` rows.
@@ -49,11 +46,11 @@ public:
     void deserializeBinary(ReadBuffer & istr)  override;
 
     std::optional<double> estimateProbability(const String & column, const Field & lower, const Field & upper) const override;
-    void add(const String & name, const IMergeTreeColumnDistributionStatisticPtr & stat) override;
+    void add(const String & name, const IColumnDistributionStatisticPtr & stat) override;
     void remove(const String & name) override;
 
 private:
-    std::unordered_map<String, IMergeTreeColumnDistributionStatisticPtr> column_to_stats;
+    std::unordered_map<String, IColumnDistributionStatisticPtr> column_to_stats;
 };
 
 using MergeTreeColumnDistributionStatisticsPtr = std::shared_ptr<MergeTreeColumnDistributionStatistics>;
@@ -83,10 +80,10 @@ class MergeTreeStatisticFactory : private boost::noncopyable
 public:
     static MergeTreeStatisticFactory & instance();
 
-    using StatCreator = std::function<IMergeTreeColumnDistributionStatisticPtr(const StatisticDescription & stat)>;
+    using StatCreator = std::function<IColumnDistributionStatisticPtr(const StatisticDescription & stat)>;
     using CollectorCreator = std::function<IMergeTreeColumnDistributionStatisticCollectorPtr(const StatisticDescription & stat)>;
 
-    IMergeTreeColumnDistributionStatisticPtr getColumnDistributionStatistic(const StatisticDescription & stat) const;
+    IColumnDistributionStatisticPtr getColumnDistributionStatistic(const StatisticDescription & stat) const;
     MergeTreeStatisticsPtr get(const std::vector<StatisticDescription> & stats) const;
 
     IMergeTreeColumnDistributionStatisticCollectorPtr getColumnDistributionStatisticCollector(

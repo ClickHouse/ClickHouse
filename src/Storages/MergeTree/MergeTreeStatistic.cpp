@@ -63,7 +63,7 @@ std::optional<double> MergeTreeColumnDistributionStatistics::estimateProbability
     return column_to_stats.at(column)->estimateProbability(lower, upper);
 }
 
-void MergeTreeColumnDistributionStatistics::add(const String & name, const IMergeTreeColumnDistributionStatisticPtr & stat) {
+void MergeTreeColumnDistributionStatistics::add(const String & name, const IColumnDistributionStatisticPtr & stat) {
     if (stat == nullptr)
     {
         column_to_stats.erase(name);
@@ -209,7 +209,7 @@ void MergeTreeStatisticFactory::registerCreators(
                         ErrorCodes::LOGICAL_ERROR);
 }
 
-IMergeTreeColumnDistributionStatisticPtr MergeTreeStatisticFactory::getColumnDistributionStatistic(
+IColumnDistributionStatisticPtr MergeTreeStatisticFactory::getColumnDistributionStatistic(
     const StatisticDescription & stat) const
 {
     auto it = creators.find(stat.type);

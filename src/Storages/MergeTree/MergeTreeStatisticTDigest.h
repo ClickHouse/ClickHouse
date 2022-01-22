@@ -42,7 +42,7 @@ public:
     const String & name() const override;
     const String & column() const override;
     bool empty() const override;
-    IMergeTreeColumnDistributionStatisticPtr getStatisticAndReset() override;
+    IColumnDistributionStatisticPtr getStatisticAndReset() override;
 
     void update(const Block & block, size_t * pos, size_t limit) override;
     void granuleFinished() override;
@@ -52,7 +52,7 @@ private:
     std::optional<QuantileTDigest<Float32>> sketch;
 };
 
-IMergeTreeColumnDistributionStatisticPtr creatorColumnDistributionStatisticTDigest(const StatisticDescription & stat);
+IColumnDistributionStatisticPtr creatorColumnDistributionStatisticTDigest(const StatisticDescription & stat);
 IMergeTreeColumnDistributionStatisticCollectorPtr creatorColumnDistributionStatisticCollectorTDigest(const StatisticDescription & stat);
 
 }
