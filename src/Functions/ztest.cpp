@@ -119,9 +119,10 @@ namespace DB
                 const UInt64 trials_total = trials_x + trials_y;
                 const Float64 confidence_level = arguments[4].column->getFloat64(row_num);
 
-                if ((successes_x == 0 || successes_y == 0)
-                    || (successes_x > trials_x || successes_y > trials_y)
-                    || trials_total == 0)
+                if (successes_x == 0 || successes_y == 0
+                    || successes_x > trials_x || successes_y > trials_y
+                    || trials_total == 0
+                    || !std::isfinite(confidence_level) || confidence_level < 0.0 || confidence_level > 1.0)
                 {
                     nan(to);
                     continue;
