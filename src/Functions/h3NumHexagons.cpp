@@ -8,7 +8,6 @@
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
-#include <base/range.h>
 
 #include <constants.h>
 #include <h3api.h>
@@ -18,25 +17,20 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int ILLEGAL_COLUMN;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int ILLEGAL_COLUMN;
+extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 namespace
 {
 
-// Average metric edge length of H3 hexagon. The edge length `e` for given resolution `res` can
-// be used for converting metric search radius `radius` to hexagon search ring size `k` that is
-// used by `H3kRing` function. For small enough search area simple flat approximation can be used,
-// i.e. the smallest `k` that satisfies relation `3 k^2 - 3 k + 1 >= (radius / e)^2` should be
-// chosen
-class FunctionH3EdgeLengthM : public IFunction
+class FunctionH3NumHexagons : public IFunction
 {
 public:
-    static constexpr auto name = "h3EdgeLengthM";
+    static constexpr auto name = "h3NumHexagons";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3EdgeLengthM>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3NumHexagons>(); }
 
     std::string getName() const override { return name; }
 
@@ -53,7 +47,7 @@ public:
                 "Illegal type {} of argument {} of function {}. Must be UInt8",
                 arg->getName(), 1, getName());
 
-        return std::make_shared<DataTypeFloat64>();
+        return std::make_shared<DataTypeInt64>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -63,13 +57,13 @@ public:
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal type {} of argument {} of function {}. Must be UInt8",
-                arguments[0].column->getName(),
+                arguments[0].type->getName(),
                 1,
                 getName());
 
         const auto & data = column->getData();
 
-        auto dst = ColumnVector<Float64>::create();
+        auto dst = ColumnVector<Int64>::create();
         auto & dst_data = dst->getData();
         dst_data.resize(input_rows_count);
 
@@ -81,9 +75,7 @@ public:
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                     "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is ",
                     toString(resolution), getName(), MAX_H3_RES);
-
-            Float64 res = getHexagonEdgeLengthAvgM(resolution);
-
+            Int64 res = getNumCells(resolution);
             dst_data[row] = res;
         }
 
@@ -93,9 +85,9 @@ public:
 
 }
 
-void registerFunctionH3EdgeLengthM(FunctionFactory & factory)
+void registerFunctionH3NumHexagons(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionH3EdgeLengthM>();
+    factory.registerFunction<FunctionH3NumHexagons>();
 }
 
 }

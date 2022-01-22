@@ -18,25 +18,19 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int ILLEGAL_COLUMN;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int ILLEGAL_COLUMN;
 }
 
 namespace
 {
 
-// Average metric edge length of H3 hexagon. The edge length `e` for given resolution `res` can
-// be used for converting metric search radius `radius` to hexagon search ring size `k` that is
-// used by `H3kRing` function. For small enough search area simple flat approximation can be used,
-// i.e. the smallest `k` that satisfies relation `3 k^2 - 3 k + 1 >= (radius / e)^2` should be
-// chosen
-class FunctionH3EdgeLengthM : public IFunction
+class FunctionH3ExactEdgeLengthRads : public IFunction
 {
 public:
-    static constexpr auto name = "h3EdgeLengthM";
+    static constexpr auto name = "h3ExactEdgeLengthRads";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3EdgeLengthM>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ExactEdgeLengthRads>(); }
 
     std::string getName() const override { return name; }
 
@@ -47,10 +41,10 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto * arg = arguments[0].get();
-        if (!WhichDataType(arg).isUInt8())
+        if (!WhichDataType(arg).isUInt64())
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be UInt8",
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
                 arg->getName(), 1, getName());
 
         return std::make_shared<DataTypeFloat64>();
@@ -58,12 +52,12 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * column = checkAndGetColumn<ColumnUInt8>(arguments[0].column.get());
+        const auto * column = checkAndGetColumn<ColumnUInt64>(arguments[0].column.get());
         if (!column)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal type {} of argument {} of function {}. Must be UInt8",
-                arguments[0].column->getName(),
+                "Illegal type {} of argument {} of function {}. Must be UInt64",
+                arguments[0].type->getName(),
                 1,
                 getName());
 
@@ -75,15 +69,8 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const UInt8 resolution = data[row];
-            if (resolution > MAX_H3_RES)
-                throw Exception(
-                    ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                    "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is ",
-                    toString(resolution), getName(), MAX_H3_RES);
-
-            Float64 res = getHexagonEdgeLengthAvgM(resolution);
-
+            const UInt64 index = data[row];
+            Float64 res = exactEdgeLengthRads(index);
             dst_data[row] = res;
         }
 
@@ -93,9 +80,9 @@ public:
 
 }
 
-void registerFunctionH3EdgeLengthM(FunctionFactory & factory)
+void registerFunctionH3ExactEdgeLengthRads(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionH3EdgeLengthM>();
+    factory.registerFunction<FunctionH3ExactEdgeLengthRads>();
 }
 
 }
