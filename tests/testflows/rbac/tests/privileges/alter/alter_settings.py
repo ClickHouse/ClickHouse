@@ -191,7 +191,7 @@ def scenario_parallelization(self, table_type, privilege):
     (key,) for key in table_types.keys()
 ])
 @Name("alter settings")
-def feature(self, node="clickhouse1", stress=None):
+def feature(self, stress=None, node="clickhouse1"):
     """Runs test suites above which check correctness over scenarios and permutations
     """
     self.context.node = self.context.cluster.node(node)

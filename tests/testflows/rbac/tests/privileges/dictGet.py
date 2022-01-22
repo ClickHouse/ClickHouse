@@ -651,7 +651,7 @@ def dictGetType_check(self, privilege, on, grant_target_name, user_name, type, n
     RQ_SRS_006_RBAC_Privileges_None("1.0")
 )
 @Name("dictGet")
-def feature(self, node="clickhouse1", stress=None):
+def feature(self, stress=None, node="clickhouse1"):
     """Check the RBAC functionality of dictGet.
     """
     self.context.node = self.context.cluster.node(node)
@@ -661,17 +661,16 @@ def feature(self, node="clickhouse1", stress=None):
 
     with Pool(20) as pool:
         try:
-
-            Suite(test=dictGet_granted_directly, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
-            Suite(test=dictGet_granted_via_role, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
-            Suite(test=dictGetOrDefault_granted_directly, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
-            Suite(test=dictGetOrDefault_granted_via_role, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
-            Suite(test=dictHas_granted_directly, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
-            Suite(test=dictHas_granted_via_role, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
-            Suite(test=dictGetHierarchy_granted_directly, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
-            Suite(test=dictGetHierarchy_granted_via_role, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
-            Suite(test=dictIsIn_granted_directly, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
-            Suite(test=dictIsIn_granted_via_role, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
+            Suite(run=dictGet_granted_directly, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
+            Suite(run=dictGet_granted_via_role, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
+            Suite(run=dictGetOrDefault_granted_directly, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
+            Suite(run=dictGetOrDefault_granted_via_role, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
+            Suite(run=dictHas_granted_directly, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
+            Suite(run=dictHas_granted_via_role, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
+            Suite(run=dictGetHierarchy_granted_directly, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
+            Suite(run=dictGetHierarchy_granted_via_role, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
+            Suite(run=dictIsIn_granted_directly, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
+            Suite(run=dictIsIn_granted_via_role, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)
 
             for example in dictGetType_granted_directly.examples:
                 type, = example
