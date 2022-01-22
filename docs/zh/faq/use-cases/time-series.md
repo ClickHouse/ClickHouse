@@ -6,7 +6,7 @@ toc_priority: 101
 
 # 我能把 ClickHouse 当做时序数据库来使用吗? {#can-i-use-clickhouse-as-a-time-series-database}
 
-ClickHouse是一个通用的数据存储解决方案[OLAP](../../faq/general/ OLAP .md)的工作负载，而有许多专门的时间序列数据库管理系统。然而，ClickHouse的[专注于查询执行速度](../../faq/general/why-clickhouse-is-so-fast.md)使得它在许多情况下的性能优于专门的系统。关于这个话题有很多独立的基准，所以我们不打算在这里进行论述。相反，让我们将重点放在ClickHouse的重要功能(如果这是你的用例)上。
+ClickHouse是一个通用的数据存储解决方案[OLAP](../../faq/general/OLAP.md)的工作负载，而有许多专门的时间序列数据库管理系统。然而，ClickHouse的[专注于查询执行速度](../../faq/general/why-clickhouse-is-so-fast.md)使得它在许多情况下的性能优于专门的系统。关于这个话题有很多独立的基准，所以我们不打算在这里进行论述。相反，让我们将重点放在ClickHouse的重要功能(如果这是你的用例)上。
 
 
 
