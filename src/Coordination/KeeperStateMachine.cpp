@@ -212,15 +212,13 @@ void KeeperStateMachine::create_snapshot(
             }
 
             {
+                /// Destroy snapshot with lock
+                std::lock_guard lock(storage_and_responses_lock);
                 LOG_TRACE(log, "Clearing garbage after snapshot");
                 /// Turn off "snapshot mode" and clear outdate part of storage state
                 storage->clearGarbageAfterSnapshot(snapshot->snapshot_container_size);
                 LOG_TRACE(log, "Cleared garbage after snapshot");
-                {
-                    /// Destroy snapshot with lock
-                    std::lock_guard lock(storage_and_responses_lock);
-                    snapshot.reset();
-                }
+                snapshot.reset();
             }
         }
         catch (...)
