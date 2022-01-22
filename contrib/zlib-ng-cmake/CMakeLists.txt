@@ -131,7 +131,6 @@ set(ZLIB_SRCS
 set(ZLIB_ALL_SRCS ${ZLIB_SRCS} ${ZLIB_ARCH_SRCS})
 
 add_library(_zlib ${ZLIB_ALL_SRCS})
-add_library(zlibstatic ALIAS _zlib)
 add_library(ch_contrib::zlib ALIAS _zlib)
 
 # https://github.com/zlib-ng/zlib-ng/pull/733
