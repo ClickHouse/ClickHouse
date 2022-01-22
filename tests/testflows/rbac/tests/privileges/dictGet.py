@@ -21,11 +21,11 @@ def dict_setup(node, table_name, dict_name, type="UInt64"):
         yield
 
     finally:
-        with Finally("I drop the table", flags=TE):
-            node.query(f"DROP TABLE IF EXISTS {table_name}")
-
-        with And("I drop the dictionary", flags=TE):
+        with Finally("I drop the dictionary", flags=TE):
             node.query(f"DROP DICTIONARY IF EXISTS {dict_name}")
+
+        with And("I drop the table", flags=TE):
+            node.query(f"DROP TABLE IF EXISTS {table_name}")
 
 @TestSuite
 def dictGet_granted_directly(self, node=None):
