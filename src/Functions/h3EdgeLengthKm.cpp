@@ -18,25 +18,20 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int ILLEGAL_COLUMN;
+extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int ARGUMENT_OUT_OF_BOUND;
+extern const int ILLEGAL_COLUMN;
 }
 
 namespace
 {
 
-// Average metric edge length of H3 hexagon. The edge length `e` for given resolution `res` can
-// be used for converting metric search radius `radius` to hexagon search ring size `k` that is
-// used by `H3kRing` function. For small enough search area simple flat approximation can be used,
-// i.e. the smallest `k` that satisfies relation `3 k^2 - 3 k + 1 >= (radius / e)^2` should be
-// chosen
-class FunctionH3EdgeLengthM : public IFunction
+class FunctionH3EdgeLengthKm : public IFunction
 {
 public:
-    static constexpr auto name = "h3EdgeLengthM";
+    static constexpr auto name = "h3EdgeLengthKm";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3EdgeLengthM>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3EdgeLengthKm>(); }
 
     std::string getName() const override { return name; }
 
@@ -63,7 +58,7 @@ public:
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal type {} of argument {} of function {}. Must be UInt8",
-                arguments[0].column->getName(),
+                arguments[0].type->getName(),
                 1,
                 getName());
 
@@ -80,10 +75,10 @@ public:
                 throw Exception(
                     ErrorCodes::ARGUMENT_OUT_OF_BOUND,
                     "The argument 'resolution' ({}) of function {} is out of bounds because the maximum resolution in H3 library is ",
-                    toString(resolution), getName(), MAX_H3_RES);
-
-            Float64 res = getHexagonEdgeLengthAvgM(resolution);
-
+                    toString(resolution),
+                    getName(),
+                    MAX_H3_RES);
+            Float64 res = getHexagonEdgeLengthAvgKm(resolution);
             dst_data[row] = res;
         }
 
@@ -93,9 +88,9 @@ public:
 
 }
 
-void registerFunctionH3EdgeLengthM(FunctionFactory & factory)
+void registerFunctionH3EdgeLengthKm(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionH3EdgeLengthM>();
+    factory.registerFunction<FunctionH3EdgeLengthKm>();
 }
 
 }
