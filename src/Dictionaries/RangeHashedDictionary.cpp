@@ -780,6 +780,9 @@ void registerDictionaryRangeHashed(DictionaryFactory & factory)
                 "{}: dictionary of layout 'range_hashed' requires .structure.range_min and .structure.range_max",
                 full_name);
 
+        if (dict_struct.attributes.empty())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Empty attributes are not supported for dictionary of layout 'range_hashed'");
+
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
@@ -802,6 +805,9 @@ void registerDictionaryRangeHashed(DictionaryFactory & factory)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "{}: dictionary of layout 'complex_key_range_hashed' requires .structure.range_min and .structure.range_max",
                 full_name);
+
+        if (dict_struct.attributes.empty())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Empty attributes are not supported for dictionary of layout 'complex_key_range_hashed'");
 
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};

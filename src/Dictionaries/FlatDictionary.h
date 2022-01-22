@@ -154,9 +154,6 @@ private:
     template <typename T>
     void resize(Attribute & attribute, UInt64 key);
 
-    template <typename T>
-    void setAttributeValueImpl(Attribute & attribute, UInt64 key, const T & value);
-
     void setAttributeValue(Attribute & attribute, UInt64 key, const Field & value);
 
     const DictionaryStructure dict_struct;
