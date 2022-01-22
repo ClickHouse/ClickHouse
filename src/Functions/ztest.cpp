@@ -91,7 +91,7 @@ namespace DB
             return col_json_string;
         }
 
-        void nan(MutableColumnPtr & to) const
+        static void nan(MutableColumnPtr & to)
         {
             const Float64 nan = std::numeric_limits<Float64>::quiet_NaN();
             Tuple tuple({nan, nan, nan, nan});
