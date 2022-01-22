@@ -5,6 +5,7 @@
 #include <variant>
 #include <optional>
 #include <sparsehash/sparse_hash_map>
+#include <sparsehash/sparse_hash_set>
 
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
@@ -120,8 +121,13 @@ private:
     template <typename Value>
     using CollectionTypeNonSparse = std::conditional_t<
         dictionary_key_type == DictionaryKeyType::Simple,
-        HashMap<UInt64, Value>,
+        HashMap<UInt64, Value, DefaultHash<UInt64>>,
         HashMapWithSavedHash<StringRef, Value, DefaultHash<StringRef>>>;
+
+    using NoAttributesCollectionTypeNonSparse = std::conditional_t<
+        dictionary_key_type == DictionaryKeyType::Simple,
+        HashSet<UInt64, DefaultHash<UInt64>>,
+        HashSetWithSavedHash<StringRef, DefaultHash<StringRef>>>;
 
     /// Here we use sparse_hash_map with DefaultHash<> for the following reasons:
     ///
@@ -140,8 +146,12 @@ private:
         google::sparse_hash_map<UInt64, Value, DefaultHash<KeyType>>,
         google::sparse_hash_map<StringRef, Value, DefaultHash<KeyType>>>;
 
+    using NoAttributesCollectionTypeSparse = google::sparse_hash_set<KeyType, DefaultHash<KeyType>>;
+
     template <typename Value>
     using CollectionType = std::conditional_t<sparse, CollectionTypeSparse<Value>, CollectionTypeNonSparse<Value>>;
+
+    using NoAttributesCollectionType = std::conditional_t<sparse, NoAttributesCollectionTypeSparse, NoAttributesCollectionTypeNonSparse>;
 
     using NullableSet = HashSet<KeyType, DefaultHash<KeyType>>;
 
@@ -214,6 +224,7 @@ private:
 
     BlockPtr update_field_loaded_block;
     Arena string_arena;
+    NoAttributesCollectionType no_attributes_container;
 };
 
 extern template class HashedDictionary<DictionaryKeyType::Simple, false>;
