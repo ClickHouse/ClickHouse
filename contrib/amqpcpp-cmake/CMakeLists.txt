@@ -1,3 +1,10 @@
+option(ENABLE_AMQPCPP "Enable AMQP-CPP" ${ENABLE_LIBRARIES})
+
+if (NOT ENABLE_AMQPCPP)
+    message(STATUS "Not using AMQP-CPP")
+    return()
+endif()
+
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/AMQP-CPP")
 
 set (SRCS
@@ -23,9 +30,9 @@ set (SRCS
     "${LIBRARY_DIR}/src/watchable.cpp"
 )
 
-add_library(amqp-cpp ${SRCS})
+add_library(_amqp-cpp ${SRCS})
 
-target_compile_options (amqp-cpp
+target_compile_options (_amqp-cpp
     PRIVATE
         -Wno-old-style-cast
         -Wno-inconsistent-missing-destructor-override
@@ -40,5 +47,6 @@ target_compile_options (amqp-cpp
         -w
 )
 
-target_include_directories (amqp-cpp SYSTEM PUBLIC "${LIBRARY_DIR}/include")
-target_link_libraries(amqp-cpp PUBLIC ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
+target_include_directories (_amqp-cpp SYSTEM BEFORE PUBLIC "${LIBRARY_DIR}/include" "${LIBRARY_DIR}")
+target_link_libraries (_amqp-cpp PUBLIC OpenSSL::Crypto OpenSSL::SSL ch_contrib::uv)
+add_library (ch_contrib::amqp_cpp ALIAS _amqp-cpp)
