@@ -409,10 +409,15 @@ void DictionaryStructure::parseRangeConfiguration(const Poco::Util::AbstractConf
             range_max->type->getName());
     }
 
-    if (!range_min->type->isValueRepresentedByInteger())
+    WhichDataType range_type(range_min->type);
+
+    bool valid_range = range_type.isInt() || range_type.isUInt() || range_type.isDecimal() || range_type.isFloat() || range_type.isEnum()
+        || range_type.isDate() || range_type.isDate32() || range_type.isDateTime() || range_type.isDateTime64();
+
+    if (!valid_range)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Dictionary structure type of 'range_min' and 'range_max' should be an integer, Date, DateTime, or Enum."
+            "Dictionary structure type of 'range_min' and 'range_max' should be an Integer, Flaot, Decimal, Date, Date32, DateTime DateTime64, or Enum."
             " Actual 'range_min' and 'range_max' type is {}",
             range_min->type->getName());
     }
