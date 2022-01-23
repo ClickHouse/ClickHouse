@@ -34,7 +34,7 @@ public:
 };
 
 using IMergeTreeColumnDistributionStatisticCollectorPtr = std::shared_ptr<IMergeTreeColumnDistributionStatisticCollector>;
-using IMergeTreeColumnDistributionStatisticCollectors = std::vector<IMergeTreeColumnDistributionStatisticCollectorPtr>;
+using IMergeTreeColumnDistributionStatisticCollectorPtrs = std::vector<IMergeTreeColumnDistributionStatisticCollectorPtr>;
 
 class MergeTreeColumnDistributionStatistics : public IColumnDistributionStatistics {
 public:
@@ -80,23 +80,28 @@ class MergeTreeStatisticFactory : private boost::noncopyable
 public:
     static MergeTreeStatisticFactory & instance();
 
-    using StatCreator = std::function<IColumnDistributionStatisticPtr(const StatisticDescription & stat)>;
-    using CollectorCreator = std::function<IMergeTreeColumnDistributionStatisticCollectorPtr(const StatisticDescription & stat)>;
+    using StatCreator = std::function<IColumnDistributionStatisticPtr(
+        const StatisticDescription & stat, const String & column)>;
+    using CollectorCreator = std::function<IMergeTreeColumnDistributionStatisticCollectorPtr(
+        const StatisticDescription & stat, const String & column)>;
 
-    IColumnDistributionStatisticPtr getColumnDistributionStatistic(const StatisticDescription & stat) const;
     MergeTreeStatisticsPtr get(const std::vector<StatisticDescription> & stats) const;
 
-    IMergeTreeColumnDistributionStatisticCollectorPtr getColumnDistributionStatisticCollector(
-        const StatisticDescription & stat) const;
-    IMergeTreeColumnDistributionStatisticCollectors getColumnDistributionStatisticCollectors(
+    IMergeTreeColumnDistributionStatisticCollectorPtrs getColumnDistributionStatisticCollectors(
         const std::vector<StatisticDescription> & stats) const;
-
-    void registerCreators(const std::string & stat_type, StatCreator creator, CollectorCreator collector);
 
 protected:
     MergeTreeStatisticFactory();
 
 private:
+    IColumnDistributionStatisticPtr getColumnDistributionStatistic(
+        const StatisticDescription & stat, const String & column) const;
+
+    IMergeTreeColumnDistributionStatisticCollectorPtr getColumnDistributionStatisticCollector(
+        const StatisticDescription & stat, const String & column) const;
+
+    void registerCreators(const std::string & stat_type, StatCreator creator, CollectorCreator collector);
+
     using StatCreators = std::unordered_map<std::string, StatCreator>;
     using CollectorCreators = std::unordered_map<std::string, CollectorCreator>;
     StatCreators creators;

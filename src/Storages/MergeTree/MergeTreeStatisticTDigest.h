@@ -52,7 +52,9 @@ private:
     std::optional<QuantileTDigest<Float32>> sketch;
 };
 
-IColumnDistributionStatisticPtr creatorColumnDistributionStatisticTDigest(const StatisticDescription & stat);
-IMergeTreeColumnDistributionStatisticCollectorPtr creatorColumnDistributionStatisticCollectorTDigest(const StatisticDescription & stat);
+IColumnDistributionStatisticPtr creatorColumnDistributionStatisticTDigest(
+    const StatisticDescription & stat, const String & column);
+IMergeTreeColumnDistributionStatisticCollectorPtr creatorColumnDistributionStatisticCollectorTDigest(
+    const StatisticDescription & stat, const String & column);
 
 }

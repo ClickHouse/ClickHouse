@@ -98,14 +98,21 @@ void MergeTreeStatistics::merge(const std::shared_ptr<IStatistics>& other)
 
 // Serialization:
 // <Count:u64>
-// <TYPE:u64><TODO:version:u64><Count:u64><Column/Name:string><DataSizeBytes:u64><data:...><Column/Name:string><DataSizeBytes:u64><data:...>...
-// <TYPE:u64><TODO:version:u64><Count:u64><Column/Name:string><DataSizeBytes:u64><data:...><Column/Name:string><DataSizeBytes:u64><data:...>...
+// <TYPE&VERSION:u64><Count:u64>
+//      <Column/Name:string><DataSizeBytes:u64><data:...>
+//      <Column/Name:string><DataSizeBytes:u64><data:...>
+//      ...
+// <TYPE&VERSION:u64><Count:u64>
+//      <Column/Name:string><DataSizeBytes:u64><data:...>
+//      <Column/Name:string><DataSizeBytes:u64><data:...>
+//      ...
 // ...
 void MergeTreeStatistics::serializeBinary(WriteBuffer & ostr) const
 {
     const auto & size_type = DataTypePtr(std::make_shared<DataTypeUInt64>());
     auto size_serialization = size_type->getDefaultSerialization();
     size_serialization->serializeBinary(1, ostr);
+    // TODO: support versions and multiple distrs
     column_distributions->serializeBinary(ostr);
 }
 
@@ -210,7 +217,7 @@ void MergeTreeStatisticFactory::registerCreators(
 }
 
 IColumnDistributionStatisticPtr MergeTreeStatisticFactory::getColumnDistributionStatistic(
-    const StatisticDescription & stat) const
+    const StatisticDescription & stat, const String & column) const
 {
     auto it = creators.find(stat.type);
     if (it == creators.end())
@@ -226,7 +233,7 @@ IColumnDistributionStatisticPtr MergeTreeStatisticFactory::getColumnDistribution
                         }),
                 ErrorCodes::INCORRECT_QUERY);
 
-    return it->second(stat);
+    return {it->second(stat, column)};
 }
 
 MergeTreeStatisticsPtr MergeTreeStatisticFactory::get(
@@ -235,8 +242,10 @@ MergeTreeStatisticsPtr MergeTreeStatisticFactory::get(
     auto column_distribution_stats = std::make_shared<MergeTreeColumnDistributionStatistics>();
     Poco::Logger::get("MergeTreeStatisticFactory").information("STAT CREATE NEW");
     for (const auto & stat : stats) {
-        column_distribution_stats->add(stat.column_names.front(), getColumnDistributionStatistic(stat));
-        Poco::Logger::get("MergeTreeStatisticFactory").information("STAT CREATE name = " + stat.column_names.front());
+        for (const auto & column : stat.column_names) {
+            column_distribution_stats->add(column, getColumnDistributionStatistic(stat, column));
+            Poco::Logger::get("MergeTreeStatisticFactory").information("STAT CREATE name = " + stat.name + " column = " + column);
+        }
     }
 
     auto result = std::make_shared<MergeTreeStatistics>();
@@ -245,7 +254,7 @@ MergeTreeStatisticsPtr MergeTreeStatisticFactory::get(
 }
 
 IMergeTreeColumnDistributionStatisticCollectorPtr MergeTreeStatisticFactory::getColumnDistributionStatisticCollector(
-    const StatisticDescription & stat) const
+    const StatisticDescription & stat, const String & column) const
 {
     auto it = collectors.find(stat.type);
     if (it == collectors.end())
@@ -261,15 +270,18 @@ IMergeTreeColumnDistributionStatisticCollectorPtr MergeTreeStatisticFactory::get
                         }),
                 ErrorCodes::INCORRECT_QUERY);
 
-    return it->second(stat);
+    return {it->second(stat, column)};
 }
 
-IMergeTreeColumnDistributionStatisticCollectors MergeTreeStatisticFactory::getColumnDistributionStatisticCollectors(
+IMergeTreeColumnDistributionStatisticCollectorPtrs MergeTreeStatisticFactory::getColumnDistributionStatisticCollectors(
     const std::vector<StatisticDescription> & stats) const
 {
-    IMergeTreeColumnDistributionStatisticCollectors result;
-    for (const auto & stat : stats)
-        result.emplace_back(getColumnDistributionStatisticCollector(stat));
+    IMergeTreeColumnDistributionStatisticCollectorPtrs result;
+    for (const auto & stat : stats) {
+        for (const auto & column : stat.column_names) {
+            result.emplace_back(getColumnDistributionStatisticCollector(stat, column));
+        }
+    }
     return result;
 }
 

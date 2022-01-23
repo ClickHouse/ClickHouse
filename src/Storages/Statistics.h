@@ -20,6 +20,7 @@ enum class StatisticType
     //COLUMN_LOW_CARDINALITY_COUNT, -- exact per block stats for low cardinality
     //COLUMN_COUNT_SKETCH, -- per block count
     //COLUMN_NULL_COUNT, -- like postgres
+    //COLUMN_CORRELATION_WITH_PRIMARY, -- like postgres
     //...
 };
 

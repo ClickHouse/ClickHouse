@@ -18,7 +18,7 @@ ASTPtr ASTStatisticDeclaration::clone() const
         res->set(res->columns, columns->clone());
     if (type)
         res->set(res->type, type->clone());
-    return res;
+    return std::move(res);
 }
 
 

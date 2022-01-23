@@ -49,9 +49,6 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     , log{log_}
     , column_sizes{std::move(column_sizes_)}
     , stats(storage_->getStatisticsByPartitionPredicate(query_info, context))
-    //, stats(std::dynamic_pointer_cast<StorageMergeTree>(storage_)
-    //    ? std::dynamic_pointer_cast<StorageMergeTree>(storage_)->getStatisticsByPartitionPredicate(query_info, context)
-    //    : nullptr) // TODO: looks awful, use IStorage interface
     , use_new_scoring(settings.allow_experimental_stats_for_prewhere_optimization && stats != nullptr)
 {
     LOG_DEBUG(&Poco::Logger::get("MergeTreeWhereOptimizer"), "kek = {}", storage_->getName());

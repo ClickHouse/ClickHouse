@@ -163,12 +163,12 @@ bool ParserStatisticDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     if (!expression_p.parse(pos, columns, expected))
         return false;
 
-    if (!s_type.ignore(pos, expected))
-        return false;
-
-    if (!data_type_p.parse(pos, type, expected))
-        return false;
-
+    if (s_type.ignore(pos, expected)) {
+        if (!data_type_p.parse(pos, type, expected))
+            return false;
+    } else {
+        type = makeASTFunction("AUTO");
+    }
 
     auto stat = std::make_shared<ASTStatisticDeclaration>();
     stat->name = name->as<ASTIdentifier &>().name();

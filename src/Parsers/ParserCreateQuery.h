@@ -284,6 +284,7 @@ protected:
 };
 
 /** name BY columns TYPE typename(arg1, arg2, ...) */
+/** name BY columns */
 class ParserStatisticDeclaration : public IParserBase
 {
 public:

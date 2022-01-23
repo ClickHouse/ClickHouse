@@ -224,14 +224,20 @@ void MergeTreeColumnDistributionStatisticCollectorTDigest::granuleFinished()
     // do nothing
 }
 
-IColumnDistributionStatisticPtr creatorColumnDistributionStatisticTDigest(const StatisticDescription & stat)
+IColumnDistributionStatisticPtr creatorColumnDistributionStatisticTDigest(
+    const StatisticDescription & stat, const String & column)
 {
-    return std::make_shared<MergeTreeColumnDistributionStatisticTDigest>(stat.column_names.front());
+    if (std::find(std::begin(stat.column_names), std::end(stat.column_names), column) == std::end(stat.column_names))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistic {} hasn't column {}.", stat.name, column);
+    return std::make_shared<MergeTreeColumnDistributionStatisticTDigest>(column);
 }
 
-IMergeTreeColumnDistributionStatisticCollectorPtr creatorColumnDistributionStatisticCollectorTDigest(const StatisticDescription & stat)
+IMergeTreeColumnDistributionStatisticCollectorPtr creatorColumnDistributionStatisticCollectorTDigest(
+    const StatisticDescription & stat, const String & column)
 {
-    return std::make_shared<MergeTreeColumnDistributionStatisticCollectorTDigest>(stat.column_names.front());
+    if (std::find(std::begin(stat.column_names), std::end(stat.column_names), column) == std::end(stat.column_names))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistic {} hasn't column {}.", stat.name, column);
+    return std::make_shared<MergeTreeColumnDistributionStatisticCollectorTDigest>(column);
 }
 
 }
