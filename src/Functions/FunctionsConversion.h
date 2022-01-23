@@ -2805,13 +2805,11 @@ private:
         }
 
         const auto * from_type = checkAndGetDataType<DataTypeArray>(from_type_untyped.get());
+        const auto * from_type_map = checkAndGetDataType<DataTypeMap>(from_type_untyped.get());
 
-        if (!from_type)
-        {
-            /// Convert from Map
-            const auto * from_type_map = checkAndGetDataType<DataTypeMap>(from_type_untyped.get());
+        /// Convert from Map
+        if (from_type_map)
             from_type = checkAndGetDataType<DataTypeArray>(from_type_map->getNestedType().get());
-        }
 
         if (!from_type)
         {
