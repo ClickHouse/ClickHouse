@@ -57,7 +57,9 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
         if (query_context)
             thread_status.attachQueryContext(query_context);
 
-        thread_status.attachQuery(running_group);
+        if (running_group)
+            thread_status.attachQuery(running_group);
+
         setThreadName("VFSRead");
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};

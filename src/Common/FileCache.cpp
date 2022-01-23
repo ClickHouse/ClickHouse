@@ -22,7 +22,7 @@ namespace ErrorCodes
 
 namespace
 {
-    String keyToStr(const FileCacheKey & key)
+    String keyToStr(const FileCache::Key & key)
     {
         return getHexUIntLowercase(key);
     }
@@ -33,7 +33,7 @@ FileCache::FileCache(const String & cache_base_path_, size_t max_size_, size_t m
 {
 }
 
-FileCacheKey FileCache::hash(const String & path)
+FileCache::Key FileCache::hash(const String & path)
 {
     return sipHash128(path.data(), path.size());
 }
@@ -98,6 +98,8 @@ void LRUFileCache::removeCell(
     auto * cell = getCell(key, offset, cache_lock);
     if (!cell)
         throw Exception(ErrorCodes::FILE_CACHE_ERROR, "No cache cell for key: {}, offset: {}", keyToStr(key), offset);
+
+    cell->file_segment->detached = true;
 
     if (cell->queue_iterator)
         queue.erase(*cell->queue_iterator);
@@ -176,7 +178,7 @@ FileSegments LRUFileCache::getImpl(
     /// TODO: remove this extra debug logging.
     String ranges;
     for (const auto & s : result)
-        ranges += "\nRange: " + s->range().toString() + ", download state: " + FileSegment::toString(s->state()) + " ";
+        ranges += "\nRange: " + s->range().toString() + ", download state: " + FileSegment::toString(s->download_state) + " ";
     LOG_TEST(log, "Cache get. Key: {}, range: {}, file_segments number: {}, ranges: {}",
              keyToStr(key), range.toString(), result.size(), ranges);
 
@@ -194,7 +196,7 @@ FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t
 
     if (file_segments.empty())
     {
-        auto * cell = setImpl(key, offset, size, FileSegment::State::EMPTY, cache_lock);
+        auto * cell = addCell(key, offset, size, FileSegment::State::EMPTY, cache_lock);
         file_segments = {cell->file_segment};
     }
     else
@@ -240,7 +242,7 @@ FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t
             assert(current_pos < segment_range.left);
 
             auto hole_size = segment_range.left - current_pos;
-            auto * cell = setImpl(key, current_pos, hole_size, FileSegment::State::EMPTY, cache_lock);
+            auto * cell = addCell(key, current_pos, hole_size, FileSegment::State::EMPTY, cache_lock);
             file_segments.insert(it, cell->file_segment);
 
             current_pos = segment_range.right + 1;
@@ -255,7 +257,7 @@ FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t
             /// segmentN
 
             auto hole_size = range.right - current_pos + 1;
-            auto * cell = setImpl(key, current_pos, hole_size, FileSegment::State::EMPTY, cache_lock);
+            auto * cell = addCell(key, current_pos, hole_size, FileSegment::State::EMPTY, cache_lock);
             file_segments.push_back(cell->file_segment);
         }
     }
@@ -296,76 +298,19 @@ LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
     return &(it->second);
 }
 
-LRUFileCache::FileSegmentCell * LRUFileCache::setImpl(
-    const Key & key, size_t offset, size_t size,
-    FileSegment::State state, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
+bool LRUFileCache::tryReserve(const Key & key_, size_t offset_, size_t size, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
 {
-    if (!size)
-        return nullptr;
-
-    LOG_TEST(log, "SetImpl. Key: {}, offset: {}, size: {}", keyToStr(key), offset, size);
-
-    switch (state)
-    {
-        case FileSegment::State::EMPTY:
-        {
-            /**
-             * A new cell in cache becomes EMPTY at first, does not have any reserved space and
-             * is not present in LRUQueue, but are visible to cache users as a valid cache cell.
-             * EMPTY cells acquire DOWNLOADING state when it's owner successfully calls getOrSetDownlaoder()
-             * and are put into LRUQueue on first (successful) space reservation attempt.
-             */
-
-            return addCell(key, offset, size, state, cache_lock);
-        }
-        case FileSegment::State::DOWNLOADED:
-        {
-            if (startup_restore_finished)
-                throw Exception(ErrorCodes::FILE_CACHE_ERROR, "Setting DOWNLOADED state cell is allowed only at startup");
-
-            if (tryReserve(size, cache_lock))
-                return addCell(key, offset, size, state, cache_lock);
-
-            return nullptr;
-        }
-        case FileSegment::State::DOWNLOADING:
-        {
-            auto * cell = getCell(key, offset, cache_lock);
-            if (!cell)
-                throw Exception(ErrorCodes::FILE_CACHE_ERROR,
-                                "Cannot set cell, because it was not created for key: {}, offset: {}", keyToStr(key), offset);
-
-            if (tryReserve(size, cache_lock))
-            {
-                cell->queue_iterator = queue.insert(queue.end(), std::make_pair(key, offset));
-                return cell;
-            }
-
-            return nullptr;
-        }
-        default:
-            throw Exception(ErrorCodes::FILE_CACHE_ERROR, "Unexpected state: {}", FileSegment::toString(state));
-    }
-}
-
-bool LRUFileCache::set(
-    const Key & key, size_t offset, size_t size,
-    [[maybe_unused]] std::lock_guard<std::mutex> & segment_lock,
-    [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
-{
-    auto * cell = getCell(key, offset, cache_lock);
-    if (!cell)
-        throw Exception(ErrorCodes::FILE_CACHE_ERROR,
-                        "Cannot set cell, because it was not created for key: {}, offset: {}", keyToStr(key), offset);
-
-    auto state = cell->file_segment->download_state;
-    return setImpl(key, offset, size, state, cache_lock) != nullptr;
-}
-
-bool LRUFileCache::tryReserve(size_t size, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
-{
-    auto queue_size = queue.size() + 1;
     auto removed_size = 0;
+    size_t queue_size = queue.size();
+    assert(queue_size <= max_element_size);
+
+    /// Since space reservation is incremental, cache cell already exists if it's state is DOWNLOADING.
+    /// And it cache cell does not exist on startup -- as we first check for space and then add a cell.
+    auto * cell_for_reserve = getCell(key_, offset_, cache_lock);
+
+    /// A cell acquires a LRUQueue iterator on first successful space reservation attempt.
+    if (!cell_for_reserve || !cell_for_reserve->queue_iterator)
+        queue_size += 1;
 
     auto is_overflow = [&]
     {
@@ -392,7 +337,7 @@ bool LRUFileCache::tryReserve(size_t size, [[maybe_unused]] std::lock_guard<std:
 
         if (cell->releasable())
         {
-            switch (cell->file_segment->state())
+            switch (cell->file_segment->download_state)
             {
                 case FileSegment::State::DOWNLOADED:
                 {
@@ -421,6 +366,9 @@ bool LRUFileCache::tryReserve(size_t size, [[maybe_unused]] std::lock_guard<std:
 
     if (is_overflow())
         return false;
+
+    if (cell_for_reserve && !cell_for_reserve->queue_iterator)
+        cell_for_reserve->queue_iterator = queue.insert(queue.end(), std::make_pair(key_, offset_));
 
     for (auto & [key, offset] : to_evict)
         remove(key, offset, cache_lock);
@@ -488,23 +436,30 @@ void LRUFileCache::restore()
             {
                 bool parsed = tryParse<UInt64>(offset, offset_it->path().filename());
                 if (!parsed)
-                    throw Exception(
-                        ErrorCodes::FILE_CACHE_ERROR,
-                        "Unexpected file in cache: cannot parse offset. Path: {}", key_it->path().string());
+                {
+                    LOG_WARNING(log, "Unexpected file: ", offset_it->path().string());
+                    continue; /// Or remove? Some unexpected file.
+                }
 
                 size = offset_it->file_size();
-
-                auto * cell = setImpl(key, offset, size, FileSegment::State::DOWNLOADED, cache_lock);
-                if (cell)
+                if (!size)
                 {
-                    cells.push_back(cell);
+                    fs::remove(offset_it->path());
+                    continue;
+                }
+
+                if (tryReserve(key, offset, size, cache_lock))
+                {
+                    auto * cell = addCell(key, offset, size, FileSegment::State::DOWNLOADED, cache_lock);
+                    if (cell)
+                        cells.push_back(cell);
                 }
                 else
                 {
                     LOG_WARNING(log,
                                 "Cache capacity changed (max size: {}, available: {}), cached file `{}` does not fit in cache anymore (size: {})",
                                 max_size, available(), key_it->path().string(), size);
-                    fs::remove(path(key, offset));
+                    fs::remove(offset_it->path());
                 }
             }
         }
@@ -562,7 +517,7 @@ LRUFileCache::Stat LRUFileCache::getStat()
             throw Exception(ErrorCodes::FILE_CACHE_ERROR,
                 "Cache became inconsistent. Key: {}, offset: {}", keyToStr(key), offset);
 
-        switch (cell->file_segment->state())
+        switch (cell->file_segment->download_state)
         {
             case FileSegment::State::DOWNLOADED:
             {
@@ -603,6 +558,7 @@ void LRUFileCache::reduceSizeToDownloaded(
                         "Nothing to reduce, file segment fully downloaded, key: {}, offset: {}", keyToStr(key), offset);
 
     file_segment->download_state = FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
+    file_segment->detached = true;
 
     /**
      * Create a new file segment as file segment's size is static and cannot be changed. Size is static because
@@ -612,12 +568,17 @@ void LRUFileCache::reduceSizeToDownloaded(
     cell->file_segment = std::make_shared<FileSegment>(offset, downloaded_size, key, this, FileSegment::State::DOWNLOADED);
 }
 
-size_t LRUFileCache::getUseCount(const FileSegment & file_segment,
-    [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
+bool LRUFileCache::isLastFileSegmentHolder(
+    const Key & key, size_t offset, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
 {
-    auto * cell = getCell(file_segment.key(), file_segment.range().left, cache_lock);
-    assert(cell->file_segment.use_count() >= 1);
-    return cell->file_segment.use_count() - 1; /// Do not consider pointer which lies in cache itself.
+    auto * cell = getCell(key, offset, cache_lock);
+
+    if (!cell)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No cell found for key: {}, offset: {}", keyToStr(key), offset);
+
+    /// The caller of this method is last file segment holder if use count is 2 and the second
+    /// pointer is cache itself,
+    return cell->file_segment.use_count() == 2;
 }
 
 LRUFileCache::FileSegmentCell::FileSegmentCell(FileSegmentPtr file_segment_, LRUQueue & queue_)
@@ -625,7 +586,7 @@ LRUFileCache::FileSegmentCell::FileSegmentCell(FileSegmentPtr file_segment_, LRU
 {
     /**
      * Cell can be created with either DOWNLOADED or EMPTY file segment's state.
-     * File segment aquires DOWNLOADING state and creates LRUQueue iterator on first
+     * File segment acquires DOWNLOADING state and creates LRUQueue iterator on first
      * successful getOrSetDownaloder call.
      */
 
