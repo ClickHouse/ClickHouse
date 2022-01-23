@@ -19,20 +19,26 @@
 namespace DB
 {
 
-using RangeStorageType = Int64;
+struct RangeHashedDictionaryConfiguration
+{
+    bool convert_null_range_bound_to_open;
+    bool require_nonempty;
+};
 
-template <DictionaryKeyType dictionary_key_type>
+template <DictionaryKeyType dictionary_key_type, typename RangeStorageDataType>
 class RangeHashedDictionary final : public IDictionary
 {
 public:
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
+    using RangeStorageType = typename RangeStorageDataType::FieldType;
+    using RangeColumnType = typename RangeStorageDataType::ColumnType;
 
     RangeHashedDictionary(
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
-        bool require_nonempty_,
+        RangeHashedDictionaryConfiguration configuration_,
         BlockPtr update_field_loaded_block_ = nullptr);
 
     std::string getTypeName() const override
@@ -63,7 +69,7 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<RangeHashedDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty, update_field_loaded_block);
+        return std::make_shared<RangeHashedDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, configuration, update_field_loaded_block);
     }
 
     DictionarySourcePtr getSource() const override { return source_ptr; }
@@ -170,21 +176,10 @@ private:
 
     void setAttributeValue(Attribute & attribute, const Field & value);
 
-    template <typename RangeType>
-    void getKeysAndRangeValues(
-        PaddedPODArray<KeyType> & keys,
-        PaddedPODArray<RangeType> & range_start_values,
-        PaddedPODArray<RangeType> & range_end_value) const;
-
-    template <typename RangeType>
-    PaddedPODArray<Int64> makeKeysValues(
-        const PaddedPODArray<RangeType> & range_start_values,
-        const PaddedPODArray<RangeType> & range_end_values) const;
-
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
-    const bool require_nonempty;
+    const RangeHashedDictionaryConfiguration configuration;
     BlockPtr update_field_loaded_block;
 
     std::vector<Attribute> attributes;
