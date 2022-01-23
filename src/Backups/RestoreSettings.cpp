@@ -29,6 +29,10 @@ RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)
                 res.throw_if_database_exists = setting.value.safeGet<bool>();
             else if (setting.name == "throw_if_table_exists")
                 res.throw_if_table_exists = setting.value.safeGet<bool>();
+            else if (setting.name == "throw_if_database_has_different_definition")
+                res.throw_if_database_has_different_definition = setting.value.safeGet<bool>();
+            else if (setting.name == "throw_if_table_has_different_definition")
+                res.throw_if_table_has_different_definition = setting.value.safeGet<bool>();
             else
                 throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting {}", setting.name);
         }
