@@ -1,7 +1,7 @@
 FROM ubuntu:20.04
 
 ARG repository="deb https://repo.clickhouse.com/deb/stable/ main/"
-ARG version=21.11.11.*
+ARG version=21.11.12.*
 ARG gosu_ver=1.10
 
 # set non-empty deb_location_url url to create a docker image
