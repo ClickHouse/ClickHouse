@@ -1,8 +1,10 @@
 #include <Backups/BackupUtils.h>
 #include <Backups/BackupEntryFromMemory.h>
 #include <Backups/BackupSettings.h>
+#include <Backups/DDLCompareUtils.h>
 #include <Backups/DDLRenamingVisitor.h>
 #include <Backups/IBackup.h>
+#include <Backups/formatTableNameOrTemporaryTableName.h>
 #include <Common/escapeForFileName.h>
 #include <Access/Common/AccessFlags.h>
 #include <Databases/IDatabase.h>
@@ -82,7 +84,7 @@ namespace
             {
                 if (info.different_create_query)
                     throw Exception(ErrorCodes::CANNOT_BACKUP_DATABASE,
-                                    "Couldn't backup a database because two different create queries were generated for it: {} and {}",
+                                    "Cannot backup a database because two different create queries were generated for it: {} and {}",
                                     serializeAST(*info.create_query), serializeAST(*info.different_create_query));
             }
 
@@ -130,28 +132,24 @@ namespace
             if (database->hasHollowBackup())
                 throw Exception(
                     ErrorCodes::CANNOT_BACKUP_TABLE,
-                    "Couldn't backup table {}.{} because of the database's engine {} is hollow",
-                    backQuoteIfNeed(table_name_.first), backQuoteIfNeed(table_name_.second),
+                    "Cannot backup the {} because it's contained in a hollow database (engine: {})",
+                    formatTableNameOrTemporaryTableName(table_name_),
                     database->getEngineName());
 
             /// Check that we are not trying to backup the same table again.
             DatabaseAndTableName new_table_name = renaming_settings.getNewTableName(table_name_);
             if (tables.contains(new_table_name))
-            {
-                String message;
-                if (new_table_name.first == DatabaseCatalog::TEMPORARY_DATABASE)
-                    message = fmt::format("Couldn't backup temporary table {} twice", backQuoteIfNeed(new_table_name.second));
-                else
-                    message = fmt::format("Couldn't backup table {}.{} twice", backQuoteIfNeed(new_table_name.first), backQuoteIfNeed(new_table_name.second));
-                throw Exception(ErrorCodes::CANNOT_BACKUP_TABLE, message);
-            }
+                throw Exception(ErrorCodes::CANNOT_BACKUP_TABLE, "Cannot backup the {} twice", formatTableNameOrTemporaryTableName(new_table_name));
 
             /// Make a create query for this table.
             auto create_query = renameInCreateQuery(database->getCreateTableQuery(table_name_.second, context));
 
             bool has_data = !storage->hasHollowBackup() && !backup_settings.structure_only;
             if (has_data)
+            {
+                /// We check for SELECT privilege only if we're going to read data from the table.
                 context->checkAccess(AccessType::SELECT, table_name_.first, table_name_.second);
+            }
 
             CreateTableInfo info;
             info.create_query = create_query;
@@ -185,7 +183,7 @@ namespace
                     {
                         auto create_db_query = renameInCreateQuery(table_.first->getCreateDatabaseQuery());
                         create_db_query->setDatabase(new_table_name.first);
-                        if (serializeAST(*info_db.create_query) != serializeAST(*create_db_query))
+                        if (!areDatabaseDefinitionsSame(*info_db.create_query, *create_db_query))
                             info_db.different_create_query = create_db_query;
                     }
                 }
@@ -206,7 +204,7 @@ namespace
             /// Check that we are not trying to restore the same database again.
             String new_database_name = renaming_settings.getNewDatabaseName(database_name_);
             if (databases.contains(new_database_name) && databases[new_database_name].is_explicit)
-                throw Exception(ErrorCodes::CANNOT_BACKUP_DATABASE, "Couldn't backup database {} twice", backQuoteIfNeed(new_database_name));
+                throw Exception(ErrorCodes::CANNOT_BACKUP_DATABASE, "Cannot backup the database {} twice", backQuoteIfNeed(new_database_name));
 
             /// Of course we're not going to backup the definition of the system or the temporary database.
             if (!isSystemOrTemporaryDatabase(database_name_))
