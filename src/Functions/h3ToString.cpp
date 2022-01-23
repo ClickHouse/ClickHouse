@@ -88,7 +88,7 @@ public:
             while (*pos != '\0')
                 pos++;
 
-            vec_offsets[i] = ++pos - begin;
+            vec_offsets[row] = ++pos - begin;
         }
         vec_res.resize(pos - begin);
         return col_res;
