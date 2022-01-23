@@ -56,7 +56,7 @@ public:
         if (!column)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal type {} of argument {} of function {}. Must be UInt64.",
+                "Illegal type {} of argument {} of function {}. Must be UInt8.",
                 arguments[0].type->getName(),
                 1,
                 getName());

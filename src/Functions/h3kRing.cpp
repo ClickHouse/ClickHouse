@@ -80,7 +80,7 @@ public:
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal type {} of argument {} of function {}. Must be Integer.",
-                arguments[0].type->getName(),
+                arguments[1].type->getName(),
                 2,
                 getName());
 
