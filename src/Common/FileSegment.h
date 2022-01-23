@@ -117,9 +117,6 @@ private:
 
     Key file_key;
     FileCache * cache;
-
-    /// Removed from cache cell.
-    bool detached = false;
 };
 
 struct FileSegmentsHolder : boost::noncopyable

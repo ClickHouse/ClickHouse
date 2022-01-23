@@ -18,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int FILE_CACHE_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -90,19 +91,6 @@ LRUFileCache::FileSegmentCell * LRUFileCache::getCell(
         return nullptr;
 
     return &cell_it->second;
-}
-
-void LRUFileCache::removeCell(
-    const Key & key, size_t offset, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
-{
-    auto * cell = getCell(key, offset, cache_lock);
-    if (!cell)
-        throw Exception(ErrorCodes::FILE_CACHE_ERROR, "No cache cell for key: {}, offset: {}", keyToStr(key), offset);
-
-    cell->file_segment->detached = true;
-
-    if (cell->queue_iterator)
-        queue.erase(*cell->queue_iterator);
 }
 
 FileSegments LRUFileCache::getImpl(
@@ -385,7 +373,12 @@ void LRUFileCache::remove(
 {
     LOG_TEST(log, "Remove. Key: {}, offset: {}", keyToStr(key), offset);
 
-    removeCell(key, offset, cache_lock);
+    auto * cell = getCell(key, offset, cache_lock);
+    if (!cell)
+        throw Exception(ErrorCodes::FILE_CACHE_ERROR, "No cache cell for key: {}, offset: {}", keyToStr(key), offset);
+
+    if (cell->queue_iterator)
+        queue.erase(*cell->queue_iterator);
 
     auto & offsets = files[key];
     offsets.erase(offset);
@@ -484,8 +477,6 @@ void LRUFileCache::remove(const Key & key)
 
     for (auto & [offset, _] : offsets)
         remove(key, offset, cache_lock);
-
-    removeFileKey(key);
 }
 
 void LRUFileCache::removeFileKey(const Key & key)
@@ -557,14 +548,6 @@ void LRUFileCache::reduceSizeToDownloaded(
         throw Exception(ErrorCodes::FILE_CACHE_ERROR,
                         "Nothing to reduce, file segment fully downloaded, key: {}, offset: {}", keyToStr(key), offset);
 
-    file_segment->download_state = FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
-    file_segment->detached = true;
-
-    /**
-     * Create a new file segment as file segment's size is static and cannot be changed. Size is static because
-     * there is an invariant, that list of shared pointers to file segments returned to users in FileSegmentsHolder
-     * represents a contiguous range without holes.
-     */
     cell->file_segment = std::make_shared<FileSegment>(offset, downloaded_size, key, this, FileSegment::State::DOWNLOADED);
 }
 
@@ -618,7 +601,7 @@ String LRUFileCache::dumpStructure()
         auto [key, offset] = *it;
         auto * cell = getCell(key, offset, cache_lock);
         result << (it != queue.begin() ? ", " : "") << cell->file_segment->range().toString();
-        result << "(state: " << cell->file_segment->state() << ")";
+        result << "(state: " << cell->file_segment->download_state << ")";
     }
     return result.str();
 }

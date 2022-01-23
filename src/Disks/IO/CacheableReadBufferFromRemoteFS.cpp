@@ -142,7 +142,7 @@ bool CacheableReadBufferFromRemoteFS::completeFileSegmentAndGetNext()
 
     auto file_segment_it = current_file_segment_it++;
 
-    auto range = (*file_segment_it)->range();
+    [[maybe_unused]] auto range = (*file_segment_it)->range();
     assert(file_offset_of_buffer_end > range.right);
 
     /// Only downloader completes file segment.
@@ -207,7 +207,8 @@ bool CacheableReadBufferFromRemoteFS::nextImpl()
             if (!completeFileSegmentAndGetNext())
                 return false;
         }
-        else if (current_state == FileSegment::State::PARTIALLY_DOWNLOADED
+
+        if (current_state == FileSegment::State::PARTIALLY_DOWNLOADED
                 || current_state == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
         {
             checkForPartialDownload();
@@ -243,9 +244,8 @@ bool CacheableReadBufferFromRemoteFS::nextImpl()
             size_t size = impl->buffer().size();
 
             if (file_segment->reserve(size))
-                file_segment->write(impl->buffer().begin(), impl->buffer().size());
+                file_segment->write(impl->buffer().begin(), size);
             else
-                /// TODO: This is incorrect. We steal hold file segment. Need to release.
                 file_segment->complete(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
         }
     }
