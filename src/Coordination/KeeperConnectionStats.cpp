@@ -74,6 +74,7 @@ void KeeperConnectionStats::resetLatency()
     count = 0;
     max_latency = 0;
     min_latency = 0;
+    last_latency = 0;
 }
 
 void KeeperConnectionStats::resetRequestCounters()

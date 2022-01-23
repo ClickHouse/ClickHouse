@@ -89,6 +89,11 @@ public:
     void add(const Block & block);
     void add(const SerializationInfoByName & other);
 
+    /// Takes data from @other, but keeps current serialization kinds.
+    /// If column exists in @other infos, but not in current infos,
+    /// it's cloned to current infos.
+    void replaceData(const SerializationInfoByName & other);
+
     void writeJSON(WriteBuffer & out) const;
     void readJSON(ReadBuffer & in);
 };

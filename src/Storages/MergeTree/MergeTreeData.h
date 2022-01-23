@@ -24,9 +24,10 @@
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Interpreters/PartLog.h>
 #include <Disks/StoragePolicy.h>
-#include <Interpreters/Aggregator.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
+#include <Storages/MergeTree/ZeroCopyLock.h>
+
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -43,6 +44,7 @@ class MergeTreeDataMergerMutator;
 class MutationCommands;
 class Context;
 struct JobAndPool;
+struct ZeroCopyLock;
 
 /// Auxiliary struct holding information about the future merged or mutated part.
 struct EmergingPartInfo
@@ -408,15 +410,7 @@ public:
 
     bool supportsPrewhere() const override { return true; }
 
-    bool supportsFinal() const override
-    {
-        return merging_params.mode == MergingParams::Collapsing
-            || merging_params.mode == MergingParams::Summing
-            || merging_params.mode == MergingParams::Aggregating
-            || merging_params.mode == MergingParams::Replacing
-            || merging_params.mode == MergingParams::Graphite
-            || merging_params.mode == MergingParams::VersionedCollapsing;
-    }
+    bool supportsFinal() const override;
 
     bool supportsSubcolumns() const override { return true; }
 
@@ -447,7 +441,7 @@ public:
 
     static void validateDetachedPartName(const String & name);
 
-    void dropDetached(const ASTPtr & partition, bool part, ContextPtr context);
+    void dropDetached(const ASTPtr & partition, bool part, ContextPtr local_context);
 
     MutableDataPartsVector tryLoadPartsToAttach(const ASTPtr & partition, bool attach_part,
             ContextPtr context, PartsTemporaryRename & renamed_parts);
@@ -1156,9 +1150,7 @@ private:
     void addPartContributionToDataVolume(const DataPartPtr & part);
     void removePartContributionToDataVolume(const DataPartPtr & part);
 
-    void increaseDataVolume(size_t bytes, size_t rows, size_t parts);
-    void decreaseDataVolume(size_t bytes, size_t rows, size_t parts);
-
+    void increaseDataVolume(ssize_t bytes, ssize_t rows, ssize_t parts);
     void setDataVolume(size_t bytes, size_t rows, size_t parts);
 
     std::atomic<size_t> total_active_size_bytes = 0;
@@ -1189,6 +1181,10 @@ private:
         DataPartsVector & duplicate_parts_to_remove,
         MutableDataPartsVector & parts_from_wal,
         DataPartsLock & part_lock);
+
+    /// Create zero-copy exclusive lock for part and disk. Useful for coordination of
+    /// distributed operations which can lead to data duplication. Implemented only in ReplicatedMergeTree.
+    virtual std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const DataPartPtr &, const DiskPtr &) { return std::nullopt; }
 };
 
 /// RAII struct to record big parts that are submerging or emerging.
