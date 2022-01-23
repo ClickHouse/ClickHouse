@@ -51,10 +51,10 @@ public:
                 arg->getName(), 1, getName());
 
         arg = arguments[1].get();
-        if (!isUnsignedInteger(arg))
+        if (!WhichDataType(arg).isUInt16())
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be an unsigned integer",
+                "Illegal type {} of argument {} of function {}. Must be UInt16",
                 arg->getName(),
                 2,
                 getName());
@@ -75,11 +75,12 @@ public:
 
         const auto & data_hindex = col_hindex->getData();
 
-        const auto * col_k = checkAndGetColumn<ColumnUInt64>(arguments[1].column.get());
+        /// ColumnUInt16 is sufficient as the max value of 2nd arg is checked (arg > 0 < 10000) in implementation below
+        const auto * col_k = checkAndGetColumn<ColumnUInt16>(arguments[1].column.get());
         if (!col_k)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal type {} of argument {} of function {}. Must be an unsigned integer.",
+                "Illegal type {} of argument {} of function {}. Must be UInt16.",
                 arguments[1].type->getName(),
                 2,
                 getName());
