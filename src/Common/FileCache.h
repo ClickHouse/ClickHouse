@@ -126,10 +126,6 @@ private:
     Poco::Logger * log;
     bool startup_restore_finished = false;
 
-    size_t available() const { return max_size - current_size; }
-
-    void restore();
-
     /**
      * Get list of file segments which intesect with `range`.
      * If `key` is not in cache or there is not such range, return std::nullopt.
@@ -144,9 +140,6 @@ private:
     FileSegmentCell * addCell(
         const Key & key, size_t offset, size_t size,
         FileSegment::State state, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock);
-
-    void removeCell(
-        const Key & key, size_t offset, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock);
 
     void useCell(const FileSegmentCell & cell, FileSegments & result, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock);
 
@@ -166,6 +159,10 @@ private:
 
     void reduceSizeToDownloaded(
         const Key & key, size_t offset, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override;
+
+    size_t available() const { return max_size - current_size; }
+
+    void restore();
 
 public:
     struct Stat

@@ -143,21 +143,17 @@ void FileSegment::complete(std::optional<State> state)
 {
     /**
      * Either downloader calls file_segment->complete(state) manually or
-     * file_segment->complete() is called with no state from its FileSegmentsHolder desctructor.
+     * file_segment->complete() is called with no state from its FileSegmentsHolder destructor.
      *
      * Downloader can call complete(state) with either DOWNLOADED or
      * PARTIALLY_DOWNLOADED_NO_CONTINUATION (in case space reservation failed).
      *
-     * If complete() is called from FileSegmentsHolder desctructor -- actions are taken
-     * according to current download_state and only in case `detached==false`, meaning than
-     * this filesegment is present in cache cell. If file segment was removed from cache cell,
-     * it has `detached=true`, so that other threads will know that no clean up is required from them.
+     * complete() without any arguments should be called only from destructor of FileSegmentsHolder.
      */
 
     {
         std::lock_guard segment_lock(mutex);
 
-        bool download_can_continue = false;
         bool is_downloader = downloader_id == getCallerId();
 
         if (state)
@@ -171,43 +167,47 @@ void FileSegment::complete(std::optional<State> state)
                                 "Cannot complete file segment with state: {}", toString(*state));
 
             download_state = *state;
-            if (download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
-            {
-                std::lock_guard cache_lock(cache->mutex);
-
-                if (downloaded_size)
-                    cache->reduceSizeToDownloaded(key(), offset(), cache_lock);
-                else
-                    cache->remove(key(), offset(), cache_lock);
-            }
         }
-        else if (!detached)
+        else
         {
-            if (downloaded_size == range().size())
+            if (download_state == State::SKIP_CACHE)
+                return;
+
+            if (downloaded_size == range().size() && download_state != State::DOWNLOADED)
                 download_state = State::DOWNLOADED;
 
             if (download_state == State::DOWNLOADING)
                 download_state = State::PARTIALLY_DOWNLOADED;
+        }
 
-            if (download_state == State::PARTIALLY_DOWNLOADED
-                     || download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
+        bool download_can_continue = false;
+
+        if (download_state == State::PARTIALLY_DOWNLOADED
+                    || download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
+        {
+            std::lock_guard cache_lock(cache->mutex);
+
+            bool is_last_holder = cache->isLastFileSegmentHolder(key(), offset(), cache_lock);
+            download_can_continue = !is_last_holder && download_state == State::PARTIALLY_DOWNLOADED;
+
+            if (!download_can_continue)
             {
-                std::lock_guard cache_lock(cache->mutex);
-
-                bool is_last_holder = cache->isLastFileSegmentHolder(key(), offset(), cache_lock);
-                download_can_continue = !is_last_holder && download_state == State::PARTIALLY_DOWNLOADED;
-
-                if (!download_can_continue)
+                if (!downloaded_size)
                 {
-                    bool is_responsible_for_cell = is_downloader || (downloader_id.empty() && is_last_holder);
-                    if (is_responsible_for_cell)
-                    {
-                        if (downloaded_size)
-                            cache->reduceSizeToDownloaded(key(), offset(), cache_lock);
-                        else
-                            cache->remove(key(), offset(), cache_lock);
-                    }
+                    download_state = State::SKIP_CACHE;
+                    cache->remove(key(), offset(), cache_lock);
                 }
+                else if (is_last_holder)
+                {
+                    /**
+                    * Only last holder of current file segment can resize the cell,
+                    * because there is an invariant that file segments returned to users
+                    * in FileSegmentsHolder represent a contiguous range, so we can resize
+                    * it only when nobody needs it.
+                    */
+                    cache->reduceSizeToDownloaded(key(), offset(), cache_lock);
+                }
+
             }
         }
 

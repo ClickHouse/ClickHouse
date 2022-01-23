@@ -15,6 +15,10 @@
                 <secret_access_key>minio123</secret_access_key>
                 <s3_max_single_read_retries>10</s3_max_single_read_retries>
             </unstable_s3>
+            <hdd>
+                <type>local</type>
+                <path>/</path>
+            </hdd>
             <s3_with_cache>
                 <type>s3</type>
                 <endpoint>http://minio1:9001/root/data/</endpoint>
@@ -30,6 +34,9 @@
                     <main>
                         <disk>s3</disk>
                     </main>
+                    <external>
+                        <disk>hdd</disk>
+                    </external>
                 </volumes>
             </s3>
             <unstable_s3>
