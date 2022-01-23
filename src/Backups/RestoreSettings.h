@@ -30,6 +30,14 @@ struct RestoreSettings : public StorageRestoreSettings
     /// Whether RESTORE TABLE will throw an exception if a destination table already exists.
     bool throw_if_table_exists = true;
 
+    /// Whether RESTORE DATABASE will throw an exception if a destination database has
+    /// a different definition comparing with the definition read from backup.
+    bool throw_if_database_has_different_definition = true;
+
+    /// Whether RESTORE TABLE will throw an exception if a destination table has
+    /// a different definition comparing with the definition read from backup.
+    bool throw_if_table_has_different_definition = true;
+
     static RestoreSettings fromRestoreQuery(const ASTBackupQuery & query);
 };
 
