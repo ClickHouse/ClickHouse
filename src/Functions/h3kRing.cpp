@@ -51,10 +51,10 @@ public:
                 arg->getName(), 1, getName());
 
         arg = arguments[1].get();
-        if (!isInteger(arg))
+        if (!isUnsignedInteger(arg))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument {} of function {}. Must be Integer",
+                "Illegal type {} of argument {} of function {}. Must be an unsigned integer",
                 arg->getName(),
                 2,
                 getName());
@@ -75,11 +75,11 @@ public:
 
         const auto & data_hindex = col_hindex->getData();
 
-        const auto * col_k = checkAndGetColumn<ColumnInt64>(arguments[1].column.get());
+        const auto * col_k = checkAndGetColumn<ColumnUInt64>(arguments[1].column.get());
         if (!col_k)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
-                "Illegal type {} of argument {} of function {}. Must be Integer.",
+                "Illegal type {} of argument {} of function {}. Must be an unsigned integer.",
                 arguments[1].type->getName(),
                 2,
                 getName());
@@ -103,6 +103,7 @@ public:
             constexpr auto max_k = 10000;
             if (k > max_k)
                 throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Too large 'k' argument for {} function, maximum {}", getName(), max_k);
+            /// Check is already made while fetching the argument for k (to determine if it's an unsigned integer). Nevertheless, it's checked again here.
             if (k < 0)
                 throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND, "Argument 'k' for {} function must be non negative", getName());
 
