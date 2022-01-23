@@ -35,7 +35,13 @@ public:
         bool require_nonempty_,
         BlockPtr update_field_loaded_block_ = nullptr);
 
-    std::string getTypeName() const override { return "RangeHashed"; }
+    std::string getTypeName() const override
+    {
+        if (dictionary_key_type == DictionaryKeyType::Simple)
+            return "RangeHashed";
+        else
+            return "ComplexKeyRangeHashed";
+    }
 
     size_t getBytesAllocated() const override { return bytes_allocated; }
 
@@ -90,50 +96,54 @@ private:
 
     using RangeInterval = Interval<RangeStorageType>;
 
-    template <typename T>
-    using Values = IntervalMap<RangeInterval, std::optional<T>>;
+    using IntervalMap = IntervalMap<RangeInterval, size_t>;
+
+    using KeyContainerType = std::conditional_t<
+        dictionary_key_type == DictionaryKeyType::Simple,
+        HashMap<UInt64, IntervalMap, DefaultHash<UInt64>>,
+        HashMapWithSavedHash<StringRef, IntervalMap, DefaultHash<StringRef>>>;
 
     template <typename Value>
-    using CollectionType = std::conditional_t<
-        dictionary_key_type == DictionaryKeyType::Simple,
-        HashMap<UInt64, Values<Value>, DefaultHash<UInt64>>,
-        HashMapWithSavedHash<StringRef, Values<Value>, DefaultHash<StringRef>>>;
-
-    using NoAttributesCollectionType = std::conditional_t<
-        dictionary_key_type == DictionaryKeyType::Simple,
-        HashMap<UInt64, IntervalSet<RangeInterval>>,
-        HashMapWithSavedHash<StringRef, IntervalSet<RangeInterval>>>;
+    using AttributeContainerType = std::conditional_t<std::is_same_v<Value, Array>, std::vector<Value>, PaddedPODArray<Value>>;
 
     struct Attribute final
     {
     public:
         AttributeUnderlyingType type;
-        bool is_nullable;
 
         std::variant<
-            CollectionType<UInt8>,
-            CollectionType<UInt16>,
-            CollectionType<UInt32>,
-            CollectionType<UInt64>,
-            CollectionType<UInt128>,
-            CollectionType<UInt256>,
-            CollectionType<Int8>,
-            CollectionType<Int16>,
-            CollectionType<Int32>,
-            CollectionType<Int64>,
-            CollectionType<Int128>,
-            CollectionType<Int256>,
-            CollectionType<Decimal32>,
-            CollectionType<Decimal64>,
-            CollectionType<Decimal128>,
-            CollectionType<Decimal256>,
-            CollectionType<DateTime64>,
-            CollectionType<Float32>,
-            CollectionType<Float64>,
-            CollectionType<UUID>,
-            CollectionType<StringRef>,
-            CollectionType<Array>>
-            maps;
+            AttributeContainerType<UInt8>,
+            AttributeContainerType<UInt16>,
+            AttributeContainerType<UInt32>,
+            AttributeContainerType<UInt64>,
+            AttributeContainerType<UInt128>,
+            AttributeContainerType<UInt256>,
+            AttributeContainerType<Int8>,
+            AttributeContainerType<Int16>,
+            AttributeContainerType<Int32>,
+            AttributeContainerType<Int64>,
+            AttributeContainerType<Int128>,
+            AttributeContainerType<Int256>,
+            AttributeContainerType<Decimal32>,
+            AttributeContainerType<Decimal64>,
+            AttributeContainerType<Decimal128>,
+            AttributeContainerType<Decimal256>,
+            AttributeContainerType<DateTime64>,
+            AttributeContainerType<Float32>,
+            AttributeContainerType<Float64>,
+            AttributeContainerType<UUID>,
+            AttributeContainerType<StringRef>,
+            AttributeContainerType<Array>>
+            container;
+
+        std::optional<std::vector<bool>> is_value_nullable;
+    };
+
+    struct KeyAttribute final
+    {
+
+        KeyContainerType container;
+
     };
 
     void createAttributes();
@@ -155,30 +165,21 @@ private:
 
     void blockToAttributes(const Block & block);
 
-    void buildAttributeIntervalTrees();
-
     template <typename T>
-    void setAttributeValueImpl(Attribute & attribute, KeyType key, const RangeInterval & interval, const Field & value);
+    void setAttributeValueImpl(Attribute & attribute, const Field & value);
 
-    void setAttributeValue(Attribute & attribute, KeyType key, const RangeInterval & interval, const Field & value);
-
-    template <typename RangeType>
-    void getKeysAndDates(
-        PaddedPODArray<KeyType> & keys,
-        PaddedPODArray<RangeType> & start_dates,
-        PaddedPODArray<RangeType> & end_dates) const;
-
-    template <typename T, typename RangeType>
-    void getKeysAndDates(
-        const Attribute & attribute,
-        PaddedPODArray<KeyType> & keys,
-        PaddedPODArray<RangeType> & start_dates,
-        PaddedPODArray<RangeType> & end_dates) const;
+    void setAttributeValue(Attribute & attribute, const Field & value);
 
     template <typename RangeType>
-    PaddedPODArray<Int64> makeDateKeys(
-        const PaddedPODArray<RangeType> & block_start_dates,
-        const PaddedPODArray<RangeType> & block_end_dates) const;
+    void getKeysAndRangeValues(
+        PaddedPODArray<KeyType> & keys,
+        PaddedPODArray<RangeType> & range_start_values,
+        PaddedPODArray<RangeType> & range_end_value) const;
+
+    template <typename RangeType>
+    PaddedPODArray<Int64> makeKeysValues(
+        const PaddedPODArray<RangeType> & range_start_values,
+        const PaddedPODArray<RangeType> & range_end_values) const;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
@@ -187,7 +188,7 @@ private:
     BlockPtr update_field_loaded_block;
 
     std::vector<Attribute> attributes;
-    Arena complex_key_arena;
+    KeyAttribute key_attribute;
 
     size_t bytes_allocated = 0;
     size_t element_count = 0;
@@ -195,7 +196,6 @@ private:
     mutable std::atomic<size_t> query_count{0};
     mutable std::atomic<size_t> found_count{0};
     Arena string_arena;
-    NoAttributesCollectionType no_attributes_container;
 };
 
 }
