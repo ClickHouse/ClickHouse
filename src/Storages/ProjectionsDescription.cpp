@@ -9,6 +9,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/formatAST.h>
 
 #include <Core/Defines.h>
 #include <Interpreters/InterpreterSelectQuery.h>
