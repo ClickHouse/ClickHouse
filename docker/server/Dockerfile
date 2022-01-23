@@ -5,7 +5,7 @@ ARG apt_archive="http://archive.ubuntu.com"
 RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
 ARG repository="deb https://repo.clickhouse.com/deb/stable/ main/"
-ARG version=21.12.4.*
+ARG version=21.12.5.*
 ARG gosu_ver=1.10
 
 # set non-empty deb_location_url url to create a docker image
