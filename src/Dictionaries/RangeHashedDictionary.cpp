@@ -630,7 +630,7 @@ void RangeHashedDictionary<dictionary_key_type, RangeStorageDataType>::setAttrib
 template <DictionaryKeyType dictionary_key_type, typename RangeStorageDataType>
 void RangeHashedDictionary<dictionary_key_type, RangeStorageDataType>::setAttributeValue(Attribute & attribute, const Field & value)
 {
-    auto type_call = [&](const auto &dictionary_attribute_type)
+    auto type_call = [&](const auto & dictionary_attribute_type)
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
@@ -721,14 +721,25 @@ static DictionaryPtr createRangeHashedDictionary(const std::string & full_name,
                             const std::string & config_prefix,
                             DictionarySourcePtr source_ptr)
 {
-    if (dict_struct.key)
+    static constexpr auto layout_name = dictionary_key_type == DictionaryKeyType::Simple ? "range_hashed" : "complex_key_range_hashed";
+
+    if (dictionary_key_type == DictionaryKeyType::Simple)
+    {
+        if (dict_struct.key)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'key' is not supported for dictionary of layout 'range_hashed'");
+    }
+    else
+    {
+        if (dict_struct.id)
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "'id' is not supported for dictionary of layout 'complex_key_range_hashed'");
+    }
 
     if (!dict_struct.range_min || !dict_struct.range_max)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "{}: dictionary of layout 'range_hashed' requires .structure.range_min and .structure.range_max",
-            full_name);
+            "{}: dictionary of layout '{}' requires .structure.range_min and .structure.range_max",
+            full_name,
+            layout_name);
 
     const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
     const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
