@@ -10,7 +10,6 @@ namespace DB
 {
 
 class FileCache;
-using FileCacheKey = UInt128;
 
 class FileSegment;
 using FileSegmentPtr = std::shared_ptr<FileSegment>;
@@ -22,6 +21,8 @@ class FileSegment : boost::noncopyable
 friend class LRUFileCache;
 
 public:
+    using Key = UInt128;
+
     enum class State
     {
         DOWNLOADED,
@@ -40,12 +41,12 @@ public:
         /**
          * Space reservation for a file segment is incremental, i.e. downaloder reads buffer_size bytes
          * from remote fs -> tries to reserve buffer_size bytes to put them to cache -> writes to cache
-         * on successfull reservation and stops cache write otherwise. If some users were waiting for
-         * current segment will read partially downloaded part from cache and remaining part directly from remote fs.
+         * on successful reservation and stops cache write otherwise. Those, who waited for the same file
+         * file segment, will read downloaded part from cache and remaining part directly from remote fs.
          */
         PARTIALLY_DOWNLOADED_NO_CONTINUATION,
         /**
-         * If downloader did not finish download if current file segment for any reason apart from running
+         * If downloader did not finish download of current file segment for any reason apart from running
          * out of cache space, then download can be continued by other owners of this file segment.
          */
         PARTIALLY_DOWNLOADED,
@@ -56,13 +57,9 @@ public:
         SKIP_CACHE,
     };
 
-    FileSegment(size_t offset_, size_t size_, const FileCacheKey & key_, FileCache * cache_, State download_state_);
+    FileSegment(size_t offset_, size_t size_, const Key & key_, FileCache * cache_, State download_state_);
 
-    State state() const
-    {
-        std::lock_guard lock(mutex);
-        return download_state;
-    }
+    State state() const;
 
     static String toString(FileSegment::State state);
 
@@ -81,11 +78,9 @@ public:
 
     const Range & range() const { return segment_range; }
 
-    const FileCacheKey & key() const { return file_key; }
+    const Key & key() const { return file_key; }
 
-    size_t downloadedSize() const;
-
-    size_t reservedSize() const;
+    size_t offset() const { return range().left; }
 
     State wait();
 
@@ -93,20 +88,23 @@ public:
 
     void write(const char * from, size_t size);
 
-    void complete();
+    void complete(std::optional<State> state = std::nullopt);
 
     String getOrSetDownloader();
 
     bool isDownloader() const;
 
+    size_t downloadOffset() const;
+
     static String getCallerId();
 
 private:
     size_t available() const { return reserved_size - downloaded_size; }
+    bool lastFileSegmentHolder() const;
 
-    Range segment_range;
+    const Range segment_range;
 
-    State download_state; /// Protected by mutex and cache->mutex
+    State download_state;
     String downloader_id;
 
     std::unique_ptr<WriteBufferFromFile> download_buffer;
@@ -117,8 +115,11 @@ private:
     mutable std::mutex mutex;
     std::condition_variable cv;
 
-    FileCacheKey file_key;
+    Key file_key;
     FileCache * cache;
+
+    /// Removed from cache cell.
+    bool detached = false;
 };
 
 struct FileSegmentsHolder : boost::noncopyable
@@ -128,18 +129,12 @@ struct FileSegmentsHolder : boost::noncopyable
 
     ~FileSegmentsHolder()
     {
-        /// CacheableReadBufferFromRemoteFS removes completed file segments from FileSegmentsHolder, so
-        /// in destruction here remain only uncompleted file segments.
+        /// In CacheableReadBufferFromRemoteFS file segment's downloader removes file segments from
+        /// FileSegmentsHolder right after calling file_segment->complete(), so on destruction here
+        /// remain only uncompleted file segments.
 
         for (auto & segment : file_segments)
-        {
-            /// In general file segment is completed by downloader by calling segment->complete()
-            /// for each segment once it has been downloaded or failed to download.
-            /// But if not done by downloader, downloader's holder will do that.
-
-            if (segment && segment->isDownloader())
-                segment->complete();
-        }
+            segment->complete();
     }
 
     FileSegments file_segments;

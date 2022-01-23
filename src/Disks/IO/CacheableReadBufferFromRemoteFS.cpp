@@ -147,7 +147,7 @@ bool CacheableReadBufferFromRemoteFS::completeFileSegmentAndGetNext()
 
     /// Only downloader completes file segment.
     if (read_type == ReadType::REMOTE_FS_READ_AND_DOWNLOAD)
-        (*file_segment_it)->complete();
+        (*file_segment_it)->complete(DB::FileSegment::State::DOWNLOADED);
 
     /// Do not hold pointer to file segment if it is not needed anymore
     /// so can become releasable and can be evicted from cache.
@@ -164,8 +164,14 @@ bool CacheableReadBufferFromRemoteFS::completeFileSegmentAndGetNext()
 
 void CacheableReadBufferFromRemoteFS::checkForPartialDownload()
 {
+    auto state = (*current_file_segment_it)->state();
+
+    if (state != FileSegment::State::PARTIALLY_DOWNLOADED
+        && state != FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
+        return;
+
     auto current_read_range = (*current_file_segment_it)->range();
-    auto last_downloaded_offset = current_read_range.left + (*current_file_segment_it)->downloadedSize() - 1;
+    auto last_downloaded_offset = (*current_file_segment_it)->downloadOffset();
 
     if (file_offset_of_buffer_end > last_downloaded_offset)
     {
@@ -177,6 +183,7 @@ void CacheableReadBufferFromRemoteFS::checkForPartialDownload()
             read_type = ReadType::REMOTE_FS_READ;
 
         impl->setReadUntilPosition(current_read_range.right + 1); /// [..., range.right]
+        impl->seek(file_offset_of_buffer_end, SEEK_SET);
     }
 }
 
@@ -238,9 +245,8 @@ bool CacheableReadBufferFromRemoteFS::nextImpl()
             if (file_segment->reserve(size))
                 file_segment->write(impl->buffer().begin(), impl->buffer().size());
             else
-                file_segment->complete();
-            /// TODO: This is incorrect. We steal hold file segment. Need to release.
-            /// And avoud double complete.
+                /// TODO: This is incorrect. We steal hold file segment. Need to release.
+                file_segment->complete(FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
         }
     }
     catch (...)

@@ -12,7 +12,7 @@ namespace ErrorCodes
 FileSegment::FileSegment(
         size_t offset_,
         size_t size_,
-        const FileCacheKey & key_,
+        const Key & key_,
         FileCache * cache_,
         State download_state_)
     : segment_range(offset_, offset_ + size_ - 1)
@@ -20,19 +20,22 @@ FileSegment::FileSegment(
     , file_key(key_)
     , cache(cache_)
 {
-    assert(download_state == State::DOWNLOADED || download_state == State::EMPTY);
+    if (download_state == State::DOWNLOADED)
+        reserved_size = downloaded_size = size_;
+    else if (download_state != State::EMPTY)
+        throw Exception(ErrorCodes::FILE_CACHE_ERROR, "Can create cell with either DOWNLOADED or EMPTY state");
 }
 
-size_t FileSegment::downloadedSize() const
+FileSegment::State FileSegment::state() const
 {
     std::lock_guard segment_lock(mutex);
-    return downloaded_size;
+    return download_state;
 }
 
-size_t FileSegment::reservedSize() const
+size_t FileSegment::downloadOffset() const
 {
     std::lock_guard segment_lock(mutex);
-    return reserved_size;
+    return range().left + downloaded_size - 1;
 }
 
 String FileSegment::getCallerId()
@@ -64,15 +67,20 @@ bool FileSegment::isDownloader() const
 
 void FileSegment::write(const char * from, size_t size)
 {
+    if (!size)
+        throw Exception(ErrorCodes::FILE_CACHE_ERROR, "Writing zero size is not allowed");
+
     if (available() < size)
         throw Exception(
             ErrorCodes::FILE_CACHE_ERROR,
             "Not enough space is reserved. Available: {}, expected: {}", available(), size);
 
+    if (!isDownloader())
+        throw Exception(ErrorCodes::FILE_CACHE_ERROR, "Only downloader can do the downloading");
+
     if (!download_buffer)
     {
-        assert(!downloaded_size);
-        auto download_path = cache->path(key(), range().left);
+        auto download_path = cache->path(key(), offset());
         download_buffer = std::make_unique<WriteBufferFromFile>(download_path);
     }
 
@@ -103,9 +111,10 @@ bool FileSegment::reserve(size_t size)
 
     std::lock_guard segment_lock(mutex);
 
-    if (downloaded_size == range().size())
+    if (downloaded_size + size > range().size())
         throw Exception(ErrorCodes::FILE_CACHE_ERROR,
-                        "Attempt to reserve space for fully downloaded file segment");
+                        "Attempt to reserve space too much space ({}) for file segment with range: {} (downloaded size: {})",
+                        size, range().toString(), downloaded_size);
 
     if (downloader_id != getCallerId())
         throw Exception(ErrorCodes::FILE_CACHE_ERROR, "Space can be reserved only by downloader");
@@ -122,95 +131,91 @@ bool FileSegment::reserve(size_t size)
     size_t free_space = reserved_size - downloaded_size;
     size_t size_to_reserve = size - free_space;
 
-    bool reserved;
-    if (downloaded_size)
-        reserved = cache->tryReserve(size_to_reserve, cache_lock);
-    else
-        reserved = cache->set(key(), range().left, size_to_reserve, segment_lock, cache_lock);
+    bool reserved = cache->tryReserve(key(), offset(), size_to_reserve, cache_lock);
 
     if (reserved)
         reserved_size += size;
-    else
-        download_state = downloaded_size
-            ? State::PARTIALLY_DOWNLOADED_NO_CONTINUATION
-            : State::SKIP_CACHE;
 
     return reserved;
 }
 
-void FileSegment::complete()
+void FileSegment::complete(std::optional<State> state)
 {
+    /**
+     * Either downloader calls file_segment->complete(state) manually or
+     * file_segment->complete() is called with no state from its FileSegmentsHolder desctructor.
+     *
+     * Downloader can call complete(state) with either DOWNLOADED or
+     * PARTIALLY_DOWNLOADED_NO_CONTINUATION (in case space reservation failed).
+     *
+     * If complete() is called from FileSegmentsHolder desctructor -- actions are taken
+     * according to current download_state and only in case `detached==false`, meaning than
+     * this filesegment is present in cache cell. If file segment was removed from cache cell,
+     * it has `detached=true`, so that other threads will know that no clean up is required from them.
+     */
+
     {
         std::lock_guard segment_lock(mutex);
 
-        /// TODO: There is a gap between next thread will call getOrSetDownlaoder and no one will remove the cell during this gap.
+        bool download_can_continue = false;
+        bool is_downloader = downloader_id == getCallerId();
 
-        if (downloader_id != getCallerId())
-            throw Exception(ErrorCodes::FILE_CACHE_ERROR,
-                            "File segment can be completed only by downloader or downloader's FileSegmentsHodler");
-
-        downloader_id.clear();
-        download_buffer.reset();
-        reserved_size = downloaded_size;
-
-        switch (download_state)
+        if (state)
         {
-            case State::EMPTY:
-            case State::DOWNLOADED:
-            {
-                /// Download not even started or already completed successfully.
-                break;
-            }
-            case State::SKIP_CACHE:
-            {
-                /// Nothing has been downloaded as first space reservation failed.
-                assert(!downloaded_size);
+            if (!is_downloader)
+                throw Exception(ErrorCodes::FILE_CACHE_ERROR,
+                                "File segment can be completed only by downloader or downloader's FileSegmentsHodler");
 
+            if (*state != State::DOWNLOADED && *state != State::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
+                throw Exception(ErrorCodes::FILE_CACHE_ERROR,
+                                "Cannot complete file segment with state: {}", toString(*state));
+
+            download_state = *state;
+            if (download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
+            {
                 std::lock_guard cache_lock(cache->mutex);
-                cache->remove(key(), range().left, cache_lock);
 
-                break;
-            }
-            case State::DOWNLOADING:
-            case State::PARTIALLY_DOWNLOADED:
-            case State::PARTIALLY_DOWNLOADED_NO_CONTINUATION:
-            {
-                if (downloaded_size == range().size())
-                {
-                    std::lock_guard cache_lock(cache->mutex);
-                    download_state = State::DOWNLOADED;
-                }
+                if (downloaded_size)
+                    cache->reduceSizeToDownloaded(key(), offset(), cache_lock);
                 else
+                    cache->remove(key(), offset(), cache_lock);
+            }
+        }
+        else if (!detached)
+        {
+            if (downloaded_size == range().size())
+                download_state = State::DOWNLOADED;
+
+            if (download_state == State::DOWNLOADING)
+                download_state = State::PARTIALLY_DOWNLOADED;
+
+            if (download_state == State::PARTIALLY_DOWNLOADED
+                     || download_state == State::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
+            {
+                std::lock_guard cache_lock(cache->mutex);
+
+                bool is_last_holder = cache->isLastFileSegmentHolder(key(), offset(), cache_lock);
+                download_can_continue = !is_last_holder && download_state == State::PARTIALLY_DOWNLOADED;
+
+                if (!download_can_continue)
                 {
-                    /**
-                    * If file segment's downloader did not fully download the range,
-                    * check if there is some other thread holding the same file segment.
-                    * If there is any - download can be continued.
-                    */
-
-                    std::lock_guard cache_lock(cache->mutex);
-
-                    size_t users_count = cache->getUseCount(*this, cache_lock);
-                    assert(users_count >= 1);
-
-                    if (users_count == 1)
+                    bool is_responsible_for_cell = is_downloader || (downloader_id.empty() && is_last_holder);
+                    if (is_responsible_for_cell)
                     {
-                        if (downloaded_size > 0)
-                        {
-                            segment_range.right = segment_range.left + downloaded_size - 1;
-                            download_state = State::PARTIALLY_DOWNLOADED;
-                        }
+                        if (downloaded_size)
+                            cache->reduceSizeToDownloaded(key(), offset(), cache_lock);
                         else
-                        {
-                            cache->remove(key(), range().left, cache_lock);
-                            download_state = State::SKIP_CACHE;
-                        }
+                            cache->remove(key(), offset(), cache_lock);
                     }
-                    else
-                        download_state = State::PARTIALLY_DOWNLOADED;
                 }
             }
         }
+
+        if (is_downloader)
+            downloader_id.clear();
+
+        if (!download_can_continue)
+            download_buffer.reset();
     }
 
     cv.notify_all();
