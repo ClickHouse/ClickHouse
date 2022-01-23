@@ -27,8 +27,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <base/logger_useful.h>
 #include <algorithm>
-#include <Common/hex.h>
-#include <Common/memcpySmall.h>
+#include <Poco/URI.h>
 
 
 namespace DB
@@ -187,9 +186,8 @@ namespace
                         std::string user_info = request_uri.getUserInfo();
                         if (!user_info.empty())
                         {
-                            char decoded_user_info[user_info.length() + 1];
-                            size_t decode_len = decodeURL(user_info.c_str(), user_info.length(), decoded_user_info);
-                            std::string url_decoded_user_info(decoded_user_info, decode_len);
+                            std::string url_decoded_user_info;
+                            Poco::URI::decode(user_info, url_decoded_user_info);
                             std::size_t n = url_decoded_user_info.find(':');
                             if (n != std::string::npos)
                             {
@@ -239,60 +237,6 @@ namespace
                 pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
                 reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
             };
-        }
-
-        // We assume that size of the dst buf isn't less than src_size. Moved from src/Functions/URL/decodeURLComponent.cpp per @bharatnc suggested.
-        static size_t decodeURL(const char * src, size_t src_size, char * dst)
-        {
-            const char * src_prev_pos = src;
-            const char * src_curr_pos = src;
-            const char * src_end = src + src_size;
-            char * dst_pos = dst;
-
-            while (true)
-            {
-                src_curr_pos = find_first_symbols<'%'>(src_curr_pos, src_end);
-
-                if (src_curr_pos == src_end)
-                {
-                    break;
-                }
-                else if (src_end - src_curr_pos < 3)
-                {
-                    src_curr_pos = src_end;
-                    break;
-                }
-                else
-                {
-                    unsigned char high = unhex(src_curr_pos[1]);
-                    unsigned char low = unhex(src_curr_pos[2]);
-
-                    if (high != 0xFF && low != 0xFF)
-                    {
-                        unsigned char octet = (high << 4) + low;
-
-                        size_t bytes_to_copy = src_curr_pos - src_prev_pos;
-                        memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
-                        dst_pos += bytes_to_copy;
-
-                        *dst_pos = octet;
-                        ++dst_pos;
-
-                        src_prev_pos = src_curr_pos + 3;
-                    }
-
-                    src_curr_pos += 3;
-                }
-            }
-
-            if (src_prev_pos < src_curr_pos)
-            {
-                size_t bytes_to_copy = src_curr_pos - src_prev_pos;
-                memcpySmallAllowReadWriteOverflow15(dst_pos, src_prev_pos, bytes_to_copy);
-                dst_pos += bytes_to_copy;
-            }
-
-            return dst_pos - dst;
         }
 
         String getName() const override
