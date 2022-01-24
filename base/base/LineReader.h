@@ -4,6 +4,7 @@
 #include <atomic>
 #include <vector>
 #include <optional>
+#include <replxx.hxx>
 
 #include <base/types.h>
 
@@ -15,7 +16,7 @@ public:
         using Words = std::vector<std::string>;
 
         /// Get vector for the matched range of words if any.
-        Words getCompletions(const String & prefix, size_t prefix_length);
+        replxx::Replxx::completions_t getCompletions(const String & prefix, size_t prefix_length);
         void addWords(Words && new_words);
 
     private:
