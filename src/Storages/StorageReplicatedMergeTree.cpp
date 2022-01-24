@@ -4808,7 +4808,7 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper()
     if (getZooKeeper()->exists(replica_path))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Replica path is present at {} - nothing to restore. "
-                        "If you are sure that metadata is lost and replica path contain some garbage, "
+                        "If you are sure that metadata is lost and that replica path contains some garbage, "
                         "then use SYSTEM DROP REPLICA query first.", replica_path);
 
     if (has_metadata_in_zookeeper.has_value() && *has_metadata_in_zookeeper)
