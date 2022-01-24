@@ -1,5 +1,7 @@
 #pragma once
 
+//#define STANDARD_VECTOR_SIZE 1024 * 4
+
 #include <Processors/Formats/IInputFormat.h>
 #include <Columns/ColumnVector.h>
 
@@ -40,6 +42,7 @@ private:
     std::vector<duckdb::column_t> column_indices;
     std::vector<idx_t> row_group_ids;
     std::vector<::duckdb::LogicalType> row_type;
+    std::unique_ptr<duckdb::DataChunk> output;
 };
 }
 

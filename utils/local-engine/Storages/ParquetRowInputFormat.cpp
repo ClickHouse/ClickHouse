@@ -34,6 +34,8 @@ void local_engine::ParquetRowInputFormat::prepareReader()
     }
     state = std::make_unique<duckdb::ParquetReaderScanState>();
     reader->InitializeScan(*state, column_indices, row_group_ids, nullptr);
+    output = std::make_unique<duckdb::DataChunk>();
+    output->Initialize(row_type);
 }
 
 Chunk local_engine::ParquetRowInputFormat::generate()
@@ -42,12 +44,11 @@ Chunk local_engine::ParquetRowInputFormat::generate()
 
     if (!reader)
         prepareReader();
-    ::duckdb::DataChunk output;
-    output.Initialize(row_type);
-    reader->Scan(*state, output);
-    if (output.size() > 0)
+    output->Reset();
+    reader->Scan(*state, *output);
+    if (output->size() > 0)
     {
-        duckDbChunkToCHChunk(output, res);
+        duckDbChunkToCHChunk(*output, res);
     }
     return res;
 }
