@@ -138,8 +138,6 @@ void ReadBufferFromRemoteFSGather::initialize()
 
 bool ReadBufferFromRemoteFSGather::nextImpl()
 {
-    assert(!internal_buffer.empty());
-
     /// Find first available buffer that fits to given offset.
     if (!current_buf)
         initialize();
