@@ -88,10 +88,8 @@ public:
         throw Exception("Cannot insert into " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void insertRangeFrom(const IColumn &, size_t, size_t) override
-    {
-        throw Exception("Cannot insert into " + getName(), ErrorCodes::NOT_IMPLEMENTED);
-    }
+    void insertFrom(const IColumn & src, size_t n) override;
+    void insertRangeFrom(const IColumn &, size_t start, size_t length) override;
 
     void insertData(const char *, size_t) override
     {

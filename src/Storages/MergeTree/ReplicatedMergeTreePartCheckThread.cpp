@@ -315,7 +315,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
         /// If the part is in ZooKeeper, check its data with its checksums, and them with ZooKeeper.
         if (zookeeper->tryGet(part_path, part_znode))
         {
-            LOG_WARNING(log, "Checking data of part {}.", part_name);
+            LOG_INFO(log, "Checking data of part {}.", part_name);
 
             try
             {

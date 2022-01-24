@@ -157,6 +157,12 @@ namespace
             hash.update(x.data.size());
             hash.update(x.data.data(), x.data.size());
         }
+        void operator() (const bool & x) const
+        {
+            UInt8 type = Field::Types::Bool;
+            hash.update(type);
+            hash.update(x);
+        }
     };
 }
 

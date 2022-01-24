@@ -17,6 +17,7 @@
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/formatAST.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/AlterCommands.h>
@@ -141,14 +142,16 @@ void StorageMergeTree::startup()
 
 void StorageMergeTree::flush()
 {
+    if (flush_called.exchange(true))
+        return;
+
     flushAllInMemoryPartsIfNeeded();
 }
 
 void StorageMergeTree::shutdown()
 {
-    if (shutdown_called)
+    if (shutdown_called.exchange(true))
         return;
-    shutdown_called = true;
 
     /// Unlock all waiting mutations
     {
