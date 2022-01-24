@@ -47,7 +47,7 @@ public:
       */
     MergeTreeData::MutableDataPartPtr writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, bool optimize_on_insert);
 
-    struct TempPart
+    struct TemporaryPart
     {
         MergeTreeData::MutableDataPartPtr part;
 
@@ -62,10 +62,10 @@ public:
         void finalize();
     };
 
-    TempPart writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
+    TemporaryPart writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
 
     /// For insertion.
-    static TempPart writeProjectionPart(
+    static TemporaryPart writeProjectionPart(
         MergeTreeData & data,
         Poco::Logger * log,
         Block block,
@@ -73,7 +73,7 @@ public:
         const IMergeTreeDataPart * parent_part);
 
     /// For mutation: MATERIALIZE PROJECTION.
-    static TempPart writeTempProjectionPart(
+    static TemporaryPart writeTempProjectionPart(
         MergeTreeData & data,
         Poco::Logger * log,
         Block block,
@@ -82,7 +82,7 @@ public:
         size_t block_num);
 
     /// For WriteAheadLog AddPart.
-    static TempPart writeInMemoryProjectionPart(
+    static TemporaryPart writeInMemoryProjectionPart(
         const MergeTreeData & data,
         Poco::Logger * log,
         Block block,
@@ -97,7 +97,7 @@ public:
         const MergeTreeData::MergingParams & merging_params);
 
 private:
-    static TempPart writeProjectionPartImpl(
+    static TemporaryPart writeProjectionPartImpl(
         const String & part_name,
         MergeTreeDataPartType part_type,
         const String & relative_path,

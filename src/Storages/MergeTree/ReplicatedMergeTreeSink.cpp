@@ -36,7 +36,7 @@ struct ReplicatedMergeTreeSink::PrevPart
 {
     struct Partition
     {
-        MergeTreeDataWriter::TempPart temp_part;
+        MergeTreeDataWriter::TemporaryPart temp_part;
         UInt64 elapsed_ns;
         String block_id;
     };
@@ -195,7 +195,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
     prev_part->partitions = std::move(partitions);
 
     /// If deduplicated data should not be inserted into MV, we need to set proper
-    /// value for `last_block_is_duplicate`, which is possible only after the part is commited.
+    /// value for `last_block_is_duplicate`, which is possible only after the part is committed.
     /// Othervide we can delay commit.
     /// TODO: we can also delay commit if there is no MVs.
     if (!context->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views)

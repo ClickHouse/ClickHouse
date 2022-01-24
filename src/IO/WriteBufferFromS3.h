@@ -96,7 +96,7 @@ private:
 
     bool is_prefinalized = false;
 
-    /// Following fields
+    /// Following fields are for backround uploads in thread pool (if specified).
     ThreadPool * thread_pool;
     std::unique_ptr<PutObjectTask> put_object_task;
     std::list<UploadPartTask> upload_object_tasks;
