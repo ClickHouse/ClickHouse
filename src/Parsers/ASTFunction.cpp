@@ -32,7 +32,7 @@ void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
     if (name == "view")
         throw Exception("Table function view cannot be used as an expression", ErrorCodes::UNEXPECTED_EXPRESSION);
 
-    /// If function can be converted to literal it will be parsed as literal after formating.
+    /// If function can be converted to literal it will be parsed as literal after formatting.
     /// In distributed query it may lead to mismathed column names.
     /// To avoid it we check whether we can convert function to literal.
     if (auto literal = toLiteral())
@@ -135,6 +135,8 @@ static ASTPtr createLiteral(const ASTs & arguments)
         {
             if (auto func_literal = func->toLiteral())
                 container.push_back(func_literal->as<ASTLiteral>()->value);
+            else
+                return {};
         }
         else
             /// Some of the Array or Tuple arguments is not literal
