@@ -101,12 +101,6 @@ def check_args_and_update_paths(args):
         if not os.path.exists(path):
             raise Exception("Path {} doesn't exist".format(path))
 
-    if args.dockerd_volume:
-        if not os.path.isabs(args.dockerd_volume):
-            args.src_dir = os.path.abspath(
-                os.path.join(CURRENT_WORK_DIR, args.dockerd_volume)
-            )
-
     if (not os.path.exists(os.path.join(args.base_configs_dir, "config.xml"))) and (
         not os.path.exists(os.path.join(args.base_configs_dir, "config.yaml"))
     ):
