@@ -17,6 +17,17 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Parsers/ASTCreateQuery.h>
 
+#include <Common/FileChecker.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBufferFromFile.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <Backups/BackupEntryFromImmutableFile.h>
+#include <Backups/IBackup.h>
+#include <Backups/IRestoreTask.h>
+#include <IO/copyData.h>
+#include <IO/createReadBufferFromFileBase.h>
+#include <Poco/TemporaryFile.h>
+
 
 namespace DB
 {
@@ -363,6 +374,152 @@ void StorageMemory::truncate(
     total_size_bytes.store(0, std::memory_order_relaxed);
     total_size_rows.store(0, std::memory_order_relaxed);
 }
+
+
+BackupEntries StorageMemory::backup(ContextPtr context, const ASTs & partitions)
+{
+    if (!partitions.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
+
+    auto blocks = data.get();
+
+    /// We store our data in the StripeLog format.
+    BackupEntries backup_entries;
+    auto temp_dir_owner = std::make_shared<Poco::TemporaryFile>();
+    auto temp_dir = temp_dir_owner->path();
+    fs::create_directories(temp_dir);
+
+    /// Writing data.bin
+    constexpr char data_file_name[] = "data.bin";
+    String data_file_path = temp_dir + "/" + data_file_name;
+    IndexForNativeFormat index;
+    {
+        auto data_out_compressed = std::make_unique<WriteBufferFromFile>(data_file_path);
+        CompressedWriteBuffer data_out{*data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), context->getSettingsRef().max_compress_block_size};
+        NativeWriter block_out{data_out, 0, getInMemoryMetadataPtr()->getSampleBlock(), false, &index};
+        for (const auto & block : *blocks)
+            block_out.write(block);
+    }
+
+    /// Writing index.mrk
+    constexpr char index_file_name[] = "index.mrk";
+    String index_file_path = temp_dir + "/" + index_file_name;
+    {
+        auto index_out_compressed = std::make_unique<WriteBufferFromFile>(index_file_path);
+        CompressedWriteBuffer index_out{*index_out_compressed};
+        index.write(index_out);
+    }
+
+    /// Writing sizes.json
+    constexpr char sizes_file_name[] = "sizes.json";
+    String sizes_file_path = temp_dir + "/" + sizes_file_name;
+    FileChecker file_checker{sizes_file_path};
+    file_checker.update(data_file_path);
+    file_checker.update(index_file_path);
+    file_checker.save();
+
+    /// Prepare backup entries.
+    backup_entries.emplace_back(
+        data_file_name,
+        std::make_unique<BackupEntryFromImmutableFile>(
+            data_file_path, file_checker.getFileSize(data_file_path), std::nullopt, temp_dir_owner));
+
+    backup_entries.emplace_back(
+        index_file_name,
+        std::make_unique<BackupEntryFromImmutableFile>(
+            index_file_path, file_checker.getFileSize(index_file_path), std::nullopt, temp_dir_owner));
+
+    backup_entries.emplace_back(
+        sizes_file_name,
+        std::make_unique<BackupEntryFromImmutableFile>(
+            sizes_file_path, std::nullopt, std::nullopt, temp_dir_owner));
+
+    return backup_entries;
+}
+
+
+class MemoryRestoreTask : public IRestoreTask
+{
+public:
+    MemoryRestoreTask(
+        std::shared_ptr<StorageMemory> storage_, const BackupPtr & backup_, const String & data_path_in_backup_, ContextMutablePtr context_)
+        : storage(storage_), backup(backup_), data_path_in_backup(data_path_in_backup_), context(context_)
+    {
+    }
+
+    RestoreTasks run() override
+    {
+        /// Our data are in the StripeLog format.
+
+        /// Reading index.mrk
+        IndexForNativeFormat index;
+        {
+            String index_file_path = data_path_in_backup + "index.mrk";
+            auto backup_entry = backup->readFile(index_file_path);
+            auto in = backup_entry->getReadBuffer();
+            CompressedReadBuffer compressed_in{*in};
+            index.read(compressed_in);
+        }
+
+        /// Reading data.bin
+        Blocks new_blocks;
+        size_t new_bytes = 0;
+        size_t new_rows = 0;
+        {
+            String data_file_path = data_path_in_backup + "data.bin";
+            auto backup_entry = backup->readFile(data_file_path);
+            std::unique_ptr<ReadBuffer> in = backup_entry->getReadBuffer();
+            std::optional<Poco::TemporaryFile> temp_data_copy;
+            if (!typeid_cast<ReadBufferFromFileBase *>(in.get()))
+            {
+                temp_data_copy.emplace();
+                auto temp_data_copy_out = std::make_unique<WriteBufferFromFile>(temp_data_copy->path());
+                copyData(*in, *temp_data_copy_out);
+                temp_data_copy_out.reset();
+                in = createReadBufferFromFileBase(temp_data_copy->path(), {});
+            }
+            std::unique_ptr<ReadBufferFromFileBase> in_from_file{static_cast<ReadBufferFromFileBase *>(in.release())};
+            CompressedReadBufferFromFile compressed_in{std::move(in_from_file)};
+            NativeReader block_in{compressed_in, 0, index.blocks.begin(), index.blocks.end()};
+
+            while (auto block = block_in.read())
+            {
+                new_bytes += block.bytes();
+                new_rows += block.rows();
+                new_blocks.push_back(std::move(block));
+            }
+        }
+
+        /// Append old blocks with the new ones.
+        auto old_blocks = storage->data.get();
+        Blocks old_and_new_blocks = *old_blocks;
+        old_and_new_blocks.insert(old_and_new_blocks.end(), std::make_move_iterator(new_blocks.begin()), std::make_move_iterator(new_blocks.end()));
+
+        /// Finish restoring.
+        storage->data.set(std::make_unique<Blocks>(std::move(old_and_new_blocks)));
+        storage->total_size_bytes += new_bytes;
+        storage->total_size_rows += new_rows;
+
+        return {};
+    }
+
+private:
+    std::shared_ptr<StorageMemory> storage;
+    BackupPtr backup;
+    String data_path_in_backup;
+    ContextMutablePtr context;
+};
+
+
+RestoreTaskPtr StorageMemory::restoreFromBackup(ContextMutablePtr context, const ASTs & partitions, const BackupPtr & backup, const String & data_path_in_backup, const StorageRestoreSettings &)
+{
+    if (!partitions.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
+
+    return std::make_unique<MemoryRestoreTask>(
+        typeid_cast<std::shared_ptr<StorageMemory>>(shared_from_this()), backup, data_path_in_backup, context);
+}
+
 
 std::optional<UInt64> StorageMemory::totalRows(const Settings &) const
 {
