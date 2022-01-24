@@ -158,6 +158,7 @@ if __name__ == "__main__":
 
     runner_path = os.path.join(repo_path, "tests/integration", "ci-runner.py")
     run_command = f"sudo -E {runner_path} | tee {output_path_log}"
+    logging.info("Running command: %s", run_command)
 
     with TeePopen(run_command, output_path_log, my_env) as process:
         retcode = process.wait()
