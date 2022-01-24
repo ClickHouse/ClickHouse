@@ -414,17 +414,12 @@ BlockIO InterpreterInsertQuery::execute()
             return std::make_shared<MaterializingTransform>(in_header);
         });
 
-        size_t num_select_threads = pipeline.getNumThreads();
         size_t num_insert_threads = std::max_element(out_chains.begin(), out_chains.end(), [&](const auto &a, const auto &b)
         {
             return a.getNumThreads() < b.getNumThreads();
         })->getNumThreads();
         pipeline.addChains(std::move(out_chains));
-
         pipeline.setMaxThreads(num_insert_threads);
-        /// Don't use more threads for insert then for select to reduce memory consumption.
-        if (!settings.parallel_view_processing && pipeline.getNumThreads() > num_select_threads)
-            pipeline.setMaxThreads(num_select_threads);
 
         pipeline.setSinks([&](const Block & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
         {

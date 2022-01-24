@@ -48,8 +48,6 @@ struct ViewsData
     StorageID source_storage_id;
     StorageMetadataPtr source_metadata_snapshot;
     StoragePtr source_storage;
-    /// This value is actually only for logs.
-    size_t max_threads = 1;
 
     /// In case of exception happened while inserting into main table, it is pushed to pipeline.
     /// Remember the first one, we should keep them after view processing.
@@ -349,9 +347,6 @@ Chain buildPushingToViewsChain(
     if (views_data)
     {
         size_t num_views = views_data->views.size();
-        const Settings & settings = context->getSettingsRef();
-        if (settings.parallel_view_processing)
-            views_data->max_threads = settings.max_threads ? std::min(static_cast<size_t>(settings.max_threads), num_views) : num_views;
 
         std::vector<Block> headers;
         headers.reserve(num_views);
@@ -744,8 +739,7 @@ void FinalizingViewsTransform::work()
 
             LOG_TRACE(
                 &Poco::Logger::get("PushingToViews"),
-                "Pushing ({}) from {} to {} took {} ms.",
-                views_data->max_threads <= 1 ? "sequentially" : ("parallel " + std::to_string(views_data->max_threads)),
+                "Pushing from {} to {} took {} ms.",
                 views_data->source_storage_id.getNameForLogs(),
                 view.table_id.getNameForLogs(),
                 view.runtime_stats->elapsed_ms);
