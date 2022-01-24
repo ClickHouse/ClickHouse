@@ -92,7 +92,7 @@ MergedBlockOutputStream::Finalizer::~Finalizer()
     {
         finish();
     }
-    catch(...)
+    catch (...)
     {
         tryLogCurrentException("MergedBlockOutputStream");
     }
