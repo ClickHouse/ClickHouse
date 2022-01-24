@@ -7,7 +7,7 @@
 #include <mutex>
 #include <atomic>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -36,12 +36,13 @@ public:
     using Mapped = TMapped;
     using MappedPtr = std::shared_ptr<Mapped>;
 
-private:
-    using Clock = std::chrono::steady_clock;
-
-public:
-    LRUCache(size_t max_size_)
-        : max_size(std::max(static_cast<size_t>(1), max_size_)) {}
+    /** Initialize LRUCache with max_size and max_elements_size.
+      * max_elements_size == 0 means no elements size restrictions.
+      */
+    LRUCache(size_t max_size_, size_t max_elements_size_ = 0)
+        : max_size(std::max(static_cast<size_t>(1), max_size_))
+        , max_elements_size(max_elements_size_)
+        {}
 
     MappedPtr get(const Key & key)
     {
@@ -61,6 +62,18 @@ public:
         std::lock_guard lock(mutex);
 
         setImpl(key, mapped, lock);
+    }
+
+    void remove(const Key & key)
+    {
+        std::lock_guard lock(mutex);
+        auto it = cells.find(key);
+        if (it == cells.end())
+            return;
+        auto & cell = it->second;
+        current_size -= cell.size;
+        queue.erase(cell.queue_iterator);
+        cells.erase(it);
     }
 
     /// If the value for the key is in the cache, returns it. If it is not, calls load_func() to
@@ -252,6 +265,7 @@ private:
     /// Total weight of values.
     size_t current_size = 0;
     const size_t max_size;
+    const size_t max_elements_size;
 
     std::atomic<size_t> hits {0};
     std::atomic<size_t> misses {0};
@@ -311,7 +325,8 @@ private:
     {
         size_t current_weight_lost = 0;
         size_t queue_size = cells.size();
-        while ((current_size > max_size) && (queue_size > 1))
+
+        while ((current_size > max_size || (max_elements_size != 0 && queue_size > max_elements_size)) && (queue_size > 1))
         {
             const Key & key = queue.front();
 

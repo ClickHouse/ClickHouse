@@ -1,21 +1,33 @@
 #pragma once
-#include <Processors/ISink.h>
 #include <Storages/TableLockHolder.h>
+#include <Processors/Transforms/ExceptionKeepingTransform.h>
 
 namespace DB
 {
 
 /// Sink which is returned from Storage::write.
-/// The same as ISink, but also can hold table lock.
-class SinkToStorage : public ISink
+class SinkToStorage : public ExceptionKeepingTransform
 {
-public:
-    using ISink::ISink;
+/// PartitionedSink owns nested sinks.
+friend class PartitionedSink;
 
+public:
+    explicit SinkToStorage(const Block & header);
+
+    const Block & getHeader() const { return inputs.front().getHeader(); }
     void addTableLock(const TableLockHolder & lock) { table_locks.push_back(lock); }
+
+protected:
+    virtual void consume(Chunk chunk) = 0;
+    virtual bool lastBlockIsDuplicate() const { return false; }
 
 private:
     std::vector<TableLockHolder> table_locks;
+
+    void onConsume(Chunk chunk) override;
+    GenerateResult onGenerate() override;
+
+    Chunk cur_chunk;
 };
 
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
@@ -29,4 +41,5 @@ public:
     void consume(Chunk) override {}
 };
 
+using SinkPtr = std::shared_ptr<SinkToStorage>;
 }

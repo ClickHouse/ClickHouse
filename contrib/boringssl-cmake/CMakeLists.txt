@@ -1,10 +1,20 @@
+# Needed for:
+# - securely connecting to an external server, e.g. clickhouse-client --host ... --secure
+# - lots of thirdparty libraries
+option(ENABLE_SSL "Enable ssl" ${ENABLE_LIBRARIES})
+
+if(NOT ENABLE_SSL)
+  message(STATUS "Not using openssl")
+  return()
+endif()
+
 # Copyright (c) 2019 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 # This file is created by generate_build_files.py and edited accordingly.
 
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.5)
 
 project(BoringSSL LANGUAGES C CXX)
 
@@ -20,12 +30,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CLANG)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
   endif()
 
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-common")
-  if((CMAKE_C_COMPILER_VERSION VERSION_GREATER "4.8.99") OR CLANG)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c11")
-  else()
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99")
-  endif()
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-common -std=c11")
 endif()
 
 # pthread_rwlock_t requires a feature flag.
@@ -55,7 +60,7 @@ add_definitions(-DBORINGSSL_IMPLEMENTATION)
 # builds.
 if(NOT OPENSSL_NO_ASM AND CMAKE_OSX_ARCHITECTURES)
   list(LENGTH CMAKE_OSX_ARCHITECTURES NUM_ARCHES)
-  if(NOT ${NUM_ARCHES} EQUAL 1)
+  if(NOT NUM_ARCHES EQUAL 1)
     message(FATAL_ERROR "Universal binaries not supported.")
   endif()
   list(GET CMAKE_OSX_ARCHITECTURES 0 CMAKE_SYSTEM_PROCESSOR)
@@ -78,7 +83,13 @@ elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "AMD64")
 elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "x86")
   set(ARCH "x86")
 elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "i386")
-  set(ARCH "x86")
+  # cmake uses `uname -p` to set the system processor, but Solaris
+  # systems support multiple architectures.
+  if((${CMAKE_SYSTEM_NAME} STREQUAL "SunOS") AND CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(ARCH "x86_64")
+  else()
+    set(ARCH "x86")
+  endif()
 elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "i686")
   set(ARCH "x86")
 elseif(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "aarch64")
@@ -129,8 +140,6 @@ if(BUILD_SHARED_LIBS)
   # some library targets are OBJECT libraries.
   set(CMAKE_POSITION_INDEPENDENT_CODE TRUE)
 endif()
-
-include_directories("${BORINGSSL_SOURCE_DIR}/include")
 
 set(
   CRYPTO_ios_aarch64_SOURCES
@@ -290,6 +299,21 @@ set(
 )
 
 set(
+  CRYPTO_win_aarch64_SOURCES
+
+  win-aarch64/crypto/chacha/chacha-armv8.S
+  win-aarch64/crypto/fipsmodule/aesv8-armx64.S
+  win-aarch64/crypto/fipsmodule/armv8-mont.S
+  win-aarch64/crypto/fipsmodule/ghash-neon-armv8.S
+  win-aarch64/crypto/fipsmodule/ghashv8-armx64.S
+  win-aarch64/crypto/fipsmodule/sha1-armv8.S
+  win-aarch64/crypto/fipsmodule/sha256-armv8.S
+  win-aarch64/crypto/fipsmodule/sha512-armv8.S
+  win-aarch64/crypto/fipsmodule/vpaes-armv8.S
+  win-aarch64/crypto/test/trampoline-armv8.S
+)
+
+set(
   CRYPTO_win_x86_SOURCES
 
   win-x86/crypto/chacha/chacha-x86.asm
@@ -331,9 +355,9 @@ set(
   win-x86_64/crypto/test/trampoline-x86_64.asm
 )
 
-if(APPLE AND ${ARCH} STREQUAL "aarch64")
+if(APPLE AND ARCH STREQUAL "aarch64")
   set(CRYPTO_ARCH_SOURCES ${CRYPTO_ios_aarch64_SOURCES})
-elseif(APPLE AND ${ARCH} STREQUAL "arm")
+elseif(APPLE AND ARCH STREQUAL "arm")
   set(CRYPTO_ARCH_SOURCES ${CRYPTO_ios_arm_SOURCES})
 elseif(APPLE)
   set(CRYPTO_ARCH_SOURCES ${CRYPTO_mac_${ARCH}_SOURCES})
@@ -344,7 +368,7 @@ elseif(WIN32)
 endif()
 
 add_library(
-  crypto
+  _crypto
 
   ${CRYPTO_ARCH_SOURCES}
   err_data.c
@@ -360,6 +384,7 @@ add_library(
   "${BORINGSSL_SOURCE_DIR}/crypto/asn1/a_object.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/asn1/a_octet.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/asn1/a_print.c"
+  "${BORINGSSL_SOURCE_DIR}/crypto/asn1/a_strex.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/asn1/a_strnid.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/asn1/a_time.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/asn1/a_type.c"
@@ -389,6 +414,7 @@ add_library(
   "${BORINGSSL_SOURCE_DIR}/crypto/bio/printf.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/bio/socket.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/bio/socket_helper.c"
+  "${BORINGSSL_SOURCE_DIR}/crypto/blake2/blake2.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/bn_extra/bn_asn1.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/bn_extra/convert.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/buf/buf.c"
@@ -413,6 +439,7 @@ add_library(
   "${BORINGSSL_SOURCE_DIR}/crypto/conf/conf.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/cpu-aarch64-fuchsia.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/cpu-aarch64-linux.c"
+  "${BORINGSSL_SOURCE_DIR}/crypto/cpu-aarch64-win.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/cpu-arm-linux.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/cpu-arm.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/cpu-intel.c"
@@ -452,7 +479,6 @@ add_library(
   "${BORINGSSL_SOURCE_DIR}/crypto/ex_data.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/fipsmodule/bcm.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/fipsmodule/fips_shared_support.c"
-  "${BORINGSSL_SOURCE_DIR}/crypto/fipsmodule/is_fips.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/hkdf/hkdf.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/hpke/hpke.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/hrss/hrss.c"
@@ -499,13 +525,13 @@ add_library(
   "${BORINGSSL_SOURCE_DIR}/crypto/trust_token/voprf.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509/a_digest.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509/a_sign.c"
-  "${BORINGSSL_SOURCE_DIR}/crypto/x509/a_strex.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509/a_verify.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509/algorithm.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509/asn1_gen.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509/by_dir.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509/by_file.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509/i2d_pr.c"
+  "${BORINGSSL_SOURCE_DIR}/crypto/x509/name_print.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509/rsa_pss.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509/t_crl.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509/t_req.c"
@@ -519,7 +545,6 @@ add_library(
   "${BORINGSSL_SOURCE_DIR}/crypto/x509/x509_ext.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509/x509_lu.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509/x509_obj.c"
-  "${BORINGSSL_SOURCE_DIR}/crypto/x509/x509_r2x.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509/x509_req.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509/x509_set.c"
   "${BORINGSSL_SOURCE_DIR}/crypto/x509/x509_trs.c"
@@ -580,7 +605,7 @@ add_library(
 )
 
 add_library(
-  ssl
+  _ssl
 
   "${BORINGSSL_SOURCE_DIR}/ssl/bio_ssl.cc"
   "${BORINGSSL_SOURCE_DIR}/ssl/d1_both.cc"
@@ -589,6 +614,8 @@ add_library(
   "${BORINGSSL_SOURCE_DIR}/ssl/d1_srtp.cc"
   "${BORINGSSL_SOURCE_DIR}/ssl/dtls_method.cc"
   "${BORINGSSL_SOURCE_DIR}/ssl/dtls_record.cc"
+  "${BORINGSSL_SOURCE_DIR}/ssl/encrypted_client_hello.cc"
+  "${BORINGSSL_SOURCE_DIR}/ssl/extensions.cc"
   "${BORINGSSL_SOURCE_DIR}/ssl/handoff.cc"
   "${BORINGSSL_SOURCE_DIR}/ssl/handshake.cc"
   "${BORINGSSL_SOURCE_DIR}/ssl/handshake_client.cc"
@@ -611,7 +638,6 @@ add_library(
   "${BORINGSSL_SOURCE_DIR}/ssl/ssl_versions.cc"
   "${BORINGSSL_SOURCE_DIR}/ssl/ssl_x509.cc"
   "${BORINGSSL_SOURCE_DIR}/ssl/t1_enc.cc"
-  "${BORINGSSL_SOURCE_DIR}/ssl/t1_lib.cc"
   "${BORINGSSL_SOURCE_DIR}/ssl/tls13_both.cc"
   "${BORINGSSL_SOURCE_DIR}/ssl/tls13_client.cc"
   "${BORINGSSL_SOURCE_DIR}/ssl/tls13_enc.cc"
@@ -621,6 +647,7 @@ add_library(
 
   "${BORINGSSL_SOURCE_DIR}/decrepit/ssl/ssl_decrepit.c"
   "${BORINGSSL_SOURCE_DIR}/decrepit/cfb/cfb.c"
+  "${BORINGSSL_SOURCE_DIR}/decrepit/bio/base64_bio.c"
 )
 
 add_executable(
@@ -633,6 +660,7 @@ add_executable(
   "${BORINGSSL_SOURCE_DIR}/tool/digest.cc"
   "${BORINGSSL_SOURCE_DIR}/tool/fd.cc"
   "${BORINGSSL_SOURCE_DIR}/tool/file.cc"
+  "${BORINGSSL_SOURCE_DIR}/tool/generate_ech.cc"
   "${BORINGSSL_SOURCE_DIR}/tool/generate_ed25519.cc"
   "${BORINGSSL_SOURCE_DIR}/tool/genrsa.cc"
   "${BORINGSSL_SOURCE_DIR}/tool/pkcs12.cc"
@@ -644,18 +672,22 @@ add_executable(
   "${BORINGSSL_SOURCE_DIR}/tool/transport_common.cc"
 )
 
-target_link_libraries(ssl crypto)
-target_link_libraries(bssl ssl)
+target_link_libraries(_ssl _crypto)
+target_link_libraries(bssl _ssl)
 
 if(NOT WIN32 AND NOT ANDROID)
-  target_link_libraries(crypto pthread)
+  target_link_libraries(_crypto pthread)
 endif()
 
+# NOTE: that ClickHouse does not support WIN32 anyway.
 if(WIN32)
   target_link_libraries(bssl ws2_32)
 endif()
 
-target_include_directories(crypto SYSTEM PUBLIC "${BORINGSSL_SOURCE_DIR}/include")
-target_include_directories(ssl SYSTEM PUBLIC "${BORINGSSL_SOURCE_DIR}/include")
+target_include_directories(_crypto SYSTEM PUBLIC "${BORINGSSL_SOURCE_DIR}/include")
+target_include_directories(_ssl SYSTEM PUBLIC "${BORINGSSL_SOURCE_DIR}/include")
 
-target_compile_options(crypto PRIVATE -Wno-gnu-anonymous-struct)
+target_compile_options(_crypto PRIVATE -Wno-gnu-anonymous-struct)
+
+add_library(OpenSSL::Crypto ALIAS _crypto)
+add_library(OpenSSL::SSL ALIAS _ssl)

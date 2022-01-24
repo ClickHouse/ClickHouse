@@ -11,6 +11,7 @@ struct RoundAgeImpl
 {
     using ResultType = UInt8;
     static constexpr const bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = false;
 
     static inline ResultType apply(A x)
     {

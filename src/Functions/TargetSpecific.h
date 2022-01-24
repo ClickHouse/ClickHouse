@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 
 /* This file contains macros and helpers for writing platform-dependent code.
  *
@@ -106,7 +106,7 @@ String toString(TargetArch arch);
 /* Clang shows warning when there aren't any objects to apply pragma.
  * To prevent this warning we define this function inside every macros with pragmas.
  */
-#   define DUMMY_FUNCTION_DEFINITION [[maybe_unused]] void __dummy_function_definition();
+#   define DUMMY_FUNCTION_DEFINITION [[maybe_unused]] void _dummy_function_definition();
 #else
 #   define BEGIN_AVX512F_SPECIFIC_CODE \
         _Pragma("GCC push_options") \

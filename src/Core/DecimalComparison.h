@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/arithmeticOverflow.h>
+#include <base/arithmeticOverflow.h>
 #include <Core/Block.h>
 #include <Core/AccurateComparison.h>
 #include <Core/callOnTypeIndex.h>
@@ -47,21 +47,20 @@ template <> struct ConstructDecInt<32> { using Type = Int256; };
 template <typename T, typename U>
 struct DecCompareInt
 {
-    using Type = typename ConstructDecInt<(!IsDecimalNumber<U> || sizeof(T) > sizeof(U)) ? sizeof(T) : sizeof(U)>::Type;
+    using Type = typename ConstructDecInt<(!is_decimal<U> || sizeof(T) > sizeof(U)) ? sizeof(T) : sizeof(U)>::Type;
     using TypeA = Type;
     using TypeB = Type;
 };
 
-///
 template <typename A, typename B, template <typename, typename> typename Operation, bool _check_overflow = true,
-    bool _actual = IsDecimalNumber<A> || IsDecimalNumber<B>>
+    bool _actual = is_decimal<A> || is_decimal<B>>
 class DecimalComparison
 {
 public:
     using CompareInt = typename DecCompareInt<A, B>::Type;
     using Op = Operation<CompareInt, CompareInt>;
-    using ColVecA = std::conditional_t<IsDecimalNumber<A>, ColumnDecimal<A>, ColumnVector<A>>;
-    using ColVecB = std::conditional_t<IsDecimalNumber<B>, ColumnDecimal<B>, ColumnVector<B>>;
+    using ColVecA = ColumnVectorOrDecimal<A>;
+    using ColVecB = ColumnVectorOrDecimal<B>;
 
     using ArrayA = typename ColVecA::Container;
     using ArrayB = typename ColVecB::Container;
@@ -116,7 +115,7 @@ private:
     }
 
     template <typename T, typename U>
-    static std::enable_if_t<IsDecimalNumber<T> && IsDecimalNumber<U>, Shift>
+    static std::enable_if_t<is_decimal<T> && is_decimal<U>, Shift>
     getScales(const DataTypePtr & left_type, const DataTypePtr & right_type)
     {
         const DataTypeDecimalBase<T> * decimal0 = checkDecimalBase<T>(*left_type);
@@ -138,7 +137,7 @@ private:
     }
 
     template <typename T, typename U>
-    static std::enable_if_t<IsDecimalNumber<T> && !IsDecimalNumber<U>, Shift>
+    static std::enable_if_t<is_decimal<T> && !is_decimal<U>, Shift>
     getScales(const DataTypePtr & left_type, const DataTypePtr &)
     {
         Shift shift;
@@ -149,7 +148,7 @@ private:
     }
 
     template <typename T, typename U>
-    static std::enable_if_t<!IsDecimalNumber<T> && IsDecimalNumber<U>, Shift>
+    static std::enable_if_t<!is_decimal<T> && is_decimal<U>, Shift>
     getScales(const DataTypePtr &, const DataTypePtr & right_type)
     {
         Shift shift;
@@ -222,13 +221,13 @@ private:
     static NO_INLINE UInt8 apply(A a, B b, CompareInt scale [[maybe_unused]])
     {
         CompareInt x;
-        if constexpr (IsDecimalNumber<A>)
+        if constexpr (is_decimal<A>)
             x = a.value;
         else
             x = a;
 
         CompareInt y;
-        if constexpr (IsDecimalNumber<B>)
+        if constexpr (is_decimal<B>)
             y = b.value;
         else
             y = b;

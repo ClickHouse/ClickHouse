@@ -76,4 +76,4 @@ INSERT INTO criteo SELECT date, clicked, int1, int2, int3, int4, int5, int6, int
 DROP TABLE criteo_log;
 ```
 
-[原始文章](https://clickhouse.tech/docs/en/getting_started/example_datasets/criteo/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/getting_started/example_datasets/criteo/) <!--hide-->

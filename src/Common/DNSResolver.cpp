@@ -1,9 +1,9 @@
 #include "DNSResolver.h"
-#include <common/SimpleCache.h>
+#include <base/CachedFn.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Names.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/DNS.h>
 #include <Poco/Net/NetException.h>
@@ -15,7 +15,7 @@
 
 namespace ProfileEvents
 {
-    extern Event DNSError;
+    extern const Event DNSError;
 }
 
 namespace std
@@ -114,11 +114,7 @@ static DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host)
 
     try
     {
-#if defined(ARCADIA_BUILD)
-        addresses = Poco::Net::DNS::hostByName(host, &Poco::Net::DNS::DEFAULT_DNS_TIMEOUT, flags).addresses();
-#else
         addresses = Poco::Net::DNS::hostByName(host, flags).addresses();
-#endif
     }
     catch (const Poco::Net::DNSException & e)
     {
@@ -146,8 +142,8 @@ static String reverseResolveImpl(const Poco::Net::IPAddress & address)
 
 struct DNSResolver::Impl
 {
-    SimpleCache<decltype(resolveIPAddressImpl), &resolveIPAddressImpl> cache_host;
-    SimpleCache<decltype(reverseResolveImpl), &reverseResolveImpl> cache_address;
+    CachedFn<&resolveIPAddressImpl> cache_host;
+    CachedFn<&reverseResolveImpl> cache_address;
 
     std::mutex drop_mutex;
     std::mutex update_mutex;

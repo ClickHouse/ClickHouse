@@ -22,4 +22,4 @@ MySQL 引擎可以对存储在远程 MySQL 服务器上的数据执行 `SELECT` 
 
 `MySQL` 引擎不支持 [可为空](../../../engines/table-engines/integrations/mysql.md) 数据类型，因此，当从MySQL表中读取数据时，`NULL` 将转换为指定列类型的默认值（通常为0或空字符串）。
 
-[原始文章](https://clickhouse.tech/docs/zh/operations/table_engines/mysql/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/zh/operations/table_engines/mysql/) <!--hide-->

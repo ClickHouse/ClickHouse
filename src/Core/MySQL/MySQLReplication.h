@@ -2,7 +2,7 @@
 #include <Core/Field.h>
 #include <Core/MySQL/PacketsReplication.h>
 #include <Core/MySQL/MySQLGtid.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 
@@ -383,6 +383,7 @@ namespace MySQLReplication
         String schema;
         String query;
         QueryType typ = QUERY_EVENT_DDL;
+        bool transaction_complete = true;
 
         QueryEvent(EventHeader && header_)
             : EventBase(std::move(header_)), thread_id(0), exec_time(0), schema_len(0), error_code(0), status_len(0)
@@ -536,6 +537,9 @@ namespace MySQLReplication
         void update(BinlogEventPtr event);
         void update(UInt64 binlog_pos_, const String & binlog_name_, const String & gtid_sets_);
         void dump(WriteBuffer & out) const;
+
+    private:
+        std::optional<GTID> pending_gtid;
     };
 
     class IFlavor : public MySQLProtocol::IMySQLReadPacket

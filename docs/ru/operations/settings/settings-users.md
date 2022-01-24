@@ -28,7 +28,7 @@ toc_title: "Настройки пользователей"
         <profile>profile_name</profile>
 
         <quota>default</quota>
-
+        <default_database>default<default_database>
         <databases>
             <database_name>
                 <table_name>

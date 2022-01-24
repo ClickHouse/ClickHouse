@@ -109,4 +109,4 @@ Result:
 └─────────────────────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/sql-reference/functions/geo/geohash) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/sql-reference/functions/geo/geohash) <!--hide-->

@@ -77,6 +77,13 @@ struct RowRefList : RowRef
             return &batch->row_refs[position];
         }
 
+        const RowRef * operator * () const
+        {
+            if (first)
+                return root;
+            return &batch->row_refs[position];
+        }
+
         void operator ++ ()
         {
             if (first)
@@ -96,7 +103,7 @@ struct RowRefList : RowRef
             }
         }
 
-        bool ok() const { return first || (batch && position < batch->size); }
+        bool ok() const { return first || batch; }
 
     private:
         const RowRefList * root;

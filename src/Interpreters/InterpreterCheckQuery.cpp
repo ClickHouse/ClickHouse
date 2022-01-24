@@ -1,9 +1,9 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCheckQuery.h>
-#include <Access/AccessFlags.h>
+#include <Access/Common/AccessFlags.h>
 #include <Storages/IStorage.h>
 #include <Parsers/ASTCheckQuery.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnsNumber.h>
@@ -72,7 +72,7 @@ BlockIO InterpreterCheckQuery::execute()
     }
 
     BlockIO res;
-    res.in = std::make_shared<OneBlockInputStream>(block);
+    res.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::move(block)));
 
     return res;
 }

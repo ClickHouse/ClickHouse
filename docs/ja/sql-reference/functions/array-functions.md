@@ -702,13 +702,13 @@ arrayDifference(array)
 
 **パラメータ**
 
--   `array` – [配列](https://clickhouse.tech/docs/en/data_types/array/).
+-   `array` – [配列](https://clickhouse.com/docs/en/data_types/array/).
 
 **戻り値**
 
 隣接する要素間の差分の配列を返します。
 
-タイプ: [UInt\*](https://clickhouse.tech/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.tech/docs/en/data_types/int_uint/#int-ranges), [フロート\*](https://clickhouse.tech/docs/en/data_types/float/).
+タイプ: [UInt\*](https://clickhouse.com/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.com/docs/en/data_types/int_uint/#int-ranges), [フロート\*](https://clickhouse.com/docs/en/data_types/float/).
 
 **例**
 
@@ -754,7 +754,7 @@ arrayDistinct(array)
 
 **パラメータ**
 
--   `array` – [配列](https://clickhouse.tech/docs/en/data_types/array/).
+-   `array` – [配列](https://clickhouse.com/docs/en/data_types/array/).
 
 **戻り値**
 
@@ -1058,4 +1058,4 @@ select arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])
 └────────────────────────────────────────---──┘
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/array_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/array_functions/) <!--hide-->

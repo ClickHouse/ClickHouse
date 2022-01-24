@@ -70,6 +70,7 @@ private:
 
     using Conditions = std::list<Condition>;
 
+    bool tryAnalyzeTuple(Conditions & res, const ASTFunction * func, bool is_final) const;
     void analyzeImpl(Conditions & res, const ASTPtr & node, bool is_final) const;
 
     /// Transform conjunctions chain in WHERE expression to Conditions list.

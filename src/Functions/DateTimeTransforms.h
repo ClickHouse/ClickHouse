@@ -1,10 +1,10 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/DecimalFunctions.h>
 #include <Common/Exception.h>
-#include <common/DateLUTImpl.h>
-#include <common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
+#include <Common/DateLUT.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
 #include <Functions/FunctionHelpers.h>
@@ -84,7 +84,8 @@ struct ToDate32Impl
     }
     static inline Int32 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return Int32(time_zone.toDayNum(t));
+        /// Don't saturate.
+        return Int32(time_zone.toDayNum<Int64>(t));
     }
     static inline Int32 execute(Int32 d, const DateLUTImpl &)
     {
@@ -117,7 +118,7 @@ struct ToStartOfDayImpl
     }
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDate(ExtendedDayNum(d));
+        return time_zone.toDate(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -143,7 +144,7 @@ struct ToMondayImpl
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d));
+        return time_zone.toFirstDayNumOfWeek(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -167,7 +168,7 @@ struct ToStartOfMonthImpl
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toFirstDayNumOfMonth(ExtendedDayNum(d));
+        return time_zone.toFirstDayNumOfMonth(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -191,7 +192,7 @@ struct ToStartOfQuarterImpl
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toFirstDayNumOfQuarter(ExtendedDayNum(d));
+        return time_zone.toFirstDayNumOfQuarter(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -215,7 +216,7 @@ struct ToStartOfYearImpl
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toFirstDayNumOfYear(ExtendedDayNum(d));
+        return time_zone.toFirstDayNumOfYear(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -224,7 +225,7 @@ struct ToStartOfYearImpl
 
 struct ToTimeImpl
 {
-    /// When transforming to time, the date will be equated to 1970-01-01.
+    /// When transforming to time, the date will be equated to 1970-01-02.
     static constexpr auto name = "toTime";
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
@@ -456,7 +457,7 @@ struct ToYearImpl
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toYear(ExtendedDayNum(d));
+        return time_zone.toYear(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -480,7 +481,7 @@ struct ToQuarterImpl
     }
     static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toQuarter(ExtendedDayNum(d));
+        return time_zone.toQuarter(DayNum(d));
     }
 
     using FactorTransform = ToStartOfYearImpl;
@@ -504,7 +505,7 @@ struct ToMonthImpl
     }
     static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toMonth(ExtendedDayNum(d));
+        return time_zone.toMonth(DayNum(d));
     }
 
     using FactorTransform = ToStartOfYearImpl;
@@ -528,7 +529,7 @@ struct ToDayOfMonthImpl
     }
     static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDayOfMonth(ExtendedDayNum(d));
+        return time_zone.toDayOfMonth(DayNum(d));
     }
 
     using FactorTransform = ToStartOfMonthImpl;
@@ -552,7 +553,7 @@ struct ToDayOfWeekImpl
     }
     static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDayOfWeek(ExtendedDayNum(d));
+        return time_zone.toDayOfWeek(DayNum(d));
     }
 
     using FactorTransform = ToMondayImpl;
@@ -576,7 +577,7 @@ struct ToDayOfYearImpl
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toDayOfYear(ExtendedDayNum(d));
+        return time_zone.toDayOfYear(DayNum(d));
     }
 
     using FactorTransform = ToStartOfYearImpl;
@@ -699,7 +700,7 @@ struct ToISOYearImpl
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toISOYear(ExtendedDayNum(d));
+        return time_zone.toISOYear(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -723,7 +724,7 @@ struct ToStartOfISOYearImpl
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toFirstDayNumOfISOYear(ExtendedDayNum(d));
+        return time_zone.toFirstDayNumOfISOYear(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -747,7 +748,7 @@ struct ToISOWeekImpl
     }
     static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toISOWeek(ExtendedDayNum(d));
+        return time_zone.toISOWeek(DayNum(d));
     }
 
     using FactorTransform = ToISOYearImpl;
@@ -771,7 +772,7 @@ struct ToRelativeYearNumImpl
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toYear(ExtendedDayNum(d));
+        return time_zone.toYear(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -795,7 +796,7 @@ struct ToRelativeQuarterNumImpl
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toRelativeQuarterNum(ExtendedDayNum(d));
+        return time_zone.toRelativeQuarterNum(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -819,7 +820,7 @@ struct ToRelativeMonthNumImpl
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toRelativeMonthNum(ExtendedDayNum(d));
+        return time_zone.toRelativeMonthNum(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -843,7 +844,7 @@ struct ToRelativeWeekNumImpl
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toRelativeWeekNum(ExtendedDayNum(d));
+        return time_zone.toRelativeWeekNum(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -892,7 +893,7 @@ struct ToRelativeHourNumImpl
     }
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toRelativeHourNum(ExtendedDayNum(d));
+        return time_zone.toRelativeHourNum(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -916,7 +917,7 @@ struct ToRelativeMinuteNumImpl
     }
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toRelativeMinuteNum(ExtendedDayNum(d));
+        return time_zone.toRelativeMinuteNum(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -940,7 +941,7 @@ struct ToRelativeSecondNumImpl
     }
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.fromDayNum(ExtendedDayNum(d));
+        return time_zone.fromDayNum(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -960,11 +961,11 @@ struct ToYYYYMMImpl
     }
     static inline UInt32 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toNumYYYYMM(static_cast<ExtendedDayNum>(d));
+        return time_zone.toNumYYYYMM(ExtendedDayNum(d));
     }
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toNumYYYYMM(static_cast<DayNum>(d));
+        return time_zone.toNumYYYYMM(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -984,11 +985,11 @@ struct ToYYYYMMDDImpl
     }
     static inline UInt32 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toNumYYYYMMDD(static_cast<ExtendedDayNum>(d));
+        return time_zone.toNumYYYYMMDD(ExtendedDayNum(d));
     }
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toNumYYYYMMDD(static_cast<DayNum>(d));
+        return time_zone.toNumYYYYMMDD(DayNum(d));
     }
 
     using FactorTransform = ZeroTransform;
@@ -1008,11 +1009,11 @@ struct ToYYYYMMDDhhmmssImpl
     }
     static inline UInt64 execute(Int32 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toNumYYYYMMDDhhmmss(time_zone.toDate(static_cast<ExtendedDayNum>(d)));
+        return time_zone.toNumYYYYMMDDhhmmss(time_zone.toDate(ExtendedDayNum(d)));
     }
     static inline UInt64 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toNumYYYYMMDDhhmmss(time_zone.toDate(static_cast<DayNum>(d)));
+        return time_zone.toNumYYYYMMDDhhmmss(time_zone.toDate(DayNum(d)));
     }
 
     using FactorTransform = ZeroTransform;

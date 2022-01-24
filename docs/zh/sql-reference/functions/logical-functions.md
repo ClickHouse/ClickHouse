@@ -17,4 +17,4 @@ toc_title: 逻辑函数
 
 ## 异或，`XOR` 运算符 {#xor}
 
-[来源文章](https://clickhouse.tech/docs/en/query_language/functions/logical_functions/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/query_language/functions/logical_functions/) <!--hide-->

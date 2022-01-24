@@ -54,9 +54,6 @@ private:
     template <typename Comparator>
     void getPermutationImpl(size_t limit, Permutation & res, Comparator cmp) const;
 
-    template <typename Comparator>
-    void updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_ranges, Comparator cmp) const;
-
 public:
     const char * getFamilyName() const override { return "String"; }
     TypeIndex getDataType() const override { return TypeIndex::String; }
@@ -108,6 +105,12 @@ public:
     {
         assert(n < size());
         return StringRef(&chars[offsetAt(n)], sizeAt(n));
+    }
+
+    bool isDefaultAt(size_t n) const override
+    {
+        assert(n < size());
+        return sizeAt(n) == 1;
     }
 
 /// Suppress gcc 7.3.1 warning: '*((void*)&<anonymous> +8)' may be used uninitialized in this function
@@ -279,6 +282,16 @@ public:
     bool structureEquals(const IColumn & rhs) const override
     {
         return typeid(rhs) == typeid(ColumnString);
+    }
+
+    double getRatioOfDefaultRows(double sample_ratio) const override
+    {
+        return getRatioOfDefaultRowsImpl<ColumnString>(sample_ratio);
+    }
+
+    void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
+    {
+        return getIndicesOfNonDefaultRowsImpl<ColumnString>(indices, from, limit);
     }
 
     Chars & getChars() { return chars; }

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: zookeeper, no-parallel
 
 set -e
 

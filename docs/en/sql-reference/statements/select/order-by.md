@@ -4,7 +4,9 @@ toc_title: ORDER BY
 
 # ORDER BY Clause {#select-order-by}
 
-The `ORDER BY` clause contains a list of expressions, which can each be attributed with `DESC` (descending) or `ASC` (ascending) modifier which determine the sorting direction. If the direction is not specified, `ASC` is assumed, so it’s usually omitted. The sorting direction applies to a single expression, not to the entire list. Example: `ORDER BY Visits DESC, SearchPhrase`
+The `ORDER BY` clause contains a list of expressions, which can each be attributed with `DESC` (descending) or `ASC` (ascending) modifier which determine the sorting direction. If the direction is not specified, `ASC` is assumed, so it’s usually omitted. The sorting direction applies to a single expression, not to the entire list. Example: `ORDER BY Visits DESC, SearchPhrase`.
+
+If you want to sort by column numbers instead of column names, enable the setting [enable_positional_arguments](../../../operations/settings/settings.md#enable-positional-arguments).
 
 Rows that have identical values for the list of sorting expressions are output in an arbitrary order, which can also be non-deterministic (different each time).
 If the ORDER BY clause is omitted, the order of the rows is also undefined, and may be non-deterministic as well.
@@ -400,4 +402,4 @@ Result:
 └────────────┴────────────┴──────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/select/order-by/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/sql-reference/statements/select/order-by/) <!--hide-->

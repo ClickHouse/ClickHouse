@@ -7,10 +7,10 @@ namespace DB
 {
 
 struct NameVisitParamExtractFloat  { static constexpr auto name = "visitParamExtractFloat"; };
-using FunctionVisitParamExtractFloat = FunctionsStringSearch<ExtractParamImpl<ExtractNumericType<Float64>>, NameVisitParamExtractFloat>;
+using FunctionVisitParamExtractFloat = FunctionsStringSearch<ExtractParamImpl<NameVisitParamExtractFloat, ExtractNumericType<Float64>>>;
 
 struct NameSimpleJSONExtractFloat  { static constexpr auto name = "simpleJSONExtractFloat"; };
-using FunctionSimpleJSONExtractFloat = FunctionsStringSearch<ExtractParamImpl<ExtractNumericType<Float64>>, NameSimpleJSONExtractFloat>;
+using FunctionSimpleJSONExtractFloat = FunctionsStringSearch<ExtractParamImpl<NameSimpleJSONExtractFloat, ExtractNumericType<Float64>>>;
 
 void registerFunctionVisitParamExtractFloat(FunctionFactory & factory)
 {

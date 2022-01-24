@@ -1,0 +1,316 @@
+// Colors
+
+$white: #fff;
+$black: #212529;
+
+$gray-100: #f1f6f9;
+$gray-500: #d6dbdf;
+$gray-700: #6c757d;
+$gray-900: #495057;
+
+$color-brand-primary: #ffcc00;
+$color-brand-secondary: #ff3939;
+
+$color-primary-accent-yellow: #ffcc00;
+$color-primary-accent-light-yellow: #fffaf0;
+$color-primary-accent-blue: #257af4;
+$color-primary-accent-light-blue: #e3f1fe;
+
+$color-secondary-accent-orange: #ff8c00;
+$color-secondary-accent-light-orange: #ffe4b5;
+$color-secondary-accent-red: #ff3939;
+$color-secondary-accent-light-red: #ffe4e1;
+
+$grays: (
+    "100": $gray-100,
+    "500": $gray-500,
+	"700": $gray-700,
+    "900": $gray-900
+);
+
+$colors: (
+	"brand-primary": $color-brand-primary,
+	"brand-secondary": $color-brand-secondary,
+
+	"primary-accent-yellow": $color-brand-primary,
+	"primary-accent-light-yellow": $color-primary-accent-light-yellow,
+	"primary-accent-blue": $color-primary-accent-blue,
+	"primary-accent-light-blue": $color-primary-accent-light-blue,
+
+	"secondary-accent-orange": $color-secondary-accent-orange,
+	"secondary-accent-light-orange": $color-secondary-accent-light-orange,
+	"secondary-accent-red": $color-brand-secondary,
+	"secondary-accent-light-red": $color-secondary-accent-light-red,
+);
+
+$theme-colors: (
+	"primary": $color-brand-primary,
+	"primary-light": $color-primary-accent-light-yellow,
+	"secondary": $black,
+	"secondary-light": $white,
+	"tertiary": $color-primary-accent-blue,
+	"tertiary-light": $color-primary-accent-light-blue,
+
+	"white": $white,
+	"black": $black,
+
+	"blue": $color-primary-accent-blue,
+	"light-blue": $color-primary-accent-light-blue,
+	"yellow": $color-primary-accent-yellow,
+	"light-yellow": $color-primary-accent-light-yellow,
+	"orange": $color-secondary-accent-orange,
+	"light-orange": $color-secondary-accent-light-orange,
+	"red": $color-secondary-accent-red,
+	"light-red": $color-secondary-accent-light-red,
+
+	"light": $gray-100,
+	"medium": $gray-500,
+	"dark": $gray-900
+);
+
+$link-color: $color-secondary-accent-orange;
+$link-hover-color: $color-secondary-accent-orange;
+
+
+// Options
+//
+// Quickly modify global styling by enabling or disabling optional features.
+
+$enable-caret:                                true;
+$enable-rounded:                              true;
+$enable-shadows:                              false;
+$enable-gradients:                            false;
+$enable-transitions:                          true;
+$enable-grid-classes:                         true;
+$enable-responsive-font-sizes:                true;
+
+
+// Spacing
+//
+// Control the default styling of most Bootstrap elements by modifying these
+// variables. Mostly focused on spacing.
+// You can add more entries to the $spacers map, should you need more variation.
+
+$spacer: 8px;
+$spacers: (
+	0: 0,
+	1: $spacer,
+	2: ($spacer * 2),
+	3: ($spacer * 3),
+	4: ($spacer * 4),
+	5: ($spacer * 5),
+	6: ($spacer * 6),
+	7: ($spacer * 7),
+	8: ($spacer * 8),
+	9: ($spacer * 9),
+	10: ($spacer * 10),
+	12: ($spacer * 12),
+	15: ($spacer * 15)
+);
+
+
+// Body
+//
+// Settings for the `<body>` element.
+
+$body-bg:                   $white;
+$body-color:                $black;
+
+
+// Grid breakpoints
+//
+// Define the minimum dimensions at which your layout will change,
+// adapting to different screen sizes, for use in media queries.
+
+$grid-breakpoints: (
+  xxs: 0,
+  xs: 400px,
+  sm: 616px,
+  md: 768px,
+  lg: 980px,
+  xl: 1240px
+);
+
+
+// Grid containers
+//
+// Define the maximum width of `.container` for different screen sizes.
+
+$container-max-widths: (
+  xs: 576px,
+  sm: 576px,
+  md: 958px,
+  lg: 1008px,
+  xl: 1118px
+);
+
+// Grid columns
+//
+// Set the number of columns and specify the width of the gutters.
+
+$grid-columns:                12;
+$grid-gutter-width:           40px;
+$grid-row-columns:            6;
+
+
+// Components
+//
+// Define common padding and border radius sizes and more.
+
+$line-height-lg:              1.5;
+$line-height-sm:              1.5;
+
+$border-width:                1px;
+$border-color:                $gray-500;
+
+$border-radius:               8px;
+$border-radius-lg:            8px;
+$border-radius-sm:            4px;
+
+$box-shadow-sm:               0 2px 14px rgba($gray-700, .2);
+$box-shadow:                  0 8px 20px rgba($gray-700, .2);
+$box-shadow-lg:               0 12px 32px rgba($gray-700, .2);
+
+
+// Typography
+//
+// Font, line-height, and color for body text, headings, and more.
+
+$font-family-sans-serif:      "Noto Sans", sans-serif;
+
+$font-size-base:              1rem; // Assumes the browser default, typically `16px`
+$font-size-xl:                $font-size-base * 1.25; // 20px
+$font-size-lg:                $font-size-base * 1.125; // 18px
+$font-size-sm:                $font-size-base * .875; // 14px
+$font-size-xs:                $font-size-base * .625; // 10px
+
+$font-weight-light:           300;
+$font-weight-normal:          400;
+$font-weight-medium:          500;
+$font-weight-semibold:        600;
+$font-weight-bold:            700;
+
+$font-weight-base:            $font-weight-normal;
+$line-height-base:            1.5;
+
+$h1-font-size:                40px;
+$h2-font-size:                32px;
+$h3-font-size:                28px;
+$h4-font-size:                24px;
+$h5-font-size:                18px;
+$h6-font-size:                14px;
+
+$headings-margin-bottom:      $spacer * 2;
+$headings-font-family:        "Hind Siliguri", sans-serif;
+$headings-font-weight:        500;
+$headings-line-height:        1.125;
+$headings-color:              null;
+
+$display1-size:               64px;
+$display2-size:               40px;
+$display3-size:               32px;
+$display4-size:               28px;
+$display5-size:               20px;
+$display6-size:               14px;
+
+$display1-weight:             600;
+$display2-weight:             600;
+$display3-weight:             500;
+$display4-weight:             500;
+$display5-weight:             500;
+$display6-weight:             700;
+$display-line-height:         $headings-line-height;
+
+$lead-font-size:              22px;
+$lead-font-weight:            400;
+
+$text-muted:                  $gray-700;
+
+
+// Buttons
+//
+// For each of Bootstrap's buttons, define text, background, and border color.
+
+$btn-padding-y:               12px;
+$btn-padding-x:               32px;
+$btn-font-family:             inherit;
+$btn-font-size:               14px;
+$btn-line-height:             20px;
+$btn-white-space:             null; // Set to `nowrap` to prevent text wrapping
+
+$btn-padding-y-sm:            6px;
+$btn-padding-x-sm:            12px;
+$btn-font-size-sm:            12px;
+$btn-line-height-sm:          16px;
+
+$btn-padding-y-lg:            16px;
+$btn-padding-x-lg:            32px;
+$btn-font-size-lg:            18px;
+$btn-line-height-lg:          26px;
+
+$btn-border-width:            1px;
+
+$btn-font-weight:             $font-weight-bold;
+$btn-box-shadow:              none;
+$btn-focus-width:             0;
+$btn-focus-box-shadow:        none;
+$btn-disabled-opacity:        .65;
+$btn-active-box-shadow:       none;
+
+$btn-link-disabled-color:     $gray-500;
+
+$btn-block-spacing-y:         24px;
+
+// Allows for customizing button radius independently from global border radius
+$btn-border-radius:           $border-radius;
+$btn-border-radius-lg:        $border-radius-lg;
+$btn-border-radius-sm:        $border-radius-sm;
+
+$btn-transition:              color .15s ease-in-out, background-color .15s ease-in-out, border-color .15s ease-in-out, box-shadow .15s ease-in-out;
+
+
+// Navs
+
+$nav-link-padding-y:                0;
+$nav-link-padding-x:                0;
+$nav-link-disabled-color:           $gray-500;
+
+$nav-tabs-border-color:             $gray-700;
+$nav-tabs-border-width:             $border-width;
+$nav-tabs-border-radius:            $border-radius;
+$nav-tabs-link-hover-border-color:  transparent;
+$nav-tabs-link-active-color:        $color-primary-accent-blue;
+$nav-tabs-link-active-bg:           $white;
+$nav-tabs-link-active-border-color: $gray-700;
+
+
+// Navbar
+
+$navbar-padding-y:            24px;
+$navbar-padding-x:            0;
+
+$navbar-nav-height:           46px;
+$navbar-height-xl:            80px;
+
+// Cards
+
+$card-spacer-y:                     24px;
+$card-spacer-x:                     24px;
+$card-border-width:                 $border-width;
+$card-border-radius:                $border-radius;
+$card-border-color:                 $border-color;
+$card-inner-border-radius:          subtract($card-border-radius, $card-border-width);
+$card-cap-bg:                       $gray-100;
+$card-cap-color:                    null;
+$card-height:                       null;
+$card-color:                        null;
+$card-bg:                           $white;
+
+$card-img-overlay-padding:          24px;
+
+$card-group-margin:                 $grid-gutter-width / 2;
+$card-deck-margin:                  $card-group-margin;
+
+$card-columns-count:                3;
+$card-columns-gap:                  $grid-gutter-width;
+$card-columns-margin:               $grid-gutter-width;

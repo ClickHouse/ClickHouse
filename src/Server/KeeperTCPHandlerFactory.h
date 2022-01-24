@@ -1,16 +1,16 @@
 #pragma once
 
 #include <Server/KeeperTCPHandler.h>
-#include <Poco/Net/TCPServerConnectionFactory.h>
+#include <Server/TCPServerConnectionFactory.h>
 #include <Poco/Net/NetException.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Server/IServer.h>
 #include <string>
 
 namespace DB
 {
 
-class KeeperTCPHandlerFactory : public Poco::Net::TCPServerConnectionFactory
+class KeeperTCPHandlerFactory : public TCPServerConnectionFactory
 {
 private:
     IServer & server;
@@ -21,6 +21,7 @@ private:
         using Poco::Net::TCPServerConnection::TCPServerConnection;
         void run() override {}
     };
+
 public:
     KeeperTCPHandlerFactory(IServer & server_, bool secure)
         : server(server_)
@@ -28,7 +29,7 @@ public:
     {
     }
 
-    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket) override
+    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer &) override
     {
         try
         {
@@ -41,6 +42,7 @@ public:
             return new DummyTCPHandler(socket);
         }
     }
+
 };
 
 }

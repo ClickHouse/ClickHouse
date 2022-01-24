@@ -1,4 +1,6 @@
 #include "GRPCServer.h"
+#include <limits>
+#include <memory>
 #if USE_GRPC
 
 #include <Columns/ColumnString.h>
@@ -6,33 +8,40 @@
 #include <Common/CurrentThread.h>
 #include <Common/SettingsChanges.h>
 #include <Common/setThreadName.h>
+#include <Common/Stopwatch.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <DataStreams/AsynchronousBlockInputStream.h>
-#include <DataStreams/PushingToSinkBlockOutputStream.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <QueryPipeline/ProfileInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
+#include <IO/CompressionMethod.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ParserQuery.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <Processors/QueryPipeline.h>
-#include <Formats/FormatFactory.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Sinks/EmptySink.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Server/IServer.h>
 #include <Storages/IStorage.h>
 #include <Poco/FileStream.h>
 #include <Poco/StreamCopier.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include <common/range.h>
+#include <base/range.h>
+#include <base/logger_useful.h>
 #include <grpc++/security/server_credentials.h>
 #include <grpc++/server.h>
 #include <grpc++/server_builder.h>
@@ -120,6 +129,33 @@ namespace
             throw Exception("Unknown compression level: '" + str + "'", ErrorCodes::INVALID_CONFIG_PARAMETER);
     }
 
+    grpc_compression_algorithm convertCompressionAlgorithm(const ::clickhouse::grpc::CompressionAlgorithm & algorithm)
+    {
+        if (algorithm == ::clickhouse::grpc::NO_COMPRESSION)
+            return GRPC_COMPRESS_NONE;
+        else if (algorithm == ::clickhouse::grpc::DEFLATE)
+            return GRPC_COMPRESS_DEFLATE;
+        else if (algorithm == ::clickhouse::grpc::GZIP)
+            return GRPC_COMPRESS_GZIP;
+        else if (algorithm == ::clickhouse::grpc::STREAM_GZIP)
+            return GRPC_COMPRESS_STREAM_GZIP;
+        else
+            throw Exception("Unknown compression algorithm: '" + ::clickhouse::grpc::CompressionAlgorithm_Name(algorithm) + "'", ErrorCodes::INVALID_GRPC_QUERY_INFO);
+    }
+
+    grpc_compression_level convertCompressionLevel(const ::clickhouse::grpc::CompressionLevel & level)
+    {
+        if (level == ::clickhouse::grpc::COMPRESSION_NONE)
+            return GRPC_COMPRESS_LEVEL_NONE;
+        else if (level == ::clickhouse::grpc::COMPRESSION_LOW)
+            return GRPC_COMPRESS_LEVEL_LOW;
+        else if (level == ::clickhouse::grpc::COMPRESSION_MEDIUM)
+            return GRPC_COMPRESS_LEVEL_MED;
+        else if (level == ::clickhouse::grpc::COMPRESSION_HIGH)
+            return GRPC_COMPRESS_LEVEL_HIGH;
+        else
+            throw Exception("Unknown compression level: '" + ::clickhouse::grpc::CompressionLevel_Name(level) + "'", ErrorCodes::INVALID_GRPC_QUERY_INFO);
+    }
 
     /// Gets file's contents as a string, throws an exception if failed.
     String readFile(const String & filepath)
@@ -242,7 +278,22 @@ namespace
         virtual void write(const GRPCResult & result, const CompletionCallback & callback) = 0;
         virtual void writeAndFinish(const GRPCResult & result, const grpc::Status & status, const CompletionCallback & callback) = 0;
 
-        Poco::Net::SocketAddress getClientAddress() const { String peer = grpc_context.peer(); return Poco::Net::SocketAddress{peer.substr(peer.find(':') + 1)}; }
+        Poco::Net::SocketAddress getClientAddress() const
+        {
+            String peer = grpc_context.peer();
+            return Poco::Net::SocketAddress{peer.substr(peer.find(':') + 1)};
+        }
+
+        void setResultCompression(grpc_compression_algorithm algorithm, grpc_compression_level level)
+        {
+            grpc_context.set_compression_algorithm(algorithm);
+            grpc_context.set_compression_level(level);
+        }
+
+        void setResultCompression(const ::clickhouse::grpc::Compression & compression)
+        {
+            setResultCompression(convertCompressionAlgorithm(compression.algorithm()), convertCompressionLevel(compression.level()));
+        }
 
     protected:
         CompletionCallback * getCallbackPtr(const CompletionCallback & callback)
@@ -535,11 +586,11 @@ namespace
         void createExternalTables();
 
         void generateOutput();
-        void generateOutputWithProcessors();
 
         void finishQuery();
         void onException(const Exception & exception);
         void onFatalError();
+        void releaseQueryIDAndSessionID();
         void close();
 
         void readQueryInfo();
@@ -549,7 +600,7 @@ namespace
         void addProgressToResult();
         void addTotalsToResult(const Block & totals);
         void addExtremesToResult(const Block & extremes);
-        void addProfileInfoToResult(const BlockStreamProfileInfo & info);
+        void addProfileInfoToResult(const ProfileInfo & info);
         void addLogsToResult();
         void sendResult();
         void throwIfFailedToSendResult();
@@ -568,7 +619,11 @@ namespace
         ASTInsertQuery * insert_query = nullptr;
         String input_format;
         String input_data_delimiter;
+        PODArray<char> output;
         String output_format;
+        CompressionMethod compression_method = CompressionMethod::None;
+        int compression_level = 0;
+
         uint64_t interactive_delay = 100000;
         bool send_exception_with_stacktrace = true;
         bool input_function_is_used = false;
@@ -585,11 +640,13 @@ namespace
         bool responder_finished = false;
         bool cancelled = false;
 
-        std::optional<ReadBufferFromCallback> read_buffer;
-        std::optional<WriteBufferFromString> write_buffer;
+        std::unique_ptr<ReadBuffer> read_buffer;
+        std::unique_ptr<WriteBuffer> write_buffer;
+        WriteBufferFromVector<PODArray<char>> * nested_write_buffer = nullptr;
+        WriteBuffer * compressing_write_buffer = nullptr;
         std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> pipeline_executor;
-        BlockOutputStreamPtr block_output_stream;
+        std::shared_ptr<IOutputFormat> output_format_processor;
         bool need_input_data_from_insert_query = true;
         bool need_input_data_from_query_info = true;
         bool need_input_data_delimiter = false;
@@ -732,6 +789,10 @@ namespace
         if (!query_info.database().empty())
             query_context->setCurrentDatabase(query_info.database());
 
+        /// Apply compression settings for this call.
+        if (query_info.has_result_compression())
+            responder->setResultCompression(query_info.result_compression());
+
         /// The interactive delay will be used to show progress.
         interactive_delay = settings.interactive_delay;
         query_context->setProgressCallback([this](const Progress & value) { return progress.incrementPiecewiseAtomically(value); });
@@ -763,6 +824,10 @@ namespace
         }
         if (output_format.empty())
             output_format = query_context->getDefaultFormat();
+
+        /// Choose compression.
+        compression_method = chooseCompressionMethod("", query_info.compression_type());
+        compression_level = query_info.compression_level();
 
         /// Set callback to create and fill external tables
         query_context->setExternalTablesInitializer([this] (ContextPtr context)
@@ -799,12 +864,12 @@ namespace
             query_end = insert_query->data;
         }
         String query(begin, query_end);
-        io = ::DB::executeQuery(query, query_context, false, QueryProcessingStage::Complete, true, true);
+        io = ::DB::executeQuery(true, query, query_context);
     }
 
     void Call::processInput()
     {
-        if (!io.out)
+        if (!io.pipeline.pushing())
             return;
 
         bool has_data_to_insert = (insert_query && insert_query->data)
@@ -819,24 +884,25 @@ namespace
 
         /// This is significant, because parallel parsing may be used.
         /// So we mustn't touch the input stream from other thread.
-        initializeBlockInputStream(io.out->getHeader());
+        initializeBlockInputStream(io.pipeline.getHeader());
 
-        io.out->writePrefix();
+        PushingPipelineExecutor executor(io.pipeline);
+        executor.start();
 
         Block block;
         while (pipeline_executor->pull(block))
         {
             if (block)
-                io.out->write(block);
+                executor.push(block);
         }
 
-        io.out->writeSuffix();
+        executor.finish();
     }
 
     void Call::initializeBlockInputStream(const Block & header)
     {
         assert(!read_buffer);
-        read_buffer.emplace([this]() -> std::pair<const void *, size_t>
+        read_buffer = std::make_unique<ReadBufferFromCallback>([this]() -> std::pair<const void *, size_t>
         {
             if (need_input_data_from_insert_query)
             {
@@ -892,25 +958,38 @@ namespace
             return {nullptr, 0}; /// no more input data
         });
 
+        read_buffer = wrapReadBufferWithCompressionMethod(std::move(read_buffer), compression_method);
+
         assert(!pipeline);
-        pipeline = std::make_unique<QueryPipeline>();
-        auto source = FormatFactory::instance().getInput(
-            input_format, *read_buffer, header, query_context, query_context->getSettings().max_insert_block_size);
-        pipeline->init(Pipe(source));
+        auto source = query_context->getInputFormat(
+            input_format, *read_buffer, header, query_context->getSettings().max_insert_block_size);
+        QueryPipelineBuilder builder;
+        builder.init(Pipe(source));
 
         /// Add default values if necessary.
         if (ast)
         {
             if (insert_query)
             {
-                auto table_id = query_context->resolveStorageID(insert_query->table_id, Context::ResolveOrdinary);
+                auto table_id = StorageID::createEmpty();
+
+                if (insert_query->table_id)
+                {
+                    table_id = query_context->resolveStorageID(insert_query->table_id, Context::ResolveOrdinary);
+                }
+                else
+                {
+                    StorageID local_table_id(insert_query->getDatabase(), insert_query->getTable());
+                    table_id = query_context->resolveStorageID(local_table_id, Context::ResolveOrdinary);
+                }
+
                 if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields && table_id)
                 {
                     StoragePtr storage = DatabaseCatalog::instance().getTable(table_id, query_context);
                     const auto & columns = storage->getInMemoryMetadataPtr()->getColumns();
                     if (!columns.empty())
                     {
-                        pipeline->addSimpleTransform([&](const Block & cur_header)
+                        builder.addSimpleTransform([&](const Block & cur_header)
                         {
                             return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *source, query_context);
                         });
@@ -919,6 +998,7 @@ namespace
             }
         }
 
+        pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
         pipeline_executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
     }
 
@@ -962,8 +1042,11 @@ namespace
                 {
                     /// The data will be written directly to the table.
                     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-                    auto out_stream = std::make_shared<PushingToSinkBlockOutputStream>(storage->write(ASTPtr(), metadata_snapshot, query_context));
-                    ReadBufferFromMemory data(external_table.data().data(), external_table.data().size());
+                    auto sink = storage->write(ASTPtr(), metadata_snapshot, query_context);
+
+                    std::unique_ptr<ReadBuffer> buf = std::make_unique<ReadBufferFromMemory>(external_table.data().data(), external_table.data().size());
+                    buf = wrapReadBufferWithCompressionMethod(std::move(buf), chooseCompressionMethod("", external_table.compression_type()));
+
                     String format = external_table.format();
                     if (format.empty())
                         format = "TabSeparated";
@@ -979,14 +1062,20 @@ namespace
                         external_table_context->checkSettingsConstraints(settings_changes);
                         external_table_context->applySettingsChanges(settings_changes);
                     }
-                    auto in_stream = external_table_context->getInputFormat(
-                        format, data, metadata_snapshot->getSampleBlock(), external_table_context->getSettings().max_insert_block_size);
-                    in_stream->readPrefix();
-                    out_stream->writePrefix();
-                    while (auto block = in_stream->read())
-                        out_stream->write(block);
-                    in_stream->readSuffix();
-                    out_stream->writeSuffix();
+                    auto in = external_table_context->getInputFormat(
+                        format, *buf, metadata_snapshot->getSampleBlock(),
+                        external_table_context->getSettings().max_insert_block_size);
+
+                    QueryPipelineBuilder cur_pipeline;
+                    cur_pipeline.init(Pipe(std::move(in)));
+                    cur_pipeline.addTransform(std::move(sink));
+                    cur_pipeline.setSinks([&](const Block & header, Pipe::StreamType)
+                    {
+                        return std::make_shared<EmptySink>(header);
+                    });
+
+                    auto executor = cur_pipeline.execute();
+                    executor->execute(1);
                 }
             }
 
@@ -1021,145 +1110,102 @@ namespace
 
     void Call::generateOutput()
     {
-        if (io.pipeline.initialized())
-        {
-            generateOutputWithProcessors();
+        if (!io.pipeline.initialized() || io.pipeline.pushing())
             return;
+
+        Block header;
+        if (io.pipeline.pulling())
+            header = io.pipeline.getHeader();
+
+        if (compression_method != CompressionMethod::None)
+            output.resize(DBMS_DEFAULT_BUFFER_SIZE); /// Must have enough space for compressed data.
+        write_buffer = std::make_unique<WriteBufferFromVector<PODArray<char>>>(output);
+        nested_write_buffer = static_cast<WriteBufferFromVector<PODArray<char>> *>(write_buffer.get());
+        if (compression_method != CompressionMethod::None)
+        {
+            write_buffer = wrapWriteBufferWithCompressionMethod(std::move(write_buffer), compression_method, compression_level);
+            compressing_write_buffer = write_buffer.get();
         }
 
-        if (!io.in)
-            return;
+        auto has_output = [&] { return (nested_write_buffer->position() != output.data()) || (compressing_write_buffer && compressing_write_buffer->offset()); };
 
-        AsynchronousBlockInputStream async_in(io.in);
-        write_buffer.emplace(*result.mutable_output());
-        block_output_stream = query_context->getOutputStream(output_format, *write_buffer, async_in.getHeader());
+        output_format_processor = query_context->getOutputFormat(output_format, *write_buffer, header);
         Stopwatch after_send_progress;
 
         /// Unless the input() function is used we are not going to receive input data anymore.
         if (!input_function_is_used)
             check_query_info_contains_cancel_only = true;
 
-        auto check_for_cancel = [&]
+        if (io.pipeline.pulling())
         {
-            if (isQueryCancelled())
+            auto executor = std::make_shared<PullingAsyncPipelineExecutor>(io.pipeline);
+            auto check_for_cancel = [&]
             {
-                async_in.cancel(false);
-                return false;
-            }
-            return true;
-        };
+                if (isQueryCancelled())
+                {
+                    executor->cancel();
+                    return false;
+                }
+                return true;
+            };
 
-        async_in.readPrefix();
-        block_output_stream->writePrefix();
-
-        while (check_for_cancel())
-        {
             Block block;
-            if (async_in.poll(interactive_delay / 1000))
+            while (check_for_cancel())
             {
-                block = async_in.read();
-                if (!block)
+                if (!executor->pull(block, interactive_delay / 1000))
+                    break;
+
+                throwIfFailedToSendResult();
+                if (!check_for_cancel())
+                    break;
+
+                if (block && !io.null_format)
+                    output_format_processor->write(materializeBlock(block));
+
+                if (after_send_progress.elapsedMicroseconds() >= interactive_delay)
+                {
+                    addProgressToResult();
+                    after_send_progress.restart();
+                }
+
+                addLogsToResult();
+
+                if (has_output() || result.has_progress() || result.logs_size())
+                    sendResult();
+
+                throwIfFailedToSendResult();
+                if (!check_for_cancel())
                     break;
             }
 
-            throwIfFailedToSendResult();
-            if (!check_for_cancel())
-                break;
-
-            if (block && !io.null_format)
-                block_output_stream->write(block);
-
-            if (after_send_progress.elapsedMicroseconds() >= interactive_delay)
+            if (!isQueryCancelled())
             {
+                addTotalsToResult(executor->getTotalsBlock());
+                addExtremesToResult(executor->getExtremesBlock());
+                addProfileInfoToResult(executor->getProfileInfo());
+            }
+        }
+        else
+        {
+            auto executor = std::make_shared<CompletedPipelineExecutor>(io.pipeline);
+            auto callback = [&]() -> bool
+            {
+                throwIfFailedToSendResult();
                 addProgressToResult();
-                after_send_progress.restart();
-            }
+                addLogsToResult();
 
-            addLogsToResult();
+                if (has_output() || result.has_progress() || result.logs_size())
+                    sendResult();
 
-            bool has_output = write_buffer->offset();
-            if (has_output || result.has_progress() || result.logs_size())
-                sendResult();
+                throwIfFailedToSendResult();
 
-            throwIfFailedToSendResult();
-            if (!check_for_cancel())
-                break;
+                return isQueryCancelled();
+            };
+            executor->setCancelCallback(std::move(callback), interactive_delay / 1000);
+            executor->execute();
         }
 
-        async_in.readSuffix();
-        block_output_stream->writeSuffix();
-
-        if (!isQueryCancelled())
-        {
-            addTotalsToResult(io.in->getTotals());
-            addExtremesToResult(io.in->getExtremes());
-            addProfileInfoToResult(io.in->getProfileInfo());
-        }
-    }
-
-    void Call::generateOutputWithProcessors()
-    {
-        if (!io.pipeline.initialized())
-            return;
-
-        auto executor = std::make_shared<PullingAsyncPipelineExecutor>(io.pipeline);
-        write_buffer.emplace(*result.mutable_output());
-        block_output_stream = query_context->getOutputStream(output_format, *write_buffer, executor->getHeader());
-        block_output_stream->writePrefix();
-        Stopwatch after_send_progress;
-
-        /// Unless the input() function is used we are not going to receive input data anymore.
-        if (!input_function_is_used)
-            check_query_info_contains_cancel_only = true;
-
-        auto check_for_cancel = [&]
-        {
-            if (isQueryCancelled())
-            {
-                executor->cancel();
-                return false;
-            }
-            return true;
-        };
-
-        Block block;
-        while (check_for_cancel())
-        {
-            if (!executor->pull(block, interactive_delay / 1000))
-                break;
-
-            throwIfFailedToSendResult();
-            if (!check_for_cancel())
-                break;
-
-            if (block && !io.null_format)
-                block_output_stream->write(block);
-
-            if (after_send_progress.elapsedMicroseconds() >= interactive_delay)
-            {
-                addProgressToResult();
-                after_send_progress.restart();
-            }
-
-            addLogsToResult();
-
-            bool has_output = write_buffer->offset();
-            if (has_output || result.has_progress() || result.logs_size())
-                sendResult();
-
-            throwIfFailedToSendResult();
-            if (!check_for_cancel())
-                break;
-        }
-
-        block_output_stream->writeSuffix();
-
-        if (!isQueryCancelled())
-        {
-            addTotalsToResult(executor->getTotalsBlock());
-            addExtremesToResult(executor->getExtremesBlock());
-            addProfileInfoToResult(executor->getProfileInfo());
-        }
+        output_format_processor->finalize();
     }
 
     void Call::finishQuery()
@@ -1169,6 +1215,7 @@ namespace
         addProgressToResult();
         query_scope->logPeakMemoryUsage();
         addLogsToResult();
+        releaseQueryIDAndSessionID();
         sendResult();
         close();
 
@@ -1199,6 +1246,8 @@ namespace
                 LOG_WARNING(log, "Couldn't send logs to client");
             }
 
+            releaseQueryIDAndSessionID();
+
             try
             {
                 sendException(exception);
@@ -1218,7 +1267,7 @@ namespace
         {
             try
             {
-                finalize = true;
+                result.mutable_exception()->set_name("FatalError");
                 addLogsToResult();
                 sendResult();
             }
@@ -1228,14 +1277,29 @@ namespace
         }
     }
 
+    void Call::releaseQueryIDAndSessionID()
+    {
+        /// releaseQueryIDAndSessionID() should be called before sending the final result to the client
+        /// because the client may decide to send another query with the same query ID or session ID
+        /// immediately after it receives our final result, and it's prohibited to have
+        /// two queries executed at the same time with the same query ID or session ID.
+        io.process_list_entry.reset();
+        if (query_context)
+            query_context->setProcessListElement(nullptr);
+        if (session)
+            session->releaseSessionID();
+    }
+
     void Call::close()
     {
         responder.reset();
         pipeline_executor.reset();
         pipeline.reset();
-        block_output_stream.reset();
+        output_format_processor.reset();
         read_buffer.reset();
         write_buffer.reset();
+        nested_write_buffer = nullptr;
+        compressing_write_buffer = nullptr;
         io = {};
         query_scope.reset();
         query_context.reset();
@@ -1354,11 +1418,17 @@ namespace
         if (!totals)
             return;
 
-        WriteBufferFromString buf{*result.mutable_totals()};
-        auto stream = query_context->getOutputStream(output_format, buf, totals);
-        stream->writePrefix();
-        stream->write(totals);
-        stream->writeSuffix();
+        PODArray<char> memory;
+        if (compression_method != CompressionMethod::None)
+            memory.resize(DBMS_DEFAULT_BUFFER_SIZE); /// Must have enough space for compressed data.
+        std::unique_ptr<WriteBuffer> buf = std::make_unique<WriteBufferFromVector<PODArray<char>>>(memory);
+        buf = wrapWriteBufferWithCompressionMethod(std::move(buf), compression_method, compression_level);
+        auto format = query_context->getOutputFormat(output_format, *buf, totals);
+        format->write(materializeBlock(totals));
+        format->finalize();
+        buf->finalize();
+
+        result.mutable_totals()->assign(memory.data(), memory.size());
     }
 
     void Call::addExtremesToResult(const Block & extremes)
@@ -1366,14 +1436,20 @@ namespace
         if (!extremes)
             return;
 
-        WriteBufferFromString buf{*result.mutable_extremes()};
-        auto stream = query_context->getOutputStream(output_format, buf, extremes);
-        stream->writePrefix();
-        stream->write(extremes);
-        stream->writeSuffix();
+        PODArray<char> memory;
+        if (compression_method != CompressionMethod::None)
+            memory.resize(DBMS_DEFAULT_BUFFER_SIZE); /// Must have enough space for compressed data.
+        std::unique_ptr<WriteBuffer> buf = std::make_unique<WriteBufferFromVector<PODArray<char>>>(memory);
+        buf = wrapWriteBufferWithCompressionMethod(std::move(buf), compression_method, compression_level);
+        auto format = query_context->getOutputFormat(output_format, *buf, extremes);
+        format->write(materializeBlock(extremes));
+        format->finalize();
+        buf->finalize();
+
+        result.mutable_extremes()->assign(memory.data(), memory.size());
     }
 
-    void Call::addProfileInfoToResult(const BlockStreamProfileInfo & info)
+    void Call::addProfileInfoToResult(const ProfileInfo & info)
     {
         auto & stats = *result.mutable_stats();
         stats.set_rows(info.rows);
@@ -1441,6 +1517,38 @@ namespace
         if (!send_final_message && !isOutputStreaming(call_type))
             return;
 
+        /// Copy output to `result.output`, with optional compressing.
+        if (write_buffer)
+        {
+            size_t output_size;
+            if (send_final_message)
+            {
+                if (compressing_write_buffer)
+                    LOG_DEBUG(log, "Compressing final {} bytes", compressing_write_buffer->offset());
+                write_buffer->finalize();
+                output_size = output.size();
+            }
+            else
+            {
+                if (compressing_write_buffer && compressing_write_buffer->offset())
+                {
+                    LOG_DEBUG(log, "Compressing {} bytes", compressing_write_buffer->offset());
+                    compressing_write_buffer->sync();
+                }
+                output_size = nested_write_buffer->position() - output.data();
+            }
+
+            if (output_size)
+            {
+                result.mutable_output()->assign(output.data(), output_size);
+                nested_write_buffer->restart(); /// We're going to reuse the same buffer again for next block of data.
+            }
+        }
+
+        if (!send_final_message && result.output().empty() && result.totals().empty() && result.extremes().empty() && !result.logs_size()
+            && !result.has_progress() && !result.has_stats() && !result.has_exception() && !result.cancelled())
+            return; /// Nothing to send.
+
         /// Wait for previous write to finish.
         /// (gRPC doesn't allow to start sending another result while the previous is still being sending.)
         if (sending_result.get())
@@ -1453,9 +1561,6 @@ namespace
 
         /// Start sending the result.
         LOG_DEBUG(log, "Sending {} result to the client: {}", (send_final_message ? "final" : "intermediate"), getResultDescription(result));
-
-        if (write_buffer)
-            write_buffer->finalize();
 
         sending_result.set(true);
         auto callback = [this](bool ok)
@@ -1477,8 +1582,6 @@ namespace
 
         /// gRPC has already retrieved all data from `result`, so we don't have to keep it.
         result.Clear();
-        if (write_buffer)
-            write_buffer->restart();
 
         if (send_final_message)
         {

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <DataStreams/IBlockOutputStream.h>
+#include <Processors/ISink.h>
 #include <Core/ExternalResultDescription.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Interpreters/Context_fwd.h>
@@ -11,12 +11,12 @@
 namespace DB
 {
 
-class ODBCBlockOutputStream : public IBlockOutputStream
+class ODBCSink final : public ISink
 {
 using ValueType = ExternalResultDescription::ValueType;
 
 public:
-    ODBCBlockOutputStream(
+    ODBCSink(
             nanodbc::ConnectionHolderPtr connection_,
             const std::string & remote_database_name_,
             const std::string & remote_table_name_,
@@ -24,8 +24,10 @@ public:
             ContextPtr local_context_,
             IdentifierQuotingStyle quoting);
 
-    Block getHeader() const override;
-    void write(const Block & block) override;
+    String getName() const override { return "ODBCSink"; }
+
+protected:
+    void consume(Chunk chunk) override;
 
 private:
     Poco::Logger * log;

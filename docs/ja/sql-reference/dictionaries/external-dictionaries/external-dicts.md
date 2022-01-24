@@ -28,7 +28,7 @@ toc_title: "\u4E00\u822C\u7684\u306A\u8AAC\u660E"
 辞書構成ファイルの形式は次のとおりです:
 
 ``` xml
-<yandex>
+<clickhouse>
     <comment>An optional element with any content. Ignored by the ClickHouse server.</comment>
 
     <!--Optional element. File name with substitutions-->
@@ -40,7 +40,7 @@ toc_title: "\u4E00\u822C\u7684\u306A\u8AAC\u660E"
         <!-- There can be any number of <dictionary> sections in the configuration file. -->
     </dictionary>
 
-</yandex>
+</clickhouse>
 ```
 
 あなたはできる [設定](external-dicts-dict.md) 同じファイル内の任意の数の辞書。
@@ -59,4 +59,4 @@ toc_title: "\u4E00\u822C\u7684\u306A\u8AAC\u660E"
 -   [辞書キーとフィールド](external-dicts-dict-structure.md)
 -   [外部辞書を操作するための関数](../../../sql-reference/functions/ext-dict-functions.md)
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/dicts/external_dicts/) <!--hide-->

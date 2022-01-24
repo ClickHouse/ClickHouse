@@ -94,4 +94,4 @@ select * from products limit 1;
 └───────────────┴─────────────────┘
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/dictionary/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/dictionary/) <!--hide-->

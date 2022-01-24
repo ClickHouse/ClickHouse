@@ -1,12 +1,10 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #if USE_MYSQL
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/MySQL/MySQLReplication.h>
 #include <mysqlxx/Connection.h>
 #include <mysqlxx/PoolWithFailover.h>

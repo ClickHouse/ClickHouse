@@ -120,4 +120,4 @@ CREARE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 
 -   [仮想列](../index.md#table_engines-virtual_columns)
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/hdfs/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/hdfs/) <!--hide-->

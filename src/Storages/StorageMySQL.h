@@ -1,17 +1,20 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include "config_core.h"
-#endif
 
 #if USE_MYSQL
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/MySQL/MySQLSettings.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 #include <mysqlxx/PoolWithFailover.h>
 
+namespace Poco
+{
+class Logger;
+}
 
 namespace DB
 {
@@ -50,6 +53,8 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
+    static StorageMySQLConfiguration getConfiguration(ASTs engine_args, ContextPtr context_, MySQLBaseSettings & storage_settings);
+
 private:
     friend class StorageMySQLSink;
 
@@ -61,6 +66,8 @@ private:
     MySQLSettings mysql_settings;
 
     mysqlxx::PoolWithFailoverPtr pool;
+
+    Poco::Logger * log;
 };
 
 }

@@ -6,7 +6,7 @@ toc_title: Client Libraries
 # Client Libraries from Third-party Developers {#client-libraries-from-third-party-developers}
 
 !!! warning "Disclaimer"
-    Yandex does **not** maintain the libraries listed below and hasn’t done any extensive testing to ensure their quality.
+    ClickHouse Inc does **not** maintain the libraries listed below and hasn’t done any extensive testing to ensure their quality.
 
 -   Python
     -   [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm)
@@ -35,6 +35,8 @@ toc_title: Client Libraries
 -   NodeJs
     -   [clickhouse (NodeJs)](https://github.com/TimonKK/clickhouse)
     -   [node-clickhouse](https://github.com/apla/node-clickhouse)
+    -   [nestjs-clickhouse](https://github.com/depyronick/nestjs-clickhouse)
+    -   [clickhouse-client](https://github.com/depyronick/clickhouse-client)
 -   Perl
     -   [perl-DBD-ClickHouse](https://github.com/elcamlost/perl-DBD-ClickHouse)
     -   [HTTP-ClickHouse](https://metacpan.org/release/HTTP-ClickHouse)
@@ -67,4 +69,4 @@ toc_title: Client Libraries
 -   Haskell
     -   [hdbc-clickhouse](https://github.com/zaneli/hdbc-clickhouse)
 
-[Original article](https://clickhouse.tech/docs/en/interfaces/third-party/client_libraries/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/interfaces/third-party/client_libraries/) <!--hide-->

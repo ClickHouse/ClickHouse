@@ -42,8 +42,10 @@ IMergeTreeReader::IMergeTreeReader(
     , all_mark_ranges(all_mark_ranges_)
     , alter_conversions(storage.getAlterConversionsForPart(data_part))
 {
-    if (settings.convert_nested_to_subcolumns)
+    if (isWidePart(data_part))
     {
+        /// For wide parts convert plain arrays of Nested to subcolumns
+        /// to allow to use shared offset column from cache.
         columns = Nested::convertToSubcolumns(columns);
         part_columns = Nested::collect(part_columns);
     }
@@ -135,10 +137,11 @@ void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_e
 
                 String offsets_name = Nested::extractTableName(name);
                 auto offset_it = offset_columns.find(offsets_name);
-                if (offset_it != offset_columns.end())
+                const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
+                if (offset_it != offset_columns.end() && array_type)
                 {
+                    const auto & nested_type = array_type->getNestedType();
                     ColumnPtr offsets_column = offset_it->second;
-                    DataTypePtr nested_type = typeid_cast<const DataTypeArray &>(*type).getNestedType();
                     size_t nested_rows = typeid_cast<const ColumnUInt64 &>(*offsets_column).getData().back();
 
                     ColumnPtr nested_column =
@@ -294,7 +297,7 @@ IMergeTreeReader::ColumnPosition IMergeTreeReader::findColumnForOffsets(const St
     {
         if (typeid_cast<const DataTypeArray *>(part_column.type.get()))
         {
-            auto position = data_part->getColumnPosition(part_column.name);
+            auto position = data_part->getColumnPosition(part_column.getNameInStorage());
             if (position && Nested::extractTableName(part_column.name) == table_name)
                 return position;
         }

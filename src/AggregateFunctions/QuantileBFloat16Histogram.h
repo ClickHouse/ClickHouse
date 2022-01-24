@@ -1,7 +1,7 @@
 #pragma once
 
-#include <common/types.h>
-#include <common/bit_cast.h>
+#include <base/types.h>
+#include <base/bit_cast.h>
 #include <Common/HashTable/HashMap.h>
 
 #include <IO/ReadBuffer.h>

@@ -6,6 +6,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 
+#include <magic_enum.hpp>
+#include <base/EnumReflection.h>
 
 namespace ErrorCodes
 {
@@ -37,14 +39,13 @@ static bool parseQueryWithOnClusterAndMaybeTable(std::shared_ptr<ASTSystemQuery>
         ASTPtr ast;
         if (ParserStringLiteral{}.parse(pos, ast, expected))
         {
-            res->database = {};
-            res->table = ast->as<ASTLiteral &>().value.safeGet<String>();
+            res->setTable(ast->as<ASTLiteral &>().value.safeGet<String>());
             parsed_table = true;
         }
     }
 
     if (!parsed_table)
-        parsed_table = parseDatabaseAndTableName(pos, expected, res->database, res->table);
+        parsed_table = parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
 
     if (!parsed_table && require_table)
             return false;
@@ -54,6 +55,12 @@ static bool parseQueryWithOnClusterAndMaybeTable(std::shared_ptr<ASTSystemQuery>
             return false;
 
     res->cluster = cluster;
+
+    if (res->database)
+        res->children.push_back(res->database);
+    if (res->table)
+        res->children.push_back(res->table);
+
     return true;
 }
 
@@ -67,13 +74,14 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
     auto res = std::make_shared<ASTSystemQuery>();
 
     bool found = false;
-    for (int i = static_cast<int>(Type::UNKNOWN) + 1; i < static_cast<int>(Type::END); ++i)
+
+    for (const auto & type : magic_enum::enum_values<Type>())
     {
-        Type t = static_cast<Type>(i);
-        if (ParserKeyword{ASTSystemQuery::typeToString(t)}.ignore(pos, expected))
+        if (ParserKeyword{ASTSystemQuery::typeToString(type)}.ignore(pos, expected))
         {
-            res->type = t;
+            res->type = type;
             found = true;
+            break;
         }
     }
 
@@ -117,6 +125,35 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
             break;
         }
+        case Type::RELOAD_FUNCTION:
+        {
+            String cluster_str;
+            if (ParserKeyword{"ON"}.ignore(pos, expected))
+            {
+                if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+                    return false;
+            }
+            res->cluster = cluster_str;
+            ASTPtr ast;
+            if (ParserStringLiteral{}.parse(pos, ast, expected))
+            {
+                res->target_function = ast->as<ASTLiteral &>().value.safeGet<String>();
+            }
+            else
+            {
+                ParserIdentifier function_parser;
+                ASTPtr function;
+                String target_function;
+
+                if (!function_parser.parse(pos, function, expected))
+                    return false;
+
+                if (!tryGetIdentifierNameInto(function, res->target_function))
+                    return false;
+            }
+
+            break;
+        }
         case Type::DROP_REPLICA:
         {
             ASTPtr ast;
@@ -131,14 +168,12 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 if (ParserKeyword{"DATABASE"}.ignore(pos, expected))
                 {
                     ParserIdentifier database_parser;
-                    ASTPtr database;
-                    if (!database_parser.parse(pos, database, expected))
+                    if (!database_parser.parse(pos, res->database, expected))
                         return false;
-                    tryGetIdentifierNameInto(database, res->database);
                 }
                 else if (ParserKeyword{"TABLE"}.ignore(pos, expected))
                 {
-                    parseDatabaseAndTableName(pos, expected, res->database, res->table);
+                    parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
                 }
                 else if (ParserKeyword{"ZKPATH"}.ignore(pos, expected))
                 {
@@ -161,7 +196,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
-            if (!parseDatabaseAndTableName(pos, expected, res->database, res->table))
+            if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
                 return false;
             break;
 
@@ -219,7 +254,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             res->storage_policy = storage_policy_str;
             res->volume = volume_str;
             if (res->volume.empty() && res->storage_policy.empty())
-                parseDatabaseAndTableName(pos, expected, res->database, res->table);
+                parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
             break;
         }
 
@@ -233,7 +268,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_REPLICATED_SENDS:
         case Type::STOP_REPLICATION_QUEUES:
         case Type::START_REPLICATION_QUEUES:
-            parseDatabaseAndTableName(pos, expected, res->database, res->table);
+            parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
             break;
 
         case Type::SUSPEND:
@@ -254,6 +289,11 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             /// There are no [db.table] after COMMAND NAME
             break;
     }
+
+    if (res->database)
+        res->children.push_back(res->database);
+    if (res->table)
+        res->children.push_back(res->table);
 
     node = std::move(res);
     return true;

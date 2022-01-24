@@ -59,4 +59,4 @@ SELECT groupArray(y) FROM t_null_big
 
 `groupArray` 含まない `NULL` 結果の配列で。
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/agg_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/agg_functions/) <!--hide-->

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Server/HTTP/HTTPRequestHandler.h>
-#include <common/types.h>
+#include <base/types.h>
 
 
 namespace DB

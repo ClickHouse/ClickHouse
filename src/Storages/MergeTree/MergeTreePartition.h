@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Disks/IDisk.h>
 #include <IO/WriteBuffer.h>
 #include <Storages/KeyDescription.h>
@@ -32,6 +32,8 @@ public:
 
     String getID(const MergeTreeData & storage) const;
     String getID(const Block & partition_key_sample) const;
+
+    static std::optional<Row> tryParseValueFromID(const String & partition_id, const Block & partition_key_sample);
 
     void serializeText(const MergeTreeData & storage, WriteBuffer & out, const FormatSettings & format_settings) const;
 

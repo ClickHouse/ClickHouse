@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-#include <common/shared_ptr_helper.h>
-#include <Processors/Pipe.h>
+#include <base/shared_ptr_helper.h>
+#include <QueryPipeline/Pipe.h>
 
 namespace DB
 {

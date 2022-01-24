@@ -167,9 +167,9 @@ SELECT toDecimal32OrNull(toString(-1.111), 5) AS val, toTypeName(val)
 ```
 
 ``` text
-┌──────val─┬─toTypeName(toDecimal32OrNull(toString(-1.111), 5))─┐
-│ -1.11100 │ Nullable(Decimal(9, 5))                            │
-└──────────┴────────────────────────────────────────────────────┘
+┌────val─┬─toTypeName(toDecimal32OrNull(toString(-1.111), 5))─┐
+│ -1.111 │ Nullable(Decimal(9, 5))                            │
+└────────┴────────────────────────────────────────────────────┘
 ```
 
 ``` sql
@@ -210,9 +210,9 @@ SELECT toDecimal32OrZero(toString(-1.111), 5) AS val, toTypeName(val)
 ```
 
 ``` text
-┌──────val─┬─toTypeName(toDecimal32OrZero(toString(-1.111), 5))─┐
-│ -1.11100 │ Decimal(9, 5)                                      │
-└──────────┴────────────────────────────────────────────────────┘
+┌────val─┬─toTypeName(toDecimal32OrZero(toString(-1.111), 5))─┐
+│ -1.111 │ Decimal(9, 5)                                      │
+└────────┴────────────────────────────────────────────────────┘
 ```
 
 ``` sql
@@ -635,4 +635,4 @@ SELECT fromUnixTimestamp64Milli(i64, 'UTC')
 └──────────────────────────────────────┘
 ```
 
-[来源文章](https://clickhouse.tech/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->

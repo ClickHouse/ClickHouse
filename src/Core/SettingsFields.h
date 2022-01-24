@@ -2,7 +2,7 @@
 
 #include <Poco/Timespan.h>
 #include <Poco/URI.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/Field.h>
 #include <Core/MultiEnum.h>
 #include <boost/range/adaptor/map.hpp>

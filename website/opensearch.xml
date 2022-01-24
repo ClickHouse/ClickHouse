@@ -4,9 +4,9 @@
   <ShortName>ClickHouse</ShortName>
   <Description>Search ClickHouse</Description>
   <InputEncoding>UTF-8</InputEncoding>
-  <Image width="16" height="16" type="image/x-icon">https://clickhouse.tech/favicon.ico</Image>
+  <Image width="16" height="16" type="image/x-icon">https://clickhouse.com/favicon.ico</Image>
   <Url type="text/html" method="GET"
-      template="https://www.google.com/search?q={searchTerms}+site%3Aclickhouse.tech"/>
+      template="https://www.google.com/search?q={searchTerms}+site%3Aclickhouse.com"/>
   <Url type="application/x-suggestions+json" method="GET"
        template="https://suggestqueries.google.com/complete/search?output=chrome&amp;q={searchTerms}"/>
 </OpenSearchDescription>

@@ -5,7 +5,7 @@ toc_title: Playground
 
 # ClickHouse Playground {#clickhouse-playground}
 
-[ClickHouse Playground](https://play.clickhouse.tech) allows people to experiment with ClickHouse by running queries instantly, without setting up their server or cluster.
+[ClickHouse Playground](https://play.clickhouse.com) allows people to experiment with ClickHouse by running queries instantly, without setting up their server or cluster.
 Several example datasets are available in Playground as well as sample queries that show ClickHouse features. There’s also a selection of ClickHouse LTS releases to experiment with.
 
 ClickHouse Playground gives the experience of m2.small [Managed Service for ClickHouse](https://cloud.yandex.com/services/managed-clickhouse) instance (4 vCPU, 32 GB RAM) hosted in [Yandex.Cloud](https://cloud.yandex.com/). More information about [cloud providers](../commercial/cloud.md).
@@ -16,15 +16,15 @@ You can make queries to Playground using any HTTP client, for example [curl](htt
 
 | Parameter           | Value                                   |
 |:--------------------|:----------------------------------------|
-| HTTPS endpoint      | `https://play-api.clickhouse.tech:8443` |
-| Native TCP endpoint | `play-api.clickhouse.tech:9440`         |
+| HTTPS endpoint      | `https://play-api.clickhouse.com:8443` |
+| Native TCP endpoint | `play-api.clickhouse.com:9440`         |
 | User                | `playground`                            |
 | Password            | `clickhouse`                            |
 
 There are additional endpoints with specific ClickHouse releases to experiment with their differences (ports and user/password are the same as above):
 
--   20.3 LTS: `play-api-v20-3.clickhouse.tech`
--   19.14 LTS: `play-api-v19-14.clickhouse.tech`
+-   20.3 LTS: `play-api-v20-3.clickhouse.com`
+-   19.14 LTS: `play-api-v19-14.clickhouse.com`
 
 !!! note "Note"
     All these endpoints require a secure TLS connection.
@@ -48,13 +48,13 @@ The following settings are also enforced:
 HTTPS endpoint example with `curl`:
 
 ``` bash
-curl "https://play-api.clickhouse.tech:8443/?query=SELECT+'Play+ClickHouse\!';&user=playground&password=clickhouse&database=datasets"
+curl "https://play-api.clickhouse.com:8443/?query=SELECT+'Play+ClickHouse\!';&user=playground&password=clickhouse&database=datasets"
 ```
 
 TCP endpoint example with [CLI](../interfaces/cli.md):
 
 ``` bash
-clickhouse client --secure -h play-api.clickhouse.tech --port 9440 -u playground --password clickhouse -q "SELECT 'Play ClickHouse\!'"
+clickhouse client --secure -h play-api.clickhouse.com --port 9440 -u playground --password clickhouse -q "SELECT 'Play ClickHouse\!'"
 ```
 
 ## Implementation Details {#implementation-details}

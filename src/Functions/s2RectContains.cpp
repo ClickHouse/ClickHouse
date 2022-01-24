@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
+#include "config_functions.h"
 
 #if USE_S2_GEOMETRY
 
@@ -10,7 +8,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <Functions/FunctionFactory.h>
 #include <Common/typeid_cast.h>
-#include <common/range.h>
+#include <base/range.h>
 
 #include "s2_fwd.h"
 
@@ -41,7 +39,7 @@ public:
         return name;
     }
 
-    size_t getNumberOfArguments() const override { return 4; }
+    size_t getNumberOfArguments() const override { return 3; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -72,7 +70,7 @@ public:
         auto & dst_data = dst->getData();
         dst_data.reserve(input_rows_count);
 
-        for (const auto row : collections::range(0, input_rows_count))
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
             const auto lo = S2CellId(col_lo->getUInt(row));
             const auto hi = S2CellId(col_hi->getUInt(row));

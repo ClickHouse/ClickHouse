@@ -2,14 +2,14 @@
 
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/DecimalFunctions.h>
 #include <Functions/DateTimeTransforms.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Functions/IFunction.h>
 #include <Common/Exception.h>
-#include <common/DateLUTImpl.h>
+#include <Common/DateLUTImpl.h>
 
 /// The default mode value to use for the WEEK() function
 #define DEFAULT_WEEK_MODE 0
@@ -76,7 +76,7 @@ struct ToStartOfWeekImpl
     }
     static inline UInt16 execute(UInt16 d, UInt8 week_mode, const DateLUTImpl & time_zone)
     {
-        return time_zone.toFirstDayNumOfWeek(ExtendedDayNum(d), week_mode);
+        return time_zone.toFirstDayNumOfWeek(DayNum(d), week_mode);
     }
 
     using FactorTransform = ZeroTransform;

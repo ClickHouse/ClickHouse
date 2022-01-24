@@ -1,0 +1,47 @@
+@use 'sass:math';
+
+.pullquote {
+	position: relative;
+	width: 70%;
+
+	&:before {
+		background: no-repeat url(#{'../images/backgrounds/bg-quotes.svg'});
+		background-position: center;
+		background-size: 100%;
+		bottom: 0;
+		content: '';
+		display: block;
+		mix-blend-mode: multiply;
+		position: absolute;
+		right: $spacer * 7;
+		top: 0;
+		width: calc(100% - #{$spacer * 2});
+		z-index: 2;
+	}
+
+	&-bg {
+		bottom: 0;
+		display: block;
+		position: absolute;
+		right: 0;
+		top: 0;
+		width: calc(50vw + #{100% * math.div(20, 70)});
+		z-index: 1;
+	}
+
+	&-body {
+		padding: ($spacer * 8) ($spacer * 5) ($spacer * 8) 0;
+		position: relative;
+		z-index: 3;
+	}
+
+	&-quote {
+		font-family: $headings-font-family;
+		font-size: 32px;
+		font-weight: $font-weight-bold;
+	}
+
+	&-citation {
+		font-size: $font-size-lg;
+	}
+}

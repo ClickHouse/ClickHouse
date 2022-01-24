@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 
 
 namespace DB
@@ -91,7 +91,7 @@ public:
         IStorage::renameInMemory(new_table_id);
     }
 
-    void alter(const AlterCommands & params, ContextPtr context, TableLockHolder & alter_lock_holder) override
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override
     {
         getNested()->alter(params, context, alter_lock_holder);
         IStorage::setInMemoryMetadata(getNested()->getInMemoryMetadata());

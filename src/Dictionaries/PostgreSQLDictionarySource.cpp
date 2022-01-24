@@ -1,15 +1,18 @@
 #include "PostgreSQLDictionarySource.h"
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Core/QualifiedTableName.h>
 #include "DictionarySourceFactory.h"
 #include "registerDictionaries.h"
 
 #if USE_LIBPQXX
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataStreams/PostgreSQLSource.h>
+#include <Processors/Transforms/PostgreSQLSource.h>
 #include "readInvalidateQuery.h"
 #include <Interpreters/Context.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 #endif
 
 
@@ -25,23 +28,21 @@ namespace ErrorCodes
 
 static const UInt64 max_block_size = 8192;
 
+static const std::unordered_set<std::string_view> dictionary_allowed_keys = {
+    "host", "port", "user", "password", "db", "database", "table", "schema",
+    "update_field", "update_tag", "invalidate_query", "query", "where", "name", "priority"};
+
 namespace
 {
     ExternalQueryBuilder makeExternalQueryBuilder(const DictionaryStructure & dict_struct, const String & schema, const String & table, const String & query, const String & where)
     {
-        auto schema_value = schema;
-        auto table_value = table;
+        QualifiedTableName qualified_name{schema, table};
 
-        if (schema_value.empty())
-        {
-            if (auto pos = table_value.find('.'); pos != std::string::npos)
-            {
-                schema_value = table_value.substr(0, pos);
-                table_value = table_value.substr(pos + 1);
-            }
-        }
+        if (qualified_name.database.empty() && !qualified_name.table.empty())
+            qualified_name = QualifiedTableName::parseFromString(qualified_name.table);
+
         /// Do not need db because it is already in a connection string.
-        return {dict_struct, "", schema_value, table_value, query, where, IdentifierQuotingStyle::DoubleQuotes};
+        return {dict_struct, "", qualified_name.database, qualified_name.table, query, where, IdentifierQuotingStyle::DoubleQuotes};
     }
 }
 
@@ -129,7 +130,7 @@ std::string PostgreSQLDictionarySource::doInvalidateQuery(const std::string & re
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-    return readInvalidateQuery(Pipe(std::make_unique<PostgreSQLSource<>>(pool->get(), request, invalidate_sample_block, 1)));
+    return readInvalidateQuery(QueryPipeline(std::make_unique<PostgreSQLSource<>>(pool->get(), request, invalidate_sample_block, 1)));
 }
 
 
@@ -164,7 +165,7 @@ bool PostgreSQLDictionarySource::supportsSelectiveLoad() const
 
 DictionarySourcePtr PostgreSQLDictionarySource::clone() const
 {
-    return std::make_unique<PostgreSQLDictionarySource>(*this);
+    return std::make_shared<PostgreSQLDictionarySource>(*this);
 }
 
 
@@ -182,22 +183,24 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 ContextPtr global_context,
+                                 ContextPtr context,
                                  const std::string & /* default_database */,
                                  bool /* created_from_ddl */) -> DictionarySourcePtr
     {
 #if USE_LIBPQXX
         const auto settings_config_prefix = config_prefix + ".postgresql";
+        auto has_config_key = [](const String & key) { return dictionary_allowed_keys.contains(key) || key.starts_with("replica"); };
+        auto configuration = getExternalDataSourceConfigurationByPriority(config, settings_config_prefix, context, has_config_key);
         auto pool = std::make_shared<postgres::PoolWithFailover>(
-                    config, settings_config_prefix,
-                    global_context->getSettingsRef().postgresql_connection_pool_size,
-                    global_context->getSettingsRef().postgresql_connection_pool_wait_timeout);
+                    configuration.replicas_configurations,
+                    context->getSettingsRef().postgresql_connection_pool_size,
+                    context->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
-        PostgreSQLDictionarySource::Configuration configuration
+        PostgreSQLDictionarySource::Configuration dictionary_configuration
         {
-            .db = config.getString(fmt::format("{}.db", settings_config_prefix), ""),
-            .schema = config.getString(fmt::format("{}.schema", settings_config_prefix), ""),
-            .table = config.getString(fmt::format("{}.table", settings_config_prefix), ""),
+            .db = configuration.database,
+            .schema = configuration.schema,
+            .table = configuration.table,
             .query = config.getString(fmt::format("{}.query", settings_config_prefix), ""),
             .where = config.getString(fmt::format("{}.where", settings_config_prefix), ""),
             .invalidate_query = config.getString(fmt::format("{}.invalidate_query", settings_config_prefix), ""),
@@ -205,13 +208,13 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
             .update_lag = config.getUInt64(fmt::format("{}.update_lag", settings_config_prefix), 1)
         };
 
-        return std::make_unique<PostgreSQLDictionarySource>(dict_struct, configuration, pool, sample_block);
+        return std::make_unique<PostgreSQLDictionarySource>(dict_struct, dictionary_configuration, pool, sample_block);
 #else
         (void)dict_struct;
         (void)config;
         (void)config_prefix;
         (void)sample_block;
-        (void)global_context;
+        (void)context;
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Dictionary source of type `postgresql` is disabled because ClickHouse was built without postgresql support.");
 #endif

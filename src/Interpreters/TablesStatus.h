@@ -3,7 +3,7 @@
 #include <unordered_set>
 #include <unordered_map>
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/QualifiedTableName.h>
 
 namespace DB

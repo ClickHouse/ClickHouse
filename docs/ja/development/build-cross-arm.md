@@ -10,7 +10,7 @@ toc_title: "Aarch64\u7528\u306ELinux\u4E0A\u3067ClickHouse\u3092\u69CB\u7BC9\u30
 
 これは、Linuxマシンを使用してビルドする場合のためのものです `clickhouse` AARCH64CPUアーキテクチャを持つ別のLinuxマシン上で実行されるバイナリ。 この目的のために継続的インテグレーションをチェックを実行Linuxサーバー
 
-AARCH64のクロスビルドは [ビルド命令](build.md) 先について来い
+AARCH64のクロスビルドは [ビルド命令](../development/build.md) 先について来い
 
 # Clang-8をインストール {#install-clang-8}
 

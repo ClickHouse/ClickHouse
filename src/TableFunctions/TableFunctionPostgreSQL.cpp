@@ -6,13 +6,10 @@
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/Exception.h>
-#include <Common/parseAddress.h>
 #include "registerTableFunctions.h"
-#include <Common/quoteString.h>
 #include <Common/parseRemoteDescription.h>
 
 
@@ -21,7 +18,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -33,12 +29,12 @@ StoragePtr TableFunctionPostgreSQL::executeImpl(const ASTPtr & /*ast_function*/,
     auto result = std::make_shared<StoragePostgreSQL>(
         StorageID(getDatabaseName(), table_name),
         connection_pool,
-        remote_table_name,
+        configuration->table,
         columns,
         ConstraintsDescription{},
         String{},
-        remote_table_schema,
-        on_conflict);
+        configuration->schema,
+        configuration->on_conflict);
 
     result->startup();
     return result;
@@ -49,50 +45,26 @@ ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(ContextPtr c
 {
     const bool use_nulls = context->getSettingsRef().external_table_functions_use_nulls;
     auto connection_holder = connection_pool->get();
-    auto columns = fetchPostgreSQLTableStructure(
-            connection_holder->get(),
-            remote_table_schema.empty() ? doubleQuoteString(remote_table_name)
-                                        : doubleQuoteString(remote_table_schema) + '.' + doubleQuoteString(remote_table_name),
-            use_nulls).columns;
+    auto columns_info = fetchPostgreSQLTableStructure(
+            connection_holder->get(), configuration->table, configuration->schema, use_nulls).physical_columns;
 
-    return ColumnsDescription{*columns};
+    if (!columns_info)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table structure not returned");
+
+    return ColumnsDescription{columns_info->columns};
 }
 
 
 void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
     const auto & func_args = ast_function->as<ASTFunction &>();
-
     if (!func_args.arguments)
         throw Exception("Table function 'PostgreSQL' must have arguments.", ErrorCodes::BAD_ARGUMENTS);
 
-    ASTs & args = func_args.arguments->children;
-
-    if (args.size() < 5 || args.size() > 7)
-        throw Exception("Table function 'PostgreSQL' requires from 5 to 7 parameters: "
-                        "PostgreSQL('host:port', 'database', 'table', 'user', 'password', [, 'schema', 'ON CONFLICT ...']).",
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-    for (auto & arg : args)
-        arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
-
-    /// Split into replicas if needed. 5432 is a default postgresql port.
-    const auto & host_port = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-    size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
-    auto addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
-
-    remote_table_name = args[2]->as<ASTLiteral &>().value.safeGet<String>();
-
-    if (args.size() >= 6)
-        remote_table_schema = args[5]->as<ASTLiteral &>().value.safeGet<String>();
-    if (args.size() >= 7)
-        on_conflict = args[6]->as<ASTLiteral &>().value.safeGet<String>();
-
-    connection_pool = std::make_shared<postgres::PoolWithFailover>(
-        args[1]->as<ASTLiteral &>().value.safeGet<String>(),
-        addresses,
-        args[3]->as<ASTLiteral &>().value.safeGet<String>(),
-        args[4]->as<ASTLiteral &>().value.safeGet<String>());
+    configuration.emplace(StoragePostgreSQL::getConfiguration(func_args.arguments->children, context));
+    connection_pool = std::make_shared<postgres::PoolWithFailover>(*configuration,
+        context->getSettingsRef().postgresql_connection_pool_size,
+        context->getSettingsRef().postgresql_connection_pool_wait_timeout);
 }
 
 

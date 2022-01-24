@@ -10,7 +10,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <common/arithmeticOverflow.h>
+#include <base/arithmeticOverflow.h>
 #include "Columns/ColumnMap.h"
 #include "DataTypes/DataTypeMap.h"
 
@@ -204,7 +204,7 @@ private:
 
         std::map<KeyType, ValType> summing_map;
 
-        for (size_t i = 0; i < row_count; i++)
+        for (size_t i = 0; i < row_count; ++i)
         {
             [[maybe_unused]] bool first = true;
             for (auto & arg : args)
@@ -222,7 +222,7 @@ private:
                 }
 
                 Field temp_val;
-                for (size_t j = 0; j < len; j++)
+                for (size_t j = 0; j < len; ++j)
                 {
                     KeyType key;
                     if constexpr (std::is_same<KeyType, String>::value)
@@ -231,12 +231,10 @@ private:
                             key = col_fixed->getDataAt(offset + j).toString();
                         else if (const auto * col_str = checkAndGetColumn<ColumnString>(arg.key_column.get()))
                             key = col_str->getDataAt(offset + j).toString();
-                        else
-                            // should not happen
-                            throw Exception(
-                                "Expected String or FixedString, got " + std::string(getTypeName(arg.key_column->getDataType()))
-                                    + " in " + getName(),
-                                ErrorCodes::LOGICAL_ERROR);
+                        else // should not happen
+                            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Expected String or FixedString, got {} in {}",
+                                arg.key_column->getDataType(), getName());
                     }
                     else
                     {

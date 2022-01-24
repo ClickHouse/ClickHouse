@@ -9,8 +9,9 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
 
 
@@ -59,26 +60,30 @@ TableLockHolder IStorage::lockForShare(const String & query_id, const std::chron
     return result;
 }
 
-TableLockHolder IStorage::lockForAlter(const String & query_id, const std::chrono::milliseconds & acquire_timeout)
+IStorage::AlterLockHolder IStorage::lockForAlter(const std::chrono::milliseconds & acquire_timeout)
 {
-    TableLockHolder result = tryLockTimed(alter_lock, RWLockImpl::Write, query_id, acquire_timeout);
+    AlterLockHolder lock{alter_lock, std::defer_lock};
+
+    if (!lock.try_lock_for(acquire_timeout))
+        throw Exception(ErrorCodes::DEADLOCK_AVOIDED,
+                        "Locking attempt for ALTER on \"{}\" has timed out! ({} ms) "
+                        "Possible deadlock avoided. Client should retry.",
+                        getStorageID().getFullTableName(), std::to_string(acquire_timeout.count()));
 
     if (is_dropped)
         throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
 
-    return result;
+    return lock;
 }
 
 
 TableExclusiveLockHolder IStorage::lockExclusively(const String & query_id, const std::chrono::milliseconds & acquire_timeout)
 {
     TableExclusiveLockHolder result;
-    result.alter_lock = tryLockTimed(alter_lock, RWLockImpl::Write, query_id, acquire_timeout);
+    result.drop_lock = tryLockTimed(drop_lock, RWLockImpl::Write, query_id, acquire_timeout);
 
     if (is_dropped)
         throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
-
-    result.drop_lock = tryLockTimed(drop_lock, RWLockImpl::Write, query_id, acquire_timeout);
 
     return result;
 }
@@ -125,7 +130,7 @@ Pipe IStorage::alterPartition(
     throw Exception("Partition operations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
-void IStorage::alter(const AlterCommands & params, ContextPtr context, TableLockHolder &)
+void IStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder &)
 {
     auto table_id = getStorageID();
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
@@ -134,15 +139,13 @@ void IStorage::alter(const AlterCommands & params, ContextPtr context, TableLock
     setInMemoryMetadata(new_metadata);
 }
 
-
 void IStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const
 {
     for (const auto & command : commands)
     {
         if (!command.isCommentAlter())
-            throw Exception(
-                "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
-                ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+                command.type, getName());
     }
 }
 
@@ -201,7 +204,7 @@ NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
     return name_deps;
 }
 
-bool IStorage::isReadOnly() const
+bool IStorage::isStaticStorage() const
 {
     auto storage_policy = getStoragePolicy();
     if (storage_policy)
@@ -214,7 +217,7 @@ bool IStorage::isReadOnly() const
     return false;
 }
 
-BackupEntries IStorage::backup(const ASTs &, ContextPtr) const
+BackupEntries IStorage::backup(const ASTs &, ContextPtr)
 {
     throw Exception("Table engine " + getName() + " doesn't support backups", ErrorCodes::NOT_IMPLEMENTED);
 }

@@ -125,7 +125,7 @@ void StorageSystemProjectionParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(parent_part->getTypeName());
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part_state == State::Committed);
+            columns[res_index++]->insert(part_state == State::Active);
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->getMarksCount());
         if (columns_mask[src_index++])
@@ -282,7 +282,7 @@ void StorageSystemProjectionParts::processNextStorage(
         /// _state column should be the latest.
         /// Do not use part->getState*, it can be changed from different thread
         if (has_state_column)
-            columns[res_index++]->insert(IMergeTreeDataPart::stateToString(part_state));
+            columns[res_index++]->insert(IMergeTreeDataPart::stateString(part_state));
     }
 }
 

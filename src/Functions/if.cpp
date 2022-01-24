@@ -221,7 +221,7 @@ private:
     template <typename T0, typename T1>
     static UInt32 decimalScale(const ColumnsWithTypeAndName & arguments [[maybe_unused]])
     {
-        if constexpr (IsDecimalNumber<T0> && IsDecimalNumber<T1>)
+        if constexpr (is_decimal<T0> && is_decimal<T1>)
         {
             UInt32 left_scale = getDecimalScale(*arguments[1].type);
             UInt32 right_scale = getDecimalScale(*arguments[2].type);
@@ -416,8 +416,8 @@ private:
     ColumnPtr executeTyped(
         const ColumnUInt8 * cond_col, const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
-        using ColVecT0 = std::conditional_t<IsDecimalNumber<T0>, ColumnDecimal<T0>, ColumnVector<T0>>;
-        using ColVecT1 = std::conditional_t<IsDecimalNumber<T1>, ColumnDecimal<T1>, ColumnVector<T1>>;
+        using ColVecT0 = ColumnVectorOrDecimal<T0>;
+        using ColVecT1 = ColumnVectorOrDecimal<T1>;
 
         const IColumn * col_left_untyped = arguments[1].column.get();
 
@@ -969,7 +969,7 @@ private:
 
     static void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments)
     {
-        int last_short_circuit_argument_index = checkShirtCircuitArguments(arguments);
+        int last_short_circuit_argument_index = checkShortCircuitArguments(arguments);
         if (last_short_circuit_argument_index == -1)
             return;
 

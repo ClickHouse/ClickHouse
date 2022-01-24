@@ -3,7 +3,7 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Storages/StorageDictionary.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -29,10 +29,13 @@ namespace
                 return nullptr;
 
             DictionaryStructure dictionary_structure = ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
+            auto comment = load_result.config->config->getString("dictionary.comment", "");
+
             return StorageDictionary::create(
                 StorageID(database_name, load_result.name),
                 load_result.name,
                 dictionary_structure,
+                comment,
                 StorageDictionary::Location::DictionaryDatabase,
                 context);
         }
@@ -126,6 +129,8 @@ ASTPtr DatabaseDictionary::getCreateDatabaseQuery() const
     {
         WriteBufferFromString buffer(query);
         buffer << "CREATE DATABASE " << backQuoteIfNeed(getDatabaseName()) << " ENGINE = Dictionary";
+        if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
+            buffer << " COMMENT " << backQuote(comment_value);
     }
     auto settings = getContext()->getSettingsRef();
     ParserCreateQuery parser;

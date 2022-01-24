@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 #include "domain.h"
 #include "tldLookup.h"
 

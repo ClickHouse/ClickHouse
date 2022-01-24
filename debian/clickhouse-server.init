@@ -3,10 +3,17 @@
 # Provides:          clickhouse-server
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
-# Required-Start:    $network
-# Required-Stop:     $network
-# Short-Description: Yandex clickhouse-server daemon
+# Should-Start:      $time $network
+# Should-Stop:       $network
+# Short-Description: clickhouse-server daemon
 ### END INIT INFO
+#
+# NOTES:
+# - Should-* -- script can start if the listed facilities are missing, unlike Required-*
+#
+# For the documentation [1]:
+#
+#   [1]: https://wiki.debian.org/LSBInitScripts
 
 CLICKHOUSE_USER=clickhouse
 CLICKHOUSE_GROUP=${CLICKHOUSE_USER}

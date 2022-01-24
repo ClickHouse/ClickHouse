@@ -1,5 +1,7 @@
-# docker build -t yandex/clickhouse-stateless-pytest .
-FROM yandex/clickhouse-test-base
+# rebuild in #33610
+# docker build -t clickhouse/stateless-pytest .
+ARG FROM_TAG=latest
+FROM clickhouse/test-base:$FROM_TAG
 
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \

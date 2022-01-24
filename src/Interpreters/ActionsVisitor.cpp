@@ -26,6 +26,8 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
+#include <Processors/QueryPlan/QueryPlan.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/misc.h>
@@ -37,6 +39,8 @@
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/UserDefinedExecutableFunctionFactory.h>
+
 
 namespace DB
 {
@@ -185,9 +189,11 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
 
                 /// If the function is not a tuple, treat it as a constant expression that returns tuple and extract it.
                 function_result = extractValueFromNode(elem, *tuple_type, context);
+
                 if (function_result.getType() != Field::Types::Tuple)
-                    throw Exception("Invalid type of set. Expected tuple, got " + String(function_result.getTypeName()),
-                                    ErrorCodes::INCORRECT_ELEMENT_OF_SET);
+                    throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET,
+                        "Invalid type of set. Expected tuple, got {}",
+                        function_result.getTypeName());
 
                 tuple = &function_result.get<Tuple>();
             }
@@ -198,8 +204,9 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
             {
                 /// The literal must be tuple.
                 if (literal->value.getType() != Field::Types::Tuple)
-                    throw Exception("Invalid type in set. Expected tuple, got "
-                        + String(literal->value.getTypeName()), ErrorCodes::INCORRECT_ELEMENT_OF_SET);
+                    throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET,
+                        "Invalid type in set. Expected tuple, got {}",
+                        literal->value.getTypeName());
 
                 tuple = &literal->value.get<Tuple>();
             }
@@ -686,9 +693,14 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
 
     ASTs columns;
     size_t tid = 0;
+    auto func_alias = function->tryGetAlias();
     for (const auto & name [[maybe_unused]] : tuple_type->getElementNames())
     {
         auto tuple_ast = function->arguments->children[0];
+
+        /// This transformation can lead to exponential growth of AST size, let's check it.
+        tuple_ast->checkSize(data.getContext()->getSettingsRef().max_ast_elements);
+
         if (tid != 0)
             tuple_ast = tuple_ast->clone();
 
@@ -696,7 +708,8 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
         visit(*literal, literal, data);
 
         auto func = makeASTFunction("tupleElement", tuple_ast, literal);
-
+        if (!func_alias.empty())
+            func->setAlias(func_alias + "." + toString(tid));
         auto function_builder = FunctionFactory::instance().get(func->name, data.getContext());
         data.addFunction(function_builder, {tuple_name_type->name, literal->getColumnName()}, func->getColumnName());
 
@@ -851,17 +864,21 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     if (AggregateFunctionFactory::instance().isAggregateFunctionName(node.name))
         return;
 
-    FunctionOverloadResolverPtr function_builder;
-    try
+    FunctionOverloadResolverPtr function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(node.name, data.getContext());
+
+    if (!function_builder)
     {
-        function_builder = FunctionFactory::instance().get(node.name, data.getContext());
-    }
-    catch (Exception & e)
-    {
-        auto hints = AggregateFunctionFactory::instance().getHints(node.name);
-        if (!hints.empty())
-            e.addMessage("Or unknown aggregate function " + node.name + ". Maybe you meant: " + toString(hints));
-        throw;
+        try
+        {
+            function_builder = FunctionFactory::instance().get(node.name, data.getContext());
+        }
+        catch (Exception & e)
+        {
+            auto hints = AggregateFunctionFactory::instance().getHints(node.name);
+            if (!hints.empty())
+                e.addMessage("Or unknown aggregate function " + node.name + ". Maybe you meant: " + toString(hints));
+            throw;
+        }
     }
 
     Names argument_names;

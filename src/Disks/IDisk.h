@@ -3,7 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/Context.h>
 #include <Core/Defines.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Disks/Executor.h>
@@ -26,11 +26,6 @@ namespace Poco
     {
         class AbstractConfiguration;
     }
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric DiskSpaceReservedForMerge;
 }
 
 namespace DB
@@ -166,7 +161,8 @@ public:
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings = ReadSettings{},
-        size_t estimated_size = 0) const = 0;
+        std::optional<size_t> read_hint = {},
+        std::optional<size_t> file_size = {}) const = 0;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(
@@ -251,6 +247,28 @@ public:
 
     /// Applies new settings for disk in runtime.
     virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextPtr, const String &, const DisksMap &) {}
+
+    /// Open the local file for read and return ReadBufferFromFileBase object.
+    /// Overridden in IDiskRemote.
+    /// Used for work with custom metadata.
+    virtual std::unique_ptr<ReadBufferFromFileBase> readMetaFile(
+        const String & path,
+        const ReadSettings & settings,
+        std::optional<size_t> size) const;
+
+    /// Open the local file for write and return WriteBufferFromFileBase object.
+    /// Overridden in IDiskRemote.
+    /// Used for work with custom metadata.
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeMetaFile(
+        const String & path,
+        size_t buf_size,
+        WriteMode mode);
+
+    virtual void removeMetaFileIfExists(const String & path);
+
+    /// Return reference count for remote FS.
+    /// Overridden in IDiskRemote.
+    virtual UInt32 getRefCount(const String &) const { return 0; }
 
 protected:
     friend class DiskDecorator;

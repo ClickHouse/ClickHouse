@@ -31,11 +31,7 @@ if (CCACHE_FOUND AND NOT COMPILER_MATCHES_CCACHE)
 
    if (CCACHE_VERSION VERSION_GREATER "3.2.0" OR NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
       message(STATUS "Using ${CCACHE_FOUND} ${CCACHE_VERSION}")
-
-      set (CMAKE_CXX_COMPILER_LAUNCHER ${CCACHE_FOUND} ${CMAKE_CXX_COMPILER_LAUNCHER})
-      set (CMAKE_C_COMPILER_LAUNCHER ${CCACHE_FOUND} ${CMAKE_C_COMPILER_LAUNCHER})
-
-      set_property (GLOBAL PROPERTY RULE_LAUNCH_LINK ${CCACHE_FOUND})
+      set(LAUNCHER ${CCACHE_FOUND})
 
       # debian (debhelpers) set SOURCE_DATE_EPOCH environment variable, that is
       # filled from the debian/changelog or current time.
@@ -44,16 +40,14 @@ if (CCACHE_FOUND AND NOT COMPILER_MATCHES_CCACHE)
       #   of the manifest, which do not allow to use previous cache,
       # - 4.2+ ccache ignores SOURCE_DATE_EPOCH for every file w/o __DATE__/__TIME__
       #
-      # So for:
-      # - 4.2+ does not require any sloppiness
-      # - 4.0+ will ignore SOURCE_DATE_EPOCH environment variable.
-      if (CCACHE_VERSION VERSION_GREATER_EQUAL "4.2")
-         message(STATUS "ccache is 4.2+ no quirks for SOURCE_DATE_EPOCH required")
-      elseif (CCACHE_VERSION VERSION_GREATER_EQUAL "4.0")
+      # Exclude SOURCE_DATE_EPOCH env for ccache versions between [4.0, 4.2).
+      if (CCACHE_VERSION VERSION_GREATER_EQUAL "4.0" AND CCACHE_VERSION VERSION_LESS "4.2")
          message(STATUS "Ignore SOURCE_DATE_EPOCH for ccache")
-         set_property (GLOBAL PROPERTY RULE_LAUNCH_COMPILE "env -u SOURCE_DATE_EPOCH ${CCACHE_FOUND}")
-         set_property (GLOBAL PROPERTY RULE_LAUNCH_LINK "env -u SOURCE_DATE_EPOCH ${CCACHE_FOUND}")
+         set(LAUNCHER env -u SOURCE_DATE_EPOCH ${CCACHE_FOUND})
       endif()
+
+      set (CMAKE_CXX_COMPILER_LAUNCHER ${LAUNCHER} ${CMAKE_CXX_COMPILER_LAUNCHER})
+      set (CMAKE_C_COMPILER_LAUNCHER ${LAUNCHER} ${CMAKE_C_COMPILER_LAUNCHER})
    else ()
       message(${RECONFIGURE_MESSAGE_LEVEL} "Not using ${CCACHE_FOUND} ${CCACHE_VERSION} bug: https://bugzilla.samba.org/show_bug.cgi?id=8118")
    endif ()

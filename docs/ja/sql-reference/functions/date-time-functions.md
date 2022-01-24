@@ -447,4 +447,4 @@ Function formats a Time according given Format string. N.B.: Format is a constan
 | %Y     | 年                                              | 2018       |
 | %%     | %記号                                           | %          |
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/date_time_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/date_time_functions/) <!--hide-->

@@ -4,8 +4,13 @@
 1	mv1	before moving tablesmv1
 1	mv2	before moving tablesmv2
 1	src	before moving tables
+asdf
+asdf
+test_01155_ordinary	dict1	00000000-0000-0000-0000-000000000000
+asdf
 ordinary:
 .inner.mv1
+dict
 dist
 dst
 mv1
@@ -14,6 +19,7 @@ src
 ordinary after rename:
 atomic after rename:
 .inner_id.
+dict
 dist
 dst
 mv1
@@ -33,12 +39,14 @@ src
 3	src	after moving tables
 3	src	after renaming database
 3	src	before moving tables
-.inner_id.
-dist
-dst
-mv1
-mv2
-src
+asdf
+test_01155_ordinary	.inner_id.
+test_01155_ordinary	dict
+test_01155_ordinary	dist
+test_01155_ordinary	dst
+test_01155_ordinary	mv1
+test_01155_ordinary	mv2
+test_01155_ordinary	src
 CREATE DATABASE test_01155_atomic\nENGINE = Atomic
 4	.inner.mv1	after renaming databasemv1
 4	.inner.mv1	after renaming tablesmv1
@@ -60,8 +68,11 @@ CREATE DATABASE test_01155_atomic\nENGINE = Atomic
 4	src	after renaming database
 4	src	after renaming tables
 4	src	before moving tables
+asdf
+test_01155_ordinary	dict	00000000-0000-0000-0000-000000000000
 test_01155_ordinary:
 .inner.mv1
+dict
 dist
 dst
 mv1

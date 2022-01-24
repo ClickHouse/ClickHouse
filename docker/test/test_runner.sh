@@ -49,7 +49,7 @@ fi
 
 # Build server image (optional) from local packages
 if [ -z "${CLICKHOUSE_SERVER_IMAGE}" ]; then
-    CLICKHOUSE_SERVER_IMAGE="yandex/clickhouse-server:local"
+    CLICKHOUSE_SERVER_IMAGE="clickhouse/server:local"
 
     if [ "${CLICKHOUSE_PACKAGES_ARG}" != "${NO_REBUILD_FLAG}" ]; then
         docker build --network=host \

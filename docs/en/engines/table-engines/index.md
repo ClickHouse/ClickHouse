@@ -86,4 +86,4 @@ To select data from a virtual column, you must specify its name in the `SELECT` 
 
 If you create a table with a column that has the same name as one of the table virtual columns, the virtual column becomes inaccessible. We do not recommend doing this. To help avoid conflicts, virtual column names are usually prefixed with an underscore.
 
-[Original article](https://clickhouse.tech/docs/en/engines/table-engines/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/engines/table-engines/) <!--hide-->

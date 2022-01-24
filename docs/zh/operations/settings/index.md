@@ -26,4 +26,4 @@ toc_folder_title: "\u8BBE\u7F6E"
 
 本节不介绍只能在服务器配置文件中进行的设置。
 
-[原始文章](https://clickhouse.tech/docs/en/operations/settings/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/operations/settings/) <!--hide-->

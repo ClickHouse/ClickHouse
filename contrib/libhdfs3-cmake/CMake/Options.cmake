@@ -1,4 +1,4 @@
-OPTION(ENABLE_SSE "enable SSE4.2 buildin function" ON)
+OPTION(ENABLE_SSE "enable SSE4.2 builtin function" ON)
 
 INCLUDE (CheckFunctionExists)
 CHECK_FUNCTION_EXISTS(dladdr HAVE_DLADDR)
@@ -21,30 +21,21 @@ ADD_DEFINITIONS(-D_GNU_SOURCE)
 ADD_DEFINITIONS(-D_GLIBCXX_USE_NANOSLEEP)
 
 TRY_COMPILE(STRERROR_R_RETURN_INT
-	${CMAKE_CURRENT_BINARY_DIR}
-	"${HDFS3_ROOT_DIR}/CMake/CMakeTestCompileStrerror.cpp"
+    ${CMAKE_CURRENT_BINARY_DIR}
+    "${CMAKE_CURRENT_SOURCE_DIR}/CMake/CMakeTestCompileStrerror.c"
     CMAKE_FLAGS "-DCMAKE_CXX_LINK_EXECUTABLE='echo not linking now...'"
-	OUTPUT_VARIABLE OUTPUT)
+    OUTPUT_VARIABLE OUTPUT)
 
 MESSAGE(STATUS "Checking whether strerror_r returns an int")
 
 IF(STRERROR_R_RETURN_INT)
-	MESSAGE(STATUS "Checking whether strerror_r returns an int -- yes")
+    MESSAGE(STATUS "Checking whether strerror_r returns an int -- yes")
 ELSE(STRERROR_R_RETURN_INT)
-	MESSAGE(STATUS "Checking whether strerror_r returns an int -- no")
+    MESSAGE(STATUS "Checking whether strerror_r returns an int -- no")
 ENDIF(STRERROR_R_RETURN_INT)
 
-TRY_COMPILE(HAVE_STEADY_CLOCK
-	${CMAKE_CURRENT_BINARY_DIR}
-	"${HDFS3_ROOT_DIR}/CMake/CMakeTestCompileSteadyClock.cpp"
-    CMAKE_FLAGS "-DCMAKE_CXX_LINK_EXECUTABLE='echo not linking now...'"
-	OUTPUT_VARIABLE OUTPUT)
-
-TRY_COMPILE(HAVE_NESTED_EXCEPTION
-	${CMAKE_CURRENT_BINARY_DIR}
-	"${HDFS3_ROOT_DIR}/CMake/CMakeTestCompileNestedException.cpp"
-    CMAKE_FLAGS "-DCMAKE_CXX_LINK_EXECUTABLE='echo not linking now...'"
-	OUTPUT_VARIABLE OUTPUT)
+set(HAVE_STEADY_CLOCK 1)
+set(HAVE_NESTED_EXCEPTION 1)
 
 SET(HAVE_BOOST_CHRONO 0)
 SET(HAVE_BOOST_ATOMIC 0)

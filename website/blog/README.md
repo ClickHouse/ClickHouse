@@ -28,14 +28,14 @@ The recommended place to store images is this GitHub repo: <https://github.com/C
  ```markdown
 ---
 title: 'ClickHouse Meetup in Beijing on June 8, 2019'
-image: 'https://blog-images.clickhouse.tech/en/2019/clickhouse-meetup-in-beijing-on-june-8-2019/main.jpg'
+image: 'https://blog-images.clickhouse.com/en/2019/clickhouse-meetup-in-beijing-on-june-8-2019/main.jpg'
 date: '2019-06-13'
 tags: ['meetup','Beijing','China','events']
 ---
 
 24th ClickHouse Meetup globally and 3rd one in China took place in Beijing on Dragon Boat Festival weekend, which appeared to...
 
-![ClickHouse branded Beijing duck](https://blog-images.clickhouse.tech/en/2019/clickhouse-meetup-in-beijing-on-june-8-2019/9.jpg)
+![ClickHouse branded Beijing duck](https://blog-images.clickhouse.com/en/2019/clickhouse-meetup-in-beijing-on-june-8-2019/9.jpg)
 ```
 
 ## How To Preview My Post?

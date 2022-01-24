@@ -18,11 +18,17 @@ toc_title: "Операторы"
 
 `-a` - функция `negate(a)`.
 
+Для чисел в кортеже также может быть использована [tupleNegate](../../sql-reference/functions/tuple-functions.md#tuplenegate).
+
 ## Операторы умножения и деления {#operatory-umnozheniia-i-deleniia}
 
 `a * b` - функция `multiply(a, b)`
 
+Для умножения кортежа на число также может быть использована [tupleMultiplyByNumber](../../sql-reference/functions/tuple-functions.md#tuplemultiplybynumber), для скалярного произведения: [dotProduct](../../sql-reference/functions/tuple-functions.md#dotproduct).
+
 `a / b` - функция `divide(a, b)`
+
+Для деления кортежа на число также может быть использована [tupleDivideByNumber](../../sql-reference/functions/tuple-functions.md#tupledividebynumber).
 
 `a % b` - функция `modulo(a, b)`
 
@@ -30,7 +36,11 @@ toc_title: "Операторы"
 
 `a + b` - функция `plus(a, b)`
 
+Для сложения кортежей также может быть использована [tuplePlus](../../sql-reference/functions/tuple-functions.md#tupleplus).
+
 `a - b` - функция `minus(a, b)`
+
+Для вычитания кортежей также может быть использована [tupleMinus](../../sql-reference/functions/tuple-functions.md#tupleminus).
 
 ## Операторы сравнения {#operatory-sravneniia}
 
@@ -62,7 +72,7 @@ toc_title: "Операторы"
 
 ## Операторы для работы с множествами {#operatory-dlia-raboty-s-mnozhestvami}
 
-*Смотрите раздел [Операторы IN](../../sql-reference/operators/in.md#select-in-operators).*
+Смотрите [операторы IN](../../sql-reference/operators/in.md#select-in-operators) и оператор [EXISTS](../../sql-reference/operators/exists.md).
 
 `a IN ...` - функция `in(a, b)`
 
@@ -71,6 +81,53 @@ toc_title: "Операторы"
 `a GLOBAL IN ...` - функция `globalIn(a, b)`
 
 `a GLOBAL NOT IN ...` - функция `globalNotIn(a, b)`
+
+`a = ANY (subquery)` – функция `in(a, subquery)`.  
+
+`a != ANY (subquery)` – равнозначно `a NOT IN (SELECT singleValueOrNull(*) FROM subquery)`.
+
+`a = ALL (subquery)` – равнозначно `a IN (SELECT singleValueOrNull(*) FROM subquery)`.
+
+`a != ALL (subquery)` – функция `notIn(a, subquery)`. 
+
+
+**Примеры**
+
+Запрос с ALL:
+
+``` sql
+SELECT number AS a FROM numbers(10) WHERE a > ALL (SELECT number FROM numbers(3, 3));
+```
+
+Результат:
+
+``` text
+┌─a─┐
+│ 6 │
+│ 7 │
+│ 8 │
+│ 9 │
+└───┘
+```
+
+Запрос с ANY:
+
+``` sql
+SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3, 3));
+```
+
+Результат:
+
+``` text
+┌─a─┐
+│ 4 │
+│ 5 │
+│ 6 │
+│ 7 │
+│ 8 │
+│ 9 │
+└───┘
+```
 
 ## Оператор для работы с датами и временем {#operators-datetime}
 

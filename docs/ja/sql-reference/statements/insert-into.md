@@ -77,4 +77,4 @@ INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
 -   データはリアルタイムで追加されます。
 -   アップロードしたデータとは、通常はソートされました。
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/insert_into/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/insert_into/) <!--hide-->

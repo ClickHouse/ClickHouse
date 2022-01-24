@@ -28,7 +28,7 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <IO/UseSSL.h>
-#include <DataStreams/RemoteBlockInputStream.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Interpreters/Context.h>
 #include <Client/Connection.h>
 #include <Common/InterruptListener.h>
@@ -342,6 +342,9 @@ private:
             }
         }
 
+        /// Now we don't block the Ctrl+C signal and second signal will terminate the program without waiting.
+        interrupt_listener.unblock();
+
         pool.wait();
         total_watch.stop();
 
@@ -424,20 +427,19 @@ private:
         if (reconnect)
             connection.disconnect();
 
-        RemoteBlockInputStream stream(
+        RemoteQueryExecutor executor(
             connection, query, {}, global_context, nullptr, Scalars(), Tables(), query_processing_stage);
         if (!query_id.empty())
-            stream.setQueryId(query_id);
+            executor.setQueryId(query_id);
 
         Progress progress;
-        stream.setProgressCallback([&progress](const Progress & value) { progress.incrementPiecewiseAtomically(value); });
+        executor.setProgressCallback([&progress](const Progress & value) { progress.incrementPiecewiseAtomically(value); });
 
-        stream.readPrefix();
-        while (Block block = stream.read());
+        ProfileInfo info;
+        while (Block block = executor.read())
+            info.update(block);
 
-        stream.readSuffix();
-
-        const BlockStreamProfileInfo & info = stream.getProfileInfo();
+        executor.finish();
 
         double seconds = watch.elapsedSeconds();
 
@@ -587,7 +589,6 @@ public:
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
-#pragma GCC diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseBenchmark(int argc, char ** argv)
 {

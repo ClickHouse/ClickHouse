@@ -148,3 +148,9 @@ select if(isNull(x), Null, 42 / x) from (select CAST(materialize(Null), 'Nullabl
 select if(isNull(x), Null, x / 0) from (select CAST(materialize(Null), 'Nullable(Decimal32(2))') as x);
 
 select if(isNull(x), Null, intDiv(42, x)) from (select CAST(materialize(Null), 'Nullable(Int64)') as x);
+
+select number % 2 and toLowCardinality(number) from numbers(5);
+select number % 2 or toLowCardinality(number) from numbers(5);
+select if(toLowCardinality(number) % 2, number, number + 1) from numbers(10);
+select multiIf(toLowCardinality(number) % 2, number, number + 1) from numbers(10);
+

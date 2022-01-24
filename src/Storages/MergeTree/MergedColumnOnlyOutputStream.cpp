@@ -18,7 +18,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     WrittenOffsetColumns * offset_columns_,
     const MergeTreeIndexGranularity & index_granularity,
     const MergeTreeIndexGranularityInfo * index_granularity_info)
-    : IMergedBlockOutputStream(data_part, metadata_snapshot_)
+    : IMergedBlockOutputStream(data_part, metadata_snapshot_, header_.getNamesAndTypesList(), /*reset_columns=*/ true)
     , header(header_)
 {
     const auto & global_settings = data_part->storage.getContext()->getSettings();
@@ -51,11 +51,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
         return;
 
     writer->write(block, nullptr);
-}
-
-void MergedColumnOnlyOutputStream::writeSuffix()
-{
-    throw Exception("Method writeSuffix is not supported by MergedColumnOnlyOutputStream", ErrorCodes::NOT_IMPLEMENTED);
+    new_serialization_infos.add(block);
 }
 
 MergeTreeData::DataPart::Checksums
@@ -75,13 +71,17 @@ MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(
             projection_part->checksums.getTotalChecksumUInt128());
 
     auto columns = new_part->getColumns();
+    auto serialization_infos = new_part->getSerializationInfos();
+    serialization_infos.replaceData(new_serialization_infos);
 
-    auto removed_files = removeEmptyColumnsFromPart(new_part, columns, checksums);
+    auto removed_files = removeEmptyColumnsFromPart(new_part, columns, serialization_infos, checksums);
     for (const String & removed_file : removed_files)
         if (all_checksums.files.count(removed_file))
             all_checksums.files.erase(removed_file);
 
     new_part->setColumns(columns);
+    new_part->setSerializationInfos(serialization_infos);
+
     return checksums;
 }
 

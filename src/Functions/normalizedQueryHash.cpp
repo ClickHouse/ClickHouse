@@ -4,7 +4,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Parsers/queryNormalization.h>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/SipHash.h>
 

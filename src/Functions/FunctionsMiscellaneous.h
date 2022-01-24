@@ -238,7 +238,7 @@ public:
 
         capture = std::make_shared<Capture>(Capture{
                 .captured_names = captured_names_,
-                .captured_types = std::move(captured_types),
+                .captured_types = std::move(captured_types), //-V1030
                 .lambda_arguments = lambda_arguments_,
                 .return_name = expression_return_name_,
                 .return_type = function_return_type_,

@@ -11,6 +11,7 @@
 #include <Interpreters/loadMetadata.h>
 
 #include <Databases/DatabaseOrdinary.h>
+#include <Databases/TablesLoader.h>
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -19,6 +20,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <filesystem>
+#include <base/logger_useful.h>
 
 namespace fs = std::filesystem;
 
@@ -37,16 +39,22 @@ static void executeCreateQuery(
         parser, query.data(), query.data() + query.size(), "in file " + file_name, 0, context->getSettingsRef().max_parser_depth);
 
     auto & ast_create_query = ast->as<ASTCreateQuery &>();
-    ast_create_query.database = database;
+    ast_create_query.setDatabase(database);
 
     InterpreterCreateQuery interpreter(ast, context);
     interpreter.setInternal(true);
     interpreter.setForceAttach(true);
     interpreter.setForceRestoreData(has_force_restore_data_flag);
-    interpreter.setSkipStartupTables(true);
+    interpreter.setLoadDatabaseWithoutTables(true);
     interpreter.execute();
 }
 
+static bool isSystemOrInformationSchema(const String & database_name)
+{
+    return database_name == DatabaseCatalog::SYSTEM_DATABASE ||
+           database_name == DatabaseCatalog::INFORMATION_SCHEMA ||
+           database_name == DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE;
+}
 
 static void loadDatabase(
     ContextMutablePtr context,
@@ -65,6 +73,7 @@ static void loadDatabase(
     }
     else if (fs::exists(fs::path(database_path)))
     {
+        /// TODO Remove this code (it's required for compatibility with versions older than 20.7)
         /// Database exists, but .sql file is absent. It's old-style Ordinary database (e.g. system or default)
         database_attach_query = "ATTACH DATABASE " + backQuoteIfNeed(database) + " ENGINE = Ordinary";
     }
@@ -116,7 +125,7 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
             if (fs::path(current_file).extension() == ".sql")
             {
                 String db_name = fs::path(current_file).stem();
-                if (db_name != DatabaseCatalog::SYSTEM_DATABASE)
+                if (!isSystemOrInformationSchema(db_name))
                     databases.emplace(unescapeForFileName(db_name), fs::path(path) / db_name);
             }
 
@@ -142,7 +151,7 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
         if (current_file.at(0) == '.')
             continue;
 
-        if (current_file == DatabaseCatalog::SYSTEM_DATABASE)
+        if (isSystemOrInformationSchema(current_file))
             continue;
 
         databases.emplace(unescapeForFileName(current_file), it->path().string());
@@ -153,10 +162,18 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
     bool create_default_db_if_not_exists = !default_database_name.empty();
     bool metadata_dir_for_default_db_already_exists = databases.count(default_database_name);
     if (create_default_db_if_not_exists && !metadata_dir_for_default_db_already_exists)
-        databases.emplace(default_database_name, path + "/" + escapeForFileName(default_database_name));
+        databases.emplace(default_database_name, std::filesystem::path(path) / escapeForFileName(default_database_name));
 
+    TablesLoader::Databases loaded_databases;
     for (const auto & [name, db_path] : databases)
+    {
         loadDatabase(context, name, db_path, has_force_restore_data_flag);
+        loaded_databases.insert({name, DatabaseCatalog::instance().getDatabase(name)});
+    }
+
+    TablesLoader loader{context, std::move(loaded_databases), has_force_restore_data_flag, /* force_attach */ true};
+    loader.loadTables();
+    loader.startupTables();
 
     if (has_force_restore_data_flag)
     {
@@ -171,25 +188,48 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
     }
 }
 
-
-void loadMetadataSystem(ContextMutablePtr context)
+static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & database_name, const String & default_engine)
 {
-    String path = context->getPath() + "metadata/" + DatabaseCatalog::SYSTEM_DATABASE;
+    String path = context->getPath() + "metadata/" + database_name;
     String metadata_file = path + ".sql";
     if (fs::exists(fs::path(path)) || fs::exists(fs::path(metadata_file)))
     {
         /// 'has_force_restore_data_flag' is true, to not fail on loading query_log table, if it is corrupted.
-        loadDatabase(context, DatabaseCatalog::SYSTEM_DATABASE, path, true);
+        loadDatabase(context, database_name, path, true);
     }
     else
     {
         /// Initialize system database manually
         String database_create_query = "CREATE DATABASE ";
-        database_create_query += DatabaseCatalog::SYSTEM_DATABASE;
-        database_create_query += " ENGINE=Atomic";
-        executeCreateQuery(database_create_query, context, DatabaseCatalog::SYSTEM_DATABASE, "<no file>", true);
+        database_create_query += database_name;
+        database_create_query += " ENGINE=";
+        database_create_query += default_engine;
+        executeCreateQuery(database_create_query, context, database_name, "<no file>", true);
     }
+}
 
+
+void startupSystemTables()
+{
+    ThreadPool pool;
+    DatabaseCatalog::instance().getSystemDatabase()->startupTables(pool, /* force_restore */ true, /* force_attach */ true);
+}
+
+void loadMetadataSystem(ContextMutablePtr context)
+{
+    loadSystemDatabaseImpl(context, DatabaseCatalog::SYSTEM_DATABASE, "Atomic");
+    loadSystemDatabaseImpl(context, DatabaseCatalog::INFORMATION_SCHEMA, "Memory");
+    loadSystemDatabaseImpl(context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE, "Memory");
+
+    TablesLoader::Databases databases =
+    {
+        {DatabaseCatalog::SYSTEM_DATABASE, DatabaseCatalog::instance().getSystemDatabase()},
+        {DatabaseCatalog::INFORMATION_SCHEMA, DatabaseCatalog::instance().getDatabase(DatabaseCatalog::INFORMATION_SCHEMA)},
+        {DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE, DatabaseCatalog::instance().getDatabase(DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE)},
+    };
+    TablesLoader loader{context, databases, /* force_restore */ true, /* force_attach */ true};
+    loader.loadTables();
+    /// Will startup tables in system database after all databases are loaded.
 }
 
 }

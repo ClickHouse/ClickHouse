@@ -37,4 +37,4 @@ FROM jdbc('mysql-dev?datasource_column', 'show databases') a
 INNER JOIN jdbc('self?datasource_column', 'show databases') b ON a.Database = b.name
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/table_functions/jdbc/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/table_functions/jdbc/) <!--hide-->

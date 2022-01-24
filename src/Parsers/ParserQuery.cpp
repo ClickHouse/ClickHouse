@@ -2,25 +2,26 @@
 #include <Parsers/ParserCreateFunctionQuery.h>
 #include <Parsers/ParserBackupQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/ParserCreateQuotaQuery.h>
-#include <Parsers/ParserCreateRoleQuery.h>
-#include <Parsers/ParserCreateRowPolicyQuery.h>
-#include <Parsers/ParserCreateSettingsProfileQuery.h>
-#include <Parsers/ParserCreateUserQuery.h>
-#include <Parsers/ParserDropAccessEntityQuery.h>
 #include <Parsers/ParserDropFunctionQuery.h>
 #include <Parsers/ParserDropQuery.h>
-#include <Parsers/ParserGrantQuery.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/ParserRenameQuery.h>
 #include <Parsers/ParserSetQuery.h>
-#include <Parsers/ParserSetRoleQuery.h>
 #include <Parsers/ParserSystemQuery.h>
 #include <Parsers/ParserUseQuery.h>
 #include <Parsers/ParserExternalDDLQuery.h>
+
+#include <Parsers/Access/ParserCreateQuotaQuery.h>
+#include <Parsers/Access/ParserCreateRoleQuery.h>
+#include <Parsers/Access/ParserCreateRowPolicyQuery.h>
+#include <Parsers/Access/ParserCreateSettingsProfileQuery.h>
+#include <Parsers/Access/ParserCreateUserQuery.h>
+#include <Parsers/Access/ParserDropAccessEntityQuery.h>
+#include <Parsers/Access/ParserGrantQuery.h>
+#include <Parsers/Access/ParserSetRoleQuery.h>
 
 
 namespace DB

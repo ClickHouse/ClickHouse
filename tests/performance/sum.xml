@@ -16,4 +16,15 @@
     <query>SELECT sum(toNullable(toFloat64(number))) FROM numbers(100000000)</query>
     <query>SELECT sumKahan(toNullable(toFloat32(number))) FROM numbers(100000000)</query>
     <query>SELECT sumKahan(toNullable(toFloat64(number))) FROM numbers(100000000)</query>
+
+    <!-- Create a table with ~20% null values. Make it random so the branch predictor doesn't do all the work -->
+    <create_query>CREATE TABLE nullfloat32 (x Nullable(Float32)) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO nullfloat32
+                SELECT IF(rand() % 5 == 0, NULL::Nullable(Float32), toFloat32(number)) as x
+                FROM numbers_mt(200000000)
+                SETTINGS max_threads = 8
+    </fill_query>
+    <query short="1">SELECT sum(x) FROM nullfloat32</query>
+    <query short="1">SELECT sum(x::Nullable(Float64)) FROM nullfloat32</query>
+    <drop_query>DROP TABLE IF EXISTS nullfloat32</drop_query>
 </test>

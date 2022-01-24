@@ -1,5 +1,5 @@
 #include <Processors/QueryPlan/ExtremesStep.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
@@ -25,7 +25,7 @@ ExtremesStep::ExtremesStep(const DataStream & input_stream_)
 {
 }
 
-void ExtremesStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void ExtremesStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.addExtremesTransform();
 }

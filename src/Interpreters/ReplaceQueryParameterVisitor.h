@@ -13,7 +13,7 @@ class ASTQueryParameter;
 class ReplaceQueryParameterVisitor
 {
 public:
-    ReplaceQueryParameterVisitor(const NameToNameMap & parameters)
+    explicit ReplaceQueryParameterVisitor(const NameToNameMap & parameters)
         : query_parameters(parameters)
     {}
 

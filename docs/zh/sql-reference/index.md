@@ -15,4 +15,4 @@ ClickHouse支持以下形式的查询:
 -   [ALTER](statements/alter.md#query_language_queries_alter)
 -   [其他类型的查询](statements/misc.md)
 
-[原始文档](https://clickhouse.tech/docs/zh/sql-reference/) <!--hide-->
+[原始文档](https://clickhouse.com/docs/zh/sql-reference/) <!--hide-->

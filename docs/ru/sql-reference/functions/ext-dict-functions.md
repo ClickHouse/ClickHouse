@@ -53,7 +53,7 @@ dictGetOrNull('dict_name', attr_name, id_expr)
 Настройка внешнего словаря:
 
 ``` xml
-<yandex>
+<clickhouse>
     <dictionary>
         <name>ext-dict-test</name>
         <source>
@@ -77,7 +77,7 @@ dictGetOrNull('dict_name', attr_name, id_expr)
         </structure>
         <lifetime>0</lifetime>
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 Выполним запрос:
@@ -113,7 +113,7 @@ LIMIT 3;
 Настройка внешнего словаря:
 
 ``` xml
-<yandex>
+<clickhouse>
     <dictionary>
         <name>ext-dict-mult</name>
         <source>
@@ -142,7 +142,7 @@ LIMIT 3;
         </structure>
         <lifetime>0</lifetime>
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 Выполним запрос:

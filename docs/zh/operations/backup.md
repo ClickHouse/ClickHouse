@@ -38,4 +38,4 @@ ClickHouse允许使用 `ALTER TABLE ... FREEZE PARTITION ...` 查询以创建表
 
 第三方工具可用于自动化此方法: [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup).
 
-[原始文章](https://clickhouse.tech/docs/en/operations/backup/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/operations/backup/) <!--hide-->

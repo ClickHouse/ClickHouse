@@ -9,7 +9,7 @@
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Interpreters/Context.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Poco/Event.h>
 
 
@@ -82,6 +82,7 @@ public:
         String format_name;
         size_t max_threads;
         size_t min_chunk_bytes;
+        bool is_server;
     };
 
     explicit ParallelParsingInputFormat(Params params)
@@ -90,6 +91,7 @@ public:
         , file_segmentation_engine(params.file_segmentation_engine)
         , format_name(params.format_name)
         , min_chunk_bytes(params.min_chunk_bytes)
+        , is_server(params.is_server)
         , pool(params.max_threads)
     {
         // One unit for each thread, including segmentator and reader, plus a
@@ -117,7 +119,7 @@ public:
 
     String getName() const override final { return "ParallelParsingBlockInputFormat"; }
 
-protected:
+private:
 
     Chunk generate() override final;
 
@@ -136,8 +138,6 @@ protected:
 
         finishAndWait();
     }
-
-private:
 
     class InternalParser
     {
@@ -204,6 +204,8 @@ private:
 
     std::atomic<bool> parsing_started{false};
     std::atomic<bool> parsing_finished{false};
+
+    const bool is_server;
 
     /// There are multiple "parsers", that's why we use thread pool.
     ThreadPool pool;

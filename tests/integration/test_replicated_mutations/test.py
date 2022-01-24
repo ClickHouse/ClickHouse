@@ -247,5 +247,5 @@ def test_mutations_dont_prevent_merges(started_cluster, nodes):
         logging.debug(node.query(
             "SELECT partition, count(name), sum(active), sum(active*rows) FROM system.parts WHERE table ='test_mutations' GROUP BY partition FORMAT TSVWithNames"))
 
-    assert all_done
+    assert all_done, "All done"
     assert all([str(e).find("Too many parts") < 0 for e in runner.exceptions])

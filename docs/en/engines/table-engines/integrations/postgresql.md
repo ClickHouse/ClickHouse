@@ -36,6 +36,31 @@ The table structure can differ from the original PostgreSQL table structure:
 -   `schema` — Non-default table schema. Optional.
 -   `on conflict ...` — example: `ON CONFLICT DO NOTHING`. Optional. Note: adding this option will make insertion less efficient.
 
+or via config (since version 21.11):
+
+```
+<named_collections>
+    <postgres1>
+        <host></host>
+        <port></port>
+        <username></username>
+        <password></password>
+        <table></table>
+    </postgres1>
+    <postgres2>
+        <host></host>
+        <port></port>
+        <username></username>
+        <password></password>
+    </postgres2>
+</named_collections>
+```
+
+Some parameters can be overriden by key value arguments:
+``` sql
+SELECT * FROM postgresql(postgres1, schema='schema1', table='table1');
+```
+
 ## Implementation Details {#implementation-details}
 
 `SELECT` queries on PostgreSQL side run as `COPY (SELECT ...) TO STDOUT` inside read-only PostgreSQL transaction with commit after each `SELECT` query.
@@ -149,4 +174,4 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 -   [The `postgresql` table function](../../../sql-reference/table-functions/postgresql.md)
 -   [Using PostgreSQL as a source of external dictionary](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
 
-[Original article](https://clickhouse.tech/docs/en/engines/table-engines/integrations/postgresql/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/postgresql/) <!--hide-->

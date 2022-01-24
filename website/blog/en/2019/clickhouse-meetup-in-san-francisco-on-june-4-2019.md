@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse Meetup in San Francisco on June 4, 2019'
-image: 'https://blog-images.clickhouse.tech/en/2019/clickhouse-meetup-in-san-francisco-on-june-4-2019/main.jpg'
+image: 'https://blog-images.clickhouse.com/en/2019/clickhouse-meetup-in-san-francisco-on-june-4-2019/main.jpg'
 date: '2019-06-12'
 tags: ['meetup','USA','San Francisco','events', 'California', 'Bay Area']
 ---

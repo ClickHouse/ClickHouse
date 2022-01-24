@@ -1,8 +1,7 @@
 #pragma once
 
 #include <Processors/ISource.h>
-
-#include <memory>
+#include <IO/ReadBuffer.h>
 
 
 namespace DB
@@ -17,21 +16,14 @@ struct ColumnMapping
     using OptionalIndexes = std::vector<std::optional<size_t>>;
     OptionalIndexes column_indexes_for_input_fields;
 
-    /// Tracks which columns we have read in a single read() call.
-    /// For columns that are never read, it is initialized to false when we
-    /// read the file header, and never changed afterwards.
-    /// For other columns, it is updated on each read() call.
-    std::vector<UInt8> read_columns;
+    /// The list of column indexes that are not presented in input data.
+    std::vector<UInt8> not_presented_columns;
 
-
-    /// Whether we have any columns that are not read from file at all,
-    /// and must be always initialized with defaults.
-    bool have_always_default_columns{false};
+    /// The list of column names in input data. Needed for better exception messages.
+    std::vector<String> names_of_columns;
 };
 
 using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
-
-class ReadBuffer;
 
 /** Input format is a source, that reads data from ReadBuffer.
   */
@@ -43,7 +35,7 @@ protected:
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wattributes"
 
-    ReadBuffer & in [[maybe_unused]];
+    ReadBuffer * in [[maybe_unused]];
 
 #pragma GCC diagnostic pop
 
@@ -57,6 +49,8 @@ public:
      * That should be called after current buffer was fully read.
      */
     virtual void resetParser();
+
+    virtual void setReadBuffer(ReadBuffer & in_);
 
     virtual const BlockMissingValues & getMissingValues() const
     {
@@ -83,5 +77,7 @@ private:
 
     std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
 };
+
+using InputFormatPtr = std::shared_ptr<IInputFormat>;
 
 }

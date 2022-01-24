@@ -32,7 +32,7 @@ def test_xml_main_conf():
     all_userd = ['configs/users.d/allow_introspection_functions.yaml',
                 'configs/users.d/log_queries.yaml']
 
-    node = cluster.add_instance('node', base_config_dir='configs', main_configs=all_confd, user_configs=all_userd, with_zookeeper=False)
+    node = cluster.add_instance('node', base_config_dir='configs', main_configs=all_confd, user_configs=all_userd, with_zookeeper=False, config_root_name='clickhouse')
 
     try:
         cluster.start()

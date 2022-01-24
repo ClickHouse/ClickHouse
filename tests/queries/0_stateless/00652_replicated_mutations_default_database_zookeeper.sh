@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: replica, no-replicated-database
+# Tag no-replicated-database: Fails due to additional replicas or shards
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -7,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=./mergetree_mutations.lib
 . "$CURDIR"/mergetree_mutations.lib
 
-${CLICKHOUSE_CLIENT} --multiquery << EOF
+${CLICKHOUSE_CLIENT} --allow_nondeterministic_mutations=1 --multiquery << EOF
 DROP TABLE IF EXISTS mutations_r1;
 DROP TABLE IF EXISTS for_subquery;
 

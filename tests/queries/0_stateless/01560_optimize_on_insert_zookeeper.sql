@@ -1,3 +1,5 @@
+-- Tags: zookeeper, no-parallel
+
 DROP TABLE IF EXISTS empty1;
 DROP TABLE IF EXISTS empty2;
 

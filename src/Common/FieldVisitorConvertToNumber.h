@@ -2,7 +2,7 @@
 
 #include <Common/FieldVisitors.h>
 #include <Common/NaNUtils.h>
-#include <common/demangle.h>
+#include <base/demangle.h>
 #include <type_traits>
 
 
@@ -64,7 +64,7 @@ public:
                 /// Conversion of infinite values to integer is undefined.
                 throw Exception("Cannot convert infinite value to integer type", ErrorCodes::CANNOT_CONVERT_TYPE);
             }
-            else if (x > std::numeric_limits<T>::max() || x < std::numeric_limits<T>::lowest())
+            else if (x > Float64(std::numeric_limits<T>::max()) || x < Float64(std::numeric_limits<T>::lowest()))
             {
                 throw Exception("Cannot convert out of range floating point value to integer type", ErrorCodes::CANNOT_CONVERT_TYPE);
             }
@@ -116,13 +116,15 @@ public:
     template <typename U, typename = std::enable_if_t<is_big_int_v<U>> >
     T operator() (const U & x) const
     {
-        if constexpr (IsDecimalNumber<T>)
+        if constexpr (is_decimal<T>)
             return static_cast<T>(static_cast<typename T::NativeType>(x));
         else if constexpr (std::is_same_v<T, UInt128>)
             throw Exception("No conversion to old UInt128 from " + demangle(typeid(U).name()), ErrorCodes::NOT_IMPLEMENTED);
         else
             return static_cast<T>(x);
     }
+
+    T operator() (const bool & x) const { return T(x); }
 };
 
 }

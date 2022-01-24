@@ -31,7 +31,7 @@ bool ZstdInflatingReadBuffer::nextImpl()
     do
     {
         // If it is known that end of file was reached, return false
-        if (eof)
+        if (eof_flag)
             return false;
 
         /// If end was reached, get next part
@@ -52,10 +52,10 @@ bool ZstdInflatingReadBuffer::nextImpl()
         size_t ret = ZSTD_decompressStream(dctx, &output, &input);
         if (ZSTD_isError(ret))
             throw Exception(
-                ErrorCodes::ZSTD_DECODER_FAILED, "Zstd stream decoding failed: error code: {}; zstd version: {}", ret, ZSTD_VERSION_STRING);
+                ErrorCodes::ZSTD_DECODER_FAILED, "Zstd stream encoding failed: error '{}'; zstd version: {}", ZSTD_getErrorName(ret), ZSTD_VERSION_STRING);
 
         /// Check that something has changed after decompress (input or output position)
-        assert(output.pos > 0 || in->position() < in->buffer().begin() + input.pos);
+        assert(in->eof() || output.pos > 0 || in->position() < in->buffer().begin() + input.pos);
 
         /// move position to the end of read data
         in->position() = in->buffer().begin() + input.pos;
@@ -64,7 +64,7 @@ bool ZstdInflatingReadBuffer::nextImpl()
         /// If end of file is reached, fill eof variable and return true if there is some data in buffer, otherwise return false
         if (in->eof())
         {
-            eof = true;
+            eof_flag = true;
             return !working_buffer.empty();
         }
         /// It is possible, that input buffer is not at eof yet, but nothing was decompressed in current iteration.

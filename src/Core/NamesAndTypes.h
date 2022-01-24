@@ -28,7 +28,7 @@ public:
     String getSubcolumnName() const;
 
     bool isSubcolumn() const { return subcolumn_delimiter_position != std::nullopt; }
-    DataTypePtr getTypeInStorage() const { return type_in_storage; }
+    const DataTypePtr & getTypeInStorage() const { return type_in_storage; }
 
     bool operator<(const NameAndTypePair & rhs) const
     {
@@ -39,6 +39,8 @@ public:
     {
         return name == rhs.name && type->equals(*rhs.type);
     }
+
+    String dump() const;
 
     String name;
     DataTypePtr type;

@@ -2,7 +2,7 @@
 
 #include <Disks/IDisk.h>
 #include <Interpreters/Context_fwd.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <boost/noncopyable.hpp>
 #include <Poco/Util/AbstractConfiguration.h>

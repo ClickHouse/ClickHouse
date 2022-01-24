@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
 #include <Interpreters/ActionsDAG.h>
@@ -134,7 +134,7 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
                     " input expected", ErrorCodes::LOGICAL_ERROR);
 }
 
-QueryPipelinePtr QueryPlan::buildQueryPipeline(
+QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     const QueryPlanOptimizationSettings & optimization_settings,
     const BuildQueryPipelineSettings & build_pipeline_settings)
 {
@@ -144,10 +144,10 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline(
     struct Frame
     {
         Node * node = {};
-        QueryPipelines pipelines = {};
+        QueryPipelineBuilders pipelines = {};
     };
 
-    QueryPipelinePtr last_pipeline;
+    QueryPipelineBuilderPtr last_pipeline;
 
     std::stack<Frame> stack;
     stack.push(Frame{.node = root});
@@ -180,6 +180,9 @@ QueryPipelinePtr QueryPlan::buildQueryPipeline(
     for (auto & context : interpreter_context)
         last_pipeline->addInterpreterContext(std::move(context));
 
+    last_pipeline->setProgressCallback(build_pipeline_settings.progress_callback);
+    last_pipeline->setProcessListElement(build_pipeline_settings.process_list_element);
+
     return last_pipeline;
 }
 
@@ -193,10 +196,10 @@ Pipe QueryPlan::convertToPipe(
     if (isCompleted())
         throw Exception("Cannot convert completed QueryPlan to Pipe", ErrorCodes::LOGICAL_ERROR);
 
-    return QueryPipeline::getPipe(std::move(*buildQueryPipeline(optimization_settings, build_pipeline_settings)));
+    return QueryPipelineBuilder::getPipe(std::move(*buildQueryPipeline(optimization_settings, build_pipeline_settings)));
 }
 
-void QueryPlan::addInterpreterContext(std::shared_ptr<Context> context)
+void QueryPlan::addInterpreterContext(ContextPtr context)
 {
     interpreter_context.emplace_back(std::move(context));
 }

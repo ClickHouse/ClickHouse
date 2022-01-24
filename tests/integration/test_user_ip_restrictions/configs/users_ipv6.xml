@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <profiles>
         <default>
             <max_memory_usage>10000000000</max_memory_usage>
@@ -23,4 +23,4 @@
         <default>
         </default>
     </quotas>
-</yandex>
+</clickhouse>

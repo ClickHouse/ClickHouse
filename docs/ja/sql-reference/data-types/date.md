@@ -9,4 +9,4 @@ toc_title: "\u65E5\u4ED8"
 
 日付値は、タイムゾーンなしで格納されます。
 
-[元の記事](https://clickhouse.tech/docs/en/data_types/date/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/data_types/date/) <!--hide-->

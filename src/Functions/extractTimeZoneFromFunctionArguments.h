@@ -12,6 +12,8 @@ namespace DB
 
 class Block;
 
+std::string extractTimeZoneNameFromColumn(const IColumn & column);
+
 /// Determine working timezone either from optional argument with time zone name or from time zone in DateTime type of argument.
 /// Returns empty string if default time zone should be used.
 std::string extractTimeZoneNameFromFunctionArguments(

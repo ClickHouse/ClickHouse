@@ -5,6 +5,7 @@
 #if USE_AWS_S3
 
 #include <TableFunctions/ITableFunction.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 
 
 namespace DB
@@ -12,7 +13,7 @@ namespace DB
 
 class Context;
 
-/* s3(source, [access_key_id, secret_access_key,] format, structure) - creates a temporary storage for a file in S3
+/* s3(source, [access_key_id, secret_access_key,] format, structure[, compression]) - creates a temporary storage for a file in S3
  */
 class TableFunctionS3 : public ITableFunction
 {
@@ -22,7 +23,7 @@ public:
     {
         return name;
     }
-    bool hasStaticStructure() const override { return true; }
+    bool hasStaticStructure() const override { return s3_configuration->structure != "auto"; }
 
 protected:
     StoragePtr executeImpl(
@@ -36,12 +37,7 @@ protected:
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
-    String filename;
-    String format;
-    String structure;
-    String access_key_id;
-    String secret_access_key;
-    String compression_method = "auto";
+    std::optional<StorageS3Configuration> s3_configuration;
 };
 
 class TableFunctionCOS : public TableFunctionS3

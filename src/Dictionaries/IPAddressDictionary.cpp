@@ -10,9 +10,9 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <Poco/ByteOrder.h>
 #include <Common/formatIPv6.h>
-#include <common/itoa.h>
-#include <common/map.h>
-#include <common/range.h>
+#include <base/itoa.h>
+#include <base/map.h>
+#include <base/range.h>
 #include <Dictionaries/DictionarySource.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -209,6 +209,11 @@ IPAddressDictionary::IPAddressDictionary(
     calculateBytesAllocated();
 }
 
+void IPAddressDictionary::convertKeyColumns(Columns &, DataTypes &) const
+{
+    /// Do not perform any implicit keys conversion for IPAddressDictionary
+}
+
 ColumnPtr IPAddressDictionary::getColumn(
     const std::string & attribute_name,
     const DataTypePtr & result_type,
@@ -331,7 +336,7 @@ void IPAddressDictionary::createAttributes()
             if (attribute.is_nullable)
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                     "{}: array or nullable attributes not supported for dictionary of type {}",
-                    full_name,
+                    getFullName(),
                     getTypeName());
 
             attribute_index_by_name.emplace(attribute.name, attributes.size());
@@ -340,7 +345,7 @@ void IPAddressDictionary::createAttributes()
             if (attribute.hierarchical)
                 throw Exception(ErrorCodes::TYPE_MISMATCH,
                     "{}: hierarchical attributes not supported for dictionary of type {}",
-                    full_name,
+                    getFullName(),
                     getTypeName());
         }
     };
@@ -352,8 +357,7 @@ void IPAddressDictionary::createAttributes()
 
 void IPAddressDictionary::loadData()
 {
-    QueryPipeline pipeline;
-    pipeline.init(source_ptr->loadAll());
+    QueryPipeline pipeline(source_ptr->loadAll());
 
     std::vector<IPRecord> ip_records;
 
@@ -516,7 +520,7 @@ void IPAddressDictionary::loadData()
     LOG_TRACE(logger, "{} ip records are read", ip_records.size());
 
     if (require_nonempty && 0 == element_count)
-        throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY, "{}: dictionary source is empty and 'require_nonempty' property is set.", full_name);
+        throw Exception(ErrorCodes::DICTIONARY_IS_EMPTY, "{}: dictionary source is empty and 'require_nonempty' property is set.", getFullName());
 }
 
 template <typename T>
@@ -777,7 +781,7 @@ const IPAddressDictionary::Attribute & IPAddressDictionary::getAttribute(const s
 {
     const auto it = attribute_index_by_name.find(attribute_name);
     if (it == std::end(attribute_index_by_name))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: no such attribute '{}'", full_name, attribute_name);
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}: no such attribute '{}'", getFullName(), attribute_name);
 
     return attributes[it->second];
 }
@@ -808,13 +812,14 @@ Columns IPAddressDictionary::getKeyColumns() const
         key_ip_column->insertData(data, IPV6_BINARY_LENGTH);
         key_mask_column->insertValue(mask_column[row]);
     }
+
     return {std::move(key_ip_column), std::move(key_mask_column)};
 }
 
 template <typename KeyColumnType, bool IsIPv4>
 static auto keyViewGetter()
 {
-    return [](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
+    return [](const Columns & columns, const std::vector<DictionaryAttribute> & dictonary_key_attributes)
     {
         auto column = ColumnString::create();
         const auto & key_ip_column = assert_cast<const KeyColumnType &>(*columns.front());
@@ -831,41 +836,45 @@ static auto keyViewGetter()
             column->insertData(buffer, str_len);
         }
         return ColumnsWithTypeAndName{
-            ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), dict_attributes.front().name)};
+            ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), dictonary_key_attributes.front().name)};
     };
 }
 
-Pipe IPAddressDictionary::read(const Names & column_names, size_t max_block_size) const
+Pipe IPAddressDictionary::read(const Names & column_names, size_t max_block_size, size_t num_streams) const
 {
     const bool is_ipv4 = std::get_if<IPv4Container>(&ip_column) != nullptr;
 
-    auto get_keys = [is_ipv4](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
-    {
-        const auto & attr = dict_attributes.front();
-        std::shared_ptr<const IDataType> key_typ;
-        if (is_ipv4)
-            key_typ = std::make_shared<DataTypeUInt32>();
-        else
-            key_typ = std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH);
+    auto key_columns = getKeyColumns();
 
-        return ColumnsWithTypeAndName({
-            ColumnWithTypeAndName(columns.front(), key_typ, attr.name),
-            ColumnWithTypeAndName(columns.back(), std::make_shared<DataTypeUInt8>(), attr.name + ".mask")
-        });
+    std::shared_ptr<const IDataType> key_type;
+    if (is_ipv4)
+        key_type = std::make_shared<DataTypeUInt32>();
+    else
+        key_type = std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH);
+
+    ColumnsWithTypeAndName key_columns_with_type = {
+        ColumnWithTypeAndName(key_columns.front(), key_type, ""),
+        ColumnWithTypeAndName(key_columns.back(), std::make_shared<DataTypeUInt8>(), "")
     };
+
+    ColumnsWithTypeAndName view_columns;
 
     if (is_ipv4)
     {
         auto get_view = keyViewGetter<ColumnVector<UInt32>, true>();
-        return Pipe(std::make_shared<DictionarySource>(
-            DictionarySourceData(shared_from_this(), getKeyColumns(), column_names, std::move(get_keys), std::move(get_view)),
-            max_block_size));
+        view_columns = get_view(key_columns, *dict_struct.key);
+    }
+    else
+    {
+        auto get_view = keyViewGetter<ColumnFixedString, false>();
+        view_columns = get_view(key_columns, *dict_struct.key);
     }
 
-    auto get_view = keyViewGetter<ColumnFixedString, false>();
-    return Pipe(std::make_shared<DictionarySource>(
-        DictionarySourceData(shared_from_this(), getKeyColumns(), column_names, std::move(get_keys), std::move(get_view)),
-        max_block_size));
+    std::shared_ptr<const IDictionary> dictionary = shared_from_this();
+    auto coordinator = DictionarySourceCoordinator::create(dictionary, column_names, std::move(key_columns_with_type), std::move(view_columns), max_block_size);
+    auto result = coordinator->read(num_streams);
+
+    return result;
 }
 
 IPAddressDictionary::RowIdxConstIter IPAddressDictionary::ipNotFound() const

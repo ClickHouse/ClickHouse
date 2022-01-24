@@ -41,6 +41,7 @@ public:
         RESET_SETTING,
         MODIFY_QUERY,
         REMOVE_TTL,
+        REMOVE_SAMPLE_BY,
 
         ADD_INDEX,
         DROP_INDEX,
@@ -70,6 +71,10 @@ public:
         NO_TYPE,
 
         LIVE_VIEW_REFRESH,
+
+        MODIFY_DATABASE_SETTING,
+
+        MODIFY_COMMENT,
     };
 
     Type type = NO_TYPE;
@@ -199,9 +204,11 @@ public:
     /// Which property user want to remove
     String remove_property;
 
-    String getID(char delim) const override { return "AlterCommand" + (delim + std::to_string(static_cast<int>(type))); }
+    String getID(char delim) const override;
 
     ASTPtr clone() const override;
+
+    static const char * typeToString(Type type);
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
@@ -210,13 +217,27 @@ protected:
 class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
-    bool is_live_view{false}; /// true for ALTER LIVE VIEW
+    enum class AlterObjectType
+    {
+        TABLE,
+        DATABASE,
+        LIVE_VIEW,
+        UNKNOWN,
+    };
+
+    AlterObjectType alter_object = AlterObjectType::UNKNOWN;
 
     ASTExpressionList * command_list = nullptr;
 
     bool isSettingsAlter() const;
 
     bool isFreezeAlter() const;
+
+    bool isAttachAlter() const;
+
+    bool isFetchAlter() const;
+
+    bool isDropPartitionAlter() const;
 
     String getID(char) const override;
 
@@ -227,7 +248,7 @@ public:
         return removeOnCluster<ASTAlterQuery>(clone(), new_database);
     }
 
-    const char * getQueryKindString() const override { return "Alter"; }
+    virtual QueryKind getQueryKind() const override { return QueryKind::Alter; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

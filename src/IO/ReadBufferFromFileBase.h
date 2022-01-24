@@ -2,9 +2,10 @@
 
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/SeekableReadBuffer.h>
-#include <common/time.h>
+#include <base/time.h>
 
 #include <functional>
+#include <utility>
 #include <string>
 
 #include <sys/stat.h>
@@ -22,7 +23,11 @@ class ReadBufferFromFileBase : public BufferWithOwnMemory<SeekableReadBuffer>
 {
 public:
     ReadBufferFromFileBase();
-    ReadBufferFromFileBase(size_t buf_size, char * existing_memory, size_t alignment);
+    ReadBufferFromFileBase(
+        size_t buf_size,
+        char * existing_memory,
+        size_t alignment,
+        std::optional<size_t> file_size_ = std::nullopt);
     ~ReadBufferFromFileBase() override;
     virtual std::string getFileName() const = 0;
 
@@ -44,6 +49,7 @@ public:
     }
 
 protected:
+    std::optional<size_t> file_size;
     ProfileCallback profile_callback;
     clockid_t clock_type{};
 };
