@@ -12,7 +12,7 @@ DIFF_IN_DOCUMENTATION_EXT = [".html", ".md", ".yml", ".txt", ".css", ".js", ".xm
 
 def get_pr_for_commit(sha, ref):
     if not ref:
-        return
+        return None
     try_get_pr_url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/commits/{sha}/pulls"
     try:
         response = requests.get(try_get_pr_url)
