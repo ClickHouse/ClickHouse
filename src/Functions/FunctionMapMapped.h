@@ -94,7 +94,7 @@ public:
                             + toString(arguments.size()) + ".",
                             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         if (arguments.size() > 2 && Impl::needOneMap())
-            throw Exception("Function " + getName() + " needs one map argument.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function '{}' needs one map argument", getName());
 
         const auto * data_type_function = checkAndGetDataType<DataTypeFunction>(arguments[0].type.get());
 
