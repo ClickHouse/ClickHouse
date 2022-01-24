@@ -32,6 +32,8 @@ public:
 
     virtual ~FileCache() = default;
 
+    static bool shouldBypassCache();
+
     size_t capacity() const { return max_size; }
 
     static Key hash(const String & path);
@@ -67,18 +69,18 @@ protected:
 
     virtual bool tryReserve(
         const Key & key, size_t offset, size_t size,
-        [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) = 0;
+        std::lock_guard<std::mutex> & cache_lock) = 0;
 
     virtual void remove(
         Key key, size_t offset,
-        [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) = 0;
+        std::lock_guard<std::mutex> & cache_lock) = 0;
 
     virtual bool isLastFileSegmentHolder(
         const Key & key, size_t offset,
-        [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) = 0;
+        std::lock_guard<std::mutex> & cache_lock) = 0;
 
     virtual void reduceSizeToDownloaded(
-        const Key & key, size_t offset, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) = 0;
+        const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock) = 0;
 };
 
 using FileCachePtr = std::shared_ptr<FileCache>;
@@ -128,35 +130,35 @@ private:
 
     FileSegments getImpl(
         const Key & key, const FileSegment::Range & range,
-        [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock);
+        std::lock_guard<std::mutex> & cache_lock);
 
     FileSegmentCell * getCell(
-        const Key & key, size_t offset, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock);
+        const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock);
 
     FileSegmentCell * addCell(
         const Key & key, size_t offset, size_t size,
-        FileSegment::State state, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock);
+        FileSegment::State state, std::lock_guard<std::mutex> & cache_lock);
 
-    void useCell(const FileSegmentCell & cell, FileSegments & result, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock);
+    void useCell(const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & cache_lock);
 
     bool tryReserve(
         const Key & key, size_t offset, size_t size,
-        [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override;
+        std::lock_guard<std::mutex> & cache_lock) override;
 
     void remove(
         Key key, size_t offset,
-        [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override;
+        std::lock_guard<std::mutex> & cache_lock) override;
 
     bool isLastFileSegmentHolder(
         const Key & key, size_t offset,
-        [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override;
+        std::lock_guard<std::mutex> & cache_lock) override;
 
     void removeFileKey(const Key & key);
 
     void reduceSizeToDownloaded(
-        const Key & key, size_t offset, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock) override;
+        const Key & key, size_t offset, std::lock_guard<std::mutex> & cache_lock) override;
 
-    size_t available() const { return max_size - current_size; }
+    size_t availableSize() const { return max_size - current_size; }
 
     void restore();
 

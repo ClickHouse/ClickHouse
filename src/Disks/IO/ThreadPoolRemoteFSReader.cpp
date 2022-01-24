@@ -54,9 +54,11 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
     {
         ThreadStatus thread_status;
 
+        /// Save query context if any, because cache implementation needs it.
         if (query_context)
             thread_status.attachQueryContext(query_context);
 
+        /// To be able to pass ProfileEvents.
         if (running_group)
             thread_status.attachQuery(running_group);
 

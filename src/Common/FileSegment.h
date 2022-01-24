@@ -19,6 +19,7 @@ using FileSegments = std::list<FileSegmentPtr>;
 class FileSegment : boost::noncopyable
 {
 friend class LRUFileCache;
+friend struct FileSegmentsHolder;
 
 public:
     using Key = UInt128;
@@ -88,7 +89,7 @@ public:
 
     void write(const char * from, size_t size);
 
-    void complete(std::optional<State> state = std::nullopt);
+    void complete(State state);
 
     String getOrSetDownloader();
 
@@ -99,8 +100,10 @@ public:
     static String getCallerId();
 
 private:
-    size_t available() const { return reserved_size - downloaded_size; }
+    size_t availableSize() const { return reserved_size - downloaded_size; }
     bool lastFileSegmentHolder() const;
+    void complete();
+    void completeImpl(std::lock_guard<std::mutex> & /* segment_lock */);
 
     const Range segment_range;
 
@@ -134,7 +137,7 @@ struct FileSegmentsHolder : boost::noncopyable
             segment->complete();
     }
 
-    FileSegments file_segments;
+    FileSegments file_segments{};
 };
 
 }

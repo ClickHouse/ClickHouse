@@ -16,7 +16,7 @@
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #endif
 
-#include <Disks/IO/CacheableReadBufferFromRemoteFS.h>
+#include <Disks/IO/CachedReadBufferFromRemoteFS.h>
 #include <base/logger_useful.h>
 #include <filesystem>
 #include <iostream>
@@ -36,13 +36,9 @@ SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const S
         client_ptr, bucket, fs::path(metadata.remote_fs_root_path) / path, max_single_read_retries,
         settings, use_external_buffer, read_until_position, true);
 
-    /// For threadpool reads query id is attached in ThreadPoolRemoreFSReader.
-    if (CurrentThread::isInitialized() && CurrentThread::get().getQueryContext())
-    {
-        auto cache = settings.remote_fs_cache;
-        if (cache)
-            return std::make_shared<CacheableReadBufferFromRemoteFS>(path, std::move(cache), std::move(reader), settings, read_until_position);
-    }
+    auto cache = settings.remote_fs_cache;
+    if (cache && !cache->shouldBypassCache())
+        return std::make_shared<CachedReadBufferFromRemoteFS>(path, cache, std::move(reader), settings, read_until_position);
 
     return std::move(reader);
 }
@@ -120,8 +116,6 @@ void ReadBufferFromRemoteFSGather::initialize()
             if (!current_buf || current_buf_idx != i)
             {
                 current_buf_idx = i;
-                if (!read_until_position)
-                    read_until_position = metadata.remote_fs_objects[current_buf_idx].second;
                 current_buf = createImplementationBuffer(file_path);
             }
 
@@ -158,8 +152,6 @@ bool ReadBufferFromRemoteFSGather::nextImpl()
     ++current_buf_idx;
 
     const auto & [path, size] = metadata.remote_fs_objects[current_buf_idx];
-    if (!read_until_position)
-        read_until_position = size;
     current_buf = createImplementationBuffer(path);
 
     return readImpl();
