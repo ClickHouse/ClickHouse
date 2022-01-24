@@ -250,25 +250,19 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--tmpfs",
-        action="store_true",
-        default=False,
-        dest="tmpfs",
-        help="Use tmpfs for dockerd files",
-    )
-
-    parser.add_argument(
         "--cleanup-containers",
         action="store_true",
         default=False,
         dest="cleanup_containers",
-        help="Remove all running containers on test session start",
+        help="Remove ALL running containers on test session start",
     )
 
     parser.add_argument(
-        "--dockerd-volume-dir",
+        "--docker-socket",
+        "-s",
         action="store",
-        dest="dockerd_volume",
+        dest="docker_socket",
+        default="/var/run/docker.sock",
         help="Bind volume to this dir to use for dockerd files",
     )
 
@@ -313,31 +307,6 @@ if __name__ == "__main__":
             else:
                 logging.info("Unknown image %s" % (image))
 
-    # create named volume which will be used inside to store images and other docker related files,
-    # to avoid redownloading it every time
-    #
-    # should be removed manually when not needed
-    dockerd_internal_volume = ""
-    if args.tmpfs:
-        dockerd_internal_volume = "--tmpfs /var/lib/docker -e DOCKER_RAMDISK=true"
-    elif args.dockerd_volume:
-        dockerd_internal_volume = (
-            "--mount type=bind,source={},target=/var/lib/docker".format(
-                args.dockerd_volume
-            )
-        )
-    else:
-        try:
-            subprocess.check_call(
-                "docker volume create {name}_volume".format(name=CONTAINER_NAME),
-                shell=True,
-            )
-        except Exception as ex:
-            print("Volume creationg failed, probably it already exists, exception", ex)
-        dockerd_internal_volume = "--volume={}_volume:/var/lib/docker".format(
-            CONTAINER_NAME
-        )
-
     # If enabled we kill and remove containers before pytest session run.
     env_cleanup = ""
     if args.cleanup_containers:
@@ -354,13 +323,13 @@ if __name__ == "__main__":
     if args.keyword_expression:
         args.pytest_args += ["-k", args.keyword_expression]
 
-    cmd = "docker run {net} {tty} --rm --name {name} --privileged \
+    cmd = "docker run {net} {tty} --rm --name {name} \
         --volume={odbc_bridge_bin}:/clickhouse-odbc-bridge --volume={bin}:/clickhouse \
         --volume={library_bridge_bin}:/clickhouse-library-bridge --volume={bin}:/clickhouse \
         --volume={base_cfg}:/clickhouse-config --volume={cases_dir}:/ClickHouse/tests/integration \
         --volume={src_dir}/Server/grpc_protos:/ClickHouse/src/Server/grpc_protos \
-        --volume=/run:/run/host:ro \
-        {dockerd_internal_volume} -e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 \
+        --volume=/run:/run/host:ro --volume={docker_socket}:/var/run/docker.sock \
+        -e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 \
         -e XTABLES_LOCKFILE=/run/host/xtables.lock \
         {env_tags} {env_cleanup} -e PYTEST_OPTS='{parallel} {opts} {tests_list} -vvv' {img} {command}".format(
         net=net,
@@ -376,7 +345,7 @@ if __name__ == "__main__":
         parallel=parallel_args,
         opts=" ".join(args.pytest_args).replace("'", "\\'"),
         tests_list=" ".join(args.tests_list),
-        dockerd_internal_volume=dockerd_internal_volume,
+        docker_socket=args.docker_socket,
         img=DIND_INTEGRATION_TESTS_IMAGE_NAME + ":" + args.docker_image_version,
         name=CONTAINER_NAME,
         command=args.command,
