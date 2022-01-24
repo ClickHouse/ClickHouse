@@ -46,6 +46,8 @@ namespace
 class HashTablesStatistics
 {
 public:
+    using Cache = DB::LRUCache<UInt64, size_t>;
+    using CachePtr = std::shared_ptr<Cache>;
     using Params = DB::Aggregator::Params::StatsCollectingParams;
 
     std::optional<size_t> getSizeHint(const Params & params)
@@ -73,10 +75,13 @@ public:
         }
     }
 
-private:
-    using Cache = DB::LRUCache<UInt64, size_t>;
-    using CachePtr = std::shared_ptr<Cache>;
+    CachePtr getCache()
+    {
+        std::lock_guard lock(mutex);
+        return hash_table_stats;
+    }
 
+private:
     CachePtr getHashTableStatsCache(const Params & params, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
     {
         if (!hash_table_stats || hash_table_stats->maxSize() != params.max_entries_for_hash_table_stats)
@@ -184,6 +189,17 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+
+std::optional<HashTablesCacheStatistics> getHashTablesCacheStatistics()
+{
+    if (auto cache = getHashTablesStatistics().getCache())
+    {
+        size_t hits = 0, misses = 0;
+        cache->getStats(hits, misses);
+        return HashTablesCacheStatistics{.entries = cache->count(), .hits = hits, .misses = misses};
+    }
+    return std::nullopt;
+}
 
 void AggregatedDataVariants::convertToTwoLevel()
 {
