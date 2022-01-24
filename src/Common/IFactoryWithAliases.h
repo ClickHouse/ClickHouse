@@ -120,8 +120,12 @@ public:
     const String & getCanonicalNameIfAny(const String & name) const
     {
         auto it = case_insensitive_name_mapping.find(Poco::toLower(name));
-        if (it != case_insensitive_name_mapping.end())
-            return it->second;
+        if (it != case_insensitive_name_mapping.end()) {
+            if (it->first != name)
+            {
+                return it->second;
+            }
+        }
         return name;
     }
 
