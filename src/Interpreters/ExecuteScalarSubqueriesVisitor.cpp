@@ -86,7 +86,7 @@ static auto getQueryInterpreter(const ASTSubquery & subquery, ExecuteScalarSubqu
     subquery_settings.max_result_rows = 1;
     subquery_settings.extremes = false;
     subquery_context->setSettings(subquery_settings);
-    if (subquery_context->hasQueryContext())
+    if (!data.only_analyze && subquery_context->hasQueryContext())
     {
         /// Save current cached scalars in the context before analyzing the query
         /// This is specially helpful when analyzing CTE scalars
