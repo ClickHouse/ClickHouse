@@ -56,7 +56,7 @@ RUN apt-get update \
         /tmp/* \
     && apt-get clean
 
-RUN dockerd --version; docker --version
+RUN docker --version
 
 ARG TARGETARCH
 # FIXME: psycopg2-binary is not available for aarch64, we skip it for now
@@ -99,11 +99,10 @@ COPY misc/ /misc/
 
 RUN set -x \
   && addgroup --system dockremap \
-    && adduser --system dockremap \
+  && adduser --system dockremap \
   && adduser dockremap dockremap \
   && echo 'dockremap:165536:65536' >> /etc/subuid \
-    && echo 'dockremap:165536:65536' >> /etc/subgid
+  && echo 'dockremap:165536:65536' >> /etc/subgid
 
-EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]
 CMD ["sh", "-c", "pytest $PYTEST_OPTS"]
