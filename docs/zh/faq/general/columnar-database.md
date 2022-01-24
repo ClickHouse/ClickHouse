@@ -22,4 +22,4 @@ toc_priority: 101
 **列存储**
 !(列存储)(https://clickhouse.com/docs/en/images/column-oriented.gif)
 
-列存储数据库是分析应用程序的首选，因为它允许在一个表中有许多列以防万一，但不会在读取查询执行时为未使用的列付出代价。面向列的数据库是为大数据处理而设计的，因为和数据仓库一样，它们通常使用分布式的低成本硬件集群来提高吞吐量。ClickHouse结合了[分布式](../../engines/table-engines/special/distributed.md)和[复制式](../../engines/table-engines/mergetree-family/replication.md)两个表。
+列存储数据库是分析应用程序的首选，因为它允许在一个表中有许多列以防万一，但不会在读取查询执行时为未使用的列付出代价。面向列的数据库是为大数据处理而设计的，因为和数据仓库一样，它们通常使用分布式的低成本硬件集群来提高吞吐量。ClickHouse结合了[分布式](../../engines/table-engines/special/distributed.md)和[复制式](../../engines/table-engines/mergetree-family/replication.md)两类表。
