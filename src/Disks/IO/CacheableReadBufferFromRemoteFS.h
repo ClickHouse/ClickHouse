@@ -52,6 +52,9 @@ private:
     SeekableReadBufferPtr impl;
     bool initialized = false;
 
+    /// Flag to identify usage of threadpool reads
+    bool use_external_buffer;
+
     enum class ReadType
     {
         CACHED,

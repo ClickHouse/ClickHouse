@@ -4,6 +4,7 @@
 #include <Common/FileCache.h>
 #include <Common/CurrentThread.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/tests/gtest_global_context.h>
 #include <Common/SipHash.h>
 #include <Common/hex.h>
 #include <Interpreters/Context.h>
@@ -95,10 +96,7 @@ TEST(LRUFileCache, get)
     DB::ThreadStatus thread_status;
 
     /// To work with cache need query_id and query context.
-    auto shared_context = DB::Context::createShared();
-    auto context = DB::Context::createGlobal(shared_context.get());
-    context->makeGlobalContext();
-    auto query_context = DB::Context::createCopy(context);
+    auto query_context = DB::Context::createCopy(getContext().context);
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("query_id");
     DB::CurrentThread::QueryScope query_scope_holder(query_context);
@@ -343,7 +341,7 @@ TEST(LRUFileCache, get)
         std::thread other_1([&]
         {
             DB::ThreadStatus thread_status_1;
-            auto query_context_1 = DB::Context::createCopy(context);
+            auto query_context_1 = DB::Context::createCopy(getContext().context);
             query_context_1->makeQueryContext();
             query_context_1->setCurrentQueryId("query_id_1");
             DB::CurrentThread::QueryScope query_scope_holder_1(query_context_1);
@@ -410,7 +408,7 @@ TEST(LRUFileCache, get)
         std::thread other_1([&]
         {
             DB::ThreadStatus thread_status_1;
-            auto query_context_1 = DB::Context::createCopy(context);
+            auto query_context_1 = DB::Context::createCopy(getContext().context);
             query_context_1->makeQueryContext();
             query_context_1->setCurrentQueryId("query_id_1");
             DB::CurrentThread::QueryScope query_scope_holder_1(query_context_1);

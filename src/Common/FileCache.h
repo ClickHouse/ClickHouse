@@ -126,10 +126,6 @@ private:
     Poco::Logger * log;
     bool startup_restore_finished = false;
 
-    /**
-     * Get list of file segments which intesect with `range`.
-     * If `key` is not in cache or there is not such range, return std::nullopt.
-     */
     FileSegments getImpl(
         const Key & key, const FileSegment::Range & range,
         [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock);
