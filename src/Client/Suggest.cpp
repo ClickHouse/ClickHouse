@@ -29,7 +29,7 @@ namespace ErrorCodes
 Suggest::Suggest()
 {
     /// Keywords may be not up to date with ClickHouse parser.
-    new_words = {
+    addWords({
         "CREATE",       "DATABASE", "IF",     "NOT",       "EXISTS",   "TEMPORARY",   "TABLE",    "ON",          "CLUSTER", "DEFAULT",
         "MATERIALIZED", "ALIAS",    "ENGINE", "AS",        "VIEW",     "POPULATE",    "SETTINGS", "ATTACH",      "DETACH",  "DROP",
         "RENAME",       "TO",       "ALTER",  "ADD",       "MODIFY",   "CLEAR",       "COLUMN",   "AFTER",       "COPY",    "PROJECT",
@@ -43,7 +43,7 @@ Suggest::Suggest()
         "PROFILE",      "QUOTA",    "POLICY", "ROW",       "GRANT",    "REVOKE",      "OPTION",   "ADMIN",       "EXCEPT",  "REPLACE",
         "IDENTIFIED",   "HOST",     "NAME",   "READONLY",  "WRITABLE", "PERMISSIVE",  "FOR",      "RESTRICTIVE", "RANDOMIZED",
         "INTERVAL",     "LIMITS",   "ONLY",   "TRACKING",  "IP",       "REGEXP",      "ILIKE",
-    };
+    });
 }
 
 static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggestion)
@@ -126,8 +126,6 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
         }
 
         /// Note that keyword suggestions are available even if we cannot load data from server.
-
-        addWords(std::move(new_words));
     });
 }
 
@@ -182,8 +180,14 @@ void Suggest::fillWordsFromBlock(const Block & block)
     const ColumnString & column = typeid_cast<const ColumnString &>(*block.getByPosition(0).column);
 
     size_t rows = block.rows();
+
+    Words new_words;
+    new_words.reserve(rows);
     for (size_t i = 0; i < rows; ++i)
+    {
         new_words.emplace_back(column.getDataAt(i).toString());
+    }
+    addWords(std::move(new_words));
 }
 
 template

@@ -38,8 +38,6 @@ private:
 
     /// Words are fetched asynchronously.
     std::thread loading_thread;
-
-    Words new_words;
 };
 
 }
