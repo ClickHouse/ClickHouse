@@ -10,6 +10,7 @@
 #include <Formats/IndexForNativeFormat.h>
 #include <Common/FileChecker.h>
 #include <Common/escapeForFileName.h>
+#include <Disks/IDisk.h>
 
 
 namespace DB
