@@ -3,6 +3,7 @@
 
 import socket
 import os
+import uuid
 
 CLICKHOUSE_HOST = os.environ.get('CLICKHOUSE_HOST', '127.0.0.1')
 CLICKHOUSE_PORT = int(os.environ.get('CLICKHOUSE_PORT_TCP', '900000'))
@@ -109,9 +110,9 @@ def receiveHello(s):
     # print("Version patch: ", server_version_patch)
 
 
-def serializeClientInfo(ba):
+def serializeClientInfo(ba, query_id):
     writeStringBinary('default', ba) # initial_user
-    writeStringBinary('123456', ba) # initial_query_id
+    writeStringBinary(query_id, ba) # initial_query_id
     writeStringBinary('127.0.0.1:9000', ba) # initial_address
     ba.extend([0] * 8) # initial_query_start_time_microseconds
     ba.append(1) # TCP
@@ -129,13 +130,14 @@ def serializeClientInfo(ba):
 
 def sendQuery(s, query):
     ba = bytearray()
+    query_id = uuid.uuid4().hex
     writeVarUInt(1, ba) # query
-    writeStringBinary('123456', ba)
+    writeStringBinary(query_id, ba)
 
     ba.append(1) # INITIAL_QUERY
 
     # client info
-    serializeClientInfo(ba)
+    serializeClientInfo(ba, query_id)
 
     writeStringBinary('', ba) # No settings
     writeStringBinary('', ba) # No interserver secret
@@ -163,15 +165,22 @@ def sendEmptyBlock(s):
     s.sendall(ba)
 
 
+def assertPacket(packet, expected):
+    assert(packet == expected), packet
+
 def readHeader(s):
-    readVarUInt(s) # Data
+    packet_type = readVarUInt(s)
+    if packet_type == 2: # Exception
+        raise RuntimeError(readException(s))
+    assertPacket(packet_type, 1) # Data
+
     readStringBinary(s) # external table name
     # BlockInfo
-    readVarUInt(s) # 1
-    readUInt8(s) # is_overflows
-    readVarUInt(s) # 2
-    readUInt32(s) # bucket_num
-    readVarUInt(s) # 0
+    assertPacket(readVarUInt(s), 1) # 1
+    assertPacket(readUInt8(s), 0) # is_overflows
+    assertPacket(readVarUInt(s), 2) # 2
+    assertPacket(readUInt32(s), 4294967295) # bucket_num
+    assertPacket(readVarUInt(s), 0) # 0
     columns = readVarUInt(s) # rows
     rows = readVarUInt(s) # columns
     print("Rows {} Columns {}".format(rows, columns))
@@ -182,13 +191,12 @@ def readHeader(s):
 
 
 def readException(s):
-    assert(readVarUInt(s) == 2)
     code = readUInt32(s)
     name = readStringBinary(s)
     text = readStringBinary(s)
     readStringBinary(s) # trace
-    assert(readUInt8(s) == 0) # has_nested
-    print("code {}: {}".format(code, text.replace('DB::Exception:', '')))
+    assertPacket(readUInt8(s), 0) # has_nested
+    return "code {}: {}".format(code, text.replace('DB::Exception:', ''))
 
 
 def insertValidLowCardinalityRow():
@@ -223,7 +231,7 @@ def insertValidLowCardinalityRow():
         # Fin block
         sendEmptyBlock(s)
 
-        assert(readVarUInt(s) == 5) # End of stream
+        assertPacket(readVarUInt(s), 5) # End of stream
         s.close()
 
 
@@ -256,7 +264,8 @@ def insertLowCardinalityRowWithIndexOverflow():
         ba.extend([0] * 7 + [1]) # UInt64 index (overflow)
         s.sendall(ba)
 
-        readException(s)
+        assertPacket(readVarUInt(s), 2)
+        print(readException(s))
         s.close()
 
 
@@ -289,14 +298,48 @@ def insertLowCardinalityRowWithIncorrectDictType():
         ba.extend([0] * 8) # UInt64 index (overflow)
         s.sendall(ba)
 
-        readException(s)
+        assertPacket(readVarUInt(s), 2)
+        print(readException(s))
         s.close()
 
+def insertLowCardinalityRowWithIncorrectAdditionalKeys():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(30)
+        s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
+        sendHello(s)
+        receiveHello(s)
+        sendQuery(s, 'insert into {}.tab format TSV'.format(CLICKHOUSE_DATABASE))
+
+        # external tables
+        sendEmptyBlock(s)
+        readHeader(s)
+
+        # Data
+        ba = bytearray()
+        writeVarUInt(2, ba) # Data
+        writeStringBinary('', ba)
+        serializeBlockInfo(ba)
+        writeVarUInt(1, ba) # rows
+        writeVarUInt(1, ba) # columns
+        writeStringBinary('x', ba)
+        writeStringBinary('LowCardinality(String)', ba)
+        ba.extend([1] + [0] * 7) # SharedDictionariesWithAdditionalKeys
+        ba.extend([3, 0] + [0] * 6) # indexes type: UInt64 [3], with  NO additional keys [0]
+        ba.extend([1] + [0] * 7) # num_keys in dict
+        writeStringBinary('hello', ba) # key
+        ba.extend([1] + [0] * 7) # num_indexes
+        ba.extend([0] * 8) # UInt64 index (0 for 'hello')
+        s.sendall(ba)
+
+        assertPacket(readVarUInt(s), 2)
+        print(readException(s))
+        s.close()
 
 def main():
     insertValidLowCardinalityRow()
     insertLowCardinalityRowWithIndexOverflow()
     insertLowCardinalityRowWithIncorrectDictType()
+    insertLowCardinalityRowWithIncorrectAdditionalKeys()
 
 if __name__ == "__main__":
     main()

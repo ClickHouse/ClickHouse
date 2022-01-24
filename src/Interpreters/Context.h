@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Access/RowPolicy.h>
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
@@ -15,9 +14,11 @@
 #include <Common/RemoteHostFilter.h>
 #include <Common/isLocalAddress.h>
 #include <base/types.h>
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 #include "config_core.h"
 
+#include <boost/container/flat_set.hpp>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -43,6 +44,7 @@ struct QuotaUsage;
 class AccessFlags;
 struct AccessRightsElement;
 class AccessRightsElements;
+enum class RowPolicyFilterType;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalModelsLoader;
@@ -147,6 +149,8 @@ using InputBlocksReader = std::function<Block(ContextPtr)>;
 /// Used in distributed task processing
 using ReadTaskCallback = std::function<String()>;
 
+using MergeTreeReadTaskCallback = std::function<std::optional<PartitionReadResponse>(PartitionReadRequest)>;
+
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -195,7 +199,7 @@ private:
     std::shared_ptr<std::vector<UUID>> current_roles;
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> settings_constraints_and_current_profiles;
     std::shared_ptr<const ContextAccess> access;
-    std::shared_ptr<const EnabledRowPolicies> initial_row_policy;
+    std::shared_ptr<const EnabledRowPolicies> row_policies_of_initial_user;
     String current_database;
     Settings settings;  /// Setting for query execution.
 
@@ -215,8 +219,12 @@ private:
     Scalars scalars;
     Scalars local_scalars;
 
-    /// Fields for distributed s3 function
+    /// Used in s3Cluster table function. With this callback, a worker node could ask an initiator
+    /// about next file to read from s3.
     std::optional<ReadTaskCallback> next_task_callback;
+    /// Used in parallel reading from replicas. A replica tells about its intentions to read
+    /// some ranges from some part and initiator will tell the replica about whether it is accepted or denied.
+    std::optional<MergeTreeReadTaskCallback> merge_tree_read_task_callback;
 
     /// Record entities accessed by current query, and store this information in system.query_log.
     struct QueryAccessInfo
@@ -340,7 +348,7 @@ public:
     String getUserScriptsPath() const;
 
     /// A list of warnings about server configuration to place in `system.warnings` table.
-    std::vector<String> getWarnings() const;
+    Strings getWarnings() const;
 
     VolumePtr getTemporaryVolume() const;
 
@@ -414,12 +422,14 @@ public:
 
     std::shared_ptr<const ContextAccess> getAccess() const;
 
-    ASTPtr getRowPolicyCondition(const String & database, const String & table_name, RowPolicy::ConditionType type) const;
+    ASTPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
 
-    /// Sets an extra row policy based on `client_info.initial_user`, if it exists.
+    /// Finds and sets extra row policies to be used based on `client_info.initial_user`,
+    /// if the initial user exists.
     /// TODO: we need a better solution here. It seems we should pass the initial row policy
-    /// because a shard is allowed to don't have the initial user or it may be another user with the same name.
-    void setInitialRowPolicy();
+    /// because a shard is allowed to not have the initial user or it might be another user
+    /// with the same name.
+    void enableRowPoliciesOfInitialUser();
 
     std::shared_ptr<const EnabledQuota> getQuota() const;
     std::optional<QuotaUsage> getQuotaUsage() const;
@@ -740,7 +750,10 @@ public:
     std::shared_ptr<Clusters> getClusters() const;
     std::shared_ptr<Cluster> getCluster(const std::string & cluster_name) const;
     std::shared_ptr<Cluster> tryGetCluster(const std::string & cluster_name) const;
-    void setClustersConfig(const ConfigurationPtr & config, const String & config_name = "remote_servers");
+    void setClustersConfig(const ConfigurationPtr & config, bool enable_discovery = false, const String & config_name = "remote_servers");
+
+    void startClusterDiscovery();
+
     /// Sets custom cluster, but doesn't update configuration
     void setCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster);
     void reloadClusterConfig() const;
@@ -861,6 +874,9 @@ public:
 
     ReadTaskCallback getReadTaskCallback() const;
     void setReadTaskCallback(ReadTaskCallback && callback);
+
+    MergeTreeReadTaskCallback getMergeTreeReadTaskCallback() const;
+    void setMergeTreeReadTaskCallback(MergeTreeReadTaskCallback && callback);
 
     /// Background executors related methods
     void initializeBackgroundExecutorsIfNeeded();

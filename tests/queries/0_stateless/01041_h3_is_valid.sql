@@ -1,4 +1,4 @@
--- Tags: no-unbundled, no-fasttest
+-- Tags: no-fasttest
 
 SELECT h3IsValid(581276613233082367);
 SELECT h3IsValid(621807531097128959);

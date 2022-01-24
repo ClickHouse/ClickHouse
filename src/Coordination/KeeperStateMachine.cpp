@@ -155,7 +155,7 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
 
     { /// deserialize and apply snapshot to storage
         std::lock_guard lock(storage_and_responses_lock);
-        auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_buf);
+        auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_ptr);
         storage = std::move(snapshot_deserialization_result.storage);
         latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
         cluster_config = snapshot_deserialization_result.cluster_config;
@@ -212,14 +212,13 @@ void KeeperStateMachine::create_snapshot(
             }
 
             {
-                /// Must do it with lock (clearing elements from list)
-                std::lock_guard lock(storage_and_responses_lock);
-                /// Turn off "snapshot mode" and clear outdate part of storage state
-                storage->clearGarbageAfterSnapshot();
                 /// Destroy snapshot with lock
-                snapshot.reset();
+                std::lock_guard lock(storage_and_responses_lock);
+                LOG_TRACE(log, "Clearing garbage after snapshot");
+                /// Turn off "snapshot mode" and clear outdate part of storage state
+                storage->clearGarbageAfterSnapshot(snapshot->snapshot_container_size);
                 LOG_TRACE(log, "Cleared garbage after snapshot");
-
+                snapshot.reset();
             }
         }
         catch (...)
@@ -326,16 +325,96 @@ void KeeperStateMachine::processReadRequest(const KeeperStorage::RequestForSessi
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", response.session_id);
 }
 
+void KeeperStateMachine::shutdownStorage()
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    storage->finalize();
+}
+
 std::vector<int64_t> KeeperStateMachine::getDeadSessions()
 {
     std::lock_guard lock(storage_and_responses_lock);
     return storage->getDeadSessions();
 }
 
-void KeeperStateMachine::shutdownStorage()
+uint64_t KeeperStateMachine::getLastProcessedZxid() const
 {
     std::lock_guard lock(storage_and_responses_lock);
-    storage->finalize();
+    return storage->getZXID();
+}
+
+uint64_t KeeperStateMachine::getNodesCount() const
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    return storage->getNodesCount();
+}
+
+uint64_t KeeperStateMachine::getTotalWatchesCount() const
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    return storage->getTotalWatchesCount();
+}
+
+uint64_t KeeperStateMachine::getWatchedPathsCount() const
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    return storage->getWatchedPathsCount();
+}
+
+uint64_t KeeperStateMachine::getSessionsWithWatchesCount() const
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    return storage->getSessionsWithWatchesCount();
+}
+
+uint64_t KeeperStateMachine::getTotalEphemeralNodesCount() const
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    return storage->getTotalEphemeralNodesCount();
+}
+
+uint64_t KeeperStateMachine::getSessionWithEphemeralNodesCount() const
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    return storage->getSessionWithEphemeralNodesCount();
+}
+
+void KeeperStateMachine::dumpWatches(WriteBufferFromOwnString & buf) const
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    storage->dumpWatches(buf);
+}
+
+void KeeperStateMachine::dumpWatchesByPath(WriteBufferFromOwnString & buf) const
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    storage->dumpWatchesByPath(buf);
+}
+
+void KeeperStateMachine::dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    storage->dumpSessionsAndEphemerals(buf);
+}
+
+uint64_t KeeperStateMachine::getApproximateDataSize() const
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    return storage->getApproximateDataSize();
+}
+
+uint64_t KeeperStateMachine::getKeyArenaSize() const
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    return storage->getArenaDataSize();
+}
+
+uint64_t KeeperStateMachine::getLatestSnapshotBufSize() const
+{
+    std::lock_guard lock(snapshots_lock);
+    if (latest_snapshot_buf)
+        return latest_snapshot_buf->size();
+    return 0;
 }
 
 ClusterConfigPtr KeeperStateMachine::getClusterConfig() const

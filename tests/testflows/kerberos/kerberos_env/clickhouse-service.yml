@@ -2,7 +2,7 @@ version: '2.3'
 
 services:
   clickhouse:
-    image: clickhouse/integration-test:21454
+    image: clickhouse/integration-test
     expose:
       - "9000"
       - "9009"

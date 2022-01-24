@@ -18,6 +18,7 @@ class StorageSystemDetachedParts final :
     friend struct shared_ptr_helper<StorageSystemDetachedParts>;
 public:
     std::string getName() const override { return "SystemDetachedParts"; }
+    bool isSystemStorage() const override { return true; }
 
 protected:
     explicit StorageSystemDetachedParts(const StorageID & table_id_);

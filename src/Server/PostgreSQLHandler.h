@@ -1,14 +1,11 @@
 #pragma once
 
 #include <Common/CurrentMetrics.h>
+#include <Common/config.h>
 #include <Core/PostgreSQLProtocol.h>
 #include <Poco/Net/TCPServerConnection.h>
 #include <base/logger_useful.h>
 #include "IServer.h"
-
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
 
 #if USE_SSL
 #   include <Poco/Net/SecureStreamSocket.h>
@@ -21,8 +18,9 @@ namespace CurrentMetrics
 
 namespace DB
 {
-
+class ReadBufferFromPocoSocket;
 class Session;
+class TCPServer;
 
 /** PostgreSQL wire protocol implementation.
  * For more info see https://www.postgresql.org/docs/current/protocol.html
@@ -33,6 +31,7 @@ public:
     PostgreSQLHandler(
         const Poco::Net::StreamSocket & socket_,
         IServer & server_,
+        TCPServer & tcp_server_,
         bool ssl_enabled_,
         Int32 connection_id_,
         std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_);
@@ -43,12 +42,13 @@ private:
     Poco::Logger * log = &Poco::Logger::get("PostgreSQLHandler");
 
     IServer & server;
+    TCPServer & tcp_server;
     std::unique_ptr<Session> session;
     bool ssl_enabled = false;
     Int32 connection_id = 0;
     Int32 secret_key = 0;
 
-    std::shared_ptr<ReadBuffer> in;
+    std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBuffer> out;
     std::shared_ptr<PostgreSQLProtocol::Messaging::MessageTransport> message_transport;
 

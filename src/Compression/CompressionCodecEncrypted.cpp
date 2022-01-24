@@ -7,11 +7,9 @@
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Poco/Logger.h>
 #include <base/logger_useful.h>
-#include <Common/ErrorCodes.h>
 
 // This depends on BoringSSL-specific API, notably <openssl/aead.h>.
-#if USE_SSL && USE_INTERNAL_SSL_LIBRARY
-#include <Parsers/ASTLiteral.h>
+#if USE_SSL
 #include <openssl/digest.h>
 #include <openssl/err.h>
 #include <boost/algorithm/hex.hpp>
@@ -68,7 +66,7 @@ uint8_t getMethodCode(EncryptionMethod Method)
 
 } // end of namespace DB
 
-#if USE_SSL && USE_INTERNAL_SSL_LIBRARY
+#if USE_SSL
 namespace DB
 {
 
@@ -515,7 +513,7 @@ void CompressionCodecEncrypted::doDecompressData(const char * source, UInt32 sou
 
 }
 
-#else /* USE_SSL && USE_INTERNAL_SSL_LIBRARY */
+#else /* USE_SSL */
 
 namespace DB
 {
@@ -553,7 +551,7 @@ void CompressionCodecEncrypted::Configuration::load(const Poco::Util::AbstractCo
 
 }
 
-#endif /* USE_SSL && USE_INTERNAL_SSL_LIBRARY */
+#endif /* USE_SSL */
 
 namespace DB
 {

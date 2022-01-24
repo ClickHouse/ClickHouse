@@ -5,7 +5,6 @@
 #include <base/unaligned.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Types.h>

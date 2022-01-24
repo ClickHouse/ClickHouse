@@ -391,20 +391,27 @@ AvroRowOutputFormat::AvroRowOutputFormat(
 
 AvroRowOutputFormat::~AvroRowOutputFormat() = default;
 
-void AvroRowOutputFormat::writePrefix()
+void AvroRowOutputFormat::createFileWriter()
 {
-    // we have to recreate avro::DataFileWriterBase object due to its interface limitations
     file_writer_ptr = std::make_unique<avro::DataFileWriterBase>(
         std::make_unique<OutputStreamWriteBufferAdapter>(out),
         serializer.getSchema(),
         settings.avro.output_sync_interval,
         getCodec(settings.avro.output_codec));
+}
+
+void AvroRowOutputFormat::writePrefix()
+{
+    // we have to recreate avro::DataFileWriterBase object due to its interface limitations
+    createFileWriter();
 
     file_writer_ptr->syncIfNeeded();
 }
 
 void AvroRowOutputFormat::write(const Columns & columns, size_t row_num)
 {
+    if (!file_writer_ptr)
+        createFileWriter();
     file_writer_ptr->syncIfNeeded();
     serializer.serializeRow(columns, row_num, file_writer_ptr->encoder());
     file_writer_ptr->incr();
@@ -428,7 +435,6 @@ void AvroRowOutputFormat::consumeImpl(DB::Chunk chunk)
     auto num_rows = chunk.getNumRows();
     const auto & columns = chunk.getColumns();
 
-    writePrefixIfNot();
     for (size_t row = 0; row < num_rows; ++row)
     {
         write(columns, row);
@@ -447,7 +453,7 @@ void AvroRowOutputFormat::consumeImplWithCallback(DB::Chunk chunk)
         /// used by WriteBufferToKafkaProducer to obtain auxiliary data
         ///   from the starting row of a file
 
-        writePrefix();
+        writePrefixIfNot();
         for (size_t row_in_file = 0;
              row_in_file < settings.avro.output_rows_in_file && row < num_rows;
              ++row, ++row_in_file)
@@ -457,6 +463,7 @@ void AvroRowOutputFormat::consumeImplWithCallback(DB::Chunk chunk)
 
         file_writer_ptr->flush();
         writeSuffix();
+        need_write_prefix = true;
 
         params.callback(columns, current_row);
     }

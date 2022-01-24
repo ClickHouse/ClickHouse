@@ -12,6 +12,11 @@
 
 namespace fs = std::filesystem;
 
+namespace CurrentMetrics
+{
+    extern const Metric DiskSpaceReservedForMerge;
+}
+
 namespace DB
 {
 
@@ -37,7 +42,7 @@ class IAsynchronousReader;
 using AsynchronousReaderPtr = std::shared_ptr<IAsynchronousReader>;
 
 
-/// Base Disk class for remote FS's, which are not posix-compatible (DiskS3 and DiskHDFS)
+/// Base Disk class for remote FS's, which are not posix-compatible (e.g. DiskS3, DiskHDFS, DiskBlobStorage)
 class IDiskRemote : public IDisk
 {
 
@@ -47,7 +52,7 @@ public:
     IDiskRemote(
         const String & name_,
         const String & remote_fs_root_path_,
-        const String & metadata_path_,
+        DiskPtr metadata_disk_,
         const String & log_name_,
         size_t thread_pool_size);
 
@@ -55,7 +60,7 @@ public:
 
     const String & getName() const final override { return name; }
 
-    const String & getPath() const final override { return metadata_path; }
+    const String & getPath() const final override { return metadata_disk->getPath(); }
 
     Metadata readMeta(const String & path) const;
 
@@ -131,12 +136,27 @@ public:
 
     static AsynchronousReaderPtr getThreadPoolReader();
 
+    virtual std::unique_ptr<ReadBufferFromFileBase> readMetaFile(
+        const String & path,
+        const ReadSettings & settings,
+        std::optional<size_t> size) const override;
+
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeMetaFile(
+        const String & path,
+        size_t buf_size,
+        WriteMode mode) override;
+
+    virtual void removeMetaFileIfExists(
+        const String & path) override;
+
+    UInt32 getRefCount(const String & path) const override;
+
 protected:
     Poco::Logger * log;
     const String name;
     const String remote_fs_root_path;
 
-    const String metadata_path;
+    DiskPtr metadata_disk;
 
 private:
     void removeMeta(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper);
@@ -182,8 +202,7 @@ struct IDiskRemote::Metadata : RemoteMetadata
     static constexpr UInt32 VERSION_RELATIVE_PATHS = 2;
     static constexpr UInt32 VERSION_READ_ONLY_FLAG = 3;
 
-    /// Disk path.
-    const String & disk_path;
+    DiskPtr metadata_disk;
 
     /// Total size of all remote FS (S3, HDFS) objects.
     size_t total_size = 0;
@@ -196,7 +215,7 @@ struct IDiskRemote::Metadata : RemoteMetadata
 
     /// Load metadata by path or create empty if `create` flag is set.
     Metadata(const String & remote_fs_root_path_,
-            const String & disk_path_,
+            DiskPtr metadata_disk_,
             const String & metadata_file_path_,
             bool create = false);
 
@@ -206,33 +225,6 @@ struct IDiskRemote::Metadata : RemoteMetadata
     void save(bool sync = false);
 
 };
-
-
-class RemoteDiskDirectoryIterator final : public IDiskDirectoryIterator
-{
-public:
-    RemoteDiskDirectoryIterator() {}
-    RemoteDiskDirectoryIterator(const String & full_path, const String & folder_path_) : iter(full_path), folder_path(folder_path_) {}
-
-    void next() override { ++iter; }
-
-    bool isValid() const override { return iter != fs::directory_iterator(); }
-
-    String path() const override
-    {
-        if (fs::is_directory(iter->path()))
-            return folder_path / iter->path().filename().string() / "";
-        else
-            return folder_path / iter->path().filename().string();
-    }
-
-    String name() const override { return iter->path().filename(); }
-
-private:
-    fs::directory_iterator iter;
-    fs::path folder_path;
-};
-
 
 class DiskRemoteReservation final : public IReservation
 {

@@ -22,7 +22,24 @@ namespace
 /// Trim ending whitespace inplace
 void trim(String & s)
 {
-    s.erase(std::find_if(s.rbegin(), s.rend(), [](int ch) { return !std::isspace(ch); }).base(), s.end());
+    s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), s.end());
+}
+
+/// Check if string ends with given character after skipping whitespaces.
+bool ends_with(const std::string_view & s, const std::string_view & p)
+{
+    auto ss = std::string_view(s.data(), s.rend() - std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !std::isspace(ch); }));
+    return ss.ends_with(p);
+}
+
+std::string getEditor()
+{
+    const char * editor = std::getenv("EDITOR");
+
+    if (!editor || !*editor)
+        editor = "vim";
+
+    return editor;
 }
 
 /// Copied from replxx::src/util.cxx::now_ms_str() under the terms of 3-clause BSD license of Replxx.
@@ -123,6 +140,7 @@ ReplxxLineReader::ReplxxLineReader(
     Patterns delimiters_,
     replxx::Replxx::highlighter_callback_t highlighter_)
     : LineReader(history_file_path_, multiline_, std::move(extenders_), std::move(delimiters_)), highlighter(std::move(highlighter_))
+    , editor(getEditor())
 {
     using namespace std::placeholders;
     using Replxx = replxx::Replxx;
@@ -178,8 +196,28 @@ ReplxxLineReader::ReplxxLineReader(
     rx.bind_key(Replxx::KEY::control('N'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_NEXT, code); });
     rx.bind_key(Replxx::KEY::control('P'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_PREVIOUS, code); });
 
+    auto commit_action = [this](char32_t code)
+    {
+        std::string_view str = rx.get_state().text();
+
+        /// Always commit line when we see extender at the end. It will start a new prompt.
+        for (const auto * extender : extenders)
+            if (ends_with(str, extender))
+                return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
+
+        /// If we see an delimiter at the end, commit right away.
+        for (const auto * delimiter : delimiters)
+            if (ends_with(str, delimiter))
+                return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
+
+        /// If we allow multiline and there is already something in the input, start a newline.
+        if (multiline && !input.empty())
+            return rx.invoke(Replxx::ACTION::NEW_LINE, code);
+        return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
+    };
     /// bind C-j to ENTER action.
-    rx.bind_key(Replxx::KEY::control('J'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::COMMIT_LINE, code); });
+    rx.bind_key(Replxx::KEY::control('J'), commit_action);
+    rx.bind_key(Replxx::KEY::ENTER, commit_action);
 
     /// By default COMPLETE_NEXT/COMPLETE_PREV was binded to C-p/C-n, re-bind
     /// to M-P/M-N (that was used for HISTORY_COMMON_PREFIX_SEARCH before, but
@@ -236,14 +274,13 @@ void ReplxxLineReader::addToHistory(const String & line)
         rx.print("Unlock of history file failed: %s\n", errnoToString(errno).c_str());
 }
 
-int ReplxxLineReader::execute(const std::string & command)
+/// See comments in ShellCommand::executeImpl()
+/// (for the vfork via dlsym())
+int ReplxxLineReader::executeEditor(const std::string & path)
 {
-    std::vector<char> argv0("sh", &("sh"[3]));
-    std::vector<char> argv1("-c", &("-c"[3]));
-    std::vector<char> argv2(command.data(), command.data() + command.size() + 1);
-
-    const char * filename = "/bin/sh";
-    char * const argv[] = {argv0.data(), argv1.data(), argv2.data(), nullptr};
+    std::vector<char> argv0(editor.data(), editor.data() + editor.size() + 1);
+    std::vector<char> argv1(path.data(), path.data() + path.size() + 1);
+    char * const argv[] = {argv0.data(), argv1.data(), nullptr};
 
     static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
     if (!real_vfork)
@@ -260,6 +297,7 @@ int ReplxxLineReader::execute(const std::string & command)
         return -1;
     }
 
+    /// Child
     if (0 == pid)
     {
         sigset_t mask;
@@ -267,16 +305,26 @@ int ReplxxLineReader::execute(const std::string & command)
         sigprocmask(0, nullptr, &mask);
         sigprocmask(SIG_UNBLOCK, &mask, nullptr);
 
-        execv(filename, argv);
+        execvp(editor.c_str(), argv);
+        rx.print("Cannot execute %s: %s\n", editor.c_str(), errnoToString(errno).c_str());
         _exit(-1);
     }
 
     int status = 0;
-    if (-1 == waitpid(pid, &status, 0))
+    do
     {
-        rx.print("Cannot waitpid: %s\n", errnoToString(errno).c_str());
-        return -1;
-    }
+        int exited_pid = waitpid(pid, &status, 0);
+        if (exited_pid == -1)
+        {
+            if (errno == EINTR)
+                continue;
+
+            rx.print("Cannot waitpid: %s\n", errnoToString(errno).c_str());
+            return -1;
+        }
+        else
+            break;
+    } while (true);
     return status;
 }
 
@@ -289,10 +337,6 @@ void ReplxxLineReader::openEditor()
         rx.print("Cannot create temporary file to edit query: %s\n", errnoToString(errno).c_str());
         return;
     }
-
-    const char * editor = std::getenv("EDITOR");
-    if (!editor || !*editor)
-        editor = "vim";
 
     replxx::Replxx::State state(rx.get_state());
 
@@ -316,7 +360,7 @@ void ReplxxLineReader::openEditor()
         return;
     }
 
-    if (0 == execute(fmt::format("{} {}", editor, filename)))
+    if (0 == executeEditor(filename))
     {
         try
         {

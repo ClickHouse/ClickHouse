@@ -216,6 +216,13 @@ ColumnPtr fillColumnWithRandomData(
             fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(UInt16), rng);
             return column;
         }
+        case TypeIndex::Date32:
+        {
+            auto column = ColumnInt32::create();
+            column->getData().resize(limit);
+            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(Int32), rng);
+            return column;
+        }
         case TypeIndex::UInt32: [[fallthrough]];
         case TypeIndex::DateTime:
         {

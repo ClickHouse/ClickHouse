@@ -37,10 +37,10 @@ SELECT d, count() FROM with_fill_date GROUP BY d ORDER BY d WITH FILL STEP INTER
 DROP TABLE with_fill_date;
 
 DROP TABLE IF EXISTS with_fill_date;
-CREATE TABLE with_fill_date (d DateTime, d64 DateTime64) ENGINE = Memory;
+CREATE TABLE with_fill_date (d DateTime('UTC'), d64 DateTime64(3, 'UTC')) ENGINE = Memory;
 
-INSERT INTO with_fill_date VALUES (toDateTime('2020-02-05 10:20:00'), toDateTime64('2020-02-05 10:20:00', 3));
-INSERT INTO with_fill_date VALUES (toDateTime('2020-03-08 11:01:00'), toDateTime64('2020-03-08 11:01:00', 3));
+INSERT INTO with_fill_date VALUES (toDateTime('2020-02-05 10:20:00', 'UTC'), toDateTime64('2020-02-05 10:20:00', 3, 'UTC'));
+INSERT INTO with_fill_date VALUES (toDateTime('2020-03-08 11:01:00', 'UTC'), toDateTime64('2020-03-08 11:01:00', 3, 'UTC'));
 
 SELECT '15 MINUTE';
 SELECT d, count() FROM with_fill_date GROUP BY d ORDER BY d WITH FILL STEP INTERVAL 15 MINUTE LIMIT 5;

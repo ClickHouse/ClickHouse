@@ -36,6 +36,8 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
                 data_part->getMarksCount(), data_part->name, data_part->rows_count);
     }
 
+    /// Note, that we don't check setting collaborate_with_coordinator presence, because this source
+    /// is only used in background merges.
     addTotalRowsApprox(data_part->rows_count);
 
     /// Add columns because we don't want to read empty blocks

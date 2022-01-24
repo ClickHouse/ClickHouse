@@ -1,6 +1,7 @@
 #include "WriteIndirectBufferFromRemoteFS.h"
 
 #include <IO/WriteBufferFromS3.h>
+#include <IO/WriteBufferFromAzureBlobStorage.h>
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <IO/WriteBufferFromHTTP.h>
 
@@ -25,7 +26,7 @@ WriteIndirectBufferFromRemoteFS<T>::~WriteIndirectBufferFromRemoteFS()
 {
     try
     {
-        WriteIndirectBufferFromRemoteFS::finalize();
+        finalize();
     }
     catch (...)
     {
@@ -35,12 +36,9 @@ WriteIndirectBufferFromRemoteFS<T>::~WriteIndirectBufferFromRemoteFS()
 
 
 template <typename T>
-void WriteIndirectBufferFromRemoteFS<T>::finalize()
+void WriteIndirectBufferFromRemoteFS<T>::finalizeImpl()
 {
-    if (finalized)
-        return;
-
-    WriteBufferFromFileDecorator::finalize();
+    WriteBufferFromFileDecorator::finalizeImpl();
 
     metadata.addObject(remote_fs_path, count());
     metadata.save();
@@ -58,6 +56,11 @@ void WriteIndirectBufferFromRemoteFS<T>::sync()
 #if USE_AWS_S3
 template
 class WriteIndirectBufferFromRemoteFS<WriteBufferFromS3>;
+#endif
+
+#if USE_AZURE_BLOB_STORAGE
+template
+class WriteIndirectBufferFromRemoteFS<WriteBufferFromAzureBlobStorage>;
 #endif
 
 #if USE_HDFS

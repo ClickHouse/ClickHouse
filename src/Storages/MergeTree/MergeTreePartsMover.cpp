@@ -123,6 +123,9 @@ bool MergeTreePartsMover::selectPartsForMove(
 
     auto metadata_snapshot = data->getInMemoryMetadataPtr();
 
+    if (need_to_move.empty() && !metadata_snapshot->hasAnyMoveTTL())
+        return false;
+
     for (const auto & part : data_parts)
     {
         String reason;
@@ -197,7 +200,7 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
     auto settings = data->getSettings();
     auto part = moving_part.part;
     auto disk = moving_part.reserved_space->getDisk();
-    LOG_DEBUG(log, "Cloning part {} from {} to {}", part->name, part->volume->getDisk()->getName(), disk->getName());
+    LOG_DEBUG(log, "Cloning part {} from '{}' to '{}'", part->name, part->volume->getDisk()->getName(), disk->getName());
 
     const String directory_to_move = "moving";
     if (disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication)
@@ -228,6 +231,7 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
     LOG_TRACE(log, "Part {} was cloned to {}", part->name, cloned_part->getFullPath());
 
     cloned_part->loadColumnsChecksumsIndexes(true, true);
+    cloned_part->modification_time = disk->getLastModified(cloned_part->getFullRelativePath()).epochTime();
     return cloned_part;
 
 }

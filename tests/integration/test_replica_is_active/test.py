@@ -1,6 +1,7 @@
 import pytest
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from ast import literal_eval
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', with_zookeeper=True)
@@ -30,12 +31,12 @@ def start_cluster():
 
 def test_replica_is_active(start_cluster):
     query_result = node1.query("select replica_is_active from system.replicas where table = 'test_table'")
-    assert query_result == '{\'node1\':1,\'node2\':1,\'node3\':1}\n'
+    assert literal_eval(query_result) == {'node1': 1, 'node2': 1, 'node3': 1}
 
     node3.stop()
     query_result = node1.query("select replica_is_active from system.replicas where table = 'test_table'")
-    assert query_result == '{\'node1\':1,\'node2\':1,\'node3\':0}\n'
+    assert literal_eval(query_result) == {'node1': 1, 'node2': 1, 'node3': 0}
 
     node2.stop()
     query_result = node1.query("select replica_is_active from system.replicas where table = 'test_table'")
-    assert query_result == '{\'node1\':1,\'node2\':0,\'node3\':0}\n'
+    assert literal_eval(query_result) == {'node1': 1, 'node2': 0, 'node3': 0}

@@ -2,6 +2,8 @@
 
 #include <Parsers/IParserBase.h>
 
+#include <cassert>
+
 namespace DB
 {
 

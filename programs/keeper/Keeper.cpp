@@ -6,6 +6,7 @@
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Coordination/Defines.h>
 #include <Common/Config/ConfigReloader.h>
+#include <Server/TCPServer.h>
 #include <filesystem>
 #include <IO/UseSSL.h>
 #include <Core/ServerUUID.h>
@@ -20,11 +21,10 @@
 #include <Poco/Environment.h>
 #include <sys/stat.h>
 #include <pwd.h>
+#include <Coordination/FourLetterCommand.h>
 
-#if !defined(ARCADIA_BUILD)
-#   include "config_core.h"
-#   include "Common/config_version.h"
-#endif
+#include "config_core.h"
+#include "Common/config_version.h"
 
 #if USE_SSL
 #    include <Poco/Net/Context.h>
@@ -334,7 +334,11 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
 
-    GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 100));
+    GlobalThreadPool::initialize(
+        config().getUInt("max_thread_pool_size", 100),
+        config().getUInt("max_thread_pool_free_size", 1000),
+        config().getUInt("thread_pool_queue_size", 10000)
+    );
 
     static ServerErrorHandler error_handler;
     Poco::ErrorHandler::set(&error_handler);
@@ -363,6 +367,8 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 
     /// Initialize keeper RAFT. Do nothing if no keeper_server in config.
     global_context->initializeKeeperDispatcher(/* start_async = */false);
+    FourLetterCommandFactory::registerCommands(*global_context->getKeeperDispatcher());
+
     for (const auto & listen_host : listen_hosts)
     {
         /// TCP Keeper
@@ -374,11 +380,11 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
             socket.setReceiveTimeout(settings.receive_timeout);
             socket.setSendTimeout(settings.send_timeout);
             servers->emplace_back(
+                listen_host,
                 port_name,
-                std::make_unique<Poco::Net::TCPServer>(
-                    new KeeperTCPHandlerFactory(*this, false), server_pool, socket, new Poco::Net::TCPServerParams));
-
-            LOG_INFO(log, "Listening for connections to Keeper (tcp): {}", address.toString());
+                "Keeper (tcp): " + address.toString(),
+                std::make_unique<TCPServer>(
+                    new KeeperTCPHandlerFactory(*this, false), server_pool, socket));
         });
 
         const char * secure_port_name = "keeper_server.tcp_port_secure";
@@ -390,10 +396,11 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
             socket.setReceiveTimeout(settings.receive_timeout);
             socket.setSendTimeout(settings.send_timeout);
             servers->emplace_back(
+                listen_host,
                 secure_port_name,
-                std::make_unique<Poco::Net::TCPServer>(
-                    new KeeperTCPHandlerFactory(*this, true), server_pool, socket, new Poco::Net::TCPServerParams));
-            LOG_INFO(log, "Listening for connections to Keeper with secure protocol (tcp_secure): {}", address.toString());
+                "Keeper with secure protocol (tcp_secure): " + address.toString(),
+                std::make_unique<TCPServer>(
+                    new KeeperTCPHandlerFactory(*this, true), server_pool, socket));
 #else
             UNUSED(port);
             throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
@@ -403,7 +410,10 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     }
 
     for (auto & server : *servers)
+    {
         server.start();
+        LOG_INFO(log, "Listening for {}", server.getDescription());
+    }
 
     zkutil::EventPtr unused_event = std::make_shared<Poco::Event>();
     zkutil::ZooKeeperNodeCache unused_cache([] { return nullptr; });

@@ -1,14 +1,12 @@
 #include <unistd.h>
 #include <errno.h>
 #include <cassert>
-#include <sys/types.h>
 #include <sys/stat.h>
 
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
-#include <Common/MemoryTracker.h>
 
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
@@ -96,17 +94,19 @@ WriteBufferFromFileDescriptor::WriteBufferFromFileDescriptor(
 
 WriteBufferFromFileDescriptor::~WriteBufferFromFileDescriptor()
 {
+    finalize();
+}
+
+void WriteBufferFromFileDescriptor::finalizeImpl()
+{
     if (fd < 0)
     {
         assert(!offset() && "attempt to write after close");
         return;
     }
 
-    /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
     next();
 }
-
 
 void WriteBufferFromFileDescriptor::sync()
 {
@@ -114,7 +114,11 @@ void WriteBufferFromFileDescriptor::sync()
     next();
 
     /// Request OS to sync data with storage medium.
-    int res = fsync(fd);
+#if defined(OS_DARWIN)
+    int res = ::fsync(fd);
+#else
+    int res = ::fdatasync(fd);
+#endif
     if (-1 == res)
         throwFromErrnoWithPath("Cannot fsync " + getFileName(), getFileName(), ErrorCodes::CANNOT_FSYNC);
 }

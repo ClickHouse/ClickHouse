@@ -185,7 +185,7 @@ public:
         if constexpr (!Impl::isSaturable())
         {
             auto * result = nativeBoolCast(b, types[0], values[0]);
-            for (size_t i = 1; i < types.size(); i++)
+            for (size_t i = 1; i < types.size(); ++i)
                 result = Impl::apply(b, result, nativeBoolCast(b, types[i], values[i]));
             return b.CreateSelect(result, b.getInt8(1), b.getInt8(0));
         }
@@ -194,7 +194,7 @@ public:
         auto * stop = llvm::BasicBlock::Create(next->getContext(), "", next->getParent());
         b.SetInsertPoint(stop);
         auto * phi = b.CreatePHI(b.getInt8Ty(), values.size());
-        for (size_t i = 0; i < types.size(); i++)
+        for (size_t i = 0; i < types.size(); ++i)
         {
             b.SetInsertPoint(next);
             auto * value = values[i];

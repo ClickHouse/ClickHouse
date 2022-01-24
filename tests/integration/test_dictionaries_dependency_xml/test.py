@@ -3,7 +3,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
 DICTIONARY_FILES = ['configs/dictionaries/dep_x.xml', 'configs/dictionaries/dep_y.xml',
-                    'configs/dictionaries/dep_z.xml']
+                    'configs/dictionaries/dep_z.xml', 'configs/dictionaries/node.xml']
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance', dictionaries=DICTIONARY_FILES, stay_alive=True)
@@ -109,8 +109,18 @@ def test_dependent_tables(started_cluster):
     dependent_tables_assert()
     instance.restart_clickhouse()
     dependent_tables_assert()
+    query("drop table a.t")
+    query("drop table lazy.log")
+    query("drop table join")
+    query("drop dictionary test.d")
+    query("drop table src")
+    query("drop table system.join")
     query("drop database a")
     query("drop database lazy")
-    query("drop table src")
-    query("drop table join")
-    query("drop table system.join")
+
+
+def test_xml_dict_same_name(started_cluster):
+    instance.query("create table default.node ( key UInt64, name String ) Engine=Dictionary(node);")
+    instance.restart_clickhouse()
+    assert "node" in instance.query("show tables from default")
+    instance.query("drop table default.node")

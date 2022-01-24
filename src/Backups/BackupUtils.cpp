@@ -312,11 +312,11 @@ namespace
     String getDataPathInBackup(const IAST & create_query)
     {
         const auto & create = create_query.as<const ASTCreateQuery &>();
-        if (create.table.empty())
+        if (!create.table)
             return {};
         if (create.temporary)
-            return getDataPathInBackup({DatabaseCatalog::TEMPORARY_DATABASE, create.table});
-        return getDataPathInBackup({create.database, create.table});
+            return getDataPathInBackup({DatabaseCatalog::TEMPORARY_DATABASE, create.getTable()});
+        return getDataPathInBackup({create.getDatabase(), create.getTable()});
     }
 
     String getMetadataPathInBackup(const DatabaseAndTableName & table_name)
@@ -336,11 +336,11 @@ namespace
     String getMetadataPathInBackup(const IAST & create_query)
     {
         const auto & create = create_query.as<const ASTCreateQuery &>();
-        if (create.table.empty())
-            return getMetadataPathInBackup(create.database);
+        if (!create.table)
+            return getMetadataPathInBackup(create.getDatabase());
         if (create.temporary)
-            return getMetadataPathInBackup({DatabaseCatalog::TEMPORARY_DATABASE, create.table});
-        return getMetadataPathInBackup({create.database, create.table});
+            return getMetadataPathInBackup({DatabaseCatalog::TEMPORARY_DATABASE, create.getTable()});
+        return getMetadataPathInBackup({create.getDatabase(), create.getTable()});
     }
 
     void backupCreateQuery(const IAST & create_query, BackupEntries & backup_entries)
@@ -419,7 +419,7 @@ namespace
 
         /// We create and execute `create` query for the database name.
         auto create_query = std::make_shared<ASTCreateQuery>();
-        create_query->database = database_name;
+        create_query->setDatabase(database_name);
         create_query->if_not_exists = true;
         InterpreterCreateQuery create_interpreter{create_query, context};
         create_interpreter.execute();
@@ -460,7 +460,7 @@ namespace
 
         restore_tasks.emplace_back([table_name, new_create_query, partitions, context, backup]() -> RestoreDataTasks
         {
-            DatabaseAndTableName new_table_name{new_create_query->database, new_create_query->table};
+            DatabaseAndTableName new_table_name{new_create_query->getDatabase(), new_create_query->getTable()};
             if (new_create_query->temporary)
                 new_table_name.first = DatabaseCatalog::TEMPORARY_DATABASE;
 
@@ -536,7 +536,7 @@ namespace
 
         restore_tasks.emplace_back([database_name, new_create_query, except_list, context, backup, renaming_config]() -> RestoreDataTasks
         {
-            const String & new_database_name = new_create_query->database;
+            const String & new_database_name = new_create_query->getDatabase();
             context->checkAccess(AccessType::SHOW_TABLES, new_database_name);
 
             if (!DatabaseCatalog::instance().isDatabaseExist(new_database_name))

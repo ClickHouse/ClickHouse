@@ -6,7 +6,7 @@
 
 -   `policy_name` ([String](../../sql-reference/data-types/string.md)) — имя политики хранения.
 -   `volume_name` ([String](../../sql-reference/data-types/string.md)) — имя тома, который содержится в политике хранения.
--   `volume_priority` ([UInt64](../../sql-reference/data-types/int-uint.md)) — порядковый номер тома согласно конфигурации.
+-   `volume_priority` ([UInt64](../../sql-reference/data-types/int-uint.md)) — порядковый номер тома согласно конфигурации, приоритет согласно которому данные заполняют тома, т.е. данные при инсертах и мержах записываются на тома с более низким приоритетом (с учетом других правил: TTL, `max_data_part_size`, `move_factor`).
 -   `disks` ([Array(String)](../../sql-reference/data-types/array.md)) — имена дисков, содержащихся в политике хранения.
 -   `max_data_part_size` ([UInt64](../../sql-reference/data-types/int-uint.md)) — максимальный размер куска данных, который может храниться на дисках тома (0 — без ограничений).
 -   `move_factor` — доля доступного свободного места на томе, если места становится меньше, то данные начнут перемещение на следующий том, если он есть (по умолчанию 0.1).

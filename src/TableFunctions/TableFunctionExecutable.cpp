@@ -5,6 +5,7 @@
 #include <TableFunctions/parseColumnsListForTableFunction.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Storages/StorageExecutable.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -74,7 +75,12 @@ ColumnsDescription TableFunctionExecutable::getActualTableStructure(ContextPtr c
 StoragePtr TableFunctionExecutable::executeImpl(const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/) const
 {
     auto storage_id = StorageID(getDatabaseName(), table_name);
-    auto storage = StorageExecutable::create(storage_id, script_name, arguments, format, input_queries, getActualTableStructure(context), ConstraintsDescription{});
+    auto global_context = context->getGlobalContext();
+    ExecutableSettings settings;
+    settings.script_name = script_name;
+    settings.script_arguments = std::move(arguments);
+
+    auto storage = StorageExecutable::create(storage_id, format, settings, input_queries, getActualTableStructure(context), ConstraintsDescription{});
     storage->startup();
     return storage;
 }

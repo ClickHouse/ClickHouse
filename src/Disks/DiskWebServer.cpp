@@ -38,10 +38,12 @@ void DiskWebServer::initialize(const String & uri_path) const
     LOG_TRACE(log, "Loading metadata for directory: {}", uri_path);
     try
     {
+        Poco::Net::HTTPBasicCredentials credentials{};
         ReadWriteBufferFromHTTP metadata_buf(Poco::URI(fs::path(uri_path) / ".index"),
                                             Poco::Net::HTTPRequest::HTTP_GET,
                                             ReadWriteBufferFromHTTP::OutStreamCallback(),
-                                            ConnectionTimeouts::getHTTPTimeouts(getContext()));
+                                            ConnectionTimeouts::getHTTPTimeouts(getContext()),
+                                            credentials);
         String file_name;
         FileData file_data{};
 
@@ -152,7 +154,7 @@ bool DiskWebServer::exists(const String & path) const
 }
 
 
-std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & path, const ReadSettings & read_settings, std::optional<size_t>) const
+std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & path, const ReadSettings & read_settings, std::optional<size_t>, std::optional<size_t>) const
 {
     LOG_TRACE(log, "Read from path: {}", path);
     auto iter = files.find(path);
@@ -166,7 +168,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
     RemoteMetadata meta(path, remote_path);
     meta.remote_fs_objects.emplace_back(std::make_pair(remote_path, iter->second.size));
 
-    bool threadpool_read = read_settings.remote_fs_method == RemoteFSReadMethod::read_threadpool;
+    bool threadpool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
 
     auto web_impl = std::make_unique<ReadBufferFromWebServerGather>(path, url, meta, getContext(), threadpool_read, read_settings);
 

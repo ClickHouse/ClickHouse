@@ -1,19 +1,15 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/CurrentMetrics.h>
+#include <Parsers/formatAST.h>
 
-
-namespace CurrentMetrics
-{
-    extern const Metric BackgroundPoolTask;
-}
 
 namespace DB
 {
@@ -842,33 +838,14 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
                     LOG_TRACE(log, "Adding mutation {} for partition {} for all block numbers less than {}", entry->znode_name, partition_id, block_num);
                 }
 
-                /// Initialize `mutation.parts_to_do`. First we need to mutate all parts in `current_parts`.
-                Strings current_parts_to_mutate = getPartNamesToMutate(*entry, current_parts, drop_ranges);
-                for (const String & current_part_to_mutate : current_parts_to_mutate)
+                /// Initialize `mutation.parts_to_do`.
+                /// We need to mutate all parts in `current_parts` and all parts that will appear after queue entries execution.
+                /// So, we need to mutate all parts in virtual_parts (with the corresponding block numbers).
+                Strings virtual_parts_to_mutate = getPartNamesToMutate(*entry, virtual_parts, drop_ranges);
+                for (const String & current_part_to_mutate : virtual_parts_to_mutate)
                 {
                     assert(MergeTreePartInfo::fromPartName(current_part_to_mutate, format_version).level < MergeTreePartInfo::MAX_LEVEL);
                     mutation.parts_to_do.add(current_part_to_mutate);
-                }
-
-                /// And next we would need to mutate all parts with getDataVersion() greater than
-                /// mutation block number that would appear as a result of executing the queue.
-                for (const auto & queue_entry : queue)
-                {
-                    for (const String & produced_part_name : queue_entry->getVirtualPartNames(format_version))
-                    {
-                        auto part_info = MergeTreePartInfo::fromPartName(produced_part_name, format_version);
-
-                        /// Oddly enough, getVirtualPartNames() may return _virtual_ part name.
-                        /// Such parts do not exist and will never appear, so we should not add virtual parts to parts_to_do list.
-                        /// Fortunately, it's easy to distinguish virtual parts from normal parts by part level.
-                        /// See StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(...)
-                        if (part_info.isFakeDropRangePart())
-                            continue;
-
-                        auto it = entry->block_numbers.find(part_info.partition_id);
-                        if (it != entry->block_numbers.end() && it->second > part_info.getDataVersion())
-                            mutation.parts_to_do.add(produced_part_name);
-                    }
                 }
 
                 if (mutation.parts_to_do.size() == 0)
@@ -1057,7 +1034,7 @@ void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
                 min_unprocessed_insert_time_changed, max_processed_insert_time_changed, lock);
 
             (*it)->removed_by_other_entry = true;
-            queue.erase(it++);
+            it = queue.erase(it);
             ++removed_entries;
         }
         else
@@ -1201,7 +1178,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                 return false;
             }
 
-            auto part = data.getPartIfExists(name, {MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
+            auto part = data.getPartIfExists(name, {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
             if (part)
             {
                 if (auto part_in_memory = asInMemoryPart(part))

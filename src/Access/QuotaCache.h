@@ -11,7 +11,9 @@
 namespace DB
 {
 class AccessControl;
-
+struct Quota;
+using QuotaPtr = std::shared_ptr<const Quota>;
+struct RolesOrUsersSet;
 
 /// Stores information how much amount of resources have been consumed and how much are left.
 class QuotaCache
@@ -41,7 +43,7 @@ private:
 
         String calculateKey(const EnabledQuota & enabled_quota) const;
         boost::shared_ptr<const Intervals> getOrBuildIntervals(const String & key);
-        boost::shared_ptr<const Intervals> rebuildIntervals(const String & key);
+        boost::shared_ptr<const Intervals> rebuildIntervals(const String & key, std::chrono::system_clock::time_point current_time);
         void rebuildAllIntervals();
 
         QuotaPtr quota;

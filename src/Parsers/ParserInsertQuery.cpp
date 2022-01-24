@@ -1,6 +1,6 @@
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -41,7 +41,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_with("WITH");
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
-    ParserIdentifier name_p;
+    ParserIdentifier name_p(true);
     ParserList columns_p(std::make_unique<ParserInsertElement>(), std::make_unique<ParserToken>(TokenType::Comma), false);
     ParserFunction table_function_p{false};
     ParserStringLiteral infile_name_p;
@@ -116,7 +116,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// Check if file is a source of data.
     if (s_from_infile.ignore(pos, expected))
     {
-        /// Read its name to process it later
+        /// Read file name to process it later
         if (!infile_name_p.parse(pos, infile, expected))
             return false;
 
@@ -133,7 +133,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     Pos before_values = pos;
     String format_str;
 
-    /// VALUES or FROM INFILE or FORMAT or SELECT
+    /// VALUES or FORMAT or SELECT or WITH or WATCH.
+    /// After FROM INFILE we expect FORMAT, SELECT, WITH or nothing.
     if (!infile && s_values.ignore(pos, expected))
     {
         /// If VALUES is defined in query, everything except setting will be parsed as data
@@ -162,21 +163,17 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         tryGetIdentifierNameInto(format, format_str);
     }
-    else if (s_watch.ignore(pos, expected))
+    else if (!infile && s_watch.ignore(pos, expected))
     {
         /// If WATCH is defined, return to position before WATCH and parse
         /// rest of query as WATCH query.
         pos = before_values;
         ParserWatchQuery watch_p;
         watch_p.parse(pos, watch, expected);
-
-        /// FORMAT section is expected if we have input() in SELECT part
-        if (s_format.ignore(pos, expected) && !name_p.parse(pos, format, expected))
-            return false;
     }
-    else
+    else if (!infile)
     {
-        /// If all previous conditions were false, query is incorrect
+        /// If all previous conditions were false and it's not FROM INFILE, query is incorrect
         return false;
     }
 
@@ -187,6 +184,10 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ParserSetQuery parser_settings(true);
         if (!parser_settings.parse(pos, settings_ast, expected))
             return false;
+        /// In case of INSERT INTO ... VALUES SETTINGS ... (...), (...), ...
+        /// we should move data pointer after all settings.
+        if (data != nullptr)
+            data = pos->begin;
     }
 
     if (select)
@@ -244,8 +245,13 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else
     {
-        tryGetIdentifierNameInto(database, query->table_id.database_name);
-        tryGetIdentifierNameInto(table, query->table_id.table_name);
+        query->database = database;
+        query->table = table;
+
+        if (database)
+            query->children.push_back(database);
+        if (table)
+            query->children.push_back(table);
     }
 
     query->columns = columns;

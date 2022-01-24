@@ -40,6 +40,7 @@ public:
     size_t getSizeOfValueInMemory() const override;
     bool onlyNull() const override;
     bool canBeInsideLowCardinality() const override { return nested_data_type->canBeInsideLowCardinality(); }
+    bool canBePromoted() const override { return nested_data_type->canBePromoted(); }
 
     const DataTypePtr & getNestedType() const { return nested_data_type; }
 private:
