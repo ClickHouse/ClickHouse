@@ -139,8 +139,6 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
 {
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
 
-    last_block_is_duplicate = false;
-
     auto zookeeper = storage.getZooKeeper();
     assertSessionIsNotExpired(zookeeper);
 
@@ -188,19 +186,28 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
         partitions.emplace_back(ReplicatedMergeTreeSink::PrevPart::Partition{
             .temp_part = std::move(temp_part),
             .elapsed_ns = elapsed_ns,
-            .block_id = block_id
+            .block_id = std::move(block_id)
         });
     }
 
     finishPrevPart(zookeeper);
     prev_part = std::make_unique<ReplicatedMergeTreeSink::PrevPart>();
     prev_part->partitions = std::move(partitions);
+
+    /// If deduplicated data should not be inserted into MV, we need to set proper
+    /// value for `last_block_is_duplicate`, which is possible only after the part is commited.
+    /// Othervide we can delay commit.
+    /// TODO: we can also delay commit if there is no MVs.
+    if (!context->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views)
+        finishPrevPart(zookeeper);
 }
 
 void ReplicatedMergeTreeSink::finishPrevPart(zkutil::ZooKeeperPtr & zookeeper)
 {
     if (!prev_part)
         return;
+
+    last_block_is_duplicate = false;
 
     for (auto & partition : prev_part->partitions)
     {
@@ -212,8 +219,10 @@ void ReplicatedMergeTreeSink::finishPrevPart(zkutil::ZooKeeperPtr & zookeeper)
         {
             commitPart(zookeeper, part, partition.block_id);
 
+            last_block_is_duplicate = last_block_is_duplicate || part->is_duplicate;
+
             /// Set a special error code if the block is duplicate
-            int error = (deduplicate && last_block_is_duplicate) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
+            int error = (deduplicate && part->is_duplicate) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
             PartLog::addNewPart(storage.getContext(), part, partition.elapsed_ns, ExecutionStatus(error));
         }
         catch (...)
@@ -222,13 +231,13 @@ void ReplicatedMergeTreeSink::finishPrevPart(zkutil::ZooKeeperPtr & zookeeper)
             throw;
         }
     }
+
+    prev_part.reset();
 }
 
 
 void ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPtr & part)
 {
-    last_block_is_duplicate = false;
-
     /// NOTE: No delay in this case. That's Ok.
 
     auto zookeeper = storage.getZooKeeper();
@@ -386,7 +395,6 @@ void ReplicatedMergeTreeSink::commitPart(
             if (storage.getActiveContainingPart(existing_part_name))
             {
                 part->is_duplicate = true;
-                last_block_is_duplicate = true;
                 ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
                 if (quorum)
                 {

@@ -137,6 +137,7 @@ public:
     virtual RemoteFSPathKeeperPtr createFSPathKeeper() const = 0;
 
     static AsynchronousReaderPtr getThreadPoolReader();
+    static ThreadPool & getThreadPoolWriter();
 
     virtual std::unique_ptr<ReadBufferFromFileBase> readMetaFile(
         const String & path,
@@ -152,8 +153,6 @@ public:
         const String & path) override;
 
     UInt32 getRefCount(const String & path) const override;
-
-    static ThreadPool & getThreadPoolWriter();
 
 protected:
     Poco::Logger * log;

@@ -91,27 +91,7 @@ void WriteBufferFromS3::nextImpl()
         allocateBuffer();
     }
 
-    if (thread_pool)
-    {
-        std::lock_guard lock(bg_tasks_mutex);
-        {
-            while (!background_tasks.empty() && background_tasks.front().is_finised)
-            {
-                auto & task = background_tasks.front();
-                auto exception = std::move(task.exception);
-                auto tag = std::move(task.tag);
-                background_tasks.pop_front();
-
-                if (exception)
-                {
-                    waitForBackGroundTasks();
-                    std::rethrow_exception(exception);
-                }
-
-                part_tags.push_back(tag);
-            }
-        }
-    }
+    waitForReadyBackGroundTasks();
 }
 
 void WriteBufferFromS3::allocateBuffer()
@@ -148,7 +128,7 @@ void WriteBufferFromS3::finalizeImpl()
     if (!is_prefinalized)
         preFinalize();
 
-    waitForBackGroundTasks();
+    waitForAllBackGroundTasks();
 
     if (!multipart_upload_id.empty())
         completeMultipartUpload();
@@ -200,7 +180,7 @@ void WriteBufferFromS3::writePart()
         int part_number;
         {
             std::lock_guard lock(bg_tasks_mutex);
-            task = &background_tasks.emplace_back();
+            task = &upload_object_tasks.emplace_back();
             ++num_added_bg_tasks;
             part_number = num_added_bg_tasks;
         }
@@ -232,33 +212,6 @@ void WriteBufferFromS3::writePart()
         fillUploadRequest(task.req, part_tags.size() + 1);
         processUploadRequest(task);
         part_tags.push_back(task.tag);
-    }
-}
-
-void WriteBufferFromS3::waitForBackGroundTasks()
-{
-    if (thread_pool)
-    {
-        std::unique_lock lock(bg_tasks_mutex);
-        bg_tasks_condvar.wait(lock, [this]() { return num_added_bg_tasks == num_finished_bg_tasks; });
-
-        while (!background_tasks.empty())
-        {
-            auto & task = background_tasks.front();
-            if (task.exception)
-                std::rethrow_exception(std::move(task.exception));
-
-            part_tags.push_back(task.tag);
-
-            background_tasks.pop_front();
-        }
-
-        if (put_object_task)
-        {
-            bg_tasks_condvar.wait(lock, [this]() { return put_object_task->is_finised; });
-            if (put_object_task->exception)
-                std::rethrow_exception(std::move(put_object_task->exception));
-        }
     }
 }
 
@@ -385,6 +338,58 @@ void WriteBufferFromS3::processPutRequest(PutObjectTask & task)
         LOG_DEBUG(log, "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}, WithPool: {}", bucket, key, task.req.GetContentLength(), with_pool);
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+}
+
+void WriteBufferFromS3::waitForReadyBackGroundTasks()
+{
+    if (thread_pool)
+    {
+        std::lock_guard lock(bg_tasks_mutex);
+        {
+            while (!upload_object_tasks.empty() && upload_object_tasks.front().is_finised)
+            {
+                auto & task = upload_object_tasks.front();
+                auto exception = std::move(task.exception);
+                auto tag = std::move(task.tag);
+                upload_object_tasks.pop_front();
+
+                if (exception)
+                {
+                    waitForAllBackGroundTasks();
+                    std::rethrow_exception(exception);
+                }
+
+                part_tags.push_back(tag);
+            }
+        }
+    }
+}
+
+void WriteBufferFromS3::waitForAllBackGroundTasks()
+{
+    if (thread_pool)
+    {
+        std::unique_lock lock(bg_tasks_mutex);
+        bg_tasks_condvar.wait(lock, [this]() { return num_added_bg_tasks == num_finished_bg_tasks; });
+
+        while (!upload_object_tasks.empty())
+        {
+            auto & task = upload_object_tasks.front();
+            if (task.exception)
+                std::rethrow_exception(std::move(task.exception));
+
+            part_tags.push_back(task.tag);
+
+            upload_object_tasks.pop_front();
+        }
+
+        if (put_object_task)
+        {
+            bg_tasks_condvar.wait(lock, [this]() { return put_object_task->is_finised; });
+            if (put_object_task->exception)
+                std::rethrow_exception(std::move(put_object_task->exception));
+        }
+    }
 }
 
 }
