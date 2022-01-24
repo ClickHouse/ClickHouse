@@ -76,7 +76,8 @@ private:
     void fillPutRequest(Aws::S3::Model::PutObjectRequest & req);
     void processPutRequest(PutObjectTask & task);
 
-    void waitForBackGroundTasks();
+    void waitForReadyBackGroundTasks();
+    void waitForAllBackGroundTasks();
 
     String bucket;
     String key;
@@ -95,14 +96,14 @@ private:
 
     bool is_prefinalized = false;
 
+    /// Following fields
     ThreadPool * thread_pool;
-    std::list<UploadPartTask> background_tasks;
+    std::unique_ptr<PutObjectTask> put_object_task;
+    std::list<UploadPartTask> upload_object_tasks;
     size_t num_added_bg_tasks = 0;
     size_t num_finished_bg_tasks = 0;
     std::mutex bg_tasks_mutex;
     std::condition_variable bg_tasks_condvar;
-
-    std::unique_ptr<PutObjectTask> put_object_task;
 
     Poco::Logger * log = &Poco::Logger::get("WriteBufferFromS3");
 };

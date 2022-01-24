@@ -8,12 +8,12 @@
 namespace DB
 {
 /**
- * Write buffer with possibility to set and invoke callback after 'finalize' call.
+ * This buffer writes to cache, but after finalize() copy written file from cache to disk.
  */
-class CompletionAwareWriteBuffer : public WriteBufferFromFileDecorator
+class WritingToCacheWriteBuffer : public WriteBufferFromFileDecorator
 {
 public:
-    CompletionAwareWriteBuffer(
+    WritingToCacheWriteBuffer(
         std::unique_ptr<WriteBufferFromFileBase> impl_,
         std::function<std::unique_ptr<ReadBuffer>()> create_read_buffer_,
         std::function<std::unique_ptr<WriteBuffer>()> create_write_buffer_)
@@ -23,7 +23,7 @@ public:
     {
     }
 
-    virtual ~CompletionAwareWriteBuffer() override
+    virtual ~WritingToCacheWriteBuffer() override
     {
         try
         {
@@ -192,13 +192,13 @@ DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode
     if (!cache_file_predicate(path))
         return DiskDecorator::writeFile(path, buf_size, mode);
 
-    // LOG_TRACE(log, "Write file {} to cache", backQuote(path));
+    LOG_TEST(log, "Write file {} to cache", backQuote(path));
 
     auto dir_path = directoryPath(path);
     if (!cache_disk->exists(dir_path))
         cache_disk->createDirectories(dir_path);
 
-    return std::make_unique<CompletionAwareWriteBuffer>(
+    return std::make_unique<WritingToCacheWriteBuffer>(
         cache_disk->writeFile(path, buf_size, mode),
         [this, path]()
         {
