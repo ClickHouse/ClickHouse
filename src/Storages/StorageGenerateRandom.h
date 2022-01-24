@@ -14,6 +14,7 @@ class StorageGenerateRandom final : public shared_ptr_helper<StorageGenerateRand
     friend struct shared_ptr_helper<StorageGenerateRandom>;
 public:
     std::string getName() const override { return "GenerateRandom"; }
+    bool supportsSubcolumns() const override { return true; }
 
     Pipe read(
         const Names & column_names,

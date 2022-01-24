@@ -21,6 +21,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Interpreters/Context.h>
 
 #include <Common/SipHash.h>
 #include <Common/randomSeed.h>
@@ -379,23 +380,38 @@ ColumnPtr fillColumnWithRandomData(
 class GenerateSource : public SourceWithProgress
 {
 public:
-    GenerateSource(UInt64 block_size_, UInt64 max_array_length_, UInt64 max_string_length_, UInt64 random_seed_, Block block_header_, ContextPtr context_)
-        : SourceWithProgress(Nested::flatten(prepareBlockToFill(block_header_)))
+    GenerateSource(UInt64 block_size_, UInt64 max_array_length_, UInt64 max_string_length_,
+        UInt64 random_seed_, const NamesAndTypesList & columns_list_, ContextPtr context_)
+        : SourceWithProgress(getHeader(columns_list_, context_->getSettings().flatten_nested))
         , block_size(block_size_), max_array_length(max_array_length_), max_string_length(max_string_length_)
-        , block_to_fill(std::move(block_header_)), rng(random_seed_), context(context_) {}
+        , columns_list(columns_list_), rng(random_seed_), context(context_) {}
 
     String getName() const override { return "GenerateRandom"; }
 
 protected:
     Chunk generate() override
     {
+        Block block;
+        for (const auto & elem : columns_list)
+        {
+            auto name_in_storage = elem.getNameInStorage();
+            if (!block.has(name_in_storage))
+            {
+                const auto & type_in_storage = elem.getTypeInStorage();
+                auto column = fillColumnWithRandomData(type_in_storage, block_size, max_array_length, max_string_length, rng, context);
+                block.insert({std::move(column), type_in_storage, name_in_storage});
+            }
+        }
+
+        if (context->getSettings().flatten_nested)
+            block = Nested::flatten(block);
+
         Columns columns;
-        columns.reserve(block_to_fill.columns());
+        columns.reserve(columns_list.size());
 
-        for (const auto & elem : block_to_fill)
-            columns.emplace_back(fillColumnWithRandomData(elem.type, block_size, max_array_length, max_string_length, rng, context));
+        for (const auto & elem : columns_list)
+            columns.emplace_back(getColumnFromBlock(block, elem));
 
-        columns = Nested::flatten(block_to_fill.cloneWithColumns(std::move(columns))).getColumns();
         return {std::move(columns), block_size};
     }
 
@@ -403,22 +419,19 @@ private:
     UInt64 block_size;
     UInt64 max_array_length;
     UInt64 max_string_length;
-    Block block_to_fill;
+    NamesAndTypesList columns_list;
 
     pcg64 rng;
 
     ContextPtr context;
 
-    static Block & prepareBlockToFill(Block & block)
+    static Block getHeader(const NamesAndTypesList & columns, bool flatten_nested)
     {
-        /// To support Nested types, we will collect them to single Array of Tuple.
-        auto names_and_types = Nested::collect(block.getNamesAndTypesList());
-        block.clear();
+        Block header;
+        for (const auto & column : columns)
+            header.insert(ColumnWithTypeAndName(column.type, column.name));
 
-        for (auto & column : names_and_types)
-            block.insert(ColumnWithTypeAndName(column.type, column.name));
-
-        return block;
+        return flatten_nested ? Nested::flatten(header) : header;
     }
 };
 
@@ -498,20 +511,12 @@ Pipe StorageGenerateRandom::read(
     Pipes pipes;
     pipes.reserve(num_streams);
 
-    const ColumnsDescription & our_columns = metadata_snapshot->getColumns();
-    Block block_header;
-    for (const auto & name : column_names)
-    {
-        const auto & name_type = our_columns.get(name);
-        MutableColumnPtr column = name_type.type->createColumn();
-        block_header.insert({std::move(column), name_type.type, name_type.name});
-    }
-
     /// Will create more seed values for each source from initial seed.
     pcg64 generate(random_seed);
 
-    for (UInt64 i = 0; i < num_streams; ++i)
-        pipes.emplace_back(std::make_shared<GenerateSource>(max_block_size, max_array_length, max_string_length, generate(), block_header, context));
+    auto columns_list = metadata_snapshot->getColumns().getByNames(ColumnsDescription::All, column_names, true);
+    for (size_t i = 0; i < num_streams; ++i)
+        pipes.emplace_back(std::make_shared<GenerateSource>(max_block_size, max_array_length, max_string_length, generate(), columns_list, context));
 
     return Pipe::unitePipes(std::move(pipes));
 }

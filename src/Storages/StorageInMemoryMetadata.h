@@ -159,13 +159,13 @@ struct StorageInMemoryMetadata
     /// Storage metadata.
     Block getSampleBlockWithVirtuals(const NamesAndTypesList & virtuals) const;
 
-
     /// Block with ordinary + materialized + aliases + virtuals. Virtuals have
     /// to be explicitly specified, because they are part of Storage type, not
     /// Storage metadata. StorageID required only for more clear exception
     /// message.
     Block getSampleBlockForColumns(
         const Names & column_names, const NamesAndTypesList & virtuals = {}, const StorageID & storage_id = StorageID::createEmpty()) const;
+
     /// Returns structure with partition key.
     const KeyDescription & getPartitionKey() const;
     /// Returns ASTExpressionList of partition key expression for storage or nullptr if there is none.
