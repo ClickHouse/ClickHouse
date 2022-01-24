@@ -388,7 +388,7 @@ Pipe StorageHive::read(
     }
     else
         hive_task_files_collector = (*hive_task_files_collector_builder)();
-    hive_task_files_collector->init_query_env(args);
+    hive_task_files_collector->initQueryEnv(args);
     /// Hive files to read
     HiveFiles hive_files = hive_task_files_collector->collectHiveFiles();
 

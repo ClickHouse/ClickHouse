@@ -12,8 +12,13 @@ class SingleHiveTaskFilesCollector : public IHiveTaskFilesCollector
 {
 public:
     using Arguments = IHiveTaskFilesCollector::Arguments;
-    void init_query_env(const Arguments & args_) override;
+    void initQueryEnv(const Arguments & args_) override;
     HiveFiles collectHiveFiles() override;
+    String getName() override { return "SingleHiveTask"; }
+    void setupCallbackData(const String &) override
+    {
+
+    }
 private:
     Arguments args;
     ExpressionActionsPtr partition_key_expr;
@@ -37,7 +42,7 @@ private:
 
     HiveFilePtr createHiveFileIfNeeded(
         const HiveMetastoreClient::FileInfo & file_info_,
-        const FieldVector & fiedls_,
+        const FieldVector & fields_,
         SelectQueryInfo & query_info_,
         ContextPtr context_ );
 };

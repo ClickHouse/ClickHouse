@@ -28,6 +28,67 @@ namespace ErrorCodes
 namespace DB
 {
 
+String IHiveFile::toHiveFileFormat(const String & format_class)
+{
+    using FileFormat = IHiveFile::FileFormat;
+    FileFormat hdfs_file_format = IHiveFile::toFileFormat(format_class);
+    String format_name;
+    switch (hdfs_file_format)
+    {
+        case FileFormat::TEXT:
+        case FileFormat::LZO_TEXT:
+            format_name = "HiveText";
+            break;
+        case FileFormat::RC_FILE:
+            /// TODO to be implemented
+            throw Exception("Unsopported hive format rc_file", ErrorCodes::NOT_IMPLEMENTED);
+        case FileFormat::SEQUENCE_FILE:
+            /// TODO to be implemented
+            throw Exception("Unsopported hive format sequence_file", ErrorCodes::NOT_IMPLEMENTED);
+        case FileFormat::AVRO:
+            format_name = "Avro";
+            break;
+        case FileFormat::PARQUET:
+            format_name = "Parquet";
+            break;
+        case FileFormat::ORC:
+            format_name = "ORC";
+            break;
+    }
+    return format_name;
+}
+HiveFilePtr createHiveFile(
+    const String & format_name,
+    const FieldVector & fields,
+    const String & namenode_url,
+    const String & path,
+    UInt64 ts,
+    size_t size,
+    const NamesAndTypesList & index_names_and_types,
+    const std::shared_ptr<HiveSettings> & hive_settings,
+    ContextPtr context)
+{
+    HiveFilePtr hive_file;
+    if (format_name == "HiveText")
+    {
+        hive_file = std::make_shared<HiveTextFile>(fields, namenode_url, path, ts, size, index_names_and_types, hive_settings, context);
+    }
+    else if (format_name == "ORC")
+    {
+        hive_file = std::make_shared<HiveOrcFile>(fields, namenode_url, path, ts, size, index_names_and_types, hive_settings, context);
+    }
+    else if (format_name == "Parquet")
+    {
+        hive_file = std::make_shared<HiveParquetFile>(fields, namenode_url, path, ts, size, index_names_and_types, hive_settings, context);
+    }
+    else
+    {
+        throw Exception("IHiveFile not implemented for format " + format_name, ErrorCodes::NOT_IMPLEMENTED);
+    }
+    return hive_file;
+
+}
+
 template <class FieldType, class StatisticsType>
 Range createRangeFromOrcStatistics(const StatisticsType * stats)
 {

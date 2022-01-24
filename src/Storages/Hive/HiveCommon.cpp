@@ -5,6 +5,7 @@
 #include <thrift/protocol/TBinaryProtocol.h>
 #include <thrift/transport/TBufferTransports.h>
 #include <thrift/transport/TSocket.h>
+#include <Storages/Hive/HiveFile.h>
 
 
 namespace DB
@@ -13,6 +14,7 @@ namespace ErrorCodes
 {
     extern const int NO_HIVEMETASTORE;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 bool HiveMetastoreClient::shouldUpdateTableMetadata(
