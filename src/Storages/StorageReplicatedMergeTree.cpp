@@ -4813,7 +4813,7 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper()
 
     if (has_metadata_in_zookeeper.has_value() && *has_metadata_in_zookeeper)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Replica has metadata in ZooKeeper: "
-                                                   "it's a bug or a result of manual intervention into ZooKeeper");
+                                                   "it's either a bug or it's a result of manual intervention to ZooKeeper");
 
     if (are_restoring_replica.exchange(true))
         throw Exception(ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED, "Replica restoration in progress");
