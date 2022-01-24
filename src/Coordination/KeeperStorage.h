@@ -177,9 +177,9 @@ public:
     }
 
     /// Clear outdated data from internal container.
-    void clearGarbageAfterSnapshot(size_t up_to_size)
+    void clearGarbageAfterSnapshot()
     {
-        container.clearOutdatedNodes(up_to_size);
+        container.clearOutdatedNodes();
     }
 
     /// Get all active sessions
