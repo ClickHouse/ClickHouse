@@ -176,7 +176,7 @@ public:
 
     /// If format always doesn't support append, you can use this method instead of
     /// registerAppendSupportChecker with append_support_checker that always returns true.
-    void markFormatDoesntSupportAppend(const String & name);
+    void markFormatHasNoAppendSupport(const String & name);
 
     bool checkIfFormatSupportAppend(const String & name, ContextPtr context, const std::optional<FormatSettings> & format_settings_ = std::nullopt);
 
