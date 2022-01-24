@@ -640,7 +640,7 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
         finalizer = global_ctx->to->finalizePart(
             global_ctx->new_data_part, ctx->need_sync, &global_ctx->storage_columns, &global_ctx->checksums_gathered_columns);
 
-    global_ctx->to->finish(std::move(*finalizer));
+    finalizer->finish();
 
     global_ctx->promise.set_value(global_ctx->new_data_part);
 

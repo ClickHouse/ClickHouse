@@ -982,8 +982,7 @@ private:
         ctx->mutating_executor.reset();
         ctx->mutating_pipeline.reset();
 
-        auto finalizer = static_pointer_cast<MergedBlockOutputStream>(ctx->out)->finalizePart(ctx->new_data_part, ctx->need_sync);
-        static_pointer_cast<MergedBlockOutputStream>(ctx->out)->finish(std::move(finalizer));
+        static_pointer_cast<MergedBlockOutputStream>(ctx->out)->finalizePart(ctx->new_data_part, ctx->need_sync).finish();
         ctx->out.reset();
     }
 

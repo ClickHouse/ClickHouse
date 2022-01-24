@@ -41,6 +41,8 @@ public:
         ~Finalizer();
         Finalizer(Finalizer &&);
         Finalizer & operator=(Finalizer &&);
+
+        void finish();
     };
 
     /// Finalize writing part and fill inner structures

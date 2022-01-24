@@ -38,7 +38,7 @@ struct MergeTreeSink::PrevPart
 {
     struct Partition
     {
-        MergeTreeDataWriter::TempPart temp_part;
+        MergeTreeDataWriter::TemporaryPart temp_part;
         UInt64 elapsed_ns;
     };
 

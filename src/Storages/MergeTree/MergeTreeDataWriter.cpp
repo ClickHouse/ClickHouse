@@ -137,10 +137,10 @@ void updateTTL(
 
 }
 
-void MergeTreeDataWriter::TempPart::finalize()
+void MergeTreeDataWriter::TemporaryPart::finalize()
 {
     for (auto & stream : streams)
-        stream.stream->finish(std::move(stream.finalizer));
+        stream.finalizer.finish();
 }
 
 BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
@@ -276,10 +276,10 @@ Block MergeTreeDataWriter::mergeBlock(
     return block.cloneWithColumns(status.chunk.getColumns());
 }
 
-MergeTreeDataWriter::TempPart MergeTreeDataWriter::writeTempPart(
+MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
     BlockWithPartition & block_with_partition, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
-    TempPart temp_part;
+    TemporaryPart temp_part;
     Block & block = block_with_partition.block;
 
     static const String TMP_PREFIX = "tmp_insert_";
@@ -445,7 +445,7 @@ MergeTreeDataWriter::TempPart MergeTreeDataWriter::writeTempPart(
     auto finalizer = out->finalizePart(new_data_part, data_settings->fsync_after_insert);
 
     temp_part.part = new_data_part;
-    temp_part.streams.emplace_back(TempPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
+    temp_part.streams.emplace_back(TemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
 
     /// out.finish(new_data_part, std::move(written_files), sync_on_insert);
 
@@ -456,7 +456,7 @@ MergeTreeDataWriter::TempPart MergeTreeDataWriter::writeTempPart(
     return temp_part;
 }
 
-MergeTreeDataWriter::TempPart MergeTreeDataWriter::writeProjectionPartImpl(
+MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     const String & part_name,
     MergeTreeDataPartType part_type,
     const String & relative_path,
@@ -467,7 +467,7 @@ MergeTreeDataWriter::TempPart MergeTreeDataWriter::writeProjectionPartImpl(
     Block block,
     const ProjectionDescription & projection)
 {
-    TempPart temp_part;
+    TemporaryPart temp_part;
     const StorageMetadataPtr & metadata_snapshot = projection.metadata;
     MergeTreePartInfo new_part_info("all", 0, 0, 0);
     auto new_data_part = data.createPart(
@@ -550,7 +550,7 @@ MergeTreeDataWriter::TempPart MergeTreeDataWriter::writeProjectionPartImpl(
     out->writeWithPermutation(block, perm_ptr);
     auto finalizer = out->finalizePart(new_data_part, false);
     temp_part.part = new_data_part;
-    temp_part.streams.emplace_back(TempPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
+    temp_part.streams.emplace_back(TemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
 
     // out.finish(new_data_part, std::move(written_files), false);
 
@@ -561,7 +561,7 @@ MergeTreeDataWriter::TempPart MergeTreeDataWriter::writeProjectionPartImpl(
     return temp_part;
 }
 
-MergeTreeDataWriter::TempPart MergeTreeDataWriter::writeProjectionPart(
+MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPart(
     MergeTreeData & data, Poco::Logger * log, Block block, const ProjectionDescription & projection, const IMergeTreeDataPart * parent_part)
 {
     String part_name = projection.name;
@@ -593,7 +593,7 @@ MergeTreeDataWriter::TempPart MergeTreeDataWriter::writeProjectionPart(
 
 /// This is used for projection materialization process which may contain multiple stages of
 /// projection part merges.
-MergeTreeDataWriter::TempPart MergeTreeDataWriter::writeTempProjectionPart(
+MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempProjectionPart(
     MergeTreeData & data,
     Poco::Logger * log,
     Block block,
@@ -628,7 +628,7 @@ MergeTreeDataWriter::TempPart MergeTreeDataWriter::writeTempProjectionPart(
         projection);
 }
 
-MergeTreeDataWriter::TempPart MergeTreeDataWriter::writeInMemoryProjectionPart(
+MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeInMemoryProjectionPart(
     const MergeTreeData & data,
     Poco::Logger * log,
     Block block,

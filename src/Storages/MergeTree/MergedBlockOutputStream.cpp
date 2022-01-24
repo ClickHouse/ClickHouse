@@ -53,12 +53,51 @@ void MergedBlockOutputStream::writeWithPermutation(const Block & block, const IC
 
 struct MergedBlockOutputStream::Finalizer::Impl
 {
+    IMergeTreeDataPartWriter & writer;
     MergeTreeData::MutableDataPartPtr part;
     std::vector<std::unique_ptr<WriteBufferFromFileBase>> written_files;
     bool sync;
+
+    Impl(IMergeTreeDataPartWriter & writer_, MergeTreeData::MutableDataPartPtr part_, bool sync_)
+        : writer(writer_), part(std::move(part_)), sync(sync_) {}
+
+    void finish();
 };
 
-MergedBlockOutputStream::Finalizer::~Finalizer() = default;
+void MergedBlockOutputStream::Finalizer::finish()
+{
+    if (impl)
+        impl->finish();
+
+    impl.reset();
+}
+
+void MergedBlockOutputStream::Finalizer::Impl::finish()
+{
+    writer.finish(sync);
+
+    for (auto & file : written_files)
+    {
+        file->finalize();
+        if (sync)
+            file->sync();
+    }
+
+    part->storage.lockSharedData(*part);
+}
+
+MergedBlockOutputStream::Finalizer::~Finalizer()
+{
+    try
+    {
+        finish();
+    }
+    catch(...)
+    {
+        tryLogCurrentException("MergedBlockOutputStream");
+    }
+}
+
 MergedBlockOutputStream::Finalizer::Finalizer(Finalizer &&) = default;
 MergedBlockOutputStream::Finalizer & MergedBlockOutputStream::Finalizer::operator=(Finalizer &&) = default;
 MergedBlockOutputStream::Finalizer::Finalizer(std::unique_ptr<Impl> impl_) : impl(std::move(impl_)) {}
@@ -98,9 +137,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePart(
         new_part->setSerializationInfos(serialization_infos);
     }
 
-    auto finalizer = std::make_unique<Finalizer::Impl>();
-    finalizer->sync = sync;
-    finalizer->part = new_part;
+    auto finalizer = std::make_unique<Finalizer::Impl>(*writer, new_part, sync);
     if (new_part->isStoredOnDisk())
        finalizer->written_files = finalizePartOnDisk(new_part, checksums);
 
@@ -116,20 +153,6 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePart(
         new_part->default_codec = default_codec;
 
     return Finalizer(std::move(finalizer));
-}
-
-void MergedBlockOutputStream::finish(Finalizer finalizer)
-{
-    writer->finish(finalizer.impl->sync);
-
-    for (auto & file : finalizer.impl->written_files)
-    {
-        file->finalize();
-        if (sync)
-            file->sync();
-    }
-
-    finalizer.impl->part->storage.lockSharedData(*finalizer.impl->part);
 }
 
 MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDisk(
