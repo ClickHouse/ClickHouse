@@ -8,9 +8,9 @@
 
 #include <type_traits>
 
-#include <base/DateLUT.h>
-#include <base/LocalDate.h>
-#include <base/LocalDateTime.h>
+#include <Common/DateLUT.h>
+#include <Common/LocalDate.h>
+#include <Common/LocalDateTime.h>
 #include <base/StringRef.h>
 #include <base/arithmeticOverflow.h>
 #include <base/unit.h>
@@ -30,6 +30,7 @@
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/PeekableReadBuffer.h>
 #include <IO/VarInt.h>
 
 #include <DataTypes/DataTypeDateTime.h>
@@ -47,6 +48,7 @@ struct Memory;
 namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_DATE;
+    extern const int CANNOT_PARSE_BOOL;
     extern const int CANNOT_PARSE_DATETIME;
     extern const int CANNOT_PARSE_UUID;
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
@@ -182,6 +184,15 @@ inline void assertChar(char symbol, ReadBuffer & buf)
     }
 }
 
+inline bool checkCharCaseInsensitive(char c, ReadBuffer & buf)
+{
+    char a;
+    if (!buf.peek(a) || !equalsCaseInsensitive(a, c))
+        return false;
+    buf.ignore();
+    return true;
+}
+
 inline void assertString(const String & s, ReadBuffer & buf)
 {
     assertString(s.c_str(), buf);
@@ -230,20 +241,45 @@ inline void readBoolText(bool & x, ReadBuffer & buf)
     x = tmp != '0';
 }
 
-inline void readBoolTextWord(bool & x, ReadBuffer & buf)
+inline void readBoolTextWord(bool & x, ReadBuffer & buf, bool support_upper_case = false)
 {
     if (buf.eof())
         throwReadAfterEOF();
 
-    if (*buf.position() == 't')
+    switch (*buf.position())
     {
-        assertString("true", buf);
-        x = true;
-    }
-    else
-    {
-        assertString("false", buf);
-        x = false;
+        case 't':
+            assertString("true", buf);
+            x = true;
+            break;
+        case 'f':
+            assertString("false", buf);
+            x = false;
+            break;
+        case 'T':
+        {
+            if (support_upper_case)
+            {
+                assertString("TRUE", buf);
+                x = true;
+                break;
+            }
+            else
+                [[fallthrough]];
+        }
+        case 'F':
+        {
+            if (support_upper_case)
+            {
+                assertString("FALSE", buf);
+                x = false;
+                break;
+            }
+            else
+                [[fallthrough]];
+        }
+        default:
+            throw ParsingException("Unexpected Bool value", ErrorCodes::CANNOT_PARSE_BOOL);
     }
 }
 
@@ -527,6 +563,8 @@ void readStringUntilWhitespace(String & s, ReadBuffer & buf);
   */
 void readCSVString(String & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 
+/// Differ from readCSVString in that it doesn't remove quotes around field if any.
+void readCSVField(String & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 
 /// Read and append result to array of characters.
 template <typename Vector>
@@ -597,35 +635,45 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf)
         /// YYYY-MM-D
         /// YYYY-M-DD
         /// YYYY-M-D
+        /// YYYYMMDD
 
         /// The delimiters can be arbitrary characters, like YYYY/MM!DD, but obviously not digits.
 
         UInt16 year = (pos[0] - '0') * 1000 + (pos[1] - '0') * 100 + (pos[2] - '0') * 10 + (pos[3] - '0');
+        UInt8 month;
+        UInt8 day;
         pos += 5;
 
         if (isNumericASCII(pos[-1]))
-            return ReturnType(false);
-
-        UInt8 month = pos[0] - '0';
-        if (isNumericASCII(pos[1]))
         {
-            month = month * 10 + pos[1] - '0';
+            /// YYYYMMDD
+            month = (pos[-1] - '0') * 10 + (pos[0] - '0');
+            day = (pos[1] - '0') * 10 + (pos[2] - '0');
             pos += 3;
         }
         else
-            pos += 2;
-
-        if (isNumericASCII(pos[-1]))
-            return ReturnType(false);
-
-        UInt8 day = pos[0] - '0';
-        if (isNumericASCII(pos[1]))
         {
-            day = day * 10 + pos[1] - '0';
-            pos += 2;
+            month = pos[0] - '0';
+            if (isNumericASCII(pos[1]))
+            {
+                month = month * 10 + pos[1] - '0';
+                pos += 3;
+            }
+            else
+                pos += 2;
+
+            if (isNumericASCII(pos[-1]))
+                return ReturnType(false);
+
+            day = pos[0] - '0';
+            if (isNumericASCII(pos[1]))
+            {
+                day = day * 10 + pos[1] - '0';
+                pos += 2;
+            }
+            else
+                pos += 1;
         }
-        else
-            pos += 1;
 
         buf.position() = pos;
         date = LocalDate(year, month, day);
@@ -853,13 +901,8 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
     {
         /// Unix timestamp with subsecond precision, already scaled to integer.
         /// For disambiguation we support only time since 2001-09-09 01:46:40 UTC and less than 30 000 years in future.
-
-        for (size_t i = 0; i < scale; ++i)
-        {
-            components.fractional *= 10;
-            components.fractional += components.whole % 10;
-            components.whole /= 10;
-        }
+        components.fractional =  components.whole % common::exp10_i32(scale);
+        components.whole = components.whole / common::exp10_i32(scale);
     }
 
     datetime64 = DecimalUtils::decimalFromComponents<DateTime64>(components, scale);
@@ -1025,7 +1068,6 @@ inline void readDoubleQuoted(LocalDateTime & x, ReadBuffer & buf)
     assertChar('"', buf);
 }
 
-
 /// CSV, for numbers, dates: quotes are optional, no special escaping rules.
 template <typename T>
 inline void readCSVSimple(T & x, ReadBuffer & buf)
@@ -1045,8 +1087,10 @@ inline void readCSVSimple(T & x, ReadBuffer & buf)
 }
 
 template <typename T>
-inline std::enable_if_t<is_arithmetic_v<T>, void>
-readCSV(T & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline std::enable_if_t<is_arithmetic_v<T>, void> readCSV(T & x, ReadBuffer & buf)
+{
+    readCSVSimple(x, buf);
+}
 
 inline void readCSV(String & x, ReadBuffer & buf, const FormatSettings::CSV & settings) { readCSVString(x, buf, settings); }
 inline void readCSV(LocalDate & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
@@ -1314,6 +1358,9 @@ void saveUpToPosition(ReadBuffer & in, Memory<Allocator<false>> & memory, char *
   */
 bool loadAtPosition(ReadBuffer & in, Memory<Allocator<false>> & memory, char * & current);
 
+/// Skip data until start of the next row or eof (the end of row is determined by two delimiters:
+/// row_after_delimiter and row_between_delimiter).
+void skipToNextRowOrEof(PeekableReadBuffer & buf, const String & row_after_delimiter, const String & row_between_delimiter, bool skip_spaces);
 
 struct PcgDeserializer
 {
@@ -1335,4 +1382,9 @@ struct PcgDeserializer
     }
 };
 
+void readQuotedFieldIntoString(String & s, ReadBuffer & buf);
+
+void readJSONFieldIntoString(String & s, ReadBuffer & buf);
+
 }
+

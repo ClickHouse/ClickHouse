@@ -6,11 +6,12 @@
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/getTableExpressions.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTSelectQuery.h>
 
 namespace DB
 {
+
+class ASTIdentifier;
+class ASTSelectQuery;
 
 struct IdentifierSemanticImpl
 {

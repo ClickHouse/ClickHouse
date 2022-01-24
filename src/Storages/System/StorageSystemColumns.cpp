@@ -3,13 +3,14 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/queryToString.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/NullSource.h>

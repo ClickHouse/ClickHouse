@@ -43,9 +43,7 @@
 #include <Interpreters/Context.h>
 
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
+#include "config_functions.h"
 
 
 namespace DB
@@ -1251,7 +1249,7 @@ public:
     {
         ColumnString & col_str = assert_cast<ColumnString &>(dest);
         auto & chars = col_str.getChars();
-        WriteBufferFromVector<ColumnString::Chars> buf(chars, WriteBufferFromVector<ColumnString::Chars>::AppendModeTag());
+        WriteBufferFromVector<ColumnString::Chars> buf(chars, AppendModeTag());
         traverse(element, buf);
         buf.finalize();
         chars.push_back(0);

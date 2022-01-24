@@ -1,8 +1,6 @@
 #include "Storages/StorageS3Cluster.h"
 
-#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#endif
 
 #if USE_AWS_S3
 
@@ -128,7 +126,7 @@ Pipe StorageS3Cluster::read(
                 scalars,
                 Tables(),
                 processed_stage,
-                callback);
+                RemoteQueryExecutor::Extension{.task_iterator = callback});
 
             pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
         }

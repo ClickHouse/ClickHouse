@@ -1,7 +1,3 @@
-#ifdef __SSE2__
-    #include <emmintrin.h>
-#endif
-
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
@@ -229,16 +225,19 @@ namespace
             memcpy(&res_elems[elems_size_old], &src_elems[arr_offset], arr_size * sizeof(T));
         };
 
-    #if defined(__AVX512F__) && defined(__AVX512BW__)
-        const __m512i zero_vec = _mm512_setzero_epi32();
+        /** A slightly more optimized version.
+        * Based on the assumption that often pieces of consecutive values
+        *  completely pass or do not pass the filter.
+        * Therefore, we will optimistically check the parts of `SIMD_BYTES` values.
+        */
         static constexpr size_t SIMD_BYTES = 64;
         const auto * filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
 
         while (filt_pos < filt_end_aligned)
         {
-            uint64_t mask = _mm512_cmp_epi8_mask(_mm512_loadu_si512(reinterpret_cast<const __m512i *>(filt_pos)), zero_vec, _MM_CMPINT_GT);
+            uint64_t mask = bytes64MaskToBits64Mask(filt_pos);
 
-            if (mask == 0xffffffffffffffff)
+            if (0xffffffffffffffff == mask)
             {
                 /// SIMD_BYTES consecutive rows pass the filter
                 const auto first = offsets_pos == offsets_begin;
@@ -270,88 +269,6 @@ namespace
             filt_pos += SIMD_BYTES;
             offsets_pos += SIMD_BYTES;
         }
-    #elif defined(__AVX__) && defined(__AVX2__)
-        const __m256i zero_vec = _mm256_setzero_si256();
-        static constexpr size_t SIMD_BYTES = 32;
-        const auto * filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
-
-        while (filt_pos < filt_end_aligned)
-        {
-            uint32_t mask = _mm256_movemask_epi8(_mm256_cmpgt_epi8(_mm256_loadu_si256(reinterpret_cast<const __m256i *>(filt_pos)), zero_vec));
-
-            if (mask == 0xffffffff)
-            {
-                /// SIMD_BYTES consecutive rows pass the filter
-                const auto first = offsets_pos == offsets_begin;
-
-                const auto chunk_offset = first ? 0 : offsets_pos[-1];
-                const auto chunk_size = offsets_pos[SIMD_BYTES - 1] - chunk_offset;
-
-                result_offsets_builder.template insertChunk<SIMD_BYTES>(offsets_pos, first, chunk_offset, chunk_size);
-
-                /// copy elements for SIMD_BYTES arrays at once
-                const auto elems_size_old = res_elems.size();
-                res_elems.resize(elems_size_old + chunk_size);
-                memcpy(&res_elems[elems_size_old], &src_elems[chunk_offset], chunk_size * sizeof(T));
-            }
-            else
-            {
-                while (mask)
-                {
-                    size_t index = __builtin_ctz(mask);
-                    copy_array(offsets_pos + index);
-                #ifdef __BMI__
-                    mask = _blsr_u32(mask);
-                #else
-                    mask = mask & (mask-1);
-                #endif
-                }
-            }
-
-            filt_pos += SIMD_BYTES;
-            offsets_pos += SIMD_BYTES;
-        }
-    #elif defined(__SSE2__)
-        const __m128i zero_vec = _mm_setzero_si128();
-        static constexpr size_t SIMD_BYTES = 16;
-        const auto * filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
-
-        while (filt_pos < filt_end_aligned)
-        {
-            UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(
-                _mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)),
-                zero_vec));
-            mask = ~mask;
-
-            if (mask == 0xffff)
-            {
-                /// SIMD_BYTES consecutive rows pass the filter
-                const auto first = offsets_pos == offsets_begin;
-
-                const auto chunk_offset = first ? 0 : offsets_pos[-1];
-                const auto chunk_size = offsets_pos[SIMD_BYTES - 1] - chunk_offset;
-
-                result_offsets_builder.template insertChunk<SIMD_BYTES>(offsets_pos, first, chunk_offset, chunk_size);
-
-                /// copy elements for SIMD_BYTES arrays at once
-                const auto elems_size_old = res_elems.size();
-                res_elems.resize(elems_size_old + chunk_size);
-                memcpy(&res_elems[elems_size_old], &src_elems[chunk_offset], chunk_size * sizeof(T));
-            }
-            else
-            {
-                while (mask)
-                {
-                    size_t index = __builtin_ctz(mask);
-                    copy_array(offsets_pos + index);
-                    mask = mask & (mask - 1);
-                }
-            }
-
-            filt_pos += SIMD_BYTES;
-            offsets_pos += SIMD_BYTES;
-        }
-    #endif
 
         while (filt_pos < filt_end)
         {

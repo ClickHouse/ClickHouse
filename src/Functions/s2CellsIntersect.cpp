@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
+#include "config_functions.h"
 
 #if USE_S2_GEOMETRY
 
@@ -74,7 +72,7 @@ public:
         auto & dst_data = dst->getData();
         dst_data.reserve(input_rows_count);
 
-        for (const auto row : collections::range(0, input_rows_count))
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 id_first = col_id_first->getInt(row);
             const UInt64 id_second = col_id_second->getInt(row);

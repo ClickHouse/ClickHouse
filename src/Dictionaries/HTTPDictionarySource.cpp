@@ -98,10 +98,13 @@ Pipe HTTPDictionarySource::loadAll()
         Poco::Net::HTTPRequest::HTTP_GET,
         ReadWriteBufferFromHTTP::OutStreamCallback(),
         timeouts,
-        0,
         credentials,
+        0,
         DBMS_DEFAULT_BUFFER_SIZE,
-        configuration.header_entries);
+        context->getReadSettings(),
+        configuration.header_entries,
+        ReadWriteBufferFromHTTP::Range{},
+        RemoteHostFilter{}, false);
 
     return createWrappedBuffer(std::move(in_ptr));
 }
@@ -116,10 +119,13 @@ Pipe HTTPDictionarySource::loadUpdatedAll()
         Poco::Net::HTTPRequest::HTTP_GET,
         ReadWriteBufferFromHTTP::OutStreamCallback(),
         timeouts,
-        0,
         credentials,
+        0,
         DBMS_DEFAULT_BUFFER_SIZE,
-        configuration.header_entries);
+        context->getReadSettings(),
+        configuration.header_entries,
+        ReadWriteBufferFromHTTP::Range{},
+        RemoteHostFilter{}, false);
 
     return createWrappedBuffer(std::move(in_ptr));
 }
@@ -143,10 +149,13 @@ Pipe HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
         Poco::Net::HTTPRequest::HTTP_POST,
         out_stream_callback,
         timeouts,
-        0,
         credentials,
+        0,
         DBMS_DEFAULT_BUFFER_SIZE,
-        configuration.header_entries);
+        context->getReadSettings(),
+        configuration.header_entries,
+        ReadWriteBufferFromHTTP::Range{},
+        RemoteHostFilter{}, false);
 
     return createWrappedBuffer(std::move(in_ptr));
 }
@@ -170,10 +179,13 @@ Pipe HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::vect
         Poco::Net::HTTPRequest::HTTP_POST,
         out_stream_callback,
         timeouts,
-        0,
         credentials,
+        0,
         DBMS_DEFAULT_BUFFER_SIZE,
-        configuration.header_entries);
+        context->getReadSettings(),
+        configuration.header_entries,
+        ReadWriteBufferFromHTTP::Range{},
+        RemoteHostFilter{}, false);
 
     return createWrappedBuffer(std::move(in_ptr));
 }
@@ -195,7 +207,7 @@ bool HTTPDictionarySource::hasUpdateField() const
 
 DictionarySourcePtr HTTPDictionarySource::clone() const
 {
-    return std::make_unique<HTTPDictionarySource>(*this);
+    return std::make_shared<HTTPDictionarySource>(*this);
 }
 
 std::string HTTPDictionarySource::toString() const

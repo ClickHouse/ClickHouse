@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-    #include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #if USE_YAML_CPP
 #include "YAMLParser.h"
@@ -19,7 +17,7 @@
 #include <Poco/DOM/Text.h>
 #include <Common/Exception.h>
 
-#include <yaml-cpp/yaml.h> // Y_IGNORE
+#include <yaml-cpp/yaml.h>
 
 #include <base/logger_useful.h>
 

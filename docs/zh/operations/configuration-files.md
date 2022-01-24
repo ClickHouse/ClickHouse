@@ -3,7 +3,7 @@
 ClickHouse支持多配置文件管理。主配置文件是`/etc/clickhouse-server/config.xml`。其余文件须在目录`/etc/clickhouse-server/config.d`。
 
 !!! 注意：
-    所有配置文件必须是XML格式。此外，配置文件须有相同的跟元素，通常是`<yandex>`。
+    所有配置文件必须是XML格式。此外，配置文件须有相同的跟元素，通常是`<clickhouse>`。
 
 主配置文件中的一些配置可以通过`replace`或`remove`属性被配置文件覆盖。
 
@@ -26,7 +26,7 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 ```
 
 ``` xml
-<yandex>
+<clickhouse>
     <users>
       <alice>
           <profile>analytics</profile>
@@ -37,7 +37,7 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
           <quota>analytics</quota>
       </alice>
     </users>
-</yandex>
+</clickhouse>
 ```
 
 对于每个配置文件，服务器还会在启动时生成 `file-preprocessed.xml` 文件。这些文件包含所有已完成的替换和复盖，并且它们旨在提供信息。如果zookeeper替换在配置文件中使用，但ZooKeeper在服务器启动时不可用，则服务器将从预处理的文件中加载配置。

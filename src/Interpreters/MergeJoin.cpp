@@ -50,12 +50,12 @@ ColumnWithTypeAndName condtitionColumnToJoinable(const Block & block, const Stri
 
     if (!src_column_name.empty())
     {
-        auto mask_col = JoinCommon::getColumnAsMask(block, src_column_name);
-        assert(mask_col);
-        const auto & mask_data = assert_cast<const ColumnUInt8 &>(*mask_col).getData();
-
-        for (size_t i = 0; i < res_size; ++i)
-            null_map->getData()[i] = !mask_data[i];
+        auto join_mask = JoinCommon::getColumnAsMask(block, src_column_name);
+        if (!join_mask.isConstant())
+        {
+            for (size_t i = 0; i < res_size; ++i)
+                null_map->getData()[i] = join_mask.isRowFiltered(i);
+        }
     }
 
     ColumnPtr res_col = ColumnNullable::create(std::move(data_col), std::move(null_map));
@@ -477,6 +477,7 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , max_rows_in_right_block(table_join->maxRowsInRightBlock())
     , max_files_to_merge(table_join->maxFilesToMerge())
+    , log(&Poco::Logger::get("MergeJoin"))
 {
     switch (table_join->strictness())
     {
@@ -533,8 +534,9 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
         if (right_sample_block.getByName(right_key).type->lowCardinality())
             lowcard_right_keys.push_back(right_key);
     }
-    JoinCommon::removeLowCardinalityInplace(right_table_keys);
-    JoinCommon::removeLowCardinalityInplace(right_sample_block, key_names_right);
+
+    JoinCommon::convertToFullColumnsInplace(right_table_keys);
+    JoinCommon::convertToFullColumnsInplace(right_sample_block, key_names_right);
 
     const NameSet required_right_keys = table_join->requiredRightKeys();
     for (const auto & column : right_table_keys)
@@ -549,10 +551,15 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
     makeSortAndMerge(key_names_left, left_sort_description, left_merge_description);
     makeSortAndMerge(key_names_right, right_sort_description, right_merge_description);
 
-    /// Temporary disable 'partial_merge_join_left_table_buffer_bytes' without 'partial_merge_join_optimizations'
-    if (table_join->enablePartialMergeJoinOptimizations())
-        if (size_t max_bytes = table_join->maxBytesInLeftBuffer())
-            left_blocks_buffer = std::make_shared<SortedBlocksBuffer>(left_sort_description, max_bytes);
+    LOG_DEBUG(log, "Joining keys: left [{}], right [{}]", fmt::join(key_names_left, ", "), fmt::join(key_names_right, ", "));
+
+    if (size_t max_bytes = table_join->maxBytesInLeftBuffer(); max_bytes > 0)
+    {
+        /// Disabled due to https://github.com/ClickHouse/ClickHouse/issues/31009
+        // left_blocks_buffer = std::make_shared<SortedBlocksBuffer>(left_sort_description, max_bytes);
+        LOG_WARNING(log, "`partial_merge_join_left_table_buffer_bytes` is disabled in current version of ClickHouse");
+        UNUSED(left_blocks_buffer);
+    }
 }
 
 /// Has to be called even if totals are empty
@@ -658,7 +665,7 @@ bool MergeJoin::saveRightBlock(Block && block)
 Block MergeJoin::modifyRightBlock(const Block & src_block) const
 {
     Block block = materializeBlock(src_block);
-    JoinCommon::removeLowCardinalityInplace(block, table_join->getOnlyClause().key_names_right);
+    JoinCommon::convertToFullColumnsInplace(block, table_join->getOnlyClause().key_names_right);
     return block;
 }
 
@@ -700,7 +707,7 @@ void MergeJoin::joinBlock(Block & block, ExtraBlockPtr & not_processed)
                 lowcard_keys.push_back(column_name);
         }
 
-        JoinCommon::removeLowCardinalityInplace(block, key_names_left, false);
+        JoinCommon::convertToFullColumnsInplace(block, key_names_left, false);
 
         sortBlock(block, left_sort_description);
 

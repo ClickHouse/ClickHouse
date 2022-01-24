@@ -1,12 +1,12 @@
 #include <Access/SettingsProfileElement.h>
 #include <Access/SettingsConstraints.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/SettingsProfile.h>
-#include <Parsers/ASTSettingsProfileElement.h>
 #include <Core/Settings.h>
 #include <Common/SettingsChanges.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Parsers/Access/ASTSettingsProfileElement.h>
 #include <base/removeDuplicates.h>
 
 
@@ -17,19 +17,19 @@ SettingsProfileElement::SettingsProfileElement(const ASTSettingsProfileElement &
     init(ast, nullptr);
 }
 
-SettingsProfileElement::SettingsProfileElement(const ASTSettingsProfileElement & ast, const AccessControlManager & manager)
+SettingsProfileElement::SettingsProfileElement(const ASTSettingsProfileElement & ast, const AccessControl & access_control)
 {
-    init(ast, &manager);
+    init(ast, &access_control);
 }
 
-void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const AccessControlManager * manager)
+void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const AccessControl * access_control)
 {
-    auto name_to_id = [id_mode{ast.id_mode}, manager](const String & name_) -> UUID
+    auto name_to_id = [id_mode{ast.id_mode}, access_control](const String & name_) -> UUID
     {
         if (id_mode)
             return parse<UUID>(name_);
-        assert(manager);
-        return manager->getID<SettingsProfile>(name_);
+        assert(access_control);
+        return access_control->getID<SettingsProfile>(name_);
     };
 
     if (!ast.parent_profile.empty())
@@ -40,8 +40,8 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
         setting_name = ast.setting_name;
 
         /// Optionally check if a setting with that name is allowed.
-        if (manager)
-            manager->checkSettingNameIsAllowed(setting_name);
+        if (access_control)
+            access_control->checkSettingNameIsAllowed(setting_name);
 
         value = ast.value;
         min_value = ast.min_value;
@@ -76,13 +76,13 @@ std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toAST() const
 }
 
 
-std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toASTWithNames(const AccessControlManager & manager) const
+std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toASTWithNames(const AccessControl & access_control) const
 {
     auto ast = std::make_shared<ASTSettingsProfileElement>();
 
     if (parent_profile)
     {
-        auto parent_profile_name = manager.tryReadName(*parent_profile);
+        auto parent_profile_name = access_control.tryReadName(*parent_profile);
         if (parent_profile_name)
             ast->parent_profile = *parent_profile_name;
     }
@@ -103,10 +103,10 @@ SettingsProfileElements::SettingsProfileElements(const ASTSettingsProfileElement
         emplace_back(*ast_element);
 }
 
-SettingsProfileElements::SettingsProfileElements(const ASTSettingsProfileElements & ast, const AccessControlManager & manager)
+SettingsProfileElements::SettingsProfileElements(const ASTSettingsProfileElements & ast, const AccessControl & access_control)
 {
     for (const auto & ast_element : ast.elements)
-        emplace_back(*ast_element, manager);
+        emplace_back(*ast_element, access_control);
 }
 
 
@@ -118,11 +118,11 @@ std::shared_ptr<ASTSettingsProfileElements> SettingsProfileElements::toAST() con
     return res;
 }
 
-std::shared_ptr<ASTSettingsProfileElements> SettingsProfileElements::toASTWithNames(const AccessControlManager & manager) const
+std::shared_ptr<ASTSettingsProfileElements> SettingsProfileElements::toASTWithNames(const AccessControl & access_control) const
 {
     auto res = std::make_shared<ASTSettingsProfileElements>();
     for (const auto & element : *this)
-        res->elements.push_back(element.toASTWithNames(manager));
+        res->elements.push_back(element.toASTWithNames(access_control));
     return res;
 }
 
@@ -155,9 +155,9 @@ SettingsChanges SettingsProfileElements::toSettingsChanges() const
     return res;
 }
 
-SettingsConstraints SettingsProfileElements::toSettingsConstraints(const AccessControlManager & manager) const
+SettingsConstraints SettingsProfileElements::toSettingsConstraints(const AccessControl & access_control) const
 {
-    SettingsConstraints res{manager};
+    SettingsConstraints res{access_control};
     for (const auto & elem : *this)
     {
         if (!elem.setting_name.empty())

@@ -1,7 +1,8 @@
 #pragma once
 
 #include <base/types.h>
-#include <Access/AccessRightsElement.h>
+#include <Access/Common/AccessRightsElement.h>
+#include <functional>
 #include <memory>
 #include <vector>
 

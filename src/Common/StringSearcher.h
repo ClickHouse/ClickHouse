@@ -116,9 +116,9 @@ public:
 
                 /// lower and uppercase variants of the first octet of the first character in `needle`
                 size_t length_l = UTF8::convertCodePointToUTF8(first_l_u32, l_seq, sizeof(l_seq));
-                size_t length_r = UTF8::convertCodePointToUTF8(first_u_u32, u_seq, sizeof(u_seq));
+                size_t length_u = UTF8::convertCodePointToUTF8(first_u_u32, u_seq, sizeof(u_seq));
 
-                if (length_l != length_r)
+                if (length_l != length_u)
                     throw Exception{"UTF8 sequences with different lowercase and uppercase lengths are not supported", ErrorCodes::UNSUPPORTED_PARAMETER};
             }
 
@@ -184,6 +184,31 @@ public:
     }
 
     template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+    ALWAYS_INLINE bool compareTrivial(const CharT * haystack_pos, const CharT * const haystack_end, const uint8_t * needle_pos) const
+    {
+        while (haystack_pos < haystack_end && needle_pos < needle_end)
+        {
+            auto haystack_code_point = UTF8::convertUTF8ToCodePoint(haystack_pos, haystack_end - haystack_pos);
+            auto needle_code_point = UTF8::convertUTF8ToCodePoint(needle_pos, needle_end - needle_pos);
+
+            /// Invalid UTF-8, should not compare equals
+            if (!haystack_code_point || !needle_code_point)
+                break;
+
+            /// Not equals case insensitive.
+            if (Poco::Unicode::toLower(*haystack_code_point) != Poco::Unicode::toLower(*needle_code_point))
+                break;
+
+            /// @note assuming sequences for lowercase and uppercase have exact same length (that is not always true)
+            const auto len = UTF8::seqLength(*haystack_pos);
+            haystack_pos += len;
+            needle_pos += len;
+        }
+
+        return needle_pos == needle_end;
+    }
+
+    template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
     ALWAYS_INLINE bool compare(const CharT * /*haystack*/, const CharT * haystack_end, const CharT * pos) const
     {
 
@@ -200,34 +225,15 @@ public:
             {
                 if (mask == cachemask)
                 {
-                    pos += cache_valid_len;
-                    auto needle_pos = needle + cache_valid_len;
-
-                    while (needle_pos < needle_end)
-                    {
-                        auto haystack_code_point = UTF8::convertUTF8ToCodePoint(pos, haystack_end - pos);
-                        auto needle_code_point = UTF8::convertUTF8ToCodePoint(needle_pos, needle_end - needle_pos);
-
-                        /// Invalid UTF-8, should not compare equals
-                        if (!haystack_code_point || !needle_code_point)
-                            break;
-
-                        /// Not equals case insensitive.
-                        if (Poco::Unicode::toLower(*haystack_code_point) != Poco::Unicode::toLower(*needle_code_point))
-                            break;
-
-                        /// @note assuming sequences for lowercase and uppercase have exact same length (that is not always true)
-                        const auto len = UTF8::seqLength(*pos);
-                        pos += len;
-                        needle_pos += len;
-                    }
-
-                    if (needle_pos == needle_end)
+                    if (compareTrivial(pos, haystack_end, needle))
                         return true;
                 }
             }
             else if ((mask & cachemask) == cachemask)
-                return true;
+            {
+                if (compareTrivial(pos, haystack_end, needle))
+                    return true;
+            }
 
             return false;
         }
@@ -238,25 +244,7 @@ public:
             pos += first_needle_symbol_is_ascii;
             auto needle_pos = needle + first_needle_symbol_is_ascii;
 
-            while (needle_pos < needle_end)
-            {
-                auto haystack_code_point = UTF8::convertUTF8ToCodePoint(pos, haystack_end - pos);
-                auto needle_code_point = UTF8::convertUTF8ToCodePoint(needle_pos, needle_end - needle_pos);
-
-                /// Invalid UTF-8, should not compare equals
-                if (!haystack_code_point || !needle_code_point)
-                    break;
-
-                /// Not equals case insensitive.
-                if (Poco::Unicode::toLower(*haystack_code_point) != Poco::Unicode::toLower(*needle_code_point))
-                    break;
-
-                const auto len = UTF8::seqLength(*pos);
-                pos += len;
-                needle_pos += len;
-            }
-
-            if (needle_pos == needle_end)
+            if (compareTrivial(pos, haystack_end, needle_pos))
                 return true;
         }
 
@@ -299,40 +287,21 @@ public:
                     const auto v_against_l_offset = _mm_cmpeq_epi8(v_haystack_offset, cachel);
                     const auto v_against_u_offset = _mm_cmpeq_epi8(v_haystack_offset, cacheu);
                     const auto v_against_l_or_u_offset = _mm_or_si128(v_against_l_offset, v_against_u_offset);
-                    const auto mask_offset = _mm_movemask_epi8(v_against_l_or_u_offset);
+                    const auto mask_offset_both = _mm_movemask_epi8(v_against_l_or_u_offset);
 
                     if (0xffff == cachemask)
                     {
-                        if (mask_offset == cachemask)
+                        if (mask_offset_both == cachemask)
                         {
-                            auto haystack_pos = haystack + cache_valid_len;
-                            auto needle_pos = needle + cache_valid_len;
-
-                            while (haystack_pos < haystack_end && needle_pos < needle_end)
-                            {
-                                auto haystack_code_point = UTF8::convertUTF8ToCodePoint(haystack_pos, haystack_end - haystack_pos);
-                                auto needle_code_point = UTF8::convertUTF8ToCodePoint(needle_pos, needle_end - needle_pos);
-
-                                /// Invalid UTF-8, should not compare equals
-                                if (!haystack_code_point || !needle_code_point)
-                                    break;
-
-                                /// Not equals case insensitive.
-                                if (Poco::Unicode::toLower(*haystack_code_point) != Poco::Unicode::toLower(*needle_code_point))
-                                    break;
-
-                                /// @note assuming sequences for lowercase and uppercase have exact same length (that is not always true)
-                                const auto len = UTF8::seqLength(*haystack_pos);
-                                haystack_pos += len;
-                                needle_pos += len;
-                            }
-
-                            if (needle_pos == needle_end)
+                            if (compareTrivial(haystack, haystack_end, needle))
                                 return haystack;
                         }
                     }
-                    else if ((mask_offset & cachemask) == cachemask)
-                        return haystack;
+                    else if ((mask_offset_both & cachemask) == cachemask)
+                    {
+                        if (compareTrivial(haystack, haystack_end, needle))
+                            return haystack;
+                    }
 
                     /// first octet was ok, but not the first 16, move to start of next sequence and reapply
                     haystack += UTF8::seqLength(*haystack);
@@ -349,25 +318,7 @@ public:
                 auto haystack_pos = haystack + first_needle_symbol_is_ascii;
                 auto needle_pos = needle + first_needle_symbol_is_ascii;
 
-                while (haystack_pos < haystack_end && needle_pos < needle_end)
-                {
-                    auto haystack_code_point = UTF8::convertUTF8ToCodePoint(haystack_pos, haystack_end - haystack_pos);
-                    auto needle_code_point = UTF8::convertUTF8ToCodePoint(needle_pos, needle_end - needle_pos);
-
-                    /// Invalid UTF-8, should not compare equals
-                    if (!haystack_code_point || !needle_code_point)
-                        break;
-
-                    /// Not equals case insensitive.
-                    if (Poco::Unicode::toLower(*haystack_code_point) != Poco::Unicode::toLower(*needle_code_point))
-                        break;
-
-                    const auto len = UTF8::seqLength(*haystack_pos);
-                    haystack_pos += len;
-                    needle_pos += len;
-                }
-
-                if (needle_pos == needle_end)
+                if (compareTrivial(haystack_pos, haystack_end, needle_pos))
                     return haystack;
             }
 

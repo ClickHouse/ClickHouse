@@ -41,7 +41,6 @@ public:
 
     std::string getName() const override;
 private:
-
     BridgeHelperPtr bridge_helper;
     std::string remote_database_name;
     std::string remote_table_name;

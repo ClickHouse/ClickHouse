@@ -1,33 +1,24 @@
 #include <stdlib.h>
 #include <fcntl.h>
-#include <signal.h>
 #include <map>
 #include <iostream>
-#include <fstream>
 #include <iomanip>
-#include <unordered_set>
-#include <algorithm>
 #include <optional>
 #include <base/scope_guard_safe.h>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
-#include <Poco/String.h>
 #include <filesystem>
 #include <string>
 #include "Client.h"
 #include "Core/Protocol.h"
 
-#include <base/argsToConfig.h>
 #include <base/find_symbols.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
+#include <Common/config_version.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <Common/TerminalSize.h>
 #include <Common/Config/configReadClient.h>
-#include "Common/MemoryTracker.h"
 
 #include <Core/QueryProcessingStage.h>
 #include <Client/TestHint.h>
@@ -57,14 +48,6 @@
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
-
-namespace CurrentMetrics
-{
-    extern const Metric Revision;
-    extern const Metric VersionInteger;
-    extern const Metric MemoryTracking;
-    extern const Metric MaxDDLEntryID;
-}
 
 namespace fs = std::filesystem;
 
@@ -330,7 +313,9 @@ std::vector<String> Client::loadWarningMessages()
 {
     std::vector<String> messages;
     connection->sendQuery(connection_parameters.timeouts, "SELECT message FROM system.warnings", "" /* query_id */,
-                          QueryProcessingStage::Complete, nullptr, nullptr, false);
+                          QueryProcessingStage::Complete,
+                          &global_context->getSettingsRef(),
+                          &global_context->getClientInfo(), false);
     while (true)
     {
         Packet packet = connection->receivePacket();
@@ -413,22 +398,13 @@ try
     std::cout << std::fixed << std::setprecision(3);
     std::cerr << std::fixed << std::setprecision(3);
 
-    /// Limit on total memory usage
-    size_t max_client_memory_usage = config().getInt64("max_memory_usage_in_client", 0 /*default value*/);
-
-    if (max_client_memory_usage != 0)
-    {
-        total_memory_tracker.setHardLimit(max_client_memory_usage);
-        total_memory_tracker.setDescription("(total)");
-        total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
-    }
-
     registerFormats();
     registerFunctions();
     registerAggregateFunctions();
 
     processConfig();
 
+    /// Includes delayed_interactive.
     if (is_interactive)
     {
         clearTerminal();
@@ -437,28 +413,28 @@ try
 
     connect();
 
-    if (is_interactive)
+    /// Load Warnings at the beginning of connection
+    if (is_interactive && !config().has("no-warnings"))
     {
-        /// Load Warnings at the beginning of connection
-        if (!config().has("no-warnings"))
+        try
         {
-            try
+            std::vector<String> messages = loadWarningMessages();
+            if (!messages.empty())
             {
-                std::vector<String> messages = loadWarningMessages();
-                if (!messages.empty())
-                {
-                    std::cout << "Warnings:" << std::endl;
-                    for (const auto & message : messages)
-                        std::cout << " * " << message << std::endl;
-                    std::cout << std::endl;
-                }
-            }
-            catch (...)
-            {
-                /// Ignore exception
+                std::cout << "Warnings:" << std::endl;
+                for (const auto & message : messages)
+                    std::cout << " * " << message << std::endl;
+                std::cout << std::endl;
             }
         }
+        catch (...)
+        {
+            /// Ignore exception
+        }
+    }
 
+    if (is_interactive && !delayed_interactive)
+    {
         runInteractive();
     }
     else
@@ -482,14 +458,17 @@ try
             // case so that at least we don't lose an error.
             return -1;
         }
+
+        if (delayed_interactive)
+            runInteractive();
     }
 
     return 0;
 }
 catch (const Exception & e)
 {
-    bool print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
-    std::cerr << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
+    bool need_print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
+    std::cerr << getExceptionMessage(e, need_print_stack_trace, true) << std::endl << std::endl;
     /// If exception code isn't zero, we should return non-zero return code anyway.
     return e.code() ? e.code() : -1;
 }
@@ -555,8 +534,7 @@ void Client::connect()
     if (is_interactive)
     {
         std::cout << "Connected to " << server_name << " server version " << server_version << " revision " << server_revision << "."
-                    << std::endl
-                    << std::endl;
+                    << std::endl << std::endl;
 
         auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
         auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
@@ -703,16 +681,16 @@ bool Client::processWithFuzzing(const String & full_query)
             throw;
     }
 
+    if (!orig_ast)
+    {
+        // Can't continue after a parsing error
+        return true;
+    }
+
     // `USE db` should not be executed
     // since this will break every query after `DROP db`
     if (orig_ast->as<ASTUseQuery>())
     {
-        return true;
-    }
-
-    if (!orig_ast)
-    {
-        // Can't continue after a parsing error
         return true;
     }
 
@@ -1001,14 +979,10 @@ void Client::addOptions(OptionsDescription & options_description)
         ("password", po::value<std::string>()->implicit_value("\n", ""), "password")
         ("ask-password", "ask-password")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
-        ("pager", po::value<std::string>(), "pager")
         ("testmode,T", "enable test hints in comments")
 
         ("max_client_network_bandwidth", po::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
         ("compression", po::value<bool>(), "enable or disable compression")
-
-        ("log-level", po::value<std::string>(), "client log level")
-        ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
 
         ("query-fuzzer-runs", po::value<int>()->default_value(0), "After executing every SELECT query, do random mutations in it and run again specified number of times. This is used for testing to discover unexpected corner cases.")
         ("interleave-queries-file", po::value<std::vector<std::string>>()->multitoken(),
@@ -1018,7 +992,6 @@ void Client::addOptions(OptionsDescription & options_description)
         ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
 
         ("no-warnings", "disable warnings when client connects to server")
-        ("max_memory_usage_in_client", po::value<int>(), "sets memory limit in client")
     ;
 
     /// Commandline options related to external tables.
@@ -1105,8 +1078,6 @@ void Client::processOptions(const OptionsDescription & options_description,
         config().setString("host", options["host"].as<std::string>());
     if (options.count("interleave-queries-file"))
         interleave_queries_files = options["interleave-queries-file"].as<std::vector<std::string>>();
-    if (options.count("pager"))
-        config().setString("pager", options["pager"].as<std::string>());
     if (options.count("port") && !options["port"].defaulted())
         config().setInt("port", options["port"].as<int>());
     if (options.count("secure"))
@@ -1125,8 +1096,6 @@ void Client::processOptions(const OptionsDescription & options_description,
         max_client_network_bandwidth = options["max_client_network_bandwidth"].as<int>();
     if (options.count("compression"))
         config().setBool("compression", options["compression"].as<bool>());
-    if (options.count("server_logs_file"))
-        server_logs_file = options["server_logs_file"].as<std::string>();
     if (options.count("no-warnings"))
         config().setBool("no-warnings", true);
 
@@ -1161,11 +1130,11 @@ void Client::processConfig()
     /// - stdin is not a terminal. In this case queries are read from it.
     /// - -qf (--queries-file) command line option is present.
     ///   The value of the option is used as file with query (or of multiple queries) to execute.
-    if (stdin_is_a_tty && !config().has("query") && queries_files.empty())
-    {
-        if (config().has("query") && config().has("queries-file"))
-            throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
 
+    delayed_interactive = config().has("interactive") && (config().has("query") || config().has("queries-file"));
+    if (stdin_is_a_tty
+        && (delayed_interactive || (!config().has("query") && queries_files.empty())))
+    {
         is_interactive = true;
     }
     else

@@ -12,7 +12,7 @@ toc_title: "\u5916\u90E8\u8F9E\u66F8\u306E\u30BD\u30FC\u30B9"
 辞書がxml-fileを使用して構成されている場合、構成は次のようになります:
 
 ``` xml
-<yandex>
+<clickhouse>
   <dictionary>
     ...
     <source>
@@ -23,7 +23,7 @@ toc_title: "\u5916\u90E8\u8F9E\u66F8\u306E\u30BD\u30FC\u30B9"
     ...
   </dictionary>
   ...
-</yandex>
+</clickhouse>
 ```
 
 の場合 [DDL-クエリ](../../statements/create.md#create-dictionary-query)、等しい構成は次のようになります:
@@ -272,7 +272,7 @@ $ sudo apt-get install -y unixodbc odbcinst odbc-postgresql
 ClickHouseの辞書構成:
 
 ``` xml
-<yandex>
+<clickhouse>
     <dictionary>
         <name>table_name</name>
         <source>
@@ -301,7 +301,7 @@ ClickHouseの辞書構成:
             </attribute>
         </structure>
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 または
@@ -367,7 +367,7 @@ $ sudo apt-get install tdsodbc freetds-bin sqsh
 ClickHouseでの辞書の構成:
 
 ``` xml
-<yandex>
+<clickhouse>
     <dictionary>
         <name>test</name>
         <source>
@@ -397,7 +397,7 @@ ClickHouseでの辞書の構成:
             </attribute>
         </structure>
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 または

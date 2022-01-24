@@ -6,6 +6,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -39,6 +40,29 @@ IPolygonDictionary::IPolygonDictionary(
     setup();
     loadData();
     calculateBytesAllocated();
+}
+
+void IPolygonDictionary::convertKeyColumns(Columns & key_columns, DataTypes & key_types) const
+{
+    if (key_columns.size() != 2)
+        throw Exception(ErrorCodes::TYPE_MISMATCH,
+            "Dictionary {} key lookup structure does not match, expected two columns of coordinates with type Float64",
+            getFullName());
+
+    auto float_64_type = std::make_shared<DataTypeFloat64>();
+    size_t key_types_size = key_types.size();
+    for (size_t key_type_index = 0; key_type_index < key_types_size; ++key_type_index)
+    {
+        auto & key_type = key_types[key_type_index];
+        if (float_64_type->equals(*key_type))
+            continue;
+
+        auto & key_column_to_cast = key_columns[key_type_index];
+        ColumnWithTypeAndName column_to_cast = {key_column_to_cast, key_type, ""};
+        auto casted_column = castColumnAccurate(std::move(column_to_cast), float_64_type);
+        key_column_to_cast = std::move(casted_column);
+        key_type = float_64_type;
+    }
 }
 
 ColumnPtr IPolygonDictionary::getColumn(
@@ -118,7 +142,7 @@ ColumnPtr IPolygonDictionary::getColumn(
     return result;
 }
 
-Pipe IPolygonDictionary::read(const Names & column_names, size_t) const
+Pipe IPolygonDictionary::read(const Names & column_names, size_t, size_t) const
 {
     if (!configuration.store_polygon_key_column)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,

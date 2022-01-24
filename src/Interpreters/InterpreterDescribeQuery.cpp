@@ -10,7 +10,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/IdentifierSemantic.h>
-#include <Access/AccessFlags.h>
+#include <Access/Common/AccessFlags.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -150,7 +150,7 @@ BlockIO InterpreterDescribeQuery::execute()
                     res_columns[6]->insertDefault();
 
                 res_columns[7]->insert(1u);
-            }, column.type->getDefaultSerialization(), column.type, nullptr);
+            }, {column.type->getDefaultSerialization(), column.type, nullptr, nullptr});
         }
     }
 

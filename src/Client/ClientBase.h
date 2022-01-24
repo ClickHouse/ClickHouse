@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Common/NamePrompter.h"
 #include <Common/ProgressIndication.h>
 #include <Common/InterruptListener.h>
 #include <Common/ShellCommand.h>
@@ -10,6 +11,8 @@
 #include <Client/Suggest.h>
 #include <Client/QueryFuzzer.h>
 #include <boost/program_options.hpp>
+#include <Storages/StorageFile.h>
+#include <Storages/SelectQueryInfo.h>
 
 namespace po = boost::program_options;
 
@@ -35,7 +38,7 @@ void interruptSignalHandler(int signum);
 
 class InternalTextLogs;
 
-class ClientBase : public Poco::Util::Application
+class ClientBase : public Poco::Util::Application, public IHints<2, ClientBase>
 {
 
 public:
@@ -45,6 +48,8 @@ public:
     ~ClientBase() override;
 
     void init(int argc, char ** argv);
+
+    std::vector<String> getAllRegisteredNames() const override { return cmd_options; }
 
 protected:
     void runInteractive();
@@ -76,9 +81,6 @@ protected:
         String & query_to_execute, ASTPtr & parsed_query, const String & all_queries_text,
         std::optional<Exception> & current_exception);
 
-    /// For non-interactive multi-query mode get queries text prefix.
-    virtual String getQueryTextPrefix() { return ""; }
-
     static void clearTerminal();
     void showClientVersion();
 
@@ -98,9 +100,10 @@ protected:
                                 const std::vector<Arguments> & external_tables_arguments) = 0;
     virtual void processConfig() = 0;
 
-private:
+protected:
     bool processQueryText(const String & text);
 
+private:
     void receiveResult(ASTPtr parsed_query);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled);
     void receiveLogs(ASTPtr parsed_query);
@@ -120,15 +123,13 @@ private:
     void sendData(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query);
     void sendDataFrom(ReadBuffer & buf, Block & sample,
                       const ColumnsDescription & columns_description, ASTPtr parsed_query);
+    void sendDataFromPipe(Pipe && pipe, ASTPtr parsed_query);
     void sendExternalTables(ASTPtr parsed_query);
 
     void initBlockOutputStream(const Block & block, ASTPtr parsed_query);
     void initLogsOutputStream();
 
-    inline String prompt() const
-    {
-        return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
-    }
+    String prompt() const;
 
     void resetOutput();
     void outputQueryInfo(bool echo_query_);
@@ -138,6 +139,7 @@ private:
 protected:
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool is_multiquery = false;
+    bool delayed_interactive = false;
 
     bool echo_queries = false; /// Print queries before execution in batch mode.
     bool ignore_error = false; /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
@@ -146,6 +148,7 @@ protected:
 
     std::vector<String> queries_files; /// If not empty, queries will be read from these files
     std::vector<String> interleave_queries_files; /// If not empty, run queries from these files before processing every file from 'queries_files'.
+    std::vector<String> cmd_options;
 
     bool stdin_is_a_tty = false; /// stdin is a terminal.
     bool stdout_is_a_tty = false; /// stdout is a terminal.
@@ -155,6 +158,7 @@ protected:
     ConnectionParameters connection_parameters;
 
     String format; /// Query results output format.
+    bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.
     bool is_default_format = true; /// false, if format is set in the config or command line.
     size_t format_max_block_size = 0; /// Max block size for console output.
     String insert_format; /// Format of INSERT data that is read from stdin in batch mode.

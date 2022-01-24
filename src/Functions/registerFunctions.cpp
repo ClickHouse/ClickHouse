@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include "config_core.h"
 
 #include <Functions/FunctionFactory.h>
 
@@ -56,6 +54,8 @@ void registerFunctionValidateNestedArraySizes(FunctionFactory & factory);
 void registerFunctionsSnowflake(FunctionFactory & factory);
 void registerFunctionTid(FunctionFactory & factory);
 void registerFunctionLogTrace(FunctionFactory & factory);
+void registerFunctionsTimeWindow(FunctionFactory &);
+void registerFunctionToBool(FunctionFactory &);
 
 #if USE_SSL
 void registerFunctionEncrypt(FunctionFactory & factory);
@@ -73,9 +73,7 @@ void registerFunctions()
     registerFunctionsArray(factory);
     registerFunctionsTuple(factory);
     registerFunctionsMap(factory);
-#if !defined(ARCADIA_BUILD)
     registerFunctionsBitmap(factory);
-#endif
     registerFunctionsBinaryRepr(factory);
     registerFunctionsCoding(factory);
     registerFunctionsCodingUUID(factory);
@@ -118,6 +116,8 @@ void registerFunctions()
     registerFunctionsStringHash(factory);
     registerFunctionValidateNestedArraySizes(factory);
     registerFunctionsSnowflake(factory);
+    registerFunctionsTimeWindow(factory);
+    registerFunctionToBool(factory);
 
 #if USE_SSL
     registerFunctionEncrypt(factory);

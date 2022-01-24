@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include <config_core.h>
-#endif
+#include <config_core.h>
 
 namespace DB
 {
@@ -87,6 +85,10 @@ void registerFunctionGetOSKernelVersion(FunctionFactory &);
 void registerFunctionConvertCharset(FunctionFactory &);
 #endif
 
+#ifdef FUZZING_MODE
+void registerFunctionGetFuzzerData(FunctionFactory & factory);
+#endif
+
 void registerFunctionsMiscellaneous(FunctionFactory & factory)
 {
     registerFunctionCurrentDatabase(factory);
@@ -167,6 +169,10 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);
+#endif
+
+#ifdef FUZZING_MODE
+    registerFunctionGetFuzzerData(factory);
 #endif
 }
 

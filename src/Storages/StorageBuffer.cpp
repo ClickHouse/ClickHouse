@@ -13,7 +13,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/MemoryTracker.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
@@ -126,7 +126,13 @@ StorageBuffer::StorageBuffer(
     , bg_pool(getContext()->getBufferFlushSchedulePool())
 {
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
+    if (columns_.empty())
+    {
+        auto dest_table = DatabaseCatalog::instance().getTable(destination_id, context_);
+        storage_metadata.setColumns(dest_table->getInMemoryMetadataPtr()->getColumns());
+    }
+    else
+        storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
@@ -446,7 +452,8 @@ static void appendBlock(const Block & from, Block & to)
     if (!to)
         throw Exception("Cannot append to empty block", ErrorCodes::LOGICAL_ERROR);
 
-    assertBlocksHaveEqualStructure(from, to, "Buffer");
+    if (to.rows())
+        assertBlocksHaveEqualStructure(from, to, "Buffer");
 
     from.checkNumberOfRows();
     to.checkNumberOfRows();
@@ -454,24 +461,33 @@ static void appendBlock(const Block & from, Block & to)
     size_t rows = from.rows();
     size_t bytes = from.bytes();
 
-    CurrentMetrics::add(CurrentMetrics::StorageBufferRows, rows);
-    CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, bytes);
-
     size_t old_rows = to.rows();
+    size_t old_bytes = to.bytes();
 
     MutableColumnPtr last_col;
     try
     {
-        MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
+        MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
-        for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
+        if (to.rows() == 0)
         {
-            const IColumn & col_from = *from.getByPosition(column_no).column.get();
-            last_col = IColumn::mutate(std::move(to.getByPosition(column_no).column));
+            to = from;
+            CurrentMetrics::add(CurrentMetrics::StorageBufferRows, rows);
+            CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, bytes);
+        }
+        else
+        {
+            for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
+            {
+                const IColumn & col_from = *from.getByPosition(column_no).column.get();
+                last_col = IColumn::mutate(std::move(to.getByPosition(column_no).column));
 
-            last_col->insertRangeFrom(col_from, 0, rows);
+                last_col->insertRangeFrom(col_from, 0, rows);
 
-            to.getByPosition(column_no).column = std::move(last_col);
+                to.getByPosition(column_no).column = std::move(last_col);
+            }
+            CurrentMetrics::add(CurrentMetrics::StorageBufferRows, rows);
+            CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, to.bytes() - old_bytes);
         }
     }
     catch (...)
@@ -480,7 +496,7 @@ static void appendBlock(const Block & from, Block & to)
 
         /// In case of rollback, it is better to ignore memory limits instead of abnormal server termination.
         /// So ignore any memory limits, even global (since memory tracking has drift).
-        MemoryTracker::BlockerInThread temporarily_ignore_any_memory_limits(VariableContext::Global);
+        MemoryTrackerBlockerInThread temporarily_ignore_any_memory_limits(VariableContext::Global);
 
         try
         {
@@ -908,7 +924,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     }
     auto destination_metadata_snapshot = table->getInMemoryMetadataPtr();
 
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
     auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = destination_id;
@@ -1019,10 +1035,9 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, Context
     auto name_deps = getDependentViewsByColumn(local_context);
     for (const auto & command : commands)
     {
-        if (command.type != AlterCommand::Type::ADD_COLUMN
-            && command.type != AlterCommand::Type::MODIFY_COLUMN
-            && command.type != AlterCommand::Type::DROP_COLUMN
-            && command.type != AlterCommand::Type::COMMENT_COLUMN)
+        if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
+            && command.type != AlterCommand::Type::DROP_COLUMN && command.type != AlterCommand::Type::COMMENT_COLUMN
+            && command.type != AlterCommand::Type::COMMENT_TABLE)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
                 command.type, getName());
 
@@ -1058,7 +1073,7 @@ std::optional<UInt64> StorageBuffer::totalBytes(const Settings & /*settings*/) c
     return total_writes.bytes;
 }
 
-void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context, TableLockHolder &)
+void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &)
 {
     auto table_id = getStorageID();
     checkAlterIsPossible(params, local_context);
@@ -1101,7 +1116,7 @@ void registerStorageBuffer(StorageFactory & factory)
 
         // After we evaluated all expressions, check that all arguments are
         // literals.
-        for (size_t i = 0; i < engine_args.size(); i++)
+        for (size_t i = 0; i < engine_args.size(); ++i)
         {
             if (!typeid_cast<ASTLiteral *>(engine_args[i].get()))
             {
@@ -1158,6 +1173,7 @@ void registerStorageBuffer(StorageFactory & factory)
     },
     {
         .supports_parallel_insert = true,
+        .supports_schema_inference = true,
     });
 }
 

@@ -2,12 +2,9 @@
 
 #include <Columns/ColumnVector.h>
 #include <Common/assert_cast.h>
-#include <Common/typeid_cast.h>
-#include <base/DateLUT.h>
+#include <Common/DateLUT.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
-#include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -40,16 +37,21 @@ void SerializationDateTime64::serializeText(const IColumn & column, size_t row_n
     }
 }
 
-void SerializationDateTime64::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationDateTime64::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
 {
     DateTime64 result = 0;
     readDateTime64Text(result, scale, istr, time_zone);
     assert_cast<ColumnType &>(column).getData().push_back(result);
+
+    if (whole && !istr.eof())
+        throwUnexpectedDataAfterParsedValue(column, istr, settings, "DateTime64");
 }
 
 void SerializationDateTime64::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     deserializeTextEscaped(column, istr, settings);
+    if (!istr.eof())
+        throwUnexpectedDataAfterParsedValue(column, istr, settings, "DateTime64");
 }
 
 void SerializationDateTime64::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

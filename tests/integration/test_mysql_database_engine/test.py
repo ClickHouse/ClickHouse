@@ -6,9 +6,10 @@ import pymysql.cursors
 import pytest
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)
-clickhouse_node = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml', 'configs/named_collections.xml'], with_mysql=True)
+clickhouse_node = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml', 'configs/named_collections.xml'], with_mysql=True, stay_alive=True)
 
 
 @pytest.fixture(scope="module")
@@ -27,6 +28,7 @@ class MySQLNodeInstance:
         self.hostname = hostname
         self.password = password
         self.mysql_connection = None  # lazy init
+        self.ip_address = hostname
 
     def query(self, execution_query):
         if self.mysql_connection is None:
@@ -424,3 +426,24 @@ def test_predefined_connection_configuration(started_cluster):
 
         clickhouse_node.query("CREATE DATABASE test_database ENGINE = MySQL(mysql1, port=3306)")
         assert clickhouse_node.query("SELECT count() FROM `test_database`.`test_table`").rstrip() == '100'
+
+
+def test_restart_server(started_cluster):
+    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', started_cluster.mysql_ip, started_cluster.mysql_port)) as mysql_node:
+        mysql_node.query("DROP DATABASE IF EXISTS test_restart")
+        clickhouse_node.query("DROP DATABASE IF EXISTS test_restart")
+        clickhouse_node.query_and_get_error("CREATE DATABASE test_restart ENGINE = MySQL('mysql57:3306', 'test_restart', 'root', 'clickhouse')")
+        assert 'test_restart' not in clickhouse_node.query('SHOW DATABASES')
+
+        mysql_node.query("CREATE DATABASE test_restart DEFAULT CHARACTER SET 'utf8'")
+        mysql_node.query("CREATE TABLE `test_restart`.`test_table` ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;")
+        clickhouse_node.query("CREATE DATABASE test_restart ENGINE = MySQL('mysql57:3306', 'test_restart', 'root', 'clickhouse')")
+
+        assert 'test_restart' in clickhouse_node.query('SHOW DATABASES')
+        assert 'test_table' in clickhouse_node.query('SHOW TABLES FROM test_restart')
+
+        with PartitionManager() as pm:
+            pm.partition_instances(clickhouse_node, mysql_node, action='REJECT --reject-with tcp-reset')
+            clickhouse_node.restart_clickhouse()
+            clickhouse_node.query_and_get_error('SHOW TABLES FROM test_restart')
+        assert 'test_table' in clickhouse_node.query('SHOW TABLES FROM test_restart')

@@ -237,25 +237,39 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
     const UInt8 * filt_end = filt_pos + size;
     const T * data_pos = data.data();
 
-#ifdef __SSE2__
-    static constexpr size_t SIMD_BYTES = 16;
-    const __m128i zero16 = _mm_setzero_si128();
-    const UInt8 * filt_end_sse = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
+    /** A slightly more optimized version.
+    * Based on the assumption that often pieces of consecutive values
+    *  completely pass or do not pass the filter.
+    * Therefore, we will optimistically check the parts of `SIMD_BYTES` values.
+    */
+    static constexpr size_t SIMD_BYTES = 64;
+    const UInt8 * filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
 
-    while (filt_pos < filt_end_sse)
+    while (filt_pos < filt_end_aligned)
     {
-        UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16));
-        mask = ~mask;
-        while (mask)
+        UInt64 mask = bytes64MaskToBits64Mask(filt_pos);
+
+        if (0xffffffffffffffff == mask)
         {
-            size_t index = __builtin_ctz(mask);
-            res_data.push_back(*(data_pos + index));
-            mask = mask & (mask - 1);
+            res_data.insert(data_pos, data_pos + SIMD_BYTES);
         }
+        else
+        {
+            while (mask)
+            {
+                size_t index = __builtin_ctzll(mask);
+                res_data.push_back(data_pos[index]);
+            #ifdef __BMI__
+                mask = _blsr_u64(mask);
+            #else
+                mask = mask & (mask-1);
+            #endif
+            }
+        }
+
         filt_pos += SIMD_BYTES;
         data_pos += SIMD_BYTES;
     }
-#endif
 
     while (filt_pos < filt_end)
     {
@@ -317,7 +331,8 @@ void ColumnDecimal<T>::gather(ColumnGathererStream & gatherer)
 template <is_decimal T>
 ColumnPtr ColumnDecimal<T>::compress() const
 {
-    size_t source_size = data.size() * sizeof(T);
+    const size_t data_size = data.size();
+    const size_t source_size = data_size * sizeof(T);
 
     /// Don't compress small blocks.
     if (source_size < 4096) /// A wild guess.
@@ -328,8 +343,9 @@ ColumnPtr ColumnDecimal<T>::compress() const
     if (!compressed)
         return ColumnCompressed::wrap(this->getPtr());
 
-    return ColumnCompressed::create(data.size(), compressed->size(),
-        [compressed = std::move(compressed), column_size = data.size(), scale = this->scale]
+    const size_t compressed_size = compressed->size();
+    return ColumnCompressed::create(data_size, compressed_size,
+        [compressed = std::move(compressed), column_size = data_size, scale = this->scale]
         {
             auto res = ColumnDecimal<T>::create(column_size, scale);
             ColumnCompressed::decompressBuffer(

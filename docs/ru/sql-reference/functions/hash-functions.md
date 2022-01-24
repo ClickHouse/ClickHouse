@@ -89,9 +89,39 @@ SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00
 
 ## sipHash128 {#hash_functions-siphash128}
 
-Вычисляет SipHash от строки.
-Принимает аргумент типа String. Возвращает FixedString(16).
-Отличается от sipHash64 тем, что финальный xor-folding состояния делается только до 128 бит.
+Генерирует 128-битное хеш-значение [SipHash](https://131002.net/siphash/). Отличается от [sipHash64](#hash_functions-siphash64) тем, что финальный xor-folding состояния делается до 128 бит.
+
+**Синтаксис**
+
+``` sql
+sipHash128(par1,...)
+```
+
+**Аргументы**
+
+Функция принимает переменное число входных параметров. Аргументы могут быть любого [поддерживаемого типа данных](../../sql-reference/functions/hash-functions.md).
+
+**Возвращаемое значение**
+
+128-битное хеш-значение `SipHash`.
+
+Тип: [FixedString(16)](../../sql-reference/data-types/fixedstring.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT hex(sipHash128('foo', '\x01', 3));
+```
+
+Результат:
+
+``` text
+┌─hex(sipHash128('foo', '', 3))────┐
+│ 9DE516A64A414D4B1B609415E4523F24 │
+└──────────────────────────────────┘
+```
 
 ## cityHash64 {#cityhash64}
 
@@ -459,30 +489,38 @@ SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 
 ## murmurHash3_128 {#murmurhash3-128}
 
-Генерирует значение [MurmurHash3](https://github.com/aappleby/smhasher).
+Генерирует 128-битное хеш-значение [MurmurHash3](https://github.com/aappleby/smhasher).
+
+**Синтаксис**
 
 ``` sql
-murmurHash3_128( expr )
+murmurHash3_128(expr)
 ```
 
 **Аргументы**
 
--   `expr` — [выражение](../syntax.md#syntax-expressions), возвращающее значение типа [String](../../sql-reference/functions/hash-functions.md).
+-   `expr` — список [выражений](../../sql-reference/syntax.md#syntax-expressions). [String](../../sql-reference/data-types/string.md).
 
 **Возвращаемое значение**
 
-Хэш-значение типа [FixedString(16)](../../sql-reference/functions/hash-functions.md).
+128-битное значение хеш-значение `MurmurHash3`.
+
+Тип: [FixedString(16)](../../sql-reference/data-types/fixedstring.md).
 
 **Пример**
 
+Запрос:
+
 ``` sql
-SELECT hex(murmurHash3_128('example_string')) AS MurmurHash3, toTypeName(MurmurHash3) AS type;
+SELECT hex(murmurHash3_128('foo', 'foo', 'foo'));
 ```
 
+Результат:
+
 ``` text
-┌─MurmurHash3──────────────────────┬─type───┐
-│ 368A1A311CB7342253354B548E7E7E71 │ String │
-└──────────────────────────────────┴────────┘
+┌─hex(murmurHash3_128('foo', 'foo', 'foo'))─┐
+│ F8F7AD9B6CD4CF117A71E277E2EC2931          │
+└───────────────────────────────────────────┘
 ```
 
 ## xxHash32, xxHash64 {#hash-functions-xxhash32-xxhash64}

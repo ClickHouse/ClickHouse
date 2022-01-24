@@ -4,9 +4,7 @@
 #include <Interpreters/Context.h>
 #include <Core/MySQL/PacketEndpoint.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #if USE_SSL
 #    include <openssl/pem.h>

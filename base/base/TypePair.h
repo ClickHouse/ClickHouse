@@ -1,4 +1,4 @@
 #pragma once
 
-template <class T, class V> struct TypePair { };
-template <class T> struct Id { };
+template <typename T, typename V> struct TypePair {};
+template <typename T> struct Id {};

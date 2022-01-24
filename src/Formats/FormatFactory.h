@@ -4,7 +4,10 @@
 #include <Columns/IColumn.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
+#include <IO/BufferWithOwnMemory.h>
+#include <IO/CompressionMethod.h>
 #include <base/types.h>
+#include <Core/NamesAndTypes.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -30,6 +33,11 @@ class IOutputFormat;
 
 struct RowInputFormatParams;
 struct RowOutputFormatParams;
+
+class ISchemaReader;
+class IExternalSchemaReader;
+using SchemaReaderPtr = std::shared_ptr<ISchemaReader>;
+using ExternalSchemaReaderPtr = std::shared_ptr<IExternalSchemaReader>;
 
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
@@ -68,14 +76,11 @@ public:
         size_t row)>;
 
 private:
-
-    using InputCreatorFunc = InputFormatPtr(
-        ReadBuffer & buf,
-        const Block & header,
-        const RowInputFormatParams & params,
-        const FormatSettings & settings);
-
-    using InputCreator = std::function<InputCreatorFunc>;
+    using InputCreator = std::function<InputFormatPtr(
+            ReadBuffer & buf,
+            const Block & header,
+            const RowInputFormatParams & params,
+            const FormatSettings & settings)>;
 
     using OutputCreator = std::function<OutputFormatPtr(
             WriteBuffer & buf,
@@ -88,17 +93,23 @@ private:
     /// The checker should return true if parallel parsing should be disabled.
     using NonTrivialPrefixAndSuffixChecker = std::function<bool(ReadBuffer & buf)>;
 
+    using SchemaReaderCreator = std::function<SchemaReaderPtr(ReadBuffer & in, const FormatSettings & settings, ContextPtr context)>;
+    using ExternalSchemaReaderCreator = std::function<ExternalSchemaReaderPtr(const FormatSettings & settings)>;
+
     struct Creators
     {
         InputCreator input_creator;
         OutputCreator output_creator;
         FileSegmentationEngine file_segmentation_engine;
+        SchemaReaderCreator schema_reader_creator;
+        ExternalSchemaReaderCreator external_schema_reader_creator;
         bool supports_parallel_formatting{false};
         bool is_column_oriented{false};
         NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker;
     };
 
     using FormatsDictionary = std::unordered_map<String, Creators>;
+    using FileExtensionFormats = std::unordered_map<String, String>;
 
 public:
     static FormatFactory & instance();
@@ -134,6 +145,22 @@ public:
         const Block & sample,
         ContextPtr context,
         WriteCallback callback = {},
+        const std::optional<FormatSettings> & _format_settings = std::nullopt) const;
+
+    String getContentType(
+        const String & name,
+        ContextPtr context,
+        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+
+    SchemaReaderPtr getSchemaReader(
+        const String & name,
+        ReadBuffer & buf,
+        ContextPtr context,
+        const std::optional<FormatSettings> & format_settings = std::nullopt) const;
+
+    ExternalSchemaReaderPtr getExternalSchemaReader(
+        const String & name,
+        ContextPtr context,
         const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
     void registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine);
@@ -144,10 +171,22 @@ public:
     void registerInputFormat(const String & name, InputCreator input_creator);
     void registerOutputFormat(const String & name, OutputCreator output_creator);
 
+    /// Register file extension for format
+    void registerFileExtension(const String & extension, const String & format_name);
+    String getFormatFromFileName(String file_name, bool throw_if_not_found = false);
+
+    /// Register schema readers for format its name.
+    void registerSchemaReader(const String & name, SchemaReaderCreator schema_reader_creator);
+    void registerExternalSchemaReader(const String & name, ExternalSchemaReaderCreator external_schema_reader_creator);
+
     void markOutputFormatSupportsParallelFormatting(const String & name);
     void markFormatAsColumnOriented(const String & name);
 
     bool checkIfFormatIsColumnOriented(const String & name);
+
+    bool checkIfFormatHasSchemaReader(const String & name);
+    bool checkIfFormatHasExternalSchemaReader(const String & name);
+    bool checkIfFormatHasAnySchemaReader(const String & name);
 
     const FormatsDictionary & getAllFormats() const
     {
@@ -159,8 +198,10 @@ public:
 
 private:
     FormatsDictionary dict;
+    FileExtensionFormats file_extension_formats;
 
     const Creators & getCreators(const String & name) const;
+
 };
 
 }

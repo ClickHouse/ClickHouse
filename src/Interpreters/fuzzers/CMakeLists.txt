@@ -7,4 +7,3 @@ target_link_libraries(execute_query_fuzzer PRIVATE
     clickhouse_dictionaries
     clickhouse_dictionaries_embedded
     ${LIB_FUZZING_ENGINE})
-

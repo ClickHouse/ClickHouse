@@ -579,7 +579,7 @@
         const rows = response.statistics.rows_read;
         const bytes = response.statistics.bytes_read;
         const formatted_bytes = formatReadableBytes(bytes);
-        const formatted_rows = formatReadableRows(bytes);
+        const formatted_rows = formatReadableRows(rows);
         stats.innerText = `Elapsed: ${seconds} sec, read ${formatted_rows} rows, ${formatted_bytes}.`;
 
         /// We can also render graphs if user performed EXPLAIN PIPELINE graph=1.

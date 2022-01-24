@@ -3,6 +3,12 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <future>
 #include <chrono>
+#include <Poco/Path.h>
+#include <Common/hex.h>
+#include <filesystem>
+#include <Common/checkStackSize.h>
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -14,9 +20,10 @@ namespace ErrorCodes
     extern const int SYSTEM_ERROR;
 }
 
+
 KeeperDispatcher::KeeperDispatcher()
-    : coordination_settings(std::make_shared<CoordinationSettings>())
-    , responses_queue(std::numeric_limits<size_t>::max())
+    : responses_queue(std::numeric_limits<size_t>::max())
+    , configuration_and_settings(std::make_shared<KeeperConfigurationAndSettings>())
     , log(&Poco::Logger::get("KeeperDispatcher"))
 {
 }
@@ -36,7 +43,8 @@ void KeeperDispatcher::requestThread()
     {
         KeeperStorage::RequestForSession request;
 
-        UInt64 max_wait = UInt64(coordination_settings->operation_timeout_ms.totalMilliseconds());
+        auto coordination_settings = configuration_and_settings->coordination_settings;
+        uint64_t max_wait = coordination_settings->operation_timeout_ms.totalMilliseconds();
         uint64_t max_batch_size = coordination_settings->max_requests_batch_size;
 
         /// The code below do a very simple thing: batch all write (quorum) requests into vector until
@@ -141,7 +149,7 @@ void KeeperDispatcher::responseThread()
     {
         KeeperStorage::ResponseForSession response_for_session;
 
-        UInt64 max_wait = UInt64(coordination_settings->operation_timeout_ms.totalMilliseconds());
+        uint64_t max_wait = configuration_and_settings->coordination_settings->operation_timeout_ms.totalMilliseconds();
 
         if (responses_queue.tryPop(response_for_session, max_wait))
         {
@@ -206,7 +214,10 @@ void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
 
         /// Session was disconnected, just skip this response
         if (session_response_callback == session_to_response_callback.end())
+        {
+            LOG_TEST(log, "Cannot write response xid={}, op={}, session {} disconnected", response->xid, response->getOpNum(), session_id);
             return;
+        }
 
         session_response_callback->second(response);
 
@@ -242,33 +253,30 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
         if (!requests_queue->push(std::move(request_info)))
             throw Exception("Cannot push request to queue", ErrorCodes::SYSTEM_ERROR);
     }
-    else if (!requests_queue->tryPush(std::move(request_info), coordination_settings->operation_timeout_ms.totalMilliseconds()))
+    else if (!requests_queue->tryPush(std::move(request_info), configuration_and_settings->coordination_settings->operation_timeout_ms.totalMilliseconds()))
     {
         throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
     }
-
     return true;
 }
 
 void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper, bool start_async)
 {
     LOG_DEBUG(log, "Initializing storage dispatcher");
-    int myid = config.getInt("keeper_server.server_id");
 
-    coordination_settings->loadFromConfig("keeper_server.coordination_settings", config);
-    requests_queue = std::make_unique<RequestsQueue>(coordination_settings->max_requests_batch_size);
+    configuration_and_settings = KeeperConfigurationAndSettings::loadFromConfig(config, standalone_keeper);
+    requests_queue = std::make_unique<RequestsQueue>(configuration_and_settings->coordination_settings->max_requests_batch_size);
 
     request_thread = ThreadFromGlobalPool([this] { requestThread(); });
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
 
-    server = std::make_unique<KeeperServer>(
-        myid, coordination_settings, config, responses_queue, snapshots_queue, standalone_keeper);
+    server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue);
 
     try
     {
         LOG_DEBUG(log, "Waiting server to initialize");
-        server->startup();
+        server->startup(configuration_and_settings->enable_ipv6);
         LOG_DEBUG(log, "Server initialized, waiting for quorum");
 
         if (!start_async)
@@ -280,7 +288,6 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
         {
             LOG_INFO(log, "Starting Keeper asynchronously, server will accept connections to Keeper when it will be ready");
         }
-
     }
     catch (...)
     {
@@ -290,6 +297,8 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
     /// Start it after keeper server start
     session_cleaner_thread = ThreadFromGlobalPool([this] { sessionCleanerTask(); });
+    update_configuration_thread = ThreadFromGlobalPool([this] { updateConfigurationThread(); });
+    updateConfiguration(config);
 
     LOG_DEBUG(log, "Dispatcher initialized");
 }
@@ -325,6 +334,10 @@ void KeeperDispatcher::shutdown()
             snapshots_queue.finish();
             if (snapshot_thread.joinable())
                 snapshot_thread.join();
+
+            update_configuration_queue.finish();
+            if (update_configuration_thread.joinable())
+                update_configuration_thread.join();
         }
 
         if (server)
@@ -405,7 +418,8 @@ void KeeperDispatcher::sessionCleanerTask()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(coordination_settings->dead_session_check_period_ms.totalMilliseconds()));
+        auto time_to_sleep = configuration_and_settings->coordination_settings->dead_session_check_period_ms.totalMilliseconds();
+        std::this_thread::sleep_for(std::chrono::milliseconds(time_to_sleep));
     }
 }
 
@@ -503,6 +517,136 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
     /// Forcefully wait for request execution because we cannot process any other
     /// requests for this client until it get new session id.
     return future.get();
+}
+
+
+void KeeperDispatcher::updateConfigurationThread()
+{
+    while (true)
+    {
+        if (shutdown_called)
+            return;
+
+        try
+        {
+            if (!server->checkInit())
+            {
+                LOG_INFO(log, "Server still not initialized, will not apply configuration until initialization finished");
+                std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+                continue;
+            }
+
+            ConfigUpdateAction action;
+            if (!update_configuration_queue.pop(action))
+                break;
+
+
+            /// We must wait this update from leader or apply it ourself (if we are leader)
+            bool done = false;
+            while (!done)
+            {
+                if (shutdown_called)
+                    return;
+
+                if (isLeader())
+                {
+                    server->applyConfigurationUpdate(action);
+                    done = true;
+                }
+                else
+                {
+                    done = server->waitConfigurationUpdate(action);
+                    if (!done)
+                        LOG_INFO(log, "Cannot wait for configuration update, maybe we become leader, or maybe update is invalid, will try to wait one more time");
+                }
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+}
+
+void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    auto diff = server->getConfigurationDiff(config);
+    if (diff.empty())
+        LOG_TRACE(log, "Configuration update triggered, but nothing changed for RAFT");
+    else if (diff.size() > 1)
+        LOG_WARNING(log, "Configuration changed for more than one server ({}) from cluster, it's strictly not recommended", diff.size());
+    else
+        LOG_DEBUG(log, "Configuration change size ({})", diff.size());
+
+    for (auto & change : diff)
+    {
+        bool push_result = update_configuration_queue.push(change);
+        if (!push_result)
+            throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push configuration update to queue");
+    }
+}
+
+void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms)
+{
+    std::lock_guard lock(keeper_stats_mutex);
+    keeper_stats.updateLatency(process_time_ms);
+}
+
+static uint64_t getDirSize(const fs::path & dir)
+{
+    checkStackSize();
+    if (!fs::exists(dir))
+        return 0;
+
+    fs::directory_iterator it(dir);
+    fs::directory_iterator end;
+
+    uint64_t size{0};
+    while (it != end)
+    {
+        if (it->is_regular_file())
+            size += fs::file_size(*it);
+        else
+            size += getDirSize(it->path());
+        ++it;
+    }
+    return size;
+}
+
+uint64_t KeeperDispatcher::getLogDirSize() const
+{
+    return getDirSize(configuration_and_settings->log_storage_path);
+}
+
+uint64_t KeeperDispatcher::getSnapDirSize() const
+{
+    return getDirSize(configuration_and_settings->snapshot_storage_path);
+}
+
+Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
+{
+    Keeper4LWInfo result;
+    result.is_follower = server->isFollower();
+    result.is_standalone = !result.is_follower && server->getFollowerCount() == 0;
+    result.is_leader = isLeader();
+    result.is_observer = server->isObserver();
+    result.has_leader = hasLeader();
+    {
+        std::lock_guard lock(push_request_mutex);
+        result.outstanding_requests_count = requests_queue->size();
+    }
+    {
+        std::lock_guard lock(session_to_response_callback_mutex);
+        result.alive_connections_count = session_to_response_callback.size();
+    }
+    if (result.is_leader)
+    {
+        result.follower_count = server->getFollowerCount();
+        result.synced_follower_count = server->getSyncedFollowerCount();
+    }
+    result.total_nodes_count = server->getKeeperStateMachine()->getNodesCount();
+    result.last_zxid = server->getKeeperStateMachine()->getLastProcessedZxid();
+    return result;
 }
 
 }

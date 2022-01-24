@@ -34,7 +34,7 @@ then
     if [ "${ARCH}" = "x86_64" ]
     then
         DIR="macos"
-    elif [ "${ARCH}" = "aarch64" ]
+    elif [ "${ARCH}" = "aarch64" -o "${ARCH}" = "arm64" ]
     then
         DIR="macos-aarch64"
     fi
@@ -50,7 +50,7 @@ URL="https://builds.clickhouse.com/master/${DIR}/clickhouse"
 echo
 echo "Will download ${URL}"
 echo
-curl -O "${URL}" && chmod a+x clickhouse &&
+curl -O "${URL}" && chmod a+x clickhouse || exit 1
 echo
 echo "Successfully downloaded the ClickHouse binary, you can run it as:
     ./clickhouse"

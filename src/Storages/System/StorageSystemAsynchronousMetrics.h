@@ -25,12 +25,6 @@ private:
     const AsynchronousMetrics & async_metrics;
 
 protected:
-#if defined(ARCADIA_BUILD)
-    StorageSystemAsynchronousMetrics(const String & name_, const AsynchronousMetrics & async_metrics_)
-    : StorageSystemAsynchronousMetrics(StorageID{"system", name_}, async_metrics_)
-    {
-    }
-#endif
     StorageSystemAsynchronousMetrics(const StorageID & table_id_, const AsynchronousMetrics & async_metrics_);
 
     void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const override;

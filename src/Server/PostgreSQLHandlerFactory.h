@@ -1,15 +1,16 @@
 #pragma once
 
-#include <Poco/Net/TCPServerConnectionFactory.h>
 #include <atomic>
 #include <memory>
 #include <Server/IServer.h>
+#include <Server/TCPServerConnectionFactory.h>
 #include <Core/PostgreSQLProtocol.h>
+#include <Common/config.h>
 
 namespace DB
 {
 
-class PostgreSQLHandlerFactory : public Poco::Net::TCPServerConnectionFactory
+class PostgreSQLHandlerFactory : public TCPServerConnectionFactory
 {
 private:
     IServer & server;
@@ -27,6 +28,6 @@ private:
 public:
     explicit PostgreSQLHandlerFactory(IServer & server_);
 
-    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket) override;
+    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, TCPServer & server) override;
 };
 }

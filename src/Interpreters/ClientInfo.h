@@ -55,11 +55,6 @@ public:
     String current_query_id;
     Poco::Net::SocketAddress current_address;
 
-#if defined(ARCADIA_BUILD)
-    /// This field is only used in foreign "Arcadia" build.
-    String current_password;
-#endif
-
     /// When query_kind == INITIAL_QUERY, these values are equal to current.
     String initial_user;
     String initial_query_id;
@@ -84,6 +79,14 @@ public:
     UInt64 client_version_patch = 0;
     unsigned client_tcp_protocol_version = 0;
 
+    /// In case of distributed query, client info for query is actually a client info of client.
+    /// In order to get a version of server-initiator, use connection_ values.
+    /// Also for tcp only.
+    UInt64 connection_client_version_major = 0;
+    UInt64 connection_client_version_minor = 0;
+    UInt64 connection_client_version_patch = 0;
+    unsigned connection_tcp_protocol_version = 0;
+
     /// For http
     HTTPMethod http_method = HTTPMethod::UNKNOWN;
     String http_user_agent;
@@ -104,6 +107,11 @@ public:
     UInt64 distributed_depth = 0;
 
     bool is_replicated_database_internal = false;
+
+    /// For parallel processing on replicas
+    bool collaborate_with_initiator{false};
+    UInt64 count_participating_replicas{0};
+    UInt64 number_of_current_replica{0};
 
     bool empty() const { return query_kind == QueryKind::NO_QUERY; }
 

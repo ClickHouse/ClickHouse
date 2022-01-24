@@ -1,8 +1,6 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include "config_core.h"
-#endif
 
 #if USE_MYSQL
 
@@ -55,7 +53,7 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
-    static StorageMySQLConfiguration getConfiguration(ASTs engine_args, ContextPtr context_);
+    static StorageMySQLConfiguration getConfiguration(ASTs engine_args, ContextPtr context_, MySQLBaseSettings & storage_settings);
 
 private:
     friend class StorageMySQLSink;

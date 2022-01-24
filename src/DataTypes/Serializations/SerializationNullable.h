@@ -16,8 +16,7 @@ public:
     void enumerateStreams(
         SubstreamPath & path,
         const StreamCallback & callback,
-        DataTypePtr type,
-        ColumnPtr column) const override;
+        const SubstreamData & data) const override;
 
     void serializeBinaryBulkStatePrefix(
             SerializeBinaryBulkSettings & settings,
@@ -72,6 +71,9 @@ public:
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
+    void deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
+    void serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+
     /// If ReturnType is bool, check for NULL and deserialize value into non-nullable column (and return true) or insert default value of nested type (and return false)
     /// If ReturnType is void, deserialize Nullable(T)
     template <typename ReturnType = bool>
@@ -84,6 +86,10 @@ public:
     static ReturnType deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested);
     template <typename ReturnType = bool>
     static ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings &, const SerializationPtr & nested);
+    template <typename ReturnType = bool>
+    static ReturnType deserializeTextRawImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested);
+    template <typename ReturnType = bool, bool escaped>
+    static ReturnType deserializeTextEscapedAndRawImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested);
 
 private:
     struct SubcolumnCreator : public ISubcolumnCreator

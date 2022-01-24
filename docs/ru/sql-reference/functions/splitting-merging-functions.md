@@ -212,8 +212,8 @@ SELECT splitByNonAlpha('  1!  a,  b.  ');
 
 ## arrayStringConcat(arr\[, separator\]) {#arraystringconcatarr-separator}
 
-Склеивает строки, перечисленные в массиве, с разделителем separator.
-separator - необязательный параметр, константная строка, по умолчанию равен пустой строке.
+Склеивает строковые представления элементов массива с разделителем `separator`.
+`separator` - необязательный параметр, константная строка, по умолчанию равен пустой строке.
 Возвращается строка.
 
 ## alphaTokens(s) {#alphatokenss}
@@ -252,7 +252,7 @@ ngrams(string, ngramsize)
 
 -   Массив с n-граммами.
 
-Тип: [Array](../../sql-reference/data-types/array.md)([FixedString](../../sql-reference/data-types/fixedstring.md)).
+Тип: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 **Пример**
 
@@ -270,3 +270,32 @@ SELECT ngrams('ClickHouse', 3);
 └───────────────────────────────────────────────────┘
 ```
 
+## tokens {#tokens}
+
+Разбивает строку на  токены, используя в качестве разделителей не буквенно-цифровые символы ASCII.
+
+**Аргументы**
+
+-   `input_string` — набор байтов. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемые значения**
+
+Возвращает массив токенов.
+
+Тип: [Array](../data-types/array.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT tokens('test1,;\\ test2,;\\ test3,;\\   test4') AS tokens;
+```
+
+Результат:
+
+``` text
+┌─tokens────────────────────────────┐
+│ ['test1','test2','test3','test4'] │
+└───────────────────────────────────┘
+```

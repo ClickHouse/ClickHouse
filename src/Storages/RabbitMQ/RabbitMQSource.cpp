@@ -63,11 +63,14 @@ RabbitMQSource::RabbitMQSource(
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
 {
+    storage.incrementReader();
 }
 
 
 RabbitMQSource::~RabbitMQSource()
 {
+    storage.decrementReader();
+
     if (!buffer)
         return;
 

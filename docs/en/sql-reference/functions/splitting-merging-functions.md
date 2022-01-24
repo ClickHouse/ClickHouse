@@ -213,7 +213,7 @@ SELECT splitByNonAlpha('  1!  a,  b.  ');
 
 ## arrayStringConcat(arr\[, separator\]) {#arraystringconcatarr-separator}
 
-Concatenates the strings listed in the array with the separator.’separator’ is an optional parameter: a constant string, set to an empty string by default.
+Concatenates string representations of values listed in the array with the separator. `separator` is an optional parameter: a constant string, set to an empty string by default.
 Returns the string.
 
 ## alphaTokens(s) {#alphatokenss}
@@ -290,7 +290,7 @@ ngrams(string, ngramsize)
 
 -   Array with n-grams.
 
-Type: [Array](../../sql-reference/data-types/array.md)([FixedString](../../sql-reference/data-types/fixedstring.md)).
+Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 **Example**
 
@@ -306,4 +306,34 @@ Result:
 ┌─ngrams('ClickHouse', 3)───────────────────────────┐
 │ ['Cli','lic','ick','ckH','kHo','Hou','ous','use'] │
 └───────────────────────────────────────────────────┘
+```
+
+## tokens {#tokens}
+
+Splits a string into tokens using non-alphanumeric ASCII characters as separators.
+
+**Arguments**
+
+-   `input_string` — Any set of bytes represented as the [String](../../sql-reference/data-types/string.md) data type object.
+
+**Returned value**
+
+-   The resulting array of tokens from input string.
+
+Type: [Array](../data-types/array.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT tokens('test1,;\\ test2,;\\ test3,;\\   test4') AS tokens;
+```
+
+Result:
+
+``` text
+┌─tokens────────────────────────────┐
+│ ['test1','test2','test3','test4'] │
+└───────────────────────────────────┘
 ```

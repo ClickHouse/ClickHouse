@@ -1,5 +1,4 @@
--- Tags: no-replicated-database, no-parallel
--- Tag no-replicated-database: Unsupported type of ALTER query
+-- Tags: no-parallel
 
 SET send_logs_level = 'fatal';
 

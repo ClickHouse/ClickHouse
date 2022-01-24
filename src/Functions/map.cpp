@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
@@ -15,6 +16,8 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include "array/arrayIndex.h"
+#include "Functions/like.h"
+#include "Functions/FunctionsStringSearch.h"
 
 
 namespace DB
@@ -274,6 +277,247 @@ public:
     }
 };
 
+class FunctionMapContainsKeyLike : public IFunction
+{
+public:
+    static constexpr auto name = "mapContainsKeyLike";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapContainsKeyLike>(); }
+    String getName() const override { return name; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*info*/) const override { return true; }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        bool is_const = isColumnConst(*arguments[0].column);
+        const ColumnMap * col_map = is_const ? checkAndGetColumnConstData<ColumnMap>(arguments[0].column.get())
+                                             : checkAndGetColumn<ColumnMap>(arguments[0].column.get());
+        const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
+        if (!col_map || !map_type)
+            throw Exception{"First argument for function " + getName() + " must be a map", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        auto col_res = ColumnVector<UInt8>::create();
+        typename ColumnVector<UInt8>::Container & vec_res = col_res->getData();
+
+        if (input_rows_count == 0)
+            return col_res;
+
+        vec_res.resize(input_rows_count);
+
+        const auto & column_array = typeid_cast<const ColumnArray &>(col_map->getNestedColumn());
+        const auto & column_tuple = typeid_cast<const ColumnTuple &>(column_array.getData());
+
+        const ColumnString * column_string = checkAndGetColumn<ColumnString>(column_tuple.getColumn(0));
+        const ColumnFixedString * column_fixed_string = checkAndGetColumn<ColumnFixedString>(column_tuple.getColumn(0));
+
+        FunctionLike func_like;
+
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            size_t element_start_row = row != 0 ? column_array.getOffsets()[row-1] : 0;
+            size_t elem_size = column_array.getOffsets()[row]- element_start_row;
+
+            ColumnPtr sub_map_column;
+            DataTypePtr data_type;
+
+            //The keys of one row map will be processed as a single ColumnString
+            if (column_string)
+            {
+               sub_map_column = column_string->cut(element_start_row, elem_size);
+               data_type = std::make_shared<DataTypeString>();
+            }
+            else
+            {
+               sub_map_column = column_fixed_string->cut(element_start_row, elem_size);
+               data_type = std::make_shared<DataTypeFixedString>(checkAndGetColumn<ColumnFixedString>(sub_map_column.get())->getN());
+            }
+
+            size_t col_key_size = sub_map_column->size();
+            auto column = is_const? ColumnConst::create(std::move(sub_map_column), std::move(col_key_size)) : std::move(sub_map_column);
+
+            ColumnsWithTypeAndName new_arguments =
+                {
+                    {
+                        column,
+                        data_type,
+                        ""
+                    },
+                    arguments[1]
+                };
+
+            auto res = func_like.executeImpl(new_arguments, result_type, input_rows_count);
+            const auto & container = checkAndGetColumn<ColumnUInt8>(res.get())->getData();
+
+            const auto it = std::find_if(container.begin(), container.end(), [](int element){ return element == 1; });  // NOLINT
+            vec_res[row] = it == container.end() ? 0 : 1;
+        }
+
+        return col_res;
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (arguments.size() != 2)
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                            + toString(arguments.size()) + ", should be 2",
+                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
+        const DataTypeString * pattern_type = checkAndGetDataType<DataTypeString>(arguments[1].type.get());
+
+        if (!map_type)
+            throw Exception{"First argument for function " + getName() + " must be a Map",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        if (!pattern_type)
+            throw Exception{"Second argument for function " + getName() + " must be String",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        if (!isStringOrFixedString(map_type->getKeyType()))
+            throw Exception{"Key type of map for function " + getName() + " must be `String` or `FixedString`",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        return std::make_shared<DataTypeUInt8>();
+    }
+
+    size_t getNumberOfArguments() const override { return 2; }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+};
+
+class FunctionExtractKeyLike : public IFunction
+{
+public:
+    static constexpr auto name = "mapExtractKeyLike";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionExtractKeyLike>(); }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*info*/) const override { return true; }
+
+    size_t getNumberOfArguments() const override { return 2; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (arguments.size() != 2)
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                + toString(arguments.size()) + ", should be 2",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+
+        const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
+
+        if (!map_type)
+            throw Exception{"First argument for function " + getName() + " must be a map",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+
+        auto key_type = map_type->getKeyType();
+
+        WhichDataType which(key_type);
+
+        if (!which.isStringOrFixedString())
+            throw Exception{"Function " + getName() + "only support the map with String or FixedString key",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        if (!isStringOrFixedString(arguments[1].type))
+            throw Exception{"Second argument passed to function " + getName() + " must be String or FixedString",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        return std::make_shared<DataTypeMap>(map_type->getKeyType(), map_type->getValueType());
+    }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        bool is_const = isColumnConst(*arguments[0].column);
+        const ColumnMap * col_map = typeid_cast<const ColumnMap *>(arguments[0].column.get());
+
+        //It may not be necessary to check this condition, cause it will be checked in getReturnTypeImpl function
+        if (!col_map)
+            return nullptr;
+
+        const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
+        auto key_type = map_type->getKeyType();
+        auto value_type = map_type->getValueType();
+
+        const auto & nested_column = col_map->getNestedColumn();
+        const auto & keys_column = col_map->getNestedData().getColumn(0);
+        const auto & values_column = col_map->getNestedData().getColumn(1);
+        const ColumnString * keys_string_column = checkAndGetColumn<ColumnString>(keys_column);
+        const ColumnFixedString * keys_fixed_string_column = checkAndGetColumn<ColumnFixedString>(keys_column);
+
+        FunctionLike func_like;
+
+        //create result data
+        MutableColumnPtr keys_data = key_type->createColumn();
+        MutableColumnPtr values_data = value_type->createColumn();
+        MutableColumnPtr offsets = DataTypeNumber<IColumn::Offset>().createColumn();
+
+        IColumn::Offset current_offset = 0;
+
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            size_t element_start_row = row != 0 ? nested_column.getOffsets()[row-1] : 0;
+            size_t element_size = nested_column.getOffsets()[row]- element_start_row;
+
+            ColumnsWithTypeAndName new_arguments;
+            ColumnPtr sub_map_column;
+            DataTypePtr data_type;
+
+            if (keys_string_column)
+            {
+                sub_map_column = keys_string_column->cut(element_start_row, element_size);
+                data_type = std::make_shared<DataTypeString>();
+            }
+            else
+            {
+                sub_map_column = keys_fixed_string_column->cut(element_start_row, element_size);
+                data_type =std::make_shared<DataTypeFixedString>(checkAndGetColumn<ColumnFixedString>(sub_map_column.get())->getN());
+            }
+
+            size_t col_key_size = sub_map_column->size();
+            auto column = is_const? ColumnConst::create(std::move(sub_map_column), std::move(col_key_size)) : std::move(sub_map_column);
+
+            new_arguments = {
+                    {
+                        column,
+                        data_type,
+                        ""
+                        },
+                    arguments[1]
+                    };
+
+            auto res = func_like.executeImpl(new_arguments, result_type, input_rows_count);
+            const auto & container = checkAndGetColumn<ColumnUInt8>(res.get())->getData();
+
+            for (size_t row_num = 0; row_num < element_size; ++row_num)
+            {
+                if (container[row_num] == 1)
+                {
+                    auto key_ref = keys_string_column ?
+                                   keys_string_column->getDataAt(element_start_row + row_num) :
+                                   keys_fixed_string_column->getDataAt(element_start_row + row_num);
+                    auto value_ref = values_column.getDataAt(element_start_row + row_num);
+
+                    keys_data->insertData(key_ref.data, key_ref.size);
+                    values_data->insertData(value_ref.data, value_ref.size);
+                    current_offset += 1;
+                }
+            }
+
+            offsets->insert(current_offset);
+        }
+
+        auto result_nested_column = ColumnArray::create(
+            ColumnTuple::create(Columns{std::move(keys_data), std::move(values_data)}),
+            std::move(offsets));
+
+        return ColumnMap::create(result_nested_column);
+    }
+};
+
 }
 
 void registerFunctionsMap(FunctionFactory & factory)
@@ -282,6 +526,8 @@ void registerFunctionsMap(FunctionFactory & factory)
     factory.registerFunction<FunctionMapContains>();
     factory.registerFunction<FunctionMapKeys>();
     factory.registerFunction<FunctionMapValues>();
+    factory.registerFunction<FunctionMapContainsKeyLike>();
+    factory.registerFunction<FunctionExtractKeyLike>();
 }
 
 }

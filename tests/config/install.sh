@@ -17,9 +17,7 @@ mkdir -p $DEST_CLIENT_PATH
 
 ln -sf $SRC_PATH/config.d/zookeeper.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/listen.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/part_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/text_log.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/metric_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/custom_settings_prefixes.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/macros.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/disks.xml $DEST_SERVER_PATH/config.d/
@@ -50,6 +48,7 @@ ln -sf $SRC_PATH/users.d/remote_queries.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/session_log_test.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/memory_profiler.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/no_fsync_metadata.xml $DEST_SERVER_PATH/users.d/
+ln -sf $SRC_PATH/users.d/filelog.xml $DEST_SERVER_PATH/users.d/
 
 # FIXME DataPartsExchange may hang for http_send_timeout seconds
 # when nobody is going to read from the other side of socket (due to "Fetching of part was cancelled"),

@@ -57,7 +57,7 @@ protected:
 
     String getFileContents(const String & file_name)
     {
-        auto buf = encrypted_disk->readFile(file_name, {}, 0);
+        auto buf = encrypted_disk->readFile(file_name, /* settings= */ {}, /* read_hint= */ {}, /* file_size= */ {});
         String str;
         readStringUntilEOF(str, *buf);
         return str;
@@ -65,7 +65,7 @@ protected:
 
     static String getBinaryRepresentation(const String & abs_path)
     {
-        auto buf = createReadBufferFromFileBase(abs_path, {}, 0);
+        auto buf = createReadBufferFromFileBase(abs_path, /* settings= */ {});
         String str;
         readStringUntilEOF(str, *buf);
         return str;

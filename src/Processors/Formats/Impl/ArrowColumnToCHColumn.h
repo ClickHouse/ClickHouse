@@ -1,8 +1,6 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_formats.h"
-#endif
+#include "config_formats.h"
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
 
@@ -21,18 +19,29 @@ class Chunk;
 class ArrowColumnToCHColumn
 {
 public:
-    ArrowColumnToCHColumn(const Block & header_, const std::string & format_name_, bool import_nested_);
+    using NameToColumnPtr = std::unordered_map<std::string, std::shared_ptr<arrow::ChunkedArray>>;
 
-    /// Constructor that create header by arrow schema. It will be useful for inserting
-    /// data from file without knowing table structure.
-    ArrowColumnToCHColumn(const arrow::Schema & schema, const std::string & format_name, bool import_nested_);
+    ArrowColumnToCHColumn(
+        const Block & header_,
+        const std::string & format_name_,
+        bool import_nested_,
+        bool allow_missing_columns_);
 
     void arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table);
 
+    void arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr);
+
+    /// Get missing columns that exists in header but not in arrow::Schema
+    std::vector<size_t> getMissingColumns(const arrow::Schema & schema) const;
+
+    static Block arrowSchemaToCHHeader(const arrow::Schema & schema, const std::string & format_name);
+
 private:
-    const Block header;
+    const Block & header;
     const std::string format_name;
     bool import_nested;
+    /// If false, throw exception if some columns in header not exists in arrow table.
+    bool allow_missing_columns;
 
     /// Map {column name : dictionary column}.
     /// To avoid converting dictionary from Arrow Dictionary

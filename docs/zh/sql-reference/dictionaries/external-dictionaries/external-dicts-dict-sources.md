@@ -12,7 +12,7 @@ toc_title: "\u5916\u90E8\u5B57\u5178\u7684\u6765\u6E90"
 如果使用xml-file配置字典，则配置如下所示:
 
 ``` xml
-<yandex>
+<clickhouse>
   <dictionary>
     ...
     <source>
@@ -23,7 +23,7 @@ toc_title: "\u5916\u90E8\u5B57\u5178\u7684\u6765\u6E90"
     ...
   </dictionary>
   ...
-</yandex>
+</clickhouse>
 ```
 
 在情况下 [DDL-查询](../../statements/create.md#create-dictionary-query)，相等的配置将看起来像:
@@ -272,7 +272,7 @@ $ sudo apt-get install -y unixodbc odbcinst odbc-postgresql
 ClickHouse中的字典配置:
 
 ``` xml
-<yandex>
+<clickhouse>
     <dictionary>
         <name>table_name</name>
         <source>
@@ -301,7 +301,7 @@ ClickHouse中的字典配置:
             </attribute>
         </structure>
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 或
@@ -367,7 +367,7 @@ $ sudo apt-get install tdsodbc freetds-bin sqsh
 在ClickHouse中配置字典:
 
 ``` xml
-<yandex>
+<clickhouse>
     <dictionary>
         <name>test</name>
         <source>
@@ -397,7 +397,7 @@ $ sudo apt-get install tdsodbc freetds-bin sqsh
             </attribute>
         </structure>
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 或

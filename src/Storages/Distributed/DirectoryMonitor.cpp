@@ -1,7 +1,6 @@
 #include <QueryPipeline/RemoteInserter.h>
 #include <Formats/NativeReader.h>
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Common/escapeForFileName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/SipHash.h>
@@ -333,7 +332,7 @@ namespace
 
     uint64_t doubleToUInt64(double d)
     {
-        if (d >= std::numeric_limits<uint64_t>::max())
+        if (d >= double(std::numeric_limits<uint64_t>::max()))
             return std::numeric_limits<uint64_t>::max();
         return static_cast<uint64_t>(d);
     }

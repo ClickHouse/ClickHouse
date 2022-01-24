@@ -17,9 +17,9 @@ def copy_file_to_container(local_path, dist_path, container_id):
     os.system("docker cp {local} {cont_id}:{dist}".format(local=local_path, cont_id=container_id, dist=dist_path))
 
 
-config = '''<yandex>
+config = '''<clickhouse>
     <dictionaries_config>/etc/clickhouse-server/dictionaries/{dictionaries_config}</dictionaries_config>
-</yandex>'''
+</clickhouse>'''
 
 
 @pytest.fixture(scope="module")

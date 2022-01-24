@@ -4,9 +4,10 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
 
 
 namespace DB
@@ -451,9 +452,9 @@ bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr & node, bool atomi
         const ASTs & args = func->arguments->children;
 
         if (func->name == "and" || func->name == "indexHint")
-            return checkASTUseless(args[0], atomic) && checkASTUseless(args[1], atomic);
+            return std::all_of(args.begin(), args.end(), [this, atomic](const auto & arg) { return checkASTUseless(arg, atomic); });
         else if (func->name == "or")
-            return checkASTUseless(args[0], atomic) || checkASTUseless(args[1], atomic);
+            return std::any_of(args.begin(), args.end(), [this, atomic](const auto & arg) { return checkASTUseless(arg, atomic); });
         else if (func->name == "not")
             return checkASTUseless(args[0], atomic);
         else

@@ -173,7 +173,7 @@ roundBankers(4.5) = 4
 roundBankers(3.55, 1) = 3.6
 roundBankers(3.65, 1) = 3.6
 roundBankers(10.35, 1) = 10.4
-roundBankers(10.755, 2) = 11,76
+roundBankers(10.755, 2) = 10,76
 ```
 
 **Смотрите также**

@@ -86,7 +86,7 @@ done
 if [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CLICKHOUSE_PASSWORD" ]; then
     echo "$0: create new user '$CLICKHOUSE_USER' instead 'default'"
     cat <<EOT > /etc/clickhouse-server/users.d/default-user.xml
-    <yandex>
+    <clickhouse>
       <!-- Docs: <https://clickhouse.com/docs/en/operations/settings/settings_users/> -->
       <users>
         <!-- Remove default user -->
@@ -103,7 +103,7 @@ if [ -n "$CLICKHOUSE_USER" ] && [ "$CLICKHOUSE_USER" != "default" ] || [ -n "$CL
           <access_management>${CLICKHOUSE_ACCESS_MANAGEMENT}</access_management>
         </${CLICKHOUSE_USER}>
       </users>
-    </yandex>
+    </clickhouse>
 EOT
 fi
 

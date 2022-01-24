@@ -50,7 +50,7 @@ SELECT count() FROM table4 WHERE id % 10 = 7;
 SELECT 'comparison:';
 SELECT v, v-205 as vv, modulo(vv, 200), moduloLegacy(vv, 200) FROM table1 ORDER BY v;
 
-DROP TABLE table1;
-DROP TABLE table2;
-DROP TABLE table3;
-DROP TABLE table4;
+DROP TABLE table1 SYNC;
+DROP TABLE table2 SYNC;
+DROP TABLE table3 SYNC;
+DROP TABLE table4 SYNC;

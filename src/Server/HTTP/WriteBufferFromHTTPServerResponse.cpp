@@ -3,16 +3,6 @@
 #include <IO/HTTPCommon.h>
 #include <IO/Progress.h>
 #include <IO/WriteBufferFromString.h>
-#include <Common/Exception.h>
-#include <Common/NetException.h>
-#include <Common/Stopwatch.h>
-#include <Common/MemoryTracker.h>
-
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
-
-#include <Poco/Version.h>
 
 
 namespace DB
@@ -170,8 +160,12 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
     }
 }
 
+WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
+{
+    finalize();
+}
 
-void WriteBufferFromHTTPServerResponse::finalize()
+void WriteBufferFromHTTPServerResponse::finalizeImpl()
 {
     try
     {
@@ -199,12 +193,5 @@ void WriteBufferFromHTTPServerResponse::finalize()
     }
 }
 
-
-WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
-{
-    /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-    finalize();
-}
 
 }

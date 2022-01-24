@@ -4,6 +4,7 @@
 #include <Common/ThreadStatus.h>
 #include <base/errnoToString.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
+#include <Interpreters/Context.h>
 
 #include <Poco/Logger.h>
 #include <base/getThreadId.h>
@@ -11,6 +12,7 @@
 
 #include <csignal>
 #include <mutex>
+#include <sys/mman.h>
 
 
 namespace DB
@@ -26,7 +28,7 @@ namespace ErrorCodes
 thread_local ThreadStatus * current_thread = nullptr;
 thread_local ThreadStatus * main_thread = nullptr;
 
-#if !defined(SANITIZER) && !defined(ARCADIA_BUILD)
+#if !defined(SANITIZER)
 namespace
 {
 
@@ -72,6 +74,24 @@ static thread_local bool has_alt_stack = false;
 #endif
 
 
+std::vector<ThreadGroupStatus::ProfileEventsCountersAndMemory> ThreadGroupStatus::getProfileEventsCountersAndMemoryForThreads()
+{
+    std::lock_guard guard(mutex);
+
+    /// It is OK to move it, since it is enough to report statistics for the thread at least once.
+    auto stats = std::move(finished_threads_counters_memory);
+    for (auto * thread : threads)
+    {
+        stats.emplace_back(ProfileEventsCountersAndMemory{
+            thread->performance_counters.getPartiallyAtomicSnapshot(),
+            thread->memory_tracker.get(),
+            thread->thread_id,
+        });
+    }
+
+    return stats;
+}
+
 ThreadStatus::ThreadStatus()
     : thread_id{getThreadId()}
 {
@@ -88,7 +108,7 @@ ThreadStatus::ThreadStatus()
     /// Will set alternative signal stack to provide diagnostics for stack overflow errors.
     /// If not already installed for current thread.
     /// Sanitizer makes larger stack usage and also it's incompatible with alternative stack by default (it sets up and relies on its own).
-#if !defined(SANITIZER) && !defined(ARCADIA_BUILD)
+#if !defined(SANITIZER)
     if (!has_alt_stack)
     {
         /// Don't repeat tries even if not installed successfully.
@@ -139,19 +159,23 @@ ThreadStatus::~ThreadStatus()
     {
         /// It's a minor tracked memory leak here (not the memory itself but it's counter).
         /// We've already allocated a little bit more than the limit and cannot track it in the thread memory tracker or its parent.
+        tryLogCurrentException(log);
     }
 
     if (thread_group)
     {
         std::lock_guard guard(thread_group->mutex);
+        thread_group->finished_threads_counters_memory.emplace_back(ThreadGroupStatus::ProfileEventsCountersAndMemory{
+            performance_counters.getPartiallyAtomicSnapshot(),
+            memory_tracker.get(),
+            thread_id,
+        });
         thread_group->threads.erase(this);
     }
 
-#if !defined(ARCADIA_BUILD)
     /// It may cause segfault if query_context was destroyed, but was not detached
     auto query_context_ptr = query_context.lock();
     assert((!query_context_ptr && query_id.empty()) || (query_context_ptr && query_id == query_context_ptr->getCurrentQueryId()));
-#endif
 
     if (deleter)
         deleter();

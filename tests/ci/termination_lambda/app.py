@@ -49,12 +49,20 @@ def list_runners(access_token):
         "Authorization": f"token {access_token}",
         "Accept": "application/vnd.github.v3+json",
     }
-
-    response = requests.get("https://api.github.com/orgs/ClickHouse/actions/runners", headers=headers)
+    response = requests.get("https://api.github.com/orgs/ClickHouse/actions/runners?per_page=100", headers=headers)
     response.raise_for_status()
     data = response.json()
-    print("Total runners", data['total_count'])
+    total_runners = data['total_count']
     runners = data['runners']
+
+    total_pages = int(total_runners / 100 + 1)
+    for i in range(2, total_pages + 1):
+        response = requests.get(f"https://api.github.com/orgs/ClickHouse/actions/runners?page={i}&per_page=100", headers=headers)
+        response.raise_for_status()
+        data = response.json()
+        runners += data['runners']
+
+    print("Total runners", len(runners))
     result = []
     for runner in runners:
         tags = [tag['name'] for tag in runner['labels']]
@@ -131,7 +139,7 @@ def delete_runner(access_token, runner):
 
     response = requests.delete(f"https://api.github.com/orgs/ClickHouse/actions/runners/{runner.id}", headers=headers)
     response.raise_for_status()
-    print(f"Response code deleting {runner.name} is {response.status_code}")
+    print(f"Response code deleting {runner.name} with id {runner.id} is {response.status_code}")
     return response.status_code == 204
 
 
@@ -189,7 +197,7 @@ def main(github_secret_key, github_app_id, event):
     print("Going to delete runners:", ', '.join([runner.name for runner in to_delete_runners]))
     for runner in to_delete_runners:
         if delete_runner(access_token, runner):
-            print(f"Runner {runner.name} successfuly deleted from github")
+            print(f"Runner with name {runner.name} and id {runner.id} successfuly deleted from github")
             instances_to_kill.append(runner.name)
         else:
             print(f"Cannot delete {runner.name} from github")

@@ -1,9 +1,7 @@
 {
     "docker/packager/deb": {
         "name": "clickhouse/deb-builder",
-        "dependent": [
-            "docker/packager/unbundled"
-        ]
+        "dependent": []
     },
     "docker/packager/binary": {
         "name": "clickhouse/binary-builder",
@@ -12,10 +10,6 @@
             "docker/test/pvs",
             "docker/test/codebrowser"
         ]
-    },
-    "docker/packager/unbundled": {
-        "name": "clickhouse/unbundled-builder",
-        "dependent": []
     },
     "docker/test/compatibility/centos": {
         "name": "clickhouse/test-old-centos",
@@ -52,7 +46,6 @@
         "name": "clickhouse/stateless-test",
         "dependent": [
             "docker/test/stateful",
-            "docker/test/coverage",
             "docker/test/unit"
         ]
     },
@@ -61,10 +54,6 @@
         "dependent": [
             "docker/test/stress"
         ]
-    },
-    "docker/test/coverage": {
-        "name": "clickhouse/test-coverage",
-        "dependent": []
     },
     "docker/test/unit": {
         "name": "clickhouse/unit-test",
@@ -114,6 +103,10 @@
         "name": "clickhouse/mysql-golang-client",
         "dependent": []
     },
+    "docker/test/integration/dotnet_client": {
+        "name": "clickhouse/dotnet-client",
+        "dependent": []
+    },
     "docker/test/integration/mysql_java_client": {
         "name": "clickhouse/mysql-java-client",
         "dependent": []
@@ -138,21 +131,9 @@
          "name": "clickhouse/test-base",
          "dependent": [
             "docker/test/stateless",
-            "docker/test/stateless_unbundled",
             "docker/test/integration/base",
             "docker/test/fuzzer",
             "docker/test/keeper-jepsen"
-         ]
-    },
-    "docker/packager/unbundled": {
-         "name": "clickhouse/unbundled-builder",
-         "dependent": [
-            "docker/test/stateless_unbundled"
-         ]
-    },
-    "docker/test/stateless_unbundled": {
-         "name": "clickhouse/stateless-unbundled-test",
-         "dependent": [
          ]
     },
     "docker/test/integration/kerberized_hadoop": {
@@ -165,6 +146,21 @@
     },
     "docker/test/keeper-jepsen": {
         "name": "clickhouse/keeper-jepsen-test",
+        "dependent": []
+    },
+    "docker/docs/builder": {
+        "name": "clickhouse/docs-builder",
+        "dependent": [
+            "docker/docs/check",
+            "docker/docs/release"
+        ]
+    },
+    "docker/docs/check": {
+        "name": "clickhouse/docs-check",
+        "dependent": []
+    },
+    "docker/docs/release": {
+        "name": "clickhouse/docs-release",
         "dependent": []
     }
 }

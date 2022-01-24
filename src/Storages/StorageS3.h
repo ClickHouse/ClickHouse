@@ -68,6 +68,8 @@ public:
 
     Chunk generate() override;
 
+    void onCancel() override;
+
 private:
     String name;
     String bucket;
@@ -118,7 +120,8 @@ public:
         ContextPtr context_,
         std::optional<FormatSettings> format_settings_,
         const String & compression_method_ = "",
-        bool distributed_processing_ = false);
+        bool distributed_processing_ = false,
+        ASTPtr partition_by_ = nullptr);
 
     String getName() const override
     {
@@ -144,8 +147,19 @@ public:
 
     static StorageS3Configuration getConfiguration(ASTs & engine_args, ContextPtr local_context);
 
-private:
+    static ColumnsDescription getTableStructureFromData(
+        const String & format,
+        const S3::URI & uri,
+        const String & access_key_id,
+        const String & secret_access_key,
+        UInt64 max_connections,
+        UInt64 max_single_read_retries,
+        const String & compression_method,
+        bool distributed_processing,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr ctx);
 
+private:
     friend class StorageS3Cluster;
     friend class TableFunctionS3Cluster;
 
@@ -169,8 +183,20 @@ private:
     String name;
     const bool distributed_processing;
     std::optional<FormatSettings> format_settings;
+    ASTPtr partition_by;
 
     static void updateClientAndAuthSettings(ContextPtr, ClientAuthentication &);
+
+    static std::shared_ptr<StorageS3Source::IteratorWrapper> createFileIterator(const ClientAuthentication & client_auth, bool distributed_processing, ContextPtr local_context);
+
+    static ColumnsDescription getTableStructureFromDataImpl(
+        const String & format,
+        const ClientAuthentication & client_auth,
+        UInt64 max_single_read_retries,
+        const String & compression_method,
+        bool distributed_processing,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr ctx);
 };
 
 }

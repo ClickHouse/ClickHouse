@@ -19,7 +19,7 @@ toc_title: "Хранение данных на внешних дисках"
 
 Пример конфигурации:
 ``` xml
-<yandex>
+<clickhouse>
     <storage_configuration>
         <disks>
             <hdfs>
@@ -41,7 +41,7 @@ toc_title: "Хранение данных на внешних дисках"
     <merge_tree>
         <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
     </merge_tree>
-</yandex>
+</clickhouse>
 ```
 
 Обязательные параметры:
@@ -93,7 +93,7 @@ toc_title: "Хранение данных на внешних дисках"
 Пример конфигурации:
 
 ``` xml
-<yandex>
+<clickhouse>
     <storage_configuration>
         <disks>
             <disk_s3>
@@ -110,7 +110,7 @@ toc_title: "Хранение данных на внешних дисках"
             </disk_s3_encrypted>
         </disks>
     </storage_configuration>
-</yandex>
+</clickhouse>
 ```
 
 ## Хранение данных на веб-сервере {#storing-data-on-webserver}
@@ -124,7 +124,7 @@ toc_title: "Хранение данных на внешних дисках"
 Готовый тестовый пример. Добавьте эту конфигурацию в config:
 
 ``` xml
-<yandex>
+<clickhouse>
     <storage_configuration>
         <disks>
             <web>
@@ -142,7 +142,7 @@ toc_title: "Хранение данных на внешних дисках"
             </web>
         </policies>
     </storage_configuration>
-</yandex>
+</clickhouse>
 ```
 
 А затем выполните этот запрос:

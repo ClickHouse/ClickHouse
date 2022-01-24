@@ -30,11 +30,10 @@
 #include <Processors/ISink.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <pcg_random.hpp>
+#include <base/scope_guard.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#    include <Common/config.h>
-#endif
+#include <Common/config_version.h>
+#include <Common/config.h>
 
 #if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>
@@ -604,6 +603,14 @@ void Connection::sendReadTaskResponse(const String & response)
     out->next();
 }
 
+
+void Connection::sendMergeTreeReadTaskResponse(const PartitionReadResponse & response)
+{
+    writeVarUInt(Protocol::Client::MergeTreeReadTaskResponse, *out);
+    response.serialize(*out);
+    out->next();
+}
+
 void Connection::sendPreparedData(ReadBuffer & input, size_t size, const String & name)
 {
     /// NOTE 'Throttler' is not used in this method (could use, but it's not important right now).
@@ -873,6 +880,10 @@ Packet Connection::receivePacket()
             case Protocol::Server::ReadTaskRequest:
                 return res;
 
+            case Protocol::Server::MergeTreeReadTaskRequest:
+                res.request = receivePartitionReadRequest();
+                return res;
+
             case Protocol::Server::ProfileEvents:
                 res.block = receiveProfileEvents();
                 return res;
@@ -1022,6 +1033,13 @@ ProfileInfo Connection::receiveProfileInfo() const
     ProfileInfo profile_info;
     profile_info.read(*in);
     return profile_info;
+}
+
+PartitionReadRequest Connection::receivePartitionReadRequest() const
+{
+    PartitionReadRequest request;
+    request.deserialize(*in);
+    return request;
 }
 
 

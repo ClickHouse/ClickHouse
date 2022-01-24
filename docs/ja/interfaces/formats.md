@@ -559,7 +559,7 @@ CREATE TABLE IF NOT EXISTS example_table
 -   もし `input_format_defaults_for_omitted_fields = 1` のデフォルト値 `x` 等しい `0` しかし、デフォルト値は `a` 等しい `x * 2`.
 
 !!! note "警告"
-    データを挿入するとき `insert_sample_with_metadata = 1`,ClickHouseは、挿入と比較して、より多くの計算リソースを消費します `insert_sample_with_metadata = 0`.
+    データを挿入するとき `input_format_defaults_for_omitted_fields = 1`,ClickHouseは、挿入と比較して、より多くの計算リソースを消費します `input_format_defaults_for_omitted_fields = 0`.
 
 ### データの選択 {#selecting-data}
 

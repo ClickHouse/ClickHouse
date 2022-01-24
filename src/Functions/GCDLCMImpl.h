@@ -6,9 +6,7 @@
 #include <limits>
 #include <type_traits>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 
 namespace DB

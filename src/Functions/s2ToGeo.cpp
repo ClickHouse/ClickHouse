@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
+#include "config_functions.h"
 
 #if USE_S2_GEOMETRY
 
@@ -80,7 +78,7 @@ public:
         auto & latitude = col_latitude->getData();
         latitude.reserve(input_rows_count);
 
-        for (const auto row : collections::range(0, input_rows_count))
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
             const auto id = S2CellId(col_id->getUInt(row));
 

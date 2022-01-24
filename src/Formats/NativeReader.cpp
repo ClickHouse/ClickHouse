@@ -1,4 +1,5 @@
 #include <Core/Defines.h>
+#include <Core/ProtocolDefines.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
@@ -10,6 +11,8 @@
 
 #include <Formats/NativeReader.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 
 
 namespace DB
@@ -62,7 +65,7 @@ void NativeReader::resetParser()
     use_index = false;
 }
 
-void NativeReader::readData(const IDataType & type, ColumnPtr & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint)
+void NativeReader::readData(const ISerialization & serialization, ColumnPtr & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint)
 {
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
@@ -71,14 +74,13 @@ void NativeReader::readData(const IDataType & type, ColumnPtr & column, ReadBuff
     settings.native_format = true;
 
     ISerialization::DeserializeBinaryBulkStatePtr state;
-    auto serialization = type.getDefaultSerialization();
 
-    serialization->deserializeBinaryBulkStatePrefix(settings, state);
-    serialization->deserializeBinaryBulkWithMultipleStreams(column, rows, settings, state, nullptr);
+    serialization.deserializeBinaryBulkStatePrefix(settings, state);
+    serialization.deserializeBinaryBulkWithMultipleStreams(column, rows, settings, state, nullptr);
 
     if (column->size() != rows)
-        throw Exception("Cannot read all data in NativeBlockInputStream. Rows read: " + toString(column->size()) + ". Rows expected: " + toString(rows) + ".",
-            ErrorCodes::CANNOT_READ_ALL_DATA);
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+            "Cannot read all data in NativeBlockInputStream. Rows read: {}. Rows expected: {}", column->size(), rows);
 }
 
 
@@ -142,6 +144,30 @@ Block NativeReader::read()
         readBinary(type_name, istr);
         column.type = data_type_factory.get(type_name);
 
+        const auto * aggregate_function_data_type = typeid_cast<const DataTypeAggregateFunction *>(column.type.get());
+        if (aggregate_function_data_type && aggregate_function_data_type->isVersioned())
+        {
+            auto version = aggregate_function_data_type->getVersionFromRevision(server_revision);
+            aggregate_function_data_type->setVersion(version, /*if_empty=*/ true);
+        }
+
+        SerializationPtr serialization;
+        if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
+        {
+            auto info = column.type->createSerializationInfo({});
+
+            UInt8 has_custom;
+            readBinary(has_custom, istr);
+            if (has_custom)
+                info->deserializeFromKindsBinary(istr);
+
+            serialization = column.type->getSerialization(*info);
+        }
+        else
+        {
+            serialization = column.type->getDefaultSerialization();
+        }
+
         if (use_index)
         {
             /// Index allows to do more checks.
@@ -152,11 +178,11 @@ Block NativeReader::read()
         }
 
         /// Data
-        ColumnPtr read_column = column.type->createColumn();
+        ColumnPtr read_column = column.type->createColumn(*serialization);
 
         double avg_value_size_hint = avg_value_size_hints.empty() ? 0 : avg_value_size_hints[i];
         if (rows)    /// If no rows, nothing to read.
-            readData(*column.type, read_column, istr, rows, avg_value_size_hint);
+            readData(*serialization, read_column, istr, rows, avg_value_size_hint);
 
         column.column = std::move(read_column);
 
@@ -166,8 +192,8 @@ Block NativeReader::read()
             auto & header_column = header.getByName(column.name);
             if (!header_column.type->equals(*column.type))
             {
-                column.column = recursiveTypeConversion(column.column, column.type, header.getByPosition(i).type);
-                column.type = header.getByPosition(i).type;
+                column.column = recursiveTypeConversion(column.column, column.type, header.safeGetByPosition(i).type);
+                column.type = header.safeGetByPosition(i).type;
             }
         }
 
@@ -218,41 +244,6 @@ void NativeReader::updateAvgValueSizeHints(const Block & block)
     {
         auto & avg_value_size_hint = avg_value_size_hints[idx];
         IDataType::updateAvgValueSizeHint(*block.getByPosition(idx).column, avg_value_size_hint);
-    }
-}
-
-void IndexForNativeFormat::read(ReadBuffer & istr, const NameSet & required_columns)
-{
-    while (!istr.eof())
-    {
-        blocks.emplace_back();
-        IndexOfBlockForNativeFormat & block = blocks.back();
-
-        readVarUInt(block.num_columns, istr);
-        readVarUInt(block.num_rows, istr);
-
-        if (block.num_columns < required_columns.size())
-            throw Exception("Index contain less than required columns", ErrorCodes::INCORRECT_INDEX);
-
-        for (size_t i = 0; i < block.num_columns; ++i)
-        {
-            IndexOfOneColumnForNativeFormat column_index;
-
-            readBinary(column_index.name, istr);
-            readBinary(column_index.type, istr);
-            readBinary(column_index.location.offset_in_compressed_file, istr);
-            readBinary(column_index.location.offset_in_decompressed_block, istr);
-
-            if (required_columns.count(column_index.name))
-                block.columns.push_back(std::move(column_index));
-        }
-
-        if (block.columns.size() < required_columns.size())
-            throw Exception("Index contain less than required columns", ErrorCodes::INCORRECT_INDEX);
-        if (block.columns.size() > required_columns.size())
-            throw Exception("Index contain duplicate columns", ErrorCodes::INCORRECT_INDEX);
-
-        block.num_columns = block.columns.size();
     }
 }
 

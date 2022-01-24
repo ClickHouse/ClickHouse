@@ -99,13 +99,22 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
     , join_use_nulls(settings.join_use_nulls)
     , max_joined_block_rows(settings.max_joined_block_size_rows)
     , join_algorithm(settings.join_algorithm)
-    , partial_merge_join_optimizations(settings.partial_merge_join_optimizations)
     , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
     , partial_merge_join_left_table_buffer_bytes(settings.partial_merge_join_left_table_buffer_bytes)
     , max_files_to_merge(settings.join_on_disk_max_files_to_merge)
     , temporary_files_codec(settings.temporary_files_codec)
     , tmp_volume(tmp_volume_)
 {
+}
+
+void TableJoin::resetKeys()
+{
+    clauses.clear();
+
+    key_asts_left.clear();
+    key_asts_right.clear();
+    left_type_map.clear();
+    right_type_map.clear();
 }
 
 void TableJoin::resetCollected()
@@ -223,6 +232,13 @@ Names TableJoin::requiredJoinedNames() const
     NameSet required_columns_set(key_names_right.begin(), key_names_right.end());
     for (const auto & joined_column : columns_added_by_join)
         required_columns_set.insert(joined_column.name);
+
+    /*
+     * In case of `SELECT count() FROM ... JOIN .. ON NULL` required columns set for right table is empty.
+     * But we have to get at least one column from right table to know the number of rows.
+     */
+    if (required_columns_set.empty() && !columns_from_joined_table.empty())
+        return {columns_from_joined_table.begin()->name};
 
     return Names(required_columns_set.begin(), required_columns_set.end());
 }
@@ -352,9 +368,7 @@ bool TableJoin::sameStrictnessAndKind(ASTTableJoin::Strictness strictness_, ASTT
 
 bool TableJoin::oneDisjunct() const
 {
-    if (!isCrossOrComma(kind()))
-        assert(!clauses.empty());
-    return clauses.size() <= 1;
+    return clauses.size() == 1;
 }
 
 bool TableJoin::allowMergeJoin() const
@@ -648,6 +662,12 @@ void TableJoin::assertHasOneOnExpr() const
                             clauses.size(), fmt::join(text, " | "), queryToString(table_join));
 
     }
+}
+
+void TableJoin::resetToCross()
+{
+    this->resetKeys();
+    this->table_join.kind = ASTTableJoin::Kind::Cross;
 }
 
 }

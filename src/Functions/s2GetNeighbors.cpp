@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
+#include "config_functions.h"
 
 #if USE_S2_GEOMETRY
 
@@ -74,7 +72,7 @@ public:
         dst_offsets.resize(input_rows_count);
         size_t current_offset = 0;
 
-        for (const auto row : collections::range(0, input_rows_count))
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 id = col_id->getUInt(row);
 
