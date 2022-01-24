@@ -16,5 +16,6 @@ set (SRCS
     ../fmtlib/include/fmt/ranges.h
 )
 
-add_library(fmt ${SRCS})
-target_include_directories(fmt SYSTEM PUBLIC ../fmtlib/include)
+add_library(_fmt ${SRCS})
+target_include_directories(_fmt SYSTEM PUBLIC ../fmtlib/include)
+add_library(ch_contrib::fmt ALIAS _fmt)
