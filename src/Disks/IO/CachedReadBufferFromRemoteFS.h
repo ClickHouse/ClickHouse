@@ -9,13 +9,13 @@
 namespace DB
 {
 
-class CacheableReadBufferFromRemoteFS : public SeekableReadBuffer
+class CachedReadBufferFromRemoteFS : public SeekableReadBuffer
 {
 public:
-    CacheableReadBufferFromRemoteFS(
+    CachedReadBufferFromRemoteFS(
         const String & path,
         FileCachePtr cache_,
-        SeekableReadBufferPtr reader_,
+        SeekableReadBufferPtr downloader_,
         const ReadSettings & settings_,
         size_t read_until_position_);
 
@@ -38,7 +38,7 @@ private:
     Poco::Logger * log;
     FileCache::Key key;
     FileCachePtr cache;
-    SeekableReadBufferPtr reader;
+    SeekableReadBufferPtr downloader;
     ReadSettings settings;
 
     size_t read_until_position;
