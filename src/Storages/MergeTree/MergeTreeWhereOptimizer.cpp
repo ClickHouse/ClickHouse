@@ -135,8 +135,15 @@ static bool isConditionGoodNew(const ASTPtr & condition)
     if (!function)
         return false;
 
-    // TODO: support other
-    if (function->name != "equals")
+    std::unordered_set<String> compare_funcs = {
+        "equals",
+        "notEquals",
+        "less",
+        "greater",
+        "greaterOrEquals",
+        "lessOrEquals",
+    };
+    if (!compare_funcs.contains(function->name))
         return false;
 
     auto * left_arg = function->arguments->children.front().get();
