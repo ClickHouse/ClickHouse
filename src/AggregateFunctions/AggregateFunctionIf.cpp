@@ -151,12 +151,16 @@ public:
             for (size_t i = 0; i < batch_size; ++i)
                 final_nulls[i] = (!!null_map[i]) | (!filter_values[i]);
 
-        this->nested_function->addBatchSinglePlaceNotNull(
-            batch_size, this->nestedPlace(place), columns_param, final_nulls.get(), arena, -1);
-
         if constexpr (result_is_nullable)
+        {
             if (!memoryIsByte(final_nulls.get(), batch_size, 1))
                 this->setFlag(place);
+            else
+                return; /// No work to do.
+        }
+
+        this->nested_function->addBatchSinglePlaceNotNull(
+            batch_size, this->nestedPlace(place), columns_param, final_nulls.get(), arena, -1);
     }
 
 #if USE_EMBEDDED_COMPILER
