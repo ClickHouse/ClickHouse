@@ -19,9 +19,16 @@
 namespace DB
 {
 
+enum class RangeHashedDictionaryLookupStrategy
+{
+    min,
+    max
+};
+
 struct RangeHashedDictionaryConfiguration
 {
     bool convert_null_range_bound_to_open;
+    RangeHashedDictionaryLookupStrategy lookup_strategy;
     bool require_nonempty;
 };
 
@@ -88,7 +95,7 @@ public:
     DictionarySpecialKeyType getSpecialKeyType() const override { return DictionarySpecialKeyType::Range;}
 
     ColumnPtr getColumn(
-        const std::string& attribute_name,
+        const std::string & attribute_name,
         const DataTypePtr & result_type,
         const Columns & key_columns,
         const DataTypes & key_types,
@@ -166,6 +173,17 @@ private:
         const Columns & key_columns,
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
+
+    ColumnPtr getColumnInternal(
+        const std::string & attribute_name,
+        const DataTypePtr & result_type,
+        const PaddedPODArray<UInt64> & key_to_index) const;
+
+    template <typename AttributeType, bool is_nullable, typename ValueSetter>
+    void getItemsInternalImpl(
+        const Attribute & attribute,
+        const PaddedPODArray<UInt64> & key_to_index,
+        ValueSetter && set_value) const;
 
     void updateData();
 
