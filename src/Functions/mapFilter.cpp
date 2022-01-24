@@ -2,7 +2,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
-#include "FunctionMapMapped.h"
+#include <Functions/FunctionMapMapped.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 
