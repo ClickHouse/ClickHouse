@@ -13,6 +13,7 @@
 #include <Parsers/formatAST.h>
 #include <Interpreters/misc.h>
 #include <Common/typeid_cast.h>
+#include "Core/Field.h"
 #include "Interpreters/StorageID.h"
 #include "Storages/StorageMerge.h"
 #include <DataTypes/NestedUtils.h>
@@ -165,12 +166,11 @@ static double scoreSelectivity(const IStatisticsPtr & stats, const ASTPtr & cond
 
     std::unordered_set<String> compare_funcs = {
         "equals",
-        // TODO: support other
-        //"notEquals",
-        //"less",
-        //"greater",
-        //"greaterOrEquals",
-        //"lessOrEquals",
+        "notEquals",
+        "less",
+        "greater",
+        "greaterOrEquals",
+        "lessOrEquals",
     };
     if (!compare_funcs.contains(function->name))
         return 1;
@@ -191,10 +191,38 @@ static double scoreSelectivity(const IStatisticsPtr & stats, const ASTPtr & cond
             const auto & field = literal->value;
 
             // everything is converted to float
-            return stats->getColumnDistributionStatistics()->estimateProbability(
+            if (function->name == "equals")
+            {
+                return stats->getColumnDistributionStatistics()->estimateProbability(
                     ident->getColumnName(),
                     field,
                     field).value_or(1);
+            }
+            else if (function->name == "notEquals")
+            {
+                return 1 - stats->getColumnDistributionStatistics()->estimateProbability(
+                    ident->getColumnName(),
+                    field,
+                    field).value_or(0);
+            }
+            else if (function->name == "less" || function->name == "lessOrEquals")
+            {
+                return stats->getColumnDistributionStatistics()->estimateProbability(
+                    ident->getColumnName(),
+                    {},
+                    field).value_or(1); 
+            }
+            else if (function->name == "greater" || function->name == "greaterOrEquals")
+            {
+                return stats->getColumnDistributionStatistics()->estimateProbability(
+                    ident->getColumnName(),
+                    field,
+                    {}).value_or(1); 
+            }
+            else
+            {
+                return 1;
+            }
         }
     }
 
@@ -364,7 +392,7 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
         }
     };
 
-    /// TODO: try to use branch-and-bound instead
+    /// TODO: use columns in expr
     /// Move conditions unless the ratio of total_size_of_moved_conditions to the total_size_of_queried_columns is less than some threshold.
     while (!where_conditions.empty())
     {
