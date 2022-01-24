@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <string_view>
+#include <algorithm>
 
 #include <string.h>
 #include <unistd.h>
@@ -32,6 +33,33 @@ bool hasInputData()
     FD_ZERO(&fds);
     FD_SET(STDIN_FILENO, &fds);
     return select(1, &fds, nullptr, nullptr, &timeout) == 1;
+}
+
+struct NoCaseCompare
+{
+    bool operator()(const std::string & str1, const std::string & str2)
+    {
+        return std::lexicographical_compare(begin(str1), end(str1), begin(str2), end(str2), [](const char c1, const char c2)
+        {
+            return std::tolower(c1) < std::tolower(c2);
+        });
+    }
+};
+
+using Words = std::vector<std::string>;
+template <class Compare>
+void addNewWords(Words & to, const Words & from, Compare comp)
+{
+    size_t old_size = to.size();
+    size_t new_size = old_size + from.size();
+
+    to.reserve(new_size);
+    to.insert(to.end(), from.begin(), from.end());
+    auto middle = to.begin() + old_size;
+    std::inplace_merge(to.begin(), middle, to.end(), comp);
+
+    auto last_unique = std::unique(to.begin(), to.end());
+    to.erase(last_unique, to.end());
 }
 
 }
@@ -69,34 +97,21 @@ replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String &
 
 void LineReader::Suggest::addWords(Words && new_words)
 {
-    std::lock_guard lock(mutex);
-
-    /// Optimization for initial load.
-    if (words.empty())
+    Words new_words_no_case = new_words;
+    if (!new_words.empty())
     {
-        words.swap(new_words);
-        words_no_case = words;
-    }
-    else
-    {
-        for (const auto & new_word : new_words)
-        {
-            if (std::binary_search(words.begin(), words.end(), new_word))
-                continue;
-
-            words.push_back(new_word);
-            words_no_case.push_back(new_word);
-        }
+        std::sort(new_words.begin(), new_words.end());
+        std::sort(new_words_no_case.begin(), new_words_no_case.end(), NoCaseCompare{});
     }
 
-    std::sort(words.begin(), words.end());
-    std::sort(words_no_case.begin(), words_no_case.end(), [](const std::string & str1, const std::string & str2)
     {
-        return std::lexicographical_compare(begin(str1), end(str1), begin(str2), end(str2), [](const char char1, const char char2)
-        {
-            return std::tolower(char1) < std::tolower(char2);
-        });
-    });
+        std::lock_guard lock(mutex);
+        addNewWords(words, new_words, std::less<std::string>{});
+        addNewWords(words_no_case, new_words_no_case, NoCaseCompare{});
+    }
+
+    assert(std::is_sorted(words.begin(), words.end()));
+    assert(std::is_sorted(words_no_case.begin(), words_no_case.end(), NoCaseCompare{}));
 }
 
 LineReader::LineReader(const String & history_file_path_, bool multiline_, Patterns extenders_, Patterns delimiters_)
