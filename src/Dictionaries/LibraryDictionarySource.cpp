@@ -129,7 +129,7 @@ Pipe LibraryDictionarySource::loadKeys(const Columns & key_columns, const std::v
 
 DictionarySourcePtr LibraryDictionarySource::clone() const
 {
-    return std::make_unique<LibraryDictionarySource>(*this);
+    return std::make_shared<LibraryDictionarySource>(*this);
 }
 
 

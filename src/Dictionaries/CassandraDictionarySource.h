@@ -61,7 +61,7 @@ public:
 
     DictionarySourcePtr clone() const override
     {
-        return std::make_unique<CassandraDictionarySource>(dict_struct, configuration, sample_block);
+        return std::make_shared<CassandraDictionarySource>(dict_struct, configuration, sample_block);
     }
 
     Pipe loadIds(const std::vector<UInt64> & ids) override;

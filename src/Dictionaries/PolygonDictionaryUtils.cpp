@@ -151,7 +151,7 @@ void SlabsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
         }
     }
 
-    for (size_t i = 0; i != all_edges.size(); i++)
+    for (size_t i = 0; i != all_edges.size(); ++i)
     {
         size_t l = edge_left[i];
         size_t r = edge_right[i];

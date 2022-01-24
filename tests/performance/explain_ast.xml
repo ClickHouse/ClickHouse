@@ -1,0 +1,5911 @@
+<test>
+    <!-- This is a large but valid query (Initially a valid query, obfuscated and tripled via UNION ALL) -->
+    <query short='1'>
+        <![CDATA[
+EXPLAIN AST SELECT *
+FROM
+(
+SELECT
+c1,
+c2,
+c3_q[1] AS c3_q1,
+c3_q[3] AS c3_q3,
+c3_q[2] AS c3_median,
+least(c3_max, c3_q3 + (1.5 * (c3_q3 - c3_q1))) AS c3_max,
+greatest(c3_min, c3_q1 - (1.5 * (c3_q3 - c3_q1))) AS c3_min,
+c3_avg,
+c4_q[1] AS c4_q1,
+c4_q[3] AS c4_q3,
+c4_q[2] AS c4_median,
+least(c4_max, c4_q3 + (1.5 * (c4_q3 - c4_q1))) AS c4_max,
+greatest(c4_min, c4_q1 - (1.5 * (c4_q3 - c4_q1))) AS c4_min,
+c4_avg,
+c5_q[1] AS c5_q1,
+c5_q[3] AS c5_q3,
+c5_q[2] AS c5_median,
+least(c5_max, c5_q3 + (1.5 * (c5_q3 - c5_q1))) AS c5_max,
+greatest(c5_min, c5_q1 - (1.5 * (c5_q3 - c5_q1))) AS c5_min,
+c5_avg,
+c6_q[1] AS c6_q1,
+c6_q[3] AS c6_q3,
+c6_q[2] AS c6_median,
+least(c6_max, c6_q3 + (1.5 * (c6_q3 - c6_q1))) AS c6_max,
+greatest(c6_min, c6_q1 - (1.5 * (c6_q3 - c6_q1))) AS c6_min,
+c6_avg,
+c7_q[1] AS c7_q1,
+c7_q[3] AS c7_q3,
+c7_q[2] AS c7_median,
+least(c7_max, c7_q3 + (1.5 * (c7_q3 - c7_q1))) AS c7_max,
+greatest(c7_min, c7_q1 - (1.5 * (c7_q3 - c7_q1))) AS c7_min,
+c7_avg,
+c8_q[1] AS c8_q1,
+c8_q[3] AS c8_q3,
+c8_q[2] AS c8_median,
+least(c8_max, c8_q3 + (1.5 * (c8_q3 - c8_q1))) AS c8_max,
+greatest(c8_min, c8_q1 - (1.5 * (c8_q3 - c8_q1))) AS c8_min,
+c8_avg,
+c9_q[1] AS c9_q1,
+c9_q[3] AS c9_q3,
+c9_q[2] AS c9_median,
+least(c9_max, c9_q3 + (1.5 * (c9_q3 - c9_q1))) AS c9_max,
+greatest(c9_min, c9_q1 - (1.5 * (c9_q3 - c9_q1))) AS c9_min,
+c9_avg,
+c10_q[1] AS c10_q1,
+c10_q[3] AS c10_q3,
+c10_q[2] AS c10_median,
+least(c10_max, c10_q3 + (1.5 * (c10_q3 - c10_q1))) AS c10_max,
+greatest(c10_min, c10_q1 - (1.5 * (c10_q3 - c10_q1))) AS c10_min,
+c10_avg,
+c10_avg,
+c11_q[1] AS c11_q1,
+c11_q[3] AS c11_q3,
+c11_q[2] AS c11_median,
+least(c11_max, c11_q3 + (1.5 * (c11_q3 - c11_q1))) AS c11_max,
+greatest(c11_min, c11_q1 - (1.5 * (c11_q3 - c11_q1))) AS c11_min,
+c11_avg,
+c12_q[1] AS c12_q1,
+c12_q[3] AS c12_q3,
+c12_q[2] AS c12_median,
+least(c12_max, c12_q3 + (1.5 * (c12_q3 - c12_q1))) AS c12_max,
+greatest(c12_min, c12_q1 - (1.5 * (c12_q3 - c12_q1))) AS c12_min,
+c12_avg,
+c13_q[1] AS c13_q1,
+c13_q[3] AS c13_q3,
+c13_q[2] AS c13_median,
+least(c13_max, c13_q3 + (1.5 * (c13_q3 - c13_q1))) AS c13_max,
+greatest(c13_min, c13_q1 - (1.5 * (c13_q3 - c13_q1))) AS c13_min,
+c13_avg,
+c14_q[1] AS c14_q1,
+c14_q[3] AS c14_q3,
+c14_q[2] AS c14_median,
+least(c14_max, c14_q3 + (1.5 * (c14_q3 - c14_q1))) AS c14_max,
+greatest(c14_min, c14_q1 - (1.5 * (c14_q3 - c14_q1))) AS c14_min,
+c14_avg,
+c15_q[1] AS c15_q1,
+c15_q[3] AS c15_q3,
+c15_q[2] AS c15_median,
+least(c15_max, c15_q3 + (1.5 * (c15_q3 - c15_q1))) AS c15_max,
+greatest(c15_min, c15_q1 - (1.5 * (c15_q3 - c15_q1))) AS c15_min,
+c15_avg,
+c16_q[1] AS c16_q1,
+c16_q[3] AS c16_q3,
+c16_q[2] AS c16_median,
+least(toFloat64(c16_max), c16_q3 + (1.5 * (c16_q3 - c16_q1))) AS c16_max,
+greatest(toFloat64(c16_min), c16_q1 - (1.5 * (c16_q3 - c16_q1))) AS c16_min,
+c16_avg,
+c17_q[1] AS c17_q1,
+c17_q[3] AS c17_q3,
+c17_q[2] AS c17_median,
+least(toFloat64(c17_max), c17_q3 + (1.5 * (c17_q3 - c17_q1))) AS c17_max,
+greatest(toFloat64(c17_min), c17_q1 - (1.5 * (c17_q3 - c17_q1))) AS c17_min,
+c17_avg,
+c18_q[1] AS c18_q1,
+c18_q[3] AS c18_q3,
+c18_q[2] AS c18_median,
+least(toFloat64(c18_max), c18_q3 + (1.5 * (c18_q3 - c18_q1))) AS c18_max,
+greatest(toFloat64(c18_min), c18_q1 - (1.5 * (c18_q3 - c18_q1))) AS c18_min,
+c18_avg,
+round(if(c19 != 0, c24 / c19, 0), 2) AS c20,
+c21,
+c22,
+c23 AS c23,
+c19 AS c19,
+c16 AS c16,
+c17 AS c17,
+c18 AS c18,
+round(c24, 2) AS c24,
+round(if(c17 != 0, c24 / c17, 0), 2) AS c25,
+'CH' AS c26
+FROM
+(
+SELECT
+c1,
+c2,
+groupUniqArray(c27) AS c28,
+groupUniqArrayIf(c27, isNotNull(c29)) AS c28_with_c29,
+quantiles(0.25, 0.5, 0.75)(if(c3 > 0, c3, NULL)) AS c3_q,
+quantiles(0.25, 0.5, 0.75)(if(c4 > 0, c4, NULL)) AS c4_q,
+quantiles(0.25, 0.5, 0.75)(t.c17 / t.c19) AS c5_q,
+quantiles(0.25, 0.5, 0.75)(c6) AS c6_q,
+quantiles(0.25, 0.5, 0.75)(c7) AS c7_q,
+quantiles(0.25, 0.5, 0.75)(c8) AS c8_q,
+quantiles(0.25, 0.5, 0.75)(c9) AS c9_q,
+quantiles(0.25, 0.5, 0.75)(c10) AS c10_q,
+quantiles(0.25, 0.5, 0.75)(c11) AS c11_q,
+quantiles(0.25, 0.5, 0.75)(c12) AS c12_q,
+quantiles(0.25, 0.5, 0.75)(c13) AS c13_q,
+quantiles(0.25, 0.5, 0.75)(if(t.c24 > 0, t.c24, NULL) / t.c19) AS c14_q,
+quantiles(0.25, 0.5, 0.75)(if(t.c24 > 0, t.c24, NULL) / t.c17) AS c15_q,
+quantiles(0.25, 0.5, 0.75)(t.c16) AS c16_q,
+quantiles(0.25, 0.5, 0.75)(t.c17) AS c17_q,
+quantiles(0.25, 0.5, 0.75)(if(t.c18 > 0, t.c18, NULL)) AS c18_q,
+max(if(c3 > 0, c3, NULL)) AS c3_max,
+min(if(c3 > 0, c3, NULL)) AS c3_min,
+avg(if(c3 > 0, c3, NULL)) AS c3_avg,
+max(if(c4 > 0, c4, NULL)) AS c4_max,
+min(if(c4 > 0, c4, NULL)) AS c4_min,
+avg(if(c4 > 0, c4, NULL)) AS c4_avg,
+max(t.c17 / t.c19) AS c5_max,
+min(t.c17 / t.c19) AS c5_min,
+avg(t.c17 / t.c19) AS c5_avg,
+max(if(c6 > 0, c6, NULL)) AS c6_max,
+min(if(c6 > 0, c6, NULL)) AS c6_min,
+avg(if(c6 > 0, c6, NULL)) AS c6_avg,
+max(if(c7 > 0, c7, NULL)) AS c7_max,
+min(if(c7 > 0, c7, NULL)) AS c7_min,
+avg(if(c7 > 0, c7, NULL)) AS c7_avg,
+max(if(c10 > 0, c10, NULL)) AS c10_max,
+min(if(c10 > 0, c10, NULL)) AS c10_min,
+avg(if(c10 > 0, c10, NULL)) AS c10_avg,
+max(if(c8 > 0, c8, NULL)) AS c8_max,
+min(if(c8 > 0, c8, NULL)) AS c8_min,
+avg(if(c8 > 0, c8, NULL)) AS c8_avg,
+max(if(c9 > 0, c9, NULL)) AS c9_max,
+min(if(c9 > 0, c9, NULL)) AS c9_min,
+avg(if(c9 > 0, c9, NULL)) AS c9_avg,
+max(if(c11 > 0, c11, NULL)) AS c11_max,
+min(if(c11 > 0, c11, NULL)) AS c11_min,
+avg(if(c11 > 0, c11, NULL)) AS c11_avg,
+max(if(c12 > 0, c12, NULL)) AS c12_max,
+min(if(c12 > 0, c12, NULL)) AS c12_min,
+avg(if(c12 > 0, c12, NULL)) AS c12_avg,
+max(if(c13 > 0, c13, NULL)) AS c13_max,
+min(if(c13 > 0, c13, NULL)) AS c13_min,
+avg(if(c13 > 0, c13, NULL)) AS c13_avg,
+max(if(t.c24 > 0, t.c24, NULL) / t.c19) AS c14_max,
+min(if(t.c24 > 0, t.c24, NULL) / t.c19) AS c14_min,
+avg(if(t.c24 > 0, t.c24, NULL) / t.c19) AS c14_avg,
+max(if(t.c24 > 0, t.c24, NULL) / t.c17) AS c15_max,
+min(if(t.c24 > 0, t.c24, NULL) / t.c17) AS c15_min,
+avg(if(t.c24 > 0, t.c24, NULL) / t.c17) AS c15_avg,
+max(t.c16) AS c16_max,
+min(t.c16) AS c16_min,
+avg(t.c16) AS c16_avg,
+max(t.c17) AS c17_max,
+min(t.c17) AS c17_min,
+avg(t.c17) AS c17_avg,
+max(if(t.c18 > 0, t.c18, NULL)) AS c18_max,
+min(if(t.c18 > 0, t.c18, NULL)) AS c18_min,
+avg(if(t.c18 > 0, t.c18, NULL)) AS c18_avg,
+sum(t.c19) AS c19,
+sum(if(t.c18 > 0, t.c18, NULL)) AS c18,
+sum(t.c16) AS c16,
+sum(c23) AS c23,
+sum(t.c17) AS c17,
+sum(if(t.c24 > 0, t.c24, NULL)) AS c24,
+c24 / c19 AS c14,
+c24 / c17 AS c15,
+median(if(isNotNull(c29) AND (t.c22 > 0), c13 * (t.c22 / c29), NULL)) AS c21,
+sum(c22) AS c22
+FROM
+(
+SELECT
+c27,
+c39 AS c1,
+c29,
+c19,
+c23,
+c17,
+c16,
+c18,
+c22,
+c24,
+c3,
+c4,
+c8,
+c9,
+c10,
+c11,
+c12,
+c13,
+c6,
+c7
+FROM
+(
+SELECT
+c27,
+uniqExact(c30, c31) AS c19,
+uniqExact(c30, c31, c32) AS c23,
+uniqExactIf(c30, c31, c33 IN ('c37', 'c38')) AS c17,
+countIf(c33 IN ('c37', 'c38')) AS c16,
+countIf(c33 = 'c39') AS c18,
+coalesce(sumIf(c29, c33 = 'c39'), 0) AS c22,
+coalesce(sumIf(c37, c33 = 'c39'), 0) AS c24,
+if((c18 > 0) AND (c19 > 0), c18 / c19, NULL) AS c3,
+if(c17 != 0, c18 / c17, NULL) AS c4,
+coalesce(avgIf(c34, (c34 > 0) AND (c33 IN ('c37', 'c38'))), NULL) AS c8,
+coalesce(avgIf(c35, (c35 > 0) AND (c33 IN ('c37', 'c38'))), NULL) AS c9,
+coalesce(avgIf(c34, (c34 > 0) AND (c33 = 'c39')), NULL) AS c10,
+coalesce(avgIf(c35, (c35 > 0) AND (c33 = 'c39')), NULL) AS c11,
+coalesce(avgIf(c37, c33 = 'c39'), NULL) AS c12,
+coalesce(avgIf(c37 / c34, (c34 > 0) AND (c33 = 'c39')), NULL) AS c13,
+coalesce(avgIf(c37, (c37 > 0) AND (c33 IN ('c37', 'c38'))), NULL) AS c6,
+coalesce(minIf(c37, (c37 > 0) AND (c33 IN ('c37', 'c38')) AND (c37 > (c36 / 2))), NULL) AS c7
+FROM
+(
+SELECT
+c27,
+c30,
+c32,
+c31,
+NULL AS c29,
+NULL AS c33,
+NULL AS c37,
+NULL AS c34,
+NULL AS c35
+FROM
+(
+SELECT
+c27,
+c30,
+c32,
+c31
+FROM database.t1
+PREWHERE ((c32 >= parseDateTimeBestEffort('2020-01-01')) AND (c32 <= parseDateTimeBestEffort('2020-01-01 23:59:59'))) AND (c27 IN
+(
+SELECT comp_c27
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+groupArray(c39) AS c39,
+any(c40) AS c40,
+any(c41) AS c41,
+any(c42) AS c42,
+any(c29) AS c29,
+any(c43) AS c43,
+any(c44) AS c44,
+any(min_c32) AS min_c32,
+any(max_c32) AS max_c32,
+any(c45) AS c45,
+any(c46) AS c46,
+any(c38) AS c38,
+any(c47) AS c47
+FROM
+(
+SELECT
+c27 AS comp_c27,
+if(comp_c27 = 0, toDate('2010-01-01'), toDate(minMerge(min_c32))) AS min_c32,
+if(comp_c27 = 0, toDate(now()), toDate(maxMerge(max_c32))) + 1 AS max_c32,
+NULL AS c39,
+NULL AS c40,
+NULL AS c41,
+NULL AS c42,
+NULL AS c29,
+NULL AS c43,
+NULL AS c44,
+NULL AS c45,
+NULL AS c46,
+NULL AS c38,
+NULL AS c47
+FROM database.table15
+GROUP BY comp_c27
+UNION ALL
+SELECT
+comp_c27,
+NULL AS min_c32,
+NULL AS max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38,
+c47
+FROM
+(
+SELECT
+c39,
+comp_c27 AS c27,
+comp_c27,
+c40,
+c41,
+assumeNotNull(c45) AS c45,
+assumeNotNull(c46) AS c46,
+assumeNotNull(c38) AS c38,
+joinGet('database.table14', 'c48', c40) AS c42,
+joinGet('database.table14', 'c29', c40) AS c29,
+joinGet('database.table14', 'c43', c40) AS c43,
+joinGet('database.table14', 'property_c44', c40) AS c44,
+splitByChar(',', assumeNotNull(joinGet('database.jointable13', 'prefix_c33', comp_c27))) AS c33s,
+joinGet('database.jointable13', 'c47', comp_c27) AS c47
+FROM
+(
+SELECT
+c39,
+comp_c27,
+joinGet('database.jointable13', 'c40', comp_c27) AS c40,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+c39,
+arrayJoin(arrayMap(x -> toInt64(x), arrayFilter(x -> (length(x) > 0), splitByString(', ', c49)))) AS comp_c27,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+'c57' AS c39,
+toString(c27) AS c49,
+1 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'c58' AS c39,
+arrayStringConcat(groupArray(toString(c27)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE chain_id IN
+(
+SELECT chain_id
+FROM database.table12
+WHERE c27 IN (322)
+)
+UNION ALL
+SELECT
+'c59' AS c39,
+assumeNotNull(c27s_str) AS c49,
+0 AS c41,
+c50 AS c45,
+c51 AS c46,
+c52 AS c38
+FROM
+(
+SELECT *
+FROM table11
+WHERE c27 IN (322)
+) AS c1s_c59
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'superSupercalifragilisticexpialidocious' AS c39,
+arrayStringConcat(groupArray(toString(c1_id)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table10
+WHERE c27 IN (322)
+) AS table9
+)
+) AS a
+) AS table8
+) AS table7
+GROUP BY comp_c27
+) AS table6
+WHERE (parseDateTimeBestEffort('2020-01-01') >= min_c32) AND (max_c32 >= (parseDateTimeBestEffort('2021-05-02') - 2))
+) AS table5
+ARRAY JOIN c39
+WHERE isNotNull(c39)
+) AS table4
+))
+WHERE c61 = 0
+) AS table25
+UNION ALL
+SELECT
+c27,
+c30,
+c32,
+c31,
+c29,
+c33,
+c37,
+c34,
+c35
+FROM
+(
+SELECT
+c27,
+c30,
+c32,
+'c37' AS c33,
+coalesce(c37 * joinGet('database.table18', 'c60', concat(c26, '_', 'CH')), 0) AS c37,
+if(c53 > 0, c53, 2) AS c53,
+c54,
+if(c29 > 0, c29, 1) AS c29,
+c55,
+c56,
+datediff('day', c55, c56) AS c34,
+datediff('day', c32, c55) AS c35,
+c31
+FROM database.table24
+PREWHERE ((c32 >= parseDateTimeBestEffort('2020-01-01')) AND (c32 <= parseDateTimeBestEffort('2020-01-01 23:59:59'))) AND (c27 IN
+(
+SELECT comp_c27
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+groupArray(c39) AS c39,
+any(c40) AS c40,
+any(c41) AS c41,
+any(c42) AS c42,
+any(c29) AS c29,
+any(c43) AS c43,
+any(c44) AS c44,
+any(min_c32) AS min_c32,
+any(max_c32) AS max_c32,
+any(c45) AS c45,
+any(c46) AS c46,
+any(c38) AS c38,
+any(c47) AS c47
+FROM
+(
+SELECT
+c27 AS comp_c27,
+if(comp_c27 = 0, toDate('2010-01-01'), toDate(minMerge(min_c32))) AS min_c32,
+if(comp_c27 = 0, toDate(now()), toDate(maxMerge(max_c32))) + 1 AS max_c32,
+NULL AS c39,
+NULL AS c40,
+NULL AS c41,
+NULL AS c42,
+NULL AS c29,
+NULL AS c43,
+NULL AS c44,
+NULL AS c45,
+NULL AS c46,
+NULL AS c38,
+NULL AS c47
+FROM database.table15
+GROUP BY comp_c27
+UNION ALL
+SELECT
+comp_c27,
+NULL AS min_c32,
+NULL AS max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38,
+c47
+FROM
+(
+SELECT
+c39,
+comp_c27 AS c27,
+comp_c27,
+c40,
+c41,
+assumeNotNull(c45) AS c45,
+assumeNotNull(c46) AS c46,
+assumeNotNull(c38) AS c38,
+joinGet('database.table14', 'c48', c40) AS c42,
+joinGet('database.table14', 'c29', c40) AS c29,
+joinGet('database.table14', 'c43', c40) AS c43,
+joinGet('database.table14', 'property_c44', c40) AS c44,
+splitByChar(',', assumeNotNull(joinGet('database.jointable13', 'prefix_c33', comp_c27))) AS c33s,
+joinGet('database.jointable13', 'c47', comp_c27) AS c47
+FROM
+(
+SELECT
+c39,
+comp_c27,
+joinGet('database.jointable13', 'c40', comp_c27) AS c40,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+c39,
+arrayJoin(arrayMap(x -> toInt64(x), arrayFilter(x -> (length(x) > 0), splitByString(', ', c49)))) AS comp_c27,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+'c57' AS c39,
+toString(c27) AS c49,
+1 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'c58' AS c39,
+arrayStringConcat(groupArray(toString(c27)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE chain_id IN
+(
+SELECT chain_id
+FROM database.table12
+WHERE c27 IN (322)
+)
+UNION ALL
+SELECT
+'c59' AS c39,
+assumeNotNull(c27s_str) AS c49,
+0 AS c41,
+c50 AS c45,
+c51 AS c46,
+c52 AS c38
+FROM
+(
+SELECT *
+FROM table11
+WHERE c27 IN (322)
+) AS c1s_c59
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'superSupercalifragilisticexpialidocious' AS c39,
+arrayStringConcat(groupArray(toString(c1_id)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table10
+WHERE c27 IN (322)
+) AS table9
+)
+) AS a
+) AS table8
+) AS table7
+GROUP BY comp_c27
+) AS table6
+WHERE (parseDateTimeBestEffort('2020-01-01') >= min_c32) AND (max_c32 >= (parseDateTimeBestEffort('2021-05-02') - 2))
+) AS table5
+ARRAY JOIN c39
+WHERE isNotNull(c39)
+) AS table4
+))
+WHERE (c61 = 0) AND (c37 < (666 * (1 / joinGet('database.table18', 'c60', concat(c26, '_', 'CH')))))
+) AS table23
+UNION ALL
+SELECT
+c27,
+c30,
+c32,
+c31,
+c29,
+c33,
+c37,
+c34,
+c35
+FROM
+(
+SELECT
+c27,
+c30,
+c32,
+'c39' AS c33,
+coalesce(c37 * joinGet('database.table18', 'c60', concat(c26, '_', 'CH')), 0) AS c37,
+if(c53 > 0, c53, 2) AS c53,
+c54,
+if(c29 > 0, c29, 1) AS c29,
+c55,
+c56,
+datediff('day', c55, c56) AS c34,
+datediff('day', c32, c55) AS c35,
+c31
+FROM database.table22
+PREWHERE ((c32 >= parseDateTimeBestEffort('2020-01-01')) AND (c32 <= parseDateTimeBestEffort('2020-01-01 23:59:59'))) AND (c27 IN
+(
+SELECT comp_c27
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+groupArray(c39) AS c39,
+any(c40) AS c40,
+any(c41) AS c41,
+any(c42) AS c42,
+any(c29) AS c29,
+any(c43) AS c43,
+any(c44) AS c44,
+any(min_c32) AS min_c32,
+any(max_c32) AS max_c32,
+any(c45) AS c45,
+any(c46) AS c46,
+any(c38) AS c38,
+any(c47) AS c47
+FROM
+(
+SELECT
+c27 AS comp_c27,
+if(comp_c27 = 0, toDate('2010-01-01'), toDate(minMerge(min_c32))) AS min_c32,
+if(comp_c27 = 0, toDate(now()), toDate(maxMerge(max_c32))) + 1 AS max_c32,
+NULL AS c39,
+NULL AS c40,
+NULL AS c41,
+NULL AS c42,
+NULL AS c29,
+NULL AS c43,
+NULL AS c44,
+NULL AS c45,
+NULL AS c46,
+NULL AS c38,
+NULL AS c47
+FROM database.table15
+GROUP BY comp_c27
+UNION ALL
+SELECT
+comp_c27,
+NULL AS min_c32,
+NULL AS max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38,
+c47
+FROM
+(
+SELECT
+c39,
+comp_c27 AS c27,
+comp_c27,
+c40,
+c41,
+assumeNotNull(c45) AS c45,
+assumeNotNull(c46) AS c46,
+assumeNotNull(c38) AS c38,
+joinGet('database.table14', 'c48', c40) AS c42,
+joinGet('database.table14', 'c29', c40) AS c29,
+joinGet('database.table14', 'c43', c40) AS c43,
+joinGet('database.table14', 'property_c44', c40) AS c44,
+splitByChar(',', assumeNotNull(joinGet('database.jointable13', 'prefix_c33', comp_c27))) AS c33s,
+joinGet('database.jointable13', 'c47', comp_c27) AS c47
+FROM
+(
+SELECT
+c39,
+comp_c27,
+joinGet('database.jointable13', 'c40', comp_c27) AS c40,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+c39,
+arrayJoin(arrayMap(x -> toInt64(x), arrayFilter(x -> (length(x) > 0), splitByString(', ', c49)))) AS comp_c27,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+'c57' AS c39,
+toString(c27) AS c49,
+1 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'c58' AS c39,
+arrayStringConcat(groupArray(toString(c27)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE chain_id IN
+(
+SELECT chain_id
+FROM database.table12
+WHERE c27 IN (322)
+)
+UNION ALL
+SELECT
+'c59' AS c39,
+assumeNotNull(c27s_str) AS c49,
+0 AS c41,
+c50 AS c45,
+c51 AS c46,
+c52 AS c38
+FROM
+(
+SELECT *
+FROM table11
+WHERE c27 IN (322)
+) AS c1s_c59
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'superSupercalifragilisticexpialidocious' AS c39,
+arrayStringConcat(groupArray(toString(c1_id)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table10
+WHERE c27 IN (322)
+) AS table9
+)
+) AS a
+) AS table8
+) AS table7
+GROUP BY comp_c27
+) AS table6
+WHERE (parseDateTimeBestEffort('2020-01-01') >= min_c32) AND (max_c32 >= (parseDateTimeBestEffort('2021-05-02') - 2))
+) AS table5
+ARRAY JOIN c39
+WHERE isNotNull(c39)
+) AS table4
+))
+WHERE (c61 = 0) AND (c37 < (666 * (1 / joinGet('database.table18', 'c60', concat(c26, '_', 'CH')))))
+) AS table21
+) AS table20
+ALL LEFT JOIN
+(
+SELECT
+c27,
+avgMerge(avg_c37) * joinGet('database.table18', 'c60', concat('USD', '_', 'CH')) AS c36
+FROM database.table19
+PREWHERE c27 IN
+(
+SELECT comp_c27
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+groupArray(c39) AS c39,
+any(c40) AS c40,
+any(c41) AS c41,
+any(c42) AS c42,
+any(c29) AS c29,
+any(c43) AS c43,
+any(c44) AS c44,
+any(min_c32) AS min_c32,
+any(max_c32) AS max_c32,
+any(c45) AS c45,
+any(c46) AS c46,
+any(c38) AS c38,
+any(c47) AS c47
+FROM
+(
+SELECT
+c27 AS comp_c27,
+if(comp_c27 = 0, toDate('2010-01-01'), toDate(minMerge(min_c32))) AS min_c32,
+if(comp_c27 = 0, toDate(now()), toDate(maxMerge(max_c32))) + 1 AS max_c32,
+NULL AS c39,
+NULL AS c40,
+NULL AS c41,
+NULL AS c42,
+NULL AS c29,
+NULL AS c43,
+NULL AS c44,
+NULL AS c45,
+NULL AS c46,
+NULL AS c38,
+NULL AS c47
+FROM database.table15
+GROUP BY comp_c27
+UNION ALL
+SELECT
+comp_c27,
+NULL AS min_c32,
+NULL AS max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38,
+c47
+FROM
+(
+SELECT
+c39,
+comp_c27 AS c27,
+comp_c27,
+c40,
+c41,
+assumeNotNull(c45) AS c45,
+assumeNotNull(c46) AS c46,
+assumeNotNull(c38) AS c38,
+joinGet('database.table14', 'c48', c40) AS c42,
+joinGet('database.table14', 'c29', c40) AS c29,
+joinGet('database.table14', 'c43', c40) AS c43,
+joinGet('database.table14', 'property_c44', c40) AS c44,
+splitByChar(',', assumeNotNull(joinGet('database.jointable13', 'prefix_c33', comp_c27))) AS c33s,
+joinGet('database.jointable13', 'c47', comp_c27) AS c47
+FROM
+(
+SELECT
+c39,
+comp_c27,
+joinGet('database.jointable13', 'c40', comp_c27) AS c40,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+c39,
+arrayJoin(arrayMap(x -> toInt64(x), arrayFilter(x -> (length(x) > 0), splitByString(', ', c49)))) AS comp_c27,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+'c57' AS c39,
+toString(c27) AS c49,
+1 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'c58' AS c39,
+arrayStringConcat(groupArray(toString(c27)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE chain_id IN
+(
+SELECT chain_id
+FROM database.table12
+WHERE c27 IN (322)
+)
+UNION ALL
+SELECT
+'c59' AS c39,
+assumeNotNull(c27s_str) AS c49,
+0 AS c41,
+c50 AS c45,
+c51 AS c46,
+c52 AS c38
+FROM
+(
+SELECT *
+FROM table11
+WHERE c27 IN (322)
+) AS c1s_c59
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'superSupercalifragilisticexpialidocious' AS c39,
+arrayStringConcat(groupArray(toString(c1_id)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table10
+WHERE c27 IN (322)
+) AS table9
+)
+) AS a
+) AS table8
+) AS table7
+GROUP BY comp_c27
+) AS table6
+WHERE (parseDateTimeBestEffort('2020-01-01') >= min_c32) AND (max_c32 >= (parseDateTimeBestEffort('2021-05-02') - 2))
+) AS table5
+ARRAY JOIN c39
+WHERE isNotNull(c39)
+) AS table4
+)
+WHERE date > (now() - toIntervalMonth(3))
+GROUP BY c27
+) AS table17 USING (c27)
+GROUP BY c27
+) AS table16
+ALL LEFT JOIN
+(
+SELECT
+comp_c27 AS c27,
+assumeNotNull(c39) AS c39,
+c29
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+groupArray(c39) AS c39,
+any(c40) AS c40,
+any(c41) AS c41,
+any(c42) AS c42,
+any(c29) AS c29,
+any(c43) AS c43,
+any(c44) AS c44,
+any(min_c32) AS min_c32,
+any(max_c32) AS max_c32,
+any(c45) AS c45,
+any(c46) AS c46,
+any(c38) AS c38,
+any(c47) AS c47
+FROM
+(
+SELECT
+c27 AS comp_c27,
+if(comp_c27 = 0, toDate('2010-01-01'), toDate(minMerge(min_c32))) AS min_c32,
+if(comp_c27 = 0, toDate(now()), toDate(maxMerge(max_c32))) + 1 AS max_c32,
+NULL AS c39,
+NULL AS c40,
+NULL AS c41,
+NULL AS c42,
+NULL AS c29,
+NULL AS c43,
+NULL AS c44,
+NULL AS c45,
+NULL AS c46,
+NULL AS c38,
+NULL AS c47
+FROM database.table15
+GROUP BY comp_c27
+UNION ALL
+SELECT
+comp_c27,
+NULL AS min_c32,
+NULL AS max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38,
+c47
+FROM
+(
+SELECT
+c39,
+comp_c27 AS c27,
+comp_c27,
+c40,
+c41,
+assumeNotNull(c45) AS c45,
+assumeNotNull(c46) AS c46,
+assumeNotNull(c38) AS c38,
+joinGet('database.table14', 'c48', c40) AS c42,
+joinGet('database.table14', 'c29', c40) AS c29,
+joinGet('database.table14', 'c43', c40) AS c43,
+joinGet('database.table14', 'property_c44', c40) AS c44,
+splitByChar(',', assumeNotNull(joinGet('database.jointable13', 'prefix_c33', comp_c27))) AS c33s,
+joinGet('database.jointable13', 'c47', comp_c27) AS c47
+FROM
+(
+SELECT
+c39,
+comp_c27,
+joinGet('database.jointable13', 'c40', comp_c27) AS c40,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+c39,
+arrayJoin(arrayMap(x -> toInt64(x), arrayFilter(x -> (length(x) > 0), splitByString(', ', c49)))) AS comp_c27,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+'c57' AS c39,
+toString(c27) AS c49,
+1 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'c58' AS c39,
+arrayStringConcat(groupArray(toString(c27)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE chain_id IN
+(
+SELECT chain_id
+FROM database.table12
+WHERE c27 IN (322)
+)
+UNION ALL
+SELECT
+'c59' AS c39,
+assumeNotNull(c27s_str) AS c49,
+0 AS c41,
+c50 AS c45,
+c51 AS c46,
+c52 AS c38
+FROM
+(
+SELECT *
+FROM table11
+WHERE c27 IN (322)
+) AS c1s_c59
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'superSupercalifragilisticexpialidocious' AS c39,
+arrayStringConcat(groupArray(toString(c1_id)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table10
+WHERE c27 IN (322)
+) AS table9
+)
+) AS a
+) AS table8
+) AS table7
+GROUP BY comp_c27
+) AS table6
+WHERE (parseDateTimeBestEffort('2020-01-01') >= min_c32) AND (max_c32 >= (parseDateTimeBestEffort('2021-05-02') - 2))
+) AS table5
+ARRAY JOIN c39
+WHERE isNotNull(c39)
+) AS table4
+) USING (c27)
+) AS t
+ALL LEFT JOIN
+(
+SELECT
+c1,
+c2
+FROM
+(
+SELECT
+c39 AS c1,
+groupArray(comp_c27) AS c49,
+multiIf(c1 = 'c58', if(length(c49) <= 2, 0, 1), c1 = 'c57', 1, if(length(c49) <= 3, 0, 1)) AS c2
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+groupArray(c39) AS c39,
+any(c40) AS c40,
+any(c41) AS c41,
+any(c42) AS c42,
+any(c29) AS c29,
+any(c43) AS c43,
+any(c44) AS c44,
+any(min_c32) AS min_c32,
+any(max_c32) AS max_c32,
+any(c45) AS c45,
+any(c46) AS c46,
+any(c38) AS c38,
+any(c47) AS c47
+FROM
+(
+SELECT
+c27 AS comp_c27,
+if(comp_c27 = 0, toDate('2010-01-01'), toDate(minMerge(min_c32))) AS min_c32,
+if(comp_c27 = 0, toDate(now()), toDate(maxMerge(max_c32))) + 1 AS max_c32,
+NULL AS c39,
+NULL AS c40,
+NULL AS c41,
+NULL AS c42,
+NULL AS c29,
+NULL AS c43,
+NULL AS c44,
+NULL AS c45,
+NULL AS c46,
+NULL AS c38,
+NULL AS c47
+FROM database.table15
+GROUP BY comp_c27
+UNION ALL
+SELECT
+comp_c27,
+NULL AS min_c32,
+NULL AS max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38,
+c47
+FROM
+(
+SELECT
+c39,
+comp_c27 AS c27,
+comp_c27,
+c40,
+c41,
+assumeNotNull(c45) AS c45,
+assumeNotNull(c46) AS c46,
+assumeNotNull(c38) AS c38,
+joinGet('database.table14', 'c48', c40) AS c42,
+joinGet('database.table14', 'c29', c40) AS c29,
+joinGet('database.table14', 'c43', c40) AS c43,
+joinGet('database.table14', 'property_c44', c40) AS c44,
+splitByChar(',', assumeNotNull(joinGet('database.jointable13', 'prefix_c33', comp_c27))) AS c33s,
+joinGet('database.jointable13', 'c47', comp_c27) AS c47
+FROM
+(
+SELECT
+c39,
+comp_c27,
+joinGet('database.jointable13', 'c40', comp_c27) AS c40,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+c39,
+arrayJoin(arrayMap(x -> toInt64(x), arrayFilter(x -> (length(x) > 0), splitByString(', ', c49)))) AS comp_c27,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+'c57' AS c39,
+toString(c27) AS c49,
+1 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'c58' AS c39,
+arrayStringConcat(groupArray(toString(c27)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE chain_id IN
+(
+SELECT chain_id
+FROM database.table12
+WHERE c27 IN (322)
+)
+UNION ALL
+SELECT
+'c59' AS c39,
+assumeNotNull(c27s_str) AS c49,
+0 AS c41,
+c50 AS c45,
+c51 AS c46,
+c52 AS c38
+FROM
+(
+SELECT *
+FROM table11
+WHERE c27 IN (322)
+) AS c1s_c59
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'superSupercalifragilisticexpialidocious' AS c39,
+arrayStringConcat(groupArray(toString(c1_id)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table10
+WHERE c27 IN (322)
+) AS table9
+)
+) AS a
+) AS table8
+) AS table7
+GROUP BY comp_c27
+) AS table6
+WHERE (parseDateTimeBestEffort('2020-01-01') >= min_c32) AND (max_c32 >= (parseDateTimeBestEffort('2021-05-02') - 2))
+) AS table5
+ARRAY JOIN c39
+WHERE isNotNull(c39)
+) AS table4
+GROUP BY c39
+) AS table3
+) USING (c1)
+GROUP BY
+c1,
+c2
+) AS table2
+ORDER BY c1 ASC
+) AS table1
+UNION ALL
+SELECT *
+FROM
+(
+SELECT
+c1,
+c2,
+c3_q[1] AS c3_q1,
+c3_q[3] AS c3_q3,
+c3_q[2] AS c3_median,
+least(c3_max, c3_q3 + (1.5 * (c3_q3 - c3_q1))) AS c3_max,
+greatest(c3_min, c3_q1 - (1.5 * (c3_q3 - c3_q1))) AS c3_min,
+c3_avg,
+c4_q[1] AS c4_q1,
+c4_q[3] AS c4_q3,
+c4_q[2] AS c4_median,
+least(c4_max, c4_q3 + (1.5 * (c4_q3 - c4_q1))) AS c4_max,
+greatest(c4_min, c4_q1 - (1.5 * (c4_q3 - c4_q1))) AS c4_min,
+c4_avg,
+c5_q[1] AS c5_q1,
+c5_q[3] AS c5_q3,
+c5_q[2] AS c5_median,
+least(c5_max, c5_q3 + (1.5 * (c5_q3 - c5_q1))) AS c5_max,
+greatest(c5_min, c5_q1 - (1.5 * (c5_q3 - c5_q1))) AS c5_min,
+c5_avg,
+c6_q[1] AS c6_q1,
+c6_q[3] AS c6_q3,
+c6_q[2] AS c6_median,
+least(c6_max, c6_q3 + (1.5 * (c6_q3 - c6_q1))) AS c6_max,
+greatest(c6_min, c6_q1 - (1.5 * (c6_q3 - c6_q1))) AS c6_min,
+c6_avg,
+c7_q[1] AS c7_q1,
+c7_q[3] AS c7_q3,
+c7_q[2] AS c7_median,
+least(c7_max, c7_q3 + (1.5 * (c7_q3 - c7_q1))) AS c7_max,
+greatest(c7_min, c7_q1 - (1.5 * (c7_q3 - c7_q1))) AS c7_min,
+c7_avg,
+c8_q[1] AS c8_q1,
+c8_q[3] AS c8_q3,
+c8_q[2] AS c8_median,
+least(c8_max, c8_q3 + (1.5 * (c8_q3 - c8_q1))) AS c8_max,
+greatest(c8_min, c8_q1 - (1.5 * (c8_q3 - c8_q1))) AS c8_min,
+c8_avg,
+c9_q[1] AS c9_q1,
+c9_q[3] AS c9_q3,
+c9_q[2] AS c9_median,
+least(c9_max, c9_q3 + (1.5 * (c9_q3 - c9_q1))) AS c9_max,
+greatest(c9_min, c9_q1 - (1.5 * (c9_q3 - c9_q1))) AS c9_min,
+c9_avg,
+c10_q[1] AS c10_q1,
+c10_q[3] AS c10_q3,
+c10_q[2] AS c10_median,
+least(c10_max, c10_q3 + (1.5 * (c10_q3 - c10_q1))) AS c10_max,
+greatest(c10_min, c10_q1 - (1.5 * (c10_q3 - c10_q1))) AS c10_min,
+c10_avg,
+c10_avg,
+c11_q[1] AS c11_q1,
+c11_q[3] AS c11_q3,
+c11_q[2] AS c11_median,
+least(c11_max, c11_q3 + (1.5 * (c11_q3 - c11_q1))) AS c11_max,
+greatest(c11_min, c11_q1 - (1.5 * (c11_q3 - c11_q1))) AS c11_min,
+c11_avg,
+c12_q[1] AS c12_q1,
+c12_q[3] AS c12_q3,
+c12_q[2] AS c12_median,
+least(c12_max, c12_q3 + (1.5 * (c12_q3 - c12_q1))) AS c12_max,
+greatest(c12_min, c12_q1 - (1.5 * (c12_q3 - c12_q1))) AS c12_min,
+c12_avg,
+c13_q[1] AS c13_q1,
+c13_q[3] AS c13_q3,
+c13_q[2] AS c13_median,
+least(c13_max, c13_q3 + (1.5 * (c13_q3 - c13_q1))) AS c13_max,
+greatest(c13_min, c13_q1 - (1.5 * (c13_q3 - c13_q1))) AS c13_min,
+c13_avg,
+c14_q[1] AS c14_q1,
+c14_q[3] AS c14_q3,
+c14_q[2] AS c14_median,
+least(c14_max, c14_q3 + (1.5 * (c14_q3 - c14_q1))) AS c14_max,
+greatest(c14_min, c14_q1 - (1.5 * (c14_q3 - c14_q1))) AS c14_min,
+c14_avg,
+c15_q[1] AS c15_q1,
+c15_q[3] AS c15_q3,
+c15_q[2] AS c15_median,
+least(c15_max, c15_q3 + (1.5 * (c15_q3 - c15_q1))) AS c15_max,
+greatest(c15_min, c15_q1 - (1.5 * (c15_q3 - c15_q1))) AS c15_min,
+c15_avg,
+c16_q[1] AS c16_q1,
+c16_q[3] AS c16_q3,
+c16_q[2] AS c16_median,
+least(toFloat64(c16_max), c16_q3 + (1.5 * (c16_q3 - c16_q1))) AS c16_max,
+greatest(toFloat64(c16_min), c16_q1 - (1.5 * (c16_q3 - c16_q1))) AS c16_min,
+c16_avg,
+c17_q[1] AS c17_q1,
+c17_q[3] AS c17_q3,
+c17_q[2] AS c17_median,
+least(toFloat64(c17_max), c17_q3 + (1.5 * (c17_q3 - c17_q1))) AS c17_max,
+greatest(toFloat64(c17_min), c17_q1 - (1.5 * (c17_q3 - c17_q1))) AS c17_min,
+c17_avg,
+c18_q[1] AS c18_q1,
+c18_q[3] AS c18_q3,
+c18_q[2] AS c18_median,
+least(toFloat64(c18_max), c18_q3 + (1.5 * (c18_q3 - c18_q1))) AS c18_max,
+greatest(toFloat64(c18_min), c18_q1 - (1.5 * (c18_q3 - c18_q1))) AS c18_min,
+c18_avg,
+round(if(c19 != 0, c24 / c19, 0), 2) AS c20,
+c21,
+c22,
+c23 AS c23,
+c19 AS c19,
+c16 AS c16,
+c17 AS c17,
+c18 AS c18,
+round(c24, 2) AS c24,
+round(if(c17 != 0, c24 / c17, 0), 2) AS c25,
+'CH' AS c26
+FROM
+(
+SELECT
+c1,
+c2,
+groupUniqArray(c27) AS c28,
+groupUniqArrayIf(c27, isNotNull(c29)) AS c28_with_c29,
+quantiles(0.25, 0.5, 0.75)(if(c3 > 0, c3, NULL)) AS c3_q,
+quantiles(0.25, 0.5, 0.75)(if(c4 > 0, c4, NULL)) AS c4_q,
+quantiles(0.25, 0.5, 0.75)(t.c17 / t.c19) AS c5_q,
+quantiles(0.25, 0.5, 0.75)(c6) AS c6_q,
+quantiles(0.25, 0.5, 0.75)(c7) AS c7_q,
+quantiles(0.25, 0.5, 0.75)(c8) AS c8_q,
+quantiles(0.25, 0.5, 0.75)(c9) AS c9_q,
+quantiles(0.25, 0.5, 0.75)(c10) AS c10_q,
+quantiles(0.25, 0.5, 0.75)(c11) AS c11_q,
+quantiles(0.25, 0.5, 0.75)(c12) AS c12_q,
+quantiles(0.25, 0.5, 0.75)(c13) AS c13_q,
+quantiles(0.25, 0.5, 0.75)(if(t.c24 > 0, t.c24, NULL) / t.c19) AS c14_q,
+quantiles(0.25, 0.5, 0.75)(if(t.c24 > 0, t.c24, NULL) / t.c17) AS c15_q,
+quantiles(0.25, 0.5, 0.75)(t.c16) AS c16_q,
+quantiles(0.25, 0.5, 0.75)(t.c17) AS c17_q,
+quantiles(0.25, 0.5, 0.75)(if(t.c18 > 0, t.c18, NULL)) AS c18_q,
+max(if(c3 > 0, c3, NULL)) AS c3_max,
+min(if(c3 > 0, c3, NULL)) AS c3_min,
+avg(if(c3 > 0, c3, NULL)) AS c3_avg,
+max(if(c4 > 0, c4, NULL)) AS c4_max,
+min(if(c4 > 0, c4, NULL)) AS c4_min,
+avg(if(c4 > 0, c4, NULL)) AS c4_avg,
+max(t.c17 / t.c19) AS c5_max,
+min(t.c17 / t.c19) AS c5_min,
+avg(t.c17 / t.c19) AS c5_avg,
+max(if(c6 > 0, c6, NULL)) AS c6_max,
+min(if(c6 > 0, c6, NULL)) AS c6_min,
+avg(if(c6 > 0, c6, NULL)) AS c6_avg,
+max(if(c7 > 0, c7, NULL)) AS c7_max,
+min(if(c7 > 0, c7, NULL)) AS c7_min,
+avg(if(c7 > 0, c7, NULL)) AS c7_avg,
+max(if(c10 > 0, c10, NULL)) AS c10_max,
+min(if(c10 > 0, c10, NULL)) AS c10_min,
+avg(if(c10 > 0, c10, NULL)) AS c10_avg,
+max(if(c8 > 0, c8, NULL)) AS c8_max,
+min(if(c8 > 0, c8, NULL)) AS c8_min,
+avg(if(c8 > 0, c8, NULL)) AS c8_avg,
+max(if(c9 > 0, c9, NULL)) AS c9_max,
+min(if(c9 > 0, c9, NULL)) AS c9_min,
+avg(if(c9 > 0, c9, NULL)) AS c9_avg,
+max(if(c11 > 0, c11, NULL)) AS c11_max,
+min(if(c11 > 0, c11, NULL)) AS c11_min,
+avg(if(c11 > 0, c11, NULL)) AS c11_avg,
+max(if(c12 > 0, c12, NULL)) AS c12_max,
+min(if(c12 > 0, c12, NULL)) AS c12_min,
+avg(if(c12 > 0, c12, NULL)) AS c12_avg,
+max(if(c13 > 0, c13, NULL)) AS c13_max,
+min(if(c13 > 0, c13, NULL)) AS c13_min,
+avg(if(c13 > 0, c13, NULL)) AS c13_avg,
+max(if(t.c24 > 0, t.c24, NULL) / t.c19) AS c14_max,
+min(if(t.c24 > 0, t.c24, NULL) / t.c19) AS c14_min,
+avg(if(t.c24 > 0, t.c24, NULL) / t.c19) AS c14_avg,
+max(if(t.c24 > 0, t.c24, NULL) / t.c17) AS c15_max,
+min(if(t.c24 > 0, t.c24, NULL) / t.c17) AS c15_min,
+avg(if(t.c24 > 0, t.c24, NULL) / t.c17) AS c15_avg,
+max(t.c16) AS c16_max,
+min(t.c16) AS c16_min,
+avg(t.c16) AS c16_avg,
+max(t.c17) AS c17_max,
+min(t.c17) AS c17_min,
+avg(t.c17) AS c17_avg,
+max(if(t.c18 > 0, t.c18, NULL)) AS c18_max,
+min(if(t.c18 > 0, t.c18, NULL)) AS c18_min,
+avg(if(t.c18 > 0, t.c18, NULL)) AS c18_avg,
+sum(t.c19) AS c19,
+sum(if(t.c18 > 0, t.c18, NULL)) AS c18,
+sum(t.c16) AS c16,
+sum(c23) AS c23,
+sum(t.c17) AS c17,
+sum(if(t.c24 > 0, t.c24, NULL)) AS c24,
+c24 / c19 AS c14,
+c24 / c17 AS c15,
+median(if(isNotNull(c29) AND (t.c22 > 0), c13 * (t.c22 / c29), NULL)) AS c21,
+sum(c22) AS c22
+FROM
+(
+SELECT
+c27,
+c39 AS c1,
+c29,
+c19,
+c23,
+c17,
+c16,
+c18,
+c22,
+c24,
+c3,
+c4,
+c8,
+c9,
+c10,
+c11,
+c12,
+c13,
+c6,
+c7
+FROM
+(
+SELECT
+c27,
+uniqExact(c30, c31) AS c19,
+uniqExact(c30, c31, c32) AS c23,
+uniqExactIf(c30, c31, c33 IN ('c37', 'c38')) AS c17,
+countIf(c33 IN ('c37', 'c38')) AS c16,
+countIf(c33 = 'c39') AS c18,
+coalesce(sumIf(c29, c33 = 'c39'), 0) AS c22,
+coalesce(sumIf(c37, c33 = 'c39'), 0) AS c24,
+if((c18 > 0) AND (c19 > 0), c18 / c19, NULL) AS c3,
+if(c17 != 0, c18 / c17, NULL) AS c4,
+coalesce(avgIf(c34, (c34 > 0) AND (c33 IN ('c37', 'c38'))), NULL) AS c8,
+coalesce(avgIf(c35, (c35 > 0) AND (c33 IN ('c37', 'c38'))), NULL) AS c9,
+coalesce(avgIf(c34, (c34 > 0) AND (c33 = 'c39')), NULL) AS c10,
+coalesce(avgIf(c35, (c35 > 0) AND (c33 = 'c39')), NULL) AS c11,
+coalesce(avgIf(c37, c33 = 'c39'), NULL) AS c12,
+coalesce(avgIf(c37 / c34, (c34 > 0) AND (c33 = 'c39')), NULL) AS c13,
+coalesce(avgIf(c37, (c37 > 0) AND (c33 IN ('c37', 'c38'))), NULL) AS c6,
+coalesce(minIf(c37, (c37 > 0) AND (c33 IN ('c37', 'c38')) AND (c37 > (c36 / 2))), NULL) AS c7
+FROM
+(
+SELECT
+c27,
+c30,
+c32,
+c31,
+NULL AS c29,
+NULL AS c33,
+NULL AS c37,
+NULL AS c34,
+NULL AS c35
+FROM
+(
+SELECT
+c27,
+c30,
+c32,
+c31
+FROM database.t1
+PREWHERE ((c32 >= parseDateTimeBestEffort('2020-01-01')) AND (c32 <= parseDateTimeBestEffort('2020-01-01 23:59:59'))) AND (c27 IN
+(
+SELECT comp_c27
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+groupArray(c39) AS c39,
+any(c40) AS c40,
+any(c41) AS c41,
+any(c42) AS c42,
+any(c29) AS c29,
+any(c43) AS c43,
+any(c44) AS c44,
+any(min_c32) AS min_c32,
+any(max_c32) AS max_c32,
+any(c45) AS c45,
+any(c46) AS c46,
+any(c38) AS c38,
+any(c47) AS c47
+FROM
+(
+SELECT
+c27 AS comp_c27,
+if(comp_c27 = 0, toDate('2010-01-01'), toDate(minMerge(min_c32))) AS min_c32,
+if(comp_c27 = 0, toDate(now()), toDate(maxMerge(max_c32))) + 1 AS max_c32,
+NULL AS c39,
+NULL AS c40,
+NULL AS c41,
+NULL AS c42,
+NULL AS c29,
+NULL AS c43,
+NULL AS c44,
+NULL AS c45,
+NULL AS c46,
+NULL AS c38,
+NULL AS c47
+FROM database.table15
+GROUP BY comp_c27
+UNION ALL
+SELECT
+comp_c27,
+NULL AS min_c32,
+NULL AS max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38,
+c47
+FROM
+(
+SELECT
+c39,
+comp_c27 AS c27,
+comp_c27,
+c40,
+c41,
+assumeNotNull(c45) AS c45,
+assumeNotNull(c46) AS c46,
+assumeNotNull(c38) AS c38,
+joinGet('database.table14', 'c48', c40) AS c42,
+joinGet('database.table14', 'c29', c40) AS c29,
+joinGet('database.table14', 'c43', c40) AS c43,
+joinGet('database.table14', 'property_c44', c40) AS c44,
+splitByChar(',', assumeNotNull(joinGet('database.jointable13', 'prefix_c33', comp_c27))) AS c33s,
+joinGet('database.jointable13', 'c47', comp_c27) AS c47
+FROM
+(
+SELECT
+c39,
+comp_c27,
+joinGet('database.jointable13', 'c40', comp_c27) AS c40,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+c39,
+arrayJoin(arrayMap(x -> toInt64(x), arrayFilter(x -> (length(x) > 0), splitByString(', ', c49)))) AS comp_c27,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+'c57' AS c39,
+toString(c27) AS c49,
+1 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'c58' AS c39,
+arrayStringConcat(groupArray(toString(c27)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE chain_id IN
+(
+SELECT chain_id
+FROM database.table12
+WHERE c27 IN (322)
+)
+UNION ALL
+SELECT
+'c59' AS c39,
+assumeNotNull(c27s_str) AS c49,
+0 AS c41,
+c50 AS c45,
+c51 AS c46,
+c52 AS c38
+FROM
+(
+SELECT *
+FROM table11
+WHERE c27 IN (322)
+) AS c1s_c59
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'superSupercalifragilisticexpialidocious' AS c39,
+arrayStringConcat(groupArray(toString(c1_id)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table10
+WHERE c27 IN (322)
+) AS table9
+)
+) AS a
+) AS table8
+) AS table7
+GROUP BY comp_c27
+) AS table6
+WHERE (parseDateTimeBestEffort('2020-01-01') >= min_c32) AND (max_c32 >= (parseDateTimeBestEffort('2021-05-02') - 2))
+) AS table5
+ARRAY JOIN c39
+WHERE isNotNull(c39)
+) AS table4
+))
+WHERE c61 = 0
+) AS table25
+UNION ALL
+SELECT
+c27,
+c30,
+c32,
+c31,
+c29,
+c33,
+c37,
+c34,
+c35
+FROM
+(
+SELECT
+c27,
+c30,
+c32,
+'c37' AS c33,
+coalesce(c37 * joinGet('database.table18', 'c60', concat(c26, '_', 'CH')), 0) AS c37,
+if(c53 > 0, c53, 2) AS c53,
+c54,
+if(c29 > 0, c29, 1) AS c29,
+c55,
+c56,
+datediff('day', c55, c56) AS c34,
+datediff('day', c32, c55) AS c35,
+c31
+FROM database.table24
+PREWHERE ((c32 >= parseDateTimeBestEffort('2020-01-01')) AND (c32 <= parseDateTimeBestEffort('2020-01-01 23:59:59'))) AND (c27 IN
+(
+SELECT comp_c27
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+groupArray(c39) AS c39,
+any(c40) AS c40,
+any(c41) AS c41,
+any(c42) AS c42,
+any(c29) AS c29,
+any(c43) AS c43,
+any(c44) AS c44,
+any(min_c32) AS min_c32,
+any(max_c32) AS max_c32,
+any(c45) AS c45,
+any(c46) AS c46,
+any(c38) AS c38,
+any(c47) AS c47
+FROM
+(
+SELECT
+c27 AS comp_c27,
+if(comp_c27 = 0, toDate('2010-01-01'), toDate(minMerge(min_c32))) AS min_c32,
+if(comp_c27 = 0, toDate(now()), toDate(maxMerge(max_c32))) + 1 AS max_c32,
+NULL AS c39,
+NULL AS c40,
+NULL AS c41,
+NULL AS c42,
+NULL AS c29,
+NULL AS c43,
+NULL AS c44,
+NULL AS c45,
+NULL AS c46,
+NULL AS c38,
+NULL AS c47
+FROM database.table15
+GROUP BY comp_c27
+UNION ALL
+SELECT
+comp_c27,
+NULL AS min_c32,
+NULL AS max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38,
+c47
+FROM
+(
+SELECT
+c39,
+comp_c27 AS c27,
+comp_c27,
+c40,
+c41,
+assumeNotNull(c45) AS c45,
+assumeNotNull(c46) AS c46,
+assumeNotNull(c38) AS c38,
+joinGet('database.table14', 'c48', c40) AS c42,
+joinGet('database.table14', 'c29', c40) AS c29,
+joinGet('database.table14', 'c43', c40) AS c43,
+joinGet('database.table14', 'property_c44', c40) AS c44,
+splitByChar(',', assumeNotNull(joinGet('database.jointable13', 'prefix_c33', comp_c27))) AS c33s,
+joinGet('database.jointable13', 'c47', comp_c27) AS c47
+FROM
+(
+SELECT
+c39,
+comp_c27,
+joinGet('database.jointable13', 'c40', comp_c27) AS c40,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+c39,
+arrayJoin(arrayMap(x -> toInt64(x), arrayFilter(x -> (length(x) > 0), splitByString(', ', c49)))) AS comp_c27,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+'c57' AS c39,
+toString(c27) AS c49,
+1 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'c58' AS c39,
+arrayStringConcat(groupArray(toString(c27)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE chain_id IN
+(
+SELECT chain_id
+FROM database.table12
+WHERE c27 IN (322)
+)
+UNION ALL
+SELECT
+'c59' AS c39,
+assumeNotNull(c27s_str) AS c49,
+0 AS c41,
+c50 AS c45,
+c51 AS c46,
+c52 AS c38
+FROM
+(
+SELECT *
+FROM table11
+WHERE c27 IN (322)
+) AS c1s_c59
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'superSupercalifragilisticexpialidocious' AS c39,
+arrayStringConcat(groupArray(toString(c1_id)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table10
+WHERE c27 IN (322)
+) AS table9
+)
+) AS a
+) AS table8
+) AS table7
+GROUP BY comp_c27
+) AS table6
+WHERE (parseDateTimeBestEffort('2020-01-01') >= min_c32) AND (max_c32 >= (parseDateTimeBestEffort('2021-05-02') - 2))
+) AS table5
+ARRAY JOIN c39
+WHERE isNotNull(c39)
+) AS table4
+))
+WHERE (c61 = 0) AND (c37 < (666 * (1 / joinGet('database.table18', 'c60', concat(c26, '_', 'CH')))))
+) AS table23
+UNION ALL
+SELECT
+c27,
+c30,
+c32,
+c31,
+c29,
+c33,
+c37,
+c34,
+c35
+FROM
+(
+SELECT
+c27,
+c30,
+c32,
+'c39' AS c33,
+coalesce(c37 * joinGet('database.table18', 'c60', concat(c26, '_', 'CH')), 0) AS c37,
+if(c53 > 0, c53, 2) AS c53,
+c54,
+if(c29 > 0, c29, 1) AS c29,
+c55,
+c56,
+datediff('day', c55, c56) AS c34,
+datediff('day', c32, c55) AS c35,
+c31
+FROM database.table22
+PREWHERE ((c32 >= parseDateTimeBestEffort('2020-01-01')) AND (c32 <= parseDateTimeBestEffort('2020-01-01 23:59:59'))) AND (c27 IN
+(
+SELECT comp_c27
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+groupArray(c39) AS c39,
+any(c40) AS c40,
+any(c41) AS c41,
+any(c42) AS c42,
+any(c29) AS c29,
+any(c43) AS c43,
+any(c44) AS c44,
+any(min_c32) AS min_c32,
+any(max_c32) AS max_c32,
+any(c45) AS c45,
+any(c46) AS c46,
+any(c38) AS c38,
+any(c47) AS c47
+FROM
+(
+SELECT
+c27 AS comp_c27,
+if(comp_c27 = 0, toDate('2010-01-01'), toDate(minMerge(min_c32))) AS min_c32,
+if(comp_c27 = 0, toDate(now()), toDate(maxMerge(max_c32))) + 1 AS max_c32,
+NULL AS c39,
+NULL AS c40,
+NULL AS c41,
+NULL AS c42,
+NULL AS c29,
+NULL AS c43,
+NULL AS c44,
+NULL AS c45,
+NULL AS c46,
+NULL AS c38,
+NULL AS c47
+FROM database.table15
+GROUP BY comp_c27
+UNION ALL
+SELECT
+comp_c27,
+NULL AS min_c32,
+NULL AS max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38,
+c47
+FROM
+(
+SELECT
+c39,
+comp_c27 AS c27,
+comp_c27,
+c40,
+c41,
+assumeNotNull(c45) AS c45,
+assumeNotNull(c46) AS c46,
+assumeNotNull(c38) AS c38,
+joinGet('database.table14', 'c48', c40) AS c42,
+joinGet('database.table14', 'c29', c40) AS c29,
+joinGet('database.table14', 'c43', c40) AS c43,
+joinGet('database.table14', 'property_c44', c40) AS c44,
+splitByChar(',', assumeNotNull(joinGet('database.jointable13', 'prefix_c33', comp_c27))) AS c33s,
+joinGet('database.jointable13', 'c47', comp_c27) AS c47
+FROM
+(
+SELECT
+c39,
+comp_c27,
+joinGet('database.jointable13', 'c40', comp_c27) AS c40,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+c39,
+arrayJoin(arrayMap(x -> toInt64(x), arrayFilter(x -> (length(x) > 0), splitByString(', ', c49)))) AS comp_c27,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+'c57' AS c39,
+toString(c27) AS c49,
+1 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'c58' AS c39,
+arrayStringConcat(groupArray(toString(c27)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE chain_id IN
+(
+SELECT chain_id
+FROM database.table12
+WHERE c27 IN (322)
+)
+UNION ALL
+SELECT
+'c59' AS c39,
+assumeNotNull(c27s_str) AS c49,
+0 AS c41,
+c50 AS c45,
+c51 AS c46,
+c52 AS c38
+FROM
+(
+SELECT *
+FROM table11
+WHERE c27 IN (322)
+) AS c1s_c59
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'superSupercalifragilisticexpialidocious' AS c39,
+arrayStringConcat(groupArray(toString(c1_id)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table10
+WHERE c27 IN (322)
+) AS table9
+)
+) AS a
+) AS table8
+) AS table7
+GROUP BY comp_c27
+) AS table6
+WHERE (parseDateTimeBestEffort('2020-01-01') >= min_c32) AND (max_c32 >= (parseDateTimeBestEffort('2021-05-02') - 2))
+) AS table5
+ARRAY JOIN c39
+WHERE isNotNull(c39)
+) AS table4
+))
+WHERE (c61 = 0) AND (c37 < (666 * (1 / joinGet('database.table18', 'c60', concat(c26, '_', 'CH')))))
+) AS table21
+) AS table20
+ALL LEFT JOIN
+(
+SELECT
+c27,
+avgMerge(avg_c37) * joinGet('database.table18', 'c60', concat('USD', '_', 'CH')) AS c36
+FROM database.table19
+PREWHERE c27 IN
+(
+SELECT comp_c27
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+groupArray(c39) AS c39,
+any(c40) AS c40,
+any(c41) AS c41,
+any(c42) AS c42,
+any(c29) AS c29,
+any(c43) AS c43,
+any(c44) AS c44,
+any(min_c32) AS min_c32,
+any(max_c32) AS max_c32,
+any(c45) AS c45,
+any(c46) AS c46,
+any(c38) AS c38,
+any(c47) AS c47
+FROM
+(
+SELECT
+c27 AS comp_c27,
+if(comp_c27 = 0, toDate('2010-01-01'), toDate(minMerge(min_c32))) AS min_c32,
+if(comp_c27 = 0, toDate(now()), toDate(maxMerge(max_c32))) + 1 AS max_c32,
+NULL AS c39,
+NULL AS c40,
+NULL AS c41,
+NULL AS c42,
+NULL AS c29,
+NULL AS c43,
+NULL AS c44,
+NULL AS c45,
+NULL AS c46,
+NULL AS c38,
+NULL AS c47
+FROM database.table15
+GROUP BY comp_c27
+UNION ALL
+SELECT
+comp_c27,
+NULL AS min_c32,
+NULL AS max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38,
+c47
+FROM
+(
+SELECT
+c39,
+comp_c27 AS c27,
+comp_c27,
+c40,
+c41,
+assumeNotNull(c45) AS c45,
+assumeNotNull(c46) AS c46,
+assumeNotNull(c38) AS c38,
+joinGet('database.table14', 'c48', c40) AS c42,
+joinGet('database.table14', 'c29', c40) AS c29,
+joinGet('database.table14', 'c43', c40) AS c43,
+joinGet('database.table14', 'property_c44', c40) AS c44,
+splitByChar(',', assumeNotNull(joinGet('database.jointable13', 'prefix_c33', comp_c27))) AS c33s,
+joinGet('database.jointable13', 'c47', comp_c27) AS c47
+FROM
+(
+SELECT
+c39,
+comp_c27,
+joinGet('database.jointable13', 'c40', comp_c27) AS c40,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+c39,
+arrayJoin(arrayMap(x -> toInt64(x), arrayFilter(x -> (length(x) > 0), splitByString(', ', c49)))) AS comp_c27,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+'c57' AS c39,
+toString(c27) AS c49,
+1 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'c58' AS c39,
+arrayStringConcat(groupArray(toString(c27)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE chain_id IN
+(
+SELECT chain_id
+FROM database.table12
+WHERE c27 IN (322)
+)
+UNION ALL
+SELECT
+'c59' AS c39,
+assumeNotNull(c27s_str) AS c49,
+0 AS c41,
+c50 AS c45,
+c51 AS c46,
+c52 AS c38
+FROM
+(
+SELECT *
+FROM table11
+WHERE c27 IN (322)
+) AS c1s_c59
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'superSupercalifragilisticexpialidocious' AS c39,
+arrayStringConcat(groupArray(toString(c1_id)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table10
+WHERE c27 IN (322)
+) AS table9
+)
+) AS a
+) AS table8
+) AS table7
+GROUP BY comp_c27
+) AS table6
+WHERE (parseDateTimeBestEffort('2020-01-01') >= min_c32) AND (max_c32 >= (parseDateTimeBestEffort('2021-05-02') - 2))
+) AS table5
+ARRAY JOIN c39
+WHERE isNotNull(c39)
+) AS table4
+)
+WHERE date > (now() - toIntervalMonth(3))
+GROUP BY c27
+) AS table17 USING (c27)
+GROUP BY c27
+) AS table16
+ALL LEFT JOIN
+(
+SELECT
+comp_c27 AS c27,
+assumeNotNull(c39) AS c39,
+c29
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+groupArray(c39) AS c39,
+any(c40) AS c40,
+any(c41) AS c41,
+any(c42) AS c42,
+any(c29) AS c29,
+any(c43) AS c43,
+any(c44) AS c44,
+any(min_c32) AS min_c32,
+any(max_c32) AS max_c32,
+any(c45) AS c45,
+any(c46) AS c46,
+any(c38) AS c38,
+any(c47) AS c47
+FROM
+(
+SELECT
+c27 AS comp_c27,
+if(comp_c27 = 0, toDate('2010-01-01'), toDate(minMerge(min_c32))) AS min_c32,
+if(comp_c27 = 0, toDate(now()), toDate(maxMerge(max_c32))) + 1 AS max_c32,
+NULL AS c39,
+NULL AS c40,
+NULL AS c41,
+NULL AS c42,
+NULL AS c29,
+NULL AS c43,
+NULL AS c44,
+NULL AS c45,
+NULL AS c46,
+NULL AS c38,
+NULL AS c47
+FROM database.table15
+GROUP BY comp_c27
+UNION ALL
+SELECT
+comp_c27,
+NULL AS min_c32,
+NULL AS max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38,
+c47
+FROM
+(
+SELECT
+c39,
+comp_c27 AS c27,
+comp_c27,
+c40,
+c41,
+assumeNotNull(c45) AS c45,
+assumeNotNull(c46) AS c46,
+assumeNotNull(c38) AS c38,
+joinGet('database.table14', 'c48', c40) AS c42,
+joinGet('database.table14', 'c29', c40) AS c29,
+joinGet('database.table14', 'c43', c40) AS c43,
+joinGet('database.table14', 'property_c44', c40) AS c44,
+splitByChar(',', assumeNotNull(joinGet('database.jointable13', 'prefix_c33', comp_c27))) AS c33s,
+joinGet('database.jointable13', 'c47', comp_c27) AS c47
+FROM
+(
+SELECT
+c39,
+comp_c27,
+joinGet('database.jointable13', 'c40', comp_c27) AS c40,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+c39,
+arrayJoin(arrayMap(x -> toInt64(x), arrayFilter(x -> (length(x) > 0), splitByString(', ', c49)))) AS comp_c27,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+'c57' AS c39,
+toString(c27) AS c49,
+1 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'c58' AS c39,
+arrayStringConcat(groupArray(toString(c27)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE chain_id IN
+(
+SELECT chain_id
+FROM database.table12
+WHERE c27 IN (322)
+)
+UNION ALL
+SELECT
+'c59' AS c39,
+assumeNotNull(c27s_str) AS c49,
+0 AS c41,
+c50 AS c45,
+c51 AS c46,
+c52 AS c38
+FROM
+(
+SELECT *
+FROM table11
+WHERE c27 IN (322)
+) AS c1s_c59
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'superSupercalifragilisticexpialidocious' AS c39,
+arrayStringConcat(groupArray(toString(c1_id)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table10
+WHERE c27 IN (322)
+) AS table9
+)
+) AS a
+) AS table8
+) AS table7
+GROUP BY comp_c27
+) AS table6
+WHERE (parseDateTimeBestEffort('2020-01-01') >= min_c32) AND (max_c32 >= (parseDateTimeBestEffort('2021-05-02') - 2))
+) AS table5
+ARRAY JOIN c39
+WHERE isNotNull(c39)
+) AS table4
+) USING (c27)
+) AS t
+ALL LEFT JOIN
+(
+SELECT
+c1,
+c2
+FROM
+(
+SELECT
+c39 AS c1,
+groupArray(comp_c27) AS c49,
+multiIf(c1 = 'c58', if(length(c49) <= 2, 0, 1), c1 = 'c57', 1, if(length(c49) <= 3, 0, 1)) AS c2
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+groupArray(c39) AS c39,
+any(c40) AS c40,
+any(c41) AS c41,
+any(c42) AS c42,
+any(c29) AS c29,
+any(c43) AS c43,
+any(c44) AS c44,
+any(min_c32) AS min_c32,
+any(max_c32) AS max_c32,
+any(c45) AS c45,
+any(c46) AS c46,
+any(c38) AS c38,
+any(c47) AS c47
+FROM
+(
+SELECT
+c27 AS comp_c27,
+if(comp_c27 = 0, toDate('2010-01-01'), toDate(minMerge(min_c32))) AS min_c32,
+if(comp_c27 = 0, toDate(now()), toDate(maxMerge(max_c32))) + 1 AS max_c32,
+NULL AS c39,
+NULL AS c40,
+NULL AS c41,
+NULL AS c42,
+NULL AS c29,
+NULL AS c43,
+NULL AS c44,
+NULL AS c45,
+NULL AS c46,
+NULL AS c38,
+NULL AS c47
+FROM database.table15
+GROUP BY comp_c27
+UNION ALL
+SELECT
+comp_c27,
+NULL AS min_c32,
+NULL AS max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38,
+c47
+FROM
+(
+SELECT
+c39,
+comp_c27 AS c27,
+comp_c27,
+c40,
+c41,
+assumeNotNull(c45) AS c45,
+assumeNotNull(c46) AS c46,
+assumeNotNull(c38) AS c38,
+joinGet('database.table14', 'c48', c40) AS c42,
+joinGet('database.table14', 'c29', c40) AS c29,
+joinGet('database.table14', 'c43', c40) AS c43,
+joinGet('database.table14', 'property_c44', c40) AS c44,
+splitByChar(',', assumeNotNull(joinGet('database.jointable13', 'prefix_c33', comp_c27))) AS c33s,
+joinGet('database.jointable13', 'c47', comp_c27) AS c47
+FROM
+(
+SELECT
+c39,
+comp_c27,
+joinGet('database.jointable13', 'c40', comp_c27) AS c40,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+c39,
+arrayJoin(arrayMap(x -> toInt64(x), arrayFilter(x -> (length(x) > 0), splitByString(', ', c49)))) AS comp_c27,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+'c57' AS c39,
+toString(c27) AS c49,
+1 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'c58' AS c39,
+arrayStringConcat(groupArray(toString(c27)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE chain_id IN
+(
+SELECT chain_id
+FROM database.table12
+WHERE c27 IN (322)
+)
+UNION ALL
+SELECT
+'c59' AS c39,
+assumeNotNull(c27s_str) AS c49,
+0 AS c41,
+c50 AS c45,
+c51 AS c46,
+c52 AS c38
+FROM
+(
+SELECT *
+FROM table11
+WHERE c27 IN (322)
+) AS c1s_c59
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'superSupercalifragilisticexpialidocious' AS c39,
+arrayStringConcat(groupArray(toString(c1_id)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table10
+WHERE c27 IN (322)
+) AS table9
+)
+) AS a
+) AS table8
+) AS table7
+GROUP BY comp_c27
+) AS table6
+WHERE (parseDateTimeBestEffort('2020-01-01') >= min_c32) AND (max_c32 >= (parseDateTimeBestEffort('2021-05-02') - 2))
+) AS table5
+ARRAY JOIN c39
+WHERE isNotNull(c39)
+) AS table4
+GROUP BY c39
+) AS table3
+) USING (c1)
+GROUP BY
+c1,
+c2
+) AS table2
+ORDER BY c1 ASC
+) AS table1
+UNION ALL
+SELECT *
+FROM
+(
+SELECT
+c1,
+c2,
+c3_q[1] AS c3_q1,
+c3_q[3] AS c3_q3,
+c3_q[2] AS c3_median,
+least(c3_max, c3_q3 + (1.5 * (c3_q3 - c3_q1))) AS c3_max,
+greatest(c3_min, c3_q1 - (1.5 * (c3_q3 - c3_q1))) AS c3_min,
+c3_avg,
+c4_q[1] AS c4_q1,
+c4_q[3] AS c4_q3,
+c4_q[2] AS c4_median,
+least(c4_max, c4_q3 + (1.5 * (c4_q3 - c4_q1))) AS c4_max,
+greatest(c4_min, c4_q1 - (1.5 * (c4_q3 - c4_q1))) AS c4_min,
+c4_avg,
+c5_q[1] AS c5_q1,
+c5_q[3] AS c5_q3,
+c5_q[2] AS c5_median,
+least(c5_max, c5_q3 + (1.5 * (c5_q3 - c5_q1))) AS c5_max,
+greatest(c5_min, c5_q1 - (1.5 * (c5_q3 - c5_q1))) AS c5_min,
+c5_avg,
+c6_q[1] AS c6_q1,
+c6_q[3] AS c6_q3,
+c6_q[2] AS c6_median,
+least(c6_max, c6_q3 + (1.5 * (c6_q3 - c6_q1))) AS c6_max,
+greatest(c6_min, c6_q1 - (1.5 * (c6_q3 - c6_q1))) AS c6_min,
+c6_avg,
+c7_q[1] AS c7_q1,
+c7_q[3] AS c7_q3,
+c7_q[2] AS c7_median,
+least(c7_max, c7_q3 + (1.5 * (c7_q3 - c7_q1))) AS c7_max,
+greatest(c7_min, c7_q1 - (1.5 * (c7_q3 - c7_q1))) AS c7_min,
+c7_avg,
+c8_q[1] AS c8_q1,
+c8_q[3] AS c8_q3,
+c8_q[2] AS c8_median,
+least(c8_max, c8_q3 + (1.5 * (c8_q3 - c8_q1))) AS c8_max,
+greatest(c8_min, c8_q1 - (1.5 * (c8_q3 - c8_q1))) AS c8_min,
+c8_avg,
+c9_q[1] AS c9_q1,
+c9_q[3] AS c9_q3,
+c9_q[2] AS c9_median,
+least(c9_max, c9_q3 + (1.5 * (c9_q3 - c9_q1))) AS c9_max,
+greatest(c9_min, c9_q1 - (1.5 * (c9_q3 - c9_q1))) AS c9_min,
+c9_avg,
+c10_q[1] AS c10_q1,
+c10_q[3] AS c10_q3,
+c10_q[2] AS c10_median,
+least(c10_max, c10_q3 + (1.5 * (c10_q3 - c10_q1))) AS c10_max,
+greatest(c10_min, c10_q1 - (1.5 * (c10_q3 - c10_q1))) AS c10_min,
+c10_avg,
+c10_avg,
+c11_q[1] AS c11_q1,
+c11_q[3] AS c11_q3,
+c11_q[2] AS c11_median,
+least(c11_max, c11_q3 + (1.5 * (c11_q3 - c11_q1))) AS c11_max,
+greatest(c11_min, c11_q1 - (1.5 * (c11_q3 - c11_q1))) AS c11_min,
+c11_avg,
+c12_q[1] AS c12_q1,
+c12_q[3] AS c12_q3,
+c12_q[2] AS c12_median,
+least(c12_max, c12_q3 + (1.5 * (c12_q3 - c12_q1))) AS c12_max,
+greatest(c12_min, c12_q1 - (1.5 * (c12_q3 - c12_q1))) AS c12_min,
+c12_avg,
+c13_q[1] AS c13_q1,
+c13_q[3] AS c13_q3,
+c13_q[2] AS c13_median,
+least(c13_max, c13_q3 + (1.5 * (c13_q3 - c13_q1))) AS c13_max,
+greatest(c13_min, c13_q1 - (1.5 * (c13_q3 - c13_q1))) AS c13_min,
+c13_avg,
+c14_q[1] AS c14_q1,
+c14_q[3] AS c14_q3,
+c14_q[2] AS c14_median,
+least(c14_max, c14_q3 + (1.5 * (c14_q3 - c14_q1))) AS c14_max,
+greatest(c14_min, c14_q1 - (1.5 * (c14_q3 - c14_q1))) AS c14_min,
+c14_avg,
+c15_q[1] AS c15_q1,
+c15_q[3] AS c15_q3,
+c15_q[2] AS c15_median,
+least(c15_max, c15_q3 + (1.5 * (c15_q3 - c15_q1))) AS c15_max,
+greatest(c15_min, c15_q1 - (1.5 * (c15_q3 - c15_q1))) AS c15_min,
+c15_avg,
+c16_q[1] AS c16_q1,
+c16_q[3] AS c16_q3,
+c16_q[2] AS c16_median,
+least(toFloat64(c16_max), c16_q3 + (1.5 * (c16_q3 - c16_q1))) AS c16_max,
+greatest(toFloat64(c16_min), c16_q1 - (1.5 * (c16_q3 - c16_q1))) AS c16_min,
+c16_avg,
+c17_q[1] AS c17_q1,
+c17_q[3] AS c17_q3,
+c17_q[2] AS c17_median,
+least(toFloat64(c17_max), c17_q3 + (1.5 * (c17_q3 - c17_q1))) AS c17_max,
+greatest(toFloat64(c17_min), c17_q1 - (1.5 * (c17_q3 - c17_q1))) AS c17_min,
+c17_avg,
+c18_q[1] AS c18_q1,
+c18_q[3] AS c18_q3,
+c18_q[2] AS c18_median,
+least(toFloat64(c18_max), c18_q3 + (1.5 * (c18_q3 - c18_q1))) AS c18_max,
+greatest(toFloat64(c18_min), c18_q1 - (1.5 * (c18_q3 - c18_q1))) AS c18_min,
+c18_avg,
+round(if(c19 != 0, c24 / c19, 0), 2) AS c20,
+c21,
+c22,
+c23 AS c23,
+c19 AS c19,
+c16 AS c16,
+c17 AS c17,
+c18 AS c18,
+round(c24, 2) AS c24,
+round(if(c17 != 0, c24 / c17, 0), 2) AS c25,
+'CH' AS c26
+FROM
+(
+SELECT
+c1,
+c2,
+groupUniqArray(c27) AS c28,
+groupUniqArrayIf(c27, isNotNull(c29)) AS c28_with_c29,
+quantiles(0.25, 0.5, 0.75)(if(c3 > 0, c3, NULL)) AS c3_q,
+quantiles(0.25, 0.5, 0.75)(if(c4 > 0, c4, NULL)) AS c4_q,
+quantiles(0.25, 0.5, 0.75)(t.c17 / t.c19) AS c5_q,
+quantiles(0.25, 0.5, 0.75)(c6) AS c6_q,
+quantiles(0.25, 0.5, 0.75)(c7) AS c7_q,
+quantiles(0.25, 0.5, 0.75)(c8) AS c8_q,
+quantiles(0.25, 0.5, 0.75)(c9) AS c9_q,
+quantiles(0.25, 0.5, 0.75)(c10) AS c10_q,
+quantiles(0.25, 0.5, 0.75)(c11) AS c11_q,
+quantiles(0.25, 0.5, 0.75)(c12) AS c12_q,
+quantiles(0.25, 0.5, 0.75)(c13) AS c13_q,
+quantiles(0.25, 0.5, 0.75)(if(t.c24 > 0, t.c24, NULL) / t.c19) AS c14_q,
+quantiles(0.25, 0.5, 0.75)(if(t.c24 > 0, t.c24, NULL) / t.c17) AS c15_q,
+quantiles(0.25, 0.5, 0.75)(t.c16) AS c16_q,
+quantiles(0.25, 0.5, 0.75)(t.c17) AS c17_q,
+quantiles(0.25, 0.5, 0.75)(if(t.c18 > 0, t.c18, NULL)) AS c18_q,
+max(if(c3 > 0, c3, NULL)) AS c3_max,
+min(if(c3 > 0, c3, NULL)) AS c3_min,
+avg(if(c3 > 0, c3, NULL)) AS c3_avg,
+max(if(c4 > 0, c4, NULL)) AS c4_max,
+min(if(c4 > 0, c4, NULL)) AS c4_min,
+avg(if(c4 > 0, c4, NULL)) AS c4_avg,
+max(t.c17 / t.c19) AS c5_max,
+min(t.c17 / t.c19) AS c5_min,
+avg(t.c17 / t.c19) AS c5_avg,
+max(if(c6 > 0, c6, NULL)) AS c6_max,
+min(if(c6 > 0, c6, NULL)) AS c6_min,
+avg(if(c6 > 0, c6, NULL)) AS c6_avg,
+max(if(c7 > 0, c7, NULL)) AS c7_max,
+min(if(c7 > 0, c7, NULL)) AS c7_min,
+avg(if(c7 > 0, c7, NULL)) AS c7_avg,
+max(if(c10 > 0, c10, NULL)) AS c10_max,
+min(if(c10 > 0, c10, NULL)) AS c10_min,
+avg(if(c10 > 0, c10, NULL)) AS c10_avg,
+max(if(c8 > 0, c8, NULL)) AS c8_max,
+min(if(c8 > 0, c8, NULL)) AS c8_min,
+avg(if(c8 > 0, c8, NULL)) AS c8_avg,
+max(if(c9 > 0, c9, NULL)) AS c9_max,
+min(if(c9 > 0, c9, NULL)) AS c9_min,
+avg(if(c9 > 0, c9, NULL)) AS c9_avg,
+max(if(c11 > 0, c11, NULL)) AS c11_max,
+min(if(c11 > 0, c11, NULL)) AS c11_min,
+avg(if(c11 > 0, c11, NULL)) AS c11_avg,
+max(if(c12 > 0, c12, NULL)) AS c12_max,
+min(if(c12 > 0, c12, NULL)) AS c12_min,
+avg(if(c12 > 0, c12, NULL)) AS c12_avg,
+max(if(c13 > 0, c13, NULL)) AS c13_max,
+min(if(c13 > 0, c13, NULL)) AS c13_min,
+avg(if(c13 > 0, c13, NULL)) AS c13_avg,
+max(if(t.c24 > 0, t.c24, NULL) / t.c19) AS c14_max,
+min(if(t.c24 > 0, t.c24, NULL) / t.c19) AS c14_min,
+avg(if(t.c24 > 0, t.c24, NULL) / t.c19) AS c14_avg,
+max(if(t.c24 > 0, t.c24, NULL) / t.c17) AS c15_max,
+min(if(t.c24 > 0, t.c24, NULL) / t.c17) AS c15_min,
+avg(if(t.c24 > 0, t.c24, NULL) / t.c17) AS c15_avg,
+max(t.c16) AS c16_max,
+min(t.c16) AS c16_min,
+avg(t.c16) AS c16_avg,
+max(t.c17) AS c17_max,
+min(t.c17) AS c17_min,
+avg(t.c17) AS c17_avg,
+max(if(t.c18 > 0, t.c18, NULL)) AS c18_max,
+min(if(t.c18 > 0, t.c18, NULL)) AS c18_min,
+avg(if(t.c18 > 0, t.c18, NULL)) AS c18_avg,
+sum(t.c19) AS c19,
+sum(if(t.c18 > 0, t.c18, NULL)) AS c18,
+sum(t.c16) AS c16,
+sum(c23) AS c23,
+sum(t.c17) AS c17,
+sum(if(t.c24 > 0, t.c24, NULL)) AS c24,
+c24 / c19 AS c14,
+c24 / c17 AS c15,
+median(if(isNotNull(c29) AND (t.c22 > 0), c13 * (t.c22 / c29), NULL)) AS c21,
+sum(c22) AS c22
+FROM
+(
+SELECT
+c27,
+c39 AS c1,
+c29,
+c19,
+c23,
+c17,
+c16,
+c18,
+c22,
+c24,
+c3,
+c4,
+c8,
+c9,
+c10,
+c11,
+c12,
+c13,
+c6,
+c7
+FROM
+(
+SELECT
+c27,
+uniqExact(c30, c31) AS c19,
+uniqExact(c30, c31, c32) AS c23,
+uniqExactIf(c30, c31, c33 IN ('c37', 'c38')) AS c17,
+countIf(c33 IN ('c37', 'c38')) AS c16,
+countIf(c33 = 'c39') AS c18,
+coalesce(sumIf(c29, c33 = 'c39'), 0) AS c22,
+coalesce(sumIf(c37, c33 = 'c39'), 0) AS c24,
+if((c18 > 0) AND (c19 > 0), c18 / c19, NULL) AS c3,
+if(c17 != 0, c18 / c17, NULL) AS c4,
+coalesce(avgIf(c34, (c34 > 0) AND (c33 IN ('c37', 'c38'))), NULL) AS c8,
+coalesce(avgIf(c35, (c35 > 0) AND (c33 IN ('c37', 'c38'))), NULL) AS c9,
+coalesce(avgIf(c34, (c34 > 0) AND (c33 = 'c39')), NULL) AS c10,
+coalesce(avgIf(c35, (c35 > 0) AND (c33 = 'c39')), NULL) AS c11,
+coalesce(avgIf(c37, c33 = 'c39'), NULL) AS c12,
+coalesce(avgIf(c37 / c34, (c34 > 0) AND (c33 = 'c39')), NULL) AS c13,
+coalesce(avgIf(c37, (c37 > 0) AND (c33 IN ('c37', 'c38'))), NULL) AS c6,
+coalesce(minIf(c37, (c37 > 0) AND (c33 IN ('c37', 'c38')) AND (c37 > (c36 / 2))), NULL) AS c7
+FROM
+(
+SELECT
+c27,
+c30,
+c32,
+c31,
+NULL AS c29,
+NULL AS c33,
+NULL AS c37,
+NULL AS c34,
+NULL AS c35
+FROM
+(
+SELECT
+c27,
+c30,
+c32,
+c31
+FROM database.t1
+PREWHERE ((c32 >= parseDateTimeBestEffort('2020-01-01')) AND (c32 <= parseDateTimeBestEffort('2020-01-01 23:59:59'))) AND (c27 IN
+(
+SELECT comp_c27
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+groupArray(c39) AS c39,
+any(c40) AS c40,
+any(c41) AS c41,
+any(c42) AS c42,
+any(c29) AS c29,
+any(c43) AS c43,
+any(c44) AS c44,
+any(min_c32) AS min_c32,
+any(max_c32) AS max_c32,
+any(c45) AS c45,
+any(c46) AS c46,
+any(c38) AS c38,
+any(c47) AS c47
+FROM
+(
+SELECT
+c27 AS comp_c27,
+if(comp_c27 = 0, toDate('2010-01-01'), toDate(minMerge(min_c32))) AS min_c32,
+if(comp_c27 = 0, toDate(now()), toDate(maxMerge(max_c32))) + 1 AS max_c32,
+NULL AS c39,
+NULL AS c40,
+NULL AS c41,
+NULL AS c42,
+NULL AS c29,
+NULL AS c43,
+NULL AS c44,
+NULL AS c45,
+NULL AS c46,
+NULL AS c38,
+NULL AS c47
+FROM database.table15
+GROUP BY comp_c27
+UNION ALL
+SELECT
+comp_c27,
+NULL AS min_c32,
+NULL AS max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38,
+c47
+FROM
+(
+SELECT
+c39,
+comp_c27 AS c27,
+comp_c27,
+c40,
+c41,
+assumeNotNull(c45) AS c45,
+assumeNotNull(c46) AS c46,
+assumeNotNull(c38) AS c38,
+joinGet('database.table14', 'c48', c40) AS c42,
+joinGet('database.table14', 'c29', c40) AS c29,
+joinGet('database.table14', 'c43', c40) AS c43,
+joinGet('database.table14', 'property_c44', c40) AS c44,
+splitByChar(',', assumeNotNull(joinGet('database.jointable13', 'prefix_c33', comp_c27))) AS c33s,
+joinGet('database.jointable13', 'c47', comp_c27) AS c47
+FROM
+(
+SELECT
+c39,
+comp_c27,
+joinGet('database.jointable13', 'c40', comp_c27) AS c40,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+c39,
+arrayJoin(arrayMap(x -> toInt64(x), arrayFilter(x -> (length(x) > 0), splitByString(', ', c49)))) AS comp_c27,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+'c57' AS c39,
+toString(c27) AS c49,
+1 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'c58' AS c39,
+arrayStringConcat(groupArray(toString(c27)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE chain_id IN
+(
+SELECT chain_id
+FROM database.table12
+WHERE c27 IN (322)
+)
+UNION ALL
+SELECT
+'c59' AS c39,
+assumeNotNull(c27s_str) AS c49,
+0 AS c41,
+c50 AS c45,
+c51 AS c46,
+c52 AS c38
+FROM
+(
+SELECT *
+FROM table11
+WHERE c27 IN (322)
+) AS c1s_c59
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'superSupercalifragilisticexpialidocious' AS c39,
+arrayStringConcat(groupArray(toString(c1_id)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table10
+WHERE c27 IN (322)
+) AS table9
+)
+) AS a
+) AS table8
+) AS table7
+GROUP BY comp_c27
+) AS table6
+WHERE (parseDateTimeBestEffort('2020-01-01') >= min_c32) AND (max_c32 >= (parseDateTimeBestEffort('2021-05-02') - 2))
+) AS table5
+ARRAY JOIN c39
+WHERE isNotNull(c39)
+) AS table4
+))
+WHERE c61 = 0
+) AS table25
+UNION ALL
+SELECT
+c27,
+c30,
+c32,
+c31,
+c29,
+c33,
+c37,
+c34,
+c35
+FROM
+(
+SELECT
+c27,
+c30,
+c32,
+'c37' AS c33,
+coalesce(c37 * joinGet('database.table18', 'c60', concat(c26, '_', 'CH')), 0) AS c37,
+if(c53 > 0, c53, 2) AS c53,
+c54,
+if(c29 > 0, c29, 1) AS c29,
+c55,
+c56,
+datediff('day', c55, c56) AS c34,
+datediff('day', c32, c55) AS c35,
+c31
+FROM database.table24
+PREWHERE ((c32 >= parseDateTimeBestEffort('2020-01-01')) AND (c32 <= parseDateTimeBestEffort('2020-01-01 23:59:59'))) AND (c27 IN
+(
+SELECT comp_c27
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+groupArray(c39) AS c39,
+any(c40) AS c40,
+any(c41) AS c41,
+any(c42) AS c42,
+any(c29) AS c29,
+any(c43) AS c43,
+any(c44) AS c44,
+any(min_c32) AS min_c32,
+any(max_c32) AS max_c32,
+any(c45) AS c45,
+any(c46) AS c46,
+any(c38) AS c38,
+any(c47) AS c47
+FROM
+(
+SELECT
+c27 AS comp_c27,
+if(comp_c27 = 0, toDate('2010-01-01'), toDate(minMerge(min_c32))) AS min_c32,
+if(comp_c27 = 0, toDate(now()), toDate(maxMerge(max_c32))) + 1 AS max_c32,
+NULL AS c39,
+NULL AS c40,
+NULL AS c41,
+NULL AS c42,
+NULL AS c29,
+NULL AS c43,
+NULL AS c44,
+NULL AS c45,
+NULL AS c46,
+NULL AS c38,
+NULL AS c47
+FROM database.table15
+GROUP BY comp_c27
+UNION ALL
+SELECT
+comp_c27,
+NULL AS min_c32,
+NULL AS max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38,
+c47
+FROM
+(
+SELECT
+c39,
+comp_c27 AS c27,
+comp_c27,
+c40,
+c41,
+assumeNotNull(c45) AS c45,
+assumeNotNull(c46) AS c46,
+assumeNotNull(c38) AS c38,
+joinGet('database.table14', 'c48', c40) AS c42,
+joinGet('database.table14', 'c29', c40) AS c29,
+joinGet('database.table14', 'c43', c40) AS c43,
+joinGet('database.table14', 'property_c44', c40) AS c44,
+splitByChar(',', assumeNotNull(joinGet('database.jointable13', 'prefix_c33', comp_c27))) AS c33s,
+joinGet('database.jointable13', 'c47', comp_c27) AS c47
+FROM
+(
+SELECT
+c39,
+comp_c27,
+joinGet('database.jointable13', 'c40', comp_c27) AS c40,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+c39,
+arrayJoin(arrayMap(x -> toInt64(x), arrayFilter(x -> (length(x) > 0), splitByString(', ', c49)))) AS comp_c27,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+'c57' AS c39,
+toString(c27) AS c49,
+1 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'c58' AS c39,
+arrayStringConcat(groupArray(toString(c27)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE chain_id IN
+(
+SELECT chain_id
+FROM database.table12
+WHERE c27 IN (322)
+)
+UNION ALL
+SELECT
+'c59' AS c39,
+assumeNotNull(c27s_str) AS c49,
+0 AS c41,
+c50 AS c45,
+c51 AS c46,
+c52 AS c38
+FROM
+(
+SELECT *
+FROM table11
+WHERE c27 IN (322)
+) AS c1s_c59
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'superSupercalifragilisticexpialidocious' AS c39,
+arrayStringConcat(groupArray(toString(c1_id)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table10
+WHERE c27 IN (322)
+) AS table9
+)
+) AS a
+) AS table8
+) AS table7
+GROUP BY comp_c27
+) AS table6
+WHERE (parseDateTimeBestEffort('2020-01-01') >= min_c32) AND (max_c32 >= (parseDateTimeBestEffort('2021-05-02') - 2))
+) AS table5
+ARRAY JOIN c39
+WHERE isNotNull(c39)
+) AS table4
+))
+WHERE (c61 = 0) AND (c37 < (666 * (1 / joinGet('database.table18', 'c60', concat(c26, '_', 'CH')))))
+) AS table23
+UNION ALL
+SELECT
+c27,
+c30,
+c32,
+c31,
+c29,
+c33,
+c37,
+c34,
+c35
+FROM
+(
+SELECT
+c27,
+c30,
+c32,
+'c39' AS c33,
+coalesce(c37 * joinGet('database.table18', 'c60', concat(c26, '_', 'CH')), 0) AS c37,
+if(c53 > 0, c53, 2) AS c53,
+c54,
+if(c29 > 0, c29, 1) AS c29,
+c55,
+c56,
+datediff('day', c55, c56) AS c34,
+datediff('day', c32, c55) AS c35,
+c31
+FROM database.table22
+PREWHERE ((c32 >= parseDateTimeBestEffort('2020-01-01')) AND (c32 <= parseDateTimeBestEffort('2020-01-01 23:59:59'))) AND (c27 IN
+(
+SELECT comp_c27
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+groupArray(c39) AS c39,
+any(c40) AS c40,
+any(c41) AS c41,
+any(c42) AS c42,
+any(c29) AS c29,
+any(c43) AS c43,
+any(c44) AS c44,
+any(min_c32) AS min_c32,
+any(max_c32) AS max_c32,
+any(c45) AS c45,
+any(c46) AS c46,
+any(c38) AS c38,
+any(c47) AS c47
+FROM
+(
+SELECT
+c27 AS comp_c27,
+if(comp_c27 = 0, toDate('2010-01-01'), toDate(minMerge(min_c32))) AS min_c32,
+if(comp_c27 = 0, toDate(now()), toDate(maxMerge(max_c32))) + 1 AS max_c32,
+NULL AS c39,
+NULL AS c40,
+NULL AS c41,
+NULL AS c42,
+NULL AS c29,
+NULL AS c43,
+NULL AS c44,
+NULL AS c45,
+NULL AS c46,
+NULL AS c38,
+NULL AS c47
+FROM database.table15
+GROUP BY comp_c27
+UNION ALL
+SELECT
+comp_c27,
+NULL AS min_c32,
+NULL AS max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38,
+c47
+FROM
+(
+SELECT
+c39,
+comp_c27 AS c27,
+comp_c27,
+c40,
+c41,
+assumeNotNull(c45) AS c45,
+assumeNotNull(c46) AS c46,
+assumeNotNull(c38) AS c38,
+joinGet('database.table14', 'c48', c40) AS c42,
+joinGet('database.table14', 'c29', c40) AS c29,
+joinGet('database.table14', 'c43', c40) AS c43,
+joinGet('database.table14', 'property_c44', c40) AS c44,
+splitByChar(',', assumeNotNull(joinGet('database.jointable13', 'prefix_c33', comp_c27))) AS c33s,
+joinGet('database.jointable13', 'c47', comp_c27) AS c47
+FROM
+(
+SELECT
+c39,
+comp_c27,
+joinGet('database.jointable13', 'c40', comp_c27) AS c40,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+c39,
+arrayJoin(arrayMap(x -> toInt64(x), arrayFilter(x -> (length(x) > 0), splitByString(', ', c49)))) AS comp_c27,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+'c57' AS c39,
+toString(c27) AS c49,
+1 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'c58' AS c39,
+arrayStringConcat(groupArray(toString(c27)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE chain_id IN
+(
+SELECT chain_id
+FROM database.table12
+WHERE c27 IN (322)
+)
+UNION ALL
+SELECT
+'c59' AS c39,
+assumeNotNull(c27s_str) AS c49,
+0 AS c41,
+c50 AS c45,
+c51 AS c46,
+c52 AS c38
+FROM
+(
+SELECT *
+FROM table11
+WHERE c27 IN (322)
+) AS c1s_c59
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'superSupercalifragilisticexpialidocious' AS c39,
+arrayStringConcat(groupArray(toString(c1_id)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table10
+WHERE c27 IN (322)
+) AS table9
+)
+) AS a
+) AS table8
+) AS table7
+GROUP BY comp_c27
+) AS table6
+WHERE (parseDateTimeBestEffort('2020-01-01') >= min_c32) AND (max_c32 >= (parseDateTimeBestEffort('2021-05-02') - 2))
+) AS table5
+ARRAY JOIN c39
+WHERE isNotNull(c39)
+) AS table4
+))
+WHERE (c61 = 0) AND (c37 < (666 * (1 / joinGet('database.table18', 'c60', concat(c26, '_', 'CH')))))
+) AS table21
+) AS table20
+ALL LEFT JOIN
+(
+SELECT
+c27,
+avgMerge(avg_c37) * joinGet('database.table18', 'c60', concat('USD', '_', 'CH')) AS c36
+FROM database.table19
+PREWHERE c27 IN
+(
+SELECT comp_c27
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+groupArray(c39) AS c39,
+any(c40) AS c40,
+any(c41) AS c41,
+any(c42) AS c42,
+any(c29) AS c29,
+any(c43) AS c43,
+any(c44) AS c44,
+any(min_c32) AS min_c32,
+any(max_c32) AS max_c32,
+any(c45) AS c45,
+any(c46) AS c46,
+any(c38) AS c38,
+any(c47) AS c47
+FROM
+(
+SELECT
+c27 AS comp_c27,
+if(comp_c27 = 0, toDate('2010-01-01'), toDate(minMerge(min_c32))) AS min_c32,
+if(comp_c27 = 0, toDate(now()), toDate(maxMerge(max_c32))) + 1 AS max_c32,
+NULL AS c39,
+NULL AS c40,
+NULL AS c41,
+NULL AS c42,
+NULL AS c29,
+NULL AS c43,
+NULL AS c44,
+NULL AS c45,
+NULL AS c46,
+NULL AS c38,
+NULL AS c47
+FROM database.table15
+GROUP BY comp_c27
+UNION ALL
+SELECT
+comp_c27,
+NULL AS min_c32,
+NULL AS max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38,
+c47
+FROM
+(
+SELECT
+c39,
+comp_c27 AS c27,
+comp_c27,
+c40,
+c41,
+assumeNotNull(c45) AS c45,
+assumeNotNull(c46) AS c46,
+assumeNotNull(c38) AS c38,
+joinGet('database.table14', 'c48', c40) AS c42,
+joinGet('database.table14', 'c29', c40) AS c29,
+joinGet('database.table14', 'c43', c40) AS c43,
+joinGet('database.table14', 'property_c44', c40) AS c44,
+splitByChar(',', assumeNotNull(joinGet('database.jointable13', 'prefix_c33', comp_c27))) AS c33s,
+joinGet('database.jointable13', 'c47', comp_c27) AS c47
+FROM
+(
+SELECT
+c39,
+comp_c27,
+joinGet('database.jointable13', 'c40', comp_c27) AS c40,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+c39,
+arrayJoin(arrayMap(x -> toInt64(x), arrayFilter(x -> (length(x) > 0), splitByString(', ', c49)))) AS comp_c27,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+'c57' AS c39,
+toString(c27) AS c49,
+1 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'c58' AS c39,
+arrayStringConcat(groupArray(toString(c27)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE chain_id IN
+(
+SELECT chain_id
+FROM database.table12
+WHERE c27 IN (322)
+)
+UNION ALL
+SELECT
+'c59' AS c39,
+assumeNotNull(c27s_str) AS c49,
+0 AS c41,
+c50 AS c45,
+c51 AS c46,
+c52 AS c38
+FROM
+(
+SELECT *
+FROM table11
+WHERE c27 IN (322)
+) AS c1s_c59
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'superSupercalifragilisticexpialidocious' AS c39,
+arrayStringConcat(groupArray(toString(c1_id)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table10
+WHERE c27 IN (322)
+) AS table9
+)
+) AS a
+) AS table8
+) AS table7
+GROUP BY comp_c27
+) AS table6
+WHERE (parseDateTimeBestEffort('2020-01-01') >= min_c32) AND (max_c32 >= (parseDateTimeBestEffort('2021-05-02') - 2))
+) AS table5
+ARRAY JOIN c39
+WHERE isNotNull(c39)
+) AS table4
+)
+WHERE date > (now() - toIntervalMonth(3))
+GROUP BY c27
+) AS table17 USING (c27)
+GROUP BY c27
+) AS table16
+ALL LEFT JOIN
+(
+SELECT
+comp_c27 AS c27,
+assumeNotNull(c39) AS c39,
+c29
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+groupArray(c39) AS c39,
+any(c40) AS c40,
+any(c41) AS c41,
+any(c42) AS c42,
+any(c29) AS c29,
+any(c43) AS c43,
+any(c44) AS c44,
+any(min_c32) AS min_c32,
+any(max_c32) AS max_c32,
+any(c45) AS c45,
+any(c46) AS c46,
+any(c38) AS c38,
+any(c47) AS c47
+FROM
+(
+SELECT
+c27 AS comp_c27,
+if(comp_c27 = 0, toDate('2010-01-01'), toDate(minMerge(min_c32))) AS min_c32,
+if(comp_c27 = 0, toDate(now()), toDate(maxMerge(max_c32))) + 1 AS max_c32,
+NULL AS c39,
+NULL AS c40,
+NULL AS c41,
+NULL AS c42,
+NULL AS c29,
+NULL AS c43,
+NULL AS c44,
+NULL AS c45,
+NULL AS c46,
+NULL AS c38,
+NULL AS c47
+FROM database.table15
+GROUP BY comp_c27
+UNION ALL
+SELECT
+comp_c27,
+NULL AS min_c32,
+NULL AS max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38,
+c47
+FROM
+(
+SELECT
+c39,
+comp_c27 AS c27,
+comp_c27,
+c40,
+c41,
+assumeNotNull(c45) AS c45,
+assumeNotNull(c46) AS c46,
+assumeNotNull(c38) AS c38,
+joinGet('database.table14', 'c48', c40) AS c42,
+joinGet('database.table14', 'c29', c40) AS c29,
+joinGet('database.table14', 'c43', c40) AS c43,
+joinGet('database.table14', 'property_c44', c40) AS c44,
+splitByChar(',', assumeNotNull(joinGet('database.jointable13', 'prefix_c33', comp_c27))) AS c33s,
+joinGet('database.jointable13', 'c47', comp_c27) AS c47
+FROM
+(
+SELECT
+c39,
+comp_c27,
+joinGet('database.jointable13', 'c40', comp_c27) AS c40,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+c39,
+arrayJoin(arrayMap(x -> toInt64(x), arrayFilter(x -> (length(x) > 0), splitByString(', ', c49)))) AS comp_c27,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+'c57' AS c39,
+toString(c27) AS c49,
+1 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'c58' AS c39,
+arrayStringConcat(groupArray(toString(c27)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE chain_id IN
+(
+SELECT chain_id
+FROM database.table12
+WHERE c27 IN (322)
+)
+UNION ALL
+SELECT
+'c59' AS c39,
+assumeNotNull(c27s_str) AS c49,
+0 AS c41,
+c50 AS c45,
+c51 AS c46,
+c52 AS c38
+FROM
+(
+SELECT *
+FROM table11
+WHERE c27 IN (322)
+) AS c1s_c59
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'superSupercalifragilisticexpialidocious' AS c39,
+arrayStringConcat(groupArray(toString(c1_id)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table10
+WHERE c27 IN (322)
+) AS table9
+)
+) AS a
+) AS table8
+) AS table7
+GROUP BY comp_c27
+) AS table6
+WHERE (parseDateTimeBestEffort('2020-01-01') >= min_c32) AND (max_c32 >= (parseDateTimeBestEffort('2021-05-02') - 2))
+) AS table5
+ARRAY JOIN c39
+WHERE isNotNull(c39)
+) AS table4
+) USING (c27)
+) AS t
+ALL LEFT JOIN
+(
+SELECT
+c1,
+c2
+FROM
+(
+SELECT
+c39 AS c1,
+groupArray(comp_c27) AS c49,
+multiIf(c1 = 'c58', if(length(c49) <= 2, 0, 1), c1 = 'c57', 1, if(length(c49) <= 3, 0, 1)) AS c2
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+groupArray(c39) AS c39,
+any(c40) AS c40,
+any(c41) AS c41,
+any(c42) AS c42,
+any(c29) AS c29,
+any(c43) AS c43,
+any(c44) AS c44,
+any(min_c32) AS min_c32,
+any(max_c32) AS max_c32,
+any(c45) AS c45,
+any(c46) AS c46,
+any(c38) AS c38,
+any(c47) AS c47
+FROM
+(
+SELECT
+c27 AS comp_c27,
+if(comp_c27 = 0, toDate('2010-01-01'), toDate(minMerge(min_c32))) AS min_c32,
+if(comp_c27 = 0, toDate(now()), toDate(maxMerge(max_c32))) + 1 AS max_c32,
+NULL AS c39,
+NULL AS c40,
+NULL AS c41,
+NULL AS c42,
+NULL AS c29,
+NULL AS c43,
+NULL AS c44,
+NULL AS c45,
+NULL AS c46,
+NULL AS c38,
+NULL AS c47
+FROM database.table15
+GROUP BY comp_c27
+UNION ALL
+SELECT
+comp_c27,
+NULL AS min_c32,
+NULL AS max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38,
+c47
+FROM
+(
+SELECT
+c39,
+comp_c27 AS c27,
+comp_c27,
+c40,
+c41,
+assumeNotNull(c45) AS c45,
+assumeNotNull(c46) AS c46,
+assumeNotNull(c38) AS c38,
+joinGet('database.table14', 'c48', c40) AS c42,
+joinGet('database.table14', 'c29', c40) AS c29,
+joinGet('database.table14', 'c43', c40) AS c43,
+joinGet('database.table14', 'property_c44', c40) AS c44,
+splitByChar(',', assumeNotNull(joinGet('database.jointable13', 'prefix_c33', comp_c27))) AS c33s,
+joinGet('database.jointable13', 'c47', comp_c27) AS c47
+FROM
+(
+SELECT
+c39,
+comp_c27,
+joinGet('database.jointable13', 'c40', comp_c27) AS c40,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+c39,
+arrayJoin(arrayMap(x -> toInt64(x), arrayFilter(x -> (length(x) > 0), splitByString(', ', c49)))) AS comp_c27,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+'c57' AS c39,
+toString(c27) AS c49,
+1 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'c58' AS c39,
+arrayStringConcat(groupArray(toString(c27)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE chain_id IN
+(
+SELECT chain_id
+FROM database.table12
+WHERE c27 IN (322)
+)
+UNION ALL
+SELECT
+'c59' AS c39,
+assumeNotNull(c27s_str) AS c49,
+0 AS c41,
+c50 AS c45,
+c51 AS c46,
+c52 AS c38
+FROM
+(
+SELECT *
+FROM table11
+WHERE c27 IN (322)
+) AS c1s_c59
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'superSupercalifragilisticexpialidocious' AS c39,
+arrayStringConcat(groupArray(toString(c1_id)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table10
+WHERE c27 IN (322)
+) AS table9
+)
+) AS a
+) AS table8
+) AS table7
+GROUP BY comp_c27
+) AS table6
+WHERE (parseDateTimeBestEffort('2020-01-01') >= min_c32) AND (max_c32 >= (parseDateTimeBestEffort('2021-05-02') - 2))
+) AS table5
+ARRAY JOIN c39
+WHERE isNotNull(c39)
+) AS table4
+GROUP BY c39
+) AS table3
+) USING (c1)
+GROUP BY
+c1,
+c2
+) AS table2
+ORDER BY c1 ASC
+) AS table1
+UNION ALL
+SELECT *
+FROM
+(
+SELECT
+c1,
+c2,
+c3_q[1] AS c3_q1,
+c3_q[3] AS c3_q3,
+c3_q[2] AS c3_median,
+least(c3_max, c3_q3 + (1.5 * (c3_q3 - c3_q1))) AS c3_max,
+greatest(c3_min, c3_q1 - (1.5 * (c3_q3 - c3_q1))) AS c3_min,
+c3_avg,
+c4_q[1] AS c4_q1,
+c4_q[3] AS c4_q3,
+c4_q[2] AS c4_median,
+least(c4_max, c4_q3 + (1.5 * (c4_q3 - c4_q1))) AS c4_max,
+greatest(c4_min, c4_q1 - (1.5 * (c4_q3 - c4_q1))) AS c4_min,
+c4_avg,
+c5_q[1] AS c5_q1,
+c5_q[3] AS c5_q3,
+c5_q[2] AS c5_median,
+least(c5_max, c5_q3 + (1.5 * (c5_q3 - c5_q1))) AS c5_max,
+greatest(c5_min, c5_q1 - (1.5 * (c5_q3 - c5_q1))) AS c5_min,
+c5_avg,
+c6_q[1] AS c6_q1,
+c6_q[3] AS c6_q3,
+c6_q[2] AS c6_median,
+least(c6_max, c6_q3 + (1.5 * (c6_q3 - c6_q1))) AS c6_max,
+greatest(c6_min, c6_q1 - (1.5 * (c6_q3 - c6_q1))) AS c6_min,
+c6_avg,
+c7_q[1] AS c7_q1,
+c7_q[3] AS c7_q3,
+c7_q[2] AS c7_median,
+least(c7_max, c7_q3 + (1.5 * (c7_q3 - c7_q1))) AS c7_max,
+greatest(c7_min, c7_q1 - (1.5 * (c7_q3 - c7_q1))) AS c7_min,
+c7_avg,
+c8_q[1] AS c8_q1,
+c8_q[3] AS c8_q3,
+c8_q[2] AS c8_median,
+least(c8_max, c8_q3 + (1.5 * (c8_q3 - c8_q1))) AS c8_max,
+greatest(c8_min, c8_q1 - (1.5 * (c8_q3 - c8_q1))) AS c8_min,
+c8_avg,
+c9_q[1] AS c9_q1,
+c9_q[3] AS c9_q3,
+c9_q[2] AS c9_median,
+least(c9_max, c9_q3 + (1.5 * (c9_q3 - c9_q1))) AS c9_max,
+greatest(c9_min, c9_q1 - (1.5 * (c9_q3 - c9_q1))) AS c9_min,
+c9_avg,
+c10_q[1] AS c10_q1,
+c10_q[3] AS c10_q3,
+c10_q[2] AS c10_median,
+least(c10_max, c10_q3 + (1.5 * (c10_q3 - c10_q1))) AS c10_max,
+greatest(c10_min, c10_q1 - (1.5 * (c10_q3 - c10_q1))) AS c10_min,
+c10_avg,
+c10_avg,
+c11_q[1] AS c11_q1,
+c11_q[3] AS c11_q3,
+c11_q[2] AS c11_median,
+least(c11_max, c11_q3 + (1.5 * (c11_q3 - c11_q1))) AS c11_max,
+greatest(c11_min, c11_q1 - (1.5 * (c11_q3 - c11_q1))) AS c11_min,
+c11_avg,
+c12_q[1] AS c12_q1,
+c12_q[3] AS c12_q3,
+c12_q[2] AS c12_median,
+least(c12_max, c12_q3 + (1.5 * (c12_q3 - c12_q1))) AS c12_max,
+greatest(c12_min, c12_q1 - (1.5 * (c12_q3 - c12_q1))) AS c12_min,
+c12_avg,
+c13_q[1] AS c13_q1,
+c13_q[3] AS c13_q3,
+c13_q[2] AS c13_median,
+least(c13_max, c13_q3 + (1.5 * (c13_q3 - c13_q1))) AS c13_max,
+greatest(c13_min, c13_q1 - (1.5 * (c13_q3 - c13_q1))) AS c13_min,
+c13_avg,
+c14_q[1] AS c14_q1,
+c14_q[3] AS c14_q3,
+c14_q[2] AS c14_median,
+least(c14_max, c14_q3 + (1.5 * (c14_q3 - c14_q1))) AS c14_max,
+greatest(c14_min, c14_q1 - (1.5 * (c14_q3 - c14_q1))) AS c14_min,
+c14_avg,
+c15_q[1] AS c15_q1,
+c15_q[3] AS c15_q3,
+c15_q[2] AS c15_median,
+least(c15_max, c15_q3 + (1.5 * (c15_q3 - c15_q1))) AS c15_max,
+greatest(c15_min, c15_q1 - (1.5 * (c15_q3 - c15_q1))) AS c15_min,
+c15_avg,
+c16_q[1] AS c16_q1,
+c16_q[3] AS c16_q3,
+c16_q[2] AS c16_median,
+least(toFloat64(c16_max), c16_q3 + (1.5 * (c16_q3 - c16_q1))) AS c16_max,
+greatest(toFloat64(c16_min), c16_q1 - (1.5 * (c16_q3 - c16_q1))) AS c16_min,
+c16_avg,
+c17_q[1] AS c17_q1,
+c17_q[3] AS c17_q3,
+c17_q[2] AS c17_median,
+least(toFloat64(c17_max), c17_q3 + (1.5 * (c17_q3 - c17_q1))) AS c17_max,
+greatest(toFloat64(c17_min), c17_q1 - (1.5 * (c17_q3 - c17_q1))) AS c17_min,
+c17_avg,
+c18_q[1] AS c18_q1,
+c18_q[3] AS c18_q3,
+c18_q[2] AS c18_median,
+least(toFloat64(c18_max), c18_q3 + (1.5 * (c18_q3 - c18_q1))) AS c18_max,
+greatest(toFloat64(c18_min), c18_q1 - (1.5 * (c18_q3 - c18_q1))) AS c18_min,
+c18_avg,
+round(if(c19 != 0, c24 / c19, 0), 2) AS c20,
+c21,
+c22,
+c23 AS c23,
+c19 AS c19,
+c16 AS c16,
+c17 AS c17,
+c18 AS c18,
+round(c24, 2) AS c24,
+round(if(c17 != 0, c24 / c17, 0), 2) AS c25,
+'CH' AS c26
+FROM
+(
+SELECT
+c1,
+c2,
+groupUniqArray(c27) AS c28,
+groupUniqArrayIf(c27, isNotNull(c29)) AS c28_with_c29,
+quantiles(0.25, 0.5, 0.75)(if(c3 > 0, c3, NULL)) AS c3_q,
+quantiles(0.25, 0.5, 0.75)(if(c4 > 0, c4, NULL)) AS c4_q,
+quantiles(0.25, 0.5, 0.75)(t.c17 / t.c19) AS c5_q,
+quantiles(0.25, 0.5, 0.75)(c6) AS c6_q,
+quantiles(0.25, 0.5, 0.75)(c7) AS c7_q,
+quantiles(0.25, 0.5, 0.75)(c8) AS c8_q,
+quantiles(0.25, 0.5, 0.75)(c9) AS c9_q,
+quantiles(0.25, 0.5, 0.75)(c10) AS c10_q,
+quantiles(0.25, 0.5, 0.75)(c11) AS c11_q,
+quantiles(0.25, 0.5, 0.75)(c12) AS c12_q,
+quantiles(0.25, 0.5, 0.75)(c13) AS c13_q,
+quantiles(0.25, 0.5, 0.75)(if(t.c24 > 0, t.c24, NULL) / t.c19) AS c14_q,
+quantiles(0.25, 0.5, 0.75)(if(t.c24 > 0, t.c24, NULL) / t.c17) AS c15_q,
+quantiles(0.25, 0.5, 0.75)(t.c16) AS c16_q,
+quantiles(0.25, 0.5, 0.75)(t.c17) AS c17_q,
+quantiles(0.25, 0.5, 0.75)(if(t.c18 > 0, t.c18, NULL)) AS c18_q,
+max(if(c3 > 0, c3, NULL)) AS c3_max,
+min(if(c3 > 0, c3, NULL)) AS c3_min,
+avg(if(c3 > 0, c3, NULL)) AS c3_avg,
+max(if(c4 > 0, c4, NULL)) AS c4_max,
+min(if(c4 > 0, c4, NULL)) AS c4_min,
+avg(if(c4 > 0, c4, NULL)) AS c4_avg,
+max(t.c17 / t.c19) AS c5_max,
+min(t.c17 / t.c19) AS c5_min,
+avg(t.c17 / t.c19) AS c5_avg,
+max(if(c6 > 0, c6, NULL)) AS c6_max,
+min(if(c6 > 0, c6, NULL)) AS c6_min,
+avg(if(c6 > 0, c6, NULL)) AS c6_avg,
+max(if(c7 > 0, c7, NULL)) AS c7_max,
+min(if(c7 > 0, c7, NULL)) AS c7_min,
+avg(if(c7 > 0, c7, NULL)) AS c7_avg,
+max(if(c10 > 0, c10, NULL)) AS c10_max,
+min(if(c10 > 0, c10, NULL)) AS c10_min,
+avg(if(c10 > 0, c10, NULL)) AS c10_avg,
+max(if(c8 > 0, c8, NULL)) AS c8_max,
+min(if(c8 > 0, c8, NULL)) AS c8_min,
+avg(if(c8 > 0, c8, NULL)) AS c8_avg,
+max(if(c9 > 0, c9, NULL)) AS c9_max,
+min(if(c9 > 0, c9, NULL)) AS c9_min,
+avg(if(c9 > 0, c9, NULL)) AS c9_avg,
+max(if(c11 > 0, c11, NULL)) AS c11_max,
+min(if(c11 > 0, c11, NULL)) AS c11_min,
+avg(if(c11 > 0, c11, NULL)) AS c11_avg,
+max(if(c12 > 0, c12, NULL)) AS c12_max,
+min(if(c12 > 0, c12, NULL)) AS c12_min,
+avg(if(c12 > 0, c12, NULL)) AS c12_avg,
+max(if(c13 > 0, c13, NULL)) AS c13_max,
+min(if(c13 > 0, c13, NULL)) AS c13_min,
+avg(if(c13 > 0, c13, NULL)) AS c13_avg,
+max(if(t.c24 > 0, t.c24, NULL) / t.c19) AS c14_max,
+min(if(t.c24 > 0, t.c24, NULL) / t.c19) AS c14_min,
+avg(if(t.c24 > 0, t.c24, NULL) / t.c19) AS c14_avg,
+max(if(t.c24 > 0, t.c24, NULL) / t.c17) AS c15_max,
+min(if(t.c24 > 0, t.c24, NULL) / t.c17) AS c15_min,
+avg(if(t.c24 > 0, t.c24, NULL) / t.c17) AS c15_avg,
+max(t.c16) AS c16_max,
+min(t.c16) AS c16_min,
+avg(t.c16) AS c16_avg,
+max(t.c17) AS c17_max,
+min(t.c17) AS c17_min,
+avg(t.c17) AS c17_avg,
+max(if(t.c18 > 0, t.c18, NULL)) AS c18_max,
+min(if(t.c18 > 0, t.c18, NULL)) AS c18_min,
+avg(if(t.c18 > 0, t.c18, NULL)) AS c18_avg,
+sum(t.c19) AS c19,
+sum(if(t.c18 > 0, t.c18, NULL)) AS c18,
+sum(t.c16) AS c16,
+sum(c23) AS c23,
+sum(t.c17) AS c17,
+sum(if(t.c24 > 0, t.c24, NULL)) AS c24,
+c24 / c19 AS c14,
+c24 / c17 AS c15,
+median(if(isNotNull(c29) AND (t.c22 > 0), c13 * (t.c22 / c29), NULL)) AS c21,
+sum(c22) AS c22
+FROM
+(
+SELECT
+c27,
+c39 AS c1,
+c29,
+c19,
+c23,
+c17,
+c16,
+c18,
+c22,
+c24,
+c3,
+c4,
+c8,
+c9,
+c10,
+c11,
+c12,
+c13,
+c6,
+c7
+FROM
+(
+SELECT
+c27,
+uniqExact(c30, c31) AS c19,
+uniqExact(c30, c31, c32) AS c23,
+uniqExactIf(c30, c31, c33 IN ('c37', 'c38')) AS c17,
+countIf(c33 IN ('c37', 'c38')) AS c16,
+countIf(c33 = 'c39') AS c18,
+coalesce(sumIf(c29, c33 = 'c39'), 0) AS c22,
+coalesce(sumIf(c37, c33 = 'c39'), 0) AS c24,
+if((c18 > 0) AND (c19 > 0), c18 / c19, NULL) AS c3,
+if(c17 != 0, c18 / c17, NULL) AS c4,
+coalesce(avgIf(c34, (c34 > 0) AND (c33 IN ('c37', 'c38'))), NULL) AS c8,
+coalesce(avgIf(c35, (c35 > 0) AND (c33 IN ('c37', 'c38'))), NULL) AS c9,
+coalesce(avgIf(c34, (c34 > 0) AND (c33 = 'c39')), NULL) AS c10,
+coalesce(avgIf(c35, (c35 > 0) AND (c33 = 'c39')), NULL) AS c11,
+coalesce(avgIf(c37, c33 = 'c39'), NULL) AS c12,
+coalesce(avgIf(c37 / c34, (c34 > 0) AND (c33 = 'c39')), NULL) AS c13,
+coalesce(avgIf(c37, (c37 > 0) AND (c33 IN ('c37', 'c38'))), NULL) AS c6,
+coalesce(minIf(c37, (c37 > 0) AND (c33 IN ('c37', 'c38')) AND (c37 > (c36 / 2))), NULL) AS c7
+FROM
+(
+SELECT
+c27,
+c30,
+c32,
+c31,
+NULL AS c29,
+NULL AS c33,
+NULL AS c37,
+NULL AS c34,
+NULL AS c35
+FROM
+(
+SELECT
+c27,
+c30,
+c32,
+c31
+FROM database.t1
+PREWHERE ((c32 >= parseDateTimeBestEffort('2020-01-01')) AND (c32 <= parseDateTimeBestEffort('2020-01-01 23:59:59'))) AND (c27 IN
+(
+SELECT comp_c27
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+groupArray(c39) AS c39,
+any(c40) AS c40,
+any(c41) AS c41,
+any(c42) AS c42,
+any(c29) AS c29,
+any(c43) AS c43,
+any(c44) AS c44,
+any(min_c32) AS min_c32,
+any(max_c32) AS max_c32,
+any(c45) AS c45,
+any(c46) AS c46,
+any(c38) AS c38,
+any(c47) AS c47
+FROM
+(
+SELECT
+c27 AS comp_c27,
+if(comp_c27 = 0, toDate('2010-01-01'), toDate(minMerge(min_c32))) AS min_c32,
+if(comp_c27 = 0, toDate(now()), toDate(maxMerge(max_c32))) + 1 AS max_c32,
+NULL AS c39,
+NULL AS c40,
+NULL AS c41,
+NULL AS c42,
+NULL AS c29,
+NULL AS c43,
+NULL AS c44,
+NULL AS c45,
+NULL AS c46,
+NULL AS c38,
+NULL AS c47
+FROM database.table15
+GROUP BY comp_c27
+UNION ALL
+SELECT
+comp_c27,
+NULL AS min_c32,
+NULL AS max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38,
+c47
+FROM
+(
+SELECT
+c39,
+comp_c27 AS c27,
+comp_c27,
+c40,
+c41,
+assumeNotNull(c45) AS c45,
+assumeNotNull(c46) AS c46,
+assumeNotNull(c38) AS c38,
+joinGet('database.table14', 'c48', c40) AS c42,
+joinGet('database.table14', 'c29', c40) AS c29,
+joinGet('database.table14', 'c43', c40) AS c43,
+joinGet('database.table14', 'property_c44', c40) AS c44,
+splitByChar(',', assumeNotNull(joinGet('database.jointable13', 'prefix_c33', comp_c27))) AS c33s,
+joinGet('database.jointable13', 'c47', comp_c27) AS c47
+FROM
+(
+SELECT
+c39,
+comp_c27,
+joinGet('database.jointable13', 'c40', comp_c27) AS c40,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+c39,
+arrayJoin(arrayMap(x -> toInt64(x), arrayFilter(x -> (length(x) > 0), splitByString(', ', c49)))) AS comp_c27,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+'c57' AS c39,
+toString(c27) AS c49,
+1 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'c58' AS c39,
+arrayStringConcat(groupArray(toString(c27)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE chain_id IN
+(
+SELECT chain_id
+FROM database.table12
+WHERE c27 IN (322)
+)
+UNION ALL
+SELECT
+'c59' AS c39,
+assumeNotNull(c27s_str) AS c49,
+0 AS c41,
+c50 AS c45,
+c51 AS c46,
+c52 AS c38
+FROM
+(
+SELECT *
+FROM table11
+WHERE c27 IN (322)
+) AS c1s_c59
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'superSupercalifragilisticexpialidocious' AS c39,
+arrayStringConcat(groupArray(toString(c1_id)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table10
+WHERE c27 IN (322)
+) AS table9
+)
+) AS a
+) AS table8
+) AS table7
+GROUP BY comp_c27
+) AS table6
+WHERE (parseDateTimeBestEffort('2020-01-01') >= min_c32) AND (max_c32 >= (parseDateTimeBestEffort('2021-05-02') - 2))
+) AS table5
+ARRAY JOIN c39
+WHERE isNotNull(c39)
+) AS table4
+))
+WHERE c61 = 0
+) AS table25
+UNION ALL
+SELECT
+c27,
+c30,
+c32,
+c31,
+c29,
+c33,
+c37,
+c34,
+c35
+FROM
+(
+SELECT
+c27,
+c30,
+c32,
+'c37' AS c33,
+coalesce(c37 * joinGet('database.table18', 'c60', concat(c26, '_', 'CH')), 0) AS c37,
+if(c53 > 0, c53, 2) AS c53,
+c54,
+if(c29 > 0, c29, 1) AS c29,
+c55,
+c56,
+datediff('day', c55, c56) AS c34,
+datediff('day', c32, c55) AS c35,
+c31
+FROM database.table24
+PREWHERE ((c32 >= parseDateTimeBestEffort('2020-01-01')) AND (c32 <= parseDateTimeBestEffort('2020-01-01 23:59:59'))) AND (c27 IN
+(
+SELECT comp_c27
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+groupArray(c39) AS c39,
+any(c40) AS c40,
+any(c41) AS c41,
+any(c42) AS c42,
+any(c29) AS c29,
+any(c43) AS c43,
+any(c44) AS c44,
+any(min_c32) AS min_c32,
+any(max_c32) AS max_c32,
+any(c45) AS c45,
+any(c46) AS c46,
+any(c38) AS c38,
+any(c47) AS c47
+FROM
+(
+SELECT
+c27 AS comp_c27,
+if(comp_c27 = 0, toDate('2010-01-01'), toDate(minMerge(min_c32))) AS min_c32,
+if(comp_c27 = 0, toDate(now()), toDate(maxMerge(max_c32))) + 1 AS max_c32,
+NULL AS c39,
+NULL AS c40,
+NULL AS c41,
+NULL AS c42,
+NULL AS c29,
+NULL AS c43,
+NULL AS c44,
+NULL AS c45,
+NULL AS c46,
+NULL AS c38,
+NULL AS c47
+FROM database.table15
+GROUP BY comp_c27
+UNION ALL
+SELECT
+comp_c27,
+NULL AS min_c32,
+NULL AS max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38,
+c47
+FROM
+(
+SELECT
+c39,
+comp_c27 AS c27,
+comp_c27,
+c40,
+c41,
+assumeNotNull(c45) AS c45,
+assumeNotNull(c46) AS c46,
+assumeNotNull(c38) AS c38,
+joinGet('database.table14', 'c48', c40) AS c42,
+joinGet('database.table14', 'c29', c40) AS c29,
+joinGet('database.table14', 'c43', c40) AS c43,
+joinGet('database.table14', 'property_c44', c40) AS c44,
+splitByChar(',', assumeNotNull(joinGet('database.jointable13', 'prefix_c33', comp_c27))) AS c33s,
+joinGet('database.jointable13', 'c47', comp_c27) AS c47
+FROM
+(
+SELECT
+c39,
+comp_c27,
+joinGet('database.jointable13', 'c40', comp_c27) AS c40,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+c39,
+arrayJoin(arrayMap(x -> toInt64(x), arrayFilter(x -> (length(x) > 0), splitByString(', ', c49)))) AS comp_c27,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+'c57' AS c39,
+toString(c27) AS c49,
+1 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'c58' AS c39,
+arrayStringConcat(groupArray(toString(c27)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE chain_id IN
+(
+SELECT chain_id
+FROM database.table12
+WHERE c27 IN (322)
+)
+UNION ALL
+SELECT
+'c59' AS c39,
+assumeNotNull(c27s_str) AS c49,
+0 AS c41,
+c50 AS c45,
+c51 AS c46,
+c52 AS c38
+FROM
+(
+SELECT *
+FROM table11
+WHERE c27 IN (322)
+) AS c1s_c59
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'superSupercalifragilisticexpialidocious' AS c39,
+arrayStringConcat(groupArray(toString(c1_id)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table10
+WHERE c27 IN (322)
+) AS table9
+)
+) AS a
+) AS table8
+) AS table7
+GROUP BY comp_c27
+) AS table6
+WHERE (parseDateTimeBestEffort('2020-01-01') >= min_c32) AND (max_c32 >= (parseDateTimeBestEffort('2021-05-02') - 2))
+) AS table5
+ARRAY JOIN c39
+WHERE isNotNull(c39)
+) AS table4
+))
+WHERE (c61 = 0) AND (c37 < (666 * (1 / joinGet('database.table18', 'c60', concat(c26, '_', 'CH')))))
+) AS table23
+UNION ALL
+SELECT
+c27,
+c30,
+c32,
+c31,
+c29,
+c33,
+c37,
+c34,
+c35
+FROM
+(
+SELECT
+c27,
+c30,
+c32,
+'c39' AS c33,
+coalesce(c37 * joinGet('database.table18', 'c60', concat(c26, '_', 'CH')), 0) AS c37,
+if(c53 > 0, c53, 2) AS c53,
+c54,
+if(c29 > 0, c29, 1) AS c29,
+c55,
+c56,
+datediff('day', c55, c56) AS c34,
+datediff('day', c32, c55) AS c35,
+c31
+FROM database.table22
+PREWHERE ((c32 >= parseDateTimeBestEffort('2020-01-01')) AND (c32 <= parseDateTimeBestEffort('2020-01-01 23:59:59'))) AND (c27 IN
+(
+SELECT comp_c27
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+groupArray(c39) AS c39,
+any(c40) AS c40,
+any(c41) AS c41,
+any(c42) AS c42,
+any(c29) AS c29,
+any(c43) AS c43,
+any(c44) AS c44,
+any(min_c32) AS min_c32,
+any(max_c32) AS max_c32,
+any(c45) AS c45,
+any(c46) AS c46,
+any(c38) AS c38,
+any(c47) AS c47
+FROM
+(
+SELECT
+c27 AS comp_c27,
+if(comp_c27 = 0, toDate('2010-01-01'), toDate(minMerge(min_c32))) AS min_c32,
+if(comp_c27 = 0, toDate(now()), toDate(maxMerge(max_c32))) + 1 AS max_c32,
+NULL AS c39,
+NULL AS c40,
+NULL AS c41,
+NULL AS c42,
+NULL AS c29,
+NULL AS c43,
+NULL AS c44,
+NULL AS c45,
+NULL AS c46,
+NULL AS c38,
+NULL AS c47
+FROM database.table15
+GROUP BY comp_c27
+UNION ALL
+SELECT
+comp_c27,
+NULL AS min_c32,
+NULL AS max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38,
+c47
+FROM
+(
+SELECT
+c39,
+comp_c27 AS c27,
+comp_c27,
+c40,
+c41,
+assumeNotNull(c45) AS c45,
+assumeNotNull(c46) AS c46,
+assumeNotNull(c38) AS c38,
+joinGet('database.table14', 'c48', c40) AS c42,
+joinGet('database.table14', 'c29', c40) AS c29,
+joinGet('database.table14', 'c43', c40) AS c43,
+joinGet('database.table14', 'property_c44', c40) AS c44,
+splitByChar(',', assumeNotNull(joinGet('database.jointable13', 'prefix_c33', comp_c27))) AS c33s,
+joinGet('database.jointable13', 'c47', comp_c27) AS c47
+FROM
+(
+SELECT
+c39,
+comp_c27,
+joinGet('database.jointable13', 'c40', comp_c27) AS c40,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+c39,
+arrayJoin(arrayMap(x -> toInt64(x), arrayFilter(x -> (length(x) > 0), splitByString(', ', c49)))) AS comp_c27,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+'c57' AS c39,
+toString(c27) AS c49,
+1 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'c58' AS c39,
+arrayStringConcat(groupArray(toString(c27)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE chain_id IN
+(
+SELECT chain_id
+FROM database.table12
+WHERE c27 IN (322)
+)
+UNION ALL
+SELECT
+'c59' AS c39,
+assumeNotNull(c27s_str) AS c49,
+0 AS c41,
+c50 AS c45,
+c51 AS c46,
+c52 AS c38
+FROM
+(
+SELECT *
+FROM table11
+WHERE c27 IN (322)
+) AS c1s_c59
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'superSupercalifragilisticexpialidocious' AS c39,
+arrayStringConcat(groupArray(toString(c1_id)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table10
+WHERE c27 IN (322)
+) AS table9
+)
+) AS a
+) AS table8
+) AS table7
+GROUP BY comp_c27
+) AS table6
+WHERE (parseDateTimeBestEffort('2020-01-01') >= min_c32) AND (max_c32 >= (parseDateTimeBestEffort('2021-05-02') - 2))
+) AS table5
+ARRAY JOIN c39
+WHERE isNotNull(c39)
+) AS table4
+))
+WHERE (c61 = 0) AND (c37 < (666 * (1 / joinGet('database.table18', 'c60', concat(c26, '_', 'CH')))))
+) AS table21
+) AS table20
+ALL LEFT JOIN
+(
+SELECT
+c27,
+avgMerge(avg_c37) * joinGet('database.table18', 'c60', concat('USD', '_', 'CH')) AS c36
+FROM database.table19
+PREWHERE c27 IN
+(
+SELECT comp_c27
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+groupArray(c39) AS c39,
+any(c40) AS c40,
+any(c41) AS c41,
+any(c42) AS c42,
+any(c29) AS c29,
+any(c43) AS c43,
+any(c44) AS c44,
+any(min_c32) AS min_c32,
+any(max_c32) AS max_c32,
+any(c45) AS c45,
+any(c46) AS c46,
+any(c38) AS c38,
+any(c47) AS c47
+FROM
+(
+SELECT
+c27 AS comp_c27,
+if(comp_c27 = 0, toDate('2010-01-01'), toDate(minMerge(min_c32))) AS min_c32,
+if(comp_c27 = 0, toDate(now()), toDate(maxMerge(max_c32))) + 1 AS max_c32,
+NULL AS c39,
+NULL AS c40,
+NULL AS c41,
+NULL AS c42,
+NULL AS c29,
+NULL AS c43,
+NULL AS c44,
+NULL AS c45,
+NULL AS c46,
+NULL AS c38,
+NULL AS c47
+FROM database.table15
+GROUP BY comp_c27
+UNION ALL
+SELECT
+comp_c27,
+NULL AS min_c32,
+NULL AS max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38,
+c47
+FROM
+(
+SELECT
+c39,
+comp_c27 AS c27,
+comp_c27,
+c40,
+c41,
+assumeNotNull(c45) AS c45,
+assumeNotNull(c46) AS c46,
+assumeNotNull(c38) AS c38,
+joinGet('database.table14', 'c48', c40) AS c42,
+joinGet('database.table14', 'c29', c40) AS c29,
+joinGet('database.table14', 'c43', c40) AS c43,
+joinGet('database.table14', 'property_c44', c40) AS c44,
+splitByChar(',', assumeNotNull(joinGet('database.jointable13', 'prefix_c33', comp_c27))) AS c33s,
+joinGet('database.jointable13', 'c47', comp_c27) AS c47
+FROM
+(
+SELECT
+c39,
+comp_c27,
+joinGet('database.jointable13', 'c40', comp_c27) AS c40,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+c39,
+arrayJoin(arrayMap(x -> toInt64(x), arrayFilter(x -> (length(x) > 0), splitByString(', ', c49)))) AS comp_c27,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+'c57' AS c39,
+toString(c27) AS c49,
+1 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'c58' AS c39,
+arrayStringConcat(groupArray(toString(c27)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE chain_id IN
+(
+SELECT chain_id
+FROM database.table12
+WHERE c27 IN (322)
+)
+UNION ALL
+SELECT
+'c59' AS c39,
+assumeNotNull(c27s_str) AS c49,
+0 AS c41,
+c50 AS c45,
+c51 AS c46,
+c52 AS c38
+FROM
+(
+SELECT *
+FROM table11
+WHERE c27 IN (322)
+) AS c1s_c59
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'superSupercalifragilisticexpialidocious' AS c39,
+arrayStringConcat(groupArray(toString(c1_id)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table10
+WHERE c27 IN (322)
+) AS table9
+)
+) AS a
+) AS table8
+) AS table7
+GROUP BY comp_c27
+) AS table6
+WHERE (parseDateTimeBestEffort('2020-01-01') >= min_c32) AND (max_c32 >= (parseDateTimeBestEffort('2021-05-02') - 2))
+) AS table5
+ARRAY JOIN c39
+WHERE isNotNull(c39)
+) AS table4
+)
+WHERE date > (now() - toIntervalMonth(3))
+GROUP BY c27
+) AS table17 USING (c27)
+GROUP BY c27
+) AS table16
+ALL LEFT JOIN
+(
+SELECT
+comp_c27 AS c27,
+assumeNotNull(c39) AS c39,
+c29
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+groupArray(c39) AS c39,
+any(c40) AS c40,
+any(c41) AS c41,
+any(c42) AS c42,
+any(c29) AS c29,
+any(c43) AS c43,
+any(c44) AS c44,
+any(min_c32) AS min_c32,
+any(max_c32) AS max_c32,
+any(c45) AS c45,
+any(c46) AS c46,
+any(c38) AS c38,
+any(c47) AS c47
+FROM
+(
+SELECT
+c27 AS comp_c27,
+if(comp_c27 = 0, toDate('2010-01-01'), toDate(minMerge(min_c32))) AS min_c32,
+if(comp_c27 = 0, toDate(now()), toDate(maxMerge(max_c32))) + 1 AS max_c32,
+NULL AS c39,
+NULL AS c40,
+NULL AS c41,
+NULL AS c42,
+NULL AS c29,
+NULL AS c43,
+NULL AS c44,
+NULL AS c45,
+NULL AS c46,
+NULL AS c38,
+NULL AS c47
+FROM database.table15
+GROUP BY comp_c27
+UNION ALL
+SELECT
+comp_c27,
+NULL AS min_c32,
+NULL AS max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38,
+c47
+FROM
+(
+SELECT
+c39,
+comp_c27 AS c27,
+comp_c27,
+c40,
+c41,
+assumeNotNull(c45) AS c45,
+assumeNotNull(c46) AS c46,
+assumeNotNull(c38) AS c38,
+joinGet('database.table14', 'c48', c40) AS c42,
+joinGet('database.table14', 'c29', c40) AS c29,
+joinGet('database.table14', 'c43', c40) AS c43,
+joinGet('database.table14', 'property_c44', c40) AS c44,
+splitByChar(',', assumeNotNull(joinGet('database.jointable13', 'prefix_c33', comp_c27))) AS c33s,
+joinGet('database.jointable13', 'c47', comp_c27) AS c47
+FROM
+(
+SELECT
+c39,
+comp_c27,
+joinGet('database.jointable13', 'c40', comp_c27) AS c40,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+c39,
+arrayJoin(arrayMap(x -> toInt64(x), arrayFilter(x -> (length(x) > 0), splitByString(', ', c49)))) AS comp_c27,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+'c57' AS c39,
+toString(c27) AS c49,
+1 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'c58' AS c39,
+arrayStringConcat(groupArray(toString(c27)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE chain_id IN
+(
+SELECT chain_id
+FROM database.table12
+WHERE c27 IN (322)
+)
+UNION ALL
+SELECT
+'c59' AS c39,
+assumeNotNull(c27s_str) AS c49,
+0 AS c41,
+c50 AS c45,
+c51 AS c46,
+c52 AS c38
+FROM
+(
+SELECT *
+FROM table11
+WHERE c27 IN (322)
+) AS c1s_c59
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'superSupercalifragilisticexpialidocious' AS c39,
+arrayStringConcat(groupArray(toString(c1_id)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table10
+WHERE c27 IN (322)
+) AS table9
+)
+) AS a
+) AS table8
+) AS table7
+GROUP BY comp_c27
+) AS table6
+WHERE (parseDateTimeBestEffort('2020-01-01') >= min_c32) AND (max_c32 >= (parseDateTimeBestEffort('2021-05-02') - 2))
+) AS table5
+ARRAY JOIN c39
+WHERE isNotNull(c39)
+) AS table4
+) USING (c27)
+) AS t
+ALL LEFT JOIN
+(
+SELECT
+c1,
+c2
+FROM
+(
+SELECT
+c39 AS c1,
+groupArray(comp_c27) AS c49,
+multiIf(c1 = 'c58', if(length(c49) <= 2, 0, 1), c1 = 'c57', 1, if(length(c49) <= 3, 0, 1)) AS c2
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+min_c32,
+max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+comp_c27,
+groupArray(c39) AS c39,
+any(c40) AS c40,
+any(c41) AS c41,
+any(c42) AS c42,
+any(c29) AS c29,
+any(c43) AS c43,
+any(c44) AS c44,
+any(min_c32) AS min_c32,
+any(max_c32) AS max_c32,
+any(c45) AS c45,
+any(c46) AS c46,
+any(c38) AS c38,
+any(c47) AS c47
+FROM
+(
+SELECT
+c27 AS comp_c27,
+if(comp_c27 = 0, toDate('2010-01-01'), toDate(minMerge(min_c32))) AS min_c32,
+if(comp_c27 = 0, toDate(now()), toDate(maxMerge(max_c32))) + 1 AS max_c32,
+NULL AS c39,
+NULL AS c40,
+NULL AS c41,
+NULL AS c42,
+NULL AS c29,
+NULL AS c43,
+NULL AS c44,
+NULL AS c45,
+NULL AS c46,
+NULL AS c38,
+NULL AS c47
+FROM database.table15
+GROUP BY comp_c27
+UNION ALL
+SELECT
+comp_c27,
+NULL AS min_c32,
+NULL AS max_c32,
+c39,
+c40,
+c41,
+c42,
+c29,
+c43,
+c44,
+c45,
+c46,
+c38,
+c47
+FROM
+(
+SELECT
+c39,
+comp_c27 AS c27,
+comp_c27,
+c40,
+c41,
+assumeNotNull(c45) AS c45,
+assumeNotNull(c46) AS c46,
+assumeNotNull(c38) AS c38,
+joinGet('database.table14', 'c48', c40) AS c42,
+joinGet('database.table14', 'c29', c40) AS c29,
+joinGet('database.table14', 'c43', c40) AS c43,
+joinGet('database.table14', 'property_c44', c40) AS c44,
+splitByChar(',', assumeNotNull(joinGet('database.jointable13', 'prefix_c33', comp_c27))) AS c33s,
+joinGet('database.jointable13', 'c47', comp_c27) AS c47
+FROM
+(
+SELECT
+c39,
+comp_c27,
+joinGet('database.jointable13', 'c40', comp_c27) AS c40,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+c39,
+arrayJoin(arrayMap(x -> toInt64(x), arrayFilter(x -> (length(x) > 0), splitByString(', ', c49)))) AS comp_c27,
+c41,
+c45,
+c46,
+c38
+FROM
+(
+SELECT
+'c57' AS c39,
+toString(c27) AS c49,
+1 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'c58' AS c39,
+arrayStringConcat(groupArray(toString(c27)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table12
+WHERE chain_id IN
+(
+SELECT chain_id
+FROM database.table12
+WHERE c27 IN (322)
+)
+UNION ALL
+SELECT
+'c59' AS c39,
+assumeNotNull(c27s_str) AS c49,
+0 AS c41,
+c50 AS c45,
+c51 AS c46,
+c52 AS c38
+FROM
+(
+SELECT *
+FROM table11
+WHERE c27 IN (322)
+) AS c1s_c59
+WHERE c27 IN (322)
+UNION ALL
+SELECT
+'superSupercalifragilisticexpialidocious' AS c39,
+arrayStringConcat(groupArray(toString(c1_id)), ', ') AS c49,
+0 AS c41,
+'' AS c45,
+'' AS c46,
+0 AS c38
+FROM database.table10
+WHERE c27 IN (322)
+) AS table9
+)
+) AS a
+) AS table8
+) AS table7
+GROUP BY comp_c27
+) AS table6
+WHERE (parseDateTimeBestEffort('2020-01-01') >= min_c32) AND (max_c32 >= (parseDateTimeBestEffort('2021-05-02') - 2))
+) AS table5
+ARRAY JOIN c39
+WHERE isNotNull(c39)
+) AS table4
+GROUP BY c39
+) AS table3
+) USING (c1)
+GROUP BY
+c1,
+c2
+) AS table2
+ORDER BY c1 ASC
+) AS table1
+FORMAT Null
+        ]]>
+    </query>
+</test>

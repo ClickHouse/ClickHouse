@@ -61,6 +61,7 @@ chmod 777 -R /var/lib/clickhouse
 clickhouse-client --query "SHOW DATABASES"
 
 clickhouse-client --query "ATTACH DATABASE datasets ENGINE = Ordinary"
+
 service clickhouse-server restart
 
 # Wait for server to start accepting connections
@@ -109,15 +110,25 @@ function run_tests()
     fi
 
     set +e
-    clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --no-stateless --hung-check --print-time "${ADDITIONAL_OPTIONS[@]}" \
+    clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --no-stateless --hung-check --print-time \
+        --skip 00168_parallel_processing_on_replicas "${ADDITIONAL_OPTIONS[@]}" \
         "$SKIP_TESTS_OPTION" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
+
+    clickhouse-test --timeout 1200 --testname --shard --zookeeper --check-zookeeper-session --no-stateless --hung-check --print-time \
+    00168_parallel_processing_on_replicas "${ADDITIONAL_OPTIONS[@]}" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee -a test_output/test_result.txt
+
     set -e
 }
 
 export -f run_tests
 timeout "$MAX_RUN_TIME" bash -c run_tests ||:
 
-./process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
+echo "Files in current directory"
+ls -la ./
+echo "Files in root directory"
+ls -la /
+
+/process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
 
 grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server.log ||:
 

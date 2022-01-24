@@ -1,5 +1,6 @@
 #include <Disks/HDFS/DiskHDFS.h>
 #include <Disks/DiskLocal.h>
+#include <Disks/RemoteDisksCommon.h>
 
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
@@ -70,11 +71,11 @@ DiskHDFS::DiskHDFS(
 }
 
 
-std::unique_ptr<ReadBufferFromFileBase> DiskHDFS::readFile(const String & path, const ReadSettings & read_settings, std::optional<size_t>) const
+std::unique_ptr<ReadBufferFromFileBase> DiskHDFS::readFile(const String & path, const ReadSettings & read_settings, std::optional<size_t>, std::optional<size_t>) const
 {
     auto metadata = readMeta(path);
 
-    LOG_TRACE(log,
+    LOG_TEST(log,
         "Read from file by path: {}. Existing HDFS objects: {}",
         backQuote(metadata_disk->getPath() + path), metadata.remote_fs_objects.size());
 
@@ -97,7 +98,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
 
     /// Single O_WRONLY in libhdfs adds O_TRUNC
     auto hdfs_buffer = std::make_unique<WriteBufferFromHDFS>(hdfs_path,
-                                                             config, buf_size,
+                                                             config, settings->replication, buf_size,
                                                              mode == WriteMode::Rewrite ? O_WRONLY :  O_WRONLY | O_APPEND);
 
     return std::make_unique<WriteIndirectBufferFromRemoteFS<WriteBufferFromHDFS>>(std::move(hdfs_buffer),
@@ -142,12 +143,13 @@ bool DiskHDFS::checkUniqueId(const String & hdfs_uri) const
 
 namespace
 {
-std::unique_ptr<DiskHDFSSettings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+std::unique_ptr<DiskHDFSSettings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Settings & settings)
 {
     return std::make_unique<DiskHDFSSettings>(
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
         config.getInt(config_prefix + ".thread_pool_size", 16),
-        config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000));
+        config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000),
+        settings.hdfs_replication);
 }
 }
 
@@ -159,21 +161,17 @@ void registerDiskHDFS(DiskFactory & factory)
                       ContextPtr context_,
                       const DisksMap & /*map*/) -> DiskPtr
     {
-        fs::path disk = fs::path(context_->getPath()) / "disks" / name;
-        fs::create_directories(disk);
-
         String uri{config.getString(config_prefix + ".endpoint")};
         checkHDFSURL(uri);
 
         if (uri.back() != '/')
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "HDFS path must ends with '/', but '{}' doesn't.", uri);
 
-        String metadata_path = context_->getPath() + "disks/" + name + "/";
-        auto metadata_disk = std::make_shared<DiskLocal>(name + "-metadata", metadata_path, 0);
+        auto metadata_disk = prepareForLocalMetadata(name, config, config_prefix, context_).second;
 
         return std::make_shared<DiskHDFS>(
             name, uri,
-            getSettings(config, config_prefix),
+            getSettings(config, config_prefix, context_->getSettingsRef()),
             metadata_disk, config);
     };
 

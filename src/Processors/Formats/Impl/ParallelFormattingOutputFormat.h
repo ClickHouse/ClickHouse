@@ -74,18 +74,23 @@ public:
         , pool(params.max_threads_for_parallel_formatting)
 
     {
-        /// Just heuristic. We need one thread for collecting, one thread for receiving chunks
-        /// and n threads for formatting.
-        processing_units.resize(params.max_threads_for_parallel_formatting + 2);
-        collector_thread = ThreadFromGlobalPool([thread_group = CurrentThread::getGroup(), this]
-        {
-            collectorThreadFunction(thread_group);
-        });
+        LOG_TEST(&Poco::Logger::get("ParallelFormattingOutputFormat"), "Parallel formatting is being used");
 
         NullWriteBuffer buf;
         save_totals_and_extremes_in_statistics = internal_formatter_creator(buf)->areTotalsAndExtremesUsedInFinalize();
 
-        LOG_TRACE(&Poco::Logger::get("ParallelFormattingOutputFormat"), "Parallel formatting is being used");
+        /// Just heuristic. We need one thread for collecting, one thread for receiving chunks
+        /// and n threads for formatting.
+        processing_units.resize(params.max_threads_for_parallel_formatting + 2);
+
+        /// Do not put any code that could throw an exception under this line.
+        /// Because otherwise the destructor of this class won't be called and this thread won't be joined.
+        /// Also some race condition is possible, because collector_thread runs in parallel with
+        /// the destruction of the objects already created in this scope.
+        collector_thread = ThreadFromGlobalPool([thread_group = CurrentThread::getGroup(), this]
+        {
+            collectorThreadFunction(thread_group);
+        });
     }
 
     ~ParallelFormattingOutputFormat() override

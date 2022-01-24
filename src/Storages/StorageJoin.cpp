@@ -261,9 +261,7 @@ void registerStorageJoin(StorageFactory & factory)
                     disk_name = setting.value.get<String>();
                 else if (setting.name == "persistent")
                 {
-                    auto join_settings = std::make_unique<JoinSettings>();
-                    join_settings->loadFromQuery(*args.storage_def);
-                    persistent = join_settings->persistent;
+                    persistent = setting.value.get<bool>();
                 }
                 else
                     throw Exception("Unknown setting " + setting.name + " for storage " + args.engine_name, ErrorCodes::BAD_ARGUMENTS);

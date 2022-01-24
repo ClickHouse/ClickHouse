@@ -33,6 +33,8 @@ public:
     String getID(const MergeTreeData & storage) const;
     String getID(const Block & partition_key_sample) const;
 
+    static std::optional<Row> tryParseValueFromID(const String & partition_id, const Block & partition_key_sample);
+
     void serializeText(const MergeTreeData & storage, WriteBuffer & out, const FormatSettings & format_settings) const;
 
     void load(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path);

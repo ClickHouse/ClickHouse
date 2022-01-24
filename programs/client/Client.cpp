@@ -1,33 +1,24 @@
 #include <stdlib.h>
 #include <fcntl.h>
-#include <signal.h>
 #include <map>
 #include <iostream>
-#include <fstream>
 #include <iomanip>
-#include <unordered_set>
-#include <algorithm>
 #include <optional>
 #include <base/scope_guard_safe.h>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
-#include <Poco/String.h>
 #include <filesystem>
 #include <string>
 #include "Client.h"
 #include "Core/Protocol.h"
 
-#include <base/argsToConfig.h>
 #include <base/find_symbols.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
+#include <Common/config_version.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <Common/TerminalSize.h>
 #include <Common/Config/configReadClient.h>
-#include "Common/MemoryTracker.h"
 
 #include <Core/QueryProcessingStage.h>
 #include <Client/TestHint.h>
@@ -57,11 +48,6 @@
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
-
-namespace CurrentMetrics
-{
-    extern const Metric MemoryTracking;
-}
 
 namespace fs = std::filesystem;
 
@@ -412,16 +398,6 @@ try
     std::cout << std::fixed << std::setprecision(3);
     std::cerr << std::fixed << std::setprecision(3);
 
-    /// Limit on total memory usage
-    size_t max_client_memory_usage = config().getInt64("max_memory_usage_in_client", 0 /*default value*/);
-
-    if (max_client_memory_usage != 0)
-    {
-        total_memory_tracker.setHardLimit(max_client_memory_usage);
-        total_memory_tracker.setDescription("(total)");
-        total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
-    }
-
     registerFormats();
     registerFunctions();
     registerAggregateFunctions();
@@ -705,16 +681,16 @@ bool Client::processWithFuzzing(const String & full_query)
             throw;
     }
 
+    if (!orig_ast)
+    {
+        // Can't continue after a parsing error
+        return true;
+    }
+
     // `USE db` should not be executed
     // since this will break every query after `DROP db`
     if (orig_ast->as<ASTUseQuery>())
     {
-        return true;
-    }
-
-    if (!orig_ast)
-    {
-        // Can't continue after a parsing error
         return true;
     }
 
@@ -1016,7 +992,6 @@ void Client::addOptions(OptionsDescription & options_description)
         ("opentelemetry-tracestate", po::value<std::string>(), "OpenTelemetry tracestate header as described by W3C Trace Context recommendation")
 
         ("no-warnings", "disable warnings when client connects to server")
-        ("max_memory_usage_in_client", po::value<int>(), "sets memory limit in client")
     ;
 
     /// Commandline options related to external tables.
