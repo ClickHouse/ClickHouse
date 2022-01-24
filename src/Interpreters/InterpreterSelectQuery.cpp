@@ -341,7 +341,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         {
             const auto & storage_values = static_cast<const StorageValues &>(*view_source);
             auto tmp_table_id = storage_values.getStorageID();
-            for (auto & t : joined_tables.tablesWithColumns())
+            for (const auto & t : joined_tables.tablesWithColumns())
                 uses_view_source |= (t.table.database == tmp_table_id.database_name && t.table.table == tmp_table_id.table_name);
         }
 

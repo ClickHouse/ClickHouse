@@ -34,7 +34,7 @@ ASTPtr ASTSelectQuery::clone() const
      * Since the positions map uses <key, position> we can copy it as is and ensure the new children array is created / pushed
      * in the same order as the existing one */
     res->children.clear();
-    for (auto & child : children)
+    for (const auto & child : children)
         res->children.push_back(child->clone());
 
     return res;
