@@ -37,7 +37,7 @@ def new_backup_name():
     return f"Disk('backups', '{backup_id_counter}/')"
 
 
-@pytest.mark.parametrize("engine", ["MergeTree", "Log", "TinyLog", "StripeLog"])
+@pytest.mark.parametrize("engine", ["MergeTree", "Log", "TinyLog", "StripeLog", "Memory"])
 def test_restore_table(engine):
     backup_name = new_backup_name()
     create_and_fill_table(engine=engine)
@@ -52,7 +52,7 @@ def test_restore_table(engine):
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
 
 
-@pytest.mark.parametrize("engine", ["MergeTree", "Log", "TinyLog", "StripeLog"])
+@pytest.mark.parametrize("engine", ["MergeTree", "Log", "TinyLog", "StripeLog", "Memory"])
 def test_restore_table_into_existing_table(engine):
     backup_name = new_backup_name()
     create_and_fill_table(engine=engine)
