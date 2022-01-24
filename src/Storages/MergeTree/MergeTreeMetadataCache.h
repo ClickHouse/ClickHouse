@@ -16,14 +16,15 @@ class MergeTreeMetadataCache
 public:
     using Status = rocksdb::Status;
 
+    static std::unique_ptr<MergeTreeMetadataCache> create(const String & dir, size_t size);
+
     explicit MergeTreeMetadataCache(rocksdb::DB * rocksdb_) : rocksdb{rocksdb_}
     {
         assert(rocksdb);
     }
 
-    static std::unique_ptr<MergeTreeMetadataCache> create(const String & dir, size_t size);
-
     MergeTreeMetadataCache(const MergeTreeMetadataCache &) = delete;
+
     MergeTreeMetadataCache & operator=(const MergeTreeMetadataCache &) = delete;
 
     Status put(const String & key, const String & value);

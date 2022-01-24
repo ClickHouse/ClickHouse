@@ -27,7 +27,6 @@ std::unique_ptr<MergeTreeMetadataCache> MergeTreeMetadataCache::create(const Str
     rocksdb::DB * db;
 
     options.create_if_missing = true;
-    options.statistics = rocksdb::CreateDBStatistics();
     auto cache = rocksdb::NewLRUCache(size);
     table_options.block_cache = cache;
     options.table_factory.reset(rocksdb::NewBlockBasedTableFactory(table_options));
