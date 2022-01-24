@@ -49,7 +49,7 @@ bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts)
 
         if (out_replaced_parts)
             out_replaced_parts->push_back(it->second);
-        part_info_to_name.erase(it++);
+        it = part_info_to_name.erase(it);
     }
 
     if (out_replaced_parts)
@@ -61,7 +61,7 @@ bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts)
         assert(part_info != it->first);
         if (out_replaced_parts)
             out_replaced_parts->push_back(it->second);
-        part_info_to_name.erase(it++);
+        it = part_info_to_name.erase(it);
     }
 
     if (it != part_info_to_name.end() && !part_info.isDisjoint(it->first))

@@ -37,6 +37,10 @@ message ExternalTable {
    // Format of the data to insert to the external table.
    string format = 4;
 
+   // Compression type used to compress `data`.
+   // Supported values: none, gzip(gz), deflate, brotli(br), lzma(xz), zstd(zst), lz4, bz2.
+   string compression_type = 6;
+
    // Settings for executing that insertion, applied after QueryInfo.settings.
    map<string, string> settings = 5;
 }
@@ -101,6 +105,25 @@ message QueryInfo {
    /// Controls how a ClickHouse server will compress query execution results before sending back to the client.
    /// If not set the compression settings from the configuration file will be used.
    Compression result_compression = 17;
+
+   // Compression type for `input_data`, `output_data`, `totals` and `extremes`.
+   // Supported compression types: none, gzip(gz), deflate, brotli(br), lzma(xz), zstd(zst), lz4, bz2.
+   // When used for `input_data` the client is responsible to compress data before putting it into `input_data`.
+   // When used for `output_data` or `totals` or `extremes` the client receives compressed data and should decompress it by itself.
+   // In the latter case consider to specify also `compression_level`.
+   string compression_type = 18;
+
+   // Compression level.
+   // WARNING: If it's not specified the compression level is set to zero by default which might be not the best choice for some compression types (see below).
+   // The compression level should be in the following range (the higher the number, the better the compression):
+   // none: compression level isn't used
+   // gzip: 0..9; 0 means no compression, 6 is recommended by default (compression level -1 also means 6)
+   // brotli: 0..11
+   // lzma: 0..9; 6 is recommended by default
+   // zstd: 1..22; 3 is recommended by default (compression level 0 also means 3)
+   // lz4: 0..16; values < 0 mean fast acceleration
+   // bz2: 1..9
+   int32 compression_level = 19;
 }
 
 enum LogsLevel {

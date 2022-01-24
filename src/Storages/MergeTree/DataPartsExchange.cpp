@@ -361,10 +361,10 @@ void Service::sendPartFromDiskRemoteMeta(const MergeTreeData::DataPartPtr & part
 
 MergeTreeData::DataPartPtr Service::findPart(const String & name)
 {
-    /// It is important to include PreCommitted and Outdated parts here because remote replicas cannot reliably
+    /// It is important to include PreActive and Outdated parts here because remote replicas cannot reliably
     /// determine the local state of the part, so queries for the parts in these states are completely normal.
     auto part = data.getPartIfExists(
-        name, {MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
+        name, {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
     if (part)
         return part;
 
@@ -591,6 +591,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
             block.getNamesAndTypesList(),
             {},
             CompressionCodecFactory::instance().get("NONE", {}));
+
         part_out.write(block);
         part_out.writeSuffixAndFinalizePart(new_projection_part);
         new_projection_part->checksums.checkEqual(checksums, /* have_uncompressed = */ true);
@@ -612,7 +613,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     new_data_part->partition.create(metadata_snapshot, block, 0, context);
 
     MergedBlockOutputStream part_out(
-        new_data_part, metadata_snapshot, block.getNamesAndTypesList(), {}, CompressionCodecFactory::instance().get("NONE", {}));
+        new_data_part, metadata_snapshot, block.getNamesAndTypesList(), {},
+        CompressionCodecFactory::instance().get("NONE", {}));
+
     part_out.write(block);
     part_out.writeSuffixAndFinalizePart(new_data_part);
     new_data_part->checksums.checkEqual(checksums, /* have_uncompressed = */ true);

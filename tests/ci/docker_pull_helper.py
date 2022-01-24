@@ -25,6 +25,11 @@ def get_images_with_versions(reports_path, required_image, pull=True):
                 images_path = os.path.join(root, 'changed_images.json')
                 break
 
+    if not images_path:
+        logging.info("Images file not found")
+    else:
+        logging.info("Images file path %s", images_path)
+
     if images_path is not None and os.path.exists(images_path):
         logging.info("Images file exists")
         with open(images_path, 'r', encoding='utf-8') as images_fd:

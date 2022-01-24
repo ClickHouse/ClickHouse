@@ -39,6 +39,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 
 #include <Access/Common/AccessRightsElement.h>
@@ -48,6 +49,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
@@ -454,6 +456,10 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
         {
             column_type = DataTypeFactory::instance().get(col_decl.type);
 
+            const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(column_type.get());
+            if (attach && aggregate_function_type && aggregate_function_type->isVersioned())
+                aggregate_function_type->setVersion(0, /* if_empty */true);
+
             if (col_decl.null_modifier)
             {
                 if (column_type->isNullable())
@@ -632,13 +638,14 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         /// Table function without columns list.
         auto table_function = TableFunctionFactory::instance().get(create.as_table_function, getContext());
         properties.columns = table_function->getActualTableStructure(getContext());
-        assert(!properties.columns.empty());
     }
     else if (create.is_dictionary)
     {
         return {};
     }
-    else
+    /// We can have queries like "CREATE TABLE <table> ENGINE=<engine>" if <engine>
+    /// supports schema inference (will determine table structure in it's constructor).
+    else if (!StorageFactory::instance().checkIfStorageSupportsSchemaInterface(create.storage->engine->name))
         throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
 
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
@@ -719,9 +726,8 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     if (create.storage || create.is_dictionary || create.isView())
     {
         if (create.temporary && create.storage && create.storage->engine && create.storage->engine->name != "Memory")
-            throw Exception(
-                "Temporary tables can only be created with ENGINE = Memory, not " + create.storage->engine->name,
-                ErrorCodes::INCORRECT_QUERY);
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Temporary tables can only be created with ENGINE = Memory, not {}", create.storage->engine->name);
 
         return;
     }
@@ -755,6 +761,11 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         if (as_create.is_live_view)
             throw Exception(
                 "Cannot CREATE a table AS " + qualified_name + ", it is a Live View",
+                ErrorCodes::INCORRECT_QUERY);
+
+        if (as_create.is_window_view)
+            throw Exception(
+                "Cannot CREATE a table AS " + qualified_name + ", it is a Window View",
                 ErrorCodes::INCORRECT_QUERY);
 
         if (as_create.is_dictionary)
@@ -971,9 +982,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         return {};
 
     /// If table has dependencies - add them to the graph
-    TableNamesSet loading_dependencies = getDependenciesSetFromCreateQuery(getContext()->getGlobalContext(), query_ptr);
+    QualifiedTableName qualified_name{database_name, create.getTable()};
+    TableNamesSet loading_dependencies = getDependenciesSetFromCreateQuery(getContext()->getGlobalContext(), qualified_name, query_ptr);
     if (!loading_dependencies.empty())
-        DatabaseCatalog::instance().addLoadingDependencies(QualifiedTableName{database_name, create.getTable()}, std::move(loading_dependencies));
+        DatabaseCatalog::instance().addLoadingDependencies(std::move(qualified_name), std::move(loading_dependencies));
 
     return fillTableIfNeeded(create);
 }
@@ -1023,6 +1035,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                     "{} {}.{} already exists", storage_name, backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
         }
 
+
         data_path = database->getTableDataPath(create);
 
         if (!create.attach && !data_path.empty() && fs::exists(fs::path{getContext()->getPath()} / data_path))
@@ -1071,7 +1084,10 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     {
         const auto & factory = TableFunctionFactory::instance();
         auto table_func = factory.get(create.as_table_function, getContext());
-        res = table_func->execute(create.as_table_function, getContext(), create.getTable(), properties.columns);
+        /// In case of CREATE AS table_function() query we should use global context
+        /// in storage creation because there will be no query context on server startup
+        /// and because storage lifetime is bigger than query context lifetime.
+        res = table_func->execute(create.as_table_function, getContext(), create.getTable(), properties.columns, /*use_global_context=*/true);
         res->renameInMemory({create.getDatabase(), create.getTable(), create.uuid});
     }
     else
@@ -1238,17 +1254,14 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 {
     /// If the query is a CREATE SELECT, insert the data into the table.
     if (create.select && !create.attach
-        && !create.is_ordinary_view && !create.is_live_view && (!create.is_materialized_view || create.is_populate))
+        && !create.is_ordinary_view && !create.is_live_view && !create.is_window_view
+        && (!create.is_materialized_view || create.is_populate))
     {
         auto insert = std::make_shared<ASTInsertQuery>();
         insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};
         insert->select = create.select->clone();
 
-        if (create.temporary && !getContext()->getSessionContext()->hasQueryContext())
-            getContext()->getSessionContext()->makeQueryContext();
-
-        return InterpreterInsertQuery(insert,
-            create.temporary ? getContext()->getSessionContext() : getContext(),
+        return InterpreterInsertQuery(insert, getContext(),
             getContext()->getSettingsRef().insert_allow_materialized_columns).execute();
     }
 

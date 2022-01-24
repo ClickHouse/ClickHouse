@@ -817,9 +817,19 @@ If the number of rows to be read from a file of a [MergeTree](../../engines/tabl
 
 Possible values:
 
--   Any positive integer.
+-   Positive integer.
 
-Default value: 163840.
+Default value: `163840`.
+
+## merge_tree_min_rows_for_concurrent_read_for_remote_filesystem {#merge-tree-min-rows-for-concurrent-read-for-remote-filesystem}
+
+The minimum number of lines to read from one file before [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) engine can parallelize reading, when reading from remote filesystem.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `163840`.
 
 ## merge_tree_min_bytes_for_concurrent_read {#setting-merge-tree-min-bytes-for-concurrent-read}
 
@@ -827,9 +837,19 @@ If the number of bytes to read from one file of a [MergeTree](../../engines/tabl
 
 Possible value:
 
--   Any positive integer.
+-   Positive integer.
 
-Default value: 251658240.
+Default value: `251658240`.
+
+## merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem {#merge-tree-min-bytes-for-concurrent-read-for-remote-filesystem}
+
+The minimum number of bytes to read from one file before [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) engine can parallelize reading, when reading from remote filesystem.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `251658240`.
 
 ## merge_tree_min_rows_for_seek {#setting-merge-tree-min-rows-for-seek}
 
@@ -884,26 +904,6 @@ Possible values:
 -   Any positive integer.
 
 Default value: 2013265920.
-
-## merge_tree_clear_old_temporary_directories_interval_seconds {#setting-merge-tree-clear-old-temporary-directories-interval-seconds}
-
-Sets the interval in seconds for ClickHouse to execute the cleanup of old temporary directories.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: `60` seconds.
-
-## merge_tree_clear_old_parts_interval_seconds {#setting-merge-tree-clear-old-parts-interval-seconds}
-
-Sets the interval in seconds for ClickHouse to execute the cleanup of old parts, WALs, and mutations.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: `1` second.
 
 ## min_bytes_to_use_direct_io {#settings-min-bytes-to-use-direct-io}
 
@@ -992,9 +992,16 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 
 Setting up query threads logging.
 
-Queries’ threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server configuration parameter.
+Query threads log into [system.query_thread_log](../../operations/system-tables/query_thread_log.md) table. This setting have effect only when [log_queries](#settings-log-queries) is true. Queries’ threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server configuration parameter.
 
-Example:
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: `1`.
+
+**Example**
 
 ``` text
 log_query_threads=1
@@ -1482,7 +1489,7 @@ Possible values:
 
 Default value: `1`.
 
-**See Also** 
+**See Also**
 
 -   [min_count_to_compile_aggregate_expression](#min_count_to_compile_aggregate_expression)
 
@@ -1700,18 +1707,17 @@ Quorum writes
 
 `INSERT` succeeds only when ClickHouse manages to correctly write data to the `insert_quorum` of replicas during the `insert_quorum_timeout`. If for any reason the number of replicas with successful writes does not reach the `insert_quorum`, the write is considered failed and ClickHouse will delete the inserted block from all the replicas where data has already been written.
 
-All the replicas in the quorum are consistent, i.e., they contain data from all previous `INSERT` queries. The `INSERT` sequence is linearized.
+When `insert_quorum_parallel` is disabled, all replicas in the quorum are consistent, i.e. they contain data from all previous `INSERT` queries (the `INSERT` sequence is linearized). When reading data written using `insert_quorum` and `insert_quorum_parallel` is disabled, you can turn on sequential consistency for `SELECT` queries using [select_sequential_consistency](#settings-select_sequential_consistency).
 
-When reading the data written from the `insert_quorum`, you can use the [select_sequential_consistency](#settings-select_sequential_consistency) option.
-
-ClickHouse generates an exception
+ClickHouse generates an exception:
 
 -   If the number of available replicas at the time of the query is less than the `insert_quorum`.
--   At an attempt to write data when the previous block has not yet been inserted in the `insert_quorum` of replicas. This situation may occur if the user tries to perform an `INSERT` before the previous one with the `insert_quorum` is completed.
+-   When `insert_quorum_parallel` is disabled and an attempt to write data is made when the previous block has not yet been inserted in `insert_quorum` of replicas. This situation may occur if the user tries to perform another `INSERT` query to the same table before the previous one with `insert_quorum` is completed.
 
 See also:
 
 -   [insert_quorum_timeout](#settings-insert_quorum_timeout)
+-   [insert_quorum_parallel](#settings-insert_quorum_parallel)
 -   [select_sequential_consistency](#settings-select_sequential_consistency)
 
 ## insert_quorum_timeout {#settings-insert_quorum_timeout}
@@ -1723,11 +1729,29 @@ Default value: 600 000 milliseconds (ten minutes).
 See also:
 
 -   [insert_quorum](#settings-insert_quorum)
+-   [insert_quorum_parallel](#settings-insert_quorum_parallel)
+-   [select_sequential_consistency](#settings-select_sequential_consistency)
+
+## insert_quorum_parallel {#settings-insert_quorum_parallel}
+
+Enables or disables parallelism for quorum `INSERT` queries. If enabled, additional `INSERT` queries can be sent while previous queries have not yet finished. If disabled, additional writes to the same table will be rejected.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 1.
+
+See also:
+
+-   [insert_quorum](#settings-insert_quorum)
+-   [insert_quorum_timeout](#settings-insert_quorum_timeout)
 -   [select_sequential_consistency](#settings-select_sequential_consistency)
 
 ## select_sequential_consistency {#settings-select_sequential_consistency}
 
-Enables or disables sequential consistency for `SELECT` queries:
+Enables or disables sequential consistency for `SELECT` queries. Requires `insert_quorum_parallel` to be disabled (enabled by default).
 
 Possible values:
 
@@ -1740,10 +1764,13 @@ Usage
 
 When sequential consistency is enabled, ClickHouse allows the client to execute the `SELECT` query only for those replicas that contain data from all previous `INSERT` queries executed with `insert_quorum`. If the client refers to a partial replica, ClickHouse will generate an exception. The SELECT query will not include data that has not yet been written to the quorum of replicas.
 
+When `insert_quorum_parallel` is enabled (the default), then `select_sequential_consistency` does not work. This is because parallel `INSERT` queries can be written to different sets of quorum replicas so there is no guarantee a single replica will have received all writes.
+
 See also:
 
 -   [insert_quorum](#settings-insert_quorum)
 -   [insert_quorum_timeout](#settings-insert_quorum_timeout)
+-   [insert_quorum_parallel](#settings-insert_quorum_parallel)
 
 ## insert_deduplicate {#settings-insert-deduplicate}
 
@@ -2088,7 +2115,7 @@ Possible values:
 
    - 0 — Optimization disabled.
    - 1 — Optimization enabled.
-   
+
 Default value: `1`.
 
 See also:
@@ -3127,6 +3154,12 @@ Possible values:
 
 Default value: `0`.
 
+!!! warning "Warning"
+    Nullable primary key usually indicates bad design. It is forbidden in almost all main stream DBMS. The feature is mainly for [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) and is not heavily tested. Use with care.
+
+!!! warning "Warning"
+    Do not enable this feature in version `<= 21.8`. It's not properly implemented and may lead to server crash.
+
 ## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
 
 Enables or disables rewriting all aggregate functions in a query, adding [-OrNull](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-ornull) suffix to them. Enable it for SQL standard compatibility.
@@ -3675,41 +3708,6 @@ Possible values:
 
 Default value: `0`.
 
-## materialized_postgresql_max_block_size {#materialized-postgresql-max-block-size}
-
-Sets the number of rows collected in memory before flushing data into PostgreSQL database table.
-
-Possible values:
-
--   Positive integer.
-
-Default value: `65536`.
-
-## materialized_postgresql_tables_list {#materialized-postgresql-tables-list}
-
-Sets a comma-separated list of PostgreSQL database tables, which will be replicated via [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) database engine.
-
-Default value: empty list — means whole PostgreSQL database will be replicated.
-
-## materialized_postgresql_allow_automatic_update {#materialized-postgresql-allow-automatic-update}
-
-Allows reloading table in the background, when schema changes are detected. DDL queries on the PostgreSQL side are not replicated via ClickHouse [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) engine, because it is not allowed with PostgreSQL logical replication protocol, but the fact of DDL changes is detected transactionally. In this case, the default behaviour is to stop replicating those tables once DDL is detected. However, if this setting is enabled, then, instead of stopping the replication of those tables, they will be reloaded in the background via database snapshot without data losses and replication will continue for them.
-
-Possible values:
-
--   0 — The table is not automatically updated in the background, when schema changes are detected.
--   1 — The table is automatically updated in the background, when schema changes are detected.
-
-Default value: `0`.
-
-## materialized_postgresql_replication_slot {#materialized-postgresql-replication-slot}
-
-A user-created replication slot. Must be used together with [materialized_postgresql_snapshot](#materialized-postgresql-snapshot).
-
-## materialized_postgresql_snapshot {#materialized-postgresql-snapshot}
-
-A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](../../engines/database-engines/materialized-postgresql.md) will be performed. Must be used together with [materialized_postgresql_replication_slot](#materialized-postgresql-replication-slot).
-
 ## allow_experimental_projection_optimization {#allow-experimental-projection-optimization}
 
 Enables or disables [projection](../../engines/table-engines/mergetree-family/mergetree.md#projections) optimization when processing `SELECT` queries.
@@ -3978,8 +3976,8 @@ If [wait_for_async_insert](#wait-for-async-insert) is enabled, every client will
 
 Possible values:
 
--   0 — Insertions are made synchronously, one after another. 
--   1 — Multiple asynchronous insertions enabled. 
+-   0 — Insertions are made synchronously, one after another.
+-   1 — Multiple asynchronous insertions enabled.
 
 Default value: `0`.
 
@@ -4048,6 +4046,41 @@ Possible values:
 -   0 — Timeout disabled.
 
 Default value: `0`.
+
+## alter_partition_verbose_result {#alter-partition-verbose-result}
+
+Enables or disables the display of information about the parts to which the manipulation operations with partitions and parts have been successfully applied.
+Applicable to [ATTACH PARTITION|PART](../../sql-reference/statements/alter/partition.md#alter_attach-partition) and to [FREEZE PARTITION](../../sql-reference/statements/alter/partition.md#alter_freeze-partition).
+
+Possible values:
+
+-   0 — disable verbosity.
+-   1 — enable verbosity.
+
+Default value: `0`.
+
+**Example**
+
+```sql
+CREATE TABLE test(a Int64, d Date, s String) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY a;
+INSERT INTO test VALUES(1, '2021-01-01', '');
+INSERT INTO test VALUES(1, '2021-01-01', '');
+ALTER TABLE test DETACH PARTITION ID '202101';
+
+ALTER TABLE test ATTACH PARTITION ID '202101' SETTINGS alter_partition_verbose_result = 1;
+
+┌─command_type─────┬─partition_id─┬─part_name────┬─old_part_name─┐
+│ ATTACH PARTITION │ 202101       │ 202101_7_7_0 │ 202101_5_5_0  │
+│ ATTACH PARTITION │ 202101       │ 202101_8_8_0 │ 202101_6_6_0  │
+└──────────────────┴──────────────┴──────────────┴───────────────┘
+
+ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
+
+┌─command_type─┬─partition_id─┬─part_name────┬─backup_name─┬─backup_path───────────────────┬─part_backup_path────────────────────────────────────────────┐
+│ FREEZE ALL   │ 202101       │ 202101_7_7_0 │ 8           │ /var/lib/clickhouse/shadow/8/ │ /var/lib/clickhouse/shadow/8/data/default/test/202101_7_7_0 │
+│ FREEZE ALL   │ 202101       │ 202101_8_8_0 │ 8           │ /var/lib/clickhouse/shadow/8/ │ /var/lib/clickhouse/shadow/8/data/default/test/202101_8_8_0 │
+└──────────────┴──────────────┴──────────────┴─────────────┴───────────────────────────────┴─────────────────────────────────────────────────────────────┘
+```
 
 ## format_capn_proto_enum_comparising_mode {#format-capn-proto-enum-comparising-mode}
 
@@ -4122,3 +4155,20 @@ Default value: `''`.
 Sets the character that is interpreted as a suffix after the result set for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
 
 Default value: `''`.
+
+## shutdown_wait_unfinished_queries
+
+Enables or disables waiting unfinished queries when shutdown server.
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled. The wait time equal shutdown_wait_unfinished config.
+
+Default value: 0.
+
+## shutdown_wait_unfinished
+
+The waiting time in seconds for currently handled connections when shutdown server.
+
+Default Value: 5.

@@ -37,7 +37,6 @@ protected:
     void processError(const String & query) const override;
     String getName() const override { return "local"; }
 
-    String getQueryTextPrefix() override;
     void printHelpMessage(const OptionsDescription & options_description) override;
 
     void addOptions(OptionsDescription & options_description) override;
