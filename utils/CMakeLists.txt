@@ -32,13 +32,14 @@ if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
     add_subdirectory (wal-dump)
     add_subdirectory (check-mysql-binlog)
     add_subdirectory (keeper-bench)
+    add_subdirectory (graphite-rollup)
 
-    if (USE_NURAFT)
+    if (TARGET ch_contrib::nuraft)
         add_subdirectory (keeper-data-dumper)
     endif ()
 
     # memcpy_jart.S contains position dependent code
-    if (NOT CMAKE_POSITION_INDEPENDENT_CODE AND NOT OS_DARWIN AND NOT OS_SUNOS AND NOT ARCH_AARCH64)
+    if (NOT CMAKE_POSITION_INDEPENDENT_CODE AND OS_LINUX AND ARCH_AMD64)
         add_subdirectory (memcpy-bench)
     endif ()
 endif ()

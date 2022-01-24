@@ -36,7 +36,7 @@ void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
 
 #if USE_CASSANDRA
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/SipHash.h>
 #include <IO/WriteHelpers.h>
 #include <Dictionaries/CassandraSource.h>

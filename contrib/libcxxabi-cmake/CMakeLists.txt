@@ -22,6 +22,7 @@ set(SRCS
 )
 
 add_library(cxxabi ${SRCS})
+set_target_properties(cxxabi PROPERTIES FOLDER "contrib/libcxxabi-cmake")
 
 # Third party library may have substandard code.
 target_compile_options(cxxabi PRIVATE -w)

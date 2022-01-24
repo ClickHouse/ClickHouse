@@ -20,6 +20,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -48,8 +49,10 @@ void ORCOutputStream::write(const void* buf, size_t length)
 }
 
 ORCBlockOutputFormat::ORCBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : IOutputFormat(header_, out_), format_settings{format_settings_}, output_stream(out_), data_types(header_.getDataTypes())
+    : IOutputFormat(header_, out_), format_settings{format_settings_}, output_stream(out_)
 {
+    for (const auto & type : header_.getDataTypes())
+        data_types.push_back(recursiveRemoveLowCardinality(type));
 }
 
 ORC_UNIQUE_PTR<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & type, const std::string & column_name)
@@ -84,6 +87,7 @@ ORC_UNIQUE_PTR<orc::Type> ORCBlockOutputFormat::getORCType(const DataTypePtr & t
         {
             return orc::createPrimitiveType(orc::TypeKind::DOUBLE);
         }
+        case TypeIndex::Date32: [[fallthrough]];
         case TypeIndex::Date:
         {
             return orc::createPrimitiveType(orc::TypeKind::DATE);
@@ -289,6 +293,7 @@ void ORCBlockOutputFormat::writeColumn(
             writeNumbers<UInt16, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const UInt16 & value){ return value; });
             break;
         }
+        case TypeIndex::Date32: [[fallthrough]];
         case TypeIndex::Int32:
         {
             writeNumbers<Int32, orc::LongVectorBatch>(orc_column, column, null_bytemap, [](const Int32 & value){ return value; });
@@ -482,15 +487,17 @@ void ORCBlockOutputFormat::consume(Chunk chunk)
     /// The size of the batch must be no less than total amount of array elements.
     ORC_UNIQUE_PTR<orc::ColumnVectorBatch> batch = writer->createRowBatch(getMaxColumnSize(chunk));
     orc::StructVectorBatch & root = dynamic_cast<orc::StructVectorBatch &>(*batch);
+    auto columns = chunk.detachColumns();
+    for (auto & column : columns)
+        column = recursiveRemoveLowCardinality(column);
+
     for (size_t i = 0; i != columns_num; ++i)
-    {
-        writeColumn(*root.fields[i], *chunk.getColumns()[i], data_types[i], nullptr);
-    }
+        writeColumn(*root.fields[i], *columns[i], data_types[i], nullptr);
     root.numElements = rows_num;
     writer->add(*batch);
 }
 
-void ORCBlockOutputFormat::finalize()
+void ORCBlockOutputFormat::finalizeImpl()
 {
     if (!writer)
         prepareWriter();
@@ -505,13 +512,13 @@ void ORCBlockOutputFormat::prepareWriter()
     options.setCompression(orc::CompressionKind::CompressionKind_NONE);
     size_t columns_count = header.columns();
     for (size_t i = 0; i != columns_count; ++i)
-        schema->addStructField(header.safeGetByPosition(i).name, getORCType(data_types[i], header.safeGetByPosition(i).name));
+        schema->addStructField(header.safeGetByPosition(i).name, getORCType(recursiveRemoveLowCardinality(data_types[i]), header.safeGetByPosition(i).name));
     writer = orc::createWriter(*schema, &output_stream, options);
 }
 
-void registerOutputFormatProcessorORC(FormatFactory & factory)
+void registerOutputFormatORC(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor("ORC", [](
+    factory.registerOutputFormat("ORC", [](
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams &,
@@ -528,7 +535,7 @@ void registerOutputFormatProcessorORC(FormatFactory & factory)
 namespace DB
 {
     class FormatFactory;
-    void registerOutputFormatProcessorORC(FormatFactory &)
+    void registerOutputFormatORC(FormatFactory &)
     {
     }
 }

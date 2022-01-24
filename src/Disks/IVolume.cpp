@@ -12,23 +12,6 @@ namespace ErrorCodes
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int INCONSISTENT_RESERVATIONS;
     extern const int NO_RESERVATIONS_PROVIDED;
-    extern const int UNKNOWN_VOLUME_TYPE;
-}
-
-String volumeTypeToString(VolumeType type)
-{
-    switch (type)
-    {
-        case VolumeType::JBOD:
-            return "JBOD";
-        case VolumeType::RAID1:
-            return "RAID1";
-        case VolumeType::SINGLE_DISK:
-            return "SINGLE_DISK";
-        case VolumeType::UNKNOWN:
-            return "UNKNOWN";
-    }
-    throw Exception("Unknown volume type, please add it to DB::volumeTypeToString", ErrorCodes::UNKNOWN_VOLUME_TYPE);
 }
 
 IVolume::IVolume(

@@ -3,6 +3,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Core/ProtocolDefines.h>
 
 namespace DB
 {

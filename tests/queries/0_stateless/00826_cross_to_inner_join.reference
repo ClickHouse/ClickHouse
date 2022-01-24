@@ -146,7 +146,7 @@ SELECT
     t2_00826.b
 FROM t1_00826
 ALL INNER JOIN t2_00826 ON b = t2_00826.a
-WHERE (b = t2_00826.a) AND (isNull(t2_00826.b) OR (t2_00826.b > t2_00826.a))
+WHERE (b = t2_00826.a) AND ((t2_00826.b IS NULL) OR (t2_00826.b > t2_00826.a))
 --- do not rewrite alias ---
 SELECT a AS b
 FROM t1_00826
@@ -178,4 +178,4 @@ SELECT
     t2_00826.b
 FROM t1_00826
 ALL INNER JOIN t2_00826 ON a = t2_00826.a
-WHERE (a = t2_00826.a) AND (isNull(t2_00826.b) OR (t2_00826.b < 2))
+WHERE (a = t2_00826.a) AND ((t2_00826.b IS NULL) OR (t2_00826.b < 2))

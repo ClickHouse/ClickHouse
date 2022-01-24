@@ -43,4 +43,4 @@ Question candidates:
 - Window function workarounds (row_number, lag/lead, running diff/sum/average)
 ##}
 
-{## [Original article](https://clickhouse.tech/docs/en/faq) ##}
+{## [Original article](https://clickhouse.com/docs/en/faq) ##}

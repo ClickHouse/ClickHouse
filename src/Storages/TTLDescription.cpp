@@ -6,16 +6,12 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTAssignment.h>
-#include <Parsers/ASTLiteral.h>
 #include <Storages/ColumnsDescription.h>
 #include <Interpreters/Context.h>
-
-#include <Parsers/queryToString.h>
 
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>

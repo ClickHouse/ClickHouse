@@ -1,6 +1,6 @@
 # 如何在Linux中编译Mac OS X ClickHouse {#ru-he-zai-linuxzhong-bian-yi-mac-os-x-clickhouse}
 
-Linux机器也可以编译运行在OS X系统的`clickhouse`二进制包，这可以用于在Linux上跑持续集成测试。如果要在Mac OS X上直接构建ClickHouse，请参考另外一篇指南： https://clickhouse.tech/docs/zh/development/build_osx/
+Linux机器也可以编译运行在OS X系统的`clickhouse`二进制包，这可以用于在Linux上跑持续集成测试。如果要在Mac OS X上直接构建ClickHouse，请参考另外一篇指南： https://clickhouse.com/docs/zh/development/build_osx/
 
 Mac OS X的交叉编译基于以下构建说明，请首先遵循它们。
 

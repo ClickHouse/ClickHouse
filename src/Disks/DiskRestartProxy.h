@@ -2,7 +2,7 @@
 
 #include "DiskDecorator.h"
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <shared_mutex>
 
 namespace DB
@@ -46,7 +46,8 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
-        size_t estimated_size) const override;
+        std::optional<size_t> read_hint,
+        std::optional<size_t> file_size) const override;
     std::unique_ptr<WriteBufferFromFileBase> writeFile(const String & path, size_t buf_size, WriteMode mode) override;
     void removeFile(const String & path) override;
     void removeFileIfExists(const String & path) override;

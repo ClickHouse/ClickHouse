@@ -1,5 +1,5 @@
 #include <type_traits>
-#include <common/bit_cast.h>
+#include <base/bit_cast.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionUnaryArithmetic.h>
 
@@ -64,6 +64,7 @@ struct RoundToExp2Impl
 {
     using ResultType = T;
     static constexpr const bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = false;
 
     static inline T apply(T x)
     {

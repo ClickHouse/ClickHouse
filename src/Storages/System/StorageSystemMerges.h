@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 

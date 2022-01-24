@@ -124,8 +124,8 @@ public:
         */
         struct Instruction
         {
-            const IColumn * condition = nullptr;
-            const IColumn * source = nullptr;
+            IColumn::Ptr condition = nullptr;
+            IColumn::Ptr source = nullptr;
 
             bool condition_always_true = false;
             bool condition_is_nullable = false;
@@ -160,15 +160,15 @@ public:
             }
             else
             {
-                const ColumnWithTypeAndName & cond_col = arguments[i];
+                IColumn::Ptr cond_col = arguments[i].column->convertToFullColumnIfLowCardinality();
 
                 /// We skip branches that are always false.
                 /// If we encounter a branch that is always true, we can finish.
 
-                if (cond_col.column->onlyNull())
+                if (cond_col->onlyNull())
                     continue;
 
-                if (const auto * column_const = checkAndGetColumn<ColumnConst>(*cond_col.column))
+                if (const auto * column_const = checkAndGetColumn<ColumnConst>(*cond_col))
                 {
                     Field value = column_const->getField();
 
@@ -181,26 +181,24 @@ public:
                 }
                 else
                 {
-                    if (isColumnNullable(*cond_col.column))
-                        instruction.condition_is_nullable = true;
-
-                    instruction.condition = cond_col.column.get();
+                    instruction.condition = cond_col;
+                    instruction.condition_is_nullable = instruction.condition->isNullable();
                 }
 
-                instruction.condition_is_short = cond_col.column->size() < arguments[0].column->size();
+                instruction.condition_is_short = cond_col->size() < arguments[0].column->size();
             }
 
             const ColumnWithTypeAndName & source_col = arguments[source_idx];
             instruction.source_is_short = source_col.column->size() < arguments[0].column->size();
             if (source_col.type->equals(*return_type))
             {
-                instruction.source = source_col.column.get();
+                instruction.source = source_col.column;
             }
             else
             {
                 /// Cast all columns to result type.
                 converted_columns_holder.emplace_back(castColumn(source_col, return_type));
-                instruction.source = converted_columns_holder.back().get();
+                instruction.source = converted_columns_holder.back();
             }
 
             if (instruction.source && isColumnConst(*instruction.source))
@@ -264,7 +262,7 @@ public:
 private:
     static void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments)
     {
-        int last_short_circuit_argument_index = checkShirtCircuitArguments(arguments);
+        int last_short_circuit_argument_index = checkShortCircuitArguments(arguments);
         if (last_short_circuit_argument_index < 0)
             return;
 

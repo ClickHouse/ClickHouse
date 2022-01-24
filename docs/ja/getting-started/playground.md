@@ -5,7 +5,7 @@ toc_title: Playground
 
 # ClickHouse Playground {#clickhouse-playground}
 
-[ClickHouse Playground](https://play.clickhouse.tech) では、サーバーやクラスタを設定することなく、即座にクエリを実行して ClickHouse を試すことができます。
+[ClickHouse Playground](https://play.clickhouse.com) では、サーバーやクラスタを設定することなく、即座にクエリを実行して ClickHouse を試すことができます。
 いくつかの例のデータセットは、Playground だけでなく、ClickHouse の機能を示すサンプルクエリとして利用可能です. また、 ClickHouse の LTS リリースで試すこともできます。
 
 ClickHouse Playground は、[Yandex.Cloud](https://cloud.yandex.com/)にホストされている m2.small [Managed Service for ClickHouse](https://cloud.yandex.com/services/managed-clickhouse) インスタンス(4 vCPU, 32 GB RAM) で提供されています。クラウドプロバイダの詳細情報については[こちら](../commercial/cloud.md)。
@@ -17,16 +17,16 @@ ClickHouse をサポートするソフトウェア製品の詳細情報は[こ�
 
 | パラメータ                    | 値                                      |
 | :---------------------------- | :-------------------------------------- |
-| HTTPS エンドポイント          | `https://play-api.clickhouse.tech:8443` |
-| ネイティブ TCP エンドポイント | `play-api.clickhouse.tech:9440`         |
+| HTTPS エンドポイント          | `https://play-api.clickhouse.com:8443` |
+| ネイティブ TCP エンドポイント | `play-api.clickhouse.com:9440`         |
 | ユーザ名                      | `playgrounnd`                           |
 | パスワード                    | `clickhouse`                            |
 
 
 特定のClickHouseのリリースで試すために、追加のエンドポイントがあります。（ポートとユーザー/パスワードは上記と同じです）。
 
-- 20.3 LTS: `play-api-v20-3.clickhouse.tech`
-- 19.14 LTS: `play-api-v19-14.clickhouse.tech`
+- 20.3 LTS: `play-api-v20-3.clickhouse.com`
+- 19.14 LTS: `play-api-v19-14.clickhouse.com`
 
 !!! note "備考"
 これらのエンドポイントはすべて、安全なTLS接続が必要です。
@@ -51,13 +51,13 @@ ClickHouse をサポートするソフトウェア製品の詳細情報は[こ�
 `curl` を用いて HTTPSエンドポイントへ接続する例:
 
 ``` bash
-curl "https://play-api.clickhouse.tech:8443/?query=SELECT+'Play+ClickHouse\!';&user=playground&password=clickhouse&database=datasets"
+curl "https://play-api.clickhouse.com:8443/?query=SELECT+'Play+ClickHouse\!';&user=playground&password=clickhouse&database=datasets"
 ```
 
 [CLI](../interfaces/cli.md) で TCP エンドポイントへ接続する例:
 
 ``` bash
-clickhouse client --secure -h play-api.clickhouse.tech --port 9440 -u playground --password clickhouse -q "SELECT 'Play ClickHouse\!'"
+clickhouse client --secure -h play-api.clickhouse.com --port 9440 -u playground --password clickhouse -q "SELECT 'Play ClickHouse\!'"
 ```
 
 ## 実装の詳細 {#implementation-details}

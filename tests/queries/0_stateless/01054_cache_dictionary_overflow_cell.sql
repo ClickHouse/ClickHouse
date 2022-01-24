@@ -1,3 +1,4 @@
+-- Tags: no-parallel
 
 create database if not exists test_01054_overflow;
 drop table if exists test_01054_overflow.ints;

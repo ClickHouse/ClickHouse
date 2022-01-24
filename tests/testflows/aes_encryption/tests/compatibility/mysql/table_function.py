@@ -174,7 +174,7 @@ def encrypt(self, mysql_datatype):
 def feature(self, node="clickhouse1", mysql_node="mysql1"):
     """Check usage of encryption functions with [MySQL table function].
 
-    [MySQL table function]: https://clickhouse.tech/docs/en/sql-reference/table-functions/mysql/
+    [MySQL table function]: https://clickhouse.com/docs/en/sql-reference/table-functions/mysql/
     """
     self.context.node = self.context.cluster.node(node)
     self.context.mysql_node = self.context.cluster.node(mysql_node)

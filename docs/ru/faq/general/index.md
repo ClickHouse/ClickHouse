@@ -21,4 +21,4 @@ toc_title: Общие вопросы
 !!! info "Если вы не нашли то, что искали:"
     Загляните в другие категории F.A.Q. или поищите в остальных разделах документации, ориентируясь по оглавлению слева.
 
-[Original article](https://clickhouse.tech/docs/ru/faq/general/) <!--hide-->
+[Original article](https://clickhouse.com/docs/ru/faq/general/) <!--hide-->

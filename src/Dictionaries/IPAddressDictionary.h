@@ -10,8 +10,8 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
 #include <Poco/Net/IPAddress.h>
-#include <common/StringRef.h>
-#include <common/logger_useful.h>
+#include <base/StringRef.h>
+#include <base/logger_useful.h>
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
@@ -56,7 +56,7 @@ public:
         return std::make_shared<IPAddressDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, require_nonempty);
     }
 
-    const IDictionarySource * getSource() const override { return source_ptr.get(); }
+    DictionarySourcePtr getSource() const override { return source_ptr; }
 
     const DictionaryLifetime & getLifetime() const override { return dict_lifetime; }
 
@@ -69,6 +69,8 @@ public:
 
     DictionaryKeyType getKeyType() const override { return DictionaryKeyType::Complex; }
 
+    void convertKeyColumns(Columns & key_columns, DataTypes & key_types) const override;
+
     ColumnPtr getColumn(
         const std::string& attribute_name,
         const DataTypePtr & result_type,
@@ -78,7 +80,7 @@ public:
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
-    Pipe read(const Names & column_names, size_t max_block_size) const override;
+    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
 private:
 
@@ -112,6 +114,7 @@ private:
             Decimal64,
             Decimal128,
             Decimal256,
+            DateTime64,
             Float32,
             Float64,
             UUID,
@@ -135,6 +138,7 @@ private:
             ContainerType<Decimal64>,
             ContainerType<Decimal128>,
             ContainerType<Decimal256>,
+            ContainerType<DateTime64>,
             ContainerType<Float32>,
             ContainerType<Float64>,
             ContainerType<UUID>,

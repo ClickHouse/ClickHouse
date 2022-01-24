@@ -57,7 +57,7 @@ void MergeTreeWriteAheadLog::init()
 
     /// Small hack: in NativeBlockOutputStream header is used only in `getHeader` method.
     /// To avoid complex logic of changing it during ALTERs we leave it empty.
-    block_out = std::make_unique<NativeBlockOutputStream>(*out, 0, Block{});
+    block_out = std::make_unique<NativeWriter>(*out, 0, Block{});
     min_block_number = std::numeric_limits<Int64>::max();
     max_block_number = -1;
     bytes_at_last_sync = 0;
@@ -118,8 +118,8 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
     std::unique_lock lock(write_mutex);
 
     MergeTreeData::MutableDataPartsVector parts;
-    auto in = disk->readFile(path, {}, 0);
-    NativeBlockInputStream block_in(*in, 0);
+    auto in = disk->readFile(path, {});
+    NativeReader block_in(*in, 0);
     NameSet dropped_parts;
 
     while (!in->eof())
@@ -197,12 +197,12 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
                 {},
                 CompressionCodecFactory::instance().get("NONE", {}));
 
-            part->minmax_idx.update(block, storage.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
+            part->minmax_idx->update(block, storage.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
             part->partition.create(metadata_snapshot, block, 0, context);
+            part->setColumns(block.getNamesAndTypesList());
             if (metadata_snapshot->hasSortingKey())
                 metadata_snapshot->getSortingKey().expression->execute(block);
 
-            part_out.writePrefix();
             part_out.write(block);
 
             for (const auto & projection : metadata_snapshot->getProjections())

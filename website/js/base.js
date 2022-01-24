@@ -1,7 +1,7 @@
 (function () {
     Sentry.init({
         dsn: 'https://2b95b52c943f4ad99baccab7a9048e4d@o388870.ingest.sentry.io/5246103',
-        environment: window.location.hostname === 'clickhouse.tech' ? 'prod' : 'test'
+        environment: window.location.hostname === 'clickhouse.com' ? 'prod' : 'test'
     });
     $(document).click(function (event) {
         var target = $(event.target);
@@ -36,7 +36,7 @@
         }
     });
 
-    if (window.location.hostname.endsWith('clickhouse.tech')) {
+    if (window.location.hostname.endsWith('clickhouse.com')) {
         $('a.favicon').each(function () {
             $(this).css({
                 background: 'url(/favicon/' + this.hostname + ') left center no-repeat',
@@ -67,13 +67,6 @@
         });
     }
 
-    $('#feedback_email, .feedback-email').each(function() {
-        var name = window.location.host.substring(0, 10)
-        var feedback_address = name + '-feedback' + '@yandex-team.com';
-        $(this).attr('href', 'mailto:' + feedback_address);
-        $(this).html(feedback_address);
-    });
-
     (function (d, w, c) {
         (w[c] = w[c] || []).push(function() {
             var is_single_page = $('html').attr('data-single-page') === 'true';
@@ -86,6 +79,14 @@
                     webvisor: !is_single_page
                 });
             } catch(e) { }
+            
+            if (!is_single_page) {
+                $('head').each(function(_, element) {
+                   $(element).append(
+                       '<script async src="https://www.googletagmanager.com/gtag/js?id=G-KF1LLRTQ5Q"></script><script>window.dataLayer = window.dataLayer || [];function gtag(){dataLayer.push(arguments);}gtag(\'js\', new Date());gtag(\'config\', \'G-KF1LLRTQ5Q\');</script>'
+                   );
+                });
+            }
         });
 
         var n = d.getElementsByTagName("script")[0],
@@ -94,7 +95,7 @@
         s.type = "text/javascript";
         s.async = true;
         s.src = "/js/metrika.js";
-        if (window.location.hostname.endsWith('clickhouse.tech')) {
+        if (window.location.hostname.endsWith('clickhouse.com')) {
             if (w.opera == "[object Opera]") {
                 d.addEventListener("DOMContentLoaded", f, false);
             } else {

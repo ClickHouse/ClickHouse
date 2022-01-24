@@ -26,7 +26,7 @@ public:
 
     bool canContainDistributedTables() const override { return false; }
 
-    void loadStoredObjects(ContextMutablePtr context, bool has_force_restore_data_flag, bool force_attach, bool skip_startup_tables) override;
+    void loadStoredObjects(ContextMutablePtr context, bool force_restore, bool force_attach, bool skip_startup_tables) override;
 
     void createTable(
         ContextPtr context,
@@ -64,9 +64,9 @@ public:
 
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
 
-    void attachTable(const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
+    void attachTable(ContextPtr context, const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
 
-    StoragePtr detachTable(const String & table_name) override;
+    StoragePtr detachTable(ContextPtr context, const String & table_name) override;
 
     void shutdown() override;
 

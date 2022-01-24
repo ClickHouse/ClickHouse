@@ -1,7 +1,7 @@
 ---
 title: 'How to Update Data in ClickHouse'
 date: '2016-11-20'
-image: 'https://blog-images.clickhouse.tech/en/2016/how-to-update-data-in-clickhouse/main.jpg'
+image: 'https://blog-images.clickhouse.com/en/2016/how-to-update-data-in-clickhouse/main.jpg'
 tags: ['features', 'update', 'delete', 'CollapsingMergeTree', 'partitions']
 ---
 

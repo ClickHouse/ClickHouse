@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <user_directories replace="replace">
         <users_xml>
             <path>/etc/clickhouse-server/users3.xml</path>
@@ -14,4 +14,4 @@
     </user_directories>
     <users_config remove="remove"/>
     <access_control_path remove="remove"/>
-</yandex>
+</clickhouse>

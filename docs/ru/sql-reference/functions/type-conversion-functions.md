@@ -90,6 +90,26 @@ SELECT toInt64OrNull('123123'), toInt8OrNull('123qwe123');
 └─────────────────────────┴───────────────────────────┘
 ```
 
+## toInt(8\|16\|32\|64\|128\|256)OrDefault {#toint8163264128256orDefault}
+
+Принимает аргумент типа String и пытается его распарсить в Int(8\|16\|32\|64\|128\|256). Если не удалось —  возвращает значение по умолчанию.
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT toInt64OrDefault('123123', cast('-1' as Int64)), toInt8OrDefault('123qwe123', cast('-1' as Int8));
+```
+
+Результат:
+
+``` text
+┌─toInt64OrDefault('123123', CAST('-1', 'Int64'))─┬─toInt8OrDefault('123qwe123', CAST('-1', 'Int8'))─┐
+│                                          123123 │                                               -1 │
+└─────────────────────────────────────────────────┴──────────────────────────────────────────────────┘
+```
+
 ## toUInt(8\|16\|32\|64\|256) {#touint8163264}
 
 Преобраует входное значение к типу [UInt](../../sql-reference/functions/type-conversion-functions.md). Семейство функций включает:
@@ -132,11 +152,15 @@ SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8);
 
 ## toUInt(8\|16\|32\|64\|256)OrNull {#touint8163264ornull}
 
+## toUInt(8\|16\|32\|64\|256)OrDefault {#touint8163264256ordefault}
+
 ## toFloat(32\|64) {#tofloat3264}
 
 ## toFloat(32\|64)OrZero {#tofloat3264orzero}
 
 ## toFloat(32\|64)OrNull {#tofloat3264ornull}
+
+## toFloat(32\|64)OrDefault {#tofloat3264ordefault}
 
 ## toDate {#todate}
 
@@ -146,23 +170,27 @@ Cиноним: `DATE`.
 
 ## toDateOrNull {#todateornull}
 
+## toDateOrDefault {#todateordefault}
+
 ## toDateTime {#todatetime}
 
 ## toDateTimeOrZero {#todatetimeorzero}
 
 ## toDateTimeOrNull {#todatetimeornull}
 
+## toDateTimeOrDefault {#todatetimeordefault}
+
 ## toDate32 {#todate32}
 
 Конвертирует аргумент в значение типа [Date32](../../sql-reference/data-types/date32.md). Если значение выходит за границы диапазона, возвращается пограничное значение `Date32`. Если аргумент имеет тип [Date](../../sql-reference/data-types/date.md), учитываются границы типа `Date`.
 
-**Синтаксис** 
+**Синтаксис**
 
 ``` sql
 toDate32(value)
 ```
 
-**Аргументы** 
+**Аргументы**
 
 -   `value` — Значение даты. [String](../../sql-reference/data-types/string.md), [UInt32](../../sql-reference/data-types/int-uint.md) или [Date](../../sql-reference/data-types/date.md).
 
@@ -250,6 +278,28 @@ SELECT toDate32OrNull('1955-01-01'), toDate32OrNull('');
 └──────────────────────────────┴────────────────────┘
 ```
 
+## toDate32OrDefault {#todate32-or-default}
+
+Конвертирует аргумент в значение типа [Date32](../../sql-reference/data-types/date32.md). Если значение выходит за границы диапазона, возвращается нижнее пограничное значение `Date32`. Если аргумент имеет тип [Date](../../sql-reference/data-types/date.md), учитываются границы типа `Date`. Возвращает значение по умолчанию, если получен недопустимый аргумент.
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT
+    toDate32OrDefault('1930-01-01', toDate32('2020-01-01')),
+    toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'));
+```
+
+Результат:
+
+``` text
+┌─toDate32OrDefault('1930-01-01', toDate32('2020-01-01'))─┬─toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'))─┐
+│                                              1930-01-01 │                                                2020-01-01 │
+└─────────────────────────────────────────────────────────┴───────────────────────────────────────────────────────────┘
+```
+
 ## toDecimal(32\|64\|128\|256) {#todecimal3264128}
 
 Преобразует `value` к типу данных [Decimal](../../sql-reference/functions/type-conversion-functions.md) с точностью `S`. `value` может быть числом или строкой. Параметр `S` (scale) задаёт число десятичных знаков.
@@ -293,9 +343,9 @@ SELECT toDecimal32OrNull(toString(-1.111), 5) AS val, toTypeName(val);
 Результат:
 
 ``` text
-┌──────val─┬─toTypeName(toDecimal32OrNull(toString(-1.111), 5))─┐
-│ -1.11100 │ Nullable(Decimal(9, 5))                            │
-└──────────┴────────────────────────────────────────────────────┘
+┌────val─┬─toTypeName(toDecimal32OrNull(toString(-1.111), 5))─┐
+│ -1.111 │ Nullable(Decimal(9, 5))                            │
+└────────┴────────────────────────────────────────────────────┘
 ```
 
 Запрос:
@@ -310,6 +360,59 @@ SELECT toDecimal32OrNull(toString(-1.111), 2) AS val, toTypeName(val);
 ┌──val─┬─toTypeName(toDecimal32OrNull(toString(-1.111), 2))─┐
 │ ᴺᵁᴸᴸ │ Nullable(Decimal(9, 2))                            │
 └──────┴────────────────────────────────────────────────────┘
+```
+
+## toDecimal(32\|64\|128\|256)OrDefault {#todecimal3264128256ordefault}
+
+Преобразует входную строку в значение с типом данных [Decimal(P,S)](../../sql-reference/data-types/decimal.md). Семейство функций включает в себя:
+
+-   `toDecimal32OrDefault(expr, S)` — возвращает значение типа `Decimal32(S)`.
+-   `toDecimal64OrDefault(expr, S)` — возвращает значение типа `Decimal64(S)`.
+-   `toDecimal128OrDefault(expr, S)` — возвращает значение типа `Decimal128(S)`.
+-   `toDecimal256OrDefault(expr, S)` — возвращает значение типа `Decimal256(S)`.
+
+Эти функции следует использовать вместо функций `toDecimal*()`, если при ошибке обработки входного значения вы хотите получать значение по умолчанию вместо исключения.
+
+**Аргументы**
+
+-   `expr` — [выражение](../syntax.md#syntax-expressions), возвращающее значение типа [String](../../sql-reference/functions/type-conversion-functions.md). ClickHouse ожидает текстовое представление десятичного числа. Например, `'1.111'`.
+-   `S` — количество десятичных знаков в результирующем значении.
+
+**Возвращаемое значение**
+
+Значение типа `Decimal(P,S)`. Значение содержит:
+
+-   Число с `S` десятичными знаками, если ClickHouse распознал число во входной строке.
+-   Значение по умолчанию типа `Decimal(P,S)`, если ClickHouse не смог распознать число во входной строке или входное число содержит больше чем `S` десятичных знаков.
+
+**Примеры**
+
+Запрос:
+
+``` sql
+SELECT toDecimal32OrDefault(toString(-1.111), 5) AS val, toTypeName(val);
+```
+
+Результат:
+
+``` text
+┌────val─┬─toTypeName(toDecimal32OrDefault(toString(-1.111), 5))─┐
+│ -1.111 │ Decimal(9, 5)                                         │
+└────────┴───────────────────────────────────────────────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT toDecimal32OrDefault(toString(-1.111), 2) AS val, toTypeName(val);
+```
+
+Результат:
+
+``` text
+┌─val─┬─toTypeName(toDecimal32OrDefault(toString(-1.111), 2))─┐
+│   0 │ Decimal(9, 2)                                         │
+└─────┴───────────────────────────────────────────────────────┘
 ```
 
 ## toDecimal(32\|64\|128\|256)OrZero {#todecimal3264128orzero}
@@ -346,9 +449,9 @@ SELECT toDecimal32OrZero(toString(-1.111), 5) AS val, toTypeName(val);
 Результат:
 
 ``` text
-┌──────val─┬─toTypeName(toDecimal32OrZero(toString(-1.111), 5))─┐
-│ -1.11100 │ Decimal(9, 5)                                      │
-└──────────┴────────────────────────────────────────────────────┘
+┌────val─┬─toTypeName(toDecimal32OrZero(toString(-1.111), 5))─┐
+│ -1.111 │ Decimal(9, 5)                                      │
+└────────┴────────────────────────────────────────────────────┘
 ```
 
 Запрос:
@@ -748,6 +851,63 @@ SELECT
 ┌─uint8─┬─int8─┬─fixed_string─┐
 │  ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ         │
 └───────┴──────┴──────────────┘
+```
+
+
+## accurateCastOrDefault(x, T[, default_value]) {#type_conversion_function-accurate-cast_or_default}
+
+Преобразует входное значение `x` в указанный тип данных `T`. Если исходное значение не может быть преобразовано к целевому типу, возвращает значение по умолчанию или `default_value`, если оно указано.
+
+**Синтаксис**
+
+```sql
+accurateCastOrDefault(x, T)
+```
+
+**Аргументы**
+
+-   `x` — входное значение.
+-   `T` — имя возвращаемого типа данных.
+-   `default_value` — значение по умолчанию возвращаемого типа данных.
+
+**Возвращаемое значение**
+
+-   Значение, преобразованное в указанный тип `T`.
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT toTypeName(accurateCastOrDefault(5, 'UInt8'));
+```
+
+Результат:
+
+``` text
+┌─toTypeName(accurateCastOrDefault(5, 'UInt8'))─┐
+│ UInt8                                         │
+└───────────────────────────────────────────────┘
+```
+
+Запрос:
+
+``` sql
+SELECT
+    accurateCastOrDefault(-1, 'UInt8') as uint8,
+    accurateCastOrDefault(-1, 'UInt8', 5) as uint8_default,
+    accurateCastOrDefault(128, 'Int8') as int8,
+    accurateCastOrDefault(128, 'Int8', 5) as int8_default,
+    accurateCastOrDefault('Test', 'FixedString(2)') as fixed_string,
+    accurateCastOrDefault('Test', 'FixedString(2)', 'Te') as fixed_string_default;
+```
+
+Результат:
+
+``` text
+┌─uint8─┬─uint8_default─┬─int8─┬─int8_default─┬─fixed_string─┬─fixed_string_default─┐
+│     0 │             5 │    0 │            5 │              │ Te                   │
+└───────┴───────────────┴──────┴──────────────┴──────────────┴──────────────────────┘
 ```
 
 ## toInterval(Year\|Quarter\|Month\|Week\|Day\|Hour\|Minute\|Second) {#function-tointerval}

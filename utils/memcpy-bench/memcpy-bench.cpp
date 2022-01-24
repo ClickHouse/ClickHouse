@@ -1,3 +1,7 @@
+#ifdef HAS_RESERVED_IDENTIFIER
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
+
 #include <memory>
 #include <cstddef>
 #include <stdexcept>
@@ -11,7 +15,7 @@
 
 #include <pcg_random.hpp>
 
-#include <common/defines.h>
+#include <base/defines.h>
 
 #include <Common/Stopwatch.h>
 

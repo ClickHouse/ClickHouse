@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/Transforms/DistinctTransform.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 
@@ -63,7 +63,7 @@ DistinctStep::DistinctStep(
     }
 }
 
-void DistinctStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     if (checkColumnsAlreadyDistinct(columns, input_streams.front().distinct_columns))
         return;
@@ -71,9 +71,9 @@ void DistinctStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryP
     if (!pre_distinct)
         pipeline.resize(1);
 
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
-        if (stream_type != QueryPipeline::StreamType::Main)
+        if (stream_type != QueryPipelineBuilder::StreamType::Main)
             return nullptr;
 
         return std::make_shared<DistinctTransform>(header, set_size_limits, limit_hint, columns);

@@ -26,6 +26,7 @@ SELECT
 ## timeZone {#timezone}
 
 Returns the timezone of the server.
+If it is executed in the context of a distributed table, then it generates a normal column with values relevant to each shard. Otherwise it produces a constant value.
 
 **Syntax**
 
@@ -56,7 +57,7 @@ Alias: `toTimezone`.
 **Arguments**
 
 -   `value` — Time or date and time. [DateTime64](../../sql-reference/data-types/datetime64.md).
--   `timezone` — Timezone for the returned value. [String](../../sql-reference/data-types/string.md).
+-   `timezone` — Timezone for the returned value. [String](../../sql-reference/data-types/string.md). This argument is a constant, because `toTimezone` changes the timezone of a column (timezone is an attribute of `DateTime*` types).
 
 **Returned value**
 
@@ -322,7 +323,7 @@ Truncates sub-seconds.
 **Syntax**
 
 ``` sql
-toStartOfSecond(value[, timezone])
+toStartOfSecond(value, [timezone])
 ```
 
 **Arguments**

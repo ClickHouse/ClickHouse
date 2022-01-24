@@ -1,3 +1,6 @@
+-- Tags: long, replica, no-replicated-database
+-- Tag no-replicated-database: Old syntax is not allowed
+
 DROP TABLE IF EXISTS replicated_truncate1;
 DROP TABLE IF EXISTS replicated_truncate2;
 
@@ -13,7 +16,7 @@ SELECT * FROM replicated_truncate1 ORDER BY k;
 SELECT * FROM replicated_truncate2 ORDER BY k;
 
 SELECT '======After Truncate And Empty======';
-TRUNCATE TABLE replicated_truncate1;
+TRUNCATE TABLE replicated_truncate1 SETTINGS replication_alter_partitions_sync=2;
 
 SELECT * FROM replicated_truncate1 ORDER BY k;
 SELECT * FROM replicated_truncate2 ORDER BY k;

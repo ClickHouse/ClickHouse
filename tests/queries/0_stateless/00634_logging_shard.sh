@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: shard
+
 set -e
 
 # Get all server logs

@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
-#include <common/arithmeticOverflow.h>
+#include <base/arithmeticOverflow.h>
 
 namespace DB
 {
@@ -10,6 +10,7 @@ struct MinusImpl
 {
     using ResultType = typename NumberTraits::ResultOfSubtraction<A, B>::Type;
     static const constexpr bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
     static inline NO_SANITIZE_UNDEFINED Result apply(A a, B b)

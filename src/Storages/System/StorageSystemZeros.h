@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <optional>
 #include <Storages/IStorage.h>
 
@@ -30,6 +30,7 @@ public:
         unsigned num_streams) override;
 
     bool hasEvenlyDistributedRead() const override { return true; }
+    bool isSystemStorage() const override { return true; }
 
 private:
     bool multithreaded;

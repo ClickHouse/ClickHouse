@@ -507,4 +507,4 @@ SELECT h3GetResolution(617420388352917503) as res
 └─────┘
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/geo/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/geo/) <!--hide-->

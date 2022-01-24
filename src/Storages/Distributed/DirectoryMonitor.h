@@ -24,6 +24,8 @@ class BackgroundSchedulePool;
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 
+class ISource;
+
 /** Details of StorageDistributed.
   * This type is not designed for standalone use.
   */
@@ -48,7 +50,7 @@ public:
 
     void shutdownAndDropAllData();
 
-    static ProcessorPtr createSourceFromFile(const String & file_name);
+    static std::shared_ptr<ISource> createSourceFromFile(const String & file_name);
 
     /// For scheduling via DistributedBlockOutputStream
     bool addAndSchedule(size_t file_size, size_t ms);

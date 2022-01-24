@@ -40,11 +40,7 @@ public:
     size_t getSizeOfValueInMemory() const override;
     bool onlyNull() const override;
     bool canBeInsideLowCardinality() const override { return nested_data_type->canBeInsideLowCardinality(); }
-
-    DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
-    ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const override;
-    SerializationPtr getSubcolumnSerialization(
-        const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const override;
+    bool canBePromoted() const override { return nested_data_type->canBePromoted(); }
 
     const DataTypePtr & getNestedType() const { return nested_data_type; }
 private:

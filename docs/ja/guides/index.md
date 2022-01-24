@@ -13,4 +13,4 @@ ClickHouseを使用してさまざまなタスクを解決するのに役立つ�
 -   [簡単なクラスター設定のチュートリアル](../getting-started/tutorial.md)
 -   [ClickHouseでのCatBoostモデルの適用](apply-catboost-model.md)
 
-[元の記事](https://clickhouse.tech/docs/en/guides/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/guides/) <!--hide-->

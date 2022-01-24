@@ -8,7 +8,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -195,7 +195,7 @@ std::string getLexicalErrorMessage(
     out << getErrorTokenDescription(last_token.type);
     if (last_token.size())
     {
-       out << ": '" << StringRef{last_token.begin, last_token.size()} << "'";
+       out << ": '" << std::string_view{last_token.begin, last_token.size()} << "'";
     }
 
     return out.str();

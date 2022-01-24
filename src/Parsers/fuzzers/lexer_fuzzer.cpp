@@ -1,6 +1,6 @@
 #include <map>
 #include <Parsers/Lexer.h>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>

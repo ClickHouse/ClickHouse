@@ -10,4 +10,4 @@ toc_title: JDBC Driver
     -   [ClickHouse-Native-JDBC](https://github.com/housepower/ClickHouse-Native-JDBC)
     -   [clickhouse4j](https://github.com/blynkkk/clickhouse4j)
 
-[Original article](https://clickhouse.tech/docs/en/interfaces/jdbc/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/interfaces/jdbc/) <!--hide-->

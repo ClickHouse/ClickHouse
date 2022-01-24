@@ -87,4 +87,4 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
     -   指数
     -   複製
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/file/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/file/) <!--hide-->

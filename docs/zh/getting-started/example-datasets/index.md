@@ -18,4 +18,4 @@ toc_title: "\u5BFC\u8A00"
 -   [New York Taxi Data](../../getting-started/example-datasets/nyc-taxi.md)
 -   [OnTime](../../getting-started/example-datasets/ontime.md)
 
-[原始文章](https://clickhouse.tech/docs/en/getting_started/example_datasets) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/getting_started/example_datasets) <!--hide-->

@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 SET send_logs_level = 'fatal';
 SELECT '----00489----';
 DROP TABLE IF EXISTS pk;

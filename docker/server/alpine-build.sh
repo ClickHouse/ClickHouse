@@ -4,7 +4,7 @@ set -x
 REPO_CHANNEL="${REPO_CHANNEL:-stable}" # lts / testing / prestable / etc
 REPO_URL="${REPO_URL:-"https://repo.yandex.ru/clickhouse/tgz/${REPO_CHANNEL}"}"
 VERSION="${VERSION:-20.9.3.45}"
-DOCKER_IMAGE="${DOCKER_IMAGE:-yandex/clickhouse-server}"
+DOCKER_IMAGE="${DOCKER_IMAGE:-clickhouse/clickhouse-server}"
 
 # where original files live
 DOCKER_BUILD_FOLDER="${BASH_SOURCE%/*}"

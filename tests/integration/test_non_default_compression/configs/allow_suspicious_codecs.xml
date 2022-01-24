@@ -1,7 +1,7 @@
-<yandex>
+<clickhouse>
     <profiles>
         <default>
             <allow_suspicious_codecs>1</allow_suspicious_codecs>
         </default>
     </profiles>
-</yandex>
+</clickhouse>

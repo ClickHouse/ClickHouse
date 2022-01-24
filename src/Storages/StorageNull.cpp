@@ -41,11 +41,14 @@ void StorageNull::checkAlterIsPossible(const AlterCommands & commands, ContextPt
     auto name_deps = getDependentViewsByColumn(context);
     for (const auto & command : commands)
     {
-        if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
-            && command.type != AlterCommand::Type::DROP_COLUMN && command.type != AlterCommand::Type::COMMENT_COLUMN)
-            throw Exception(
-                "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
-                ErrorCodes::NOT_IMPLEMENTED);
+        if (command.type != AlterCommand::Type::ADD_COLUMN
+            && command.type != AlterCommand::Type::MODIFY_COLUMN
+            && command.type != AlterCommand::Type::DROP_COLUMN
+            && command.type != AlterCommand::Type::COMMENT_COLUMN
+            && command.type != AlterCommand::Type::COMMENT_TABLE)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+                command.type, getName());
+
         if (command.type == AlterCommand::DROP_COLUMN && !command.clear)
         {
             const auto & deps_mv = name_deps[command.column_name];
@@ -61,7 +64,7 @@ void StorageNull::checkAlterIsPossible(const AlterCommands & commands, ContextPt
 }
 
 
-void StorageNull::alter(const AlterCommands & params, ContextPtr context, TableLockHolder &)
+void StorageNull::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder &)
 {
     auto table_id = getStorageID();
 

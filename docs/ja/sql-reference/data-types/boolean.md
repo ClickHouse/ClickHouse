@@ -9,4 +9,4 @@ toc_title: "\u30D6\u30FC\u30EB\u5024"
 
 ブール値には別の型はありません。 UInt8型を使用し、値0または1に制限します。
 
-[元の記事](https://clickhouse.tech/docs/en/data_types/boolean/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/data_types/boolean/) <!--hide-->

@@ -30,7 +30,7 @@ struct WindowFunctionWorkspace
     std::vector<size_t> argument_column_indices;
 
     // Will not be initialized for a pure window function.
-    AlignedBuffer aggregate_function_state;
+    mutable AlignedBuffer aggregate_function_state;
 
     // Argument columns. Be careful, this is a per-block cache.
     std::vector<const IColumn *> argument_columns;
@@ -39,6 +39,7 @@ struct WindowFunctionWorkspace
 
 struct WindowTransformBlock
 {
+    Columns original_input_columns;
     Columns input_columns;
     MutableColumns output_columns;
 
@@ -218,8 +219,8 @@ public:
 #endif
     }
 
-    auto moveRowNumber(const RowNumber & _x, int offset) const;
-    auto moveRowNumberNoCheck(const RowNumber & _x, int offset) const;
+    auto moveRowNumber(const RowNumber & _x, int64_t offset) const;
+    auto moveRowNumberNoCheck(const RowNumber & _x, int64_t offset) const;
 
     void assertValid(const RowNumber & x) const
     {

@@ -40,6 +40,10 @@ SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')
 └────────────────────┴────────┘
 ```
 
+## MD4 {#hash_functions-md4}
+
+Calculates the MD4 from a string and returns the resulting set of bytes as FixedString(16).
+
 ## MD5 {#hash_functions-md5}
 
 Calculates the MD5 from a string and returns the resulting set of bytes as FixedString(16).
@@ -85,9 +89,39 @@ SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00
 
 ## sipHash128 {#hash_functions-siphash128}
 
-Calculates SipHash from a string.
-Accepts a String-type argument. Returns FixedString(16).
-Differs from sipHash64 in that the final xor-folding state is only done up to 128 bits.
+Produces a 128-bit [SipHash](https://131002.net/siphash/) hash value. Differs from [sipHash64](#hash_functions-siphash64) in that the final xor-folding state is done up to 128 bits.
+
+**Syntax**
+
+``` sql
+sipHash128(par1,...)
+```
+
+**Arguments**
+
+The function takes a variable number of input parameters. Arguments can be any of the [supported data types](../../sql-reference/data-types/index.md).
+
+**Returned value**
+
+A 128-bit `SipHash` hash value.
+
+Type: [FixedString(16)](../../sql-reference/data-types/fixedstring.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT hex(sipHash128('foo', '\x01', 3));
+```
+
+Result:
+
+``` text
+┌─hex(sipHash128('foo', '', 3))────┐
+│ 9DE516A64A414D4B1B609415E4523F24 │
+└──────────────────────────────────┘
+```
 
 ## cityHash64 {#cityhash64}
 
@@ -137,18 +171,49 @@ This is a relatively fast non-cryptographic hash function of average quality for
 Calculates a 64-bit hash code from any type of integer.
 It works faster than intHash32. Average quality.
 
-## SHA1 {#sha1}
+## SHA1, SHA224, SHA256, SHA512 {#sha}
 
-## SHA224 {#sha224}
+Calculates SHA-1, SHA-224, SHA-256, SHA-512 hash from a string and returns the resulting set of bytes as [FixedString](../data-types/fixedstring.md).
 
-## SHA256 {#sha256}
+**Syntax**
 
-## SHA512 {#sha512}
+``` sql
+SHA1('s')
+...
+SHA512('s')
+```
 
-Calculates SHA-1, SHA-224, SHA-256 or SHA-512 from a string and returns the resulting set of bytes as FixedString(20), FixedString(28), FixedString(32), or FixedString(64).
 The function works fairly slowly (SHA-1 processes about 5 million short strings per second per processor core, while SHA-224 and SHA-256 process about 2.2 million).
 We recommend using this function only in cases when you need a specific hash function and you can’t select it.
-Even in these cases, we recommend applying the function offline and pre-calculating values when inserting them into the table, instead of applying it in SELECTS.
+Even in these cases, we recommend applying the function offline and pre-calculating values when inserting them into the table, instead of applying it in `SELECT` queries.
+
+**Arguments**
+
+-   `s` — Input string for SHA hash calculation. [String](../data-types/string.md).
+
+**Returned value**
+
+-   SHA hash as a hex-unencoded FixedString. SHA-1 returns as FixedString(20), SHA-224 as FixedString(28), SHA-256 — FixedString(32), SHA-512 — FixedString(64).
+
+Type: [FixedString](../data-types/fixedstring.md).
+
+**Example**
+
+Use the [hex](../functions/encoding-functions.md#hex) function to represent the result as a hex-encoded string.
+
+Query:
+
+``` sql
+SELECT hex(SHA1('abc'));
+```
+
+Result:
+
+``` text
+┌─hex(SHA1('abc'))─────────────────────────┐
+│ A9993E364706816ABA3E25717850C26C9CD0D89D │
+└──────────────────────────────────────────┘
+```
 
 ## URLHash(url\[, N\]) {#urlhashurl-n}
 
@@ -424,28 +489,36 @@ SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 
 Produces a 128-bit [MurmurHash3](https://github.com/aappleby/smhasher) hash value.
 
+**Syntax**
+
 ``` sql
-murmurHash3_128( expr )
+murmurHash3_128(expr)
 ```
 
 **Arguments**
 
--   `expr` — [Expressions](../../sql-reference/syntax.md#syntax-expressions) returning a [String](../../sql-reference/data-types/string.md)-type value.
+-   `expr` — A list of [expressions](../../sql-reference/syntax.md#syntax-expressions). [String](../../sql-reference/data-types/string.md).
 
-**Returned Value**
+**Returned value**
 
-A [FixedString(16)](../../sql-reference/data-types/fixedstring.md) data type hash value.
+A 128-bit `MurmurHash3` hash value.
+
+Type: [FixedString(16)](../../sql-reference/data-types/fixedstring.md).
 
 **Example**
 
+Query:
+
 ``` sql
-SELECT hex(murmurHash3_128('example_string')) AS MurmurHash3, toTypeName(MurmurHash3) AS type;
+SELECT hex(murmurHash3_128('foo', 'foo', 'foo'));
 ```
 
+Result:
+
 ``` text
-┌─MurmurHash3──────────────────────┬─type───┐
-│ 368A1A311CB7342253354B548E7E7E71 │ String │
-└──────────────────────────────────┴────────┘
+┌─hex(murmurHash3_128('foo', 'foo', 'foo'))─┐
+│ F8F7AD9B6CD4CF117A71E277E2EC2931          │
+└───────────────────────────────────────────┘
 ```
 
 ## xxHash32, xxHash64 {#hash-functions-xxhash32}

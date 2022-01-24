@@ -1,9 +1,10 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
+#include <Common/RWLock.h>
 #include <Storages/StorageSet.h>
-#include <Storages/JoinSettings.h>
+#include <Storages/TableLockHolder.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 
@@ -35,7 +36,7 @@ public:
 
     /// Return instance of HashJoin holding lock that protects from insertions to StorageJoin.
     /// HashJoin relies on structure of hash table that's why we need to return it with locked mutex.
-    HashJoinPtr getJoinLocked(std::shared_ptr<TableJoin> analyzed_join) const;
+    HashJoinPtr getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context) const;
 
     /// Get result type for function "joinGet(OrNull)"
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
@@ -43,7 +44,7 @@ public:
     /// Execute function "joinGet(OrNull)" on data block.
     /// Takes rwlock for read to prevent parallel StorageJoin updates during processing data block
     /// (but not during processing whole query, it's safe for joinGet that doesn't involve `used_flags` from HashJoin)
-    ColumnWithTypeAndName joinGet(const Block & block, const Block & block_with_columns_to_add) const;
+    ColumnWithTypeAndName joinGet(const Block & block, const Block & block_with_columns_to_add, ContextPtr context) const;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
 
@@ -73,12 +74,13 @@ private:
 
     /// Protect state for concurrent use in insertFromBlock and joinBlock.
     /// Lock is stored in HashJoin instance during query and blocks concurrent insertions.
-    mutable std::shared_mutex rwlock;
+    mutable RWLock rwlock = RWLockImpl::create();
     mutable std::mutex mutate_mutex;
 
-    void insertBlock(const Block & block) override;
+    void insertBlock(const Block & block, ContextPtr context) override;
     void finishInsert() override {}
-    size_t getSize() const override;
+    size_t getSize(ContextPtr context) const override;
+    RWLockImpl::LockHolder tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const;
 
 protected:
     StorageJoin(

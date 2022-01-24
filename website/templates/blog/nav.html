@@ -4,7 +4,7 @@
             <img id="docs-logo-icon" src="/images/logo.svg" alt="ClickHouse logo" title="ClickHouse logo"/>
         </a>
         <div class="w-100 navbar-text text-left d-none d-md-block">
-            <h2 class="display-6 m-0 p-0 d-inline">
+            <h2 class="display-4 text-reset m-0 p-0 d-inline">
                 <a href="/blog/{{ language }}/" class="text-reset text-decoration-none">
                     {{ config.site_name }}
                 </a>
@@ -32,10 +32,10 @@
                         GitHub
                      </a>
                 </li>
-                <li id="languages-wrapper" class="nav-item dropdown">
+                <li id="languages-wrapper" class="nav-item dropdown mr-3">
                     <div id="languages-dropdown">
                         <a class="nav-link dropdown-toggle d-inline-block text-reset" href="#" id="lang-dropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                            <img src="/images/flags/{{ language }}.svg" alt="{{ config.extra.languages[language] }}" title="{{ config.extra.languages[language] }}" width="32" class="d-inline-block mt-n1" />
+                            <img src="/images/flags/{{ language }}.svg" alt="{{ config.extra.languages[language] }}" title="{{ config.extra.languages[language] }}" width="60" class="d-inline-block" />
                         </a>
                         <div class="dropdown-menu" aria-labelledby="lang-dropdown">
                             {% for code, name in config.extra.languages.items() %}

@@ -21,4 +21,4 @@ Columns:
 
 -   [SHOW PROFILES](../../sql-reference/statements/show.md#show-profiles-statement)
 
-[Original article](https://clickhouse.tech/docs/en/operations/system-tables/settings_profiles) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/settings_profiles) <!--hide-->

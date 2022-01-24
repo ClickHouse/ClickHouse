@@ -76,7 +76,7 @@ public:
 
     void consume(Chunk chunk) override
     {
-        auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
+        auto block = getHeader().cloneWithColumns(chunk.detachColumns());
         block.updateHash(*new_hash);
         new_blocks->push_back(std::move(block));
     }

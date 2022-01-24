@@ -1,8 +1,14 @@
-# docker build -t yandex/clickhouse-pvs-test .
+# rebuild in #33610
+# docker build -t clickhouse/pvs-test .
 
-FROM yandex/clickhouse-binary-builder
+ARG FROM_TAG=latest
+FROM clickhouse/binary-builder:$FROM_TAG
 
-RUN apt-get update --yes \
+# PVS studio doesn't support aarch64/arm64, so there is a check for it everywhere
+# We'll produce an empty image for arm64
+ARG TARGETARCH
+
+RUN test x$TARGETARCH = xarm64 || ( apt-get update --yes \
     && apt-get install \
         bash \
         wget \
@@ -15,7 +21,7 @@ RUN apt-get update --yes \
         libprotoc-dev \
         libgrpc++-dev \
         libc-ares-dev \
-        --yes --no-install-recommends
+        --yes --no-install-recommends )
 
 #RUN wget -nv -O - http://files.viva64.com/etc/pubkey.txt | sudo apt-key add -
 #RUN sudo wget -nv -O /etc/apt/sources.list.d/viva64.list http://files.viva64.com/etc/viva64.list
@@ -27,20 +33,22 @@ RUN apt-get update --yes \
 
 ENV PKG_VERSION="pvs-studio-latest"
 
-RUN set -x \
-    && export PUBKEY_HASHSUM="686e5eb8b3c543a5c54442c39ec876b6c2d912fe8a729099e600017ae53c877dda3368fe38ed7a66024fe26df6b5892a" \
+RUN test x$TARGETARCH = xarm64 || ( set -x \
+    && export PUBKEY_HASHSUM="ad369a2e9d8b8c30f5a9f2eb131121739b79c78e03fef0f016ea51871a5f78cd4e6257b270dca0ac3be3d1f19d885516" \
     && wget -nv https://files.viva64.com/etc/pubkey.txt -O /tmp/pubkey.txt \
     && echo "${PUBKEY_HASHSUM} /tmp/pubkey.txt" | sha384sum -c \
     && apt-key add /tmp/pubkey.txt \
     && wget -nv "https://files.viva64.com/${PKG_VERSION}.deb" \
     && { debsig-verify ${PKG_VERSION}.deb \
     || echo "WARNING: Some file was just downloaded from the internet without any validation and we are installing it into the system"; } \
-    && dpkg -i "${PKG_VERSION}.deb"
+    && dpkg -i "${PKG_VERSION}.deb" )
 
-CMD echo "Running PVS version $PKG_VERSION" && cd /repo_folder && pvs-studio-analyzer credentials $LICENCE_NAME $LICENCE_KEY -o ./licence.lic  \
-    && cmake . -D"ENABLE_EMBEDDED_COMPILER"=OFF -D"USE_INTERNAL_PROTOBUF_LIBRARY"=OFF -D"USE_INTERNAL_GRPC_LIBRARY"=OFF \
+ENV CCACHE_DIR=/test_output/ccache
+
+CMD echo "Running PVS version $PKG_VERSION" && mkdir -p $CCACHE_DIR && cd /repo_folder && pvs-studio-analyzer credentials $LICENCE_NAME $LICENCE_KEY -o ./licence.lic  \
+    && cmake . -D"ENABLE_EMBEDDED_COMPILER"=OFF -D"DISABLE_HERMETIC_BUILD"=ON -DCMAKE_C_COMPILER=clang-13 -DCMAKE_CXX_COMPILER=clang\+\+-13 \
     && ninja re2_st clickhouse_grpc_protos \
-    && pvs-studio-analyzer analyze -o pvs-studio.log -e contrib -j 4 -l ./licence.lic; \
+    && pvs-studio-analyzer analyze -o pvs-studio.log -e contrib -j "$(nproc)" -l ./licence.lic; \
     cp /repo_folder/pvs-studio.log /test_output; \
     plog-converter -a GA:1,2 -t fullhtml -o /test_output/pvs-studio-html-report pvs-studio.log; \
     plog-converter -a GA:1,2 -t tasklist -o /test_output/pvs-studio-task-report.txt pvs-studio.log

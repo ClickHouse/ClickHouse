@@ -1,22 +1,30 @@
 #pragma once
 
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
+#include <Parsers/IAST.h>
+#include <Parsers/ASTQueryWithOnCluster.h>
+
 
 namespace DB
 {
 
-class ASTCreateFunctionQuery : public IAST
+class ASTCreateFunctionQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
-    String function_name;
+    ASTPtr function_name;
     ASTPtr function_core;
 
-    String getID(char) const override { return "CreateFunctionQuery"; }
+    bool or_replace = false;
+    bool if_not_exists = false;
+
+    String getID(char delim) const override { return "CreateFunctionQuery" + (delim + getFunctionName()); }
 
     ASTPtr clone() const override;
 
     void formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTCreateFunctionQuery>(clone()); }
+
+    String getFunctionName() const;
 };
 
 }

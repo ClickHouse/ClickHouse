@@ -8,10 +8,10 @@ toc_title: SHOW
 ## SHOW CREATE TABLE {#show-create-table}
 
 ``` sql
-SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY] [db.]table [INTO OUTFILE filename] [FORMAT format]
+SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY|VIEW] [db.]table|view [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Возвращает один столбец типа `String` с именем statement, содержащий одно значение — запрос `CREATE TABLE`, с помощью которого был создан указанный объект.
+Возвращает один столбец типа `String` с именем statement, содержащий одно значение — запрос `CREATE`, с помощью которого был создан указанный объект.
 
 ## SHOW DATABASES {#show-databases}
 
@@ -91,7 +91,7 @@ SHOW DATABASES LIMIT 2
 
 ### Смотрите также {#see-also}
 
--   [CREATE DATABASE](https://clickhouse.tech/docs/ru/sql-reference/statements/create/database/#query-language-create-database)
+-   [CREATE DATABASE](https://clickhouse.com/docs/ru/sql-reference/statements/create/database/#query-language-create-database)
 
 ## SHOW PROCESSLIST {#show-processlist}
 
@@ -190,8 +190,8 @@ SHOW TABLES FROM system LIMIT 2
 
 ### Смотрите также {#see-also}
 
--   [Create Tables](https://clickhouse.tech/docs/ru/getting-started/tutorial/#create-tables)
--   [SHOW CREATE TABLE](https://clickhouse.tech/docs/ru/sql-reference/statements/show/#show-create-table)
+-   [Create Tables](https://clickhouse.com/docs/ru/getting-started/tutorial/#create-tables)
+-   [SHOW CREATE TABLE](https://clickhouse.com/docs/ru/sql-reference/statements/show/#show-create-table)
 
 ## SHOW DICTIONARIES {#show-dictionaries}
 

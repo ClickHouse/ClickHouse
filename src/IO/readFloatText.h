@@ -2,7 +2,7 @@
 #include <type_traits>
 #include <IO/ReadHelpers.h>
 #include <Core/Defines.h>
-#include <common/shift10.h>
+#include <base/shift10.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <double-conversion/double-conversion.h>
 
@@ -341,6 +341,8 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
         negative = true;
         ++in.position();
     }
+    else if (*in.position() == '+')
+        ++in.position();
 
     auto count_after_sign = in.count();
 

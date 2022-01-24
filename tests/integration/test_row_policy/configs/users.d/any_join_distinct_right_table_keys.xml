@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <profiles>
         <default>
             <any_join_distinct_right_table_keys>1</any_join_distinct_right_table_keys>
         </default>
     </profiles>
-</yandex>
+</clickhouse>

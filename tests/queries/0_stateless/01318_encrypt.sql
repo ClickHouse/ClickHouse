@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- Tag no-fasttest: Depends on OpenSSL
+
 --- aes_encrypt_mysql(string, key, block_mode[, init_vector, AAD])
 -- The MySQL-compatitable encryption, only ecb, cbc, cfb128 and ofb modes are supported,
 -- just like for MySQL

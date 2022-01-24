@@ -72,4 +72,4 @@ Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should n
 
 **注:** その `default` プロファイルには特別な処理があります。 `default` プロのデフォルトの制約、その制限するすべてのユーザーまでの彼らのメソッドを明示的にこれらのユーザー
 
-[元の記事](https://clickhouse.tech/docs/en/operations/settings/constraints_on_settings/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/settings/constraints_on_settings/) <!--hide-->

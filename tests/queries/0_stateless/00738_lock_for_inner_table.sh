@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-ordinary-database
+
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

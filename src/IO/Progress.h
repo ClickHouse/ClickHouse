@@ -3,7 +3,7 @@
 #include <atomic>
 #include <cstddef>
 #include <functional>
-#include <common/types.h>
+#include <base/types.h>
 
 #include <Core/Defines.h>
 
@@ -121,7 +121,7 @@ struct Progress
 
 
 /** Callback to track the progress of the query.
-  * Used in IBlockInputStream and Context.
+  * Used in QueryPipeline and Context.
   * The function takes the number of rows in the last block, the number of bytes in the last block.
   * Note that the callback can be called from different threads.
   */

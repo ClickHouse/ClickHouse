@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
 <dictionary>
     <name>default_string</name>
     <source>
@@ -32,4 +32,4 @@
         </attribute>
     </structure>
 </dictionary>
-</yandex>
+</clickhouse>

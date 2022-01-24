@@ -18,9 +18,10 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
 #include <Parsers/queryToString.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Storages/KeyDescription.h>
@@ -277,27 +278,6 @@ const KeyCondition::AtomMap KeyCondition::atom_map
         }
     },
     {
-        "notLike",
-        [] (RPNElement & out, const Field & value)
-        {
-            if (value.getType() != Field::Types::String)
-                return false;
-
-            String prefix = extractFixedPrefixFromLikePattern(value.get<const String &>());
-            if (prefix.empty())
-                return false;
-
-            String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
-
-            out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
-            out.range = !right_bound.empty()
-                        ? Range(prefix, true, right_bound, false)
-                        : Range::createLeftBounded(prefix, true);
-
-            return true;
-        }
-    },
-    {
         "startsWith",
         [] (RPNElement & out, const Field & value)
         {
@@ -333,8 +313,9 @@ const KeyCondition::AtomMap KeyCondition::atom_map
         [] (RPNElement & out, const Field &)
         {
             out.function = RPNElement::FUNCTION_IS_NULL;
-            // When using NULL_LAST, isNull means [+Inf, +Inf]
-            out.range = Range(Field(POSITIVE_INFINITY));
+            // isNull means +Inf (NULLS_LAST) or -Inf (NULLS_FIRST),
+            // which is equivalent to not in Range (-Inf, +Inf)
+            out.range = Range();
             return true;
         }
     }
@@ -1299,39 +1280,57 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, 
                 }
             }
 
+            key_expr_type = recursiveRemoveLowCardinality(key_expr_type);
+            DataTypePtr key_expr_type_not_null;
+            bool key_expr_type_is_nullable = false;
+            if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(key_expr_type.get()))
+            {
+                key_expr_type_is_nullable = true;
+                key_expr_type_not_null = nullable_type->getNestedType();
+            }
+            else
+                key_expr_type_not_null = key_expr_type;
+
             bool cast_not_needed = is_set_const /// Set args are already casted inside Set::createFromAST
-                || ((isNativeNumber(key_expr_type) || isDateTime(key_expr_type))
+                || ((isNativeNumber(key_expr_type_not_null) || isDateTime(key_expr_type_not_null))
                     && (isNativeNumber(const_type) || isDateTime(const_type))); /// Numbers and DateTime are accurately compared without cast.
 
-            if (!cast_not_needed && !key_expr_type->equals(*const_type))
+            if (!cast_not_needed && !key_expr_type_not_null->equals(*const_type))
             {
                 if (const_value.getType() == Field::Types::String)
                 {
-                    const_value = convertFieldToType(const_value, *key_expr_type);
+                    const_value = convertFieldToType(const_value, *key_expr_type_not_null);
                     if (const_value.isNull())
                         return false;
                     // No need to set is_constant_transformed because we're doing exact conversion
                 }
                 else
                 {
-                    DataTypePtr common_type = getLeastSupertype({key_expr_type, const_type});
+                    DataTypePtr common_type = tryGetLeastSupertype({key_expr_type_not_null, const_type});
+                    if (!common_type)
+                        return false;
+
                     if (!const_type->equals(*common_type))
                     {
                         castValueToType(common_type, const_value, const_type, node);
 
                         // Need to set is_constant_transformed unless we're doing exact conversion
-                        if (!key_expr_type->equals(*common_type))
+                        if (!key_expr_type_not_null->equals(*common_type))
                             is_constant_transformed = true;
                     }
-                    if (!key_expr_type->equals(*common_type))
+                    if (!key_expr_type_not_null->equals(*common_type))
                     {
+                        auto common_type_maybe_nullable = (key_expr_type_is_nullable && !common_type->isNullable())
+                            ? DataTypePtr(std::make_shared<DataTypeNullable>(common_type))
+                            : common_type;
                         ColumnsWithTypeAndName arguments{
-                            {nullptr, key_expr_type, ""}, {DataTypeString().createColumnConst(1, common_type->getName()), common_type, ""}};
+                            {nullptr, key_expr_type, ""},
+                            {DataTypeString().createColumnConst(1, common_type_maybe_nullable->getName()), common_type_maybe_nullable, ""}};
                         FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl();
                         auto func_cast = func_builder_cast->build(arguments);
 
                         /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
-                        if (!func_cast || (!single_point && !func_cast->hasInformationAboutMonotonicity()))
+                        if (!single_point && !func_cast->hasInformationAboutMonotonicity())
                             return false;
                         chain.push_back(func_cast);
                     }
@@ -1988,7 +1987,10 @@ BoolMask KeyCondition::checkInHyperrectangle(
             /// No need to apply monotonic functions as nulls are kept.
             bool intersects = element.range.intersectsRange(*key_range);
             bool contains = element.range.containsRange(*key_range);
+
             rpn_stack.emplace_back(intersects, !contains);
+            if (element.function == RPNElement::FUNCTION_IS_NULL)
+                rpn_stack.back() = !rpn_stack.back();
         }
         else if (
             element.function == RPNElement::FUNCTION_IN_SET

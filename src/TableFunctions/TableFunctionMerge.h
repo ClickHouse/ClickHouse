@@ -21,8 +21,8 @@ private:
     const char * getStorageTypeName() const override { return "Merge"; }
 
     using TableSet = std::set<String>;
-    using DbToTableSetMap = std::map<String, TableSet>;
-    const DbToTableSetMap & getSourceDatabasesAndTables(ContextPtr context) const;
+    using DBToTableSetMap = std::map<String, TableSet>;
+    const DBToTableSetMap & getSourceDatabasesAndTables(ContextPtr context) const;
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
     static TableSet getMatchedTablesWithAccess(const String & database_name, const String & table_regexp, const ContextPtr & context);
@@ -30,7 +30,7 @@ private:
     String source_database_name_or_regexp;
     String source_table_regexp;
     bool database_is_regexp = false;
-    mutable std::optional<DbToTableSetMap> source_databases_and_tables;
+    mutable std::optional<DBToTableSetMap> source_databases_and_tables;
 };
 
 

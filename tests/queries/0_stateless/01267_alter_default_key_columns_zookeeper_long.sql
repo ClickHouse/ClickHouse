@@ -1,3 +1,5 @@
+-- Tags: long, zookeeper
+
 DROP TABLE IF EXISTS test_alter;
 CREATE TABLE test_alter (x Date, s String) ENGINE = MergeTree ORDER BY s PARTITION BY x;
 ALTER TABLE test_alter MODIFY COLUMN s DEFAULT 'Hello';

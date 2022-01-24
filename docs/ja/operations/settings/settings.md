@@ -1235,4 +1235,4 @@ PREWHERE/WHEREにシャーディングキー条件があるSELECTクエリの未
 
 デフォルト値は16です。
 
-[元の記事](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
+[元の記事](https://clickhouse.com/docs/en/operations/settings/settings/) <!-- hide -->

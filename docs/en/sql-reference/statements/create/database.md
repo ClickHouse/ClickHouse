@@ -8,7 +8,7 @@ toc_title: DATABASE
 Creates a new database.
 
 ``` sql
-CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)]
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)] [COMMENT 'Comment']
 ```
 
 ## Clauses {#clauses}
@@ -26,4 +26,33 @@ ClickHouse creates the `db_name` database on all the servers of a specified clus
 
 ### ENGINE {#engine}
 
-[MySQL](../../../engines/database-engines/mysql.md) allows you to retrieve data from the remote MySQL server. By default, ClickHouse uses its own [database engine](../../../engines/database-engines/index.md). There’s also a [lazy](../../../engines/database-engines/lazy.md) engine.
+By default, ClickHouse uses its own [Atomic](../../../engines/database-engines/atomic.md) database engine. There are also [Lazy](../../../engines/database-engines/lazy.md), [MySQL](../../../engines/database-engines/mysql.md), [PostgresSQL](../../../engines/database-engines/postgresql.md), [MaterializedMySQL](../../../engines/database-engines/materialized-mysql.md), [MaterializedPostgreSQL](../../../engines/database-engines/materialized-postgresql.md), [Replicated](../../../engines/database-engines/replicated.md), [SQLite](../../../engines/database-engines/sqlite.md).
+
+### COMMENT {#comment}
+
+You can add a comment to the database when you creating it.
+
+The comment is supported for all database engines.
+
+**Syntax**
+
+``` sql
+CREATE DATABASE db_name ENGINE = engine(...) COMMENT 'Comment'
+```
+
+**Example**
+
+Query:
+
+``` sql
+CREATE DATABASE db_comment ENGINE = Memory COMMENT 'The temporary database';
+SELECT name, comment FROM system.databases WHERE name = 'db_comment';
+```
+
+Result:
+
+```text
+┌─name───────┬─comment────────────────┐
+│ db_comment │ The temporary database │
+└────────────┴────────────────────────┘
+```

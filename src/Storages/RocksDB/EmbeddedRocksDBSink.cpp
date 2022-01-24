@@ -20,7 +20,7 @@ EmbeddedRocksDBSink::EmbeddedRocksDBSink(
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
 {
-    for (const auto & elem : getPort().getHeader())
+    for (const auto & elem : getHeader())
     {
         if (elem.name == storage.primary_key)
             break;
@@ -31,14 +31,14 @@ EmbeddedRocksDBSink::EmbeddedRocksDBSink(
 void EmbeddedRocksDBSink::consume(Chunk chunk)
 {
     auto rows = chunk.getNumRows();
-    auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
+    auto block = getHeader().cloneWithColumns(chunk.detachColumns());
 
     WriteBufferFromOwnString wb_key;
     WriteBufferFromOwnString wb_value;
 
     rocksdb::WriteBatch batch;
     rocksdb::Status status;
-    for (size_t i = 0; i < rows; i++)
+    for (size_t i = 0; i < rows; ++i)
     {
         wb_key.restart();
         wb_value.restart();

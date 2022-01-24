@@ -1,10 +1,10 @@
 #pragma once
 
-#include <common/logger_useful.h>
-#include <common/shared_ptr_helper.h>
+#include <base/logger_useful.h>
+#include <base/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
-#include <DataStreams/ShellCommandSource.h>
-#include <Storages/ExecutablePoolSettings.h>
+#include <Processors/Sources/ShellCommandSource.h>
+#include <Storages/ExecutableSettings.h>
 
 
 namespace DB
@@ -23,7 +23,7 @@ public:
 
     String getName() const override
     {
-        if (process_pool)
+        if (settings.is_executable_pool)
             return "ExecutablePool";
         else
             return "Executable";
@@ -42,31 +42,17 @@ protected:
 
     StorageExecutable(
         const StorageID & table_id,
-        const String & script_name_,
-        const std::vector<String> & arguments_,
-        const String & format_,
-        const std::vector<ASTPtr> & input_queries_,
-        const ColumnsDescription & columns,
-        const ConstraintsDescription & constraints);
-
-    StorageExecutable(
-        const StorageID & table_id,
-        const String & script_name_,
-        const std::vector<String> & arguments_,
-        const String & format_,
-        const std::vector<ASTPtr> & input_queries_,
-        const ExecutablePoolSettings & pool_settings_,
+        const String & format,
+        const ExecutableSettings & settings,
+        const std::vector<ASTPtr> & input_queries,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints);
 
 private:
-    String script_name;
-    std::vector<String> arguments;
-    String format;
+    ExecutableSettings settings;
     std::vector<ASTPtr> input_queries;
-    ExecutablePoolSettings pool_settings;
-    std::shared_ptr<ProcessPool> process_pool;
     Poco::Logger * log;
+    std::unique_ptr<ShellCommandSourceCoordinator> coordinator;
 };
 
 }

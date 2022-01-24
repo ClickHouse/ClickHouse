@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <http_port>8123</http_port>
     <tcp_port>9000</tcp_port>
 
@@ -10,4 +10,4 @@
         <events>true</events>
         <asynchronous_metrics>true</asynchronous_metrics>
     </prometheus>
-</yandex>
+</clickhouse>

@@ -5,8 +5,8 @@
 #include <IO/WriteBuffer.h>
 #include <Common/NaNUtils.h>
 #include <Common/PODArray.h>
-#include <common/sort.h>
-#include <common/types.h>
+#include <base/sort.h>
+#include <base/types.h>
 
 
 namespace DB
@@ -237,7 +237,7 @@ struct QuantileExactInclusive : public QuantileExact<Value>
                     nth_element(array.begin() + prev_n, array.begin() + n - 1, array.end());
                     auto nth_elem = std::min_element(array.begin() + n, array.end());
 
-                    result[indices[i]] = static_cast<Float64>(array[n - 1]) + (h - n) * static_cast<Float64>(*nth_elem - array[n - 1]);
+                    result[indices[i]] = static_cast<Float64>(array[n - 1]) + (h - n) * (static_cast<Float64>(*nth_elem) - array[n - 1]);
                     prev_n = n - 1;
                 }
             }

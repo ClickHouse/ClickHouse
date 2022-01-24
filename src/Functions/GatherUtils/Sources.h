@@ -39,7 +39,7 @@ template <typename ArraySink> struct NullableArraySink;
 template <typename T>
 struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
 {
-    using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
+    using ColVecType = ColumnVectorOrDecimal<T>;
     using Slice = NumericArraySlice<T>;
     using Column = ColumnArray;
 
@@ -356,6 +356,11 @@ struct UTF8StringSource : public StringSource
             UTF8::syncBackward(pos, begin);
         }
         return pos;
+    }
+
+    size_t getElementSize() const
+    {
+        return UTF8::countCodePoints(&elements[prev_offset], StringSource::getElementSize());
     }
 
     Slice getSliceFromLeft(size_t offset) const
@@ -720,7 +725,7 @@ template <typename T>
 struct NumericValueSource : ValueSourceImpl<NumericValueSource<T>>
 {
     using Slice = NumericValueSlice<T>;
-    using Column = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
+    using Column = ColumnVectorOrDecimal<T>;
 
     using SinkType = NumericArraySink<T>;
 

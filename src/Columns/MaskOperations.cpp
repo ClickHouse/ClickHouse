@@ -4,6 +4,7 @@
 #include <Columns/ColumnNothing.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <algorithm>
 
 namespace DB
@@ -177,19 +178,21 @@ MaskInfo extractMaskFromConstOrNull(
 template <bool inverted>
 MaskInfo extractMaskImpl(
     PaddedPODArray<UInt8> & mask,
-    const ColumnPtr & column,
+    const ColumnPtr & col,
     UInt8 null_value,
     const PaddedPODArray<UInt8> * null_bytemap,
     PaddedPODArray<UInt8> * nulls = nullptr)
 {
+    auto column = col->convertToFullColumnIfLowCardinality();
+
     /// Special implementation for Null and Const columns.
     if (column->onlyNull() || checkAndGetColumn<ColumnConst>(*column))
         return extractMaskFromConstOrNull<inverted>(mask, column, null_value, nulls);
 
-    if (const auto * col = checkAndGetColumn<ColumnNullable>(*column))
+    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(*column))
     {
-        const PaddedPODArray<UInt8> & null_map = col->getNullMapData();
-        return extractMaskImpl<inverted>(mask, col->getNestedColumnPtr(), null_value, &null_map, nulls);
+        const PaddedPODArray<UInt8> & null_map = nullable_column->getNullMapData();
+        return extractMaskImpl<inverted>(mask, nullable_column->getNestedColumnPtr(), null_value, &null_map, nulls);
     }
 
     MaskInfo mask_info;
@@ -246,8 +249,8 @@ MaskInfo extractInvertedMask(
 
 void inverseMask(PaddedPODArray<UInt8> & mask, MaskInfo & mask_info)
 {
-    for (size_t i = 0; i != mask.size(); ++i)
-        mask[i] = !mask[i];
+    for (auto & byte : mask)
+        byte = !byte;
     std::swap(mask_info.has_ones, mask_info.has_zeros);
 }
 
@@ -290,7 +293,7 @@ void executeColumnIfNeeded(ColumnWithTypeAndName & column, bool empty)
         column.column = column_function->getResultType()->createColumn();
 }
 
-int checkShirtCircuitArguments(const ColumnsWithTypeAndName & arguments)
+int checkShortCircuitArguments(const ColumnsWithTypeAndName & arguments)
 {
     int last_short_circuit_argument_index = -1;
     for (size_t i = 0; i != arguments.size(); ++i)
@@ -314,3 +317,4 @@ void copyMask(const PaddedPODArray<UInt8> & from, PaddedPODArray<UInt8> & to)
 }
 
 }
+

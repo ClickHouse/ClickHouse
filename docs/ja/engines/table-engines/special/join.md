@@ -108,4 +108,4 @@ SELECT joinGet('id_val_join', 'val', toUInt32(1))
 
 場合はサーバが再起動誤り、データブロックのディスクがいます。 この場合、破損したデータを含むファイルを手動で削除する必要がある場合があります。
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/join/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/join/) <!--hide-->

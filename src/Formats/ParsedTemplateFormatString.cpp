@@ -1,9 +1,9 @@
 #include <Formats/ParsedTemplateFormatString.h>
 #include <Formats/verbosePrintString.h>
+#include <Formats/EscapingRuleUtils.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromFile.h>
-#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -11,18 +11,17 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int INVALID_TEMPLATE_FORMAT;
 }
 
-ParsedTemplateFormatString::ParsedTemplateFormatString(const FormatSchemaInfo & schema, const ColumnIdxGetter & idx_by_name)
+ParsedTemplateFormatString::ParsedTemplateFormatString(const FormatSchemaInfo & schema, const ColumnIdxGetter & idx_by_name, bool allow_indexes)
 {
     ReadBufferFromFile schema_file(schema.absoluteSchemaPath(), 4096);
     String format_string;
     readStringUntilEOF(format_string, schema_file);
     try
     {
-        parse(format_string, idx_by_name);
+        parse(format_string, idx_by_name, allow_indexes);
     }
     catch (DB::Exception & e)
     {
@@ -34,7 +33,7 @@ ParsedTemplateFormatString::ParsedTemplateFormatString(const FormatSchemaInfo & 
 }
 
 
-void ParsedTemplateFormatString::parse(const String & format_string, const ColumnIdxGetter & idx_by_name)
+void ParsedTemplateFormatString::parse(const String & format_string, const ColumnIdxGetter & idx_by_name, bool allow_indexes)
 {
     enum ParserState
     {
@@ -83,7 +82,7 @@ void ParsedTemplateFormatString::parse(const String & format_string, const Colum
                     state = Format;
                 else if (*pos == '}')
                 {
-                    formats.push_back(ColumnFormat::None);
+                    escaping_rules.push_back(EscapingRule::None);
                     delimiters.emplace_back();
                     state = Delimiter;
                 }
@@ -101,6 +100,8 @@ void ParsedTemplateFormatString::parse(const String & format_string, const Colum
                     column_idx = strtoull(column_names.back().c_str(), &col_idx_end, 10);
                     if (col_idx_end != column_names.back().c_str() + column_names.back().size() || errno)
                         column_idx = idx_by_name(column_names.back());
+                    else if (!allow_indexes)
+                        throw Exception(ErrorCodes::INVALID_TEMPLATE_FORMAT, "Indexes instead of names are not allowed");
                 }
                 format_idx_to_column_idx.emplace_back(column_idx);
                 break;
@@ -108,7 +109,7 @@ void ParsedTemplateFormatString::parse(const String & format_string, const Colum
             case Format:
                 if (*pos == '}')
                 {
-                    formats.push_back(stringToFormat(String(token_begin, pos - token_begin)));
+                    escaping_rules.push_back(stringToEscapingRule(String(token_begin, pos - token_begin)));
                     token_begin = pos + 1;
                     delimiters.emplace_back();
                     state = Delimiter;
@@ -120,54 +121,9 @@ void ParsedTemplateFormatString::parse(const String & format_string, const Colum
     delimiters.back().append(token_begin, pos - token_begin);
 }
 
-
-ParsedTemplateFormatString::ColumnFormat ParsedTemplateFormatString::stringToFormat(const String & col_format)
-{
-    if (col_format.empty())
-        return ColumnFormat::None;
-    else if (col_format == "None")
-        return ColumnFormat::None;
-    else if (col_format == "Escaped")
-        return ColumnFormat::Escaped;
-    else if (col_format == "Quoted")
-        return ColumnFormat::Quoted;
-    else if (col_format == "CSV")
-        return ColumnFormat::Csv;
-    else if (col_format == "JSON")
-        return ColumnFormat::Json;
-    else if (col_format == "XML")
-        return ColumnFormat::Xml;
-    else if (col_format == "Raw")
-        return ColumnFormat::Raw;
-    else
-        throw Exception("Unknown field format \"" + col_format + "\"", ErrorCodes::BAD_ARGUMENTS);
-}
-
 size_t ParsedTemplateFormatString::columnsCount() const
 {
     return format_idx_to_column_idx.size();
-}
-
-String ParsedTemplateFormatString::formatToString(ParsedTemplateFormatString::ColumnFormat format)
-{
-    switch (format)
-    {
-        case ColumnFormat::None:
-            return "None";
-        case ColumnFormat::Escaped:
-            return "Escaped";
-        case ColumnFormat::Quoted:
-            return "Quoted";
-        case ColumnFormat::Csv:
-            return "CSV";
-        case ColumnFormat::Json:
-            return "Json";
-        case ColumnFormat::Xml:
-            return "Xml";
-        case ColumnFormat::Raw:
-            return "Raw";
-    }
-    __builtin_unreachable();
 }
 
 const char * ParsedTemplateFormatString::readMayBeQuotedColumnNameInto(const char * pos, size_t size, String & s)
@@ -197,7 +153,7 @@ String ParsedTemplateFormatString::dump() const
     res << "\nDelimiter " << 0 << ": ";
     verbosePrintString(delimiters.front().c_str(), delimiters.front().c_str() + delimiters.front().size(), res);
 
-    size_t num_columns = std::max(formats.size(), format_idx_to_column_idx.size());
+    size_t num_columns = std::max(escaping_rules.size(), format_idx_to_column_idx.size());
     for (size_t i = 0; i < num_columns; ++i)
     {
         res << "\nColumn " << i << ": \"";
@@ -216,7 +172,7 @@ String ParsedTemplateFormatString::dump() const
         else
             res << *format_idx_to_column_idx[i];
 
-        res << "), Format " << (i < formats.size() ? formatToString(formats[i]) : "<ERROR>");
+        res << "), Format " << (i < escaping_rules.size() ? escapingRuleToString(escaping_rules[i]) : "<ERROR>");
 
         res << "\nDelimiter " << i + 1 << ": ";
         if (delimiters.size() <= i + 1)
@@ -233,36 +189,6 @@ void ParsedTemplateFormatString::throwInvalidFormat(const String & message, size
     throw Exception("Invalid format string for Template: " + message + " (near column " + std::to_string(column) +
                     ")" + ". Parsed format string:\n" + dump() + "\n",
                     ErrorCodes::INVALID_TEMPLATE_FORMAT);
-}
-
-ParsedTemplateFormatString ParsedTemplateFormatString::setupCustomSeparatedResultsetFormat(const FormatSettings::Custom & settings)
-{
-    /// Set resultset format to "result_before_delimiter ${data} result_after_delimiter"
-    ParsedTemplateFormatString resultset_format;
-    resultset_format.delimiters.emplace_back(settings.result_before_delimiter);
-    resultset_format.delimiters.emplace_back(settings.result_after_delimiter);
-    resultset_format.formats.emplace_back(ParsedTemplateFormatString::ColumnFormat::None);
-    resultset_format.format_idx_to_column_idx.emplace_back(0);
-    resultset_format.column_names.emplace_back("data");
-    return resultset_format;
-}
-
-ParsedTemplateFormatString ParsedTemplateFormatString::setupCustomSeparatedRowFormat(const FormatSettings::Custom & settings, const Block & sample)
-{
-    /// Set row format to
-    /// "row_before_delimiter ${Col0:escaping} field_delimiter ${Col1:escaping} field_delimiter ... ${ColN:escaping} row_after_delimiter"
-    ParsedTemplateFormatString::ColumnFormat escaping = ParsedTemplateFormatString::stringToFormat(settings.escaping_rule);
-    ParsedTemplateFormatString row_format;
-    row_format.delimiters.emplace_back(settings.row_before_delimiter);
-    for (size_t i = 0; i < sample.columns(); ++i)
-    {
-        row_format.formats.emplace_back(escaping);
-        row_format.format_idx_to_column_idx.emplace_back(i);
-        row_format.column_names.emplace_back(sample.getByPosition(i).name);
-        bool last_column = i == sample.columns() - 1;
-        row_format.delimiters.emplace_back(last_column ? settings.row_after_delimiter : settings.field_delimiter);
-    }
-    return row_format;
 }
 
 }

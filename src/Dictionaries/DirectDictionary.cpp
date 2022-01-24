@@ -2,13 +2,12 @@
 
 #include <Core/Defines.h>
 #include <Common/HashTable/HashMap.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 namespace DB
@@ -29,7 +28,7 @@ DirectDictionary<dictionary_key_type>::DirectDictionary(
     , source_ptr{std::move(source_ptr_)}
 {
     if (!source_ptr->supportsSelectiveLoad())
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: source cannot be used with DirectDictionary", full_name);
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "{}: source cannot be used with DirectDictionary", getFullName());
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -68,14 +67,15 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
     size_t dictionary_keys_size = dict_struct.getKeysNames().size();
     block_key_columns.reserve(dictionary_keys_size);
 
-    QueryPipeline pipeline;
-    pipeline.init(getSourceBlockInputStream(key_columns, requested_keys));
+    QueryPipeline pipeline(getSourceBlockInputStream(key_columns, requested_keys));
 
     PullingPipelineExecutor executor(pipeline);
 
     Block block;
     while (executor.pull(block))
     {
+        convertToFullIfSparse(block);
+
         /// Split into keys columns and attribute columns
         for (size_t i = 0; i < dictionary_keys_size; ++i)
             block_key_columns.emplace_back(block.safeGetByPosition(i).column);
@@ -185,9 +185,7 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
     size_t dictionary_keys_size = dict_struct.getKeysNames().size();
     block_key_columns.reserve(dictionary_keys_size);
 
-    QueryPipeline pipeline;
-    pipeline.init(getSourceBlockInputStream(key_columns, requested_keys));
-
+    QueryPipeline pipeline(getSourceBlockInputStream(key_columns, requested_keys));
     PullingPipelineExecutor executor(pipeline);
 
     size_t keys_found = 0;
@@ -293,7 +291,7 @@ Pipe DirectDictionary<dictionary_key_type>::getSourceBlockInputStream(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-Pipe DirectDictionary<dictionary_key_type>::read(const Names & /* column_names */, size_t /* max_block_size */) const
+Pipe DirectDictionary<dictionary_key_type>::read(const Names & /* column_names */, size_t /* max_block_size */, size_t /* num_streams */) const
 {
     return source_ptr->loadAll();
 }

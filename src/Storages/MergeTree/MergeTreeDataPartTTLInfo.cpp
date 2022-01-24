@@ -4,7 +4,7 @@
 #include <Common/quoteString.h>
 #include <algorithm>
 
-#include <common/JSON.h>
+#include <base/JSON.h>
 
 namespace DB
 {

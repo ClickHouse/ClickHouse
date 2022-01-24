@@ -123,8 +123,8 @@ public:
     /// Compatibility with old parser of tables list. TODO remove
     ASTPtr sampleSize() const;
     ASTPtr sampleOffset() const;
-    ASTPtr arrayJoinExpressionList(bool & is_left) const;
-    ASTPtr arrayJoinExpressionList() const;
+    std::pair<ASTPtr, bool> arrayJoinExpressionList() const;
+
     const ASTTablesInSelectQueryElement * join() const;
     bool final() const;
     bool withFill() const;
@@ -135,7 +135,7 @@ public:
 
     void setFinal();
 
-    const char * getQueryKindString() const override { return "Select"; }
+    virtual QueryKind getQueryKind() const override { return QueryKind::Select; }
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

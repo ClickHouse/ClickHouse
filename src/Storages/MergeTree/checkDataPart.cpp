@@ -98,11 +98,28 @@ IMergeTreeDataPart::Checksums checkDataPart(
         };
     };
 
+    SerializationInfoByName serialization_infos(columns_txt, {});
+    auto serialization_path = path + IMergeTreeDataPart::SERIALIZATION_FILE_NAME;
+
+    if (disk->exists(serialization_path))
+    {
+        auto serialization_file = disk->readFile(serialization_path);
+        serialization_infos.readJSON(*serialization_file);
+    }
+
+    auto get_serialization = [&serialization_infos](const auto & column)
+    {
+        auto it = serialization_infos.find(column.name);
+        return it == serialization_infos.end()
+            ? column.type->getDefaultSerialization()
+            : column.type->getSerialization(*it->second);
+    };
+
     /// This function calculates only checksum of file content (compressed or uncompressed).
     /// It also calculates checksum of projections.
     auto checksum_file = [&](const String & file_path, const String & file_name)
     {
-        if (disk->isDirectory(file_path) && endsWith(file_name, ".proj") && !startsWith(file_name, "tmp_")) // ignore projection tmp merge dir
+        if (disk->isDirectory(file_path) && endsWith(file_name, ".proj"))
         {
             auto projection_name = file_name.substr(0, file_name.size() - sizeof(".proj") + 1);
             auto pit = data_part->getProjectionParts().find(projection_name);
@@ -124,25 +141,20 @@ IMergeTreeDataPart::Checksums checkDataPart(
                 auto file_buf = disk->readFile(proj_path);
                 HashingReadBuffer hashing_buf(*file_buf);
                 hashing_buf.ignoreAll();
-                projection_checksums_data.files[MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION] = IMergeTreeDataPart::Checksums::Checksum(hashing_buf.count(), hashing_buf.getHash());
+                projection_checksums_data.files[MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION]
+                    = IMergeTreeDataPart::Checksums::Checksum(hashing_buf.count(), hashing_buf.getHash());
             }
             else
             {
                 const NamesAndTypesList & projection_columns_list = projection->getColumns();
                 for (const auto & projection_column : projection_columns_list)
                 {
-                    auto serialization = IDataType::getSerialization(projection_column, [&](const String & stream_name)
-                    {
-                        return disk->exists(stream_name + IMergeTreeDataPart::DATA_FILE_EXTENSION);
-                    });
-
-                    serialization->enumerateStreams(
+                    get_serialization(projection_column)->enumerateStreams(
                         [&](const ISerialization::SubstreamPath & substream_path)
                         {
                             String projection_file_name = ISerialization::getFileNameForStream(projection_column, substream_path) + ".bin";
-                            checksums_data.files[projection_file_name] = checksum_compressed_file(disk, projection_path + projection_file_name);
-                        },
-                        {});
+                            projection_checksums_data.files[projection_file_name] = checksum_compressed_file(disk, projection_path + projection_file_name);
+                        });
                 }
             }
 
@@ -209,17 +221,11 @@ IMergeTreeDataPart::Checksums checkDataPart(
     {
         for (const auto & column : columns_list)
         {
-            auto serialization = IDataType::getSerialization(column,
-                [&](const String & stream_name)
-                {
-                    return disk->exists(stream_name + IMergeTreeDataPart::DATA_FILE_EXTENSION);
-                });
-
-            serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+            get_serialization(column)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
                 String file_name = ISerialization::getFileNameForStream(column, substream_path) + ".bin";
                 checksums_data.files[file_name] = checksum_compressed_file(disk, path + file_name);
-            }, {});
+            });
         }
     }
     else
@@ -264,7 +270,6 @@ IMergeTreeDataPart::Checksums checkDataPart(
 
     if (require_checksums || !checksums_txt.files.empty())
         checksums_txt.checkEqual(checksums_data, check_uncompressed);
-
     return checksums_data;
 }
 

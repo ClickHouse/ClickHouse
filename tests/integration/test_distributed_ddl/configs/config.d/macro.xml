@@ -1,5 +1,5 @@
-<yandex>
+<clickhouse>
         <macros>
                 <cluster>cluster_no_replicas</cluster>
         </macros>
-</yandex>
+</clickhouse>

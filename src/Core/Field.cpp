@@ -106,6 +106,12 @@ inline Field getBinaryValue(UInt8 type, ReadBuffer & buf)
             readStringBinary(value.data, buf);
             return value;
         }
+        case Field::Types::Bool:
+        {
+            UInt8 value;
+            readBinary(value, buf);
+            return bool(value);
+        }
     }
     return Field();
 }
@@ -346,6 +352,13 @@ Field Field::restoreFromDump(const std::string_view & dump_)
         return str;
     }
 
+    prefix = std::string_view{"Bool_"};
+    if (dump.starts_with(prefix))
+    {
+        bool value = parseFromString<bool>(dump.substr(prefix.length()));
+        return value;
+    }
+
     prefix = std::string_view{"Array_["};
     if (dump.starts_with(prefix))
     {
@@ -487,11 +500,11 @@ template bool decimalLessOrEqual<DateTime64>(DateTime64 x, DateTime64 y, UInt32 
 inline void writeText(const Null & x, WriteBuffer & buf)
 {
     if (x.isNegativeInfinity())
-        writeText(std::string("-Inf"), buf);
+        writeText("-Inf", buf);
     if (x.isPositiveInfinity())
-        writeText(std::string("+Inf"), buf);
+        writeText("+Inf", buf);
     else
-        writeText(std::string("NULL"), buf);
+        writeText("NULL", buf);
 }
 
 String toString(const Field & x)

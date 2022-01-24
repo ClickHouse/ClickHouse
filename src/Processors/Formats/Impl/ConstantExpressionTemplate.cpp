@@ -37,6 +37,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int SYNTAX_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -276,8 +277,9 @@ private:
             info.type = std::make_shared<DataTypeMap>(nested_types);
         }
         else
-            throw Exception(String("Unexpected literal type ") + info.literal->value.getTypeName() + ". It's a bug",
-                            ErrorCodes::LOGICAL_ERROR);
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Unexpected literal type {}",
+                info.literal->value.getTypeName());
 
         /// Allow literal to be NULL, if result column has nullable type or if function never returns NULL
         if (info.force_nullable && info.type->canBeInsideNullable())
@@ -341,6 +343,10 @@ ConstantExpressionTemplate::TemplateStructure::TemplateStructure(LiteralsInfo & 
     auto syntax_result = TreeRewriter(context).analyze(expression, literals.getNamesAndTypesList());
     result_column_name = expression->getColumnName();
     actions_on_literals = ExpressionAnalyzer(expression, syntax_result, context).getActions(false);
+    if (actions_on_literals->hasArrayJoin())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Array joins are not allowed in constant expressions for IN, VALUES, LIMIT and similar sections.");
+
 }
 
 size_t ConstantExpressionTemplate::TemplateStructure::getTemplateHash(const ASTPtr & expression,

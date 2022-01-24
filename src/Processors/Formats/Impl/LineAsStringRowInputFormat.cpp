@@ -1,6 +1,6 @@
 #include <Processors/Formats/Impl/LineAsStringRowInputFormat.h>
 #include <Formats/JSONEachRowUtils.h>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 #include <IO/ReadHelpers.h>
 
 namespace DB
@@ -29,13 +29,13 @@ void LineAsStringRowInputFormat::readLineObject(IColumn & column)
 {
     DB::Memory<> object;
 
-    char * pos = in.position();
+    char * pos = in->position();
     bool need_more_data = true;
 
-    while (loadAtPosition(in, object, pos) && need_more_data)
+    while (loadAtPosition(*in, object, pos) && need_more_data)
     {
-        pos = find_first_symbols<'\n'>(pos, in.buffer().end());
-        if (pos == in.buffer().end())
+        pos = find_first_symbols<'\n'>(pos, in->buffer().end());
+        if (pos == in->buffer().end())
             continue;
 
         if (*pos == '\n')
@@ -44,8 +44,8 @@ void LineAsStringRowInputFormat::readLineObject(IColumn & column)
         ++pos;
     }
 
-    saveUpToPosition(in, object, pos);
-    loadAtPosition(in, object, pos);
+    saveUpToPosition(*in, object, pos);
+    loadAtPosition(*in, object, pos);
 
     /// Last character is always \n.
     column.insertData(object.data(), object.size() - 1);
@@ -53,7 +53,7 @@ void LineAsStringRowInputFormat::readLineObject(IColumn & column)
 
 bool LineAsStringRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 {
-    if (in.eof())
+    if (in->eof())
         return false;
 
     readLineObject(*columns[0]);
@@ -61,15 +61,24 @@ bool LineAsStringRowInputFormat::readRow(MutableColumns & columns, RowReadExtens
     return true;
 }
 
-void registerInputFormatProcessorLineAsString(FormatFactory & factory)
+void registerInputFormatLineAsString(FormatFactory & factory)
 {
-    factory.registerInputFormatProcessor("LineAsString", [](
+    factory.registerInputFormat("LineAsString", [](
             ReadBuffer & buf,
             const Block & sample,
             const RowInputFormatParams & params,
             const FormatSettings &)
     {
         return std::make_shared<LineAsStringRowInputFormat>(sample, buf, params);
+    });
+}
+
+void registerLineAsStringSchemaReader(FormatFactory & factory)
+{
+    factory.registerExternalSchemaReader("LineAsString", [](
+            const FormatSettings &)
+    {
+        return std::make_shared<LinaAsStringSchemaReader>();
     });
 }
 }

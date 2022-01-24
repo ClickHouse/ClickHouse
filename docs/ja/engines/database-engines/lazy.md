@@ -15,4 +15,4 @@ RAM内のテーブルのみを保持 `expiration_time_in_seconds` 最後のア�
 
     CREATE DATABASE testlazy ENGINE = Lazy(expiration_time_in_seconds);
 
-[元の記事](https://clickhouse.tech/docs/en/database_engines/lazy/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/database_engines/lazy/) <!--hide-->

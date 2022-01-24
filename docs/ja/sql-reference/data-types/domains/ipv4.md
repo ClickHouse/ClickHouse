@@ -33,16 +33,16 @@ CREATE TABLE hits (url String, from IPv4) ENGINE = MergeTree() ORDER BY from;
 `IPv4` ドメインはIPv4文字列としてカスタム入力形式をサポート:
 
 ``` sql
-INSERT INTO hits (url, from) VALUES ('https://wikipedia.org', '116.253.40.133')('https://clickhouse.tech', '183.247.232.58')('https://clickhouse.tech/docs/en/', '116.106.34.242');
+INSERT INTO hits (url, from) VALUES ('https://wikipedia.org', '116.253.40.133')('https://clickhouse.com', '183.247.232.58')('https://clickhouse.com/docs/en/', '116.106.34.242');
 
 SELECT * FROM hits;
 ```
 
 ``` text
 ┌─url────────────────────────────────┬───────────from─┐
-│ https://clickhouse.tech/docs/en/ │ 116.106.34.242 │
+│ https://clickhouse.com/docs/en/ │ 116.106.34.242 │
 │ https://wikipedia.org              │ 116.253.40.133 │
-│ https://clickhouse.tech          │ 183.247.232.58 │
+│ https://clickhouse.com          │ 183.247.232.58 │
 └────────────────────────────────────┴────────────────┘
 ```
 
@@ -81,4 +81,4 @@ SELECT toTypeName(i), CAST(from as UInt32) as i FROM hits LIMIT 1;
 └──────────────────────────────────┴────────────┘
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/data_types/domains/ipv4) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/data_types/domains/ipv4) <!--hide-->

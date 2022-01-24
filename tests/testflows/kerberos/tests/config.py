@@ -19,7 +19,7 @@ def kerberos_not_enabled(self):
     config_path = f"kerberos/configs/{ch_nodes[0].name}/config.d/kerberos.xml"
 
     def modify_file(root):
-        return xmltree.fromstring("<yandex></yandex>")
+        return xmltree.fromstring("<clickhouse></clickhouse>")
 
     check_wrong_config(node=ch_nodes[0], client=ch_nodes[2], config_path=config_path, modify_file=modify_file,
                        output="Kerberos is not enabled")

@@ -903,4 +903,4 @@ ClickHouse内部DNSキャッシュに格納されているIPアドレスの更�
 
 -   [アクセス制御とアカウント管理](../access-rights.md#access-control)
 
-[元の記事](https://clickhouse.tech/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->

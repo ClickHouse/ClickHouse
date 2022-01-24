@@ -239,4 +239,4 @@ FROM
 !!! note "Note"
     More info about [avg()](../sql-reference/aggregate-functions/reference/avg.md#agg_function-avg) and [log()](../sql-reference/functions/math-functions.md) functions.
 
-[Original article](https://clickhouse.tech/docs/en/guides/apply_catboost_model/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/guides/apply_catboost_model/) <!--hide-->

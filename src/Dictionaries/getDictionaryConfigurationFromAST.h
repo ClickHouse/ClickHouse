@@ -15,4 +15,13 @@ using DictionaryConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfigurati
 DictionaryConfigurationPtr
 getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr context, const std::string & database_ = "");
 
+struct ClickHouseDictionarySourceInfo
+{
+    QualifiedTableName table_name;
+    bool is_local = false;
+};
+
+std::optional<ClickHouseDictionarySourceInfo>
+getInfoIfClickHouseDictionarySource(DictionaryConfigurationPtr & config, ContextPtr global_context);
+
 }

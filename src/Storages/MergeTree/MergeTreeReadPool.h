@@ -73,7 +73,7 @@ public:
         const size_t threads_, const size_t sum_marks_, const size_t min_marks_for_concurrent_read_,
         RangesInDataParts && parts_, const MergeTreeData & data_, const StorageMetadataPtr & metadata_snapshot_,
         const PrewhereInfoPtr & prewhere_info_,
-        const bool check_columns_, const Names & column_names_,
+        const Names & column_names_,
         const BackoffSettings & backoff_settings_, size_t preferred_block_size_bytes_,
         const bool do_not_steal_tasks_ = false);
 
@@ -85,14 +85,10 @@ public:
       */
     void profileFeedback(const ReadBufferFromFileBase::ProfileInfo info);
 
-    /// This method tells which mark ranges we have to read if we start from @from mark range
-    MarkRanges getRestMarks(const IMergeTreeDataPart & part, const MarkRange & from) const;
-
     Block getHeader() const;
 
 private:
-    std::vector<size_t> fillPerPartInfo(
-        const RangesInDataParts & parts, const bool check_columns);
+    std::vector<size_t> fillPerPartInfo(const RangesInDataParts & parts);
 
     void fillPerThreadInfo(
         const size_t threads, const size_t sum_marks, std::vector<size_t> per_part_sum_marks,
@@ -139,6 +135,8 @@ private:
     mutable std::mutex mutex;
 
     Poco::Logger * log = &Poco::Logger::get("MergeTreeReadPool");
+
+    std::vector<bool> is_part_on_remote_disk;
 };
 
 using MergeTreeReadPoolPtr = std::shared_ptr<MergeTreeReadPool>;

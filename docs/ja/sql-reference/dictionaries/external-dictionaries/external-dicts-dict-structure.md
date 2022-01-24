@@ -172,4 +172,4 @@ CREATE DICTIONARY somename (
 
 -   [外部辞書を操作するための関数](../../../sql-reference/functions/ext-dict-functions.md).
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_structure/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/dicts/external_dicts_dict_structure/) <!--hide-->

@@ -3,7 +3,7 @@
 "@context": "http://schema.org",
 "@type": "{% if is_blog %}BlogPosting{% else %}TechArticle{% endif %}",
 "headline": "{{ title }}",
-"mainEntityOfPage": "{{ url or 'https://clickhouse.tech/' }}",
+"mainEntityOfPage": "{{ url or 'https://clickhouse.com/' }}",
 {% if page.meta.date %}
 "datePublished": "{{ page.meta.date }}",
 "dateModified": "{{ page.meta.date }}",
@@ -11,19 +11,19 @@
 {% if page.meta.published_date %}"datePublished": "{{ page.meta.published_date.isoformat() }}",{% endif %}
 {% if page.meta.modified_date %}"dateModified": "{{ page.meta.modified_date.isoformat() }}",{% endif %}
 {% endif %}
-"image": "{{ page.meta.image or 'https://clickhouse.tech/images/logo-209x60.png' }}",
+"image": "{{ page.meta.image or 'https://clickhouse.com/images/clickhouse-209x60.png' }}",
 "author": {
   "@type": "Project",
   "name": "ClickHouse"
 },
 "publisher": {
   "@type": "Organization",
-  "name": "Yandex LLC",
+  "name": "ClickHouse, Inc.",
   "logo": {
     "@type": "ImageObject",
-    "url": "https://clickhouse.tech/images/yandex.png",
-    "width": 163,
-    "height": 60
+    "url": "https://clickhouse.com/images/logo-400x240.png",
+    "width": 400,
+    "height": 240
   }
 }}{% if not is_blog %}, {
 "@context": "http://schema.org",

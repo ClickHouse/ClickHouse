@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <listen_host>::</listen_host>
 
     <logger>
@@ -44,4 +44,4 @@
             </server>
         </raft_configuration>
     </keeper_server>
-</yandex>
+</clickhouse>

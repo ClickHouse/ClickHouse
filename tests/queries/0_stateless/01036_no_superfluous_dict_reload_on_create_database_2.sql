@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP DATABASE IF EXISTS `foo 1234`;
 CREATE DATABASE `foo 1234`;
 

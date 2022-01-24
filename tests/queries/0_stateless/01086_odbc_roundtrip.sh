@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-asan, no-msan, no-fasttest
+# Tag no-msan: can't pass because odbc libraries are not instrumented
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

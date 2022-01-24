@@ -46,4 +46,4 @@ mysql>
 
 -   一部のデータ型は文字列として送信されます
 
-[元の記事](https://clickhouse.tech/docs/en/interfaces/mysql/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/interfaces/mysql/) <!--hide-->

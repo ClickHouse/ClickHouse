@@ -44,4 +44,4 @@ toc_title: "\u306F\u3058\u3081\u306B"
 
 その `Log` と `StripeLog` エンジンの支援並列データです。 読み込み時にデータClickHouse使複数のスレッド）。 各スレッドプロセス別データブロックです。 その `Log` エンジンは、テーブルの各列に個別のファイルを使用します。 `StripeLog` すべてのデータファイルです。 その結果、 `StripeLog` エンジンは、オペレーティングシス `Log` エンジンはデータを読むとき高性能を提供する。
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/log_family/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/log_family/) <!--hide-->

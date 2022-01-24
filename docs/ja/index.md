@@ -94,4 +94,4 @@ OLAPシナリオは、他の一般的なシナリオ（OLTPやKey-Valueアクセ
 
 CPU効率のために、クエリ言語は宣言型（SQLまたはMDX）、または少なくともベクトル（J、K）でなければなりません。 クエリには、最適化を可能にする暗黙的なループのみを含める必要があります。
 
-{## [元の記事](https://clickhouse.tech/docs/en/) ##}
+{## [元の記事](https://clickhouse.com/docs/en/) ##}

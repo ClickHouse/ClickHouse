@@ -12,6 +12,11 @@
 #include <unistd.h>
 
 
+namespace CurrentMetrics
+{
+    extern const Metric DiskSpaceReservedForMerge;
+}
+
 namespace DB
 {
 
@@ -81,6 +86,22 @@ static void loadDiskLocalConfig(const String & name,
     }
 }
 
+std::optional<size_t> fileSizeSafe(const fs::path & path)
+{
+    std::error_code ec;
+
+    size_t size = fs::file_size(path, ec);
+    if (!ec)
+        return size;
+
+    if (ec == std::errc::no_such_file_or_directory)
+        return std::nullopt;
+    if (ec == std::errc::operation_not_supported)
+        return std::nullopt;
+
+    throw fs::filesystem_error("DiskLocal", path, ec);
+}
+
 class DiskLocalReservation : public IReservation
 {
 public:
@@ -106,10 +127,11 @@ private:
 };
 
 
-class DiskLocalDirectoryIterator : public IDiskDirectoryIterator
+class DiskLocalDirectoryIterator final : public IDiskDirectoryIterator
 {
 public:
-    explicit DiskLocalDirectoryIterator(const String & disk_path_, const String & dir_path_)
+    DiskLocalDirectoryIterator() = default;
+    DiskLocalDirectoryIterator(const String & disk_path_, const String & dir_path_)
         : dir_path(dir_path_), entry(fs::path(disk_path_) / dir_path_)
     {
     }
@@ -172,7 +194,7 @@ UInt64 DiskLocal::getTotalSpace() const
         fs = getStatVFS((fs::path(disk_path) / "data/").string());
     else
         fs = getStatVFS(disk_path);
-    UInt64 total_size = fs.f_blocks * fs.f_bsize;
+    UInt64 total_size = fs.f_blocks * fs.f_frsize;
     if (total_size < keep_free_space_bytes)
         return 0;
     return total_size - keep_free_space_bytes;
@@ -187,7 +209,7 @@ UInt64 DiskLocal::getAvailableSpace() const
         fs = getStatVFS((fs::path(disk_path) / "data/").string());
     else
         fs = getStatVFS(disk_path);
-    UInt64 total_size = fs.f_bavail * fs.f_bsize;
+    UInt64 total_size = fs.f_bavail * fs.f_frsize;
     if (total_size < keep_free_space_bytes)
         return 0;
     return total_size - keep_free_space_bytes;
@@ -244,7 +266,11 @@ void DiskLocal::moveDirectory(const String & from_path, const String & to_path)
 
 DiskDirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path)
 {
-    return std::make_unique<DiskLocalDirectoryIterator>(disk_path, path);
+    fs::path meta_path = fs::path(disk_path) / path;
+    if (fs::exists(meta_path) && fs::is_directory(meta_path))
+        return std::make_unique<DiskLocalDirectoryIterator>(disk_path, path);
+    else
+        return std::make_unique<DiskLocalDirectoryIterator>();
 }
 
 void DiskLocal::moveFile(const String & from_path, const String & to_path)
@@ -259,9 +285,11 @@ void DiskLocal::replaceFile(const String & from_path, const String & to_path)
     fs::rename(from_file, to_file);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path, const ReadSettings & settings, size_t estimated_size) const
+std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path, const ReadSettings & settings, std::optional<size_t> read_hint, std::optional<size_t> file_size) const
 {
-    return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, estimated_size);
+    if (!file_size.has_value())
+        file_size = fileSizeSafe(fs::path(disk_path) / path);
+    return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, read_hint, file_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>

@@ -1,5 +1,5 @@
 #pragma once
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/MySQL/MySQLReplication.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>

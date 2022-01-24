@@ -16,15 +16,13 @@ std::pair<String, StoragePtr> createTableFromAST(
     const String & database_name,
     const String & table_data_path_relative,
     ContextMutablePtr context,
-    bool has_force_restore_data_flag);
+    bool force_restore);
 
 /** Get the string with the table definition based on the CREATE query.
   * It is an ATTACH query that you can execute to create a table from the correspondent database.
   * See the implementation.
   */
 String getObjectDefinitionFromCreateQuery(const ASTPtr & query);
-
-void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata);
 
 
 /* Class to provide basic operations with tables when metadata is stored on disk in .sql files.
@@ -65,7 +63,7 @@ public:
 
     String getDataPath() const override { return data_path; }
     String getTableDataPath(const String & table_name) const override { return data_path + escapeForFileName(table_name) + "/"; }
-    String getTableDataPath(const ASTCreateQuery & query) const override { return getTableDataPath(query.table); }
+    String getTableDataPath(const ASTCreateQuery & query) const override { return getTableDataPath(query.getTable()); }
     String getMetadataPath() const override { return metadata_path; }
 
     static ASTPtr parseQueryFromMetadata(Poco::Logger * log, ContextPtr context, const String & metadata_file_path, bool throw_on_error = true, bool remove_empty = false);
@@ -73,6 +71,8 @@ public:
     /// will throw when the table we want to attach already exists (in active / detached / detached permanently form)
     void checkMetadataFilenameAvailability(const String & to_table_name) const;
     void checkMetadataFilenameAvailabilityUnlocked(const String & to_table_name, std::unique_lock<std::mutex> &) const;
+
+    void modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context);
 
 protected:
     static constexpr const char * create_suffix = ".tmp";
@@ -89,6 +89,7 @@ protected:
         bool throw_on_error) const override;
 
     ASTPtr getCreateQueryFromMetadata(const String & metadata_path, bool throw_on_error) const;
+    ASTPtr getCreateQueryFromStorage(const String & table_name, const StoragePtr & storage, bool throw_on_error) const;
 
     virtual void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
                                    const String & table_metadata_tmp_path, const String & table_metadata_path, ContextPtr query_context);
@@ -97,6 +98,9 @@ protected:
 
     const String metadata_path;
     const String data_path;
+
+    /// For alter settings.
+    std::mutex modify_settings_mutex;
 };
 
 }

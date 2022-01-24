@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
   <profiles>
     <profile_1>
       <max_parallel_replicas>2</max_parallel_replicas>
@@ -56,4 +56,4 @@
       <profile>combined_profile</profile>
     </test_combined_profile>
   </users>
-</yandex>
+</clickhouse>

@@ -1,10 +1,12 @@
 #pragma once
 
 #include <limits>
+#include <optional>
 #include <tuple>
 #include <vector>
-#include <common/types.h>
-#include <common/DayNum.h>
+#include <array>
+#include <base/types.h>
+#include <base/DayNum.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 
 
@@ -58,11 +60,16 @@ struct MergeTreePartInfo
     /// True if contains rhs (this part is obtained by merging rhs with some other parts or mutating rhs)
     bool contains(const MergeTreePartInfo & rhs) const
     {
+        /// Containing part may have equal level iff block numbers are equal (unless level is MAX_LEVEL)
+        /// (e.g. all_0_5_2 does not contain all_0_4_2, but all_0_5_3 or all_0_4_2_9 do)
+        bool strictly_contains_block_range = (min_block == rhs.min_block && max_block == rhs.max_block) || level > rhs.level
+            || level == MAX_LEVEL || level == LEGACY_MAX_LEVEL;
         return partition_id == rhs.partition_id        /// Parts for different partitions are not merged
             && min_block <= rhs.min_block
             && max_block >= rhs.max_block
             && level >= rhs.level
-            && mutation >= rhs.mutation;
+            && mutation >= rhs.mutation
+            && strictly_contains_block_range;
     }
 
     /// Return part mutation version, if part wasn't mutated return zero
@@ -98,7 +105,8 @@ struct MergeTreePartInfo
 
     static MergeTreePartInfo fromPartName(const String & part_name, MergeTreeDataFormatVersion format_version);  // -V1071
 
-    static bool tryParsePartName(const String & part_name, MergeTreePartInfo * part_info, MergeTreeDataFormatVersion format_version);
+    static std::optional<MergeTreePartInfo> tryParsePartName(
+        std::string_view part_name, MergeTreeDataFormatVersion format_version);
 
     static void parseMinMaxDatesFromPartName(const String & part_name, DayNum & min_date, DayNum & max_date);
 
@@ -110,6 +118,9 @@ struct MergeTreePartInfo
     static constexpr UInt32 LEGACY_MAX_LEVEL = std::numeric_limits<decltype(level)>::max();
 };
 
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+
 /// Information about detached part, which includes its prefix in
 /// addition to the above fields.
 struct DetachedPartInfo : public MergeTreePartInfo
@@ -117,16 +128,33 @@ struct DetachedPartInfo : public MergeTreePartInfo
     String dir_name;
     String prefix;
 
-    String disk;
+    DiskPtr disk;
 
     /// If false, MergeTreePartInfo is in invalid state (directory name was not successfully parsed).
     bool valid_name;
 
-    static const std::vector<String> DETACH_REASONS;
+    static constexpr auto DETACH_REASONS = std::to_array<std::string_view>({
+        "broken",
+        "unexpected",
+        "noquorum",
+        "ignored",
+        "broken-on-start",
+        "clone",
+        "attaching",
+        "deleting",
+        "tmp-fetch",
+        "covered-by-broken",
+    });
 
     /// NOTE: It may parse part info incorrectly.
-    /// For example, if prefix contain '_' or if DETACH_REASONS doesn't contain prefix.
-    static bool tryParseDetachedPartName(const String & dir_name, DetachedPartInfo & part_info, MergeTreeDataFormatVersion format_version);
+    /// For example, if prefix contains '_' or if DETACH_REASONS doesn't contain prefix.
+    // This method has different semantics with MergeTreePartInfo::tryParsePartName.
+    // Detached parts are always parsed regardless of their validity.
+    // DetachedPartInfo::valid_name field specifies whether parsing was successful or not.
+    static DetachedPartInfo parseDetachedPartName(const DiskPtr & disk, std::string_view dir_name, MergeTreeDataFormatVersion format_version);
+
+private:
+    void addParsedPartInfo(const MergeTreePartInfo& part);
 };
 
 using DetachedPartsInfo = std::vector<DetachedPartInfo>;

@@ -6,8 +6,9 @@
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/queryToString.h>
-#include <Access/AccessRightsElement.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Access/ContextAccess.h>
 #include <Common/Macros.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -15,6 +16,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Processors/Sinks/EmptySink.h>
+#include <QueryPipeline/Pipe.h>
 #include <filesystem>
 
 
@@ -151,7 +153,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
         }
     }
 
-    AddDefaultDatabaseVisitor visitor(current_database, !use_local_default_database);
+    AddDefaultDatabaseVisitor visitor(context, current_database, !use_local_default_database);
     visitor.visitDDL(query_ptr);
 
     /// Check access rights, assume that all servers have the same users config
@@ -212,11 +214,11 @@ BlockIO getDistributedDDLStatus(const String & node_path, const DDLLogEntry & en
     if (context->getSettingsRef().distributed_ddl_task_timeout == 0)
         return io;
 
-    ProcessorPtr processor = std::make_shared<DDLQueryStatusSource>(node_path, entry, context, hosts_to_wait);
-    io.pipeline.init(Pipe{processor});
+    auto source = std::make_shared<DDLQueryStatusSource>(node_path, entry, context, hosts_to_wait);
+    io.pipeline = QueryPipeline(std::move(source));
 
     if (context->getSettingsRef().distributed_ddl_output_mode == DistributedDDLOutputMode::NONE)
-        io.pipeline.setSinks([](const Block & header, QueryPipeline::StreamType){ return std::make_shared<EmptySink>(header); });
+        io.pipeline.complete(std::make_shared<EmptySink>(io.pipeline.getHeader()));
 
     return io;
 }

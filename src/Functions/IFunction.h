@@ -5,9 +5,7 @@
 #include <Core/Names.h>
 #include <DataTypes/IDataType.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #include <memory>
 
@@ -78,6 +76,13 @@ protected:
       */
     virtual bool useDefaultImplementationForLowCardinalityColumns() const { return true; }
 
+    /** If function arguments has single sparse column and all other arguments are constants, call function on nested column.
+      * Otherwise, convert all sparse columns to ordinary columns.
+      * If default value doesn't change after function execution, returns sparse column as a result.
+      * Otherwise, result column is converted to full.
+      */
+    virtual bool useDefaultImplementationForSparseColumns() const { return true; }
+
     /** Some arguments could remain constant during this implementation.
       */
     virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
@@ -98,6 +103,8 @@ private:
     ColumnPtr executeWithoutLowCardinalityColumns(
             const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 
+    ColumnPtr executeWithoutSparseColumns(
+            const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
 };
 
 using ExecutableFunctionPtr = std::shared_ptr<IExecutableFunction>;
@@ -250,12 +257,9 @@ public:
     /// The property of monotonicity for a certain range.
     struct Monotonicity
     {
-        bool is_monotonic = false;    /// Is the function monotonous (nondecreasing or nonincreasing).
-        bool is_positive = true;    /// true if the function is nondecreasing, false, if notincreasing. If is_monotonic = false, then it does not matter.
+        bool is_monotonic = false;    /// Is the function monotonous (non-decreasing or non-increasing).
+        bool is_positive = true;    /// true if the function is non-decreasing, false if non-increasing. If is_monotonic = false, then it does not matter.
         bool is_always_monotonic = false; /// Is true if function is monotonic on the whole input range I
-
-        Monotonicity(bool is_monotonic_ = false, bool is_positive_ = true, bool is_always_monotonic_ = false)
-                : is_monotonic(is_monotonic_), is_positive(is_positive_), is_always_monotonic(is_always_monotonic_) {}
     };
 
     /** Get information about monotonicity on a range of values. Call only if hasInformationAboutMonotonicity.
@@ -278,9 +282,7 @@ class IFunctionOverloadResolver
 public:
     virtual ~IFunctionOverloadResolver() = default;
 
-    FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const;
-
-    DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const;
+    virtual FunctionBasePtr build(const ColumnsWithTypeAndName & arguments) const;
 
     void getLambdaArgumentTypes(DataTypes & arguments) const;
 
@@ -322,7 +324,10 @@ public:
 
 protected:
 
-    virtual FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const = 0;
+    virtual FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & /* arguments */, const DataTypePtr & /* result_type */) const
+    {
+        throw Exception("buildImpl is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     virtual DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const
     {
@@ -355,10 +360,19 @@ protected:
       */
     virtual bool useDefaultImplementationForLowCardinalityColumns() const { return true; }
 
+    /** If function arguments has single sparse column and all other arguments are constants, call function on nested column.
+      * Otherwise, convert all sparse columns to ordinary columns.
+      * If default value doesn't change after function execution, returns sparse column as a result.
+      * Otherwise, result column is converted to full.
+      */
+    virtual bool useDefaultImplementationForSparseColumns() const { return true; }
+
     // /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
 
 private:
+
+    DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const;
 
     DataTypePtr getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const;
 };
@@ -405,6 +419,13 @@ public:
       * Returns ColumnLowCardinality if at least one argument is ColumnLowCardinality.
       */
     virtual bool useDefaultImplementationForLowCardinalityColumns() const { return true; }
+
+    /** If function arguments has single sparse column and all other arguments are constants, call function on nested column.
+      * Otherwise, convert all sparse columns to ordinary columns.
+      * If default value doesn't change after function execution, returns sparse column as a result.
+      * Otherwise, result column is converted to full.
+      */
+    virtual bool useDefaultImplementationForSparseColumns() const { return true; }
 
     /// If it isn't, will convert all ColumnLowCardinality arguments to full columns.
     virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }

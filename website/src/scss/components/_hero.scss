@@ -1,0 +1,58 @@
+.hero {
+	background-repeat: no-repeat;
+	background-position: center;
+	background-size: cover;
+	overflow: visible;
+	position: relative;
+
+	&-bg {
+		background-repeat: no-repeat;
+		background-position: center;
+		background-size: cover;
+		display: block;
+		height: 100%;
+		left: 50%;
+		position: absolute;
+		top: 0;
+		transform: translateX(-50%);
+		z-index: 1;
+	}
+
+	> .container {
+		position: relative;
+		z-index: 2;
+	}
+}
+
+.hero.has-offset {
+	margin-bottom: -160px;
+	padding-bottom: 160px;
+}
+
+.base-hero {
+	height:22.5vw;
+	max-height:324px;
+	min-height:280px;
+}
+.index-hero {
+  background-image:url('/images/backgrounds/bg-hero-home.svg');
+  height:68vw;
+  max-height:980px;
+  max-width:2448px;
+  width:170vw;
+}
+.other-hero {
+  background-image: url('/images/backgrounds/bg-hero.svg');
+  max-width: 2448px;
+  width: 170vw;
+}
+.bg-footer-cta {
+  background-image:url('/images/backgrounds/bg-footer-cta.svg');
+  width:2448px;
+}
+.quickstart-bg {
+  background-image:url('/images/backgrounds/bg-quick-start.svg');
+  height:40vw;
+  top:220px;
+  width:170vw;
+}

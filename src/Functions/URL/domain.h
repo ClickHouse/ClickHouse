@@ -1,7 +1,7 @@
 #pragma once
 
 #include "protocol.h"
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 #include <cstring>
 #include <Common/StringUtils/StringUtils.h>
 

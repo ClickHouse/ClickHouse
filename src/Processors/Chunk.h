@@ -82,6 +82,7 @@ public:
     MutableColumns cloneEmptyColumns() const;
 
     const ChunkInfoPtr & getChunkInfo() const { return chunk_info; }
+    bool hasChunkInfo() const { return chunk_info != nullptr; }
     void setChunkInfo(ChunkInfoPtr chunk_info_) { chunk_info = std::move(chunk_info_); }
 
     UInt64 getNumRows() const { return num_rows; }
@@ -92,6 +93,7 @@ public:
     operator bool() const { return !empty(); }
 
     void addColumn(ColumnPtr column);
+    void addColumn(size_t position, ColumnPtr column);
     void erase(size_t position);
 
     UInt64 bytes() const;
@@ -128,5 +130,11 @@ private:
     /// It could contain less columns and rows then related block.
     RowsMaskByColumnId rows_mask_by_column_id;
 };
+
+/// Converts all columns to full serialization in chunk.
+/// It's needed, when you have to access to the internals of the column,
+/// or when you need to perform operation with two columns
+/// and their structure must be equal (e.g. compareAt).
+void convertToFullIfSparse(Chunk & chunk);
 
 }

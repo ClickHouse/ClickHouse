@@ -2,7 +2,7 @@
 #include <Common/Macros.h>
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -104,6 +104,16 @@ String Macros::expand(const String & s,
             if (info.level)
                 throw Exception("Macro 'uuid' should not be inside another macro", ErrorCodes::SYNTAX_ERROR);
             res += toString(info.table_id.uuid);
+            info.expanded_uuid = true;
+        }
+        else if (info.shard && macro_name == "shard")
+        {
+            res += *info.shard;
+            info.expanded_uuid = true;
+        }
+        else if (info.replica && macro_name == "replica")
+        {
+            res += *info.replica;
             info.expanded_uuid = true;
         }
         else if (info.ignore_unknown || info.expand_special_macros_only)

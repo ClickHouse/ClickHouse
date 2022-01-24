@@ -67,4 +67,4 @@ ClickHouse支持 [等级](external-dicts-dict-structure.md#hierarchical-dict-att
 </dictionary>
 ```
 
-[原始文章](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_hierarchical/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/query_language/dicts/external_dicts_dict_hierarchical/) <!--hide-->

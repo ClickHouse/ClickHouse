@@ -33,14 +33,16 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
-
-def copy_backup_to_detached(instance, database, src_table, dst_table):
+def get_last_backup_path(instance, database, table):
     fp_increment = os.path.join(path_to_data, 'shadow/increment.txt')
     increment = instance.exec_in_container(['cat',  fp_increment]).strip()
-    fp_backup = os.path.join(path_to_data, 'shadow', increment, 'data', database, src_table)
+    return os.path.join(path_to_data, 'shadow', increment, 'data', database, table)
+
+def copy_backup_to_detached(instance, database, src_table, dst_table):
+    fp_backup = os.path.join(path_to_data, 'shadow', '*', 'data', database, src_table)
     fp_detached = os.path.join(path_to_data, 'data', database, dst_table, 'detached')
-    logging.debug(f'copy from {fp_backup} to {fp_detached}. increment {fp_increment}')
-    instance.exec_in_container(['cp', '-r', f'{fp_backup}', '-T' , f'{fp_detached}'])
+    logging.debug(f'copy from {fp_backup} to {fp_detached}')
+    instance.exec_in_container(['bash', '-c', f'cp -r {fp_backup} -T {fp_detached}'])
 
 def test_restore(started_cluster):
     instance.query("CREATE TABLE test.tbl1 AS test.tbl")
@@ -137,3 +139,22 @@ def test_replace_partition(started_cluster):
     assert (TSV(res) == expected)
 
     instance.query("DROP TABLE IF EXISTS test.tbl3")
+
+def test_freeze_in_memory(started_cluster):
+    instance.query("CREATE TABLE test.t_in_memory(a UInt32, s String) ENGINE = MergeTree ORDER BY a SETTINGS min_rows_for_compact_part = 1000")
+    instance.query("INSERT INTO test.t_in_memory VALUES (1, 'a')")
+    instance.query("ALTER TABLE test.t_in_memory FREEZE")
+
+    fp_backup = get_last_backup_path(started_cluster.instances['node'], 'test', 't_in_memory')
+    part_path = fp_backup + '/all_1_1_0/'
+
+    assert TSV(instance.query("SELECT part_type, is_frozen FROM system.parts WHERE database = 'test' AND table = 't_in_memory'")) == TSV("InMemory\t1\n")
+    instance.exec_in_container(['test', '-f',  part_path + '/data.bin'])
+    assert instance.exec_in_container(['cat',  part_path + '/count.txt']).strip() == '1'
+
+    instance.query("CREATE TABLE test.t_in_memory_2(a UInt32, s String) ENGINE = MergeTree ORDER BY a")
+    copy_backup_to_detached(started_cluster.instances['node'], 'test', 't_in_memory', 't_in_memory_2')
+
+    instance.query("ALTER TABLE test.t_in_memory_2 ATTACH PARTITION ID 'all'")
+    assert TSV(instance.query("SELECT part_type FROM system.parts WHERE database = 'test' AND table = 't_in_memory_2'")) == TSV("Compact\n")
+    assert TSV(instance.query("SELECT a, s FROM test.t_in_memory_2")) == TSV("1\ta\n")

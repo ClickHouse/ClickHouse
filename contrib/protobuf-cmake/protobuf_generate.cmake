@@ -181,11 +181,11 @@ function(protobuf_generate)
 
     add_custom_command(
       OUTPUT ${_generated_srcs}
-      COMMAND  protobuf::protoc
+      COMMAND $<TARGET_FILE:protoc>
       ARGS --${protobuf_generate_LANGUAGE}_out ${_dll_export_decl}${protobuf_generate_PROTOC_OUT_DIR} ${_dll_desc_out} ${_protobuf_include_path} ${_abs_file}
-      DEPENDS ${_abs_file} protobuf::protoc
+      DEPENDS ${_abs_file} protoc
       COMMENT "Running ${protobuf_generate_LANGUAGE} protocol buffer compiler on ${_proto}"
-      VERBATIM )
+      VERBATIM)
   endforeach()
 
   set_source_files_properties(${_generated_srcs_all} PROPERTIES GENERATED TRUE)

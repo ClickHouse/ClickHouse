@@ -1,17 +1,17 @@
 #pragma once
 
-#include <libnuraft/nuraft.hxx> // Y_IGNORE
+#include <libnuraft/nuraft.hxx>
 #include <city.h>
 #include <optional>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/HashingWriteBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
+#include <IO/CompressionMethod.h>
 #include <Disks/IDisk.h>
 
 namespace DB
 {
 
-using Checksum = UInt64;
+using Checksum = uint64_t;
 
 using LogEntryPtr = nuraft::ptr<nuraft::log_entry>;
 using LogEntries = std::vector<LogEntryPtr>;
@@ -25,9 +25,10 @@ enum class ChangelogVersion : uint8_t
 {
     V0 = 0,
     V1 = 1, /// with 64 bit buffer header
+    V2 = 2, /// with compression and duplicate records
 };
 
-static constexpr auto CURRENT_CHANGELOG_VERSION = ChangelogVersion::V1;
+static constexpr auto CURRENT_CHANGELOG_VERSION = ChangelogVersion::V2;
 
 struct ChangelogRecordHeader
 {
@@ -52,6 +53,7 @@ struct ChangelogFileDescription
     std::string prefix;
     uint64_t from_log_index;
     uint64_t to_log_index;
+    std::string extension;
 
     std::string path;
 
@@ -71,7 +73,8 @@ class Changelog
 {
 
 public:
-    Changelog(const std::string & changelogs_dir_, uint64_t rotate_interval_, bool force_sync_, Poco::Logger * log_);
+    Changelog(const std::string & changelogs_dir_, uint64_t rotate_interval_,
+            bool force_sync_, Poco::Logger * log_, bool compress_logs_ = true);
 
     /// Read changelog from files on changelogs_dir_ skipping all entries before from_log_index
     /// Truncate broken entries, remove files after broken entries.
@@ -98,6 +101,9 @@ public:
 
     /// Last entry in log, or fake entry with term 0 if log is empty
     LogEntryPtr getLastEntry() const;
+
+    /// Get entry with latest config in logstore
+    LogEntryPtr getLatestConfigChange() const;
 
     /// Return log entries between [start, end)
     LogEntriesPtr getLogEntriesBetween(uint64_t start_index, uint64_t end_index);
@@ -130,25 +136,24 @@ private:
     void rotate(uint64_t new_start_log_index);
 
     /// Remove all changelogs from disk with start_index bigger than start_to_remove_from_id
-    void removeAllLogsAfter(uint64_t start_to_remove_from_id);
+    void removeAllLogsAfter(uint64_t remove_after_log_start_index);
     /// Remove all logs from disk
     void removeAllLogs();
     /// Init writer for existing log with some entries already written
-    void initWriter(const ChangelogFileDescription & description, uint64_t entries_already_written, std::optional<uint64_t> truncate_to_offset = {});
+    void initWriter(const ChangelogFileDescription & description);
 
 private:
     const std::string changelogs_dir;
     const uint64_t rotate_interval;
     const bool force_sync;
     Poco::Logger * log;
+    bool compress_logs;
 
     /// Currently existing changelogs
     std::map<uint64_t, ChangelogFileDescription> existing_changelogs;
 
     /// Current writer for changelog file
     std::unique_ptr<ChangelogWriter> current_writer;
-    /// Mapping log_id -> binary offset in log file
-    IndexToOffset index_to_start_pos;
     /// Mapping log_id -> log_entry
     IndexToLogEntry logs;
     /// Start log_id which exists in all "active" logs

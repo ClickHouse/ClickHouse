@@ -1,7 +1,7 @@
 0	0	1
 0	1	0
 SELECT
-    isNull(id),
+    id IS NULL,
     `n.null`,
     NOT `n.null`
 FROM t_func_to_subcolumns
@@ -31,7 +31,7 @@ FROM t_func_to_subcolumns
 SELECT
     id,
     `n.null`,
-    isNull(right.n)
+    right.n IS NULL
 FROM t_func_to_subcolumns AS left
 ALL FULL OUTER JOIN
 (

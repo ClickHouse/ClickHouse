@@ -1,3 +1,5 @@
+-- Tags: shard
+
 DROP TABLE IF EXISTS report1;
 DROP TABLE IF EXISTS report2;
 

@@ -860,13 +860,13 @@ arrayDifference(array)
 
 **Arguments**
 
--   `array` – [Array](https://clickhouse.tech/docs/en/data_types/array/).
+-   `array` – [Array](https://clickhouse.com/docs/en/data_types/array/).
 
 **Returned values**
 
 Returns an array of differences between adjacent elements.
 
-Type: [UInt\*](https://clickhouse.tech/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.tech/docs/en/data_types/int_uint/#int-ranges), [Float\*](https://clickhouse.tech/docs/en/data_types/float/).
+Type: [UInt\*](https://clickhouse.com/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.com/docs/en/data_types/int_uint/#int-ranges), [Float\*](https://clickhouse.com/docs/en/data_types/float/).
 
 **Example**
 
@@ -912,7 +912,7 @@ arrayDistinct(array)
 
 **Arguments**
 
--   `array` – [Array](https://clickhouse.tech/docs/en/data_types/array/).
+-   `array` – [Array](https://clickhouse.com/docs/en/data_types/array/).
 
 **Returned values**
 
@@ -1392,11 +1392,23 @@ Returns the first element in the `arr1` array for which `func` returns something
 
 Note that the `arrayFirst` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
 
+## arrayLast(func, arr1, …) {#array-last}
+
+Returns the last element in the `arr1` array for which `func` returns something other than 0.
+
+Note that the `arrayLast` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
+
 ## arrayFirstIndex(func, arr1, …) {#array-first-index}
 
 Returns the index of the first element in the `arr1` array for which `func` returns something other than 0.
 
 Note that the `arrayFirstIndex` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
+
+## arrayLastIndex(func, arr1, …) {#array-last-index}
+
+Returns the index of the last element in the `arr1` array for which `func` returns something other than 0.
+
+Note that the `arrayLastIndex` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions). You must pass a lambda function to it as the first argument, and it can’t be omitted.
 
 ## arrayMin {#array-min}
 

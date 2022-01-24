@@ -88,4 +88,4 @@ SOURCE(ODBC(... invalidate_query 'SELECT update_time FROM dictionary_source wher
 ...
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_lifetime/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/dicts/external_dicts_dict_lifetime/) <!--hide-->

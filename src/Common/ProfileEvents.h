@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/VariableContext.h>
+#include "base/types.h"
 #include <atomic>
 #include <memory>
 #include <stddef.h>
@@ -15,6 +16,7 @@ namespace ProfileEvents
     /// Event identifier (index in array).
     using Event = size_t;
     using Count = size_t;
+    using Increment = Int64;
     using Counter = std::atomic<Count>;
     class Counters;
 
@@ -59,8 +61,26 @@ namespace ProfileEvents
             } while (current != nullptr);
         }
 
+        struct Snapshot
+        {
+            Snapshot();
+            Snapshot(Snapshot &&) = default;
+
+            Count operator[] (Event event) const noexcept
+            {
+                return counters_holder[event];
+            }
+
+            Snapshot & operator=(Snapshot &&) = default;
+        private:
+            std::unique_ptr<Count[]> counters_holder;
+
+            friend class Counters;
+            friend struct CountersIncrement;
+        };
+
         /// Every single value is fetched atomically, but not all values as a whole.
-        Counters getPartiallyAtomicSnapshot() const;
+        Snapshot getPartiallyAtomicSnapshot() const;
 
         /// Reset all counters to zero and reset parent.
         void reset();
@@ -94,4 +114,25 @@ namespace ProfileEvents
 
     /// Get index just after last event identifier.
     Event end();
+
+    struct CountersIncrement
+    {
+        CountersIncrement() noexcept = default;
+        explicit CountersIncrement(Counters::Snapshot const & snapshot);
+        CountersIncrement(Counters::Snapshot const & after, Counters::Snapshot const & before);
+
+        CountersIncrement(CountersIncrement &&) = default;
+        CountersIncrement & operator=(CountersIncrement &&) = default;
+
+        Increment operator[](Event event) const noexcept
+        {
+            return increment_holder[event];
+        }
+    private:
+        void init();
+
+        static_assert(sizeof(Count) == sizeof(Increment), "Sizes of counter and increment differ");
+
+        std::unique_ptr<Increment[]> increment_holder;
+    };
 }

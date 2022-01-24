@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <Common/OptimizedRegularExpression.h>
 #include <Storages/IStorage.h>
@@ -22,10 +22,12 @@ public:
 
     /// The check is delayed to the read method. It checks the support of the tables used.
     bool supportsSampling() const override { return true; }
-    bool supportsPrewhere() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsIndexForIn() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
+    bool supportsPrewhere() const override { return true; }
+
+    bool canMoveConditionsToPrewhere() const override;
 
     QueryProcessingStage::Enum
     getQueryProcessingStage(ContextPtr, QueryProcessingStage::Enum, const StorageMetadataPtr &, SelectQueryInfo &) const override;
@@ -43,17 +45,20 @@ public:
 
     /// you need to add and remove columns in the sub-tables manually
     /// the structure of sub-tables is not checked
-    void alter(const AlterCommands & params, ContextPtr context, TableLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
     bool mayBenefitFromIndexForIn(
         const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot) const override;
 
+    /// Evaluate database name or regexp for StorageMerge and TableFunction merge
+    static std::tuple<bool /* is_regexp */, ASTPtr> evaluateDatabaseName(const ASTPtr & node, ContextPtr context);
+
 private:
-    using DbToTableSetMap = std::map<String, std::set<String>>;
+    using DBToTableSetMap = std::map<String, std::set<String>>;
 
     std::optional<OptimizedRegularExpression> source_database_regexp;
     std::optional<OptimizedRegularExpression> source_table_regexp;
-    std::optional<DbToTableSetMap> source_databases_and_tables;
+    std::optional<DBToTableSetMap> source_databases_and_tables;
 
     String source_database_name_or_regexp;
     bool database_is_regexp = false;
@@ -72,6 +77,9 @@ private:
     template <typename F>
     StoragePtr getFirstTable(F && predicate) const;
 
+    template <typename F>
+    void forEachTable(F && func) const;
+
     DatabaseTablesIteratorPtr getDatabaseIterator(const String & database_name, ContextPtr context) const;
 
     DatabaseTablesIterators getDatabaseIterators(ContextPtr context) const;
@@ -86,7 +94,7 @@ protected:
         const String & comment,
         const String & source_database_name_or_regexp_,
         bool database_is_regexp_,
-        const DbToTableSetMap & source_databases_and_tables_,
+        const DBToTableSetMap & source_databases_and_tables_,
         ContextPtr context_);
 
     StorageMerge(
@@ -126,6 +134,11 @@ protected:
         const Block & header, const StorageMetadataPtr & metadata_snapshot, const Aliases & aliases,
         ContextPtr context, ASTPtr & query,
         Pipe & pipe, QueryProcessingStage::Enum processed_stage);
+
+    static SelectQueryInfo getModifiedQueryInfo(
+        const SelectQueryInfo & query_info, ContextPtr modified_context, const StorageID & current_storage_id, bool is_merge_engine);
+
+    ColumnsDescription getColumnsDescriptionFromSourceTables() const;
 };
 
 }

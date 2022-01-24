@@ -6,7 +6,6 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Disks/IDisk.h>
 
@@ -131,9 +130,6 @@ protected:
     std::vector<StreamPtr> skip_indices_streams;
     MergeTreeIndexAggregators skip_indices_aggregators;
     std::vector<size_t> skip_index_accumulated_marks;
-
-    using SerializationsMap = std::unordered_map<String, SerializationPtr>;
-    SerializationsMap serializations;
 
     std::unique_ptr<WriteBufferFromFileBase> index_file_stream;
     std::unique_ptr<HashingWriteBuffer> index_stream;

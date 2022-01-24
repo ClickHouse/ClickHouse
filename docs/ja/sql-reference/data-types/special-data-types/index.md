@@ -11,4 +11,4 @@ toc_title: "\u96A0\u3057"
 
 特別なデータ型の値は、テーブルへの保存やクエリ結果の出力のためにシリアル化することはできませんが、クエリ実行時の中間結果として使用でき
 
-[元の記事](https://clickhouse.tech/docs/en/data_types/special_data_types/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/data_types/special_data_types/) <!--hide-->

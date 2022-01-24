@@ -1,7 +1,7 @@
-<yandex>
+<clickhouse>
     <merge_tree>
         <max_bytes_to_merge_at_min_space_in_pool>1</max_bytes_to_merge_at_min_space_in_pool>
         <max_bytes_to_merge_at_max_space_in_pool>2</max_bytes_to_merge_at_max_space_in_pool>
         <max_replicated_merges_in_queue>0</max_replicated_merges_in_queue>
     </merge_tree>
-</yandex>
+</clickhouse>

@@ -2,9 +2,9 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
 #include <Interpreters/PartLog.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/KeeperException.h>
+#include <Core/Block.h>
 #include <IO/Operators.h>
 
 
@@ -76,18 +76,24 @@ void ReplicatedMergeTreeSink::checkQuorumPrecondition(zkutil::ZooKeeperPtr & zoo
 {
     quorum_info.status_path = storage.zookeeper_path + "/quorum/status";
 
+    Strings replicas = zookeeper->getChildren(fs::path(storage.zookeeper_path) / "replicas");
+    std::vector<std::future<Coordination::ExistsResponse>> replicas_status_futures;
+    replicas_status_futures.reserve(replicas.size());
+    for (const auto & replica : replicas)
+        if (replica != storage.replica_name)
+            replicas_status_futures.emplace_back(zookeeper->asyncExists(fs::path(storage.zookeeper_path) / "replicas" / replica / "is_active"));
+
     std::future<Coordination::GetResponse> is_active_future = zookeeper->asyncTryGet(storage.replica_path + "/is_active");
     std::future<Coordination::GetResponse> host_future = zookeeper->asyncTryGet(storage.replica_path + "/host");
 
-    /// List of live replicas. All of them register an ephemeral node for leader_election.
+    size_t active_replicas = 1;     /// Assume current replica is active (will check below)
+    for (auto & status : replicas_status_futures)
+        if (status.get().error == Coordination::Error::ZOK)
+            ++active_replicas;
 
-    Coordination::Stat leader_election_stat;
-    zookeeper->get(storage.zookeeper_path + "/leader_election", &leader_election_stat);
-
-    if (leader_election_stat.numChildren < static_cast<int32_t>(quorum))
-        throw Exception("Number of alive replicas ("
-            + toString(leader_election_stat.numChildren) + ") is less than requested quorum (" + toString(quorum) + ").",
-            ErrorCodes::TOO_FEW_LIVE_REPLICAS);
+    if (active_replicas < quorum)
+        throw Exception(ErrorCodes::TOO_FEW_LIVE_REPLICAS, "Number of alive replicas ({}) is less than requested quorum ({}).",
+                        active_replicas, quorum);
 
     /** Is there a quorum for the last part for which a quorum is needed?
         * Write of all the parts with the included quorum is linearly ordered.
@@ -118,7 +124,7 @@ void ReplicatedMergeTreeSink::checkQuorumPrecondition(zkutil::ZooKeeperPtr & zoo
 
 void ReplicatedMergeTreeSink::consume(Chunk chunk)
 {
-    auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
+    auto block = getHeader().cloneWithColumns(chunk.detachColumns());
 
     last_block_is_duplicate = false;
 
@@ -221,6 +227,8 @@ void ReplicatedMergeTreeSink::commitPart(
     constexpr size_t max_iterations = 10;
 
     bool is_already_existing_part = false;
+
+    String old_part_name = part->name;
 
     while (true)
     {
@@ -364,7 +372,7 @@ void ReplicatedMergeTreeSink::commitPart(
                 block_id, existing_part_name);
 
             /// If it does not exist, we will write a new part with existing name.
-            /// Note that it may also appear on filesystem right now in PreCommitted state due to concurrent inserts of the same data.
+            /// Note that it may also appear on filesystem right now in PreActive state due to concurrent inserts of the same data.
             /// It will be checked when we will try to rename directory.
 
             part->name = existing_part_name;
@@ -502,6 +510,9 @@ void ReplicatedMergeTreeSink::commitPart(
 
         waitForQuorum(zookeeper, part->name, quorum_info.status_path, quorum_info.is_active_node_value);
     }
+
+    /// Cleanup shared locks made with old name
+    part->cleanupOldName(old_part_name);
 }
 
 void ReplicatedMergeTreeSink::onStart()

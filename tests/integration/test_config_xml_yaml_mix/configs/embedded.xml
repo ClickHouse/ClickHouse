@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <!-- Config that is used when server is run without config file. -->
-<yandex>
+<clickhouse>
     <logger>
         <level>trace</level>
         <console>true</console>
@@ -37,4 +37,4 @@
     <quotas>
         <default />
     </quotas>
-</yandex>
+</clickhouse>

@@ -1,12 +1,10 @@
 import logging
-import random
-import string
 import time
-import threading
 import os
 
 import pytest
 from helpers.cluster import ClickHouseCluster
+from helpers.utility import generate_values
 
 from pyhdfs import HdfsClient
 
@@ -41,17 +39,6 @@ FILES_OVERHEAD = 1
 FILES_OVERHEAD_PER_COLUMN = 2  # Data and mark files
 FILES_OVERHEAD_PER_PART_WIDE = FILES_OVERHEAD_PER_COLUMN * 3 + 2 + 6 + 1
 FILES_OVERHEAD_PER_PART_COMPACT = 10 + 1
-
-
-def random_string(length):
-    letters = string.ascii_letters
-    return ''.join(random.choice(letters) for i in range(length))
-
-
-def generate_values(date_str, count, sign=1):
-    data = [[date_str, sign * (i + 1), random_string(10)] for i in range(count)]
-    data.sort(key=lambda tup: tup[1])
-    return ",".join(["('{}',{},'{}')".format(x, y, z) for x, y, z in data])
 
 
 @pytest.fixture(scope="module")

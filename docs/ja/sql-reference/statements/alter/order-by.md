@@ -1,0 +1,1 @@
+../../../../en/sql-reference/statements/alter/order-by.md

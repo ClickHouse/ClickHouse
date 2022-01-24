@@ -1,13 +1,6 @@
 #include <type_traits>
 #include <DataTypes/DataTypeNumberBase.h>
 #include <Columns/ColumnVector.h>
-#include <Columns/ColumnConst.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <Common/NaNUtils.h>
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
-#include <Formats/FormatSettings.h>
 
 
 namespace DB
@@ -28,13 +21,13 @@ MutableColumnPtr DataTypeNumberBase<T>::createColumn() const
 template <typename T>
 bool DataTypeNumberBase<T>::isValueRepresentedByInteger() const
 {
-    return is_integer_v<T>;
+    return is_integer<T>;
 }
 
 template <typename T>
 bool DataTypeNumberBase<T>::isValueRepresentedByUnsignedInteger() const
 {
-    return is_integer_v<T> && is_unsigned_v<T>;
+    return is_integer<T> && is_unsigned_v<T>;
 }
 
 

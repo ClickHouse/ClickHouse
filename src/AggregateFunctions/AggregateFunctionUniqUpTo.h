@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/unaligned.h>
+#include <base/unaligned.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
@@ -209,12 +209,12 @@ public:
         this->data(place).merge(this->data(rhs), threshold);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).write(buf, threshold);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         this->data(place).read(buf, threshold);
     }
@@ -273,12 +273,12 @@ public:
         this->data(place).merge(this->data(rhs), threshold);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         this->data(place).write(buf, threshold);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version  */, Arena *) const override
     {
         this->data(place).read(buf, threshold);
     }
@@ -295,4 +295,3 @@ public:
 #if !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
-

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 
 /// Convenience methods, that use current thread's memory_tracker if it is available.
 namespace CurrentMemoryTracker

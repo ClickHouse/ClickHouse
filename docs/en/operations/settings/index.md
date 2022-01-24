@@ -55,4 +55,4 @@ SELECT getSetting('custom_a');
 
 -   [Server Configuration Settings](../../operations/server-configuration-parameters/settings.md)
 
-[Original article](https://clickhouse.tech/docs/en/operations/settings/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/settings/) <!--hide-->

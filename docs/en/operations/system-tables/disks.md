@@ -24,4 +24,4 @@ Columns:
 1 rows in set. Elapsed: 0.001 sec.
 ```
 
-[Original article](https://clickhouse.tech/docs/en/operations/system-tables/disks) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/disks) <!--hide-->
