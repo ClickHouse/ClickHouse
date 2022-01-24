@@ -58,8 +58,6 @@ void MergeTreeSink::consume(Chunk chunk)
 
         auto temp_part = storage.writer.writeTempPart(current_block, metadata_snapshot, context);
 
-        LOG_TRACE(&Poco::Logger::get("MergeTreeSink"), "Written part {}", temp_part.part->getNameWithState());
-
         UInt64 elapsed_ns = watch.elapsed();
 
         /// If optimize_on_insert setting is true, current_block could become empty after merge
@@ -82,9 +80,7 @@ void MergeTreeSink::finishPrevPart()
 
     for (auto & partition : prev_part->partitions)
     {
-        LOG_TRACE(&Poco::Logger::get("MergeTreeSink"), "Finalizing  part {}", partition.temp_part.part->getNameWithState());
         partition.temp_part.finalize();
-        LOG_TRACE(&Poco::Logger::get("MergeTreeSink"), "Finalized part {}", partition.temp_part.part->getNameWithState());
 
         auto & part = partition.temp_part.part;
 
@@ -96,8 +92,6 @@ void MergeTreeSink::finishPrevPart()
             /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
             storage.background_operations_assignee.trigger();
         }
-
-        LOG_TRACE(&Poco::Logger::get("MergeTreeSink"), "Renamed part {}", partition.temp_part.part->getNameWithState());
     }
 
     prev_part.reset();
