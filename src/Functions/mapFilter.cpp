@@ -42,8 +42,13 @@ struct MapFilterImpl
             if (column_filter_const->getValue<UInt8>())
                 return map_column.clone();
             else
-                return ColumnMap::create(
-                    map_column.getNestedColumnPtr()->cloneEmpty());
+            {
+                const auto * column_array = typeid_cast<const ColumnArray *>(map_column.getNestedColumnPtr().get());
+                const auto * column_tuple = typeid_cast<const ColumnTuple *>(column_array->getDataPtr().get());
+                ColumnPtr keys = column_tuple->getColumnPtr(0)->cloneEmpty();
+                ColumnPtr values = column_tuple->getColumnPtr(1)->cloneEmpty();
+                return ColumnMap::create(keys, values, ColumnArray::ColumnOffsets::create(map_column.size(), 0));
+            }
         }
 
         const IColumn::Filter & filter = column_filter->getData();
