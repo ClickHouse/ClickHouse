@@ -179,8 +179,7 @@ ReplxxLineReader::ReplxxLineReader(
 
     auto callback = [&suggest] (const String & context, size_t context_size)
     {
-        auto words = suggest.getCompletions(context, context_size);
-        return Replxx::completions_t(words.begin(), words.end());
+        return suggest.getCompletions(context, context_size);
     };
 
     rx.set_completion_callback(callback);

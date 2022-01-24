@@ -36,7 +36,7 @@ bool hasInputData()
 
 }
 
-LineReader::Suggest::Words LineReader::Suggest::getCompletions(const String & prefix, size_t prefix_length)
+replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String & prefix, size_t prefix_length)
 {
     std::string_view last_word;
 
@@ -64,7 +64,7 @@ LineReader::Suggest::Words LineReader::Suggest::getCompletions(const String & pr
             return strncmp(s.data(), prefix_searched.data(), prefix_length) < 0;
         });
 
-    return Words(range.first, range.second);
+    return replxx::Replxx::completions_t(range.first, range.second);
 }
 
 void LineReader::Suggest::addWords(Words && new_words)
