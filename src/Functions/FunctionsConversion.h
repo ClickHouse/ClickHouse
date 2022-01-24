@@ -185,6 +185,15 @@ struct ConvertImpl
             bool result_is_bool = isBool(result_type);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
+                if constexpr (std::is_same_v<ToDataType, DataTypeUInt8>)
+                {
+                    if (result_is_bool)
+                    {
+                        vec_to[i] = vec_from[i] != FromFieldType(0);
+                        continue;
+                    }
+                }
+
                 if constexpr (std::is_same_v<FromDataType, DataTypeUUID> != std::is_same_v<ToDataType, DataTypeUUID>)
                 {
                     throw Exception("Conversion between numeric types and UUID is not supported", ErrorCodes::NOT_IMPLEMENTED);
@@ -268,12 +277,6 @@ struct ConvertImpl
                         {
                             vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
                         }
-                    }
-
-                    if constexpr (std::is_same_v<ToDataType, DataTypeUInt8>)
-                    {
-                        if (result_is_bool)
-                            vec_to[i] = static_cast<bool>(vec_to[i]);
                     }
                 }
             }
@@ -2802,10 +2805,16 @@ private:
         }
 
         const auto * from_type = checkAndGetDataType<DataTypeArray>(from_type_untyped.get());
+        const auto * from_type_map = checkAndGetDataType<DataTypeMap>(from_type_untyped.get());
+
+        /// Convert from Map
+        if (from_type_map)
+            from_type = checkAndGetDataType<DataTypeArray>(from_type_map->getNestedType().get());
+
         if (!from_type)
         {
             throw Exception(ErrorCodes::TYPE_MISMATCH,
-                "CAST AS Array can only be performed between same-dimensional Array or String types");
+                "CAST AS Array can only be performed between same-dimensional Array, Map or String types");
         }
 
         DataTypePtr from_nested_type = from_type->getNestedType();
@@ -2825,9 +2834,16 @@ private:
         return [nested_function, from_nested_type, to_nested_type](
                 ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t /*input_rows_count*/) -> ColumnPtr
         {
-            const auto & array_arg = arguments.front();
+            const auto & argument_column = arguments.front();
 
-            if (const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(array_arg.column.get()))
+            const ColumnArray * col_array = nullptr;
+
+            if (const ColumnMap * col_map = checkAndGetColumn<ColumnMap>(argument_column.column.get()))
+                col_array = &col_map->getNestedColumn();
+            else
+                col_array = checkAndGetColumn<ColumnArray>(argument_column.column.get());
+
+            if (col_array)
             {
                 /// create columns for converting nested column containing original and result columns
                 ColumnsWithTypeAndName nested_columns{{ col_array->getDataPtr(), from_nested_type, "" }};
@@ -2839,7 +2855,11 @@ private:
                 return ColumnArray::create(result_column, col_array->getOffsetsPtr());
             }
             else
-                throw Exception{"Illegal column " + array_arg.column->getName() + " for function CAST AS Array", ErrorCodes::LOGICAL_ERROR};
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Illegal column {} for function CAST AS Array",
+                    argument_column.column->getName());
+            }
         };
     }
 

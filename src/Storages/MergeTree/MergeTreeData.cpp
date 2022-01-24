@@ -21,6 +21,7 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
+#include <Interpreters/Aggregator.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/TreeRewriter.h>
@@ -344,6 +345,16 @@ MergeTreeData::MergeTreeData(
 StoragePolicyPtr MergeTreeData::getStoragePolicy() const
 {
     return getContext()->getStoragePolicy(getSettings()->storage_policy);
+}
+
+bool MergeTreeData::supportsFinal() const
+{
+    return merging_params.mode == MergingParams::Collapsing
+        || merging_params.mode == MergingParams::Summing
+        || merging_params.mode == MergingParams::Aggregating
+        || merging_params.mode == MergingParams::Replacing
+        || merging_params.mode == MergingParams::Graphite
+        || merging_params.mode == MergingParams::VersionedCollapsing;
 }
 
 static void checkKeyExpression(const ExpressionActions & expr, const Block & sample_block, const String & key_name, bool allow_nullable_key)
@@ -1121,13 +1132,18 @@ void MergeTreeData::loadDataPartsFromDisk(
 
     if (suspicious_broken_parts > settings->max_suspicious_broken_parts && !skip_sanity_checks)
         throw Exception(ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS,
-            "Suspiciously many ({}) broken parts to remove.",
-            suspicious_broken_parts);
+            "Suspiciously many ({} parts, {} in total) broken parts to remove while maximum allowed broken parts count is {}. You can change the maximum value "
+                        "with merge tree setting 'max_suspicious_broken_parts' in <merge_tree> configuration section or in table settings in .sql file "
+                        "(don't forget to return setting back to default value)",
+            suspicious_broken_parts, formatReadableSizeWithBinarySuffix(suspicious_broken_parts_bytes), settings->max_suspicious_broken_parts);
 
     if (suspicious_broken_parts_bytes > settings->max_suspicious_broken_parts_bytes && !skip_sanity_checks)
         throw Exception(ErrorCodes::TOO_MANY_UNEXPECTED_DATA_PARTS,
-            "Suspiciously big size ({}) of all broken parts to remove.",
-            formatReadableSizeWithBinarySuffix(suspicious_broken_parts_bytes));
+            "Suspiciously big size ({} parts, {} in total) of all broken parts to remove while maximum allowed broken parts size is {}. "
+            "You can change the maximum value with merge tree setting 'max_suspicious_broken_parts_bytes' in <merge_tree> configuration "
+            "section or in table settings in .sql file (don't forget to return setting back to default value)",
+            suspicious_broken_parts, formatReadableSizeWithBinarySuffix(suspicious_broken_parts_bytes),
+            formatReadableSizeWithBinarySuffix(settings->max_suspicious_broken_parts_bytes));
 }
 
 
@@ -2558,11 +2574,13 @@ bool MergeTreeData::renameTempPartAndReplace(
             ++reduce_parts;
         }
 
-        decreaseDataVolume(reduce_bytes, reduce_rows, reduce_parts);
-
         modifyPartState(part_it, DataPartState::Active);
         addPartContributionToColumnAndSecondaryIndexSizes(part);
-        addPartContributionToDataVolume(part);
+
+        ssize_t diff_bytes = part->getBytesOnDisk() - reduce_bytes;
+        ssize_t diff_rows = part->rows_count - reduce_rows;
+        ssize_t diff_parts = 1 - reduce_parts;
+        increaseDataVolume(diff_bytes, diff_rows, diff_parts);
     }
 
     auto part_in_memory = asInMemoryPart(part);
@@ -3091,8 +3109,9 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             auto part_it = data_parts_indexes.insert(part_copy).first;
             modifyPartState(part_it, DataPartState::Active);
 
-            removePartContributionToDataVolume(original_active_part);
-            addPartContributionToDataVolume(part_copy);
+            ssize_t diff_bytes = part_copy->getBytesOnDisk() - original_active_part->getBytesOnDisk();
+            ssize_t diff_rows = part_copy->rows_count - original_active_part->rows_count;
+            increaseDataVolume(diff_bytes, diff_rows, /* parts= */ 0);
 
             auto disk = original_active_part->volume->getDisk();
             String marker_path = fs::path(original_active_part->getFullRelativePath()) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME;
@@ -4293,8 +4312,11 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
                 data.addPartContributionToColumnAndSecondaryIndexSizes(part);
             }
         }
-        data.decreaseDataVolume(reduce_bytes, reduce_rows, reduce_parts);
-        data.increaseDataVolume(add_bytes, add_rows, add_parts);
+
+        ssize_t diff_bytes = add_bytes - reduce_bytes;
+        ssize_t diff_rows = add_rows - reduce_rows;
+        ssize_t diff_parts  = add_parts - reduce_parts;
+        data.increaseDataVolume(diff_bytes, diff_rows, diff_parts);
     }
 
     clear();
@@ -5521,6 +5543,9 @@ bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagge
 {
     LOG_INFO(log, "Got {} parts to move.", moving_tagger->parts_to_move.size());
 
+    const auto settings = getSettings();
+
+    bool result = true;
     for (const auto & moving_part : moving_tagger->parts_to_move)
     {
         Stopwatch stopwatch;
@@ -5540,8 +5565,41 @@ bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagge
 
         try
         {
-            cloned_part = parts_mover.clonePart(moving_part);
-            parts_mover.swapClonedPart(cloned_part);
+            /// If zero-copy replication enabled than replicas shouldn't try to
+            /// move parts to another disk simultaneously. For this purpose we
+            /// use shared lock across replicas. NOTE: it's not 100% reliable,
+            /// because we are not checking lock while finishing part move.
+            /// However it's not dangerous at all, we will just have very rare
+            /// copies of some part.
+            ///
+            /// FIXME: this code is related to Replicated merge tree, and not
+            /// common for ordinary merge tree. So it's a bad design and should
+            /// be fixed.
+            auto disk = moving_part.reserved_space->getDisk();
+            if (supportsReplication() && disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication)
+            {
+                /// If we acuqired lock than let's try to move. After one
+                /// replica will actually move the part from disk to some
+                /// zero-copy storage other replicas will just fetch
+                /// metainformation.
+                if (auto lock = tryCreateZeroCopyExclusiveLock(moving_part.part, disk); lock)
+                {
+                    cloned_part = parts_mover.clonePart(moving_part);
+                    parts_mover.swapClonedPart(cloned_part);
+                }
+                else
+                {
+                    /// Move will be retried but with backoff.
+                    LOG_DEBUG(log, "Move of part {} postponed, because zero copy mode enabled and someone other moving this part right now", moving_part.part->name);
+                    result = false;
+                    continue;
+                }
+            }
+            else /// Ordinary move as it should be
+            {
+                cloned_part = parts_mover.clonePart(moving_part);
+                parts_mover.swapClonedPart(cloned_part);
+            }
             write_part_log({});
         }
         catch (...)
@@ -5553,7 +5611,7 @@ bool MergeTreeData::moveParts(const CurrentlyMovingPartsTaggerPtr & moving_tagge
             throw;
         }
     }
-    return true;
+    return result;
 }
 
 bool MergeTreeData::partsContainSameProjections(const DataPartPtr & left, const DataPartPtr & right)
@@ -5643,21 +5701,14 @@ void MergeTreeData::addPartContributionToDataVolume(const DataPartPtr & part)
 
 void MergeTreeData::removePartContributionToDataVolume(const DataPartPtr & part)
 {
-    decreaseDataVolume(part->getBytesOnDisk(), part->rows_count, 1);
+    increaseDataVolume(-part->getBytesOnDisk(), -part->rows_count, -1);
 }
 
-void MergeTreeData::increaseDataVolume(size_t bytes, size_t rows, size_t parts)
+void MergeTreeData::increaseDataVolume(ssize_t bytes, ssize_t rows, ssize_t parts)
 {
     total_active_size_bytes.fetch_add(bytes, std::memory_order_acq_rel);
     total_active_size_rows.fetch_add(rows, std::memory_order_acq_rel);
     total_active_size_parts.fetch_add(parts, std::memory_order_acq_rel);
-}
-
-void MergeTreeData::decreaseDataVolume(size_t bytes, size_t rows, size_t parts)
-{
-    total_active_size_bytes.fetch_sub(bytes, std::memory_order_acq_rel);
-    total_active_size_rows.fetch_sub(rows, std::memory_order_acq_rel);
-    total_active_size_parts.fetch_sub(parts, std::memory_order_acq_rel);
 }
 
 void MergeTreeData::setDataVolume(size_t bytes, size_t rows, size_t parts)

@@ -77,6 +77,10 @@ void registerInputFormatJSONAsString(FormatFactory & factory);
 void registerInputFormatLineAsString(FormatFactory & factory);
 void registerInputFormatCapnProto(FormatFactory & factory);
 
+#if USE_HIVE
+void registerInputFormatHiveText(FormatFactory & factory);
+#endif
+
 /// Non trivial prefix and suffix checkers for disabling parallel parsing.
 void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory);
 void registerNonTrivialPrefixAndSuffixCheckerJSONAsString(FormatFactory & factory);
@@ -102,6 +106,8 @@ void registerRegexpSchemaReader(FormatFactory & factory);
 void registerTSKVSchemaReader(FormatFactory & factory);
 void registerValuesSchemaReader(FormatFactory & factory);
 void registerTemplateSchemaReader(FormatFactory & factory);
+
+void registerFileExtensions(FormatFactory & factory);
 
 void registerFormats()
 {
@@ -169,6 +175,9 @@ void registerFormats()
     registerInputFormatRegexp(factory);
     registerInputFormatJSONAsString(factory);
     registerInputFormatLineAsString(factory);
+#if USE_HIVE
+    registerInputFormatHiveText(factory);
+#endif
 
     registerInputFormatCapnProto(factory);
 
@@ -196,16 +205,6 @@ void registerFormats()
     registerTSKVSchemaReader(factory);
     registerValuesSchemaReader(factory);
     registerTemplateSchemaReader(factory);
-
-    factory.registerFileExtension("csv", "CSV");
-    factory.registerFileExtension("tsv", "TSV");
-    factory.registerFileExtension("parquet", "Parquet");
-    factory.registerFileExtension("orc", "ORC");
-    factory.registerFileExtension("native", "Native");
-    factory.registerFileExtension("json", "JSON");
-    factory.registerFileExtension("ndjson", "JSONEachRow");
-    factory.registerFileExtension("xml", "XML");
-    factory.registerFileExtension("avro", "Avro");
 }
 
 }

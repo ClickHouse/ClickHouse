@@ -2,8 +2,8 @@
 import json
 import os
 
-import requests
-from unidiff import PatchSet
+import requests  # type: ignore
+from unidiff import PatchSet  # type: ignore
 
 from env_helper import GITHUB_REPOSITORY, GITHUB_SERVER_URL, GITHUB_RUN_ID, GITHUB_EVENT_PATH
 
@@ -38,9 +38,15 @@ class PRInfo:
                 with open(GITHUB_EVENT_PATH, 'r', encoding='utf-8') as event_file:
                     github_event = json.load(event_file)
             else:
-                github_event = {'commits': 1, 'after': 'HEAD', 'ref': None}
+                github_event = {
+                    'commits': 1,
+                    'before': 'HEAD~',
+                    'after': 'HEAD',
+                    'ref': None,
+                }
         self.event = github_event
         self.changed_files = set([])
+        self.body = ""
         ref = github_event.get("ref", "refs/head/master")
         if ref.startswith('refs/heads/'):
             ref = ref[11:]
@@ -70,6 +76,7 @@ class PRInfo:
             self.base_name = github_event['pull_request']['base']['repo']['full_name']
             self.head_ref = github_event['pull_request']['head']['ref']
             self.head_name = github_event['pull_request']['head']['repo']['full_name']
+            self.body = github_event['pull_request']['body']
 
             if labels_from_api:
                 response = requests.get(f"https://api.github.com/repos/{GITHUB_REPOSITORY}/issues/{self.number}/labels")
@@ -93,7 +100,8 @@ class PRInfo:
             self.task_url = f"{repo_prefix}/actions/runs/{GITHUB_RUN_ID or '0'}"
             self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
             self.repo_full_name = GITHUB_REPOSITORY
-            if pull_request is None or pull_request['state'] == 'closed':  # it's merged PR to master
+            if pull_request is None or pull_request['state'] == 'closed':
+                # it's merged PR to master
                 self.number = 0
                 self.labels = {}
                 self.pr_html_url = f"{repo_prefix}/commits/{ref}"

@@ -58,6 +58,8 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
+#include <Storages/Cache/ExternalDataSourceCache.h>
+#include <Storages/Cache/registerRemoteFileMetadatas.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -96,9 +98,7 @@
 #endif
 
 #if USE_SSL
-#    if USE_INTERNAL_SSL_LIBRARY
-#        include <Compression/CompressionCodecEncrypted.h>
-#    endif
+#    include <Compression/CompressionCodecEncrypted.h>
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
 #endif
@@ -110,10 +110,6 @@
 #if USE_NURAFT
 #    include <Coordination/FourLetterCommand.h>
 #    include <Server/KeeperTCPHandlerFactory.h>
-#endif
-
-#if USE_BASE64
-#   include <turbob64.h>
 #endif
 
 #if USE_JEMALLOC
@@ -525,6 +521,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     registerDictionaries();
     registerDisks();
     registerFormats();
+    registerRemoteFileMetadatas();
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
@@ -558,6 +555,21 @@ if (ThreadFuzzer::instance().isEffective())
         config().getUInt("max_thread_pool_free_size", 1000),
         config().getUInt("thread_pool_queue_size", 10000)
     );
+
+
+    /// Initialize global local cache for remote filesystem.
+    if (config().has("local_cache_for_remote_fs"))
+    {
+        bool enable = config().getBool("local_cache_for_remote_fs.enable", false);
+        if (enable)
+        {
+            String root_dir = config().getString("local_cache_for_remote_fs.root_dir");
+            UInt64 limit_size = config().getUInt64("local_cache_for_remote_fs.limit_size");
+            UInt64 bytes_read_before_flush
+                = config().getUInt64("local_cache_for_remote_fs.bytes_read_before_flush", DBMS_DEFAULT_BUFFER_SIZE);
+            ExternalDataSourceCache::instance().initOnce(global_context, root_dir, limit_size, bytes_read_before_flush);
+        }
+    }
 
     Poco::ThreadPool server_pool(3, config().getUInt("max_connections", 1024));
     std::mutex servers_lock;
