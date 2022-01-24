@@ -1,6 +1,6 @@
 ---
 toc_priority: 35
-toc_title: ALTER
+toc_title: TABLE
 ---
 
 ## ALTER {#query_language_queries_alter}
