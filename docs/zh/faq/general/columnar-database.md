@@ -1,25 +1,25 @@
 ---
-title: What is a columnar database?
+title: 什么是列存储数据库?
 toc_hidden: true
 toc_priority: 101
 ---
 
-# What Is a Columnar Database? {#what-is-a-columnar-database}
+# 什么是列存储数据库? {#what-is-a-columnar-database}
 
-A columnar database stores data of each column independently. This allows to read data from disks only for those columns that are used in any given query. The cost is that operations that affect whole rows become proportionally more expensive. The synonym for a columnar database is a column-oriented database management system. ClickHouse is a typical example of such a system.
+列存储数据库独立存储每个列的数据。这只允许从磁盘读取任何给定查询中使用的列的数据。其代价是，影响整行的操作会按比例变得更昂贵。柱状数据库的同义词是面向列的数据库管理系统。ClickHouse就是这样一个典型的例子。
 
-Key columnar database advantages are:
+柱状数据库的主要优点是:
 
--   Queries that use only a few columns out of many.
--   Aggregating queries against large volumes of data.
--   Column-wise data compression.
+- 查询只使用许多列其中的少数列。
+— 聚合对大量数据的查询。
+— 按列压缩。
 
-Here is the illustration of the difference between traditional row-oriented systems and columnar databases when building reports:
+下面是构建报表时传统的面向行系统和柱状数据库之间的区别:
 
-**Traditional row-oriented**
-![Traditional row-oriented](https://clickhouse.com/docs/en/images/row-oriented.gif#)
+**传统行存储**
+!(传统行存储)(https://clickhouse.com/docs/en/images/row-oriented.gif)
 
-**Columnar**
-![Columnar](https://clickhouse.com/docs/en/images/column-oriented.gif#)
+**列存储**
+!(列存储)(https://clickhouse.com/docs/en/images/column-oriented.gif)
 
-A columnar database is a preferred choice for analytical applications because it allows to have many columns in a table just in case, but do not pay the cost for unused columns on read query execution time. Column-oriented databases are designed for big data processing because and data warehousing, they often natively scale using distributed clusters of low-cost hardware to increase throughput. ClickHouse does it with combination of [distributed](../../engines/table-engines/special/distributed.md) and [replicated](../../engines/table-engines/mergetree-family/replication.md) tables.
+列存储数据库是分析应用程序的首选，因为它允许在一个表中有许多列以防万一，但不会在读取查询执行时为未使用的列付出代价。面向列的数据库是为大数据处理而设计的，因为和数据仓库一样，它们通常使用分布式的低成本硬件集群来提高吞吐量。ClickHouse结合了[分布式](../../engines/table-engines/special/distributed.md)和[复制式](../../engines/table-engines/mergetree-family/replication.md)两个表。
