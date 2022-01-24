@@ -201,6 +201,40 @@ String ASTTableIdentifier::getDatabaseName() const
     else return {};
 }
 
+ASTPtr ASTTableIdentifier::getTable() const
+{
+    if (name_parts.size() == 2)
+    {
+        if (!name_parts[1].empty())
+            return std::make_shared<ASTIdentifier>(name_parts[1]);
+
+        if (name_parts[0].empty())
+            return std::make_shared<ASTIdentifier>("", children[1]->clone());
+        else
+            return std::make_shared<ASTIdentifier>("", children[0]->clone());
+    }
+    else if (name_parts.size() == 1)
+    {
+        if (name_parts[0].empty())
+            return std::make_shared<ASTIdentifier>("", children[0]->clone());
+        else
+            return std::make_shared<ASTIdentifier>(name_parts[0]);
+    }
+    else return {};
+}
+
+ASTPtr ASTTableIdentifier::getDatabase() const
+{
+    if (name_parts.size() == 2)
+    {
+        if (name_parts[0].empty())
+            return std::make_shared<ASTIdentifier>("", children[0]->clone());
+        else
+            return std::make_shared<ASTIdentifier>(name_parts[0]);
+    }
+    else return {};
+}
+
 void ASTTableIdentifier::resetTable(const String & database_name, const String & table_name)
 {
     auto identifier = std::make_shared<ASTTableIdentifier>(database_name, table_name);

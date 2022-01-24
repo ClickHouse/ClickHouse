@@ -26,7 +26,8 @@ public:
 
     String getName() const override { return "JSONCompactEachRowRowOutputFormat"; }
 
-    void doWritePrefix() override;
+private:
+    void writePrefix() override;
 
     void writeTotals(const Columns & columns, size_t row_num) override;
 
@@ -35,12 +36,10 @@ public:
     void writeRowStartDelimiter() override;
     void writeRowEndDelimiter() override;
 
-protected:
     void consumeTotals(Chunk) override;
     /// No extremes.
     void consumeExtremes(Chunk) override {}
 
-private:
     void writeLine(const std::vector<String> & values);
 
     FormatSettings settings;

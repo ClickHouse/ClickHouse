@@ -91,7 +91,7 @@ namespace
             return getGrantQueriesImpl(*user, access_control, attach_mode);
         if (const Role * role = typeid_cast<const Role *>(&entity))
             return getGrantQueriesImpl(*role, access_control, attach_mode);
-        throw Exception(entity.outputTypeAndName() + " is expected to be user or role", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(entity.formatTypeWithName() + " is expected to be user or role", ErrorCodes::LOGICAL_ERROR);
     }
 
 }

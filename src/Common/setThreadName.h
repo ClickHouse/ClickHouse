@@ -7,4 +7,4 @@
   */
 void setThreadName(const char * name);
 
-const std::string & getThreadName();
+const char * getThreadName();

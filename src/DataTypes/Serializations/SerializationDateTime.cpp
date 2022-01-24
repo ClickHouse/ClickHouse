@@ -2,7 +2,7 @@
 
 #include <Columns/ColumnVector.h>
 #include <Common/assert_cast.h>
-#include <base/DateLUT.h>
+#include <Common/DateLUT.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/ProtobufReader.h>
 #include <Formats/ProtobufWriter.h>
@@ -62,6 +62,8 @@ void SerializationDateTime::serializeTextEscaped(const IColumn & column, size_t 
 void SerializationDateTime::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     deserializeTextEscaped(column, istr, settings);
+    if (!istr.eof())
+        throwUnexpectedDataAfterParsedValue(column, istr, settings, "DateTime");
 }
 
 void SerializationDateTime::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const

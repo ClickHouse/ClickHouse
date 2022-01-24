@@ -133,7 +133,16 @@ void AuthenticationData::setPasswordHashHex(const String & hash)
 {
     Digest digest;
     digest.resize(hash.size() / 2);
-    boost::algorithm::unhex(hash.begin(), hash.end(), digest.data());
+
+    try
+    {
+        boost::algorithm::unhex(hash.begin(), hash.end(), digest.data());
+    }
+    catch (const std::exception &)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot read password hash in hex, check for valid characters [0-9a-fA-F] and length");
+    }
+
     setPasswordHashBinary(digest);
 }
 

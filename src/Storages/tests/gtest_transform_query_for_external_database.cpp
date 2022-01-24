@@ -84,6 +84,7 @@ private:
             const auto & table_name = tab.table.table;
             const auto & db_name = tab.table.database;
             database->attachTable(
+                context,
                 table_name,
                 StorageMemory::create(
                     StorageID(db_name, table_name), ColumnsDescription{getColumns()}, ConstraintsDescription{}, String{}));
@@ -119,7 +120,7 @@ TEST(TransformQueryForExternalDatabase, InWithSingleElement)
 
     check(state, 1,
           "SELECT column FROM test.table WHERE 1 IN (1)",
-          R"(SELECT "column" FROM "test"."table" WHERE 1)");
+          R"(SELECT "column" FROM "test"."table" WHERE 1 = 1)");
     check(state, 1,
           "SELECT column FROM test.table WHERE column IN (1, 2)",
           R"(SELECT "column" FROM "test"."table" WHERE "column" IN (1, 2))");
@@ -134,7 +135,7 @@ TEST(TransformQueryForExternalDatabase, InWithMultipleColumns)
 
     check(state, 1,
           "SELECT column FROM test.table WHERE (1,1) IN ((1,1))",
-          R"(SELECT "column" FROM "test"."table" WHERE 1)");
+          R"(SELECT "column" FROM "test"."table" WHERE 1 = 1)");
     check(state, 1,
           "SELECT field, value FROM test.table WHERE (field, value) IN (('foo', 'bar'))",
           R"(SELECT "field", "value" FROM "test"."table" WHERE ("field", "value") IN (('foo', 'bar')))");

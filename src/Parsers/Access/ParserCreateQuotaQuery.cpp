@@ -2,7 +2,7 @@
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ParserRolesOrUsersSet.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -11,7 +11,10 @@
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <base/range.h>
+#include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/predicate.hpp>
+#include <boost/algorithm/string/replace.hpp>
 
 
 namespace DB
@@ -24,13 +27,6 @@ namespace ErrorCodes
 
 namespace
 {
-    using KeyType = Quota::KeyType;
-    using KeyTypeInfo = Quota::KeyTypeInfo;
-    using ResourceType = Quota::ResourceType;
-    using ResourceTypeInfo = Quota::ResourceTypeInfo;
-    using ResourceAmount = Quota::ResourceAmount;
-
-
     bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, String & new_name)
     {
         return IParserBase::wrapParseImpl(pos, [&]
@@ -42,13 +38,13 @@ namespace
         });
     }
 
-    bool parseKeyType(IParserBase::Pos & pos, Expected & expected, KeyType & key_type)
+    bool parseKeyType(IParserBase::Pos & pos, Expected & expected, QuotaKeyType & key_type)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             if (ParserKeyword{"NOT KEYED"}.ignore(pos, expected))
             {
-                key_type = KeyType::NONE;
+                key_type = QuotaKeyType::NONE;
                 return true;
             }
 
@@ -63,9 +59,9 @@ namespace
             boost::to_lower(name);
             boost::replace_all(name, " ", "_");
 
-            for (auto kt : collections::range(Quota::KeyType::MAX))
+            for (auto kt : collections::range(QuotaKeyType::MAX))
             {
-                if (KeyTypeInfo::get(kt).name == name)
+                if (QuotaKeyTypeInfo::get(kt).name == name)
                 {
                     key_type = kt;
                     return true;
@@ -73,23 +69,23 @@ namespace
             }
 
             String all_types_str;
-            for (auto kt : collections::range(Quota::KeyType::MAX))
-                all_types_str += String(all_types_str.empty() ? "" : ", ") + "'" + KeyTypeInfo::get(kt).name + "'";
+            for (auto kt : collections::range(QuotaKeyType::MAX))
+                all_types_str += String(all_types_str.empty() ? "" : ", ") + "'" + QuotaKeyTypeInfo::get(kt).name + "'";
             String msg = "Quota cannot be keyed by '" + name + "'. Expected one of the following identifiers: " + all_types_str;
             throw Exception(msg, ErrorCodes::SYNTAX_ERROR);
         });
     }
 
 
-    bool parseResourceType(IParserBase::Pos & pos, Expected & expected, ResourceType & resource_type)
+    bool parseQuotaType(IParserBase::Pos & pos, Expected & expected, QuotaType & quota_type)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            for (auto rt : collections::range(Quota::MAX_RESOURCE_TYPE))
+            for (auto qt : collections::range(QuotaType::MAX))
             {
-                if (ParserKeyword{ResourceTypeInfo::get(rt).keyword.c_str()}.ignore(pos, expected))
+                if (ParserKeyword{QuotaTypeInfo::get(qt).keyword.c_str()}.ignore(pos, expected))
                 {
-                    resource_type = rt;
+                    quota_type = qt;
                     return true;
                 }
             }
@@ -99,11 +95,11 @@ namespace
                 return false;
 
             String name = getIdentifierName(ast);
-            for (auto rt : collections::range(Quota::MAX_RESOURCE_TYPE))
+            for (auto qt : collections::range(QuotaType::MAX))
             {
-                if (ResourceTypeInfo::get(rt).name == name)
+                if (QuotaTypeInfo::get(qt).name == name)
                 {
-                    resource_type = rt;
+                    quota_type = qt;
                     return true;
                 }
             }
@@ -113,34 +109,33 @@ namespace
     }
 
 
-    bool parseMaxAmount(IParserBase::Pos & pos, Expected & expected, ResourceType resource_type, ResourceAmount & max)
+    bool parseMaxValue(IParserBase::Pos & pos, Expected & expected, QuotaType quota_type, QuotaValue & max_value)
     {
         ASTPtr ast;
         if (!ParserNumber{}.parse(pos, ast, expected))
             return false;
 
         const Field & max_field = ast->as<ASTLiteral &>().value;
-        const auto & type_info = ResourceTypeInfo::get(resource_type);
+        const auto & type_info = QuotaTypeInfo::get(quota_type);
         if (type_info.output_denominator == 1)
-            max = applyVisitor(FieldVisitorConvertToNumber<ResourceAmount>(), max_field);
+            max_value = applyVisitor(FieldVisitorConvertToNumber<QuotaValue>(), max_field);
         else
-            max = static_cast<ResourceAmount>(
-                applyVisitor(FieldVisitorConvertToNumber<double>(), max_field) * type_info.output_denominator);
+            max_value = static_cast<QuotaValue>(applyVisitor(FieldVisitorConvertToNumber<double>(), max_field) * type_info.output_denominator);
         return true;
     }
 
 
-    bool parseLimits(IParserBase::Pos & pos, Expected & expected, std::vector<std::pair<ResourceType, ResourceAmount>> & limits)
+    bool parseLimits(IParserBase::Pos & pos, Expected & expected, std::vector<std::pair<QuotaType, QuotaValue>> & limits)
     {
-        std::vector<std::pair<ResourceType, ResourceAmount>> res_limits;
+        std::vector<std::pair<QuotaType, QuotaValue>> res_limits;
         bool max_prefix_encountered = false;
 
         auto parse_limit = [&]
         {
             max_prefix_encountered |= ParserKeyword{"MAX"}.ignore(pos, expected);
 
-            ResourceType resource_type;
-            if (!parseResourceType(pos, expected, resource_type))
+            QuotaType quota_type;
+            if (!parseQuotaType(pos, expected, quota_type))
                 return false;
 
             if (max_prefix_encountered)
@@ -153,11 +148,11 @@ namespace
                     return false;
             }
 
-            ResourceAmount max;
-            if (!parseMaxAmount(pos, expected, resource_type, max))
+            QuotaValue max_value;
+            if (!parseMaxValue(pos, expected, quota_type, max_value))
                 return false;
 
-            res_limits.emplace_back(resource_type, max);
+            res_limits.emplace_back(quota_type, max_value);
             return true;
         };
 
@@ -193,7 +188,7 @@ namespace
                 return false;
 
             limits.duration = std::chrono::seconds(static_cast<UInt64>(num_intervals * interval_kind.toAvgSeconds()));
-            std::vector<std::pair<ResourceType, ResourceAmount>> maxs;
+            std::vector<std::pair<QuotaType, QuotaValue>> new_limits;
 
             if (ParserKeyword{"NO LIMITS"}.ignore(pos, expected))
             {
@@ -202,10 +197,10 @@ namespace
             else if (ParserKeyword{"TRACKING ONLY"}.ignore(pos, expected))
             {
             }
-            else if (parseLimits(pos, expected, maxs))
+            else if (parseLimits(pos, expected, new_limits))
             {
-                for (const auto & [resource_type, max] : maxs)
-                    limits.max[resource_type] = max;
+                for (const auto & [quota_type, max_value] : new_limits)
+                    limits.max[static_cast<size_t>(quota_type)] = max_value;
             }
             else
                 return false;
@@ -283,7 +278,7 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         return false;
 
     String new_name;
-    std::optional<KeyType> key_type;
+    std::optional<QuotaKeyType> key_type;
     std::vector<ASTCreateQuotaQuery::Limits> all_limits;
     String cluster;
 
@@ -294,7 +289,7 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
         if (!key_type)
         {
-            KeyType new_key_type;
+            QuotaKeyType new_key_type;
             if (parseKeyType(pos, expected, new_key_type))
             {
                 key_type = new_key_type;

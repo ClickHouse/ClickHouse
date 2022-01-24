@@ -1,0 +1,3 @@
+CREATE TABLE default.alter_column_02126\n(\n    `a` Int32,\n    `x` Int32,\n    `y` Int32\n)\nENGINE = MergeTree\nORDER BY a\nSETTINGS index_granularity = 8192
+CREATE TABLE default.alter_column_02126\n(\n    `a` Int32,\n    `x` Float32,\n    `y` Int32\n)\nENGINE = MergeTree\nORDER BY a\nSETTINGS index_granularity = 8192
+CREATE TABLE default.alter_column_02126\n(\n    `a` Int32,\n    `x` Float64,\n    `y` Float32\n)\nENGINE = MergeTree\nORDER BY a\nSETTINGS index_granularity = 8192

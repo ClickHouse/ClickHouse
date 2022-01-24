@@ -6,16 +6,13 @@
 namespace DB
 {
 
-BuildQueryPipelineSettings BuildQueryPipelineSettings::fromSettings(const Settings & from)
-{
-    BuildQueryPipelineSettings settings;
-    settings.actions_settings = ExpressionActionsSettings::fromSettings(from, CompileExpressions::yes);
-    return settings;
-}
-
 BuildQueryPipelineSettings BuildQueryPipelineSettings::fromContext(ContextPtr from)
 {
-    return fromSettings(from->getSettingsRef());
+    BuildQueryPipelineSettings settings;
+    settings.actions_settings = ExpressionActionsSettings::fromSettings(from->getSettingsRef(), CompileExpressions::yes);
+    settings.process_list_element = from->getProcessListElement();
+    settings.progress_callback = from->getProgressCallback();
+    return settings;
 }
 
 }

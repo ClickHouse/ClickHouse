@@ -203,6 +203,9 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 -   В `Pretty*` форматах, строка выводится в виде отдельной таблицы после основного результата.
 -   В других форматах она не доступна.
 
+!!! note "Примечание"
+    totals выводится только в результатах запросов `SELECT`, и не вывоводится в `INSERT INTO ... SELECT`.
+
 При использовании секции [HAVING](having.md) поведение `WITH TOTALS` контролируется настройкой `totals_mode`.
 
 ### Настройка обработки итогов {#configuring-totals-processing}

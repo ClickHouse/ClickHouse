@@ -282,6 +282,7 @@ public:
             Int256  = 25,
             Map = 26,
             UUID = 27,
+            Bool = 28,
         };
     };
 
@@ -323,7 +324,10 @@ public:
     template <typename T>
     Field(T && rhs, enable_if_not_field_or_bool_or_stringlike_t<T> = nullptr);
 
-    Field(bool rhs) : Field(castToNearestFieldType(rhs)) {}
+    Field(bool rhs) : Field(castToNearestFieldType(rhs))
+    {
+        which = Types::Bool;
+    }
 
     /// Create a string inplace.
     Field(const std::string_view & str) { create(str.data(), str.size()); }
@@ -376,7 +380,12 @@ public:
     enable_if_not_field_or_bool_or_stringlike_t<T, Field> &
     operator=(T && rhs);
 
-    Field & operator= (bool rhs) { return *this = castToNearestFieldType(rhs); }
+    Field & operator= (bool rhs)
+    {
+        *this = castToNearestFieldType(rhs);
+        which = Types::Bool;
+        return *this;
+    }
 
     Field & operator= (const std::string_view & str);
     Field & operator= (const String & str) { return *this = std::string_view{str}; }
@@ -450,6 +459,7 @@ public:
         switch (which)
         {
             case Types::Null:    return false;
+            case Types::Bool:    [[fallthrough]];
             case Types::UInt64:  return get<UInt64>()  < rhs.get<UInt64>();
             case Types::UInt128: return get<UInt128>() < rhs.get<UInt128>();
             case Types::UInt256: return get<UInt256>() < rhs.get<UInt256>();
@@ -487,6 +497,7 @@ public:
         switch (which)
         {
             case Types::Null:    return true;
+            case Types::Bool: [[fallthrough]];
             case Types::UInt64:  return get<UInt64>()  <= rhs.get<UInt64>();
             case Types::UInt128: return get<UInt128>() <= rhs.get<UInt128>();
             case Types::UInt256: return get<UInt256>() <= rhs.get<UInt256>();
@@ -524,6 +535,7 @@ public:
         switch (which)
         {
             case Types::Null: return true;
+            case Types::Bool: [[fallthrough]];
             case Types::UInt64: return get<UInt64>() == rhs.get<UInt64>();
             case Types::Int64:   return get<Int64>() == rhs.get<Int64>();
             case Types::Float64:
@@ -580,6 +592,11 @@ public:
             case Types::Array:   return f(field.template get<Array>());
             case Types::Tuple:   return f(field.template get<Tuple>());
             case Types::Map:     return f(field.template get<Map>());
+            case Types::Bool:
+            {
+                bool value = bool(field.template get<UInt64>());
+                return f(value);
+            }
             case Types::Decimal32:  return f(field.template get<DecimalField<Decimal32>>());
             case Types::Decimal64:  return f(field.template get<DecimalField<Decimal64>>());
             case Types::Decimal128: return f(field.template get<DecimalField<Decimal128>>());
@@ -739,6 +756,7 @@ template <> struct Field::TypeToEnum<DecimalField<Decimal128>>{ static const Typ
 template <> struct Field::TypeToEnum<DecimalField<Decimal256>>{ static const Types::Which value = Types::Decimal256; };
 template <> struct Field::TypeToEnum<DecimalField<DateTime64>>{ static const Types::Which value = Types::Decimal64; };
 template <> struct Field::TypeToEnum<AggregateFunctionStateData>{ static const Types::Which value = Types::AggregateFunctionState; };
+template <> struct Field::TypeToEnum<bool>{ static const Types::Which value = Types::Bool; };
 
 template <> struct Field::EnumToType<Field::Types::Null>    { using Type = Null; };
 template <> struct Field::EnumToType<Field::Types::UInt64>  { using Type = UInt64; };
@@ -758,11 +776,19 @@ template <> struct Field::EnumToType<Field::Types::Decimal64> { using Type = Dec
 template <> struct Field::EnumToType<Field::Types::Decimal128> { using Type = DecimalField<Decimal128>; };
 template <> struct Field::EnumToType<Field::Types::Decimal256> { using Type = DecimalField<Decimal256>; };
 template <> struct Field::EnumToType<Field::Types::AggregateFunctionState> { using Type = DecimalField<AggregateFunctionStateData>; };
+template <> struct Field::EnumToType<Field::Types::Bool> { using Type = UInt64; };
 
 inline constexpr bool isInt64OrUInt64FieldType(Field::Types::Which t)
 {
     return t == Field::Types::Int64
         || t == Field::Types::UInt64;
+}
+
+inline constexpr bool isInt64OrUInt64orBoolFieldType(Field::Types::Which t)
+{
+    return t == Field::Types::Int64
+        || t == Field::Types::UInt64
+        || t == Field::Types::Bool;
 }
 
 // Field value getter with type checking in debug builds.
@@ -781,7 +807,7 @@ NearestFieldType<std::decay_t<T>> & Field::get()
     // Disregard signedness when converting between int64 types.
     constexpr Field::Types::Which target = TypeToEnum<StoredType>::value;
     if (target != which
-           && (!isInt64OrUInt64FieldType(target) || !isInt64OrUInt64FieldType(which)))
+           && (!isInt64OrUInt64orBoolFieldType(target) || !isInt64OrUInt64orBoolFieldType(which)))
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Invalid Field get from type {} to type {}", which, target);
 #endif
@@ -808,9 +834,25 @@ auto & Field::safeGet()
 template <typename T>
 T & Field::reinterpret()
 {
+    assert(which != Types::String); // See specialization for char
     using ValueType = std::decay_t<T>;
     ValueType * MAY_ALIAS ptr = reinterpret_cast<ValueType *>(&storage);
     return *ptr;
+}
+
+// Specialize reinterpreting to char (used in ColumnUnique) to make sure Strings are reinterpreted correctly
+// inline to avoid multiple definitions
+template <>
+inline char & Field::reinterpret<char>()
+{
+    if (which == Types::String)
+    {
+        // For String we want to return a pointer to the data, not the start of the class
+        // as the layout of std::string depends on the STD version and options
+        char * ptr = reinterpret_cast<String *>(&storage)->data();
+        return *ptr;
+    }
+    return *reinterpret_cast<char *>(&storage);
 }
 
 template <typename T>

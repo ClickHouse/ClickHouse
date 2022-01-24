@@ -16,6 +16,7 @@
 #include <Common/createHardLink.h>
 #include <Common/quoteString.h>
 #include <Common/thread_local_rng.h>
+#include <Common/getRandomASCIIString.h>
 
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromS3.h>
@@ -25,6 +26,7 @@
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
 
+#include <Disks/RemoteDisksCommon.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
@@ -100,15 +102,6 @@ private:
     Chunks chunks;
 };
 
-String getRandomName()
-{
-    std::uniform_int_distribution<int> distribution('a', 'z');
-    String res(32, ' '); /// The number of bits of entropy should be not less than 128.
-    for (auto & c : res)
-        c = distribution(thread_local_rng);
-    return res;
-}
-
 template <typename Result, typename Error>
 void throwIfError(Aws::Utils::Outcome<Result, Error> & response)
 {
@@ -158,11 +151,11 @@ DiskS3::DiskS3(
     String name_,
     String bucket_,
     String s3_root_path_,
-    String metadata_path_,
+    DiskPtr metadata_disk_,
     ContextPtr context_,
     SettingsPtr settings_,
     GetDiskSettings settings_getter_)
-    : IDiskRemote(name_, s3_root_path_, metadata_path_, "DiskS3", settings_->thread_pool_size)
+    : IDiskRemote(name_, s3_root_path_, metadata_disk_, "DiskS3", settings_->thread_pool_size)
     , bucket(std::move(bucket_))
     , current_settings(std::move(settings_))
     , settings_getter(settings_getter_)
@@ -218,19 +211,18 @@ void DiskS3::moveFile(const String & from_path, const String & to_path, bool sen
         };
         createFileOperationObject("rename", revision, object_metadata);
     }
-
-    fs::rename(fs::path(metadata_path) / from_path, fs::path(metadata_path) / to_path);
+    metadata_disk->moveFile(from_path, to_path);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, const ReadSettings & read_settings, std::optional<size_t>) const
+std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, const ReadSettings & read_settings, std::optional<size_t>, std::optional<size_t>) const
 {
     auto settings = current_settings.get();
     auto metadata = readMeta(path);
 
-    LOG_TRACE(log, "Read from file by path: {}. Existing S3 objects: {}",
-        backQuote(metadata_path + path), metadata.remote_fs_objects.size());
+    LOG_TEST(log, "Read from file by path: {}. Existing S3 objects: {}",
+        backQuote(metadata_disk->getPath() + path), metadata.remote_fs_objects.size());
 
-    bool threadpool_read = read_settings.remote_fs_method == RemoteFSReadMethod::read_threadpool;
+    bool threadpool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
 
     auto s3_impl = std::make_unique<ReadBufferFromS3Gather>(
         path,
@@ -255,7 +247,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
     auto metadata = readOrCreateMetaForWriting(path, mode);
 
     /// Path to store new S3 object.
-    auto s3_path = getRandomName();
+    auto s3_path = getRandomASCIIString();
 
     std::optional<ObjectMetadata> object_metadata;
     if (settings->send_metadata)
@@ -268,7 +260,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
     }
 
     LOG_TRACE(log, "{} to file by path: {}. S3 path: {}",
-              mode == WriteMode::Rewrite ? "Write" : "Append", backQuote(metadata_path + path), remote_fs_root_path + s3_path);
+              mode == WriteMode::Rewrite ? "Write" : "Append", backQuote(metadata_disk->getPath() + path), remote_fs_root_path + s3_path);
 
     auto s3_buffer = std::make_unique<WriteBufferFromS3>(
         settings->client,
@@ -307,7 +299,7 @@ void DiskS3::createHardLink(const String & src_path, const String & dst_path, bo
     src.save();
 
     /// Create FS hardlink to metadata file.
-    DB::createHardLink(metadata_path + src_path, metadata_path + dst_path);
+    metadata_disk->createHardLink(src_path, dst_path);
 }
 
 void DiskS3::shutdown()
@@ -363,7 +355,7 @@ void DiskS3::findLastRevision()
     /// Construct revision number from high to low bits.
     String revision;
     revision.reserve(64);
-    for (int bit = 0; bit < 64; bit++)
+    for (int bit = 0; bit < 64; ++bit)
     {
         auto revision_prefix = revision + "1";
 
@@ -421,7 +413,7 @@ void DiskS3::updateObjectMetadata(const String & key, const ObjectMetadata & met
 
 void DiskS3::migrateFileToRestorableSchema(const String & path)
 {
-    LOG_TRACE(log, "Migrate file {} to restorable schema", metadata_path + path);
+    LOG_TRACE(log, "Migrate file {} to restorable schema", metadata_disk->getPath() + path);
 
     auto meta = readMeta(path);
 
@@ -438,7 +430,7 @@ void DiskS3::migrateToRestorableSchemaRecursive(const String & path, Futures & r
 {
     checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
 
-    LOG_TRACE(log, "Migrate directory {} to restorable schema", metadata_path + path);
+    LOG_TRACE(log, "Migrate directory {} to restorable schema", metadata_disk->getPath() + path);
 
     bool dir_contains_only_files = true;
     for (auto it = iterateDirectory(path); it->isValid(); it->next())
@@ -702,18 +694,19 @@ struct DiskS3::RestoreInformation
 
 void DiskS3::readRestoreInformation(DiskS3::RestoreInformation & restore_information)
 {
-    ReadBufferFromFile buffer(metadata_path + RESTORE_FILE_NAME, 512);
-    buffer.next();
+    const ReadSettings read_settings;
+    auto buffer = metadata_disk->readFile(RESTORE_FILE_NAME, read_settings, 512);
+    buffer->next();
 
     try
     {
         std::map<String, String> properties;
 
-        while (buffer.hasPendingData())
+        while (buffer->hasPendingData())
         {
             String property;
-            readText(property, buffer);
-            assertChar('\n', buffer);
+            readText(property, *buffer);
+            assertChar('\n', *buffer);
 
             auto pos = property.find('=');
             if (pos == String::npos || pos == 0 || pos == property.length())
@@ -797,8 +790,7 @@ void DiskS3::restore()
         restoreFiles(information);
         restoreFileOperations(information);
 
-        fs::path restore_file = fs::path(metadata_path) / RESTORE_FILE_NAME;
-        fs::remove(restore_file);
+        metadata_disk->removeFile(RESTORE_FILE_NAME);
 
         saveSchemaVersion(RESTORABLE_SCHEMA_VERSION);
 
@@ -996,15 +988,19 @@ void DiskS3::restoreFileOperations(const RestoreInformation & restore_informatio
 
             LOG_TRACE(log, "Move directory to 'detached' {} -> {}", path, detached_path);
 
-            fs::path from_path = fs::path(metadata_path) / path;
-            fs::path to_path = fs::path(metadata_path) / detached_path;
+            fs::path from_path = fs::path(path);
+            fs::path to_path = fs::path(detached_path);
             if (path.ends_with('/'))
                 to_path /= from_path.parent_path().filename();
             else
                 to_path /= from_path.filename();
-            fs::create_directories(to_path);
-            fs::copy(from_path, to_path, fs::copy_options::recursive | fs::copy_options::overwrite_existing);
-            fs::remove_all(from_path);
+
+            /// to_path may exist and non-empty in case for example abrupt restart, so remove it before rename
+            if (metadata_disk->exists(to_path))
+                metadata_disk->removeRecursive(to_path);
+
+            createDirectories(directoryPath(to_path));
+            metadata_disk->moveDirectory(from_path, to_path);
         }
     }
 
@@ -1044,9 +1040,9 @@ String DiskS3::pathToDetached(const String & source_path)
 void DiskS3::onFreeze(const String & path)
 {
     createDirectories(path);
-    WriteBufferFromFile revision_file_buf(metadata_path + path + "revision.txt", 32);
-    writeIntText(revision_counter.load(), revision_file_buf);
-    revision_file_buf.finalize();
+    auto revision_file_buf = metadata_disk->writeFile(path + "revision.txt", 32);
+    writeIntText(revision_counter.load(), *revision_file_buf);
+    revision_file_buf->finalize();
 }
 
 void DiskS3::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &)

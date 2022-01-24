@@ -56,7 +56,7 @@ InterpreterSelectIntersectExceptQuery::InterpreterSelectIntersectExceptQuery(
     ASTSelectIntersectExceptQuery * ast = query_ptr->as<ASTSelectIntersectExceptQuery>();
     final_operator = ast->final_operator;
 
-    const auto & children = ast->children;
+    const auto & children = ast->getListOfSelects();
     size_t num_children = children.size();
 
     /// AST must have been changed by the visitor.

@@ -42,7 +42,7 @@ struct FormatImpl
     static void parseNumber(const String & description, UInt64 l, UInt64 r, UInt64 & res)
     {
         res = 0;
-        for (UInt64 pos = l; pos < r; pos++)
+        for (UInt64 pos = l; pos < r; ++pos)
         {
             if (!isNumericASCII(description[pos]))
                 throw Exception("Not a number in curly braces at position " + std::to_string(pos), ErrorCodes::BAD_ARGUMENTS);

@@ -14,11 +14,11 @@ To enable Kerberos, one should include `kerberos` section in `config.xml`. This 
 #### Parameters:
 
 - `principal` - canonical service principal name that will be acquired and used when accepting security contexts.
-  - This parameter is optional, if omitted, the default principal will be used.
+    - This parameter is optional, if omitted, the default principal will be used.
 
 
 - `realm` - a realm, that will be used to restrict authentication to only those requests whose initiator's realm matches it.
-  - This parameter is optional, if omitted, no additional filtering by realm will be applied.
+    - This parameter is optional, if omitted, no additional filtering by realm will be applied.
 
 Example (goes into `config.xml`):
 
@@ -75,7 +75,7 @@ In order to enable Kerberos authentication for the user, specify `kerberos` sect
 Parameters:
 
 - `realm` - a realm that will be used to restrict authentication to only those requests whose initiator's realm matches it.
-  - This parameter is optional, if omitted, no additional filtering by realm will be applied.
+    - This parameter is optional, if omitted, no additional filtering by realm will be applied.
 
 Example (goes into `users.xml`):
 

@@ -10,8 +10,11 @@ ${CLICKHOUSE_CLIENT} -q "SELECT 'CREATE TABLE test_' || hex(randomPrintableASCII
 
 function stress()
 {
+    # 2004l is ignored because parallel running expect emulated terminal doesn't
+    # work well with bracketed paste enabling sequence, which is \e033?2004l
+    # (https://cirw.in/blog/bracketed-paste)
     while true; do
-        "${CURDIR}"/01526_client_start_and_exit.expect-not-a-test-case | grep -v -P 'ClickHouse client|Connecting|Connected|:\) Bye\.|new year|^\s*$|spawn bash|^0\s*$'
+        "${CURDIR}"/01526_client_start_and_exit.expect-not-a-test-case | grep -v -P 'ClickHouse client|Connecting|Connected|:\) Bye\.|new year|^\s*$|spawn bash|\?2004l|^0\s*$'
     done
 }
 

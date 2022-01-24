@@ -202,10 +202,10 @@
 #define HAVE_READDIR 1
 
 /* Add readline support */
-#define HAVE_READLINE 1
+/* #undef HAVE_READLINE */
 
 /* Define to 1 if you have the <readline/history.h> header file. */
-#define HAVE_READLINE_HISTORY_H 1
+/* #undef HAVE_READLINE_HISTORY_H */
 
 /* Use the scandir lib */
 /* #undef HAVE_SCANDIR */

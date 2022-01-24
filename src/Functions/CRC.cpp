@@ -33,7 +33,7 @@ struct CRCImpl
         static CRCBase<ReturnType> base(polynomial);
 
         T crc = 0;
-        for (size_t i = 0; i < size; i++)
+        for (size_t i = 0; i < size; ++i)
             crc = base.tab[(crc ^ buf[i]) & 0xff] ^ (crc >> 8);
         return crc;
     }

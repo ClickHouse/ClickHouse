@@ -22,7 +22,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
 
-#include <base/DateLUT.h>
+#include <Common/DateLUT.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 
@@ -33,6 +33,7 @@ namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TYPE_MISMATCH;
+    extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 }
 
 
@@ -60,7 +61,7 @@ static Field convertNumericTypeImpl(const Field & from)
 template <typename To>
 static Field convertNumericType(const Field & from, const IDataType & type)
 {
-    if (from.getType() == Field::Types::UInt64)
+    if (from.getType() == Field::Types::UInt64 || from.getType() == Field::Types::Bool)
         return convertNumericTypeImpl<UInt64, To>(from);
     if (from.getType() == Field::Types::Int64)
         return convertNumericTypeImpl<Int64, To>(from);
@@ -384,11 +385,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         }
         catch (Exception & e)
         {
+            if (e.code() == ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert string {} to type {}", src.get<String>(), type.getName());
+
             e.addMessage(fmt::format("while converting '{}' to {}", src.get<String>(), type.getName()));
             throw;
         }
-        if (!in_buffer.eof())
-            throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert string {} to type {}", src.get<String>(), type.getName());
 
         Field parsed = (*col)[0];
         return convertFieldToType(parsed, type, from_type_hint);
