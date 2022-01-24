@@ -286,7 +286,10 @@
     \
     M(ScalarSubqueriesGlobalCacheHit, "Number of times a read from a scalar subquery was done using the global cache") \
     M(ScalarSubqueriesLocalCacheHit, "Number of times a read from a scalar subquery was done using the local cache") \
-    M(ScalarSubqueriesCacheMiss, "Number of times a read from a scalar subquery was not cached and had to be calculated completely")
+    M(ScalarSubqueriesCacheMiss, "Number of times a read from a scalar subquery was not cached and had to be calculated completely") \
+    \
+    M(HashTablesPreallocatedElements, "How many elements were preallocated in hash tables.") \
+    M(HashTablesInitedAsTwoLevel, "How many hash tables were converted to two-level from the beginning.") \
 
 namespace ProfileEvents
 {

@@ -30,6 +30,15 @@
 
 #include <Parsers/ASTSelectQuery.h>
 
+namespace ProfileEvents
+{
+extern const Event ExternalAggregationWritePart;
+extern const Event ExternalAggregationCompressedBytes;
+extern const Event ExternalAggregationUncompressedBytes;
+extern const Event HashTablesPreallocatedElements;
+extern const Event HashTablesInitedAsTwoLevel;
+}
+
 namespace
 {
 /** Collects observed HashMap-s sizes to avoid redundant intermediate resizes.
@@ -106,7 +115,10 @@ void initDataVariants(
             {
                 result.init(method_chosen);
                 if (result.isConvertibleToTwoLevel())
+                {
                     result.convertToTwoLevel();
+                    ProfileEvents::increment(ProfileEvents::HashTablesInitedAsTwoLevel);
+                }
             }
             else
             {
@@ -150,17 +162,13 @@ template <typename Method>
 auto constructWithReserveIfPossible(size_t size_hint)
 {
     if constexpr (HasConstructorOfNumberOfElements<typename Method::Data>::value)
+    {
+        ProfileEvents::increment(ProfileEvents::HashTablesPreallocatedElements, size_hint);
         return std::make_unique<Method>(size_hint);
+    }
     else
         return std::make_unique<Method>();
 }
-}
-
-namespace ProfileEvents
-{
-    extern const Event ExternalAggregationWritePart;
-    extern const Event ExternalAggregationCompressedBytes;
-    extern const Event ExternalAggregationUncompressedBytes;
 }
 
 namespace DB
