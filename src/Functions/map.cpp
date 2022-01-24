@@ -571,10 +571,10 @@ public:
         if (!col_map_right)
             return nullptr;
 
-        auto & nested_column_left = col_map_left->getNestedColumn();
-        auto & keys_data_left = col_map_left->getNestedData().getColumn(0);
-        auto & values_data_left = col_map_left->getNestedData().getColumn(1);
-        auto & offsets_left = nested_column_left.getOffsets();
+        const auto & nested_column_left = col_map_left->getNestedColumn();
+        const auto & keys_data_left = col_map_left->getNestedData().getColumn(0);
+        const auto & values_data_left = col_map_left->getNestedData().getColumn(1);
+        const auto & offsets_left = nested_column_left.getOffsets();
 
         const auto & nested_column_right = col_map_right->getNestedColumn();
         const auto & keys_data_right = col_map_right->getNestedData().getColumn(0);
