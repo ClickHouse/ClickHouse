@@ -479,7 +479,7 @@ void registerOutputFormatAvro(FormatFactory & factory)
     {
         return std::make_shared<AvroRowOutputFormat>(buf, sample, params, settings);
     });
-    factory.markFormatDoesntSupportAppend("Avro");
+    factory.markFormatHasNoAppendSupport("Avro");
 }
 
 }
