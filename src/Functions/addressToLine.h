@@ -1,3 +1,4 @@
+#pragma once
 #if defined(__ELF__) && !defined(__FreeBSD__)
 
 #include <Common/Dwarf.h>
