@@ -95,6 +95,7 @@ private:
 
     bool json_strings;
     bool first_row = true;
+    bool data_in_square_brackets = false;
 };
 
 }

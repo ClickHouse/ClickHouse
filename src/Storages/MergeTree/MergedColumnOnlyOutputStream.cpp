@@ -71,13 +71,17 @@ MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(
             projection_part->checksums.getTotalChecksumUInt128());
 
     auto columns = new_part->getColumns();
+    auto serialization_infos = new_part->getSerializationInfos();
+    serialization_infos.replaceData(new_serialization_infos);
 
-    auto removed_files = removeEmptyColumnsFromPart(new_part, columns, new_serialization_infos, checksums);
+    auto removed_files = removeEmptyColumnsFromPart(new_part, columns, serialization_infos, checksums);
     for (const String & removed_file : removed_files)
         if (all_checksums.files.count(removed_file))
             all_checksums.files.erase(removed_file);
 
-    new_part->setColumns(columns, new_serialization_infos);
+    new_part->setColumns(columns);
+    new_part->setSerializationInfos(serialization_infos);
+
     return checksums;
 }
 

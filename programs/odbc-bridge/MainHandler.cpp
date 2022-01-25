@@ -19,6 +19,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <base/logger_useful.h>
 #include <Server/HTTP/HTMLForm.h>
+#include <Common/config.h>
 
 #include <mutex>
 #include <memory>

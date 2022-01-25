@@ -4,6 +4,11 @@
 
 # This file was edited for ClickHouse
 
+string(FIND ${CMAKE_CURRENT_BINARY_DIR} " " _have_space)
+if(_have_space GREATER 0)
+    message(FATAL_ERROR "Using spaces in build path [${CMAKE_CURRENT_BINARY_DIR}] highly not recommended. Library re2st will be disabled.")
+endif()
+
 set(SRC_DIR "${ClickHouse_SOURCE_DIR}/contrib/re2")
 
 set(RE2_SOURCES
@@ -30,10 +35,8 @@ set(RE2_SOURCES
     ${SRC_DIR}/util/rune.cc
     ${SRC_DIR}/util/strutil.cc
 )
-
 add_library(re2 ${RE2_SOURCES})
 target_include_directories(re2 PUBLIC "${SRC_DIR}")
-
 
 # Building re2 which is thread-safe and re2_st which is not.
 # re2 changes its state during matching of regular expression, e.g. creates temporary DFA.
@@ -43,7 +46,8 @@ target_include_directories(re2 PUBLIC "${SRC_DIR}")
 add_library(re2_st ${RE2_SOURCES})
 target_compile_definitions (re2_st PRIVATE NDEBUG NO_THREADS re2=re2_st)
 target_include_directories (re2_st PRIVATE .)
-target_include_directories (re2_st SYSTEM PUBLIC ${CMAKE_CURRENT_BINARY_DIR} ${SRC_DIR})
+target_include_directories (re2_st SYSTEM PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories (re2_st SYSTEM BEFORE PUBLIC ${SRC_DIR})
 
 file (MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/re2_st)
 foreach (FILENAME filtered_re2.h re2.h set.h stringpiece.h)
@@ -66,3 +70,8 @@ foreach (FILENAME mutex.h)
     add_custom_target (transform_${FILENAME} DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/util/${FILENAME}")
     add_dependencies (re2_st transform_${FILENAME})
 endforeach ()
+
+# NOTE: you should not change name of library here, since it is used for PVS
+# (see docker/test/pvs/Dockerfile), to generate required header (see above)
+add_library(ch_contrib::re2 ALIAS re2)
+add_library(ch_contrib::re2_st ALIAS re2_st)

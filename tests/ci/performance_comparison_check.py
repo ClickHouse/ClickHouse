@@ -17,6 +17,7 @@ from get_robot_token import get_best_robot_token
 from docker_pull_helper import get_image_with_version
 from commit_status_helper import get_commit, post_commit_status
 from tee_popen import TeePopen
+from rerun_helper import RerunHelper
 
 IMAGE_NAME = 'clickhouse/performance-comparison'
 
@@ -81,6 +82,11 @@ if __name__ == "__main__":
         check_name_with_group = check_name + f' [{run_by_hash_num + 1}/{run_by_hash_total}]'
     else:
         check_name_with_group = check_name
+
+    rerun_helper = RerunHelper(gh, pr_info, check_name_with_group)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
 
     docker_image = get_image_with_version(reports_path, IMAGE_NAME)
 

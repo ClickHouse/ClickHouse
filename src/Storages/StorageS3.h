@@ -44,6 +44,18 @@ public:
             std::shared_ptr<Impl> pimpl;
     };
 
+    class KeysIterator
+    {
+        public:
+            explicit KeysIterator(const std::vector<String> & keys_);
+            String next();
+
+        private:
+            class Impl;
+            /// shared_ptr to have copy constructor
+            std::shared_ptr<Impl> pimpl;
+    };
+
     using IteratorWrapper = std::function<String()>;
 
     static Block getHeader(Block sample_block, bool with_path_column, bool with_file_column);
@@ -174,6 +186,7 @@ private:
     };
 
     ClientAuthentication client_auth;
+    std::vector<String> keys;
 
     String format_name;
     UInt64 max_single_read_retries;
@@ -184,10 +197,11 @@ private:
     const bool distributed_processing;
     std::optional<FormatSettings> format_settings;
     ASTPtr partition_by;
+    bool is_key_with_globs = false;
 
     static void updateClientAndAuthSettings(ContextPtr, ClientAuthentication &);
 
-    static std::shared_ptr<StorageS3Source::IteratorWrapper> createFileIterator(const ClientAuthentication & client_auth, bool distributed_processing, ContextPtr local_context);
+    static std::shared_ptr<StorageS3Source::IteratorWrapper> createFileIterator(const ClientAuthentication & client_auth, const std::vector<String> & keys, bool is_key_with_globs, bool distributed_processing, ContextPtr local_context);
 
     static ColumnsDescription getTableStructureFromDataImpl(
         const String & format,
@@ -195,6 +209,7 @@ private:
         UInt64 max_single_read_retries,
         const String & compression_method,
         bool distributed_processing,
+        bool is_key_with_globs,
         const std::optional<FormatSettings> & format_settings,
         ContextPtr ctx);
 };

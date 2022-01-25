@@ -47,9 +47,7 @@ private:
     void writeImpl(const Block & block, const IColumn::Permutation * permutation);
 
     void finalizePartOnDisk(
-            const MergeTreeData::MutableDataPartPtr & new_part,
-            NamesAndTypesList & part_columns,
-            SerializationInfoByName & serialization_infos,
+            const MergeTreeData::DataPartPtr & new_part,
             MergeTreeData::DataPart::Checksums & checksums,
             bool sync);
 

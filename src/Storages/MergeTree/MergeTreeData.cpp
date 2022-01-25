@@ -2569,11 +2569,13 @@ bool MergeTreeData::renameTempPartAndReplace(
             ++reduce_parts;
         }
 
-        decreaseDataVolume(reduce_bytes, reduce_rows, reduce_parts);
-
         modifyPartState(part_it, DataPartState::Active);
         addPartContributionToColumnAndSecondaryIndexSizes(part);
-        addPartContributionToDataVolume(part);
+
+        ssize_t diff_bytes = part->getBytesOnDisk() - reduce_bytes;
+        ssize_t diff_rows = part->rows_count - reduce_rows;
+        ssize_t diff_parts = 1 - reduce_parts;
+        increaseDataVolume(diff_bytes, diff_rows, diff_parts);
     }
 
     auto part_in_memory = asInMemoryPart(part);
@@ -3102,8 +3104,9 @@ void MergeTreeData::swapActivePart(MergeTreeData::DataPartPtr part_copy)
             auto part_it = data_parts_indexes.insert(part_copy).first;
             modifyPartState(part_it, DataPartState::Active);
 
-            removePartContributionToDataVolume(original_active_part);
-            addPartContributionToDataVolume(part_copy);
+            ssize_t diff_bytes = part_copy->getBytesOnDisk() - original_active_part->getBytesOnDisk();
+            ssize_t diff_rows = part_copy->rows_count - original_active_part->rows_count;
+            increaseDataVolume(diff_bytes, diff_rows, /* parts= */ 0);
 
             auto disk = original_active_part->volume->getDisk();
             String marker_path = fs::path(original_active_part->getFullRelativePath()) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME;
@@ -4304,8 +4307,11 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
                 data.addPartContributionToColumnAndSecondaryIndexSizes(part);
             }
         }
-        data.decreaseDataVolume(reduce_bytes, reduce_rows, reduce_parts);
-        data.increaseDataVolume(add_bytes, add_rows, add_parts);
+
+        ssize_t diff_bytes = add_bytes - reduce_bytes;
+        ssize_t diff_rows = add_rows - reduce_rows;
+        ssize_t diff_parts  = add_parts - reduce_parts;
+        data.increaseDataVolume(diff_bytes, diff_rows, diff_parts);
     }
 
     clear();
@@ -5690,21 +5696,14 @@ void MergeTreeData::addPartContributionToDataVolume(const DataPartPtr & part)
 
 void MergeTreeData::removePartContributionToDataVolume(const DataPartPtr & part)
 {
-    decreaseDataVolume(part->getBytesOnDisk(), part->rows_count, 1);
+    increaseDataVolume(-part->getBytesOnDisk(), -part->rows_count, -1);
 }
 
-void MergeTreeData::increaseDataVolume(size_t bytes, size_t rows, size_t parts)
+void MergeTreeData::increaseDataVolume(ssize_t bytes, ssize_t rows, ssize_t parts)
 {
     total_active_size_bytes.fetch_add(bytes, std::memory_order_acq_rel);
     total_active_size_rows.fetch_add(rows, std::memory_order_acq_rel);
     total_active_size_parts.fetch_add(parts, std::memory_order_acq_rel);
-}
-
-void MergeTreeData::decreaseDataVolume(size_t bytes, size_t rows, size_t parts)
-{
-    total_active_size_bytes.fetch_sub(bytes, std::memory_order_acq_rel);
-    total_active_size_rows.fetch_sub(rows, std::memory_order_acq_rel);
-    total_active_size_parts.fetch_sub(parts, std::memory_order_acq_rel);
 }
 
 void MergeTreeData::setDataVolume(size_t bytes, size_t rows, size_t parts)

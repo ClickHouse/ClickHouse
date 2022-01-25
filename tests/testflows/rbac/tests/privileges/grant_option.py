@@ -114,21 +114,19 @@ def grant_option_check(grant_option_target, grant_target, user_name, table_type,
     ("SELECT",),
 ])
 @Name("grant option")
-def feature(self, node="clickhouse1", stress=None, parallel=None):
+def feature(self, stress=None, node="clickhouse1"):
     """Check the RBAC functionality of privileges with GRANT OPTION.
     """
     self.context.node = self.context.cluster.node(node)
 
-    if parallel is not None:
-        self.context.parallel = parallel
     if stress is not None:
         self.context.stress = stress
 
     with Pool(12) as pool:
-        tasks = []
         try:
             for example in self.examples:
                 privilege, = example
-                run_scenario(pool, tasks, Suite(test=grant_option, name=privilege, setup=instrument_clickhouse_server_log), {"table_type": "MergeTree", "privilege": privilege})
+                args = {"table_type": "MergeTree", "privilege": privilege}
+                Suite(test=grant_option, name=privilege, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)(**args)
         finally:
-            join(tasks)
+            join()
