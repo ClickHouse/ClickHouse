@@ -19,7 +19,7 @@
 namespace DB
 {
 
-enum class RangeHashedDictionaryLookupStrategy
+enum class RangeHashedDictionaryLookupStrategy : uint8_t
 {
     min,
     max
@@ -32,24 +32,23 @@ struct RangeHashedDictionaryConfiguration
     bool require_nonempty;
 };
 
-template <DictionaryKeyType dictionary_key_type, typename RangeColumnType>
+template <DictionaryKeyType dictionary_key_type>
 class RangeHashedDictionary final : public IDictionary
 {
 public:
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
-    using RangeStorageType = typename RangeColumnType::ValueType;
 
     RangeHashedDictionary(
         const StorageID & dict_id_,
         const DictionaryStructure & dict_struct_,
         DictionarySourcePtr source_ptr_,
-        const DictionaryLifetime dict_lifetime_,
+        DictionaryLifetime dict_lifetime_,
         RangeHashedDictionaryConfiguration configuration_,
         BlockPtr update_field_loaded_block_ = nullptr);
 
     std::string getTypeName() const override
     {
-        if (dictionary_key_type == DictionaryKeyType::Simple)
+        if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
             return "RangeHashed";
         else
             return "ComplexKeyRangeHashed";
@@ -75,7 +74,15 @@ public:
 
     std::shared_ptr<const IExternalLoadable> clone() const override
     {
-        return std::make_shared<RangeHashedDictionary>(getDictionaryID(), dict_struct, source_ptr->clone(), dict_lifetime, configuration, update_field_loaded_block);
+        auto result = std::make_shared<RangeHashedDictionary>(
+            getDictionaryID(),
+            dict_struct,
+            source_ptr->clone(),
+            dict_lifetime,
+            configuration,
+            update_field_loaded_block);
+
+        return result;
     }
 
     DictionarySourcePtr getSource() const override { return source_ptr; }
@@ -106,21 +113,20 @@ public:
 
 private:
 
-    using RangeInterval = Interval<RangeStorageType>;
+    template <typename RangeStorageType>
+    using IntervalMap = IntervalMap<Interval<RangeStorageType>, size_t>;
 
-    using IntervalMap = IntervalMap<RangeInterval, size_t>;
-
-    using KeyContainerType = std::conditional_t<
+    template <typename RangeStorageType>
+    using KeyAttributeContainerType = std::conditional_t<
         dictionary_key_type == DictionaryKeyType::Simple,
-        HashMap<UInt64, IntervalMap, DefaultHash<UInt64>>,
-        HashMapWithSavedHash<StringRef, IntervalMap, DefaultHash<StringRef>>>;
+        HashMap<UInt64, IntervalMap<RangeStorageType>, DefaultHash<UInt64>>,
+        HashMapWithSavedHash<StringRef, IntervalMap<RangeStorageType>, DefaultHash<StringRef>>>;
 
     template <typename Value>
     using AttributeContainerType = std::conditional_t<std::is_same_v<Value, Array>, std::vector<Value>, PaddedPODArray<Value>>;
 
     struct Attribute final
     {
-    public:
         AttributeUnderlyingType type;
 
         std::variant<
@@ -151,10 +157,45 @@ private:
         std::optional<std::vector<bool>> is_value_nullable;
     };
 
+    template <typename RangeStorageType>
+    struct InvalidIntervalWithKey
+    {
+        KeyType key;
+        Interval<RangeStorageType> interval;
+        size_t attribute_value_index;
+    };
+
+    template <typename RangeStorageType>
+    using InvalidIntervalsContainerType = PaddedPODArray<InvalidIntervalWithKey<RangeStorageType>>;
+
+    template <template<typename> typename ContainerType>
+    using RangeStorageTypeContainer = std::variant<
+        ContainerType<UInt8>,
+        ContainerType<UInt16>,
+        ContainerType<UInt32>,
+        ContainerType<UInt64>,
+        ContainerType<UInt128>,
+        ContainerType<UInt256>,
+        ContainerType<Int8>,
+        ContainerType<Int16>,
+        ContainerType<Int32>,
+        ContainerType<Int64>,
+        ContainerType<Int128>,
+        ContainerType<Int256>,
+        ContainerType<Decimal32>,
+        ContainerType<Decimal64>,
+        ContainerType<Decimal128>,
+        ContainerType<Decimal256>,
+        ContainerType<DateTime64>,
+        ContainerType<Float32>,
+        ContainerType<Float64>,
+        ContainerType<UUID>>;
+
     struct KeyAttribute final
     {
+        RangeStorageTypeContainer<KeyAttributeContainerType> container;
 
-        KeyContainerType container;
+        RangeStorageTypeContainer<InvalidIntervalsContainerType> invalid_intervals_container;
 
     };
 
@@ -187,9 +228,6 @@ private:
     void updateData();
 
     void blockToAttributes(const Block & block);
-
-    template <typename T>
-    void setAttributeValueImpl(Attribute & attribute, const Field & value);
 
     void setAttributeValue(Attribute & attribute, const Field & value);
 
