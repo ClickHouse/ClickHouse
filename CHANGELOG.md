@@ -12,7 +12,7 @@
 * A tool for collecting diagnostics data if you need support. [#33175](https://github.com/ClickHouse/ClickHouse/pull/33175) ([Alexander Burmak](https://github.com/Alex-Burmak)).
 * Automatic cluster discovery via Zoo/Keeper. It allows to add replicas to the cluster without changing configuration on every server. [#31442](https://github.com/ClickHouse/ClickHouse/pull/31442) ([vdimir](https://github.com/vdimir)).
 * Implement hive table engine to access apache hive from clickhouse. This implements: [#29245](https://github.com/ClickHouse/ClickHouse/issues/29245). [#31104](https://github.com/ClickHouse/ClickHouse/pull/31104) ([taiyang-li](https://github.com/taiyang-li)).
-* Add aggregate functions `cramersV`, `cramersVBiasCorrected`, `theilsU` and `contingency`. These functions calculate dependency (measure of association) between categorical values. All these functions are using cross-tab (histogram on pairs) for implementation. You can imagine it like a correlation coefficient but for any discrete values (not necessary numbers). [#33366](https://github.com/ClickHouse/ClickHouse/pull/33366) ([alexey-milovidov](https://github.com/alexey-milovidov)). Initial implementation by TODO
+* Add aggregate functions `cramersV`, `cramersVBiasCorrected`, `theilsU` and `contingency`. These functions calculate dependency (measure of association) between categorical values. All these functions are using cross-tab (histogram on pairs) for implementation. You can imagine it like a correlation coefficient but for any discrete values (not necessary numbers). [#33366](https://github.com/ClickHouse/ClickHouse/pull/33366) ([alexey-milovidov](https://github.com/alexey-milovidov)). Initial implementation by [Vanyok-All-is-OK](https://github.com/Vanyok-All-is-OK) and [antikvist](https://github.com/antikvist).
 * Added table function `hdfsCluster` which allows processing files from HDFS in parallel from many nodes in a specified cluster, similarly to `s3Cluster`. [#32400](https://github.com/ClickHouse/ClickHouse/pull/32400) ([Zhichang Yu](https://github.com/yuzhichang)).
 * Adding support for disks backed by Azure Blob Storage, in a similar way it has been done for disks backed by AWS S3. [#31505](https://github.com/ClickHouse/ClickHouse/pull/31505) ([Jakub Kuklis](https://github.com/jkuklis)).
 * Allow `COMMENT` in `CREATE VIEW` (for all VIEW kinds). [#31062](https://github.com/ClickHouse/ClickHouse/pull/31062) ([Vasily Nemkov](https://github.com/Enmk)).
@@ -23,7 +23,6 @@
 * Added function `arrayLast`. Closes [#33390](https://github.com/ClickHouse/ClickHouse/issues/33390). [#33415](https://github.com/ClickHouse/ClickHouse/pull/33415) Added function `arrayLastIndex`. [#33465](https://github.com/ClickHouse/ClickHouse/pull/33465) ([Maksim Kita](https://github.com/kitaisreal)).
 * Add function `decodeURLFormComponent` slightly different to `decodeURLComponent`. Close [#10298](https://github.com/ClickHouse/ClickHouse/issues/10298). [#33451](https://github.com/ClickHouse/ClickHouse/pull/33451) ([SuperDJY](https://github.com/cmsxbc)).
 * Allow to split `GraphiteMergeTree` rollup rules for plain/tagged metrics (optional rule_type field). [#33494](https://github.com/ClickHouse/ClickHouse/pull/33494) ([Michail Safronov](https://github.com/msaf1980)).
-* Potential issue, cannot be exploited: integer overflow may happen in array resize. [#33024](https://github.com/ClickHouse/ClickHouse/pull/33024) ([varadarajkumar](https://github.com/varadarajkumar)).
 
 
 #### Performance Improvement
@@ -78,7 +77,6 @@
 * Validate config keys for external dictionaries. [#33095](https://github.com/ClickHouse/ClickHouse/issues/33095#issuecomment-1000577517). [#33130](https://github.com/ClickHouse/ClickHouse/pull/33130) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * Send profile info inside `clickhouse-local`. Closes [#33093](https://github.com/ClickHouse/ClickHouse/issues/33093). [#33097](https://github.com/ClickHouse/ClickHouse/pull/33097) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * Short circuit evaluation: support for function `throwIf`. Closes [#32969](https://github.com/ClickHouse/ClickHouse/issues/32969). [#32973](https://github.com/ClickHouse/ClickHouse/pull/32973) ([Maksim Kita](https://github.com/kitaisreal)).
-* Added `Date32` date type support in dictionaries. Closes [#32913](https://github.com/ClickHouse/ClickHouse/issues/32913). [#32971](https://github.com/ClickHouse/ClickHouse/pull/32971) ([Maksim Kita](https://github.com/kitaisreal)).
 * (This only happens in unofficial builds). Fixed segfault when inserting data into compressed Decimal, String, FixedString and Array columns. This closes [#32939](https://github.com/ClickHouse/ClickHouse/issues/32939). [#32940](https://github.com/ClickHouse/ClickHouse/pull/32940) ([N. Kolotov](https://github.com/nkolotov)).
 * Added support for specifying subquery as SQL user defined function. Example: `CREATE FUNCTION test AS () -> (SELECT 1)`. Closes [#30755](https://github.com/ClickHouse/ClickHouse/issues/30755). [#32758](https://github.com/ClickHouse/ClickHouse/pull/32758) ([Maksim Kita](https://github.com/kitaisreal)).
 * Improve gRPC compression support for [#28671](https://github.com/ClickHouse/ClickHouse/issues/28671). [#32747](https://github.com/ClickHouse/ClickHouse/pull/32747) ([Vitaly Baranov](https://github.com/vitlibar)).
@@ -100,6 +98,7 @@
 * Use `--database` option for clickhouse-local. [#32797](https://github.com/ClickHouse/ClickHouse/pull/32797) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * Fix surprisingly bad code in SQL ordinary function `file`. Now it supports symlinks. [#32640](https://github.com/ClickHouse/ClickHouse/pull/32640) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * Updating `modification_time` for data part in `system.parts` after part movement [#32964](https://github.com/ClickHouse/ClickHouse/issues/32964). [#32965](https://github.com/ClickHouse/ClickHouse/pull/32965) ([save-my-heart](https://github.com/save-my-heart)).
+* Potential issue, cannot be exploited: integer overflow may happen in array resize. [#33024](https://github.com/ClickHouse/ClickHouse/pull/33024) ([varadarajkumar](https://github.com/varadarajkumar)).
 
 
 #### Build/Testing/Packaging Improvement

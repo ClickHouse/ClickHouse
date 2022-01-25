@@ -140,6 +140,7 @@ private:
     std::map<std::pair<Int64, Int64>, UInt64> updated_version_by_block_range;
 
     std::atomic<bool> shutdown_called {false};
+    std::atomic<bool> flush_called {false};
 
     void loadMutations();
 

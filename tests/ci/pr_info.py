@@ -11,6 +11,8 @@ DIFF_IN_DOCUMENTATION_EXT = [".html", ".md", ".yml", ".txt", ".css", ".js", ".xm
                              ".jpg", ".py", ".sh", ".json"]
 
 def get_pr_for_commit(sha, ref):
+    if not ref:
+        return None
     try_get_pr_url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/commits/{sha}/pulls"
     try:
         response = requests.get(try_get_pr_url)
@@ -32,23 +34,24 @@ def get_pr_for_commit(sha, ref):
 
 
 class PRInfo:
+    default_event = {
+                    'commits': 1,
+                    'before': 'HEAD~',
+                    'after': 'HEAD',
+                    'ref': None,
+                }
     def __init__(self, github_event=None, need_orgs=False, need_changed_files=False, labels_from_api=False):
         if not github_event:
             if GITHUB_EVENT_PATH:
                 with open(GITHUB_EVENT_PATH, 'r', encoding='utf-8') as event_file:
                     github_event = json.load(event_file)
             else:
-                github_event = {
-                    'commits': 1,
-                    'before': 'HEAD~',
-                    'after': 'HEAD',
-                    'ref': None,
-                }
+                github_event = PRInfo.default_event.copy()
         self.event = github_event
         self.changed_files = set([])
         self.body = ""
         ref = github_event.get("ref", "refs/head/master")
-        if ref.startswith('refs/heads/'):
+        if ref and ref.startswith('refs/heads/'):
             ref = ref[11:]
 
         # workflow completed event, used for PRs only

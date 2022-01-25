@@ -65,6 +65,7 @@ namespace ErrorCodes
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int CANNOT_STAT;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_APPEND_TO_FILE;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
 }
 
@@ -285,6 +286,7 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
 {
     is_db_table = false;
     paths = getPathsList(table_path_, user_files_path, args.getContext(), total_bytes_to_read);
+    is_path_with_globs = paths.size() > 1;
     path_for_partitioned_write = table_path_;
     setStorageMetadata(args);
 }
@@ -603,7 +605,7 @@ public:
         int table_fd_,
         bool use_table_fd_,
         std::string base_path_,
-        std::vector<std::string> paths_,
+        std::string path_,
         const CompressionMethod compression_method_,
         const std::optional<FormatSettings> & format_settings_,
         const String format_name_,
@@ -615,7 +617,7 @@ public:
         , table_fd(table_fd_)
         , use_table_fd(use_table_fd_)
         , base_path(base_path_)
-        , paths(paths_)
+        , path(path_)
         , compression_method(compression_method_)
         , format_name(format_name_)
         , format_settings(format_settings_)
@@ -632,7 +634,7 @@ public:
         int table_fd_,
         bool use_table_fd_,
         std::string base_path_,
-        std::vector<std::string> paths_,
+        const std::string & path_,
         const CompressionMethod compression_method_,
         const std::optional<FormatSettings> & format_settings_,
         const String format_name_,
@@ -644,7 +646,7 @@ public:
         , table_fd(table_fd_)
         , use_table_fd(use_table_fd_)
         , base_path(base_path_)
-        , paths(paths_)
+        , path(path_)
         , compression_method(compression_method_)
         , format_name(format_name_)
         , format_settings(format_settings_)
@@ -666,10 +668,8 @@ public:
         }
         else
         {
-            if (paths.size() != 1)
-                throw Exception("Table '" + table_name_for_log + "' is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
             flags |= O_WRONLY | O_APPEND | O_CREAT;
-            naked_buffer = std::make_unique<WriteBufferFromFile>(paths[0], DBMS_DEFAULT_BUFFER_SIZE, flags);
+            naked_buffer = std::make_unique<WriteBufferFromFile>(path, DBMS_DEFAULT_BUFFER_SIZE, flags);
         }
 
         /// In case of formats with prefixes if file is not empty we have already written prefix.
@@ -709,7 +709,7 @@ private:
     int table_fd;
     bool use_table_fd;
     std::string base_path;
-    std::vector<std::string> paths;
+    std::string path;
     CompressionMethod compression_method;
     std::string format_name;
     std::optional<FormatSettings> format_settings;
@@ -752,7 +752,6 @@ public:
     {
         auto partition_path = PartitionedSink::replaceWildcards(path, partition_id);
         PartitionedSink::validatePartitionKey(partition_path, true);
-        Strings result_paths = {partition_path};
         checkCreationIsAllowed(context, context->getUserFilesPath(), partition_path);
         return std::make_shared<StorageFileSink>(
             metadata_snapshot,
@@ -760,7 +759,7 @@ public:
             -1,
             /* use_table_fd */false,
             base_path,
-            result_paths,
+            partition_path,
             compression_method,
             format_settings,
             format_name,
@@ -794,7 +793,6 @@ SinkToStoragePtr StorageFile::write(
 
     int flags = 0;
 
-    std::string path;
     if (context->getSettingsRef().engine_file_truncate_on_insert)
         flags |= O_TRUNC;
 
@@ -815,7 +813,7 @@ SinkToStoragePtr StorageFile::write(
             std::unique_lock{rwlock, getLockTimeout(context)},
             base_path,
             path_for_partitioned_write,
-            chooseCompressionMethod(path, compression_method),
+            chooseCompressionMethod(path_for_partitioned_write, compression_method),
             format_settings,
             format_name,
             context,
@@ -823,10 +821,41 @@ SinkToStoragePtr StorageFile::write(
     }
     else
     {
+        String path;
         if (!paths.empty())
         {
-            path = paths[0];
+            if (is_path_with_globs)
+                throw Exception("Table '" + getStorageID().getNameForLogs() + "' is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
+
+            path = paths.back();
             fs::create_directories(fs::path(path).parent_path());
+
+            if (!context->getSettingsRef().engine_file_truncate_on_insert && !is_path_with_globs
+                && !FormatFactory::instance().checkIfFormatSupportAppend(format_name, context, format_settings) && fs::exists(paths.back())
+                && fs::file_size(paths.back()) != 0)
+            {
+                if (context->getSettingsRef().engine_file_allow_create_multiple_files)
+                {
+                    auto pos = paths[0].find_first_of('.', paths[0].find_last_of('/'));
+                    size_t index = paths.size();
+                    String new_path;
+                    do
+                    {
+                        new_path = paths[0].substr(0, pos) + "." + std::to_string(index) + (pos == std::string::npos ? "" : paths[0].substr(pos));
+                        ++index;
+                    }
+                    while (fs::exists(new_path));
+                    paths.push_back(new_path);
+                    path = new_path;
+                }
+                else
+                    throw Exception(
+                        ErrorCodes::CANNOT_APPEND_TO_FILE,
+                        "Cannot append data in format {} to file, because this format doesn't support appends."
+                        " You can allow to create a new file "
+                        "on each insert by enabling setting engine_file_allow_create_multiple_files",
+                        format_name);
+            }
         }
 
         return std::make_shared<StorageFileSink>(
@@ -836,7 +865,7 @@ SinkToStoragePtr StorageFile::write(
             table_fd,
             use_table_fd,
             base_path,
-            paths,
+            path,
             chooseCompressionMethod(path, compression_method),
             format_settings,
             format_name,
@@ -882,7 +911,7 @@ void StorageFile::truncate(
     ContextPtr /* context */,
     TableExclusiveLockHolder &)
 {
-    if (paths.size() != 1)
+    if (is_path_with_globs)
         throw Exception("Can't truncate table '" + getStorageID().getNameForLogs() + "' in readonly mode", ErrorCodes::DATABASE_ACCESS_DENIED);
 
     if (use_table_fd)
@@ -892,11 +921,14 @@ void StorageFile::truncate(
     }
     else
     {
-        if (!fs::exists(paths[0]))
-            return;
+        for (const auto & path : paths)
+        {
+            if (!fs::exists(path))
+                continue;
 
-        if (0 != ::truncate(paths[0].c_str(), 0))
-            throwFromErrnoWithPath("Cannot truncate file " + paths[0], paths[0], ErrorCodes::CANNOT_TRUNCATE_FILE);
+            if (0 != ::truncate(path.c_str(), 0))
+                throwFromErrnoWithPath("Cannot truncate file " + path, path, ErrorCodes::CANNOT_TRUNCATE_FILE);
+        }
     }
 }
 

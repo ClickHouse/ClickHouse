@@ -12,9 +12,6 @@ else ()
 endif ()
 
 if (NOT ENABLE_JEMALLOC)
-    add_library(jemalloc INTERFACE)
-    target_compile_definitions(jemalloc INTERFACE USE_JEMALLOC=0)
-
     message (STATUS "Not using jemalloc")
     return()
 endif ()
@@ -90,9 +87,9 @@ if (OS_DARWIN)
     list(APPEND SRCS "${LIBRARY_DIR}/src/zone.c")
 endif ()
 
-add_library(jemalloc ${SRCS})
-target_include_directories(jemalloc PRIVATE "${LIBRARY_DIR}/include")
-target_include_directories(jemalloc SYSTEM PUBLIC include)
+add_library(_jemalloc ${SRCS})
+target_include_directories(_jemalloc PRIVATE "${LIBRARY_DIR}/include")
+target_include_directories(_jemalloc SYSTEM PUBLIC include)
 
 set (JEMALLOC_INCLUDE_PREFIX)
 # OS_
@@ -120,26 +117,24 @@ endif ()
 
 configure_file(${JEMALLOC_INCLUDE_PREFIX}/jemalloc/internal/jemalloc_internal_defs.h.in
     ${JEMALLOC_INCLUDE_PREFIX}/jemalloc/internal/jemalloc_internal_defs.h)
-target_include_directories(jemalloc SYSTEM PRIVATE
+target_include_directories(_jemalloc SYSTEM PRIVATE
     "${CMAKE_CURRENT_BINARY_DIR}/${JEMALLOC_INCLUDE_PREFIX}/jemalloc/internal")
 
-target_compile_definitions(jemalloc PRIVATE -DJEMALLOC_NO_PRIVATE_NAMESPACE)
+target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_NO_PRIVATE_NAMESPACE)
 
 if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
-    target_compile_definitions(jemalloc PRIVATE -DJEMALLOC_DEBUG=1)
+    target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_DEBUG=1)
 endif ()
 
-target_compile_definitions(jemalloc PRIVATE -DJEMALLOC_PROF=1)
+target_compile_definitions(_jemalloc PRIVATE -DJEMALLOC_PROF=1)
 
 if (USE_UNWIND)
-    target_compile_definitions (jemalloc PRIVATE -DJEMALLOC_PROF_LIBUNWIND=1)
-    target_link_libraries (jemalloc PRIVATE unwind)
+    target_compile_definitions (_jemalloc PRIVATE -DJEMALLOC_PROF_LIBUNWIND=1)
+    target_link_libraries (_jemalloc PRIVATE unwind)
 endif ()
 
-target_compile_options(jemalloc PRIVATE -Wno-redundant-decls)
+target_compile_options(_jemalloc PRIVATE -Wno-redundant-decls)
 # for RTLD_NEXT
-target_compile_options(jemalloc PRIVATE -D_GNU_SOURCE)
+target_compile_options(_jemalloc PRIVATE -D_GNU_SOURCE)
 
-set_property(TARGET jemalloc APPEND PROPERTY INTERFACE_COMPILE_DEFINITIONS USE_JEMALLOC=1)
-
-message (STATUS "Using jemalloc")
+add_library(ch_contrib::jemalloc ALIAS _jemalloc)
