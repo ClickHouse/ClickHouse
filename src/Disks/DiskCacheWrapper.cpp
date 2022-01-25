@@ -41,6 +41,8 @@ public:
         impl->preFinalize();
         impl->finalize();
 
+        // LOG_TRACE(&Poco::Logger::get("WritingToCacheWriteBuffer"), "count {}\n{}", impl->count(), StackTrace().toString());
+
         read_buffer = create_read_buffer();
         write_buffer = create_write_buffer();
         copyData(*read_buffer, *write_buffer);
@@ -54,6 +56,8 @@ public:
     {
         if (!is_prefinalized)
             preFinalize();
+
+        // LOG_TRACE(&Poco::Logger::get("WritingToCacheWriteBuffer"), "{}", StackTrace().toString());
 
         write_buffer->finalize();
     }
@@ -202,6 +206,7 @@ DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode
         cache_disk->writeFile(path, buf_size, mode),
         [this, path]()
         {
+            // LOG_TRACE(&Poco::Logger::get("DiskCacheWrapper::writeFile"), " reading from {} size {}", path, cache_disk->getFileSize(path));
             /// Copy file from cache to actual disk when cached buffer is finalized.
             return cache_disk->readFile(path, ReadSettings(), /* read_hint= */ {}, /* file_size= */ {});
         },
