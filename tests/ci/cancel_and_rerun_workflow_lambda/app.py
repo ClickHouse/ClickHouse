@@ -5,14 +5,14 @@ import json
 import time
 
 import jwt
-import requests
-import boto3
+import requests  # type: ignore
+import boto3  # type: ignore
 
 NEED_RERUN_OR_CANCELL_WORKFLOWS = {
-    13241696,  # PR
-    15834118,  # Docs
-    15516108,  # ReleaseCI
-    15797242,  # BackportPR
+    "PullRequestCI",
+    "Docs",
+    "DocsRelease",
+    "BackportPR",
 }
 
 # https://docs.github.com/en/rest/reference/actions#cancel-a-workflow-run
@@ -110,11 +110,12 @@ def get_workflows_description_for_pull_request(pull_request_event):
 
     workflow_descriptions = []
     for workflow in workflows_data:
-        # unfortunately we cannot filter workflows from forks in request to API so doing it manually
+        # unfortunately we cannot filter workflows from forks in request to API
+        # so doing it manually
         if (
             workflow["head_repository"]["full_name"]
             == pull_request_event["head"]["repo"]["full_name"]
-            and workflow["workflow_id"] in NEED_RERUN_OR_CANCELL_WORKFLOWS
+            and workflow["name"] in NEED_RERUN_OR_CANCELL_WORKFLOWS
         ):
             workflow_descriptions.append(
                 WorkflowDescription(
@@ -167,7 +168,7 @@ def main(event):
     action = event_data["action"]
     print("Got action", event_data["action"])
     pull_request = event_data["pull_request"]
-    labels = {l["name"] for l in pull_request["labels"]}
+    labels = {label["name"] for label in pull_request["labels"]}
     print("PR has labels", labels)
     if action == "closed" or "do not test" in labels:
         print("PR merged/closed or manually labeled 'do not test' will kill workflows")
