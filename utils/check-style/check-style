@@ -326,5 +326,15 @@ then
     echo "ErrorCodes.cpp contains non-unique error codes"
 fi
 
+# Check that there is no system-wide libraries/headers in use.
+#
+# NOTE: it is better to override find_path/find_library in cmake, but right now
+# it is not possible, see [1] for the reference.
+#
+#   [1]: git grep --recurse-submodules -e find_library -e find_path contrib
+if git grep -e find_path -e find_library -- :**CMakeLists.txt; then
+    echo "There is find_path/find_library usage. ClickHouse should use everything bundled. Consider adding one more contrib module."
+fi
+
 # Forbid files that differ only by character case
 find $ROOT_PATH | sort -f | uniq -i -c | awk '{ if ($1 > 1) print }'

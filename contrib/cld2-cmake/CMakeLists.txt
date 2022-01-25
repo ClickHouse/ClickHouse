@@ -26,7 +26,8 @@ set (SRCS
     "${LIBRARY_DIR}/internal/cld2_generated_distinctoctachrome.cc"
     "${LIBRARY_DIR}/internal/cld_generated_score_quad_octa_2.cc"
 )
-add_library(cld2 ${SRCS})
-set_property(TARGET cld2 PROPERTY POSITION_INDEPENDENT_CODE ON)
-target_compile_options (cld2 PRIVATE -Wno-reserved-id-macro -Wno-c++11-narrowing)
-target_include_directories(cld2 SYSTEM BEFORE PUBLIC "${LIBRARY_DIR}/public")
+add_library(_cld2 ${SRCS})
+set_property(TARGET _cld2 PROPERTY POSITION_INDEPENDENT_CODE ON)
+target_compile_options (_cld2 PRIVATE -Wno-reserved-id-macro -Wno-c++11-narrowing)
+target_include_directories(_cld2 SYSTEM BEFORE PUBLIC "${LIBRARY_DIR}/public")
+add_library(ch_contrib::cld2 ALIAS _cld2)
