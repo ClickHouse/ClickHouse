@@ -1,4 +1,2 @@
-CHECK: privilege
-Code: 446.
-CHECK: basic call
-Success
+10000000000
+has inlines:	1
