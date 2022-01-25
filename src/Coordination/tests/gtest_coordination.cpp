@@ -844,10 +844,10 @@ struct IntNode
 TEST_P(CoordinationTest, SnapshotableHashMapSimple)
 {
     DB::SnapshotableHashTable<IntNode> hello;
-    EXPECT_TRUE(hello.insert("hello", 5));
+    EXPECT_TRUE(hello.insert("hello", 5).second);
     EXPECT_TRUE(hello.contains("hello"));
     EXPECT_EQ(hello.getValue("hello"), 5);
-    EXPECT_FALSE(hello.insert("hello", 145));
+    EXPECT_FALSE(hello.insert("hello", 145).second);
     EXPECT_EQ(hello.getValue("hello"), 5);
     hello.updateValue("hello", [](IntNode & value) { value = 7; });
     EXPECT_EQ(hello.getValue("hello"), 7);
@@ -859,10 +859,10 @@ TEST_P(CoordinationTest, SnapshotableHashMapSimple)
 TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
 {
     DB::SnapshotableHashTable<IntNode> map_snp;
-    EXPECT_TRUE(map_snp.insert("/hello", 7));
-    EXPECT_FALSE(map_snp.insert("/hello", 145));
-    map_snp.enableSnapshotMode();
-    EXPECT_FALSE(map_snp.insert("/hello", 145));
+    EXPECT_TRUE(map_snp.insert("/hello", 7).second);
+    EXPECT_FALSE(map_snp.insert("/hello", 145).second);
+    map_snp.enableSnapshotMode(100000);
+    EXPECT_FALSE(map_snp.insert("/hello", 145).second);
     map_snp.updateValue("/hello", [](IntNode & value) { value = 554; });
     EXPECT_EQ(map_snp.getValue("/hello"), 554);
     EXPECT_EQ(map_snp.snapshotSize(), 2);
@@ -880,7 +880,7 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
     EXPECT_EQ(itr, map_snp.end());
     for (size_t i = 0; i < 5; ++i)
     {
-        EXPECT_TRUE(map_snp.insert("/hello" + std::to_string(i), i));
+        EXPECT_TRUE(map_snp.insert("/hello" + std::to_string(i), i).second);
     }
     EXPECT_EQ(map_snp.getValue("/hello3"), 3);
 
@@ -951,7 +951,7 @@ TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
     hello.clear();
     EXPECT_EQ(hello.getApproximateDataSize(), 0);
 
-    hello.enableSnapshotMode();
+    hello.enableSnapshotMode(10000);
     hello.insert("hello", 1);
     EXPECT_EQ(hello.getApproximateDataSize(), 9);
     hello.updateValue("hello", [](IntNode & value) { value = 2; });
@@ -984,7 +984,7 @@ TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
     world.erase("world");
     EXPECT_EQ(world.getApproximateDataSize(), 0);
 
-    world.enableSnapshotMode();
+    world.enableSnapshotMode(100000);
     world.insert("world", n1);
     EXPECT_EQ(world.getApproximateDataSize(), 98);
     world.updateValue("world", [&](Node & value) { value = n2; });

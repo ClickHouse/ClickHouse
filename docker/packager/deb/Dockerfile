@@ -1,3 +1,4 @@
+# rebuild in #33610
 # docker build -t clickhouse/deb-builder .
 FROM ubuntu:20.04
 
@@ -28,12 +29,14 @@ RUN apt-get update \
         software-properties-common \
         --yes --no-install-recommends
 
+# Architecture of the image when BuildKit/buildx is used
+ARG TARGETARCH
+
 # Special dpkg-deb (https://github.com/ClickHouse-Extras/dpkg) version which is able
 # to compress files using pigz (https://zlib.net/pigz/) instead of gzip.
 # Significantly increase deb packaging speed and compatible with old systems
-RUN curl -O https://clickhouse-datasets.s3.yandex.net/utils/1/dpkg-deb \
-    && chmod +x dpkg-deb \
-    && cp dpkg-deb /usr/bin
+RUN arch=${TARGETARCH:-amd64} \
+  && curl -Lo /usr/bin/dpkg-deb https://github.com/ClickHouse-Extras/dpkg/releases/download/1.21.1-clickhouse/dpkg-deb-${arch}
 
 RUN apt-get update \
     && apt-get install \

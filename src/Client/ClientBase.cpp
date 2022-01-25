@@ -13,15 +13,16 @@
 #include <Common/MemoryTracker.h>
 #include <base/LineReader.h>
 #include <base/scope_guard_safe.h>
-#include "Common/Exception.h"
-#include "Common/getNumberOfPhysicalCPUCores.h"
-#include "Common/tests/gtest_global_context.h"
-#include "Common/typeid_cast.h"
-#include "Columns/ColumnString.h"
-#include "Columns/ColumnsNumber.h"
-#include "Core/Block.h"
-#include "Core/Protocol.h"
-#include "Formats/FormatFactory.h"
+#include <Common/Exception.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/tests/gtest_global_context.h>
+#include <Common/typeid_cast.h>
+#include <Common/config.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Core/Block.h>
+#include <Core/Protocol.h>
+#include <Formats/FormatFactory.h>
 
 #include <Common/config_version.h>
 #include <Common/UTF8Helpers.h>
@@ -463,12 +464,13 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
         /// The query can specify output format or output file.
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
         {
+            String out_file;
             if (query_with_output->out_file)
             {
                 select_into_file = true;
 
                 const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
-                const auto & out_file = out_file_node.value.safeGet<std::string>();
+                out_file = out_file_node.value.safeGet<std::string>();
 
                 std::string compression_method;
                 if (query_with_output->compression)
@@ -493,6 +495,12 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
                     throw Exception("Output format already specified", ErrorCodes::CLIENT_OUTPUT_FORMAT_SPECIFIED);
                 const auto & id = query_with_output->format->as<ASTIdentifier &>();
                 current_format = id.name();
+            }
+            else if (query_with_output->out_file)
+            {
+                const auto & format_name = FormatFactory::instance().getFormatFromFileName(out_file);
+                if (!format_name.empty())
+                    current_format = format_name;
             }
         }
 
@@ -1008,11 +1016,15 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             compression_method = compression_method_node.value.safeGet<std::string>();
         }
 
+        String current_format = parsed_insert_query->format;
+        if (current_format.empty())
+            current_format = FormatFactory::instance().getFormatFromFileName(in_file, true);
+
         /// Create temporary storage file, to support globs and parallel reading
         StorageFile::CommonArguments args{
             WithContext(global_context),
             parsed_insert_query->table_id,
-            parsed_insert_query->format,
+            current_format,
             getFormatSettings(global_context),
             compression_method,
             columns_description_for_query,
@@ -1183,7 +1195,7 @@ bool ClientBase::receiveEndOfQuery()
 
             case Protocol::Server::Progress:
                 onProgress(packet.progress);
-                return true;
+                break;
 
             default:
                 throw NetException(

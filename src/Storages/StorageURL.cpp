@@ -624,19 +624,23 @@ URLBasedDataSourceConfiguration StorageURL::getConfiguration(ASTs & args, Contex
     }
     else
     {
-        if (args.size() != 2 && args.size() != 3)
+        if (args.empty() || args.size() > 3)
             throw Exception(
-                "Storage URL requires 2 or 3 arguments: url, name of used format and optional compression method.",
+                "Storage URL requires 1, 2 or 3 arguments: url, name of used format (taken from file extension by default) and optional compression method.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (auto & arg : args)
             arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, local_context);
 
         configuration.url = args[0]->as<ASTLiteral &>().value.safeGet<String>();
-        configuration.format = args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        if (args.size() > 1)
+            configuration.format = args[1]->as<ASTLiteral &>().value.safeGet<String>();
         if (args.size() == 3)
             configuration.compression_method = args[2]->as<ASTLiteral &>().value.safeGet<String>();
     }
+
+    if (configuration.format == "auto")
+        configuration.format = FormatFactory::instance().getFormatFromFileName(configuration.url, true);
 
     return configuration;
 }
