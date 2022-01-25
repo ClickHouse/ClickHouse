@@ -56,7 +56,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TABLE_WAS_NOT_DROPPED;
-    extern const int NO_ZOOKEEPER;
 }
 
 
@@ -250,6 +249,7 @@ BlockIO InterpreterSystemQuery::execute()
         }
         case Type::SUSPEND:
         {
+            getContext()->checkAccess(AccessType::SYSTEM_SHUTDOWN);
             auto command = fmt::format("kill -STOP {0} && sleep {1} && kill -CONT {0}", getpid(), query.seconds);
             LOG_DEBUG(log, "Will run {}", command);
             auto res = ShellCommand::execute(command);
@@ -453,9 +453,11 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::START_LISTEN_QUERIES:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not supported yet", query.type);
         case Type::STOP_THREAD_FUZZER:
+            getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::stop();
             break;
         case Type::START_THREAD_FUZZER:
+            getContext()->checkAccess(AccessType::SYSTEM_THREAD_FUZZER);
             ThreadFuzzer::start();
             break;
         default:
@@ -469,12 +471,6 @@ void InterpreterSystemQuery::restoreReplica()
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESTORE_REPLICA, table_id);
 
-    const zkutil::ZooKeeperPtr& zookeeper = getContext()->getZooKeeper();
-
-    if (zookeeper->expired())
-        throw Exception(ErrorCodes::NO_ZOOKEEPER,
-            "Cannot restore table metadata because ZooKeeper session has expired");
-
     const StoragePtr table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
 
     auto * const table_replicated_ptr = dynamic_cast<StorageReplicatedMergeTree *>(table_ptr.get());
@@ -482,24 +478,7 @@ void InterpreterSystemQuery::restoreReplica()
     if (table_replicated_ptr == nullptr)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
 
-    auto & table_replicated = *table_replicated_ptr;
-
-    StorageReplicatedMergeTree::Status status;
-    table_replicated.getStatus(status);
-
-    if (!status.is_readonly)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Replica must be readonly");
-
-    const String replica_name = table_replicated.getReplicaName();
-    const String& zk_root_path = status.zookeeper_path;
-
-    if (String replica_path = zk_root_path + "replicas/" + replica_name; zookeeper->exists(replica_path))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Replica path is present at {} -- nothing to restore. "
-            "If you are sure that metadata it lost and replica path contain some garbage, "
-            "then use SYSTEM DROP REPLICA query first.", replica_path);
-
-    table_replicated.restoreMetadataInZooKeeper();
+    table_replicated_ptr->restoreMetadataInZooKeeper();
 }
 
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool need_ddl_guard)

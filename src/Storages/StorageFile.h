@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/IStorage.h>
+
 #include <base/logger_useful.h>
 
 #include <atomic>
@@ -70,6 +71,13 @@ public:
 
     bool supportsPartitionBy() const override { return true; }
 
+    static ColumnsDescription getTableStructureFromData(
+        const String & format,
+        const std::vector<String> & paths,
+        const String & compression_method,
+        const std::optional<FormatSettings> & format_settings,
+        ContextPtr context);
+
 protected:
     friend class StorageFileSource;
     friend class StorageFileSink;
@@ -85,6 +93,8 @@ protected:
 
 private:
     explicit StorageFile(CommonArguments args);
+
+    void setStorageMetadata(CommonArguments args);
 
     std::string format_name;
     // We use format settings from global context + CREATE query for File table
@@ -110,6 +120,8 @@ private:
     size_t total_bytes_to_read = 0;
 
     String path_for_partitioned_write;
+
+    bool is_path_with_globs = false;
 };
 
 }

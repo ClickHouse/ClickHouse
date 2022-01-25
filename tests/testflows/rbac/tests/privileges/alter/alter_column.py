@@ -699,14 +699,13 @@ def user_with_privileges_on_cluster(self, permutation, table_type, node=None):
 
 @TestSuite
 def scenario_parallelization(self, table_type, permutation):
+    args = {"table_type": table_type, "permutation": permutation}
     with Pool(7) as pool:
-        tasks = []
         try:
             for scenario in loads(current_module(), Scenario):
-                run_scenario(pool, tasks, Scenario(test=scenario, setup=instrument_clickhouse_server_log),
-                    {"table_type": table_type, "permutation": permutation})
+                Scenario(test=scenario, setup=instrument_clickhouse_server_log, parallel=True, executor=pool)(**args)
         finally:
-            join(tasks)
+            join()
 
 @TestFeature
 @Requirements(
@@ -719,13 +718,11 @@ def scenario_parallelization(self, table_type, permutation):
     (key,) for key in table_types.keys()
 ])
 @Name("alter column")
-def feature(self, node="clickhouse1", stress=None, parallel=None):
+def feature(self, stress=None, node="clickhouse1"):
     """Runs test suites above which check correctness over scenarios and permutations.
     """
     self.context.node = self.context.cluster.node(node)
 
-    if parallel is not None:
-        self.context.parallel = parallel
     if stress is not None:
         self.context.stress = stress
 
@@ -737,12 +734,10 @@ def feature(self, node="clickhouse1", stress=None, parallel=None):
 
         with Example(str(example)):
             with Pool(10) as pool:
-                tasks = []
                 try:
                     for permutation in permutations(table_type):
                         privileges = alter_column_privileges(permutation)
-
-                        run_scenario(pool, tasks, Suite(test=scenario_parallelization, name=privileges),
-                            {"table_type": table_type, "permutation": permutation})
+                        args = {"table_type": table_type, "permutation": permutation}
+                        Suite(test=scenario_parallelization, name=privileges, parallel=True, executor=pool)(**args)
                 finally:
-                    join(tasks)
+                    join()

@@ -27,10 +27,10 @@ if (CMAKE_CROSSCOMPILING)
         if (ARCH_AARCH64)
             # FIXME: broken dependencies
             set (ENABLE_GRPC OFF CACHE INTERNAL "")
-            set (USE_SENTRY OFF CACHE INTERNAL "")
+            set (ENABLE_SENTRY OFF CACHE INTERNAL "")
         elseif (ARCH_PPC64LE)
             set (ENABLE_GRPC OFF CACHE INTERNAL "")
-            set (USE_SENTRY OFF CACHE INTERNAL "")
+            set (ENABLE_SENTRY OFF CACHE INTERNAL "")
         endif ()
     elseif (OS_FREEBSD)
         # FIXME: broken dependencies
@@ -40,6 +40,14 @@ if (CMAKE_CROSSCOMPILING)
         set (ENABLE_EMBEDDED_COMPILER OFF CACHE INTERNAL "")
     else ()
         message (FATAL_ERROR "Trying to cross-compile to unsupported system: ${CMAKE_SYSTEM_NAME}!")
+    endif ()
+
+    if (USE_MUSL)
+        set (ENABLE_SENTRY OFF CACHE INTERNAL "")
+        set (ENABLE_ODBC OFF CACHE INTERNAL "")
+        set (ENABLE_GRPC OFF CACHE INTERNAL "")
+        set (ENABLE_HDFS OFF CACHE INTERNAL "")
+        set (ENABLE_EMBEDDED_COMPILER OFF CACHE INTERNAL "")
     endif ()
 
     # Don't know why but CXX_STANDARD doesn't work for cross-compilation

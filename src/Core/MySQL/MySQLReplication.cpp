@@ -5,7 +5,7 @@
 #include <IO/MySQLBinlogEventReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
-#include <base/DateLUT.h>
+#include <Common/DateLUT.h>
 #include <Common/FieldVisitorToString.h>
 #include <Core/MySQL/PacketsGeneric.h>
 #include <Core/MySQL/PacketsProtocolText.h>
