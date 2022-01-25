@@ -284,7 +284,7 @@ public:
                     updateDataSize(CLEAR_OUTDATED_NODES, itr->key.size, itr->value.sizeInBytes(), 0);
                 if (itr->free_key)
                     arena.free(const_cast<char *>(itr->key.data), itr->key.size);
-                /// truely delete list node here, not in erase()
+                /// truly delete list node here, not in erase()
                 itr = list.erase(itr);
             }
             else
