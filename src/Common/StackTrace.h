@@ -75,4 +75,4 @@ protected:
     FramePointers frame_pointers{};
 };
 
-std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context);
+std::string signalToErrorMessage(int sig, const siginfo_t & info, const mcontext_t & mcontext);

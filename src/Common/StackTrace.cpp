@@ -19,7 +19,7 @@
 #    include <libunwind.h>
 #endif
 
-std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
+std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused]] const mcontext_t & mcontext)
 {
     std::stringstream error;        // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     error.exceptions(std::ios::failbit);
@@ -34,7 +34,7 @@ std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused
                 error << "Address: " << info.si_addr;
 
 #if defined(__x86_64__) && !defined(__FreeBSD__) && !defined(__APPLE__) && !defined(__arm__) && !defined(__powerpc__)
-            auto err_mask = context.uc_mcontext.gregs[REG_ERR];
+            auto err_mask = mcontext.gregs[REG_ERR];
             if ((err_mask & 0x02))
                 error << " Access: write.";
             else
