@@ -111,7 +111,7 @@ public:
     /// and start sending data asynchronously. It may improve writing performance in case you have
     /// multiple files to finalize. Mainly, for blob storage, finalization has high latency,
     /// and calling preFinalize in a loop may parallelize it.
-    virtual void preFinalize() {}
+    virtual void preFinalize() { next(); }
 
     /// Write the last data.
     void finalize()

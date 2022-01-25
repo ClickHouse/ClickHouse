@@ -17,7 +17,12 @@ public:
 
     std::string getFileName() const override;
 
-    void preFinalize() override { impl->preFinalize(); }
+    void preFinalize() override
+    {
+        next();
+        impl->preFinalize();
+        is_prefinalized = true;
+    }
 
     const WriteBuffer & getImpl() const { return *impl; }
 
@@ -28,6 +33,8 @@ protected:
 
 private:
     void nextImpl() override;
+
+    bool is_prefinalized = false;
 };
 
 }

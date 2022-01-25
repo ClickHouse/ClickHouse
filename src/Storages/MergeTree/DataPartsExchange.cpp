@@ -298,7 +298,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
             throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
 
         if (hashing_out.count() != size)
-            throw Exception("Unexpected size of file " + path, ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+            throw Exception(ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART, "Unexpected size of file {}, expected {} got {}", path, hashing_out.count(), size);
 
         writePODBinary(hashing_out.getHash(), out);
 
