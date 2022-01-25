@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include <string>
 #include <Common/Exception.h>
 #include <Common/RadixSort.h>
 #include <Common/PODArray.h>
@@ -8,6 +9,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <IO/VarInt.h>
+#include <Poco/Logger.h>
 
 
 namespace DB
@@ -420,6 +422,51 @@ public:
         auto rest_of_results = centroids.back().mean;
         for (; result_num < size; ++result_num)
             result[levels_permutation[result_num]] = rest_of_results;
+    }
+
+    /** Finds approximate quantile of value.
+        TODO: check it
+      */
+    std::pair<Float32, Float32> cdf(T value) {
+        if (centroids.empty() || std::isnan(value) || std::isinf(value))
+            return {0, 1};
+
+        compress();
+
+        if (centroids.size() == 1) {
+            if (value < centroids.front().mean) {
+                return {0, 0.5};
+            } else {
+                return {0.5, 1};
+            }
+        }
+
+        //Float64 x = level * count;
+        Float64 prev_x = 0;
+        Count sum = 0;
+        //Value prev_mean = centroids.front().mean;
+        Count prev_count = centroids.front().count;
+
+        for (const auto & c : centroids)
+        {
+            Float64 current_x = sum + c.count * 0.5;
+
+            Float64 left = prev_x + 0.5 * (prev_count == 1);
+            Float64 right = current_x - 0.5 * (c.count == 1);
+
+            if (value <= c.mean) {
+                // interpolate? [prev_mean, c.mean]
+                Poco::Logger::get("CDF").information("left  " + std::to_string(left) + " right " + std::to_string(right) + " cnt" + std::to_string(count));
+                return {left / count, right / count};
+            }
+
+            sum += c.count;
+            //prev_mean = c.mean;
+            prev_count = c.count;
+            prev_x = current_x;
+        }
+
+        return {(prev_count - 0.5 * centroids.back().count) / count, 1};
     }
 
     T get(Float64 level)

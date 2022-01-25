@@ -1,3 +1,4 @@
+#include <cmath>
 #include <memory>
 #include <string>
 #include <Storages/MergeTree/MergeTreeStatisticTDigest.h>
@@ -6,11 +7,6 @@
 
 namespace DB
 {
-
-namespace
-{
-constexpr float EPS = 1e-7;
-}
 
 MergeTreeColumnDistributionStatisticTDigest::MergeTreeColumnDistributionStatisticTDigest(
     const String & column_name_)
@@ -104,24 +100,12 @@ double MergeTreeColumnDistributionStatisticTDigest::estimateQuantileLower(const 
 {
     if (empty())
         throw Exception("TDigest is empty", ErrorCodes::LOGICAL_ERROR);
-    // TODO: normal implementation using t-digest sketch centroids
+    // TODO: t-digest grows O(log n)
     // TODO: try ddsketch???
-    constexpr auto step = 0.01;
+
+    // TODO: process corner cases float32 vs float64
     double threshold = extractValue(value);
-    float answer = 0;
-    float cur = 0;
-    while (cur < 1) {
-        if (sketch.getFloat(cur) + EPS < threshold)
-        {
-            answer = cur;
-        }
-        else
-        {
-            break;
-        }
-        cur += step;
-    }
-    return answer;
+    return sketch.cdf(threshold).first;
 }
 
 double MergeTreeColumnDistributionStatisticTDigest::estimateQuantileUpper(const Field& value) const
@@ -129,19 +113,8 @@ double MergeTreeColumnDistributionStatisticTDigest::estimateQuantileUpper(const 
     if (empty())
         throw Exception("TDigest is empty", ErrorCodes::LOGICAL_ERROR);
 
-    constexpr auto step = 0.01;
     double threshold = extractValue(value);
-    Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information("UPPER: " + toString(threshold));
-    float cur = 0;
-    while (cur < 1) {
-        Poco::Logger::get("MergeTreeColumnDistributionStatisticTDigest").information("UPPER >> " + toString(sketch.getFloat(cur)) + " " + toString(cur));
-        if (sketch.getFloat(cur) > threshold + EPS)
-        {
-            return cur;
-        }
-        cur += step;
-    }
-    return 1.0;
+    return sketch.cdf(threshold).second;
 }
 
 double MergeTreeColumnDistributionStatisticTDigest::estimateProbability(const Field& lower, const Field& upper) const
@@ -211,10 +184,9 @@ void MergeTreeColumnDistributionStatisticCollectorTDigest::update(const Block & 
     for (size_t i = 0; i < rows_read; ++i)
     {
         // support only numeric columns
-        //Poco::Logger::get("KEK2").information("test " + std::to_string(*pos) + " " + std::to_string(column->getFloat32((*pos) + i)));
+        // TODO: process coner cases float32 vs float64
         const auto value = column->getFloat32((*pos) + i);
         sketch->add(value);
-        //Poco::Logger::get("KEK2").information("AFTER ADD");
     }
     *pos += rows_read;
 }
@@ -227,6 +199,7 @@ void MergeTreeColumnDistributionStatisticCollectorTDigest::granuleFinished()
 IColumnDistributionStatisticPtr creatorColumnDistributionStatisticTDigest(
     const StatisticDescription & stat, const String & column)
 {
+    // TODO: check column is numeric
     if (std::find(std::begin(stat.column_names), std::end(stat.column_names), column) == std::end(stat.column_names))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistic {} hasn't column {}.", stat.name, column);
     return std::make_shared<MergeTreeColumnDistributionStatisticTDigest>(column);
