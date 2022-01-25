@@ -19,6 +19,7 @@ namespace ErrorCodes
     extern const int SYSTEM_ERROR;
 }
 
+
 std::unique_ptr<MergeTreeMetadataCache> MergeTreeMetadataCache::create(const String & dir, size_t size)
 {
     assert(size != 0);
