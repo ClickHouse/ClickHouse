@@ -123,6 +123,8 @@ private:
 
     String path_for_partitioned_write;
 
+    bool is_path_with_globs = false;
+
     /// These buffers are needed for schema inference when data source
     /// is file descriptor. See getTableStructureFromFileDescriptor.
     std::unique_ptr<ReadBuffer> read_buffer_from_fd;
