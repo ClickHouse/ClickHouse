@@ -38,9 +38,22 @@ class DockerImage:
         self.parent = parent
         self.built = False
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:  # type: ignore
         """Is used to check if DockerImage is in a set or not"""
-        return self.path == other.path
+        return self.path == other.path and self.repo == self.repo
+
+    def __lt__(self, other) -> bool:
+        if not isinstance(other, DockerImage):
+            return False
+        if self.parent and not other.parent:
+            return False
+        if not self.parent and other.parent:
+            return True
+        if self.path < other.path:
+            return True
+        if self.repo < other.repo:
+            return True
+        return False
 
     def __hash__(self):
         return hash(self.path)
@@ -49,7 +62,7 @@ class DockerImage:
         return self.repo
 
     def __repr__(self):
-        return f"DockerImage(path={self.path},path={self.path},parent={self.parent})"
+        return f"DockerImage(path={self.path},repo={self.repo},parent={self.parent})"
 
 
 def get_changed_docker_images(
@@ -105,7 +118,9 @@ def get_changed_docker_images(
                 dependent,
                 image,
             )
-            changed_images.append(DockerImage(dependent, image.repo, image))
+            changed_images.append(
+                DockerImage(dependent, images_dict[dependent]["name"], image)
+            )
         index += 1
         if index > 5 * len(images_dict):
             # Sanity check to prevent infinite loop.
