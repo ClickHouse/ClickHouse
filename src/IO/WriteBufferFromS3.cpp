@@ -11,6 +11,7 @@
 #    include <aws/s3/model/PutObjectRequest.h>
 #    include <aws/s3/model/UploadPartRequest.h>
 #    include <base/logger_useful.h>
+#    include <base/scope_guard_safe.h>
 
 #    include <utility>
 
@@ -186,8 +187,16 @@ void WriteBufferFromS3::writePart()
         }
 
         fillUploadRequest(task->req, part_number);
-        thread_pool->scheduleOrThrow([this, task]()
+        thread_pool->scheduleOrThrow([this, task, thread_group = CurrentThread::getGroup()]()
         {
+            if (thread_group)
+                    CurrentThread::attachTo(thread_group);
+
+            SCOPE_EXIT_SAFE(
+                if (thread_group)
+                    CurrentThread::detachQueryIfNotDetached();
+            );
+
             try
             {
                 processUploadRequest(*task);
@@ -292,8 +301,16 @@ void WriteBufferFromS3::makeSinglepartUpload()
     {
         put_object_task = std::make_unique<PutObjectTask>();
         fillPutRequest(put_object_task->req);
-        thread_pool->scheduleOrThrow([this]()
+        thread_pool->scheduleOrThrow([this, thread_group = CurrentThread::getGroup()]()
         {
+            if (thread_group)
+                    CurrentThread::attachTo(thread_group);
+
+            SCOPE_EXIT_SAFE(
+                if (thread_group)
+                    CurrentThread::detachQueryIfNotDetached();
+            );
+
             try
             {
                 processPutRequest(*put_object_task);

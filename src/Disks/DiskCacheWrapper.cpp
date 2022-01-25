@@ -10,7 +10,7 @@ namespace DB
 /**
  * This buffer writes to cache, but after finalize() copy written file from cache to disk.
  */
-class WritingToCacheWriteBuffer : public WriteBufferFromFileDecorator
+class WritingToCacheWriteBuffer final : public WriteBufferFromFileDecorator
 {
 public:
     WritingToCacheWriteBuffer(
