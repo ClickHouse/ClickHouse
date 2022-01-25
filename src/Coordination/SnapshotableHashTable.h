@@ -36,6 +36,7 @@ private:
     bool snapshot_mode{false};
     /// Allows to avoid additional copies in updateValue function
     size_t snapshot_up_to_size = 0;
+    size_t delete_nodes_count = 0;
     ArenaWithFreeLists arena;
 
     uint64_t approximate_data_size{0};
@@ -201,9 +202,14 @@ public:
         }
         else
         {
+            /// lazy delete list node in clearOutdatedNodes(), just keep a iterator here
             map.erase(it->getKey());
             arena.free(const_cast<char *>(list_itr->key.data), list_itr->key.size);
-            list.erase(list_itr);
+            list_itr->active_in_map = false;
+            list_itr->free_key = false;
+            list_itr->key.data = nullptr;
+            list_itr->key.size = 0;
+            ++delete_nodes_count;
         }
 
         updateDataSize(ERASE, key.size(), 0, old_data_size);
@@ -229,7 +235,8 @@ public:
         /// We in snapshot mode but updating some node which is already more
         /// fresh than snapshot distance. So it will not participate in
         /// snapshot and we don't need to copy it.
-        if (snapshot_mode && list_itr->distance_from_begin < snapshot_up_to_size)
+        /// Because we delete node lazily, adjust cursor to add delete_nodes_count
+        if (snapshot_mode && list_itr->distance_from_begin < snapshot_up_to_size + delete_nodes_count)
         {
             auto elem_copy = *(list_itr);
             list_itr->active_in_map = false;
@@ -257,7 +264,6 @@ public:
         return list.end();
     }
 
-
     const V & getValue(StringRef key) const
     {
         auto it = map.find(key);
@@ -274,9 +280,11 @@ public:
         {
             if (!itr->active_in_map)
             {
-                updateDataSize(CLEAR_OUTDATED_NODES, itr->key.size, itr->value.sizeInBytes(), 0);
+                if (itr->key.size)
+                    updateDataSize(CLEAR_OUTDATED_NODES, itr->key.size, itr->value.sizeInBytes(), 0);
                 if (itr->free_key)
                     arena.free(const_cast<char *>(itr->key.data), itr->key.size);
+                /// truely delete list node here, not in erase()
                 itr = list.erase(itr);
             }
             else
@@ -286,15 +294,20 @@ public:
                 ++itr;
             }
         }
+        delete_nodes_count = 0;
     }
 
     void clear()
     {
         map.clear();
         for (auto itr = list.begin(); itr != list.end(); ++itr)
-            arena.free(const_cast<char *>(itr->key.data), itr->key.size);
+        {
+            if (itr->key.size)
+                arena.free(const_cast<char *>(itr->key.data), itr->key.size);
+        }
         list.clear();
         updateDataSize(CLEAR, 0, 0, 0);
+        delete_nodes_count = 0;
     }
 
     void enableSnapshotMode(size_t up_to_size)
@@ -317,7 +330,7 @@ public:
 
     size_t snapshotSize() const
     {
-        return list.size();
+        return list.size() - delete_nodes_count;
     }
 
     uint64_t getApproximateDataSize() const
