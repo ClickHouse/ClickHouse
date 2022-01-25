@@ -169,7 +169,7 @@ std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & mu
         if (!successfully_inserted.empty())
         {
             String successfully_inserted_str;
-            for (auto entity : successfully_inserted)
+            for (const auto & entity : successfully_inserted)
             {
                 if (!successfully_inserted_str.empty())
                     successfully_inserted_str += ", ";

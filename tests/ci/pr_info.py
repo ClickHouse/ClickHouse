@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 import json
 import os
-import urllib
 
-import requests
-from unidiff import PatchSet
+import requests  # type: ignore
+from unidiff import PatchSet  # type: ignore
 
 from env_helper import GITHUB_REPOSITORY, GITHUB_SERVER_URL, GITHUB_RUN_ID, GITHUB_EVENT_PATH
 
@@ -12,6 +11,8 @@ DIFF_IN_DOCUMENTATION_EXT = [".html", ".md", ".yml", ".txt", ".css", ".js", ".xm
                              ".jpg", ".py", ".sh", ".json"]
 
 def get_pr_for_commit(sha, ref):
+    if not ref:
+        return None
     try_get_pr_url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/commits/{sha}/pulls"
     try:
         response = requests.get(try_get_pr_url)
@@ -33,17 +34,35 @@ def get_pr_for_commit(sha, ref):
 
 
 class PRInfo:
+    default_event = {
+                    'commits': 1,
+                    'before': 'HEAD~',
+                    'after': 'HEAD',
+                    'ref': None,
+                }
     def __init__(self, github_event=None, need_orgs=False, need_changed_files=False, labels_from_api=False):
         if not github_event:
             if GITHUB_EVENT_PATH:
                 with open(GITHUB_EVENT_PATH, 'r', encoding='utf-8') as event_file:
                     github_event = json.load(event_file)
             else:
-                github_event = {'commits': 1, 'after': 'HEAD', 'ref': None}
+                github_event = PRInfo.default_event.copy()
         self.event = github_event
         self.changed_files = set([])
+        self.body = ""
+        ref = github_event.get("ref", "refs/head/master")
+        if ref and ref.startswith('refs/heads/'):
+            ref = ref[11:]
+
+        # workflow completed event, used for PRs only
+        if 'action' in github_event and github_event['action'] == 'completed':
+            self.sha = github_event['workflow_run']['head_sha']
+            prs_for_sha = requests.get(f"https://api.github.com/repos/{GITHUB_REPOSITORY}/commits/{self.sha}/pulls").json()
+            if len(prs_for_sha) != 0:
+                github_event['pull_request'] = prs_for_sha[0]
+
         if 'pull_request' in github_event:  # pull request and other similar events
-            self.number = github_event['number']
+            self.number = github_event['pull_request']['number']
             if 'after' in github_event:
                 self.sha = github_event['after']
             else:
@@ -60,6 +79,7 @@ class PRInfo:
             self.base_name = github_event['pull_request']['base']['repo']['full_name']
             self.head_ref = github_event['pull_request']['head']['ref']
             self.head_name = github_event['pull_request']['head']['repo']['full_name']
+            self.body = github_event['pull_request']['body']
 
             if labels_from_api:
                 response = requests.get(f"https://api.github.com/repos/{GITHUB_REPOSITORY}/issues/{self.number}/labels")
@@ -83,13 +103,14 @@ class PRInfo:
             self.task_url = f"{repo_prefix}/actions/runs/{GITHUB_RUN_ID or '0'}"
             self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
             self.repo_full_name = GITHUB_REPOSITORY
-            if pull_request is None or pull_request['state'] == 'closed':  # it's merged PR to master
+            if pull_request is None or pull_request['state'] == 'closed':
+                # it's merged PR to master
                 self.number = 0
                 self.labels = {}
-                self.pr_html_url = f"{repo_prefix}/commits/master"
-                self.base_ref = "master"
+                self.pr_html_url = f"{repo_prefix}/commits/{ref}"
+                self.base_ref = ref
                 self.base_name = self.repo_full_name
-                self.head_ref = "master"
+                self.head_ref = ref
                 self.head_name = self.repo_full_name
                 self.diff_url = \
                     f"https://api.github.com/repos/{GITHUB_REPOSITORY}/compare/{github_event['before']}...{self.sha}"
@@ -111,21 +132,36 @@ class PRInfo:
                 else:
                     self.diff_url = pull_request['diff_url']
         else:
-            raise Exception("Cannot detect type of event")
+            print(json.dumps(github_event, sort_keys=True, indent=4))
+            self.sha = os.getenv("GITHUB_SHA")
+            self.number = 0
+            self.labels = {}
+            repo_prefix = f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}"
+            self.task_url = f"{repo_prefix}/actions/runs/{GITHUB_RUN_ID or '0'}"
+            self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
+            self.repo_full_name = GITHUB_REPOSITORY
+            self.pr_html_url = f"{repo_prefix}/commits/{ref}"
+            self.base_ref = ref
+            self.base_name = self.repo_full_name
+            self.head_ref = ref
+            self.head_name = self.repo_full_name
+
         if need_changed_files:
             self.fetch_changed_files()
 
     def fetch_changed_files(self):
+        if not self.diff_url:
+            raise Exception("Diff URL cannot be find for event")
+
+        response = requests.get(self.diff_url)
+        response.raise_for_status()
         if 'commits' in self.event and self.number == 0:
-            response = requests.get(self.diff_url)
-            response.raise_for_status()
             diff = response.json()
 
             if 'files' in diff:
                 self.changed_files = [f['filename'] for f in diff['files']]
         else:
-            diff = urllib.request.urlopen(self.diff_url)
-            diff_object = PatchSet(diff, diff.headers.get_charsets()[0])
+            diff_object = PatchSet(response.text)
             self.changed_files = {f.path for f in diff_object}
 
     def get_dict(self):

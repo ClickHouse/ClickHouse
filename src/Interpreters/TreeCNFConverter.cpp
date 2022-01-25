@@ -3,6 +3,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Common/checkStackSize.h>
+#include <IO/Operators.h>
 
 
 namespace DB

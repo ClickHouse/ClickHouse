@@ -58,6 +58,8 @@ private:
     virtual void writePrefix() override;
     virtual void writeSuffix() override;
 
+    void createFileWriter();
+
     FormatSettings settings;
     AvroSerializer serializer;
     std::unique_ptr<avro::DataFileWriterBase> file_writer_ptr;

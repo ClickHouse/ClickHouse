@@ -13,6 +13,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTIdentifier_fwd.h>
+#include <Parsers/ASTColumnDeclaration.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/LiveView/LiveViewCommands.h>
@@ -48,10 +49,15 @@ BlockIO InterpreterAlterQuery::execute()
     FunctionNameNormalizer().visit(query_ptr.get());
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
     if (alter.alter_object == ASTAlterQuery::AlterObjectType::DATABASE)
+    {
         return executeToDatabase(alter);
+    }
     else if (alter.alter_object == ASTAlterQuery::AlterObjectType::TABLE
             || alter.alter_object == ASTAlterQuery::AlterObjectType::LIVE_VIEW)
+    {
         return executeToTable(alter);
+    }
+
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown alter object type");
 }
 
