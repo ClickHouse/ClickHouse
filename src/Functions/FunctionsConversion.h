@@ -1772,6 +1772,9 @@ private:
             }
         }
 
+        if (std::is_same_v<ToDataType, DataTypeString> && from_type->getCustomSerialization())
+            return ConvertImplGenericToString<ColumnString>::execute(arguments, result_type, input_rows_count);
+
         bool done;
         if constexpr (to_string_or_fixed_string)
         {
@@ -3409,7 +3412,7 @@ private:
             return false;
         };
 
-        auto  make_custom_serialization_wrapper = [&](const auto & types) -> bool
+        auto make_custom_serialization_wrapper = [&](const auto & types) -> bool
         {
             using Types = std::decay_t<decltype(types)>;
             using ToDataType = typename Types::RightType;
