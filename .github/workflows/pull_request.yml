@@ -46,7 +46,7 @@ jobs:
           python3 -m unittest discover -s . -p '*_test.py'
   DockerHubPushAarch64:
     needs: CheckLabels
-    runs-on: [self-hosted, func-tester-aarch64]
+    runs-on: [self-hosted, style-checker-aarch64]
     steps:
       - name: Clear repository
         run: |
