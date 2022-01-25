@@ -182,6 +182,20 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         arguments[i] = std::move(argument);
     }
 
+    if (num_arguments > 1 && arguments[0].type != arguments[1].type)
+    {
+        const DataTypeLowCardinality * type_low_cardinality_arg0 = typeid_cast<const DataTypeLowCardinality *>((arguments[0].type).get());
+        const DataTypeLowCardinality * type_low_cardinality_arg1 = typeid_cast<const DataTypeLowCardinality *>((arguments[1].type).get());
+        if (type_low_cardinality_arg0 != nullptr && type_low_cardinality_arg1 == nullptr)
+        {
+            arguments[0].type = arguments[1].type;
+        }
+        else if (type_low_cardinality_arg0 == nullptr && type_low_cardinality_arg1 != nullptr)
+        {
+            arguments[1].type = arguments[0].type;
+        }
+    }
+
     node.function_base = function->build(arguments);
     node.result_type = node.function_base->getResultType();
     node.function = node.function_base->prepare(arguments);
