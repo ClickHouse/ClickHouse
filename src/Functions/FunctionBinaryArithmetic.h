@@ -139,6 +139,9 @@ public:
         Case<IsOperation<Operation>::allow_decimal && IsDataTypeDecimal<RightDataType> && IsFloatingPoint<LeftDataType>,
             DataTypeFloat64>,
 
+        Case<IsOperation<Operation>::bit_hamming_distance && IsIntegral<LeftDataType> && IsIntegral<RightDataType>,
+            DataTypeUInt8>,
+
         /// Decimal <op> Real is not supported (traditional DBs convert Decimal <op> Real to Real)
         Case<IsDataTypeDecimal<LeftDataType> && !IsIntegralOrExtendedOrDecimal<RightDataType>, InvalidType>,
         Case<IsDataTypeDecimal<RightDataType> && !IsIntegralOrExtendedOrDecimal<LeftDataType>, InvalidType>,

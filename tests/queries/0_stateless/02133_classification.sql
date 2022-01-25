@@ -1,5 +1,5 @@
 -- Tags: no-fasttest
--- Tag no-fasttest: depends on cld2 and nlp_data
+-- Tag no-fasttest: depends on cld2 and nlp-data
 
 SET allow_experimental_nlp_functions = 1;
 
