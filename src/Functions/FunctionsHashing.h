@@ -16,10 +16,7 @@
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
 #include <Common/HashTable/Hash.h>
-
-#if USE_XXHASH
-#    include <xxhash.h>
-#endif
+#include <xxhash.h>
 
 #if USE_SSL
 #    include <openssl/md4.h>
@@ -555,9 +552,6 @@ struct ImplMetroHash64
     static constexpr bool use_int_hash_for_pods = true;
 };
 
-
-#if USE_XXHASH
-
 struct ImplXxHash32
 {
     static constexpr auto name = "xxHash32";
@@ -578,7 +572,6 @@ struct ImplXxHash32
     static constexpr bool use_int_hash_for_pods = false;
 };
 
-
 struct ImplXxHash64
 {
     static constexpr auto name = "xxHash64";
@@ -596,7 +589,6 @@ struct ImplXxHash64
     static constexpr bool use_int_hash_for_pods = false;
 };
 
-#endif
 
 #if USE_BLAKE3
 struct ImplBLAKE3
@@ -1440,10 +1432,8 @@ using FunctionJavaHash = FunctionAnyHash<JavaHashImpl>;
 using FunctionJavaHashUTF16LE = FunctionAnyHash<JavaHashUTF16LEImpl>;
 using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
 
-#if USE_XXHASH
-    using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
-    using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
-#endif
+using FunctionXxHash32 = FunctionAnyHash<ImplXxHash32>;
+using FunctionXxHash64 = FunctionAnyHash<ImplXxHash64>;
 
 #if USE_BLAKE3
     using FunctionBLAKE3 = FunctionStringHashFixedString<ImplBLAKE3>;

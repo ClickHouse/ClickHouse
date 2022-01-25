@@ -104,11 +104,16 @@ void PostgreSQLReplicationHandler::addStorage(const std::string & table_name, St
 }
 
 
-void PostgreSQLReplicationHandler::startup()
+void PostgreSQLReplicationHandler::startup(bool delayed)
 {
-    /// We load tables in a separate thread, because this database is not created yet.
-    /// (will get "database is currently dropped or renamed")
-    startup_task->activateAndSchedule();
+    if (delayed)
+    {
+        startup_task->activateAndSchedule();
+    }
+    else
+    {
+        startSynchronization(/* throw_on_error */ true);
+    }
 }
 
 
