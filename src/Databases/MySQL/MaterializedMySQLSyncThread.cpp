@@ -17,6 +17,7 @@
 #include <Databases/MySQL/MaterializeMetadata.h>
 #include <Processors/Sources/MySQLSource.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include <Storages/StorageMergeTree.h>
@@ -331,7 +332,7 @@ static inline String reWriteMysqlQueryColumn(mysqlxx::Pool::Entry & connection, 
     auto mysql_source = std::make_unique<MySQLSource>(connection, query, tables_columns_sample_block, mysql_input_stream_settings);
 
     Block block;
-    std::stringstream query_columns;
+    WriteBufferFromOwnString query_columns;
     QueryPipeline pipeline(std::move(mysql_source));
     PullingPipelineExecutor executor(pipeline);
     while (executor.pull(block))
