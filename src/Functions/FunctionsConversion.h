@@ -1772,8 +1772,11 @@ private:
             }
         }
 
-        if (std::is_same_v<ToDataType, DataTypeString> && from_type->getCustomSerialization())
-            return ConvertImplGenericToString<ColumnString>::execute(arguments, result_type, input_rows_count);
+        if constexpr (std::is_same_v<ToDataType, DataTypeString>)
+        {
+            if (from_type->getCustomSerialization())
+                return ConvertImplGenericToString<ColumnString>::execute(arguments, result_type, input_rows_count);
+        }
 
         bool done;
         if constexpr (to_string_or_fixed_string)
