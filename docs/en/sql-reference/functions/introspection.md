@@ -115,7 +115,7 @@ trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 
 ## addressToLineWithInlines {#addresstolinewithinlines}
 
-Similar to `addressToLine`, but it will return an Array with all inline functions.
+Similar to `addressToLine`, but it will return an Array with all inline functions, and will be much slower as a price.
 
 If you use official ClickHouse packages, you need to install the `clickhouse-common-static-dbg` package.
 
