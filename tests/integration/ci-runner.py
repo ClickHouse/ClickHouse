@@ -644,6 +644,9 @@ class ClickhouseIntegrationTestsRunner:
             logging.info("Shuffling test groups")
             random.shuffle(items_to_run)
 
+        ch_env = {k: v for k, v in os.environ.items() if "CLICKHOUSE" in k}
+        logging.info("Environment variables with '*CLICKHOUSE*': %s", ch_env)
+
         for group, tests in items_to_run:
             logging.info("Running test group %s containing %s tests", group, len(tests))
             group_counters, group_test_times, log_paths = self.try_run_test_group(repo_path, group, tests, MAX_RETRY, NUM_WORKERS)
