@@ -547,7 +547,8 @@ void Client::connect()
                 if (attempted_address_index == hosts_ports.size() - 1)
                     throw;
 
-                if (is_interactive) {
+                if (is_interactive)
+                {
                     std::cerr << "Connection attempt to database at "
                               << connection_parameters.host << ":" << connection_parameters.port
                               << " resulted in failure"
