@@ -32,13 +32,12 @@ struct RangeHashedDictionaryConfiguration
     bool require_nonempty;
 };
 
-template <DictionaryKeyType dictionary_key_type, typename RangeStorageDataType>
+template <DictionaryKeyType dictionary_key_type, typename RangeColumnType>
 class RangeHashedDictionary final : public IDictionary
 {
 public:
     using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
-    using RangeStorageType = typename RangeStorageDataType::FieldType;
-    using RangeColumnType = typename RangeStorageDataType::ColumnType;
+    using RangeStorageType = typename RangeColumnType::ValueType;
 
     RangeHashedDictionary(
         const StorageID & dict_id_,

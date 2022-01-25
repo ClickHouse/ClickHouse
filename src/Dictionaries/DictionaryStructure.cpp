@@ -417,7 +417,7 @@ void DictionaryStructure::parseRangeConfiguration(const Poco::Util::AbstractConf
     if (!valid_range)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Dictionary structure type of 'range_min' and 'range_max' should be an Integer, Flaot, Decimal, Date, Date32, DateTime DateTime64, or Enum."
+            "Dictionary structure type of 'range_min' and 'range_max' should be an Integer, Float, Decimal, Date, Date32, DateTime DateTime64, or Enum."
             " Actual 'range_min' and 'range_max' type is {}",
             range_min->type->getName());
     }

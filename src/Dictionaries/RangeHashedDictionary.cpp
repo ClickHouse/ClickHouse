@@ -1,13 +1,12 @@
 #include <Dictionaries/RangeHashedDictionary.h>
 
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeEnum.h>
 
 #include <Columns/ColumnNullable.h>
 
@@ -30,8 +29,8 @@ namespace ErrorCodes
 }
 
 
-template <DictionaryKeyType dictionary_key_type, typename RangeStorageDataType>
-RangeHashedDictionary<dictionary_key_type, RangeStorageDataType>::RangeHashedDictionary(
+template <DictionaryKeyType dictionary_key_type, typename RangeColumnType>
+RangeHashedDictionary<dictionary_key_type, RangeColumnType>::RangeHashedDictionary(
     const StorageID & dict_id_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
@@ -50,8 +49,8 @@ RangeHashedDictionary<dictionary_key_type, RangeStorageDataType>::RangeHashedDic
     calculateBytesAllocated();
 }
 
-template <DictionaryKeyType dictionary_key_type, typename RangeStorageDataType>
-ColumnPtr RangeHashedDictionary<dictionary_key_type, RangeStorageDataType>::getColumn(
+template <DictionaryKeyType dictionary_key_type, typename RangeColumnType>
+ColumnPtr RangeHashedDictionary<dictionary_key_type, RangeColumnType>::getColumn(
     const std::string & attribute_name,
     const DataTypePtr & result_type,
     const Columns & key_columns,
@@ -172,8 +171,8 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type, RangeStorageDataType>::getC
     return result;
 }
 
-template <DictionaryKeyType dictionary_key_type, typename RangeStorageDataType>
-ColumnPtr RangeHashedDictionary<dictionary_key_type, RangeStorageDataType>::getColumnInternal(
+template <DictionaryKeyType dictionary_key_type, typename RangeColumnType>
+ColumnPtr RangeHashedDictionary<dictionary_key_type, RangeColumnType>::getColumnInternal(
     const std::string & attribute_name,
     const DataTypePtr & result_type,
     const PaddedPODArray<UInt64> & key_to_index) const
@@ -272,8 +271,8 @@ ColumnPtr RangeHashedDictionary<dictionary_key_type, RangeStorageDataType>::getC
     return result;
 }
 
-template <DictionaryKeyType dictionary_key_type, typename RangeStorageDataType>
-ColumnUInt8::Ptr RangeHashedDictionary<dictionary_key_type, RangeStorageDataType>::hasKeys(const Columns & key_columns, const DataTypes & key_types) const
+template <DictionaryKeyType dictionary_key_type, typename RangeColumnType>
+ColumnUInt8::Ptr RangeHashedDictionary<dictionary_key_type, RangeColumnType>::hasKeys(const Columns & key_columns, const DataTypes & key_types) const
 {
     if (dictionary_key_type == DictionaryKeyType::Complex)
     {
@@ -332,8 +331,8 @@ ColumnUInt8::Ptr RangeHashedDictionary<dictionary_key_type, RangeStorageDataType
     return result;
 }
 
-template <DictionaryKeyType dictionary_key_type, typename RangeStorageDataType>
-void RangeHashedDictionary<dictionary_key_type, RangeStorageDataType>::createAttributes()
+template <DictionaryKeyType dictionary_key_type, typename RangeColumnType>
+void RangeHashedDictionary<dictionary_key_type, RangeColumnType>::createAttributes()
 {
     const auto size = dict_struct.attributes.size();
     attributes.reserve(size);
@@ -348,8 +347,8 @@ void RangeHashedDictionary<dictionary_key_type, RangeStorageDataType>::createAtt
     }
 }
 
-template <DictionaryKeyType dictionary_key_type, typename RangeStorageDataType>
-void RangeHashedDictionary<dictionary_key_type, RangeStorageDataType>::loadData()
+template <DictionaryKeyType dictionary_key_type, typename RangeColumnType>
+void RangeHashedDictionary<dictionary_key_type, RangeColumnType>::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
@@ -377,8 +376,8 @@ void RangeHashedDictionary<dictionary_key_type, RangeStorageDataType>::loadData(
             "{}: dictionary source is empty and 'require_nonempty' property is set.");
 }
 
-template <DictionaryKeyType dictionary_key_type, typename RangeStorageDataType>
-void RangeHashedDictionary<dictionary_key_type, RangeStorageDataType>::calculateBytesAllocated()
+template <DictionaryKeyType dictionary_key_type, typename RangeColumnType>
+void RangeHashedDictionary<dictionary_key_type, RangeColumnType>::calculateBytesAllocated()
 {
     bucket_count = key_attribute.container.getBufferSizeInCells();
 
@@ -437,9 +436,9 @@ typename RangeHashedDictionary<dictionary_key_type, RangeStorageDataType>::Attri
     return attribute;
 }
 
-template <DictionaryKeyType dictionary_key_type, typename RangeStorageDataType>
+template <DictionaryKeyType dictionary_key_type, typename RangeColumnType>
 template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
-void RangeHashedDictionary<dictionary_key_type, RangeStorageDataType>::getItemsImpl(
+void RangeHashedDictionary<dictionary_key_type, RangeColumnType>::getItemsImpl(
     const Attribute & attribute,
     const Columns & key_columns,
     ValueSetter && set_value,
@@ -533,9 +532,9 @@ void RangeHashedDictionary<dictionary_key_type, RangeStorageDataType>::getItemsI
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
 }
 
-template <DictionaryKeyType dictionary_key_type, typename RangeStorageDataType>
+template <DictionaryKeyType dictionary_key_type, typename RangeColumnType>
 template <typename AttributeType, bool is_nullable, typename ValueSetter>
-void RangeHashedDictionary<dictionary_key_type, RangeStorageDataType>::getItemsInternalImpl(
+void RangeHashedDictionary<dictionary_key_type, RangeColumnType>::getItemsInternalImpl(
         const Attribute & attribute,
         const PaddedPODArray<UInt64> & key_to_index,
         ValueSetter && set_value) const
@@ -620,8 +619,8 @@ void RangeHashedDictionary<dictionary_key_type, RangeStorageDataType>::updateDat
     }
 }
 
-template <DictionaryKeyType dictionary_key_type, typename RangeStorageDataType>
-void RangeHashedDictionary<dictionary_key_type, RangeStorageDataType>::blockToAttributes(const Block & block)
+template <DictionaryKeyType dictionary_key_type, typename RangeColumnType>
+void RangeHashedDictionary<dictionary_key_type, RangeColumnType>::blockToAttributes(const Block & block)
 {
     size_t attributes_size = attributes.size();
     size_t dictionary_keys_size = dict_struct.getKeysSize();
@@ -754,9 +753,9 @@ void RangeHashedDictionary<dictionary_key_type, RangeStorageDataType>::blockToAt
     }
 }
 
-template <DictionaryKeyType dictionary_key_type, typename RangeStorageDataType>
+template <DictionaryKeyType dictionary_key_type, typename RangeColumnType>
 template <typename T>
-void RangeHashedDictionary<dictionary_key_type, RangeStorageDataType>::setAttributeValueImpl(Attribute & attribute, const Field & value)
+void RangeHashedDictionary<dictionary_key_type, RangeColumnType>::setAttributeValueImpl(Attribute & attribute, const Field & value)
 {
     using ValueType = DictionaryValueType<T>;
 
@@ -788,8 +787,8 @@ void RangeHashedDictionary<dictionary_key_type, RangeStorageDataType>::setAttrib
     container.back() = value_to_insert;
 }
 
-template <DictionaryKeyType dictionary_key_type, typename RangeStorageDataType>
-void RangeHashedDictionary<dictionary_key_type, RangeStorageDataType>::setAttributeValue(Attribute & attribute, const Field & value)
+template <DictionaryKeyType dictionary_key_type, typename RangeColumnType>
+void RangeHashedDictionary<dictionary_key_type, RangeColumnType>::setAttributeValue(Attribute & attribute, const Field & value)
 {
     auto type_call = [&](const auto & dictionary_attribute_type)
     {
@@ -802,8 +801,8 @@ void RangeHashedDictionary<dictionary_key_type, RangeStorageDataType>::setAttrib
     callOnDictionaryAttributeType(attribute.type, type_call);
 }
 
-template <DictionaryKeyType dictionary_key_type, typename RangeStorageDataType>
-Pipe RangeHashedDictionary<dictionary_key_type, RangeStorageDataType>::read(const Names & column_names, size_t max_block_size, size_t num_streams) const
+template <DictionaryKeyType dictionary_key_type, typename RangeColumnType>
+Pipe RangeHashedDictionary<dictionary_key_type, RangeColumnType>::read(const Names & column_names, size_t max_block_size, size_t num_streams) const
 {
     auto key_to_index_column = ColumnUInt64::create();
     auto range_min_column = dict_struct.range_min->type->createColumn();
@@ -874,7 +873,7 @@ Pipe RangeHashedDictionary<dictionary_key_type, RangeStorageDataType>::read(cons
         const DataTypes,
         const Columns &)
     {
-        auto range_dictionary_ptr = std::static_pointer_cast<const RangeHashedDictionary<dictionary_key_type, RangeStorageDataType>>(dictionary_copy);
+        auto range_dictionary_ptr = std::static_pointer_cast<const RangeHashedDictionary<dictionary_key_type, RangeColumnType>>(dictionary_copy);
 
         size_t attribute_names_size = attribute_names.size();
 
@@ -973,7 +972,8 @@ static DictionaryPtr createRangeHashedDictionary(const std::string & full_name,
 
         if constexpr (IsDataTypeDecimalOrNumber<DataType> || IsDataTypeDateOrDateTime<DataType> || IsDataTypeEnum<DataType>)
         {
-            result = std::make_unique<RangeHashedDictionary<dictionary_key_type, DataType>>(
+            using ColumnType = typename DataType::ColumnType;
+            result = std::make_unique<RangeHashedDictionary<dictionary_key_type, ColumnType>>(
                 dict_id,
                 dict_struct,
                 std::move(source_ptr),
