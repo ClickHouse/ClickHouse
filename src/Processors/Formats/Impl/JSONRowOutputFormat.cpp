@@ -284,6 +284,7 @@ void registerOutputFormatJSON(FormatFactory & factory)
     });
 
     factory.markOutputFormatSupportsParallelFormatting("JSON");
+    factory.markFormatHasNoAppendSupport("JSON");
 
     factory.registerOutputFormat("JSONStrings", [](
         WriteBuffer & buf,
@@ -295,6 +296,7 @@ void registerOutputFormatJSON(FormatFactory & factory)
     });
 
     factory.markOutputFormatSupportsParallelFormatting("JSONStrings");
+    factory.markFormatHasNoAppendSupport("JSONStrings");
 }
 
 }
