@@ -16,7 +16,7 @@ void WriteBufferFromFileDecorator::finalizeImpl()
     next();
 
     if (!is_prefinalized)
-        preFinalize();
+        WriteBufferFromFileDecorator::preFinalize();
 
     impl->finalize();
 }

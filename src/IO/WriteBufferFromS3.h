@@ -37,7 +37,7 @@ namespace DB
  * Data is divided on chunks with size greater than 'minimum_upload_part_size'. Last chunk can be less than this threshold.
  * Each chunk is written as a part to S3.
  */
-class WriteBufferFromS3 : public BufferWithOwnMemory<WriteBuffer>
+class WriteBufferFromS3 final : public BufferWithOwnMemory<WriteBuffer>
 {
 public:
     explicit WriteBufferFromS3(
