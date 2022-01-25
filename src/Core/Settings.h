@@ -556,7 +556,7 @@ class IColumn;
     M(Bool, allow_experimental_funnel_functions, false, "Enable experimental functions for funnel analysis.", 0) \
     M(Bool, allow_experimental_nlp_functions, false, "Enable experimental functions for natural language processing.", 0) \
     M(String, insert_deduplication_token, "", "If not empty, used for duplicate detection instead of data digest", 0) \
-    M(String, hive_cluster_task_iterate_policy, "file_name_hash", "Define the task iterator policy for StorageHiveCluster query", 0)\
+    M(String, hive_cluster_task_iterate_policy, "hive_task_node_hash_policy", "Define the task iterator policy for StorageHiveCluster query", 0)\
 
 // End of COMMON_SETTINGS
 // Please add settings related to formats into the FORMAT_FACTORY_SETTINGS and move obsolete settings to OBSOLETE_SETTINGS.

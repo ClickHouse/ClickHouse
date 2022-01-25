@@ -12,6 +12,7 @@
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/Hive/HiveSettings.h>
+#include <Storages/Hive/IHiveTaskPolicy.h>
 #include <Storages/Hive/StorageHive.h>
 #include <Storages/StorageFactory.h>
 namespace  DB
@@ -70,9 +71,29 @@ Pipe StorageHiveCluster::read(
         "task iterate policy:{}",
         query_kind, processed_stage_, queryToString(query_info_.query),
         context_->getSettings().getString("hive_cluster_task_iterate_policy"));
+    auto policy_name = context_->getSettings().getString("hive_cluster_task_iterate_policy");
     // first stage. create remote executors pipeline
     if (query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
+        auto iterate_callback_builder = HiveTaskPolicyFactory::instance().getIterateCallback(policy_name);
+        if (!iterate_callback_builder)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknow hive task policy : {}", policy_name);
+        
+        IHiveTaskIterateCallback::Arguments args = {
+            .cluster_name = cluster_name,
+            .storage_settings = storage_settings,
+            .columns = getInMemoryMetadata().getColumns(),
+            .context = context_,
+            .query_info = &query_info_,
+            .hive_metastore_url = hive_metastore_url,
+            .hive_database = hive_database,
+            .hive_table = hive_table,
+            .partition_by_ast = partition_by_ast,
+            .num_streams = num_streams_
+
+        };
+        iterate_callback_builder->init(args);
+
         auto cluster = context_->getCluster(cluster_name)->getClusterWithReplicasAsShards(context_->getSettings());
 
         Block header = InterpreterSelectQuery(query_info_.query, context_, SelectQueryOptions(processed_stage_).analyze()).getSampleBlock();
@@ -80,21 +101,6 @@ Pipe StorageHiveCluster::read(
         Pipes pipes;
         const bool add_agg_info = processed_stage_ == QueryProcessingStage::WithMergeableState;
 
-        std::vector<std::string> nodes;
-        std::map<std::string, size_t> node_idxes;
-        for (const auto & replicas : cluster->getShardsAddresses())
-        {
-            for (const auto & node : replicas)
-            {
-                nodes.emplace_back(node.host_name + std::to_string(node.port));
-            }
-        }
-        std::sort(nodes.begin(), nodes.end());
-        for(auto node : nodes)
-        {
-            size_t n = node_idxes.size();
-            node_idxes[node] = n;
-        }
         for (const auto & replicas : cluster->getShardsAddresses())
         {
             for (const auto & node : replicas)
@@ -103,8 +109,7 @@ Pipe StorageHiveCluster::read(
                     node.host_name, node.port, context_->getGlobalContext()->getCurrentDatabase(),
                     node.user, node.password, node.cluster, node.cluster_secret,
                     "HiveCluster", node.compression, node.secure);
-                auto replica_info = IConnections::ReplicaInfo{.all_replicas_count = node_idxes.size(), .number_of_current_replica = node_idxes[node.host_name + std::to_string(node.port)]};
-                LOG_TRACE(logger, "replica info. replicas_count:{}, current_replica:{}", replica_info.all_replicas_count, replica_info.number_of_current_replica);
+                
                 auto task_iter_callback = std::make_shared<TaskIterator>([node](){ return node.host_name; });
                 auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                     connection,
@@ -115,7 +120,7 @@ Pipe StorageHiveCluster::read(
                     scalars,
                     Tables(),
                     processed_stage_,
-                    RemoteQueryExecutor::Extension{.task_iterator=task_iter_callback, .replica_info = { replica_info} });
+                    RemoteQueryExecutor::Extension{.task_iterator = iterate_callback_builder->buildCallback(node)});
                 pipes.emplace_back(std::make_shared<RemoteSource>(remote_query_executor, add_agg_info, false));
             }
         }
@@ -123,12 +128,33 @@ Pipe StorageHiveCluster::read(
         return Pipe::unitePipes(std::move(pipes));
     }
 
-    auto & client_info = context_->getClientInfo();
+    auto files_collector = HiveTaskPolicyFactory::instance().getFilesCollector(policy_name);
+    if (!files_collector)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknow hive task policy : {}", policy_name);
+    String task_resp = context_->getReadTaskCallback()();
+    HiveTaskPackage task_package;
+    stringToPackage(task_resp, task_package);
+    files_collector->setupCallbackData(task_package.data);
+    IHiveTaskFilesCollector::Arguments args = {
+            .context = context_,
+            .query_info = &query_info_,
+            .hive_metastore_url = hive_metastore_url,
+            .hive_database = hive_database,
+            .hive_table = hive_table,
+            .storage_settings = storage_settings,
+            .columns = getInMemoryMetadata().getColumns(),
+            .num_streams = num_streams_,
+            .partition_by_ast = partition_by_ast
+    };
+    files_collector->initQueryEnv(args);
+    auto files_collector_builder = [&files_collector](){return files_collector;};
+
+
+    const auto & client_info = context_->getClientInfo();
     LOG_TRACE(logger, "replica info. count_participating_replicas:{}, number_of_current_replica:{}",
         client_info.count_participating_replicas, client_info.number_of_current_replica);
 
-    String task_resp = context_->getReadTaskCallback()();
-    LOG_TRACE(logger, "get task response:{}", task_resp);
+
     
     // second stage, create local hive storage reading pipeline
     auto local_storage_settings = std::make_unique<HiveSettings>();
@@ -144,7 +170,8 @@ Pipe StorageHiveCluster::read(
         metadata->comment,
         partition_by_ast,
         std::move(local_storage_settings),
-        context_);
+        context_,
+        std::make_shared<HiveTaskFilesCollectorBuilder>(files_collector_builder));
 
     return storage_hive->read(column_names_, metadata_snapshot_, query_info_, context_, processed_stage_, max_block_size_, num_streams_);
 }

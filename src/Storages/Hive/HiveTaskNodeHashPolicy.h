@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>
+#include <ostream>
 #include <Common/config.h>
 #if USE_HIVE
 #include <IO/Marshallable.h>
@@ -39,6 +40,12 @@ public:
     {
         p >> partition_values >> files;
     }
+    std::ostream & trace(std::ostream & os) const override
+    {
+        os << "partition_values=" << partition_values << ";"
+            << "files=" << files;
+        return os;
+    }
 };
 
 class AssginedTaskMetadata : public Marshallable
@@ -64,6 +71,13 @@ public:
     void unmarshal(MarshallableUnPack & p) override
     {
         p >> file_format >> hdfs_namenode_url >> files;
+    }
+    std::ostream & trace(std::ostream & os) const override
+    {
+        os << "file_format=" << file_format << ";"
+            << "hdfs_namenode_url=" << hdfs_namenode_url << ";"
+            << "files=" << files;
+        return os;
     }
 }; 
 
@@ -137,7 +151,7 @@ public:
     void setupCallbackData(const String & data_) override;
 
 private:
-    //Poco::Logger *logger = &Poco::Logger::get("HiveTaskNodeHashFilesCollector");
+    Poco::Logger *logger = &Poco::Logger::get("HiveTaskNodeHashFilesCollector");
     Arguments args;
     AssginedTaskMetadata task_metadata;
     

@@ -16,6 +16,7 @@
 #include <Storages/Hive/HiveCommon.h>
 #include <Storages/Hive/HiveFile.h>
 #include <Storages/Hive/IHiveTaskPolicy.h>
+#include <Storages/Hive/IHiveTaskPolicy.h>
 
 namespace DB
 {
@@ -30,7 +31,6 @@ class StorageHive final : public shared_ptr_helper<StorageHive>, public IStorage
     friend struct shared_ptr_helper<StorageHive>;
 
 public:
-    using HiveTaskFilesCollectorBuilder = std::function<std::shared_ptr<IHiveTaskFilesCollector>()>;
     String getName() const override { return "Hive"; }
 
     bool supportsIndexForIn() const override { return true; }

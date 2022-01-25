@@ -45,6 +45,14 @@ public:
         {
             p >> path >> last_modify_time >> size;
         }
+
+        std::ostream & trace(std::ostream & os) const override
+        {
+            os << "path=" << path << ","
+                << "last_modify_time=" << last_modify_time << ","
+                << "size=" << size;
+            return os;
+        }
     };
 
     struct PartitionInfo

@@ -48,6 +48,11 @@ struct Marshallable
     virtual ~Marshallable() = default;
     virtual void marshal(MarshallablePack&) const = 0;
     virtual void unmarshal(MarshallableUnPack &) = 0;
+    virtual std::ostream& trace(std::ostream& os) const
+    {
+        os << "trace Marshallable [ not immplement ]";
+        return os;
+    }
 };
 
 inline MarshallablePack & operator << (MarshallablePack & p, bool sign)
@@ -303,6 +308,59 @@ inline MarshallableUnPack & operator >> (MarshallableUnPack & p, std::map<K, V> 
 {
     unmarshal_container(p, std::inserter(m, m.end()));
     return p;
+}
+
+inline std::ostream & operator<<(std::ostream & os, const Marshallable & m)
+{
+    os << "{";
+    return m.trace(os) << "}";
+}
+
+template<class T>
+inline std::ostream & trace_container(
+    std::ostream& os,
+    const T & c, char div = ',')
+{
+    for (typename T::const_iterator iter = c.begin(); iter != c.end(); ++iter)
+    {
+        os << *iter << div;
+    }
+    return os;
+}
+
+template<class T1, class T2>
+inline std::ostream& operator<<(std::ostream & os, const std::pair<T1, T2> & p)
+{
+    os << p.first << "=" << p.second;
+    return os;
+}
+
+template<class T>
+inline std::ostream & operator << (std::ostream & os, const std::set<T> & s)
+{
+    os << "{";
+    return trace_container(os, s) << "}";
+}
+
+template<class T>
+inline std::ostream & operator << (std::ostream & os, const std::vector<T> & v)
+{
+    os << "[";
+    return trace_container(os, v) << "]";
+}
+
+template<class T>
+inline std::ostream & operator << (std::ostream & os, const std::list<T> & l)
+{
+    os << "[";
+    return trace_container(os, l) << "]";
+}
+
+template<class K, class V>
+inline std::ostream & operator << (std::ostream & os, const std::map<K,V> & m)
+{
+    os << "{";
+    return trace_container(os, m) << "}";
 }
 
 template <class M>

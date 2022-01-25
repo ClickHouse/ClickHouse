@@ -1,3 +1,4 @@
+#include <sstream>
 #include <Storages/Hive/HiveTaskNodeHashPolicy.h>
 
 #if USE_HIVE
@@ -101,7 +102,7 @@ std::vector<HiveTaskFileInfo> HiveTaskNodeHashIterateCallback::collectHiveFiles(
     auto hdfs_builder = createHDFSBuilder(hdfs_namenode_url, args.context->getGlobalContext()->getConfigRef());
     auto hdfs_fs = createHDFSFS(hdfs_builder.get());
 
-    format_name = IHiveFile::toHiveFileFormat(hive_table_metadata->getTable()->sd.location);
+    format_name = IHiveFile::toHiveFileFormat(hive_table_metadata->getTable()->sd.inputFormat);
 
     std::vector<HiveTaskFileInfo> hive_files;
     std::mutex hive_files_mutex;
@@ -149,6 +150,7 @@ std::vector<HiveTaskFileInfo> HiveTaskNodeHashIterateCallback::collectHiveFiles(
     }
     return hive_files;
 }
+
 std::vector<HiveTaskFileInfo> HiveTaskNodeHashIterateCallback::collectHiveFilesFromPartition(
         const Apache::Hadoop::Hive::Partition & partition_,
         SelectQueryInfo & query_info_,
@@ -363,6 +365,9 @@ void HiveTaskNodeHashFilesCollector::initQueryEnv(const Arguments & args_)
 void HiveTaskNodeHashFilesCollector::setupCallbackData(const String & data_)
 {
     stringToPackage(data_, task_metadata);
+    std::ostringstream ostr;
+    ostr << task_metadata;
+    LOG_TRACE(logger, "callback data : {}", ostr.str());
 }
 
 HiveFiles HiveTaskNodeHashFilesCollector::collectHiveFiles()
@@ -435,6 +440,16 @@ HiveFiles HiveTaskNodeHashFilesCollector::collectPartitionHiveFiles(const String
         hive_files.emplace_back(hive_file);
     }
     return hive_files;
+}
+
+void registerHiveTaskNodeHashPolicy(HiveTaskPolicyFactory & factory_)
+{
+    auto iterate_callback_builder = [] (){ return std::make_shared<HiveTaskNodeHashIterateCallback>(); };
+    auto files_collector_builder = [] (){ return std::make_shared<HiveTaskNodeHashFilesCollector>(); };
+    factory_.registerBuilders(
+        HIVE_TASK_NODE_HASH_POLICY,
+        iterate_callback_builder,
+        files_collector_builder);
 }
 
 } // namespace DB
