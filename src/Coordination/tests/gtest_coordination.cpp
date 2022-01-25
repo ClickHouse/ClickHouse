@@ -872,10 +872,12 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
     EXPECT_EQ(itr->key, "/hello");
     EXPECT_EQ(itr->value, 7);
     EXPECT_EQ(itr->active_in_map, false);
+    EXPECT_EQ(itr->distance_from_begin, 0);
     itr = std::next(itr);
     EXPECT_EQ(itr->key, "/hello");
     EXPECT_EQ(itr->value, 554);
     EXPECT_EQ(itr->active_in_map, true);
+    EXPECT_EQ(itr->distance_from_begin, 1);
     itr = std::next(itr);
     EXPECT_EQ(itr, map_snp.end());
     for (size_t i = 0; i < 5; ++i)
@@ -892,6 +894,7 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
         EXPECT_EQ(itr->key, "/hello" + std::to_string(i));
         EXPECT_EQ(itr->value, i);
         EXPECT_EQ(itr->active_in_map, true);
+        EXPECT_EQ(itr->distance_from_begin, i + 2);
         itr = std::next(itr);
     }
 
@@ -906,6 +909,7 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
         EXPECT_EQ(itr->key, "/hello" + std::to_string(i));
         EXPECT_EQ(itr->value, i);
         EXPECT_EQ(itr->active_in_map, i != 3 && i != 2);
+        EXPECT_EQ(itr->distance_from_begin, i + 2);
         itr = std::next(itr);
     }
     map_snp.clearOutdatedNodes();
@@ -916,18 +920,22 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
     EXPECT_EQ(itr->key, "/hello");
     EXPECT_EQ(itr->value, 554);
     EXPECT_EQ(itr->active_in_map, true);
+    EXPECT_EQ(itr->distance_from_begin, 0);
     itr = std::next(itr);
     EXPECT_EQ(itr->key, "/hello0");
     EXPECT_EQ(itr->value, 0);
     EXPECT_EQ(itr->active_in_map, true);
+    EXPECT_EQ(itr->distance_from_begin, 1);
     itr = std::next(itr);
     EXPECT_EQ(itr->key, "/hello1");
     EXPECT_EQ(itr->value, 1);
     EXPECT_EQ(itr->active_in_map, true);
+    EXPECT_EQ(itr->distance_from_begin, 2);
     itr = std::next(itr);
     EXPECT_EQ(itr->key, "/hello4");
     EXPECT_EQ(itr->value, 4);
     EXPECT_EQ(itr->active_in_map, true);
+    EXPECT_EQ(itr->distance_from_begin, 3);
     itr = std::next(itr);
     EXPECT_EQ(itr, map_snp.end());
     map_snp.disableSnapshotMode();

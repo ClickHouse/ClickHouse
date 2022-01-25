@@ -15,6 +15,7 @@ struct ListNode
 {
     StringRef key;
     V value;
+    size_t distance_from_begin{0};
 
     bool active_in_map{true};
     bool free_key{false};
@@ -137,7 +138,7 @@ public:
 
         if (!it)
         {
-            ListElem elem{copyStringInArena(key), value, true};
+            ListElem elem{copyStringInArena(key), value, list.empty() ? 0 : list.back().distance_from_begin + 1, true};
             auto itr = list.insert(list.end(), elem);
             bool inserted;
             map.emplace(itr->key, it, inserted, hash_value);
@@ -159,7 +160,7 @@ public:
 
         if (it == map.end())
         {
-            ListElem elem{copyStringInArena(key), value, true};
+            ListElem elem{copyStringInArena(key), value, list.empty() ? 0 : list.back().distance_from_begin + 1, true};
             auto itr = list.insert(list.end(), elem);
             bool inserted;
             map.emplace(itr->key, it, inserted, hash_value);
@@ -171,7 +172,7 @@ public:
             auto list_itr = it->getMapped();
             if (snapshot_mode)
             {
-                ListElem elem{list_itr->key, value, true};
+                ListElem elem{list_itr->key, value, list.back().distance_from_begin + 1, true};
                 list_itr->active_in_map = false;
                 auto new_list_itr = list.insert(list.end(), elem);
                 it->getMapped() = new_list_itr;
@@ -225,26 +226,18 @@ public:
 
         const_iterator ret;
 
-        if (snapshot_mode)
+        /// We in snapshot mode but updating some node which is already more
+        /// fresh than snapshot distance. So it will not participate in
+        /// snapshot and we don't need to copy it.
+        if (snapshot_mode && list_itr->distance_from_begin < snapshot_up_to_size)
         {
-            /// We in snapshot mode but updating some node which is already more
-            /// fresh than snapshot distance. So it will not participate in
-            /// snapshot and we don't need to copy it.
-            size_t distance = std::distance(list.begin(), list_itr);
-            if (distance < snapshot_up_to_size)
-            {
-                auto elem_copy = *(list_itr);
-                list_itr->active_in_map = false;
-                updater(elem_copy.value);
-                auto itr = list.insert(list.end(), elem_copy);
-                it->getMapped() = itr;
-                ret = itr;
-            }
-            else
-            {
-                updater(list_itr->value);
-                ret = list_itr;
-            }
+            auto elem_copy = *(list_itr);
+            list_itr->active_in_map = false;
+            updater(elem_copy.value);
+            elem_copy.distance_from_begin = list.back().distance_from_begin + 1;
+            auto itr = list.insert(list.end(), elem_copy);
+            it->getMapped() = itr;
+            ret = itr;
         }
         else
         {
@@ -276,6 +269,7 @@ public:
     {
         auto start = list.begin();
         auto end = list.end();
+        size_t counter = 0;
         for (auto itr = start; itr != end;)
         {
             if (!itr->active_in_map)
@@ -288,7 +282,8 @@ public:
             else
             {
                 assert(!itr->free_key);
-                itr++;
+                itr->distance_from_begin = counter++;
+                ++itr;
             }
         }
     }
