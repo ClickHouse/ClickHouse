@@ -394,6 +394,27 @@ void FormatFactory::registerNonTrivialPrefixAndSuffixChecker(const String & name
     target = std::move(non_trivial_prefix_and_suffix_checker);
 }
 
+void FormatFactory::registerAppendSupportChecker(const String & name, AppendSupportChecker append_support_checker)
+{
+    auto & target = dict[name].append_support_checker;
+    if (target)
+        throw Exception("FormatFactory: Suffix checker " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
+    target = std::move(append_support_checker);
+}
+
+void FormatFactory::markFormatHasNoAppendSupport(const String & name)
+{
+    registerAppendSupportChecker(name, [](const FormatSettings &){ return false; });
+}
+
+bool FormatFactory::checkIfFormatSupportAppend(const String & name, ContextPtr context, const std::optional<FormatSettings> & format_settings_)
+{
+    auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
+    auto & append_support_checker = dict[name].append_support_checker;
+    /// By default we consider that format supports append
+    return !append_support_checker || append_support_checker(format_settings);
+}
+
 void FormatFactory::registerOutputFormat(const String & name, OutputCreator output_creator)
 {
     auto & target = dict[name].output_creator;
