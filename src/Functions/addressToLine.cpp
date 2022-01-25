@@ -21,6 +21,7 @@ class FunctionAddressToLine: public FunctionAddressToLineBase<StringRef, Dwarf::
 {
 public:
     static constexpr auto name = "addressToLine";
+    String getName() const override { return name; }
     static FunctionPtr create(ContextPtr context)
     {
         context->checkAccess(AccessType::addressToLine);

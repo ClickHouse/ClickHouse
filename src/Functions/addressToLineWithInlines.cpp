@@ -24,6 +24,7 @@ class FunctionAddressToLineWithInlines: public FunctionAddressToLineBase<StringR
 {
 public:
     static constexpr auto name = "addressToLineWithInlines";
+    String getName() const override { return name; }
     static FunctionPtr create(ContextPtr context)
     {
         context->checkAccess(AccessType::addressToLineWithInlines);

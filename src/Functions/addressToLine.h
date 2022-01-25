@@ -35,8 +35,6 @@ template <typename ResultT, Dwarf::LocationInfoMode locationInfoMode>
 class FunctionAddressToLineBase : public IFunction
 {
 public:
-    static constexpr auto name = "addressToLineBase";
-    String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 1; }
 
