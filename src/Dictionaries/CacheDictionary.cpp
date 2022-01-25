@@ -271,7 +271,6 @@ ColumnUInt8::Ptr CacheDictionary<dictionary_key_type>::hasKeys(const Columns & k
     if (dictionary_key_type == DictionaryKeyType::Complex)
         dict_struct.validateKeyTypes(key_types);
 
-
     DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
     DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, arena_holder.getComplexKeyArena());
     const auto keys = extractor.extractAllKeys();

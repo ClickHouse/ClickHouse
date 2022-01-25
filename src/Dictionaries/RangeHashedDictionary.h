@@ -96,8 +96,13 @@ private:
     template <typename Value>
     using CollectionType = std::conditional_t<
         dictionary_key_type == DictionaryKeyType::Simple,
-        HashMap<UInt64, Values<Value>>,
+        HashMap<UInt64, Values<Value>, DefaultHash<UInt64>>,
         HashMapWithSavedHash<StringRef, Values<Value>, DefaultHash<StringRef>>>;
+
+    using NoAttributesCollectionType = std::conditional_t<
+        dictionary_key_type == DictionaryKeyType::Simple,
+        HashMap<UInt64, IntervalSet<RangeInterval>>,
+        HashMapWithSavedHash<StringRef, IntervalSet<RangeInterval>>>;
 
     struct Attribute final
     {
@@ -122,6 +127,7 @@ private:
             CollectionType<Decimal64>,
             CollectionType<Decimal128>,
             CollectionType<Decimal256>,
+            CollectionType<DateTime64>,
             CollectionType<Float32>,
             CollectionType<Float64>,
             CollectionType<UUID>,
@@ -189,6 +195,7 @@ private:
     mutable std::atomic<size_t> query_count{0};
     mutable std::atomic<size_t> found_count{0};
     Arena string_arena;
+    NoAttributesCollectionType no_attributes_container;
 };
 
 }
