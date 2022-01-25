@@ -795,12 +795,12 @@ static void generateUUIDForTable(ASTCreateQuery & create)
         create.to_inner_uuid = UUIDHelpers::generateV4();
 }
 
-void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const DatabasePtr & database) const
+void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, ContextPtr context_, const DatabasePtr & database, bool internal)
 {
     const auto * kind = create.is_dictionary ? "Dictionary" : "Table";
     const auto * kind_upper = create.is_dictionary ? "DICTIONARY" : "TABLE";
 
-    if (database->getEngineName() == "Replicated" && getContext()->getClientInfo().is_replicated_database_internal
+    if (database->getEngineName() == "Replicated" && context_->getClientInfo().is_replicated_database_internal
         && !internal)
     {
         if (create.uuid == UUIDHelpers::Nil)
@@ -831,7 +831,7 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
     }
     else
     {
-        bool is_on_cluster = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+        bool is_on_cluster = context_->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
         bool has_uuid = create.uuid != UUIDHelpers::Nil || create.to_inner_uuid != UUIDHelpers::Nil;
         if (has_uuid && !is_on_cluster)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
@@ -966,7 +966,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         if (auto * ptr = typeid_cast<DatabaseReplicated *>(database.get());
             ptr && !getContext()->getClientInfo().is_replicated_database_internal)
         {
-            assertOrSetUUID(create, database);
+            assertOrSetUUID(create, getContext(), database, internal);
             guard->releaseTableLock();
             return ptr->tryEnqueueReplicatedDDL(query_ptr, getContext());
         }
@@ -1006,8 +1006,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
           */
         guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable());
 
-        database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
-        assertOrSetUUID(create, database);
+        database = DatabaseCatalog::instance().getDatabase(create.database);
+        assertOrSetUUID(create, getContext(), database, internal);
 
         String storage_name = create.is_dictionary ? "Dictionary" : "Table";
         auto storage_already_exists_error_code = create.is_dictionary ? ErrorCodes::DICTIONARY_ALREADY_EXISTS : ErrorCodes::TABLE_ALREADY_EXISTS;
@@ -1275,7 +1275,15 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 
     /// For CREATE query generate UUID on initiator, so it will be the same on all hosts.
     /// It will be ignored if database does not support UUIDs.
-    generateUUIDForTable(create);
+    bool need_add_to_database = !create.temporary;
+    if (need_add_to_database)
+    {
+        String current_database = local_context->getCurrentDatabase();
+        auto database_name = create.database.empty() ? current_database : create.database;
+        auto database = DatabaseCatalog::instance().getDatabase(database_name);
+        auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, create.table);
+        assertOrSetUUID(create, local_context, database);
+    }
 
     /// For cross-replication cluster we cannot use UUID in replica path.
     String cluster_name_expanded = local_context->getMacros()->expand(cluster_name);

@@ -90,7 +90,7 @@ private:
     /// Inserts data in created table if it's CREATE ... SELECT
     BlockIO fillTableIfNeeded(const ASTCreateQuery & create);
 
-    void assertOrSetUUID(ASTCreateQuery & create, const DatabasePtr & database) const;
+    static void assertOrSetUUID(ASTCreateQuery & create, ContextPtr context, const DatabasePtr & database, bool internal = false);
 
     ASTPtr query_ptr;
 
