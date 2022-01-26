@@ -10,7 +10,6 @@
 #include <Common/setThreadName.h>
 #include <Common/StatusInfo.h>
 #include <base/chrono_io.h>
-#include <base/scope_guard_safe.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <unordered_set>
@@ -968,11 +967,6 @@ private:
     {
         if (thread_group)
             CurrentThread::attachTo(thread_group);
-
-        SCOPE_EXIT_SAFE(
-            if (thread_group)
-                CurrentThread::detachQueryIfNotDetached();
-        );
 
         LOG_TRACE(log, "Start loading object '{}'", name);
         try
