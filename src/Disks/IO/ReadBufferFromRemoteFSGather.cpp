@@ -20,6 +20,7 @@
 #include <base/logger_useful.h>
 #include <filesystem>
 #include <iostream>
+#include <Common/hex.h>
 
 namespace fs = std::filesystem;
 
@@ -27,7 +28,7 @@ namespace DB
 {
 
 #if USE_AWS_S3
-SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const String & path)
+SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const String & path, size_t file_size)
 {
     current_path = path;
     bool use_external_buffer = settings.remote_fs_method == RemoteFSReadMethod::threadpool;
@@ -37,8 +38,12 @@ SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const S
         settings, use_external_buffer, read_until_position, true);
 
     auto cache = settings.remote_fs_cache;
-    if (cache && !cache->shouldBypassCache())
-        return std::make_shared<CachedReadBufferFromRemoteFS>(path, cache, std::move(reader), settings, read_until_position);
+    if (cache && settings.remote_fs_enable_cache && !cache->shouldBypassCache())
+    {
+        LOG_TEST(&Poco::Logger::get("kssenii"), "New cacheable buffer for{}: {}", getHexUIntLowercase(cache->hash(path)), read_until_position);
+        return std::make_shared<CachedReadBufferFromRemoteFS>(
+            path, cache, std::move(reader), settings, read_until_position ? read_until_position : file_size);
+    }
 
     return std::move(reader);
 }
@@ -46,7 +51,7 @@ SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const S
 
 
 #if USE_AZURE_BLOB_STORAGE
-SeekableReadBufferPtr ReadBufferFromAzureBlobStorageGather::createImplementationBuffer(const String & path)
+SeekableReadBufferPtr ReadBufferFromAzureBlobStorageGather::createImplementationBuffer(const String & path, size_t /* file_size */)
 {
     current_path = path;
     bool use_external_buffer = settings.remote_fs_method == RemoteFSReadMethod::threadpool;
@@ -56,7 +61,7 @@ SeekableReadBufferPtr ReadBufferFromAzureBlobStorageGather::createImplementation
 #endif
 
 
-SeekableReadBufferPtr ReadBufferFromWebServerGather::createImplementationBuffer(const String & path)
+SeekableReadBufferPtr ReadBufferFromWebServerGather::createImplementationBuffer(const String & path, size_t /* file_size */)
 {
     current_path = path;
     bool use_external_buffer = settings.remote_fs_method == RemoteFSReadMethod::threadpool;
@@ -65,7 +70,7 @@ SeekableReadBufferPtr ReadBufferFromWebServerGather::createImplementationBuffer(
 
 
 #if USE_HDFS
-SeekableReadBufferPtr ReadBufferFromHDFSGather::createImplementationBuffer(const String & path)
+SeekableReadBufferPtr ReadBufferFromHDFSGather::createImplementationBuffer(const String & path, size_t /* file_size */)
 {
     return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, fs::path(hdfs_directory) / path, config, buf_size);
 }
@@ -116,7 +121,7 @@ void ReadBufferFromRemoteFSGather::initialize()
             if (!current_buf || current_buf_idx != i)
             {
                 current_buf_idx = i;
-                current_buf = createImplementationBuffer(file_path);
+                current_buf = createImplementationBuffer(file_path, size);
             }
 
             current_buf->seek(current_buf_offset, SEEK_SET);
@@ -152,7 +157,7 @@ bool ReadBufferFromRemoteFSGather::nextImpl()
     ++current_buf_idx;
 
     const auto & [path, size] = metadata.remote_fs_objects[current_buf_idx];
-    current_buf = createImplementationBuffer(path);
+    current_buf = createImplementationBuffer(path, size);
 
     return readImpl();
 }

@@ -446,7 +446,6 @@ TEST(LRUFileCache, get)
         holder.~FileSegmentsHolder();
         other_1.join();
         printRanges(segments);
-        std::cerr << "kssenii: " << cache.dumpStructure() << "\n";
         ASSERT_TRUE(segments[1]->state() == DB::FileSegment::State::DOWNLOADED);
     }
 
@@ -458,8 +457,6 @@ TEST(LRUFileCache, get)
         /// Test LRUCache::restore().
 
         auto cache2 = DB::LRUFileCache(cache_base_path, 30, 5);
-        std::cerr << "kssenii cache: " << cache.dumpStructure() << "\n";
-        std::cerr << "kssenii cache2: " << cache2.dumpStructure() << "\n";
         ASSERT_EQ(cache2.getStat().downloaded_size, 5);
 
         auto holder1 = cache2.getOrSet(key, 2, 28); /// Get [2, 29]
