@@ -5,12 +5,38 @@ import json
 import logging
 import sys
 import time
+from typing import Optional
 
 import requests  # type: ignore
 
 from ci_config import CI_CONFIG
 
 DOWNLOAD_RETRIES_COUNT = 5
+
+
+def get_with_retries(
+    url: str,
+    retries: int = DOWNLOAD_RETRIES_COUNT,
+    sleep: int = 3,
+    **kwargs,
+) -> requests.Response:
+    logging.info("Getting URL with %i and sleep %i in between: %s", retries, sleep, url)
+    exc = None  # type: Optional[Exception]
+    for i in range(DOWNLOAD_RETRIES_COUNT):
+        try:
+            response = requests.get(url, **kwargs)
+            response.raise_for_status()
+            break
+        except Exception as e:
+            if i + 1 < DOWNLOAD_RETRIES_COUNT:
+                logging.info("Exception '%s' while getting, retry %i", e, i + 1)
+                time.sleep(sleep)
+
+            exc = e
+    else:
+        raise Exception(exc)
+
+    return response
 
 
 def get_build_name_for_check(check_name):
@@ -33,8 +59,7 @@ def dowload_build_with_progress(url, path):
     for i in range(DOWNLOAD_RETRIES_COUNT):
         try:
             with open(path, "wb") as f:
-                response = requests.get(url, stream=True)
-                response.raise_for_status()
+                response = get_with_retries(url, retries=1, stream=True)
                 total_length = response.headers.get("content-length")
                 if total_length is None or int(total_length) == 0:
                     logging.info(
@@ -56,16 +81,19 @@ def dowload_build_with_progress(url, path):
                             sys.stdout.write(f"\r[{eq_str}{space_str}] {percent}%")
                             sys.stdout.flush()
             break
-        except Exception as ex:
-            sys.stdout.write("\n")
-            time.sleep(3)
-            logging.info("Exception while downloading %s, retry %s", ex, i + 1)
+        except Exception:
+            if sys.stdout.isatty():
+                sys.stdout.write("\n")
+            if i + 1 < DOWNLOAD_RETRIES_COUNT:
+                time.sleep(3)
+
             if os.path.exists(path):
                 os.remove(path)
     else:
         raise Exception(f"Cannot download dataset from {url}, all retries exceeded")
 
-    sys.stdout.write("\n")
+    if sys.stdout.isatty():
+        sys.stdout.write("\n")
     logging.info("Downloading finished")
 
 
