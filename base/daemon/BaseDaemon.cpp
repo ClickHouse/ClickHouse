@@ -286,7 +286,7 @@ private:
         if (thread_ptr)
         {
             query_id = thread_ptr->getQueryId().toString();
- 
+
             if (auto thread_group = thread_ptr->getThreadGroup())
             {
                 query = thread_group->query;
