@@ -123,6 +123,8 @@ public:
         else
             return static_cast<T>(x);
     }
+
+    T operator() (const bool & x) const { return T(x); }
 };
 
 }

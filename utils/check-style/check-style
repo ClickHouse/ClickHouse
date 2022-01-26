@@ -184,7 +184,9 @@ tables_with_database_column=(
 tests_with_database_column=( $(
     find $ROOT_PATH/tests/queries -iname '*.sql' -or -iname '*.sh' -or -iname '*.py' -or -iname '*.j2' |
         grep -vP $EXCLUDE_DIRS |
-        xargs grep --with-filename $(printf -- "-e %s " "${tables_with_database_column[@]}") | cut -d: -f1 | sort -u
+        xargs grep --with-filename $(printf -- "-e %s " "${tables_with_database_column[@]}") |
+        grep -v -e ':--' -e ':#' |
+        cut -d: -f1 | sort -u
 ) )
 for test_case in "${tests_with_database_column[@]}"; do
     grep -qE database.*currentDatabase "$test_case" || {
@@ -324,6 +326,16 @@ find $ROOT_PATH'/tests/integration' -name '*.py' |
 if [[ "$(grep -Po "M\([0-9]*," $ROOT_PATH/src/Common/ErrorCodes.cpp | wc -l)" != "$(grep -Po "M\([0-9]*," $ROOT_PATH/src/Common/ErrorCodes.cpp | sort | uniq | wc -l)" ]]
 then
     echo "ErrorCodes.cpp contains non-unique error codes"
+fi
+
+# Check that there is no system-wide libraries/headers in use.
+#
+# NOTE: it is better to override find_path/find_library in cmake, but right now
+# it is not possible, see [1] for the reference.
+#
+#   [1]: git grep --recurse-submodules -e find_library -e find_path contrib
+if git grep -e find_path -e find_library -- :**CMakeLists.txt; then
+    echo "There is find_path/find_library usage. ClickHouse should use everything bundled. Consider adding one more contrib module."
 fi
 
 # Forbid files that differ only by character case

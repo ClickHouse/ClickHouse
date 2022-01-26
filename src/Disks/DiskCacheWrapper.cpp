@@ -65,8 +65,9 @@ std::shared_ptr<FileDownloadMetadata> DiskCacheWrapper::acquireDownloadMetadata(
     std::unique_lock<std::mutex> lock{mutex};
 
     auto it = file_downloads.find(path);
-    if (it != file_downloads.end() && !it->second.expired())
-        return it->second.lock();
+    if (it != file_downloads.end())
+        if (auto x = it->second.lock())
+            return x;
 
     std::shared_ptr<FileDownloadMetadata> metadata(
         new FileDownloadMetadata,

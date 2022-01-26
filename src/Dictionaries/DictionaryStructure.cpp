@@ -1,18 +1,21 @@
-#include "DictionaryStructure.h"
+#include <Dictionaries/DictionaryStructure.h>
+
+#include <numeric>
+#include <unordered_map>
+#include <unordered_set>
+
+#include <IO/WriteHelpers.h>
+#include <IO/Operators.h>
+
+#include <Common/StringUtils/StringUtils.h>
+
+#include <Formats/FormatSettings.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Formats/FormatSettings.h>
-#include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
-#include <Common/StringUtils/StringUtils.h>
-
-#include <numeric>
-#include <unordered_map>
-#include <unordered_set>
 
 
 namespace DB
@@ -45,8 +48,8 @@ std::optional<AttributeUnderlyingType> tryGetAttributeUnderlyingType(TypeIndex i
     switch (index) /// Special cases which do not map TypeIndex::T -> AttributeUnderlyingType::T
     {
         case TypeIndex::Date:       return AttributeUnderlyingType::UInt16;
+        case TypeIndex::Date32:     return AttributeUnderlyingType::Int32;
         case TypeIndex::DateTime:   return AttributeUnderlyingType::UInt32;
-        case TypeIndex::DateTime64: return AttributeUnderlyingType::UInt64;
         default: break;
     }
 
