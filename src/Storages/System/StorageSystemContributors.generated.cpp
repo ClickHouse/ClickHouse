@@ -235,6 +235,7 @@ const char * auto_contributors[] {
     "Hamoon",
     "Hasitha Kanchana",
     "Hasnat",
+    "HeenaBansal2009",
     "Hiroaki Nakamura",
     "HuFuwang",
     "Hui Wang",

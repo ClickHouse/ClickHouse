@@ -1,7 +1,7 @@
 FROM ubuntu:18.04
 
 ARG repository="deb https://repo.clickhouse.tech/deb/stable/ main/"
-ARG version=21.3.20.*
+ARG version=21.3.21.*
 
 RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
