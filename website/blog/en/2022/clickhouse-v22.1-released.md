@@ -84,7 +84,7 @@ $$
 $$)
 ```
 
-In this query we are importing data with `url` table function. Data is posted on an HTTP server in `.native.xz` file. The most annoying part of this query is that we have to specify the data structure and the format of this file.
+In this query we are importing data with the `url` table function. Data is posted on an HTTP server in `.native.xz` file. The most annoying part of this query is that we have to specify the data structure and the format of this file.
 
 In the new ClickHouse release 22.1 it becomes much easier:
 
@@ -100,7 +100,7 @@ It works for every format that contains information about the data types: `Nativ
 
 And it works for every table function that reads files: `s3`, `file`, `hdfs`, `url`, `s3Cluster`, `hdfsCluster`.
 
-A lot of magic happens under the hood. It does not require reading the whole file in memory. For example, Parquet format has metadata at the end of file. So, we will read the header first to find where the metadata is located, then do range request to read the metadata about columns and their types, then continue to read the requested columns. And if the file is small, it will be read with a single request.
+A lot of magic happens under the hood. It does not require reading the whole file in memory. For example, Parquet format has metadata at the end of file. So, we will read the header first to find where the metadata is located, then do a range request to read the metadata about columns and their types, then continue to read the requested columns. And if the file is small, it will be read with a single request.
 
 If you want to extract the structure from the file without data processing, DESCRIBE query is available:
 
@@ -138,7 +138,7 @@ This feature is implemented by **Pavel Kruglov** with the inspiration of initial
 
 ## Realtime Resource Usage In clickhouse-client
 
-`clickhouse-client` is my favorite user interface for ClickHouse. It is an example how friendly every command line application should be.
+`clickhouse-client` is my favorite user interface for ClickHouse. It is an example of how friendly every command line application should be.
 
 Now it shows realtime CPU and memory usage for the query directly in the progress bar:
 
@@ -154,11 +154,11 @@ ClickHouse is a distributed MPP DBMS. It can scale up to use all CPU cores on on
 
 But each shard usually contains more than one replica. And by default ClickHouse is using the resources of only one replica on every shard. E.g. if you have a cluster of 6 servers with 3 shards and two replicas on each, a query will use just three servers instead of all six.
 
-There was an option to enable `max_parallel_replicas`, but that option required to specify "sampling key", it was inconvenient to use and did not scale well.
+There was an option to enable `max_parallel_replicas`, but that option required specifying a "sampling key", it was inconvenient to use and did not scale well.
 
 Now we have a setting to enable the new parallel processing algorithm: `allow_experimental_parallel_reading_from_replicas`. If it is enabled, replicas will *dynamically* select and distribute the work across them.
 
-It works perfectly even if replicas have lower or higher amount of computation resources. And it gives complete result even if some replicas are stale.
+It works perfectly even if replicas have lower or higher amounts of computation resources. And it gives a complete result even if some replicas are stale.
 
 This feature is implemented by **Nikita Mikhaylov**
 
@@ -189,7 +189,7 @@ This feature is implemented by **Vladimir Cherkasov**.
 If a column contains mostly zeros, we can encode it in sparse format
 and automatically optimize calculations!
 
-It is a special column encoding, similar to `LowCardinality`, but it's completely transparent and works automatic.
+It is a special column encoding, similar to `LowCardinality`, but it's completely transparent and works automatically.
 
 ```
 CREATE TABLE test.hits ...
@@ -197,9 +197,9 @@ ENGINE = MergeTree ORDER BY ...
 SETTINGS ratio_of_defaults_for_sparse_serialization = 0.9
 ```
 
-It allows compress data better and optimizes computations, because data in sparse columns will be processed directly in sparse format in memory.
+It allows compressing data better and optimizes computations, because data in sparse columns will be processed directly in sparse format in memory.
 
-Sparse or full format is selected based on column statistic that is calculated on insert and updated on background merges.
+Sparse or full format is selected based on column statistics that is calculated on insert and updated on background merges.
 
 Developed by **Anton Popov**.
 
@@ -207,7 +207,7 @@ We also want to make LowCardinality encoding automatic, stay tuned!
 
 ## Diagnostic Tool For ClickHouse
 
-It is a gift from Yandex Cloud team. They have a tool to collect a report about ClickHouse instance to provide all the needed information for support. They decided to contribute this tool to open-source!
+It is a gift from the Yandex Cloud team. They have a tool to collect a report about ClickHouse instances to provide all the needed information for support. They decided to contribute this tool to open-source!
 
 You can find the tool here: [utils/clickhouse-diagnostics](https://github.com/ClickHouse/ClickHouse/tree/master/
 utils/clickhouse-diagnostics)
