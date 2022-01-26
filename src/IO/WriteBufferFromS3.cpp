@@ -274,10 +274,9 @@ void WriteBufferFromS3::completeMultipartUpload()
         LOG_DEBUG(log, "Multipart upload has completed. Bucket: {}, Key: {}, Upload_id: {}, Parts: {}", bucket, key, multipart_upload_id, part_tags.size());
     else
     {
-        std::string tags_str;
-        for (auto & str : part_tags)
-            tags_str += ' ' + str;
-        throw Exception(ErrorCodes::S3_ERROR, "{} Tags:{}", outcome.GetError().GetMessage(), tags_str);
+        throw Exception(ErrorCodes::S3_ERROR, "{} Tags:{}",
+            outcome.GetError().GetMessage(),
+            fmt::join(part_tags.begin(), part_tags.end(), " "));
     }
 }
 

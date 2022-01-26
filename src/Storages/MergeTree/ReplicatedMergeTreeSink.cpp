@@ -32,7 +32,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-struct ReplicatedMergeTreeSink::PrevPart
+struct ReplicatedMergeTreeSink::DelayedChunk
 {
     struct Partition
     {
@@ -151,7 +151,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
         checkQuorumPrecondition(zookeeper);
 
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
-    std::vector<ReplicatedMergeTreeSink::PrevPart::Partition> partitions;
+    std::vector<ReplicatedMergeTreeSink::DelayedChunk::Partition> partitions;
 
     for (auto & current_block : part_blocks)
     {
@@ -183,33 +183,33 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
 
         UInt64 elapsed_ns = watch.elapsed();
 
-        partitions.emplace_back(ReplicatedMergeTreeSink::PrevPart::Partition{
+        partitions.emplace_back(ReplicatedMergeTreeSink::DelayedChunk::Partition{
             .temp_part = std::move(temp_part),
             .elapsed_ns = elapsed_ns,
             .block_id = std::move(block_id)
         });
     }
 
-    finishPrevPart(zookeeper);
-    prev_part = std::make_unique<ReplicatedMergeTreeSink::PrevPart>();
-    prev_part->partitions = std::move(partitions);
+    finishDelayedChunk(zookeeper);
+    delayed_chunk = std::make_unique<ReplicatedMergeTreeSink::DelayedChunk>();
+    delayed_chunk->partitions = std::move(partitions);
 
     /// If deduplicated data should not be inserted into MV, we need to set proper
     /// value for `last_block_is_duplicate`, which is possible only after the part is committed.
     /// Othervide we can delay commit.
     /// TODO: we can also delay commit if there is no MVs.
     if (!context->getSettingsRef().deduplicate_blocks_in_dependent_materialized_views)
-        finishPrevPart(zookeeper);
+        finishDelayedChunk(zookeeper);
 }
 
-void ReplicatedMergeTreeSink::finishPrevPart(zkutil::ZooKeeperPtr & zookeeper)
+void ReplicatedMergeTreeSink::finishDelayedChunk(zkutil::ZooKeeperPtr & zookeeper)
 {
-    if (!prev_part)
+    if (!delayed_chunk)
         return;
 
     last_block_is_duplicate = false;
 
-    for (auto & partition : prev_part->partitions)
+    for (auto & partition : delayed_chunk->partitions)
     {
         partition.temp_part.finalize();
 
@@ -232,7 +232,7 @@ void ReplicatedMergeTreeSink::finishPrevPart(zkutil::ZooKeeperPtr & zookeeper)
         }
     }
 
-    prev_part.reset();
+    delayed_chunk.reset();
 }
 
 
@@ -573,7 +573,7 @@ void ReplicatedMergeTreeSink::onFinish()
 {
     auto zookeeper = storage.getZooKeeper();
     assertSessionIsNotExpired(zookeeper);
-    finishPrevPart(zookeeper);
+    finishDelayedChunk(zookeeper);
 }
 
 void ReplicatedMergeTreeSink::waitForQuorum(

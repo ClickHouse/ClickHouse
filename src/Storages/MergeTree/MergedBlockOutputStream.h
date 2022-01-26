@@ -32,6 +32,9 @@ public:
       */
     void writeWithPermutation(const Block & block, const IColumn::Permutation * permutation);
 
+    /// Finalizer is a structure which is returned from by finalizePart().
+    /// Files from part may be written asynchronously, e.g. for blob storages.
+    /// You should call finish() to wait until all data is written.
     struct Finalizer
     {
         struct Impl;
@@ -52,8 +55,6 @@ public:
             bool sync,
             const NamesAndTypesList * total_columns_list = nullptr,
             MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
-
-    void finish(Finalizer finalizer);
 
 private:
     /** If `permutation` is given, it rearranges the values in the columns when writing.

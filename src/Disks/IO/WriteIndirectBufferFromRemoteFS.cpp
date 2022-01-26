@@ -40,8 +40,6 @@ void WriteIndirectBufferFromRemoteFS<T>::finalizeImpl()
 {
     WriteBufferFromFileDecorator::finalizeImpl();
 
-    // LOG_TRACE(&Poco::Logger::get("WriteIndirectBufferFromRemoteFS"), "{}\n{}", count(), StackTrace().toString());
-
     metadata.addObject(remote_fs_path, count());
     metadata.save();
 }

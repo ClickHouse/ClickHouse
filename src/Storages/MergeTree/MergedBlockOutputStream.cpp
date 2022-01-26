@@ -159,9 +159,6 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     const MergeTreeData::DataPartPtr & new_part,
     MergeTreeData::DataPart::Checksums & checksums)
 {
-
-    LOG_TRACE(&Poco::Logger::get("MergedBlockOutputStream"), "finalizing {}", new_part->getNameWithState());
-
     WrittenFiles written_files;
     if (new_part->isProjectionPart())
     {

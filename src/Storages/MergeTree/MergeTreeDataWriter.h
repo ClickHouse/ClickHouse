@@ -47,6 +47,9 @@ public:
       */
     MergeTreeData::MutableDataPartPtr writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, bool optimize_on_insert);
 
+    /// This structure contains not completely written temporary part.
+    /// Some writes may happen asynchronously, e.g. for blob storages.
+    /// You should call finalize() to wait until all data is written.
     struct TemporaryPart
     {
         MergeTreeData::MutableDataPartPtr part;
