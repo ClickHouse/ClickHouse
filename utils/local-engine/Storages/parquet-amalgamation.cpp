@@ -10144,10 +10144,10 @@ public:
 			}
 			if (filter[row_idx + result_offset]) {
 				VALUE_TYPE val = VALUE_CONVERSION::DictRead(*dict, offsets[offset_idx++], *this);
-				if (!Value::IsValid(val)) {
+				/*if (!Value::IsValid(val)) {
 					result_mask.SetInvalid(row_idx + result_offset);
 					continue;
-				}
+				}*/
 				result_ptr[row_idx + result_offset] = val;
 			} else {
 				offset_idx++;
@@ -10166,10 +10166,10 @@ public:
 			}
 			if (filter[row_idx + result_offset]) {
 				VALUE_TYPE val = VALUE_CONVERSION::PlainRead(*plain_data, *this);
-				if (!Value::IsValid(val)) {
+				/*if (!Value::IsValid(val)) {
 					result_mask.SetInvalid(row_idx + result_offset);
 					continue;
-				}
+				}*/
 				result_ptr[row_idx + result_offset] = val;
 			} else { // there is still some data there that we have to skip over
 				VALUE_CONVERSION::PlainSkip(*plain_data, *this);
@@ -13376,7 +13376,8 @@ string_t StringParquetValueConversion::PlainRead(ByteBuffer &plain_data, ColumnR
 	auto &scr = ((StringColumnReader &)reader);
 	uint32_t str_len = scr.fixed_width_string_length == 0 ? plain_data.read<uint32_t>() : scr.fixed_width_string_length;
 	plain_data.available(str_len);
-	auto actual_str_len = ((StringColumnReader &)reader).VerifyString(plain_data.ptr, str_len);
+	//auto actual_str_len = ((StringColumnReader &)reader).VerifyString(plain_data.ptr, str_len);
+    auto actual_str_len = str_len;
 	auto ret_str = string_t(plain_data.ptr, actual_str_len);
 	plain_data.inc(str_len);
 	return ret_str;

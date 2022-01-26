@@ -88,7 +88,12 @@ public:
         auto it = streams_.find(stream_handle.getStreamId());
         if (it == streams_.end())
         {
-            throw std::runtime_error("Unknown stream with ID " + std::to_string(stream_handle.getStreamId()));
+            std::cout<<"Read cannot find stream ID "<<stream_handle.getStreamId()<<std::endl;
+            it = streams_.find(stream_handle.getStreamId());
+            if (it == streams_.end())
+            {
+                throw std::runtime_error("Unknown stream with ID " + std::to_string(stream_handle.getStreamId()));
+            }
         }
         auto * read_buffer = dynamic_cast<SeekableReadBuffer *>(it->second.second);
         if (stream_handle.offset() != location)
@@ -140,7 +145,12 @@ public:
         auto it = streams_.find(stream_handle.getStreamId());
         if (it == streams_.end())
         {
-            throw std::runtime_error("Unknown stream with ID " + std::to_string(stream_handle.getStreamId()));
+            std::cout<<"GetFileSize cannot find stream ID "<<stream_handle.getStreamId()<<std::endl;
+            it = streams_.find(stream_handle.getStreamId());
+            if (it == streams_.end())
+            {
+                throw std::runtime_error("Unknown stream with ID " + std::to_string(stream_handle.getStreamId()));
+            }
         }
         if (auto * file_stream = dynamic_cast<ReadBufferFromFileDescriptor*>(it->second.second))
         {

@@ -34,21 +34,66 @@ void local_engine::ParquetRowInputFormat::prepareReader()
     }
     state = std::make_unique<duckdb::ParquetReaderScanState>();
     reader->InitializeScan(*state, column_indices, row_group_ids, nullptr);
+    output.Initialize(row_type);
 }
 
 Chunk local_engine::ParquetRowInputFormat::generate()
 {
     Chunk res;
+    int batchCnt = 10;
+    auto header = this->getPort().getHeader();
 
-    if (!reader)
-        prepareReader();
-    ::duckdb::DataChunk output;
-    output.Initialize(row_type);
-    reader->Scan(*state, output);
-    if (output.size() > 0)
+    std::vector<MutableColumnPtr> read_columns;
+    read_columns.reserve(header.columns());
+
+    for (size_t column_i = 0, columns = header.columns(); column_i < columns; ++column_i)
     {
-        duckDbChunkToCHChunk(output, res);
+        const ColumnWithTypeAndName & header_column = header.getByPosition(column_i);
+        read_columns.push_back(header_column.type->createColumn());
+        read_columns[column_i]->reserve(batchCnt * 4096);
     }
+
+    int i = 0;
+    for (; i < batchCnt; i++)
+    {
+        if (!reader)
+            prepareReader();
+
+        output.Reset();
+        reader->Scan(*state, output);
+        if (output.size() > 0)
+        {
+            for (size_t column_i = 0, columns = header.columns(); column_i < columns; ++column_i)
+            {
+                readColumnFromDuckVector(*(read_columns[column_i]), output.data[column_i], output.size());
+            }
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    if (i == 0)
+    {
+        return res;
+    }
+    Columns columns_list;
+    UInt64 num_rows = 0;
+    columns_list.reserve(header.columns());
+
+    for (size_t column_i = 0, columns = header.columns(); column_i < columns; ++column_i)
+    {
+        const ColumnWithTypeAndName & header_column = header.getByPosition(column_i);
+        ColumnWithTypeAndName column;
+        column.name = header_column.name;
+        column.type = header_column.type;
+        column.column = std::move(read_columns[column_i]);
+
+        num_rows = column.column->size();
+        columns_list.push_back(std::move(column.column));
+    }
+    res.setColumns(columns_list, num_rows);
     return res;
 }
 duckdb::LogicalType local_engine::ParquetRowInputFormat::convertCHTypeToDuckDbType(DataTypePtr type)
@@ -150,7 +195,7 @@ template <typename NumericType, typename VectorType>
 void local_engine::ParquetRowInputFormat::fillColumnWithNumericData(duckdb::Vector & vector, IColumn & internal_column, idx_t num_rows)
 {
     auto & column_data = static_cast<VectorType &>(internal_column).getData();
-    column_data.reserve(num_rows);
+    //column_data.reserve(num_rows);
     const auto * raw_data = reinterpret_cast<const NumericType *>(vector.GetData());
     column_data.insert_assume_reserved(raw_data, raw_data + num_rows);
 }
@@ -180,7 +225,7 @@ void local_engine::ParquetRowInputFormat::fillColumnWithStringData(duckdb::Vecto
 void local_engine::ParquetRowInputFormat::fillColumnWithDate32Data(duckdb::Vector & vector, IColumn & internal_column, idx_t num_rows)
 {
     PaddedPODArray<UInt16> & column_data = assert_cast<ColumnVector<UInt16> &>(internal_column).getData();
-    column_data.reserve(num_rows);
+    //column_data.reserve(num_rows);
     auto* duck_data = duckdb::FlatVector::GetData<duckdb::date_t>(vector);
     for (idx_t i = 0; i < num_rows; ++i)
     {

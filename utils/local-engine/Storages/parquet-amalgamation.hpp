@@ -12,6 +12,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 #include "duckdb.hpp"
+#include "rle_bitpacking_hybrid_encoder.h"
 
 namespace duckdb {
 
@@ -7200,18 +7201,31 @@ private:
 
 	template <typename T>
 	uint32_t BitUnpack(T *dest, uint32_t count) {
-		auto mask = BITPACK_MASKS[bit_width_];
+        if (count % 8 == 0) {
+            auto src = reinterpret_cast<uint8_t *>(buffer_.ptr);
+            auto destptr = reinterpret_cast<uint32_t *>(dest);
+            uint32_t count1 = count / 8;
+            for (uint32_t i = 0; i < count1; i++) {
+                (bitpacking_unpack8_funcs[bit_width_])(src, destptr);
+                src += bit_width_;
+                destptr += 8;
+            }
+            buffer_.inc(bit_width_ * count1);
+        } else {
+            auto mask = BITPACK_MASKS[bit_width_];
 
-		for (uint32_t i = 0; i < count; i++) {
-			T val = (buffer_.get<uint8_t>() >> bitpack_pos) & mask;
-			bitpack_pos += bit_width_;
-			while (bitpack_pos > BITPACK_DLEN) {
-				buffer_.inc(1);
-				val |= (buffer_.get<uint8_t>() << (BITPACK_DLEN - (bitpack_pos - bit_width_))) & mask;
-				bitpack_pos -= BITPACK_DLEN;
-			}
-			dest[i] = val;
-		}
+            for (uint32_t i = 0; i < count; i++) {
+                T val = (buffer_.get<uint8_t>() >> bitpack_pos) & mask;
+                bitpack_pos += bit_width_;
+                while (bitpack_pos > BITPACK_DLEN) {
+                    buffer_.inc(1);
+                    val |= (buffer_.get<uint8_t>() << (BITPACK_DLEN - (bitpack_pos - bit_width_))) & mask;
+                    bitpack_pos -= BITPACK_DLEN;
+                }
+                dest[i] = val;
+            }
+        }
+
 		return count;
 	}
 };
