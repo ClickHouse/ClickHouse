@@ -204,7 +204,7 @@ def check_pr_description(pr_info):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
-    pr_info = PRInfo(need_orgs=True, labels_from_api=True)
+    pr_info = PRInfo(need_orgs=True, pr_event_from_api=True)
     can_run, description = should_run_checks_for_pr(pr_info)
     gh = Github(get_best_robot_token())
     commit = get_commit(gh, pr_info.sha)

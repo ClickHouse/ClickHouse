@@ -2,9 +2,9 @@
 import json
 import os
 
-import requests  # type: ignore
 from unidiff import PatchSet  # type: ignore
 
+from build_download_helper import get_with_retries
 from env_helper import (
     GITHUB_REPOSITORY,
     GITHUB_SERVER_URL,
@@ -29,6 +29,7 @@ DIFF_IN_DOCUMENTATION_EXT = [
     ".sh",
     ".json",
 ]
+RETRY_SLEEP = 0
 
 
 def get_pr_for_commit(sha, ref):
@@ -38,8 +39,7 @@ def get_pr_for_commit(sha, ref):
         f"https://api.github.com/repos/{GITHUB_REPOSITORY}/commits/{sha}/pulls"
     )
     try:
-        response = requests.get(try_get_pr_url)
-        response.raise_for_status()
+        response = get_with_retries(try_get_pr_url, sleep=RETRY_SLEEP)
         data = response.json()
         if len(data) > 1:
             print("Got more than one pr for commit", sha)
@@ -69,7 +69,7 @@ class PRInfo:
         github_event=None,
         need_orgs=False,
         need_changed_files=False,
-        labels_from_api=False,
+        pr_event_from_api=False,
     ):
         if not github_event:
             if GITHUB_EVENT_PATH:
@@ -87,15 +87,24 @@ class PRInfo:
         # workflow completed event, used for PRs only
         if "action" in github_event and github_event["action"] == "completed":
             self.sha = github_event["workflow_run"]["head_sha"]
-            prs_for_sha = requests.get(
+            prs_for_sha = get_with_retries(
                 f"https://api.github.com/repos/{GITHUB_REPOSITORY}/commits/{self.sha}"
-                "/pulls"
+                "/pulls",
+                sleep=RETRY_SLEEP,
             ).json()
             if len(prs_for_sha) != 0:
                 github_event["pull_request"] = prs_for_sha[0]
 
         if "pull_request" in github_event:  # pull request and other similar events
             self.number = github_event["pull_request"]["number"]
+            if pr_event_from_api:
+                response = get_with_retries(
+                    f"https://api.github.com/repos/{GITHUB_REPOSITORY}"
+                    f"/pulls/{self.number}",
+                    sleep=RETRY_SLEEP,
+                )
+                github_event["pull_request"] = response.json()
+
             if "after" in github_event:
                 self.sha = github_event["after"]
             else:
@@ -113,23 +122,16 @@ class PRInfo:
             self.head_ref = github_event["pull_request"]["head"]["ref"]
             self.head_name = github_event["pull_request"]["head"]["repo"]["full_name"]
             self.body = github_event["pull_request"]["body"]
-
-            if labels_from_api:
-                response = requests.get(
-                    f"https://api.github.com/repos/{GITHUB_REPOSITORY}/issues/"
-                    f"{self.number}/labels"
-                )
-                self.labels = {label["name"] for label in response.json()}
-            else:
-                self.labels = {
-                    label["name"] for label in github_event["pull_request"]["labels"]
-                }
+            self.labels = {
+                label["name"] for label in github_event["pull_request"]["labels"]
+            }
 
             self.user_login = github_event["pull_request"]["user"]["login"]
             self.user_orgs = set([])
             if need_orgs:
-                user_orgs_response = requests.get(
-                    github_event["pull_request"]["user"]["organizations_url"]
+                user_orgs_response = get_with_retries(
+                    github_event["pull_request"]["user"]["organizations_url"],
+                    sleep=RETRY_SLEEP,
                 )
                 if user_orgs_response.ok:
                     response_json = user_orgs_response.json()
@@ -157,15 +159,7 @@ class PRInfo:
                     f"compare/{github_event['before']}...{self.sha}"
                 )
             else:
-                self.number = pull_request["number"]
-                if labels_from_api:
-                    response = requests.get(
-                        f"https://api.github.com/repos/{GITHUB_REPOSITORY}/"
-                        f"issues/{self.number}/labels"
-                    )
-                    self.labels = {label["name"] for label in response.json()}
-                else:
-                    self.labels = {label["name"] for label in pull_request["labels"]}
+                self.labels = {label["name"] for label in pull_request["labels"]}
 
                 self.base_ref = pull_request["base"]["ref"]
                 self.base_name = pull_request["base"]["repo"]["full_name"]
@@ -201,7 +195,10 @@ class PRInfo:
         if not self.diff_url:
             raise Exception("Diff URL cannot be find for event")
 
-        response = requests.get(self.diff_url)
+        response = get_with_retries(
+            self.diff_url,
+            sleep=RETRY_SLEEP,
+        )
         response.raise_for_status()
         if "commits" in self.event and self.number == 0:
             diff = response.json()
