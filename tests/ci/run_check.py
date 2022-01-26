@@ -212,6 +212,9 @@ if __name__ == "__main__":
     description_report = check_pr_description(pr_info)[:139]
     if description_report:
         print("::notice ::Cannot run, description does not match the template")
+        logging.info(
+            "PR body doesn't match the template: (start)\n%s\n(end)", pr_info.body
+        )
         url = (
             f"{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/"
             "blob/master/.github/PULL_REQUEST_TEMPLATE.md?plain=1"
