@@ -229,7 +229,7 @@ public:
                 if (sig != SanitizerTrap)
                 {
                     DB::readPODBinary(info, in);
-                    DB::readPODBinary(mcontext, in);
+                    DB::readPODBinary(context, in);
                 }
 
                 DB::readPODBinary(stack_trace, in);
