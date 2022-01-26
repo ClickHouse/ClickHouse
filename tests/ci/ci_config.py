@@ -104,6 +104,7 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
+            "static_binary_name": "amd64",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
@@ -114,6 +115,7 @@ CI_CONFIG = {
             "build_type": "debug",
             "sanitizer": "",
             "package_type": "binary",
+            "static_binary_name": "debug-amd64",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "enable",
@@ -134,6 +136,7 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
+            "static_binary_name": "macos",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
@@ -144,6 +147,7 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
+            "static_binary_name": "aarch64",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
@@ -154,6 +158,7 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
+            "static_binary_name": "freebsd",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
@@ -164,6 +169,7 @@ CI_CONFIG = {
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
+            "static_binary_name": "macos-aarch64",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
@@ -203,6 +209,8 @@ CI_CONFIG = {
         ],
     },
     "tests_config": {
+        # required_build - build name for artifacts
+        # force_tests - force success status for tests
         "Stateful tests (address, actions)": {
             "required_build": "package_asan",
         },
@@ -220,6 +228,10 @@ CI_CONFIG = {
         },
         "Stateful tests (release, actions)": {
             "required_build": "package_release",
+        },
+        "Stateful tests (aarch64, actions)": {
+            "required_build": "package_aarch64",
+            "force_tests": True,
         },
         "Stateful tests (release, DatabaseOrdinary, actions)": {
             "required_build": "package_release",
@@ -244,6 +256,10 @@ CI_CONFIG = {
         },
         "Stateless tests (release, actions)": {
             "required_build": "package_release",
+        },
+        "Stateless tests (aarch64, actions)": {
+            "required_build": "package_aarch64",
+            "force_tests": True,
         },
         "Stateless tests (release, wide parts enabled, actions)": {
             "required_build": "package_release",

@@ -2,7 +2,7 @@ if (USE_CLANG_TIDY)
     set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
 
-if(MAKE_STATIC_LIBRARIES)
+if(USE_STATIC_LIBRARIES)
     set(MAX_LINKER_MEMORY 3500)
 else()
     set(MAX_LINKER_MEMORY 2500)
@@ -34,7 +34,7 @@ if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
     add_subdirectory (keeper-bench)
     add_subdirectory (graphite-rollup)
 
-    if (USE_NURAFT)
+    if (TARGET ch_contrib::nuraft)
         add_subdirectory (keeper-data-dumper)
     endif ()
 

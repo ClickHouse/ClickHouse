@@ -30,8 +30,9 @@ configure_file(
   "${SOURCE_DIR}/snappy-stubs-public.h.in"
   "${CMAKE_CURRENT_BINARY_DIR}/snappy-stubs-public.h")
 
-add_library(snappy "")
-target_sources(snappy
+add_library(_snappy "")
+add_library(ch_contrib::snappy ALIAS _snappy)
+target_sources(_snappy
   PRIVATE
     "${SOURCE_DIR}/snappy-internal.h"
     "${SOURCE_DIR}/snappy-stubs-internal.h"
@@ -40,5 +41,5 @@ target_sources(snappy
     "${SOURCE_DIR}/snappy-stubs-internal.cc"
     "${SOURCE_DIR}/snappy.cc")
 
-target_include_directories(snappy PUBLIC ${SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
-target_compile_definitions(snappy PRIVATE -DHAVE_CONFIG_H)
+target_include_directories(_snappy SYSTEM BEFORE PUBLIC ${SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
+target_compile_definitions(_snappy PRIVATE -DHAVE_CONFIG_H)
