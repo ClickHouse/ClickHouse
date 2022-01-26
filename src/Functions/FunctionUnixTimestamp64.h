@@ -120,13 +120,13 @@ public:
     }
 
     template <typename T>
-    MutableColumnPtr executeType(auto & result_column, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
+    bool executeType(auto & result_column, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         const auto & src = arguments[0];
         const auto & col = *src.column;
 
         if (!checkAndGetColumn<ColumnVector<T>>(col))
-            return nullptr;
+            return 0;
 
         auto & result_data = result_column->getData();
 
@@ -135,22 +135,22 @@ public:
         for (size_t i = 0; i < input_rows_count; ++i)
             result_data[i] = source_data[i];
 
-        return reinterpret_cast<COW<IColumn>::MutablePtr &&>(result_column);
+        return 1;
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         auto result_column = ColumnDecimal<DateTime64>::create(input_rows_count, target_scale);
 
-        if (!((result_column = executeType<UInt8>(result_column, arguments, input_rows_count))
-              || (result_column = executeType<UInt16>(result_column, arguments, input_rows_count))
-              || (result_column = executeType<UInt32>(result_column, arguments, input_rows_count))
-              || (result_column = executeType<UInt32>(result_column, arguments, input_rows_count))
-              || (result_column = executeType<UInt64>(result_column, arguments, input_rows_count))
-              || (result_column = executeType<Int8>(result_column, arguments, input_rows_count))
-              || (result_column = executeType<Int16>(result_column, arguments, input_rows_count))
-              || (result_column = executeType<Int32>(result_column, arguments, input_rows_count))
-              || (result_column = executeType<Int64>(result_column, arguments, input_rows_count))))
+        if (!((executeType<UInt8>(result_column, arguments, input_rows_count))
+              || (executeType<UInt16>(result_column, arguments, input_rows_count))
+              || (executeType<UInt32>(result_column, arguments, input_rows_count))
+              || (executeType<UInt32>(result_column, arguments, input_rows_count))
+              || (executeType<UInt64>(result_column, arguments, input_rows_count))
+              || (executeType<Int8>(result_column, arguments, input_rows_count))
+              || (executeType<Int16>(result_column, arguments, input_rows_count))
+              || (executeType<Int32>(result_column, arguments, input_rows_count))
+              || (executeType<Int64>(result_column, arguments, input_rows_count))))
         {
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                             "Illegal column {} of first argument of function {}",
