@@ -64,6 +64,20 @@ static bool parseQueryWithOnClusterAndMaybeTable(std::shared_ptr<ASTSystemQuery>
     return true;
 }
 
+static bool parseQueryWithOnCluster(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
+                                                 Expected & expected)
+{
+    String cluster_str;
+    if (ParserKeyword{"ON"}.ignore(pos, expected))
+    {
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+            return false;
+    }
+    res->cluster = cluster_str;
+
+    return true;
+}
+
 bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     if (!ParserKeyword{"SYSTEM"}.ignore(pos, expected))
@@ -156,6 +170,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
         case Type::DROP_REPLICA:
         {
+            parseQueryWithOnCluster(res, pos, expected);
+
             ASTPtr ast;
             if (!ParserStringLiteral{}.parse(pos, ast, expected))
                 return false;
@@ -196,12 +212,17 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
+        {
+            parseQueryWithOnCluster(res, pos, expected);
             if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
                 return false;
             break;
+        }
 
         case Type::RESTART_DISK:
         {
+            parseQueryWithOnCluster(res, pos, expected);
+
             ASTPtr ast;
             if (ParserIdentifier{}.parse(pos, ast, expected))
                 res->disk = ast->as<ASTIdentifier &>().name();
@@ -232,6 +253,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::STOP_MERGES:
         case Type::START_MERGES:
         {
+            parseQueryWithOnCluster(res, pos, expected);
+
             String storage_policy_str;
             String volume_str;
 
@@ -268,11 +291,14 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_REPLICATED_SENDS:
         case Type::STOP_REPLICATION_QUEUES:
         case Type::START_REPLICATION_QUEUES:
+            parseQueryWithOnCluster(res, pos, expected);
             parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
             break;
 
         case Type::SUSPEND:
         {
+            parseQueryWithOnCluster(res, pos, expected);
+
             ASTPtr seconds;
             if (!(ParserKeyword{"FOR"}.ignore(pos, expected)
                 && ParserUnsignedInteger().parse(pos, seconds, expected)
@@ -286,8 +312,10 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
 
         default:
-            /// There are no [db.table] after COMMAND NAME
+        {
+            parseQueryWithOnCluster(res, pos, expected);
             break;
+        }
     }
 
     if (res->database)
