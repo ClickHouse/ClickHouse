@@ -27,8 +27,11 @@ friend class FileSegment;
 
 public:
     using Key = UInt128;
+    using Downloader = std::unique_ptr<SeekableReadBuffer>;
 
-    FileCache(const String & cache_base_path_, size_t max_size_, size_t max_element_size_);
+    FileCache(
+        const String & cache_base_path_,
+        size_t max_size_, size_t max_element_size_);
 
     virtual ~FileCache() = default;
 

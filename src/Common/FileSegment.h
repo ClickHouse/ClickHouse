@@ -1,8 +1,9 @@
 #pragma once
 
 #include <boost/noncopyable.hpp>
-#include <Core/Types.h>
 #include <IO/WriteBufferFromFile.h>
+#include <Core/Types.h>
+#include <IO/SeekableReadBuffer.h>
 #include <list>
 
 
@@ -23,6 +24,8 @@ friend struct FileSegmentsHolder;
 
 public:
     using Key = UInt128;
+    using RemoteFileReaderPtr = std::shared_ptr<SeekableReadBuffer>;
+    using LocalCacheWriterPtr = std::unique_ptr<WriteBufferFromFile>;
 
     enum class State
     {
@@ -58,11 +61,13 @@ public:
         SKIP_CACHE,
     };
 
-    FileSegment(size_t offset_, size_t size_, const Key & key_, FileCache * cache_, State download_state_);
+    FileSegment(
+        size_t offset_, size_t size_, const Key & key_,
+        FileCache * cache_, State download_state_);
 
     State state() const;
 
-    static String toString(FileSegment::State state);
+    static String stateToString(FileSegment::State state);
 
     /// Represents an interval [left, right] including both boundaries.
     struct Range
@@ -91,19 +96,24 @@ public:
 
     void write(const char * from, size_t size);
 
-    void complete(State state);
+    RemoteFileReaderPtr getRemoteFileReader();
 
-    void completeBatch();
+    void setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_);
 
     String getOrSetDownloader();
 
-    bool isDownloader() const;
+    String getDownloader() const;
 
-    size_t downloadOffset() const;
+    bool isDownloader() const;
 
     static String getCallerId();
 
-    String downloader_id;
+    size_t downloadOffset() const;
+
+    void completeBatchAndResetDownloader();
+
+    void complete(State state);
+
 private:
     size_t availableSize() const { return reserved_size - downloaded_size; }
     bool lastFileSegmentHolder() const;
@@ -113,8 +123,10 @@ private:
     const Range segment_range;
 
     State download_state;
+    String downloader_id;
 
-    std::unique_ptr<WriteBufferFromFile> download_buffer;
+    RemoteFileReaderPtr remote_file_reader;
+    LocalCacheWriterPtr cache_writer;
 
     size_t downloaded_size = 0;
     size_t reserved_size = 0;

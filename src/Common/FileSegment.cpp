@@ -43,7 +43,7 @@ String FileSegment::getCallerId()
     if (!CurrentThread::isInitialized() || CurrentThread::getQueryId().size == 0)
         throw Exception(ErrorCodes::FILE_CACHE_ERROR, "Cannot use cache without query id");
 
-    return CurrentThread::getQueryId().toString();
+    return CurrentThread::getQueryId().toString() + ":" + toString(getThreadId());
 }
 
 String FileSegment::getOrSetDownloader()
@@ -53,11 +53,19 @@ String FileSegment::getOrSetDownloader()
     if (downloader_id.empty())
     {
         downloader_id = getCallerId();
-        LOG_TEST(&Poco::Logger::get("kssenii " + range().toString() + " "), "Set downloader: {}, prev state: {}", downloader_id, toString(download_state));
+        LOG_TEST(&Poco::Logger::get("kssenii " + range().toString() + " "), "Set downloader: {}, prev state: {}", downloader_id, stateToString(download_state));
         download_state = State::DOWNLOADING;
     }
+    else if (downloader_id == getCallerId())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to set the same downloader for segment {} for the second time", range().toString());
 
-    LOG_TEST(&Poco::Logger::get("kssenii " + range().toString() + " "), "Returning with downloader: {} and state: {}", downloader_id, toString(download_state));
+    LOG_TEST(&Poco::Logger::get("kssenii " + range().toString() + " "), "Returning with downloader: {} and state: {}", downloader_id, stateToString(download_state));
+    return downloader_id;
+}
+
+String FileSegment::getDownloader() const
+{
+    std::lock_guard segment_lock(mutex);
     return downloader_id;
 }
 
@@ -65,6 +73,25 @@ bool FileSegment::isDownloader() const
 {
     std::lock_guard segment_lock(mutex);
     return getCallerId() == downloader_id;
+}
+
+FileSegment::RemoteFileReaderPtr FileSegment::getRemoteFileReader()
+{
+    if (!isDownloader())
+        throw Exception(ErrorCodes::FILE_CACHE_ERROR, "Only downloader can use remote filesystem file reader");
+
+    return remote_file_reader;
+}
+
+void FileSegment::setRemoteFileReader(RemoteFileReaderPtr remote_file_reader_)
+{
+    if (!isDownloader())
+        throw Exception(ErrorCodes::FILE_CACHE_ERROR, "Only downloader can use remote filesystem file reader");
+
+    if (remote_file_reader)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Remote file reader already exists");
+
+    remote_file_reader = remote_file_reader_;
 }
 
 void FileSegment::write(const char * from, size_t size)
@@ -78,15 +105,17 @@ void FileSegment::write(const char * from, size_t size)
             "Not enough space is reserved. Available: {}, expected: {}", availableSize(), size);
 
     if (!isDownloader())
-        throw Exception(ErrorCodes::FILE_CACHE_ERROR, "Only downloader can do the downloading");
+        throw Exception(ErrorCodes::FILE_CACHE_ERROR,
+                        "Only downloader can do the downloading. (CallerId: {}, DownloaderId: {})",
+                        getCallerId(), downloader_id);
 
-    if (!download_buffer)
+    if (!cache_writer)
     {
         auto download_path = cache->path(key(), offset());
-        download_buffer = std::make_unique<WriteBufferFromFile>(download_path);
+        cache_writer = std::make_unique<WriteBufferFromFile>(download_path);
     }
 
-    download_buffer->write(from, size);
+    cache_writer->write(from, size);
     downloaded_size += size;
 }
 
@@ -99,13 +128,15 @@ FileSegment::State FileSegment::wait()
 
     if (download_state == State::DOWNLOADING)
     {
-        LOG_TEST(&Poco::Logger::get("kssenii " + range().toString() + " "), "{} waiting on: {}", downloader_id, range().toString());
+        LOG_TEST(&Poco::Logger::get("kssenii " + range().toString() + " "), "{} waiting on: {}, current downloader: {}", getCallerId(), range().toString(), downloader_id);
 
         assert(!downloader_id.empty() && downloader_id != getCallerId());
 
 #ifndef NDEBUG
-        std::lock_guard cache_lock(cache->mutex);
-        assert(!cache->isLastFileSegmentHolder(key(), offset(), cache_lock));
+        {
+            std::lock_guard cache_lock(cache->mutex);
+            assert(!cache->isLastFileSegmentHolder(key(), offset(), cache_lock));
+        }
 #endif
 
         cv.wait_for(segment_lock, std::chrono::seconds(60)); /// TODO: pass through settings
@@ -150,7 +181,7 @@ bool FileSegment::reserve(size_t size)
     return reserved;
 }
 
-void FileSegment::completeBatch()
+void FileSegment::completeBatchAndResetDownloader()
 {
     {
         std::lock_guard segment_lock(mutex);
@@ -164,8 +195,11 @@ void FileSegment::completeBatch()
 
         if (downloaded_size == range().size())
             download_state = State::DOWNLOADED;
+        else
+            download_state = State::PARTIALLY_DOWNLOADED;
 
         downloader_id.clear();
+        LOG_TEST(&Poco::Logger::get("kssenii " + range().toString() + " "), "Complete batch. Current download offset: {}", downloaded_size);
     }
 
     cv.notify_all();
@@ -190,7 +224,7 @@ void FileSegment::complete(State state)
         {
             cv.notify_all();
             throw Exception(ErrorCodes::FILE_CACHE_ERROR,
-                            "Cannot complete file segment with state: {}", toString(state));
+                            "Cannot complete file segment with state: {}", stateToString(state));
         }
 
         download_state = state;
@@ -256,18 +290,18 @@ void FileSegment::completeImpl(std::lock_guard<std::mutex> & /* segment_lock */)
 
     if (downloader_id == getCallerId())
     {
-        LOG_TEST(&Poco::Logger::get("kssenii " + range().toString() + " "), "Clearing downloader id: {}, current state: {}", downloader_id, toString(download_state));
+        LOG_TEST(&Poco::Logger::get("kssenii " + range().toString() + " "), "Clearing downloader id: {}, current state: {}", downloader_id, stateToString(download_state));
         downloader_id.clear();
     }
 
-    if (!download_can_continue && download_buffer)
+    if (!download_can_continue && cache_writer)
     {
-        download_buffer->sync();
-        download_buffer.reset();
+        cache_writer->sync();
+        cache_writer.reset();
     }
 }
 
-String FileSegment::toString(FileSegment::State state)
+String FileSegment::stateToString(FileSegment::State state)
 {
     switch (state)
     {
