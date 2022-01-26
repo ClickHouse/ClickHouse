@@ -81,6 +81,7 @@ private:
     DataTypes readRowAndGetDataTypes() override;
 
     JSONCompactEachRowFormatReader reader;
+    bool first_row = true;
 };
 
 }

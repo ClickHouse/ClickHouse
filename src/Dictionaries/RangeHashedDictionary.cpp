@@ -537,7 +537,9 @@ void RangeHashedDictionary<dictionary_key_type>::blockToAttributes(const Block &
             if constexpr (std::is_same_v<KeyType, StringRef>)
                 key = copyStringInArena(string_arena, key);
 
-            setAttributeValue(attribute, key, RangeInterval{lower_bound, upper_bound}, attribute_column[key_index]);
+            if (likely(lower_bound <= upper_bound))
+                setAttributeValue(attribute, key, RangeInterval{lower_bound, upper_bound}, attribute_column[key_index]);
+
             keys_extractor.rollbackCurrentKey();
         }
 
@@ -715,19 +717,28 @@ Pipe RangeHashedDictionary<dictionary_key_type>::read(const Names & column_names
             using RangeType = typename LeftDataType::FieldType;
 
             PaddedPODArray<KeyType> keys;
-            PaddedPODArray<RangeType> start_dates;
-            PaddedPODArray<RangeType> end_dates;
-            getKeysAndDates(keys, start_dates, end_dates);
+            PaddedPODArray<RangeType> range_start;
+            PaddedPODArray<RangeType> range_end;
+            getKeysAndDates(keys, range_start, range_end);
 
-            range_min_column = ColumnWithTypeAndName{getColumnFromPODArray(start_dates), dict_struct.range_min->type, dict_struct.range_min->name};
-            range_max_column = ColumnWithTypeAndName{getColumnFromPODArray(end_dates), dict_struct.range_max->type, dict_struct.range_max->name};
+            auto date_column = getColumnFromPODArray(makeDateKeys(range_start, range_end));
+
+            auto range_start_column = getColumnFromPODArray(std::move(range_start));
+            range_min_column = ColumnWithTypeAndName{std::move(range_start_column), dict_struct.range_min->type, dict_struct.range_min->name};
+
+            auto range_end_column = getColumnFromPODArray(std::move(range_end));
+            range_max_column = ColumnWithTypeAndName{std::move(range_end_column), dict_struct.range_max->type, dict_struct.range_max->name};
 
             if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-                key_columns = {ColumnWithTypeAndName(getColumnFromPODArray(keys), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
+            {
+                auto keys_column = getColumnFromPODArray(std::move(keys));
+                key_columns = {ColumnWithTypeAndName(std::move(keys_column), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
+            }
             else
+            {
                 key_columns = deserializeColumnsWithTypeAndNameFromKeys(dict_struct, keys, 0, keys.size());
+            }
 
-            auto date_column = getColumnFromPODArray(makeDateKeys(start_dates, end_dates));
             key_columns.emplace_back(ColumnWithTypeAndName{std::move(date_column), std::make_shared<DataTypeInt64>(), ""});
 
             return true;
@@ -769,6 +780,9 @@ void registerDictionaryRangeHashed(DictionaryFactory & factory)
                 "{}: dictionary of layout 'range_hashed' requires .structure.range_min and .structure.range_max",
                 full_name);
 
+        if (dict_struct.attributes.empty())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Empty attributes are not supported for dictionary of layout 'range_hashed'");
+
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
@@ -791,6 +805,9 @@ void registerDictionaryRangeHashed(DictionaryFactory & factory)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "{}: dictionary of layout 'complex_key_range_hashed' requires .structure.range_min and .structure.range_max",
                 full_name);
+
+        if (dict_struct.attributes.empty())
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Empty attributes are not supported for dictionary of layout 'complex_key_range_hashed'");
 
         const auto dict_id = StorageID::fromDictionaryConfig(config, config_prefix);
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};

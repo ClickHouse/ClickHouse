@@ -27,7 +27,6 @@ issue_17653 = "https://github.com/ClickHouse/ClickHouse/issues/17653"
 issue_17655 = "https://github.com/ClickHouse/ClickHouse/issues/17655"
 issue_17766 = "https://github.com/ClickHouse/ClickHouse/issues/17766"
 issue_18110 = "https://github.com/ClickHouse/ClickHouse/issues/18110"
-issue_18206 = "https://github.com/ClickHouse/ClickHouse/issues/18206"
 issue_21083 = "https://github.com/ClickHouse/ClickHouse/issues/21083"
 issue_21084 = "https://github.com/ClickHouse/ClickHouse/issues/21084"
 issue_25413 = "https://github.com/ClickHouse/ClickHouse/issues/25413"
@@ -122,20 +121,6 @@ xfails = {
         [(Fail, issue_17655)],
     "privileges/public tables/sensitive tables":
         [(Fail, issue_18110)],
-    "privileges/system merges/:/:/:/:/SYSTEM:":
-        [(Fail, issue_18206)],
-    "privileges/system ttl merges/:/:/:/:/SYSTEM:":
-        [(Fail, issue_18206)],
-    "privileges/system moves/:/:/:/:/SYSTEM:":
-        [(Fail, issue_18206)],
-    "privileges/system sends/:/:/:/:/SYSTEM:":
-        [(Fail, issue_18206)],
-    "privileges/system fetches/:/:/:/:/SYSTEM:":
-        [(Fail, issue_18206)],
-    "privileges/system restart replica/:/:/:/:/SYSTEM:":
-        [(Fail, issue_18206)],
-    "privileges/system replication queues/:/:/:/:/SYSTEM:":
-        [(Fail, issue_18206)],
     "privileges/: row policy/nested live:":
         [(Fail, issue_21083)],
     "privileges/: row policy/nested mat:":
@@ -175,10 +160,9 @@ xflags = {
 @Specifications(
     SRS_006_ClickHouse_Role_Based_Access_Control
 )
-def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
+def regression(self, local, clickhouse_binary_path, stress=None):
     """RBAC regression.
     """
-    top().terminating = False
     nodes = {
         "clickhouse":
             ("clickhouse1", "clickhouse2", "clickhouse3")
@@ -186,8 +170,6 @@ def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
 
     if stress is not None:
         self.context.stress = stress
-    if parallel is not None:
-        self.context.parallel = parallel
 
     with Cluster(local, clickhouse_binary_path, nodes=nodes,
             docker_compose_project_dir=os.path.join(current_dir(), "rbac_env")) as cluster:
