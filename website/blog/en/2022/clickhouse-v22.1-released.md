@@ -2,7 +2,7 @@
 title: 'What''s New in ClickHouse 22.1'
 image: 'https://blog-images.clickhouse.com/en/2022/clickhouse-v22-1/featured.jpg'
 date: '2022-01-26'
-author: '[Alexey Milovidov](https://github.com/alexey-milovidov)'
+author: 'Alexey Milovidov'
 tags: ['company', 'community']
 ---
 
