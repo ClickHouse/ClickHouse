@@ -125,12 +125,12 @@ void MergeTreeDataPartInMemory::flushToDisk(const String & base_path, const Stri
                 projection_compression_codec);
 
             projection_out.write(projection_part->block);
-            projection_out.finalizePart(projection_data_part, false).finish();
+            projection_out.finalizePart(projection_data_part, false);
             new_data_part->addProjectionPart(projection_name, std::move(projection_data_part));
         }
     }
 
-    out.finalizePart(new_data_part, false).finish();
+    out.finalizePart(new_data_part, false);
 }
 
 void MergeTreeDataPartInMemory::makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const

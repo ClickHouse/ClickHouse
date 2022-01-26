@@ -982,7 +982,7 @@ private:
         ctx->mutating_executor.reset();
         ctx->mutating_pipeline.reset();
 
-        static_pointer_cast<MergedBlockOutputStream>(ctx->out)->finalizePart(ctx->new_data_part, ctx->need_sync).finish();
+        static_pointer_cast<MergedBlockOutputStream>(ctx->out)->finalizePart(ctx->new_data_part, ctx->need_sync);
         ctx->out.reset();
     }
 

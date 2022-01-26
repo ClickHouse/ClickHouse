@@ -442,7 +442,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPart(
                 temp_part.streams.emplace_back(std::move(stream));
         }
     }
-    auto finalizer = out->finalizePart(new_data_part, data_settings->fsync_after_insert);
+    auto finalizer = out->finalizePartAsync(new_data_part, data_settings->fsync_after_insert);
 
     temp_part.part = new_data_part;
     temp_part.streams.emplace_back(TemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
@@ -548,7 +548,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         compression_codec);
 
     out->writeWithPermutation(block, perm_ptr);
-    auto finalizer = out->finalizePart(new_data_part, false);
+    auto finalizer = out->finalizePartAsync(new_data_part, false);
     temp_part.part = new_data_part;
     temp_part.streams.emplace_back(TemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
 

@@ -50,7 +50,13 @@ public:
 
     /// Finalize writing part and fill inner structures
     /// If part is new and contains projections, they should be added before invoking this method.
-    Finalizer finalizePart(
+    Finalizer finalizePartAsync(
+            MergeTreeData::MutableDataPartPtr & new_part,
+            bool sync,
+            const NamesAndTypesList * total_columns_list = nullptr,
+            MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
+
+    void finalizePart(
             MergeTreeData::MutableDataPartPtr & new_part,
             bool sync,
             const NamesAndTypesList * total_columns_list = nullptr,
