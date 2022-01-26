@@ -1,0 +1,6 @@
+2
+2
+3
+02187_test_function	CREATE FUNCTION `02187_test_function` AS x -> (x + 2)
+3
+4

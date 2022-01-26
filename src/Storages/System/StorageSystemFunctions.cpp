@@ -99,7 +99,7 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
 
         for (const auto & function_name : session_user_defined_executable_functions_names)
         {
-            auto create_query = queryToString(user_defined_sql_functions_factory.get(function_name));
+            auto create_query = queryToString(session_user_defined_executable_functions_factory.get(function_name));
             fillRow(res_columns, function_name, UInt64(0), create_query, FunctionOrigin::SQL_USER_DEFINED, session_user_defined_executable_functions_factory);
         }
     }
