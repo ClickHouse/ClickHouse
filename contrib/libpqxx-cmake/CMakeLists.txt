@@ -70,9 +70,9 @@ set (HDRS
     "${LIBRARY_DIR}/include/pqxx/zview.hxx"
 )
 
-add_library(libpqxx ${SRCS} ${HDRS})
+add_library(_libpqxx ${SRCS} ${HDRS})
 
-target_link_libraries(libpqxx PUBLIC ch_contrib::libpq)
-target_include_directories (libpqxx SYSTEM BEFORE PUBLIC "${LIBRARY_DIR}/include")
+target_link_libraries(_libpqxx PUBLIC ch_contrib::libpq)
+target_include_directories (_libpqxx SYSTEM BEFORE PUBLIC "${LIBRARY_DIR}/include")
 
-add_library(ch_contrib::libpqxx ALIAS libpqxx)
+add_library(ch_contrib::libpqxx ALIAS _libpqxx)

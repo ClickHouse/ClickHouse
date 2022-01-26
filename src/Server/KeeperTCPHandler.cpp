@@ -287,7 +287,7 @@ Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length)
 
 void KeeperTCPHandler::runImpl()
 {
-    setThreadName("TstKprHandler");
+    setThreadName("KeeperHandler");
     ThreadStatus thread_status;
     auto global_receive_timeout = global_context->getSettingsRef().receive_timeout;
     auto global_send_timeout = global_context->getSettingsRef().send_timeout;
