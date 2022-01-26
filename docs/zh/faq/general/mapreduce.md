@@ -1,13 +1,13 @@
 ---
-title: Why not use something like MapReduce?
+title: 为何不使用 MapReduce等技术?
 toc_hidden: true
 toc_priority: 110
 ---
 
-# Why Not Use Something Like MapReduce? {#why-not-use-something-like-mapreduce}
+# 为何不使用 MapReduce等技术? {#why-not-use-something-like-mapreduce}
 
-We can refer to systems like MapReduce as distributed computing systems in which the reduce operation is based on distributed sorting. The most common open-source solution in this class is [Apache Hadoop](http://hadoop.apache.org). Yandex uses its in-house solution, YT.
+我们可以将MapReduce这样的系统称为分布式计算系统，其中的reduce操作是基于分布式排序的。这个类中最常见的开源解决方案是[Apache Hadoop](http://hadoop.apache.org)。Yandex使用其内部解决方案YT。
 
-These systems aren’t appropriate for online queries due to their high latency. In other words, they can’t be used as the back-end for a web interface. These types of systems aren’t useful for real-time data updates. Distributed sorting isn’t the best way to perform reduce operations if the result of the operation and all the intermediate results (if there are any) are located in the RAM of a single server, which is usually the case for online queries. In such a case, a hash table is an optimal way to perform reduce operations. A common approach to optimizing map-reduce tasks is pre-aggregation (partial reduce) using a hash table in RAM. The user performs this optimization manually. Distributed sorting is one of the main causes of reduced performance when running simple map-reduce tasks.
+这些系统不适合用于在线查询，因为它们的延迟很大。换句话说，它们不能被用作网页界面的后端。这些类型的系统对于实时数据更新并不是很有用。如果操作的结果和所有中间结果(如果有的话)都位于单个服务器的内存中，那么分布式排序就不是执行reduce操作的最佳方式，这通常是在线查询的情况。在这种情况下，哈希表是执行reduce操作的最佳方式。优化map-reduce任务的一种常见方法是使用RAM中的哈希表进行预聚合(部分reduce)。用户手动执行此优化。在运行简单的map-reduce任务时，分布式排序是导致性能下降的主要原因之一。
 
-Most MapReduce implementations allow you to execute arbitrary code on a cluster. But a declarative query language is better suited to OLAP to run experiments quickly. For example, Hadoop has Hive and Pig. Also consider Cloudera Impala or Shark (outdated) for Spark, as well as Spark SQL, Presto, and Apache Drill. Performance when running such tasks is highly sub-optimal compared to specialized systems, but relatively high latency makes it unrealistic to use these systems as the backend for a web interface.
+大多数MapReduce实现允许你在集群中执行任意代码。但是声明性查询语言更适合于OLAP，以便快速运行实验。例如，Hadoop有Hive和Pig。还可以考虑使用Cloudera Impala或Shark(已经过时了)来支持Spark，以及Spark SQL、Presto和Apache Drill。与专门的系统相比，运行这些任务的性能是非常不理想的，但是相对较高的延迟使得使用这些系统作为web界面的后端是不现实的。
