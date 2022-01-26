@@ -7,5 +7,5 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 $CLICKHOUSE_CLIENT -q "select * from numbers(10) format Parquet" > $CLICKHOUSE_TMP/data.parquet
-$CLICKHOUSE_LOCAL -q "select * from table" < $CLICKHOUSE_TMP/data.parquet 
+$CLICKHOUSE_LOCAL -q "select * from table" --table-file="-" < $CLICKHOUSE_TMP/data.parquet 
 
