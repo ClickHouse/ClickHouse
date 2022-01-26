@@ -95,6 +95,8 @@ void registerProtobufSchemaReader(FormatFactory & factory)
     {
         return std::make_shared<ProtobufSchemaReader>(settings);
     });
+    factory.registerFileExtension("pb", "Protobuf");
+
     factory.registerExternalSchemaReader("ProtobufSingle", [](const FormatSettings & settings)
     {
         return std::make_shared<ProtobufSchemaReader>(settings);

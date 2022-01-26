@@ -1,6 +1,6 @@
 import random
 
-from helpers.common import Pool, join
+from helpers.common import Pool
 from testflows.core import *
 from testflows.asserts import error
 
@@ -267,12 +267,13 @@ def parallel_login(self, server=None, user_count=10, timeout=300):
                                 with When("I restart the server during parallel login of users in each group"):
                                     for users in user_groups.values():
                                         for check in checks:
-                                            tasks.append(pool.apply_async(check, (users, 0, 25, True)))
+                                            tasks.append(pool.submit(check, (users, 0, 25, True)))
     
-                                    tasks.append(pool.apply_async(restart))
+                                    tasks.append(pool.submit(restart))
                             finally:
                                 with Then("logins during restart should work"):
-                                    join(tasks, timeout)
+                                    for task in tasks:
+                                        task.result(timeout=timeout)
 
                         tasks = []
                         with Pool(4) as pool:
@@ -280,10 +281,11 @@ def parallel_login(self, server=None, user_count=10, timeout=300):
                                 with When("I perform parallel login of users in each group after restart"):
                                     for users in user_groups.values():
                                         for check in checks:
-                                            tasks.append(pool.apply_async(check, (users, 0, 10, False)))
+                                            tasks.append(pool.submit(check, (users, 0, 10, False)))
                             finally:
                                 with Then("logins after restart should work"):
-                                    join(tasks, timeout)
+                                    for task in tasks:
+                                        task.result(timeout=timeout)
 
 @TestOutline(Feature)
 @Name("restart")
