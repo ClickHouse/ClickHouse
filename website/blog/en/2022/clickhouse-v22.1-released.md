@@ -201,6 +201,8 @@ It allows compress data better and optimizes computations, because data in spars
 
 Sparse or full format is selected based on column statistic that is calculated on insert and updated on background merges.
 
+Developed by **Anton Popov**.
+
 We also want to make LowCardinality encoding automatic, stay tuned!
 
 ## Diagnostic Tool For ClickHouse
