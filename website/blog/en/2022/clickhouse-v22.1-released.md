@@ -6,7 +6,7 @@ author: '[Alexey Milovidov](https://github.com/alexey-milovidov)'
 tags: ['company', 'community']
 ---
 
-22.1 is our first release in the new year. It includes 2,599 new commits from 133 contributors, including 43 new contributors:
+22.1 is our first release in the new year. It includes 2,599 new commits from 133 contributors, including 44 new contributors:
 
 > 13DaGGeR, Adri Fernandez, Alexey Gusev, Anselmo D. Adams, Antonio Andelic, Ben, Boris Kuschel, Christoph Wurm, Chun-Sheng, Li, Dao, DimaAmega, Dmitrii Mokhnatkin, Harry-Lee, Justin Hilliard, MaxTheHuman, Meena-Renganathan, Mojtaba Yaghoobzadeh, N. Kolotov, Niek, Orkhan Zeynalli, Rajkumar, Ryad ZENINE, Sergei Trifonov, Suzy Wang, TABLUM.IO, Vitaly Artemyev, Xin Wang, Yatian Xu, Youenn Lebras, dalei2019, fanzhou, gulige, lgbo-ustc, minhthucdao, mreddy017, msirm, olevino, peter279k, save-my-heart, tekeri, usurai, zhoubintao, 李扬.
 
