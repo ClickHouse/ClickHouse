@@ -130,6 +130,7 @@ public:
 
     using iterator = typename List::iterator;
     using const_iterator = typename List::const_iterator;
+
     using ValueUpdater = std::function<void(V & value)>;
 
     std::pair<typename IndexMap::LookupResult, bool> insert(const std::string & key, const V & value)
@@ -235,8 +236,7 @@ public:
         /// We in snapshot mode but updating some node which is already more
         /// fresh than snapshot distance. So it will not participate in
         /// snapshot and we don't need to copy it.
-        /// Because we delete node lazily, adjust cursor to add delete_nodes_count
-        if (snapshot_mode && list_itr->distance_from_begin < snapshot_up_to_size + delete_nodes_count)
+        if (snapshot_mode && list_itr->distance_from_begin < snapshot_up_to_size)
         {
             auto elem_copy = *(list_itr);
             list_itr->active_in_map = false;
@@ -318,7 +318,6 @@ public:
 
     void disableSnapshotMode()
     {
-
         snapshot_mode = false;
         snapshot_up_to_size = 0;
     }
@@ -328,9 +327,11 @@ public:
         return map.size();
     }
 
-    size_t snapshotSize() const
+    size_t snapshotSize()
     {
-        return list.size() - delete_nodes_count;
+        if (delete_nodes_count)
+            clearOutdatedNodes();
+        return list.size();
     }
 
     uint64_t getApproximateDataSize() const
