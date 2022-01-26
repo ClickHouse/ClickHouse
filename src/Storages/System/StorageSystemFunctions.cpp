@@ -92,6 +92,18 @@ void StorageSystemFunctions::fillData(MutableColumns & res_columns, ContextPtr c
         fillRow(res_columns, function_name, UInt64(0), create_query, FunctionOrigin::SQL_USER_DEFINED, user_defined_sql_functions_factory);
     }
 
+    if (context->hasSessionContext())
+    {
+        const auto & session_user_defined_executable_functions_factory = *context->getSessionContext()->getUserDefinedSQLFunctionFactory();
+        const auto & session_user_defined_executable_functions_names = session_user_defined_executable_functions_factory.getAllRegisteredNames();
+
+        for (const auto & function_name : session_user_defined_executable_functions_names)
+        {
+            auto create_query = queryToString(user_defined_sql_functions_factory.get(function_name));
+            fillRow(res_columns, function_name, UInt64(0), create_query, FunctionOrigin::SQL_USER_DEFINED, session_user_defined_executable_functions_factory);
+        }
+    }
+
     const auto & user_defined_executable_functions_factory = UserDefinedExecutableFunctionFactory::instance();
     const auto & user_defined_executable_functions_names = user_defined_executable_functions_factory.getRegisteredNames(context);
     for (const auto & function_name : user_defined_executable_functions_names)

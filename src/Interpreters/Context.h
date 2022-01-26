@@ -7,6 +7,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/UserDefinedSQLFunctionFactory.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/MultiVersion.h>
@@ -218,6 +219,7 @@ private:
     TemporaryTablesMapping external_tables_mapping;
     Scalars scalars;
     Scalars local_scalars;
+    std::shared_ptr<UserDefinedSQLFunctionFactory> user_defined_sql_functions_factory;
 
     /// Used in s3Cluster table function. With this callback, a worker node could ask an initiator
     /// about next file to read from s3.
@@ -471,6 +473,8 @@ public:
     Tables getExternalTables() const;
     void addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table);
     std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
+
+    std::shared_ptr<UserDefinedSQLFunctionFactory> & getUserDefinedSQLFunctionFactory();
 
     const Scalars & getScalars() const;
     const Block & getScalar(const String & name) const;

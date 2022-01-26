@@ -1221,9 +1221,10 @@ TreeRewriterResultPtr TreeRewriter::analyze(
 }
 
 void TreeRewriter::normalize(
-    ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases)
+    ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases) const
 {
     UserDefinedSQLFunctionVisitor::Data data_user_defined_functions_visitor;
+    data_user_defined_functions_visitor.current_context = getContext();
     UserDefinedSQLFunctionVisitor(data_user_defined_functions_visitor).visit(query);
 
     CustomizeCountDistinctVisitor::Data data_count_distinct{settings.count_distinct_implementation};

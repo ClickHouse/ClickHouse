@@ -18,12 +18,16 @@ ASTPtr ASTCreateFunctionQuery::clone() const
 
     res->function_core = function_core->clone();
     res->children.push_back(res->function_core);
+
     return res;
 }
 
 void ASTCreateFunctionQuery::formatImpl(const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "") << "CREATE ";
+
+    if (is_temporary)
+        settings.ostr << "TEMPORARY ";
 
     if (or_replace)
         settings.ostr << "OR REPLACE ";

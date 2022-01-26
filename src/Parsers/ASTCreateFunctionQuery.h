@@ -14,6 +14,7 @@ public:
     ASTPtr function_core;
 
     bool or_replace = false;
+    bool is_temporary = false;
     bool if_not_exists = false;
 
     String getID(char delim) const override { return "CreateFunctionQuery" + (delim + getFunctionName()); }

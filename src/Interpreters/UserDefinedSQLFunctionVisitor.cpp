@@ -9,6 +9,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Interpreters/UserDefinedSQLFunctionFactory.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -19,14 +20,14 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-void UserDefinedSQLFunctionMatcher::visit(ASTPtr & ast, Data &)
+void UserDefinedSQLFunctionMatcher::visit(ASTPtr & ast, Data & data)
 {
     auto * function = ast->as<ASTFunction>();
     if (!function)
         return;
 
     std::unordered_set<std::string> udf_in_replace_process;
-    auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process);
+    auto replace_result = tryToReplaceFunction(*function, data.current_context, udf_in_replace_process);
     if (replace_result)
         ast = replace_result;
 }
@@ -36,7 +37,7 @@ bool UserDefinedSQLFunctionMatcher::needChildVisit(const ASTPtr &, const ASTPtr 
     return true;
 }
 
-ASTPtr UserDefinedSQLFunctionMatcher::tryToReplaceFunction(const ASTFunction & function, std::unordered_set<std::string> & udf_in_replace_process)
+ASTPtr UserDefinedSQLFunctionMatcher::tryToReplaceFunction(const ASTFunction & function, ContextPtr context, std::unordered_set<std::string> & udf_in_replace_process)
 {
     if (udf_in_replace_process.find(function.name) != udf_in_replace_process.end())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -44,6 +45,9 @@ ASTPtr UserDefinedSQLFunctionMatcher::tryToReplaceFunction(const ASTFunction & f
             function.name);
 
     auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function.name);
+    if (!user_defined_function && context->hasSessionContext())
+        user_defined_function = context->getSessionContext()->getUserDefinedSQLFunctionFactory()->tryGet(function.name);
+
     if (!user_defined_function)
         return nullptr;
 
@@ -93,7 +97,7 @@ ASTPtr UserDefinedSQLFunctionMatcher::tryToReplaceFunction(const ASTFunction & f
         {
             if (auto * inner_function = child->as<ASTFunction>())
             {
-                auto replace_result = tryToReplaceFunction(*inner_function, udf_in_replace_process);
+                auto replace_result = tryToReplaceFunction(*inner_function, context, udf_in_replace_process);
                 if (replace_result)
                     child = replace_result;
             }

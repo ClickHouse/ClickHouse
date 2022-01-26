@@ -26,6 +26,7 @@ public:
 
     struct Data
     {
+        ContextPtr current_context;
     };
 
     static void visit(ASTPtr & ast, Data & data);
@@ -34,7 +35,7 @@ public:
 private:
     static void visit(ASTFunction & func, const Data & data);
 
-    static ASTPtr tryToReplaceFunction(const ASTFunction & function, std::unordered_set<std::string> & udf_in_replace_process);
+    static ASTPtr tryToReplaceFunction(const ASTFunction & function, ContextPtr context, std::unordered_set<std::string> & udf_in_replace_process);
 
 };
 

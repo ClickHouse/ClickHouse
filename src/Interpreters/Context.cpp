@@ -938,6 +938,16 @@ std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String 
     return holder;
 }
 
+std::shared_ptr<UserDefinedSQLFunctionFactory> & Context::getUserDefinedSQLFunctionFactory()
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have temporary user defined sql function factory");
+
+    if (!user_defined_sql_functions_factory)
+        user_defined_sql_functions_factory = std::make_shared<UserDefinedSQLFunctionFactory>();
+
+    return user_defined_sql_functions_factory;
+}
 
 void Context::addScalar(const String & name, const Block & block)
 {

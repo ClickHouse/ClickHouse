@@ -14,6 +14,7 @@ namespace DB
 bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_create("CREATE");
+    ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_function("FUNCTION");
     ParserKeyword s_or_replace("OR REPLACE");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
@@ -28,11 +29,15 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     String cluster_str;
     bool or_replace = false;
     bool if_not_exists = false;
+    bool is_temporary = false;
 
     if (!s_create.ignore(pos, expected))
         return false;
 
-    if (s_or_replace.ignore(pos, expected))
+    if (s_temporary.ignore(pos, expected))
+        is_temporary = true;
+
+    if (!is_temporary && s_or_replace.ignore(pos, expected))
         or_replace = true;
 
     if (!s_function.ignore(pos, expected))
@@ -67,6 +72,7 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
 
     create_function_query->or_replace = or_replace;
     create_function_query->if_not_exists = if_not_exists;
+    create_function_query->is_temporary = is_temporary;
     create_function_query->cluster = std::move(cluster_str);
 
     return true;
