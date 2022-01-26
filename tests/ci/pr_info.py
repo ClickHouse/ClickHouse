@@ -235,6 +235,7 @@ class PRInfo:
         return False
 
     def can_skip_builds_and_use_version_from_master(self):
+        # TODO: See a broken loop
         if "force tests" in self.labels:
             return False
 
@@ -242,6 +243,7 @@ class PRInfo:
             return False
 
         for f in self.changed_files:
+            # TODO: this logic is broken, should be fixed before using
             if (
                 not f.startswith("tests/queries")
                 or not f.startswith("tests/integration")
@@ -252,6 +254,7 @@ class PRInfo:
         return True
 
     def can_skip_integration_tests(self):
+        # TODO: See a broken loop
         if "force tests" in self.labels:
             return False
 
@@ -259,6 +262,7 @@ class PRInfo:
             return False
 
         for f in self.changed_files:
+            # TODO: this logic is broken, should be fixed before using
             if not f.startswith("tests/queries") or not f.startswith(
                 "tests/performance"
             ):
@@ -267,6 +271,7 @@ class PRInfo:
         return True
 
     def can_skip_functional_tests(self):
+        # TODO: See a broken loop
         if "force tests" in self.labels:
             return False
 
@@ -274,6 +279,7 @@ class PRInfo:
             return False
 
         for f in self.changed_files:
+            # TODO: this logic is broken, should be fixed before using
             if not f.startswith("tests/integration") or not f.startswith(
                 "tests/performance"
             ):
