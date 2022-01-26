@@ -6,11 +6,11 @@ author: '[Alexey Milovidov](https://github.com/alexey-milovidov)'
 tags: ['company', 'community']
 ---
 
-22.1 is our first release in the new year, it includes 2599 new commits from 133 contributors, including 43 new contributors:
+22.1 is our first release in the new year. It includes 2,599 new commits from 133 contributors, including 44 new contributors:
 
 > 13DaGGeR, Adri Fernandez, Alexey Gusev, Anselmo D. Adams, Antonio Andelic, Ben, Boris Kuschel, Christoph Wurm, Chun-Sheng, Li, Dao, DimaAmega, Dmitrii Mokhnatkin, Harry-Lee, Justin Hilliard, MaxTheHuman, Meena-Renganathan, Mojtaba Yaghoobzadeh, N. Kolotov, Niek, Orkhan Zeynalli, Rajkumar, Ryad ZENINE, Sergei Trifonov, Suzy Wang, TABLUM.IO, Vitaly Artemyev, Xin Wang, Yatian Xu, Youenn Lebras, dalei2019, fanzhou, gulige, lgbo-ustc, minhthucdao, mreddy017, msirm, olevino, peter279k, save-my-heart, tekeri, usurai, zhoubintao, 李扬.
 
-Don't forget to run `SELECT * FROM system.contributors` query on your production server!
+Don't forget to run `SELECT * FROM system.contributors` on your production server!
 
 Let's describe the most important new features in 22.1.
 
@@ -84,7 +84,7 @@ $$
 $$)
 ```
 
-In this query we are importing data with the `url` table function. Data is posted on an HTTP server in `.native.xz` file. The most annoying part of this query is that we have to specify the data structure and the format of this file.
+In this query we are importing data with the `url` table function. Data is posted on an HTTP server in a `.native.xz` file. The most annoying part of this query is that we have to specify the data structure and the format of this file.
 
 In the new ClickHouse release 22.1 it becomes much easier:
 
@@ -94,15 +94,15 @@ SELECT * FROM url('https://datasets.clickhouse.com/github_events_v2.native.xz')
 
 Cannot be more easy! How is that possible?
 
-Firstly, we detect data format automatically from file extension. Here it is `.native.xz`, so we know that the data is compressed by `xz` (LZMA2) compression and is represented in `Native` format. The `Native` format already contains all information about the types and names of the columns, and we just read and use it.
+Firstly, we detect the data format automatically from the file extension. Here it is `.native.xz`, so we know that the data is compressed by `xz` (LZMA2) compression and is represented in `Native` format. The `Native` format already contains all information about the types and names of the columns, and we just read and use it.
 
 It works for every format that contains information about the data types: `Native`, `Avro`, `Parquet`, `ORC`, `Arrow` as well as `CSVWithNamesAndTypes`, `TSVWithNamesAndTypes`.
 
 And it works for every table function that reads files: `s3`, `file`, `hdfs`, `url`, `s3Cluster`, `hdfsCluster`.
 
-A lot of magic happens under the hood. It does not require reading the whole file in memory. For example, Parquet format has metadata at the end of file. So, we will read the header first to find where the metadata is located, then do a range request to read the metadata about columns and their types, then continue to read the requested columns. And if the file is small, it will be read with a single request.
+A lot of magic happens under the hood. It does not require reading the whole file in memory. For example, Parquet format has metadata at the end of file. So, we read the header first to find where the metadata is located, then do a range request to read the metadata about columns and their types, then continue to read the requested columns. And if the file is small, it will be read with a single request.
 
-If you want to extract the structure from the file without data processing, DESCRIBE query is available:
+If you want to extract the structure from the file without data processing, the DESCRIBE query is available:
 
 ```
 DESCRIBE url('https://datasets.clickhouse.com/github_events_v2.native.xz')
@@ -114,7 +114,7 @@ For `CSV`, either Float64 or String is inferred. For `JSONEachRow` the inference
 
 If a format does not have column names (like `CSV` without a header), the names `c1`, `c2`, ... are used.
 
-File format is detected from file extension: `csv`, `tsv`, `native`, `parquet`, `pb`, `ndjson`, `orc`... For example, `.ndjson` file is recognized as `JSONEachRow` format and `.csv` is recognized as header-less `CSV` format in ClickHouse, and if you want `CSVWithNames` you can specify the format explicitly.
+File format is detected from the file extension: `csv`, `tsv`, `native`, `parquet`, `pb`, `ndjson`, `orc`... For example, `.ndjson` file is recognized as `JSONEachRow` format and `.csv` is recognized as header-less `CSV` format in ClickHouse, and if you want `CSVWithNames` you can specify the format explicitly.
 
 We support "schema on demand" queries. For example, the autodetected data types for `TSV` format are Strings, but you can refine the types in your query with the `::` operator:
 
@@ -131,7 +131,7 @@ SELECT extractTextFromHTML(*)
     FROM url('https://news.ycombinator.com/', LineAsString);
 ```
 
-Schema autodetection also works while creating `Merge`, `Distributed` and `ReplicatedMegreTree` tables. When you create the first replica, you will have to specify the table structure. But when creating all the subsequent replicas, you only write `CREATE TABLE hits
+Schema autodetection also works while creating `Merge`, `Distributed` and `ReplicatedMegreTree` tables. When you create the first replica, you have to specify the table structure. But when creating all the subsequent replicas, you only need `CREATE TABLE hits
 ENGINE = ReplicatedMegreTree(...)` without listing the columns - the definition will be copied from another replica.
 
 This feature is implemented by **Pavel Kruglov** with the inspiration of initial work by **Igor Baliuk** and with additions by **ZhongYuanKai**.
@@ -146,7 +146,7 @@ Now it shows realtime CPU and memory usage for the query directly in the progres
 
 For distributed queries, we show both total memory usage and max memory usage per host.
 
-This feature has made possible by implementation of distributed metrics forwarding by **Dmitry Novik**. I have added this small visualization to clickhouse-client, and now it is possible to add similar info in every client using native ClickHouse protocol. 
+This feature was made possible by implementation of distributed metrics forwarding by **Dmitry Novik**. I have added this small visualization to clickhouse-client, and now it is possible to add similar info in every client using native ClickHouse protocol. 
 
 ## Parallel Query Processing On Replicas
 
@@ -160,11 +160,11 @@ Now we have a setting to enable the new parallel processing algorithm: `allow_ex
 
 It works perfectly even if replicas have lower or higher amounts of computation resources. And it gives a complete result even if some replicas are stale.
 
-This feature is implemented by **Nikita Mikhaylov**
+This feature was implemented by **Nikita Mikhaylov**
 
 ## Service Discovery
 
-When adding or removing nodes in a cluster, now you don't have to edit config on every server. Just use automatic cluster and servers will register itself: 
+When adding or removing nodes in a cluster, now you don't have to edit the config on every server. Just use automatic cluster and servers will register itself: 
 
 ```
 <allow_experimental_cluster_discovery>1
@@ -180,9 +180,9 @@ When adding or removing nodes in a cluster, now you don't have to edit config on
 </remote_servers>
 ```
 
-No need to edit config on adding new replicas!
+There is no need to edit the config when adding new replicas!
 
-This feature is implemented by **Vladimir Cherkasov**.
+This feature was implemented by **Vladimir Cherkasov**.
 
 ## Sparse Encoding For Columns
 
@@ -218,7 +218,7 @@ Developed by **Alexander Burmak**.
 
 Plenty of new integrations were added in 22.1:
 
-Integration with **Hive** as foreign table engine for SELECT queries, contributed by **Taiyang Li** and reviewed by **Ksenia Sumarokova**.
+Integration with **Hive** as a foreign table engine for SELECT queries, contributed by **Taiyang Li** and reviewed by **Ksenia Sumarokova**.
 
 Integration with **Azure Blob Storage** similar to S3, contributed by **Jakub Kuklis** and reviewed by **Ksenia Sumarokova**.
 
@@ -226,7 +226,7 @@ Support for **hdfsCluster** table function similar to **s3Cluster**, contributed
 
 ## Statistical Functions
 
-I hope you have always dreamed of calculating the Cramer's V and Theil's U coefficients in ClickHouse. Because now we have these functions for you and you have to deal with it.
+I hope you have always dreamed of calculating the Cramer's V and Theil's U coefficients in ClickHouse, because now we have these functions for you and you have to deal with it.
 
 ```
 :) SELECT cramersV(URL, URLDomain) FROM test.hits
