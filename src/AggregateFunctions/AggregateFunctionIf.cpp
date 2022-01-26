@@ -72,9 +72,9 @@ private:
     using Base = AggregateFunctionNullBase<result_is_nullable, serialize_flag,
         AggregateFunctionIfNullUnary<result_is_nullable, serialize_flag>>;
 
-    inline bool singleFilter(const IColumn ** columns, size_t row_num, size_t num_arguments) const
+    inline bool singleFilter(const IColumn ** columns, size_t row_num, size_t num_arguments_) const
     {
-        const IColumn * filter_column = columns[num_arguments - 1];
+        const IColumn * filter_column = columns[num_arguments_ - 1];
 
         if (filter_is_nullable)
         {
