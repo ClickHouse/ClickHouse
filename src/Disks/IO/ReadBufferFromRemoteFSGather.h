@@ -52,7 +52,7 @@ public:
     bool initialized() const { return current_buf != nullptr; }
 
 protected:
-    virtual SeekableReadBufferPtr createImplementationBuffer(const String & path) = 0;
+    virtual SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t file_size) = 0;
 
     RemoteMetadata metadata;
 
@@ -104,7 +104,7 @@ public:
     {
     }
 
-    SeekableReadBufferPtr createImplementationBuffer(const String & path) override;
+    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t file_size) override;
 
 private:
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
@@ -135,7 +135,7 @@ public:
     {
     }
 
-    SeekableReadBufferPtr createImplementationBuffer(const String & path) override;
+    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t file_size) override;
 
 private:
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
@@ -162,7 +162,7 @@ public:
     {
     }
 
-    SeekableReadBufferPtr createImplementationBuffer(const String & path) override;
+    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t file_size) override;
 
 private:
     String uri;
@@ -191,7 +191,7 @@ public:
         hdfs_uri = hdfs_uri_.substr(0, begin_of_path);
     }
 
-    SeekableReadBufferPtr createImplementationBuffer(const String & path) override;
+    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t file_size) override;
 
 private:
     const Poco::Util::AbstractConfiguration & config;

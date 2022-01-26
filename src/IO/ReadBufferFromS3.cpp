@@ -154,6 +154,8 @@ bool ReadBufferFromS3::nextImpl()
 
 off_t ReadBufferFromS3::seek(off_t offset_, int whence)
 {
+    LOG_TEST(&Poco::Logger::get("kssenii"), "kssenii read buffer from s3 seek to: {}", offset_);
+
     if (impl && restricted_seek)
         throw Exception("Seek is allowed only before first read attempt from the buffer.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
@@ -221,8 +223,11 @@ off_t ReadBufferFromS3::getPosition()
 
 void ReadBufferFromS3::setReadUntilPosition(size_t position)
 {
-    read_until_position = position;
-    impl.reset();
+    if (position != static_cast<size_t>(read_until_position))
+    {
+        read_until_position = position;
+        impl.reset();
+    }
 }
 
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()

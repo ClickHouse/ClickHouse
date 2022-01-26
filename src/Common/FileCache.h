@@ -58,7 +58,7 @@ public:
     virtual void remove(const Key & key) = 0;
 
     /// For debug.
-    virtual String dumpStructure() = 0;
+    virtual String dumpStructure(const Key & key) = 0;
 
 protected:
     String cache_base_path;
@@ -173,7 +173,7 @@ public:
 
     Stat getStat();
 
-    String dumpStructure() override;
+    String dumpStructure(const Key & key_) override;
 };
 
 }

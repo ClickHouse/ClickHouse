@@ -590,7 +590,7 @@ LRUFileCache::FileSegmentCell::FileSegmentCell(FileSegmentPtr file_segment_, LRU
     }
 }
 
-String LRUFileCache::dumpStructure()
+String LRUFileCache::dumpStructure(const Key & key_)
 {
     std::lock_guard cache_lock(mutex);
 
@@ -598,9 +598,12 @@ String LRUFileCache::dumpStructure()
     for (auto it = queue.begin(); it != queue.end(); ++it)
     {
         auto [key, offset] = *it;
-        auto * cell = getCell(key, offset, cache_lock);
-        result << (it != queue.begin() ? ", " : "") << cell->file_segment->range().toString();
-        result << "(state: " << cell->file_segment->download_state << ")";
+        if (key == key_)
+        {
+            auto * cell = getCell(key, offset, cache_lock);
+            result << (it != queue.begin() ? ", " : "") << cell->file_segment->range().toString();
+            result << "(state: " << cell->file_segment->download_state << ")";
+        }
     }
     return result.str();
 }

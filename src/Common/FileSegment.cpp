@@ -53,9 +53,11 @@ String FileSegment::getOrSetDownloader()
     if (downloader_id.empty())
     {
         downloader_id = getCallerId();
+        LOG_TEST(&Poco::Logger::get("kssenii " + range().toString() + " "), "Set downloader: {}, prev state: {}", downloader_id, toString(download_state));
         download_state = State::DOWNLOADING;
     }
 
+    LOG_TEST(&Poco::Logger::get("kssenii " + range().toString() + " "), "Returning with downloader: {} and state: {}", downloader_id, toString(download_state));
     return downloader_id;
 }
 
@@ -97,7 +99,15 @@ FileSegment::State FileSegment::wait()
 
     if (download_state == State::DOWNLOADING)
     {
-        LOG_TEST(&Poco::Logger::get("kssenii"), "Waiting on: {}", range().toString());
+        LOG_TEST(&Poco::Logger::get("kssenii " + range().toString() + " "), "{} waiting on: {}", downloader_id, range().toString());
+
+        assert(!downloader_id.empty() && downloader_id != getCallerId());
+
+#ifndef NDEBUG
+        std::lock_guard cache_lock(cache->mutex);
+        assert(!cache->isLastFileSegmentHolder(key(), offset(), cache_lock));
+#endif
+
         cv.wait_for(segment_lock, std::chrono::seconds(60)); /// TODO: pass through settings
     }
 
@@ -116,8 +126,9 @@ bool FileSegment::reserve(size_t size)
                         "Attempt to reserve space too much space ({}) for file segment with range: {} (downloaded size: {})",
                         size, range().toString(), downloaded_size);
 
-    if (downloader_id != getCallerId())
-        throw Exception(ErrorCodes::FILE_CACHE_ERROR, "Space can be reserved only by downloader");
+    auto caller_id = getCallerId();
+    if (downloader_id != caller_id)
+        throw Exception(ErrorCodes::FILE_CACHE_ERROR, "Space can be reserved only by downloader (current: {}, expected: {})", caller_id, downloader_id);
 
     assert(reserved_size >= downloaded_size);
 
@@ -139,22 +150,48 @@ bool FileSegment::reserve(size_t size)
     return reserved;
 }
 
+void FileSegment::completeBatch()
+{
+    {
+        std::lock_guard segment_lock(mutex);
+
+        bool is_downloader = downloader_id == getCallerId();
+        if (!is_downloader)
+        {
+            cv.notify_all();
+            throw Exception(ErrorCodes::FILE_CACHE_ERROR, "File segment can be completed only by downloader");
+        }
+
+        if (downloaded_size == range().size())
+            download_state = State::DOWNLOADED;
+
+        downloader_id.clear();
+    }
+
+    cv.notify_all();
+}
+
 void FileSegment::complete(State state)
 {
     {
         std::lock_guard segment_lock(mutex);
 
         bool is_downloader = downloader_id == getCallerId();
-
         if (!is_downloader)
+        {
+            cv.notify_all();
             throw Exception(ErrorCodes::FILE_CACHE_ERROR,
                             "File segment can be completed only by downloader or downloader's FileSegmentsHodler");
+        }
 
         if (state != State::DOWNLOADED
             && state != State::PARTIALLY_DOWNLOADED
             && state != State::PARTIALLY_DOWNLOADED_NO_CONTINUATION)
+        {
+            cv.notify_all();
             throw Exception(ErrorCodes::FILE_CACHE_ERROR,
                             "Cannot complete file segment with state: {}", toString(state));
+        }
 
         download_state = state;
         completeImpl(segment_lock);
@@ -174,7 +211,7 @@ void FileSegment::complete()
         if (downloaded_size == range().size() && download_state != State::DOWNLOADED)
             download_state = State::DOWNLOADED;
 
-        if (download_state == State::DOWNLOADING)
+        if (download_state == State::DOWNLOADING || download_state == State::EMPTY)
             download_state = State::PARTIALLY_DOWNLOADED;
 
         completeImpl(segment_lock);
@@ -200,6 +237,7 @@ void FileSegment::completeImpl(std::lock_guard<std::mutex> & /* segment_lock */)
             if (!downloaded_size)
             {
                 download_state = State::SKIP_CACHE;
+                LOG_TEST(&Poco::Logger::get("kssenii " + range().toString() + " "), "Remove cell {} (downloaded: {})", range().toString(), downloaded_size);
                 cache->remove(key(), offset(), cache_lock);
             }
             else if (is_last_holder)
@@ -210,13 +248,17 @@ void FileSegment::completeImpl(std::lock_guard<std::mutex> & /* segment_lock */)
                 * in FileSegmentsHolder represent a contiguous range, so we can resize
                 * it only when nobody needs it.
                 */
+                LOG_TEST(&Poco::Logger::get("kssenii " + range().toString() + " "), "Resize cell {} to downloaded: {}", range().toString(), downloaded_size);
                 cache->reduceSizeToDownloaded(key(), offset(), cache_lock);
             }
         }
     }
 
     if (downloader_id == getCallerId())
+    {
+        LOG_TEST(&Poco::Logger::get("kssenii " + range().toString() + " "), "Clearing downloader id: {}, current state: {}", downloader_id, toString(download_state));
         downloader_id.clear();
+    }
 
     if (!download_can_continue && download_buffer)
     {

@@ -72,6 +72,8 @@ public:
 
         Range(size_t left_, size_t right_) : left(left_), right(right_) {}
 
+        bool operator==(const Range & other) const { return left == other.left && right == other.right; }
+
         size_t size() const { return right - left + 1; }
 
         String toString() const { return '[' + std::to_string(left) + ',' + std::to_string(right) + ']'; }
@@ -91,6 +93,8 @@ public:
 
     void complete(State state);
 
+    void completeBatch();
+
     String getOrSetDownloader();
 
     bool isDownloader() const;
@@ -99,6 +103,7 @@ public:
 
     static String getCallerId();
 
+    String downloader_id;
 private:
     size_t availableSize() const { return reserved_size - downloaded_size; }
     bool lastFileSegmentHolder() const;
@@ -108,7 +113,6 @@ private:
     const Range segment_range;
 
     State download_state;
-    String downloader_id;
 
     std::unique_ptr<WriteBufferFromFile> download_buffer;
 

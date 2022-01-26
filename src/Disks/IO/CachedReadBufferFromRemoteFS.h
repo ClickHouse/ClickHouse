@@ -43,8 +43,7 @@ private:
 
     size_t read_until_position;
     size_t file_offset_of_buffer_end = 0;
-
-    String query_id;
+    size_t bytes_to_predownload = 0;
 
     std::optional<FileSegmentsHolder> file_segments_holder;
     FileSegments::iterator current_file_segment_it;
