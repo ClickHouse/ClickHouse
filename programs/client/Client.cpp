@@ -1006,7 +1006,7 @@ void Client::addOptions(OptionsDescription & options_description)
         ("host,h", po::value<std::vector<HostPort>>()->multitoken()->default_value({{"localhost"}}, "localhost"),
          "list of server hosts with optionally assigned port to connect. List elements are separated by a space."
          "Every list element looks like '<host>[:<port>]'. If port isn't assigned, connection is made by port from '--port' param"
-         "Example of usage: '-h host1:1 host2, host3:3'")
+         "Example of usage: '-h host1:1 host2 host3:3'")
         ("port", po::value<int>()->default_value(9000), "server port, which is default port for every host from '--host' param")
         ("secure,s", "Use TLS connection")
         ("user,u", po::value<std::string>()->default_value("default"), "user")
