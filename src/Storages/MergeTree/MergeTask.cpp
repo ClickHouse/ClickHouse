@@ -633,14 +633,11 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
         global_ctx->new_data_part->addProjectionPart(part->name, std::move(part));
     }
 
-    std::optional<MergedBlockOutputStream::Finalizer> finalizer;
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
-        finalizer = global_ctx->to->finalizePart(global_ctx->new_data_part, ctx->need_sync);
+        global_ctx->to->finalizePart(global_ctx->new_data_part, ctx->need_sync);
     else
-        finalizer = global_ctx->to->finalizePart(
+        global_ctx->to->finalizePart(
             global_ctx->new_data_part, ctx->need_sync, &global_ctx->storage_columns, &global_ctx->checksums_gathered_columns);
-
-    finalizer->finish();
 
     global_ctx->promise.set_value(global_ctx->new_data_part);
 

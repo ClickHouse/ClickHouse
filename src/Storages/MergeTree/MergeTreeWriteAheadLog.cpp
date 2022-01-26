@@ -213,7 +213,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
                 if (projection_block.rows())
                     part->addProjectionPart(projection.name, std::move(temp_part.part));
             }
-            part_out.finalizePart(part, false).finish();
+            part_out.finalizePart(part, false);
 
             min_block_number = std::min(min_block_number, part->info.min_block);
             max_block_number = std::max(max_block_number, part->info.max_block);

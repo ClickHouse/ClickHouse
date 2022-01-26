@@ -102,7 +102,16 @@ MergedBlockOutputStream::Finalizer::Finalizer(Finalizer &&) = default;
 MergedBlockOutputStream::Finalizer & MergedBlockOutputStream::Finalizer::operator=(Finalizer &&) = default;
 MergedBlockOutputStream::Finalizer::Finalizer(std::unique_ptr<Impl> impl_) : impl(std::move(impl_)) {}
 
-MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePart(
+void MergedBlockOutputStream::finalizePart(
+        MergeTreeData::MutableDataPartPtr & new_part,
+        bool sync,
+        const NamesAndTypesList * total_columns_list,
+        MergeTreeData::DataPart::Checksums * additional_column_checksums)
+{
+    finalizePartAsync(new_part, sync, total_columns_list, additional_column_checksums).finish();
+}
+
+MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         MergeTreeData::MutableDataPartPtr & new_part,
         bool sync,
         const NamesAndTypesList * total_columns_list,
