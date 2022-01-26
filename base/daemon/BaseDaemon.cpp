@@ -82,7 +82,7 @@ static void call_default_signal_handler(int sig)
 static const size_t signal_pipe_buf_size =
     sizeof(int)
     + sizeof(siginfo_t)
-    + sizeof(mcontext_t)
+    + sizeof(ucontext_t*)
     + sizeof(StackTrace)
     + sizeof(UInt32)
     + sizeof(void*);
@@ -125,12 +125,12 @@ static void signalHandler(int sig, siginfo_t * info, void * context)
     char buf[signal_pipe_buf_size];
     DB::WriteBufferFromFileDescriptorDiscardOnFailure out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
 
-    const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
-    const StackTrace stack_trace(signal_context);
+    const ucontext_t * signal_context = reinterpret_cast<ucontext_t *>(context);
+    const StackTrace stack_trace(*signal_context);
 
     DB::writeBinary(sig, out);
     DB::writePODBinary(*info, out);
-    DB::writePODBinary(signal_context.uc_mcontext, out);
+    DB::writePODBinary(signal_context, out);
     DB::writePODBinary(stack_trace, out);
     DB::writeBinary(UInt32(getThreadId()), out);
     DB::writePODBinary(DB::current_thread, out);
@@ -221,7 +221,7 @@ public:
             else
             {
                 siginfo_t info{};
-                mcontext_t mcontext{};
+                ucontext_t * context{};
                 StackTrace stack_trace(NoCapture{});
                 UInt32 thread_num{};
                 DB::ThreadStatus * thread_ptr{};
@@ -238,7 +238,7 @@ public:
 
                 /// This allows to receive more signals if failure happens inside onFault function.
                 /// Example: segfault while symbolizing stack trace.
-                std::thread([=, this] { onFault(sig, info, mcontext, stack_trace, thread_num, thread_ptr); }).detach();
+                std::thread([=, this] { onFault(sig, info, *context, stack_trace, thread_num, thread_ptr); }).detach();
             }
         }
     }
@@ -271,7 +271,7 @@ private:
     void onFault(
         int sig,
         const siginfo_t & info,
-        const mcontext_t & mcontext,
+        const ucontext_t & context,
         const StackTrace & stack_trace,
         UInt32 thread_num,
         DB::ThreadStatus * thread_ptr) const
@@ -314,7 +314,7 @@ private:
         String error_message;
 
         if (sig != SanitizerTrap)
-            error_message = signalToErrorMessage(sig, info, mcontext);
+            error_message = signalToErrorMessage(sig, info, context);
         else
             error_message = "Sanitizer trap.";
 
