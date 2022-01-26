@@ -397,9 +397,9 @@ SELECT arrayPushFront(['b'], 'a') AS res
 
 **参数**
 
--   `array` – 数组。
--   `offset` – 数组的偏移。正值表示左侧的偏移量，负值表示右侧的缩进值。数组下标从1开始。
--   `length` - 子数组的长度。如果指定负值，则该函数返回`[offset，array_length  -  length`。如果省略该值，则该函数返回`[offset，the_end_of_array]`。
+- `array` – 数组。
+- `offset` – 数组的偏移。正值表示左侧的偏移量，负值表示右侧的缩进值。数组下标从1开始。
+- `length` - 子数组的长度。如果指定负值，则该函数返回`[offset，array_length - length]`。如果省略该值，则该函数返回`[offset，the_end_of_array]`。
 
 **示例**
 
