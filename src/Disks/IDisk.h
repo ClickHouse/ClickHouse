@@ -211,7 +211,7 @@ public:
     using RemoveBatchRequest = std::vector<RemoveRequest>;
 
     /// Batch request to remove multiple files.
-    /// Bay be much faster for blob storage.
+    /// May be much faster for blob storage.
     virtual void removeSharedFiles(const RemoveBatchRequest & files, bool keep_in_remote_fs)
     {
         for (const auto & file : files)
