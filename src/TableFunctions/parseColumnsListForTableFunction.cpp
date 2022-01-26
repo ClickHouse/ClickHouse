@@ -36,7 +36,7 @@ bool tryParseColumnsListFromString(const std::string & structure, ColumnsDescrip
     String error;
     const char * start = structure.data();
     const char * end = structure.data() + structure.size();
-    ASTPtr columns_list_raw = tryParseQuery(parser, start, end, error, false,  "columns declaration list", false, settings.max_query_size, settings.max_parser_depth);
+    ASTPtr columns_list_raw = tryParseQuery(parser, start, end, error, false, "columns declaration list", false, settings.max_query_size, settings.max_parser_depth);
     if (!columns_list_raw)
         return false;
 
