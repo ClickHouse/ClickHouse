@@ -3021,12 +3021,12 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 create_result = createLogEntryToMergeParts(
                     zookeeper,
                     future_merged_part->parts,
-                    future_merged_part->name,
+                    future_merged_part->part_info, future_merged_part->name,
                     future_merged_part->uuid,
                     future_merged_part->type,
                     deduplicate,
                     deduplicate_by_columns,
-                    nullptr,
+                    /* out_log_entry= */ nullptr,
                     merge_pred.getVersion(),
                     future_merged_part->merge_type);
             }
@@ -3111,7 +3111,7 @@ void StorageReplicatedMergeTree::mutationsFinalizingTask()
 StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::createLogEntryToMergeParts(
     zkutil::ZooKeeperPtr & zookeeper,
     const DataPartsVector & parts,
-    const String & merged_name,
+    const MergeTreePartInfo & merged_info, const String & merged_name,
     const UUID & merged_part_uuid,
     const MergeTreeDataPartType & merged_part_type,
     bool deduplicate,
@@ -3120,6 +3120,16 @@ StorageReplicatedMergeTree::CreateMergeEntryResult StorageReplicatedMergeTree::c
     int32_t log_version,
     MergeType merge_type)
 {
+    /// It is possible that intersected part had been added while fetching replication queue
+    /// (i.e. some replica already created entry that includes different set of parts).
+    ///
+    /// NOTE: since we check log_version race should not be possible.
+    if (queue.isVirtualPart(merged_info, merged_name))
+    {
+        throw Exception(ErrorCodes::DUPLICATE_DATA_PART,
+            "There is already queue entry that intersects {} part", merged_name);
+    }
+
     std::vector<std::future<Coordination::ExistsResponse>> exists_futures;
     exists_futures.reserve(parts.size());
     for (const auto & part : parts)
@@ -4390,10 +4400,16 @@ bool StorageReplicatedMergeTree::optimize(
 
             ReplicatedMergeTreeLogEntryData merge_entry;
             CreateMergeEntryResult create_result = createLogEntryToMergeParts(
-                zookeeper, future_merged_part->parts,
-                future_merged_part->name, future_merged_part->uuid, future_merged_part->type,
-                deduplicate, deduplicate_by_columns,
-                &merge_entry, can_merge.getVersion(), future_merged_part->merge_type);
+                zookeeper,
+                future_merged_part->parts,
+                future_merged_part->part_info, future_merged_part->name,
+                future_merged_part->uuid,
+                future_merged_part->type,
+                deduplicate,
+                deduplicate_by_columns,
+                &merge_entry,
+                can_merge.getVersion(),
+                future_merged_part->merge_type);
 
             if (create_result == CreateMergeEntryResult::MissingPart)
             {

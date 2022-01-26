@@ -560,7 +560,7 @@ private:
     CreateMergeEntryResult createLogEntryToMergeParts(
         zkutil::ZooKeeperPtr & zookeeper,
         const DataPartsVector & parts,
-        const String & merged_name,
+        const MergeTreePartInfo & merged_info, const String & merged_name,
         const UUID & merged_part_uuid,
         const MergeTreeDataPartType & merged_part_type,
         bool deduplicate,
