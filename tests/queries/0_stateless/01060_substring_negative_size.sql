@@ -38,9 +38,8 @@ create table t
     l Int8,
     r Int8
 ) engine = Memory;
-insert into t
-values ('abcdefgh', 2, -2),
-       ('12345678', 3, -3);
+insert into t(s, l, r)
+values ('abcdefgh', 2, -2),('12345678', 3, -3);
 
 select substring(s, 2, -2)
 from t;
@@ -61,8 +60,7 @@ create table t
     r Int8
 ) engine = Memory;
 insert into t
-values ('abcdefgh', -2, -2),
-       ('12345678', -3, -3);
+values ('abcdefgh', -2, -2),('12345678', -3, -3);
 
 select substring(s, -2, -2)
 from t;
@@ -83,8 +81,7 @@ create table t
     r Int8
 ) engine = Memory;
 insert into t
-values ('abcdefgh', 2, -2),
-       ('12345678', 3, -3);
+values ('abcdefgh', 2, -2),('12345678', 3, -3);
 
 select substring(s, 2, -2)
 from t;
@@ -105,8 +102,7 @@ create table t
     r Int8
 ) engine = Memory;
 insert into t
-values ('abcdefgh', -2, -2),
-       ('12345678', -3, -3);
+values ('abcdefgh', -2, -2),('12345678', -3, -3);
 
 select substring(s, -2, -2)
 from t;
