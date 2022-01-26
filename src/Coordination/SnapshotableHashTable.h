@@ -6,6 +6,7 @@
 #include <list>
 #include <atomic>
 #include <iostream>
+#include <sys/time.h>
 
 namespace DB
 {
@@ -38,6 +39,7 @@ private:
     size_t snapshot_up_to_size = 0;
     size_t delete_nodes_count = 0;
     ArenaWithFreeLists arena;
+    std::vector<Mapped> snapshot_coped_set;
 
     uint64_t approximate_data_size{0};
 
@@ -178,6 +180,7 @@ public:
                 list_itr->active_in_map = false;
                 auto new_list_itr = list.insert(list.end(), elem);
                 it->getMapped() = new_list_itr;
+                snapshot_coped_set.push_back(list_itr);
             }
             else
             {
@@ -200,6 +203,7 @@ public:
             list_itr->active_in_map = false;
             list_itr->free_key = true;
             map.erase(it->getKey());
+            snapshot_coped_set.push_back(list_itr);
         }
         else
         {
@@ -245,6 +249,7 @@ public:
             auto itr = list.insert(list.end(), elem_copy);
             it->getMapped() = itr;
             ret = itr;
+            snapshot_coped_set.push_back(list_itr);
         }
         else
         {
@@ -271,8 +276,16 @@ public:
         return it->getMapped()->value;
     }
 
-    void clearOutdatedNodes()
+    int64_t mytime()
     {
+        struct timeval tv;
+        gettimeofday(&tv, nullptr);
+        return tv.tv_sec * 1000 + tv.tv_usec / 1000;
+    }
+    void clearOutdatedNodes(std::string name = "")
+    {
+        auto sm = mytime();
+        /*
         auto start = list.begin();
         auto end = list.end();
         size_t counter = 0;
@@ -294,7 +307,19 @@ public:
                 ++itr;
             }
         }
+        */
+        for (auto & itr: snapshot_coped_set)
+        {
+            if (itr->key.size)
+                updateDataSize(CLEAR_OUTDATED_NODES, itr->key.size, itr->value.sizeInBytes(), 0);
+            if (itr->free_key)
+                arena.free(const_cast<char *>(itr->key.data), itr->key.size);
+            list.erase(itr);
+        }
         delete_nodes_count = 0;
+        auto em = mytime();
+        snapshot_coped_set.clear();
+        std::cout << name <<" call clearOutdatedNodes use time ms: " << em - sm << std::endl;
     }
 
     void clear()
@@ -329,8 +354,8 @@ public:
 
     size_t snapshotSize()
     {
-        if (delete_nodes_count)
-            clearOutdatedNodes();
+        //if (delete_nodes_count)
+        //    clearOutdatedNodes("snapshotSize");
         return list.size();
     }
 
