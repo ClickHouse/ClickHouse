@@ -1,25 +1,27 @@
 ---
-title: General questions about ClickHouse
+title: ClickHouse 有关常见问题
 toc_hidden_folder: true
 toc_priority: 1
 toc_title: General
 ---
 
-# General Questions About ClickHouse {#general-questions}
+# ClickHouse 有关常见问题 {#general-questions}
 
-Questions:
+常见问题:
 
--   [What is ClickHouse?](../../index.md#what-is-clickhouse)
--   [Why ClickHouse is so fast?](../../faq/general/why-clickhouse-is-so-fast.md)
--   [Who is using ClickHouse?](../../faq/general/who-is-using-clickhouse.md)
--   [What does “ClickHouse” mean?](../../faq/general/dbms-naming.md)
--   [What does “Не тормозит” mean?](../../faq/general/ne-tormozit.md)
--   [What is OLAP?](../../faq/general/olap.md)
--   [What is a columnar database?](../../faq/general/columnar-database.md)
--   [Why not use something like MapReduce?](../../faq/general/mapreduce.md)
--   [How do I contribute code to ClickHouse?](../../faq/general/how-do-i-contribute-code-to-clickhouse.md)
+-   [什么是 ClickHouse?](../../index.md#what-is-clickhouse)
+-   [为何 ClickHouse 如此迅捷?](../../faq/general/why-clickhouse-is-so-fast.md)
+-   [谁在使用 ClickHouse?](../../faq/general/who-is-using-clickhouse.md)
+-   [“ClickHouse” 有什么含义?](../../faq/general/dbms-naming.md)
+-   [ “Не тормозит” 有什么含义?](../../faq/general/ne-tormozit.md)
+-   [什么是 OLAP?](../../faq/general/olap.md)
+-   [什么是列存储数据库?](../../faq/general/columnar-database.md)
+-   [为何不使用 MapReduce等技术?](../../faq/general/mapreduce.md)
+-   [我如何为 ClickHouse贡献代码?](../../faq/general/how-do-i-contribute-code-to-clickhouse.md)
 
-!!! info "Don’t see what you were looking for?"
-    Check out [other F.A.Q. categories](../../faq/index.md) or browse around main documentation articles found in the left sidebar.
 
-{## [Original article](https://clickhouse.com/docs/en/faq/general/) ##}
+
+!!! info "没找到您需要的内容?"
+    请查阅 [其他 F.A.Q. 类别](../../faq/index.md) 或者从左侧导航栏浏览其他文档
+    
+{## [原始文档](https://clickhouse.com/docs/en/faq/general/) ##}
