@@ -25,7 +25,7 @@ TEST(TestSelect, ReadRel)
     auto plan = plan_builder.read(  TEST_DATA(/data/iris.parquet), std::move(schema)).build();
 
     std::ofstream output;
-    output.open(TEST_DATA(/../java/src/test/resources/plan.txt), std::fstream::in | std::fstream::out | std::fstream::trunc);
+    output.open(TEST_DATA(/plan.txt), std::fstream::in | std::fstream::out | std::fstream::trunc);
     //    output << plan->SerializeAsString();
     plan->SerializeToOstream(&output);
     output.flush();
