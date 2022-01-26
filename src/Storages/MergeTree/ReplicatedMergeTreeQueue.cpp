@@ -87,11 +87,11 @@ void ReplicatedMergeTreeQueue::initialize(zkutil::ZooKeeperPtr zookeeper)
     LOG_TRACE(log, "Queue initialized");
 }
 
-bool ReplicatedMergeTreeQueue::isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const
+bool ReplicatedMergeTreeQueue::isVirtualPart(const MergeTreePartInfo & part_info, const std::string & part_name) const
 {
     std::lock_guard lock(state_mutex);
-    auto virtual_part_name = virtual_parts.getContainingPart(data_part->info);
-    return !virtual_part_name.empty() && virtual_part_name != data_part->name;
+    auto virtual_part_name = virtual_parts.getContainingPart(part_info);
+    return !virtual_part_name.empty() && virtual_part_name != part_name;
 }
 
 bool ReplicatedMergeTreeQueue::checkPartInQueueAndGetSourceParts(const String & part_name, Strings & source_parts) const

@@ -391,7 +391,7 @@ public:
     bool tryFinalizeMutations(zkutil::ZooKeeperPtr zookeeper);
 
     /// Checks that part is already in virtual parts
-    bool isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const;
+    bool isVirtualPart(const MergeTreePartInfo & part_info, const std::string & part_name) const;
 
     /// Check that part produced by some entry in queue and get source parts for it.
     /// If there are several entries return largest source_parts set. This rarely possible

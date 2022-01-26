@@ -2964,7 +2964,7 @@ bool StorageReplicatedMergeTree::canExecuteFetch(const ReplicatedMergeTreeLogEnt
 
 bool StorageReplicatedMergeTree::partIsAssignedToBackgroundOperation(const DataPartPtr & part) const
 {
-    return queue.isVirtualPart(part);
+    return queue.isVirtualPart(part->info, part->name);
 }
 
 void StorageReplicatedMergeTree::mergeSelectingTask()
