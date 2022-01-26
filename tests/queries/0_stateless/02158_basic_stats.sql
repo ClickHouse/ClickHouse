@@ -1,35 +1,40 @@
 DROP TABLE IF EXISTS prewhere;
 
 SET optimize_move_to_prewhere = 1;
+SET allow_experimental_stats_for_prewhere_optimization = 1;
 
 CREATE TABLE prewhere
 (
     a Int,
-    b Int,
+    b Int64,
     c Int,
+    d FLOAT,
     heavy String,
     heavy2 String,
-    STAT a_st a TYPE tdigest,
-    STAT b_st b TYPE tdigest,
-    STAT c_st c TYPE tdigest
+    STAT st (a, b, c, d) TYPE tdigest
 )
-ENGINE=MergeTree() ORDER BY a;
+ENGINE=MergeTree() ORDER BY a
+SETTINGS experimantal_stats_update_period = 500;
 
-INSERT INTO prewhere VALUES (1, 1, 1, 'texttexttext', 'texttexttext');
-INSERT INTO prewhere VALUES (10, 100, 0, 'texttexttext', 'texttexttext');
-INSERT INTO prewhere VALUES (1, 1, 1, 'texttexttext', 'texttexttext');
+EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a == 10 AND b == 100 AND c == 0 AND d == 100;
 
 INSERT INTO prewhere SELECT
     number AS a,
     number + 10 AS b,
     number % 10 AS c,
+    number + 10 AS d,
     format('test {} test {}', toString(number), toString(number + 10)) AS heavy,
     format('text {} tafst{}afsd', toString(cityHash64(number)), toString(cityHash64(number))) AS heavy2
 FROM system.numbers
-LIMIT 1000000
+LIMIT 1000000;
+
+SELECT sleep(1);
+
+EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a == 10 AND b == 100 AND c == 0 AND d == 100;
+EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a > 0 AND c > 0 AND d < 100 AND b < 100;
+EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a > 0 AND c > 0 AND d > 100 AND b > 100;
+EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a > 0 AND c > 0 AND d > 100 AND b < 100;
+EXPLAIN SYNTAX SELECT a, b, c, d, heavy, heavy2 FROM prewhere WHERE a > 0 AND c > 0 AND d < 100 AND b > 100;
 
 
-SELECT a, b, c, heavy, heavy2 FROM prewhere WHERE a == 10 AND b == 100 AND c == 0;
-EXPLAIN SYNTAX SELECT a, b, c, heavy, heavy2 FROM prewhere WHERE a == 10 AND b == 100 AND c == 0;
-
-DROP TABLE prewhere;
+DROP TABLE prewhere SYNC;

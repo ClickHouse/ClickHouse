@@ -60,7 +60,11 @@ std::optional<double> MergeTreeColumnDistributionStatistics::estimateProbability
         return std::nullopt;
     }
     Poco::Logger::get("MergeTreeColumnDistributionStatistics").information("column " + column);
-    return column_to_stats.at(column)->estimateProbability(lower, upper);
+    const auto & stat = column_to_stats.at(column);
+    if (stat->empty()) {
+        return 1;
+    }
+    return stat->estimateProbability(lower, upper);
 }
 
 void MergeTreeColumnDistributionStatistics::add(const String & name, const IColumnDistributionStatisticPtr & stat) {

@@ -337,19 +337,22 @@ MergeTreeData::MergeTreeData(
             background_moves_assignee.trigger();
     };
 
-    stats_merger_task = getContext()->getSchedulePool().createTask("MergeTreeStatisticsMerger", [this] {
-        // TODO: settings time
-        try
-        {
-            updateStatisticsByPartition();
-        }
-        catch (...)
-        {
-            LOG_ERROR(log, "Exception during statistics update: {}", getCurrentExceptionMessage(true));
-        }
-        stats_merger_task->scheduleAfter(10000);
-    });
-    stats_merger_task->activateAndSchedule();
+    if (context_->getSettingsRef().allow_experimental_stats_for_prewhere_optimization) {
+        stats_merger_task = getContext()->getSchedulePool().createTask(
+            "MergeTreeStatisticsMerger",
+            [this, period = settings->experimantal_stats_update_period] {
+            try
+            {
+                updateStatisticsByPartition();
+            }
+            catch (...)
+            {
+                LOG_ERROR(log, "Exception during statistics update: {}", getCurrentExceptionMessage(true));
+            }
+            stats_merger_task->scheduleAfter(period);
+        });
+        stats_merger_task->activateAndSchedule();
+    }
 }
 
 StoragePolicyPtr MergeTreeData::getStoragePolicy() const
@@ -900,6 +903,10 @@ MergeTreeStatisticsPtr MergeTreeData::getStatisticsByPartitionPredicateImpl(
     /// TODO: get rid of copy-paste
     /// TODO: support table without partitions
     auto metadata_snapshot = getInMemoryMetadataPtr();
+    if (parts.empty()) {
+        return MergeTreeStatisticFactory::instance().get(metadata_snapshot->getStatistics());
+    }
+
     ASTPtr expression_ast;
     Block virtual_columns_block = getBlockWithVirtualPartColumns(parts, true /* one_part */);
 
