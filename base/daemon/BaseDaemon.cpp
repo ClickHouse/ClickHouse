@@ -238,7 +238,7 @@ public:
 
                 /// This allows to receive more signals if failure happens inside onFault function.
                 /// Example: segfault while symbolizing stack trace.
-                std::thread([=, this] { onFault(sig, info, *context, stack_trace, thread_num, thread_ptr); }).detach();
+                std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_num, thread_ptr); }).detach();
             }
         }
     }
@@ -271,7 +271,7 @@ private:
     void onFault(
         int sig,
         const siginfo_t & info,
-        const ucontext_t & context,
+        ucontext_t * context,
         const StackTrace & stack_trace,
         UInt32 thread_num,
         DB::ThreadStatus * thread_ptr) const
@@ -314,7 +314,7 @@ private:
         String error_message;
 
         if (sig != SanitizerTrap)
-            error_message = signalToErrorMessage(sig, info, context);
+            error_message = signalToErrorMessage(sig, info, *context);
         else
             error_message = "Sanitizer trap.";
 
