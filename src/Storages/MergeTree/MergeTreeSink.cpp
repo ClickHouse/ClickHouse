@@ -31,10 +31,10 @@ void MergeTreeSink::onStart()
 
 void MergeTreeSink::onFinish()
 {
-    finishPrevPart();
+    finishDelayedChunk();
 }
 
-struct MergeTreeSink::PrevPart
+struct MergeTreeSink::DelayedChunk
 {
     struct Partition
     {
@@ -51,7 +51,7 @@ void MergeTreeSink::consume(Chunk chunk)
     auto block = getHeader().cloneWithColumns(chunk.detachColumns());
 
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
-    std::vector<MergeTreeSink::PrevPart::Partition> partitions;
+    std::vector<MergeTreeSink::DelayedChunk::Partition> partitions;
     for (auto & current_block : part_blocks)
     {
         Stopwatch watch;
@@ -65,20 +65,20 @@ void MergeTreeSink::consume(Chunk chunk)
         if (!temp_part.part)
             continue;
 
-        partitions.emplace_back(MergeTreeSink::PrevPart::Partition{.temp_part = std::move(temp_part), .elapsed_ns = elapsed_ns});
+        partitions.emplace_back(MergeTreeSink::DelayedChunk::Partition{.temp_part = std::move(temp_part), .elapsed_ns = elapsed_ns});
     }
 
-    finishPrevPart();
-    prev_part = std::make_unique<MergeTreeSink::PrevPart>();
-    prev_part->partitions = std::move(partitions);
+    finishDelayedChunk();
+    delayed_chunk = std::make_unique<MergeTreeSink::DelayedChunk>();
+    delayed_chunk->partitions = std::move(partitions);
 }
 
-void MergeTreeSink::finishPrevPart()
+void MergeTreeSink::finishDelayedChunk()
 {
-    if (!prev_part)
+    if (!delayed_chunk)
         return;
 
-    for (auto & partition : prev_part->partitions)
+    for (auto & partition : delayed_chunk->partitions)
     {
         partition.temp_part.finalize();
 
@@ -94,7 +94,7 @@ void MergeTreeSink::finishPrevPart()
         }
     }
 
-    prev_part.reset();
+    delayed_chunk.reset();
 }
 
 }

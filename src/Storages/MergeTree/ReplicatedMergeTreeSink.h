@@ -93,10 +93,11 @@ private:
 
     ContextPtr context;
 
-    struct PrevPart;
-    std::unique_ptr<PrevPart> prev_part;
+    /// We can delay processing for previous chunk and start writing a new one.
+    struct DelayedChunk;
+    std::unique_ptr<DelayedChunk> delayed_chunk;
 
-    void finishPrevPart(zkutil::ZooKeeperPtr & zookeeper);
+    void finishDelayedChunk(zkutil::ZooKeeperPtr & zookeeper);
 };
 
 }
