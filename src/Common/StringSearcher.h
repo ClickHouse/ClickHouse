@@ -734,7 +734,7 @@ public:
 // Any value outside of basic ASCII (>=128) is considered a non-separator symbol, hence UTF-8 strings
 // should work just fine. But any Unicode whitespace is not considered a token separtor.
 template <typename StringSearcher>
-class TokenSearcher: public StringSearcherBase
+class TokenSearcher : public StringSearcherBase
 {
     StringSearcher searcher;
     size_t needle_size;
@@ -818,7 +818,7 @@ using ASCIICaseInsensitiveTokenSearcher = TokenSearcher<ASCIICaseInsensitiveStri
   * It is required that strings are zero-terminated.
   */
 
-struct LibCASCIICaseSensitiveStringSearcher: public StringSearcherBase
+struct LibCASCIICaseSensitiveStringSearcher : public StringSearcherBase
 {
     const char * const needle;
 
@@ -842,7 +842,7 @@ struct LibCASCIICaseSensitiveStringSearcher: public StringSearcherBase
     }
 };
 
-struct LibCASCIICaseInsensitiveStringSearcher: public StringSearcherBase
+struct LibCASCIICaseInsensitiveStringSearcher : public StringSearcherBase
 {
     const char * const needle;
 
