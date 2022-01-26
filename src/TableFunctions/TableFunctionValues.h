@@ -21,7 +21,7 @@ private:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     DataTypes getTypesFromArgument(const ASTPtr & arg, ContextPtr context);
-//    String structure;
+
     ColumnsDescription structure;
     bool has_structure_in_arguments;
 };
