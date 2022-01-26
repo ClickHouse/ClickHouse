@@ -29,8 +29,13 @@ namespace
     }
 }
 
-FileCache::FileCache(const String & cache_base_path_, size_t max_size_, size_t max_element_size_)
-    : cache_base_path(cache_base_path_), max_size(max_size_), max_element_size(max_element_size_)
+FileCache::FileCache(
+    const String & cache_base_path_,
+    size_t max_size_,
+    size_t max_element_size_)
+    : cache_base_path(cache_base_path_)
+    , max_size(max_size_)
+    , max_element_size(max_element_size_)
 {
 }
 
@@ -253,7 +258,7 @@ FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t
     /// TODO: remove this extra debug logging.
     String ranges;
     for (const auto & s : file_segments)
-        ranges += "\nRange: " + s->range().toString() + ", download state: " + FileSegment::toString(s->download_state) + " ";
+        ranges += "\nRange: " + s->range().toString() + ", download state: " + FileSegment::stateToString(s->download_state) + " ";
     LOG_TEST(log, "Cache getOrSet. Key: {}, range: {}, file_segments number: {}, ranges: {}",
              keyToStr(key), range.toString(), file_segments.size(), ranges);
 
@@ -262,7 +267,8 @@ FileSegmentsHolder LRUFileCache::getOrSet(const Key & key, size_t offset, size_t
 }
 
 LRUFileCache::FileSegmentCell * LRUFileCache::addCell(
-    const Key & key, size_t offset, size_t size, FileSegment::State state, std::lock_guard<std::mutex> & /* cache_lock */)
+    const Key & key, size_t offset, size_t size, FileSegment::State state,
+    std::lock_guard<std::mutex> & /* cache_lock */)
 {
     /// Create a file segment cell and put it in `files` map by [key][offset].
 
@@ -586,7 +592,7 @@ LRUFileCache::FileSegmentCell::FileSegmentCell(FileSegmentPtr file_segment_, LRU
         default:
             throw Exception(ErrorCodes::FILE_CACHE_ERROR,
                             "Can create cell with either DOWNLOADED or EMPTY state, got: {}",
-                            FileSegment::toString(file_segment->download_state));
+                            FileSegment::stateToString(file_segment->download_state));
     }
 }
 

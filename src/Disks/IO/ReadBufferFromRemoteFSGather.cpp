@@ -33,19 +33,21 @@ SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const S
     current_path = path;
     bool use_external_buffer = settings.remote_fs_method == RemoteFSReadMethod::threadpool;
 
-    auto reader = std::make_unique<ReadBufferFromS3>(
-        client_ptr, bucket, fs::path(metadata.remote_fs_root_path) / path, max_single_read_retries,
-        settings, use_external_buffer, read_until_position, true);
+    auto remote_file_reader_creator = [=, this]()
+    {
+        return std::make_unique<ReadBufferFromS3>(
+            client_ptr, bucket, fs::path(metadata.remote_fs_root_path) / path, max_single_read_retries,
+            settings, use_external_buffer, read_until_position, true);
+    };
 
     auto cache = settings.remote_fs_cache;
     if (cache && settings.remote_fs_enable_cache && !cache->shouldBypassCache())
     {
-        LOG_TEST(&Poco::Logger::get("kssenii"), "New cacheable buffer for{}: {}", getHexUIntLowercase(cache->hash(path)), read_until_position);
         return std::make_shared<CachedReadBufferFromRemoteFS>(
-            path, cache, std::move(reader), settings, read_until_position ? read_until_position : file_size);
+            path, cache, remote_file_reader_creator, settings, read_until_position ? read_until_position : file_size);
     }
 
-    return std::move(reader);
+    return remote_file_reader_creator();
 }
 #endif
 
@@ -100,6 +102,7 @@ ReadBufferFromRemoteFSGather::ReadResult ReadBufferFromRemoteFSGather::readInto(
 
     auto result = nextImpl();
 
+    LOG_TEST(&Poco::Logger::get("kssenii"), "Returning with size: {}, offset: {}", working_buffer.size(), BufferBase::offset());
     if (result)
         return {working_buffer.size(), BufferBase::offset()};
 
