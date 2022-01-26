@@ -479,7 +479,8 @@ Result:
 
 ## substring(s, offset, length), mid(s, offset, length), substr(s, offset, length) {#substring}
 
-Returns a substring starting with the byte from the ‘offset’ index that is ‘length’ bytes long. Character indexing starts from one (as in standard SQL). The ‘offset’ and ‘length’ arguments must be constants.
+Returns a substring starting with the byte from the ‘offset’ index that is ‘length’ bytes long. Character indexing
+starts from one (as in standard SQL).
 
 ## substringUTF8(s, offset, length) {#substringutf8}
 
