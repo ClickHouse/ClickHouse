@@ -17,8 +17,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int FUNCTION_ALREADY_EXISTS;
-    extern const int UNKNOWN_FUNCTION;
     extern const int CANNOT_DROP_FUNCTION;
 }
 

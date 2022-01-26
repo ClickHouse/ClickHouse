@@ -10,5 +10,5 @@ CREATE FUNCTION sum AS (a, b) -> a + b; --{serverError 609}
 CREATE FUNCTION 01856_test_function_2 AS (a, b) -> a + b;
 CREATE FUNCTION 01856_test_function_2 AS (a) -> a || '!!!'; --{serverError 609}
 DROP FUNCTION 01856_test_function_2;
-DROP FUNCTION unknown_function; -- {serverError 46}
+DROP FUNCTION unknown_function; -- {serverError 610}
 DROP FUNCTION CAST; -- {serverError 610}

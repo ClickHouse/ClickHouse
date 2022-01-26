@@ -10,7 +10,7 @@ Creates a user defined function from a lambda expression. The expression must co
 **Syntax**
 
 ```sql
-CREATE FUNCTION name AS (parameter0, ...) -> expression
+CREATE [TEMPORARY] FUNCTION [IF NOT EXISTS] name AS (parameter0, ...) -> expression
 ```
 A function can have an arbitrary number of parameters.
 
@@ -22,11 +22,13 @@ There are a few restrictions:
 
 If any restriction is violated then an exception is raised.
 
+A function can be created as temporary function, temporary function will disappear when the session ends, including if the connection is lost.
+
 **Example**
 
 Query:
 
-```sql
+``` sql
 CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;
 SELECT number, linear_equation(number, 2, 1) FROM numbers(3);
 ```
@@ -43,7 +45,7 @@ Result:
 
 A [conditional function](../../../sql-reference/functions/conditional-functions.md) is called in a user defined function in the following query:
 
-```sql
+``` sql
 CREATE FUNCTION parity_str AS (n) -> if(n % 2, 'odd', 'even');
 SELECT number, parity_str(number) FROM numbers(3);
 ```
@@ -56,4 +58,17 @@ Result:
 │      1 │ odd                                  │
 │      2 │ even                                 │
 └────────┴──────────────────────────────────────┘
+```
+
+For introspection `system.functions` table can be used.
+
+``` sql
+CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;
+SELECT name, create_query FROM system.functions WHERE name = 'linear_equation';
+```
+
+```text
+┌─name────────────┬─create_query──────────────────────────────────────────────────┐
+│ linear_equation │ CREATE FUNCTION linear_equation AS (x, k, b) -> ((k * x) + b) │
+└─────────────────┴───────────────────────────────────────────────────────────────┘
 ```
