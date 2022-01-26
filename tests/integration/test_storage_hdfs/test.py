@@ -366,6 +366,43 @@ def test_hdfs_directory_not_exist(started_cluster):
     node1.query(ddl)
     assert "" == node1.query("select * from HDFSStorageWithNotExistDir")
 
+def test_overwrite(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+
+    table_function = f"hdfs('hdfs://hdfs1:9000/data', 'Parquet', 'a Int32, b String')"
+    node1.query(f"create table test_overwrite as {table_function}")
+    node1.query(f"insert into test_overwrite select number, randomString(100) from numbers(5)")
+    node1.query_and_get_error(f"insert into test_overwrite select number, randomString(100) FROM numbers(10)")
+    node1.query(f"insert into test_overwrite select number, randomString(100) from numbers(10) settings hdfs_truncate_on_insert=1")
+
+    result = node1.query(f"select count() from test_overwrite")
+    assert(int(result) == 10)
+
+
+def test_multiple_inserts(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+
+    table_function = f"hdfs('hdfs://hdfs1:9000/data_multiple_inserts', 'Parquet', 'a Int32, b String')"
+    node1.query(f"create table test_multiple_inserts as {table_function}")
+    node1.query(f"insert into test_multiple_inserts select number, randomString(100) from numbers(10)")
+    node1.query(f"insert into test_multiple_inserts select number, randomString(100) from numbers(20) settings hdfs_create_new_file_on_insert=1")
+    node1.query(f"insert into test_multiple_inserts select number, randomString(100) from numbers(30) settings hdfs_create_new_file_on_insert=1")
+
+    result = node1.query(f"select count() from test_multiple_inserts")
+    assert(int(result) == 60)
+
+    result = node1.query(f"drop table test_multiple_inserts")
+
+    table_function = f"hdfs('hdfs://hdfs1:9000/data_multiple_inserts.gz', 'Parquet', 'a Int32, b String')"
+    node1.query(f"create table test_multiple_inserts as {table_function}")
+    node1.query(f"insert into test_multiple_inserts select number, randomString(100) FROM numbers(10)")
+    node1.query(f"insert into test_multiple_inserts select number, randomString(100) FROM numbers(20) settings hdfs_create_new_file_on_insert=1")
+    node1.query(f"insert into test_multiple_inserts select number, randomString(100) FROM numbers(30) settings hdfs_create_new_file_on_insert=1")
+
+    result = node1.query(f"select count() from test_multiple_inserts")
+    assert(int(result) == 60)
+
+    
 def test_format_detection(started_cluster):
     node1.query(f"create table arrow_table (x UInt64) engine=HDFS('hdfs://hdfs1:9000/data.arrow')")
     node1.query(f"insert into arrow_table select 1")
