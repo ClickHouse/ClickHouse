@@ -381,7 +381,7 @@ Chain buildPushingToViewsChain(
         processors.emplace_front(std::move(copying_data));
         processors.emplace_back(std::move(finalizing_views));
         result_chain = Chain(std::move(processors));
-        result_chain.setNumThreads(max_parallel_streams);
+        result_chain.setNumThreads(std::min(views_data->max_threads, max_parallel_streams));
     }
 
     if (auto * live_view = dynamic_cast<StorageLiveView *>(storage.get()))
