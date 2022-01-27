@@ -26,8 +26,8 @@ RUN apt-get update \
             p7zip-full \
             parallel \
             psmisc \
-            python3 \
-            python3-dev \
+            python3.8 \
+            python3.8-dev \
             python3-pip \
             python3-setuptools \
             rsync \
