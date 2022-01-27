@@ -122,6 +122,8 @@ public:
     }
 
     HiveTableMetadataPtr getTableMetadata(const String & db_name, const String & table_name);
+    // Access hive table information by hive client
+    std::shared_ptr<Apache::Hadoop::Hive::Table> getHiveTable(const String & db_name, const String & table_name);
     void clearTableMetadata(const String & db_name, const String & table_name);
     void setClient(std::shared_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> client_);
     bool isExpired() const { return expired; }

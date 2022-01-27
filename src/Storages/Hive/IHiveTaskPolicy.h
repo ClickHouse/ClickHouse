@@ -23,14 +23,8 @@ public:
     HiveTaskPackage() = default;
     String policy_name;
     String data;
-    void marshal(MarshallablePack & p) const override
-    {
-        p << policy_name << data;
-    }
-    void unmarshal(MarshallableUnPack & p) override
-    {
-        p >> policy_name >> data;
-    }
+    void marshal(MarshallablePack & p) const override { p << policy_name << data; }
+    void unmarshal(MarshallableUnPack & p) override { p >> policy_name >> data; }
 };
 
 /**
@@ -52,7 +46,7 @@ public:
         String hive_table;
         ASTPtr partition_by_ast;
         unsigned num_streams;
-        Arguments & operator = (const Arguments &) = default;
+        Arguments & operator=(const Arguments &) = default;
     };
     virtual ~IHiveTaskIterateCallback() = default;
 
@@ -84,50 +78,15 @@ public:
         ColumnsDescription columns;
         unsigned num_streams;
         ASTPtr partition_by_ast;
-        Arguments & operator = (const Arguments & args) = default;
+        Arguments & operator=(const Arguments & args) = default;
     };
     virtual void setupCallbackData(const String & data_) = 0;
     virtual void initQueryEnv(const Arguments &) = 0;
-    virtual HiveFiles collectHiveFiles() = 0; 
+    virtual HiveFiles collectHiveFiles() = 0;
     virtual String getName() = 0;
 };
 using HiveTaskFilesCollectorBuilder = std::function<std::shared_ptr<IHiveTaskFilesCollector>()>;
 
-class HiveTaskPolicyFactory
-{
-public:
-    using IterateCallbackBuilder = std::function<std::shared_ptr<IHiveTaskIterateCallback>()>;
-    using FilesCollectorBuilder = std::function<std::shared_ptr<IHiveTaskFilesCollector>()>;
-    void registerBuilders(const String & policy_name_,
-        IterateCallbackBuilder iterate_callback_builder_,
-        FilesCollectorBuilder files_collector_builder_);
-    
-    static HiveTaskPolicyFactory & instance();
-
-    inline std::shared_ptr<IHiveTaskIterateCallback> getIterateCallback(const String & policy_name_) const
-    {
-        auto iter = iterate_callback_builders.find(policy_name_);
-        if (iter == iterate_callback_builders.end())
-            return nullptr;
-        return (iter->second)();
-    }
-    
-    inline std::shared_ptr<IHiveTaskFilesCollector> getFilesCollector(const String & policy_name_) const
-    {
-        auto iter = files_collector_builders.find(policy_name_);
-        if (iter == files_collector_builders.end())
-            return nullptr;
-        return (iter->second)();
-    }
-
-protected:
-    HiveTaskPolicyFactory() = default;
-private:
-    std::unordered_map<String, IterateCallbackBuilder> iterate_callback_builders;
-    std::unordered_map<String, FilesCollectorBuilder> files_collector_builders;
-};
-
-void registerHiveTaskPolices();
 } // namespace DB
 
 #endif

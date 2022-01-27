@@ -1,3 +1,4 @@
+#include <mutex>
 #include <Storages/Hive/StorageHive.h>
 #include "IHiveTaskPolicy.h"
 #include "SingleHiveTaskFilesCollector.h"
@@ -37,6 +38,8 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/Hive/SingleHiveTaskFilesCollector.h>
+
+#include </usr/local/include/gperftools/profiler.h>
 
 namespace DB
 {
@@ -112,16 +115,22 @@ public:
         , compression_method(compression_method_)
         , max_block_size(max_block_size_)
         , sample_block(std::move(sample_block_))
-        , to_read_block(sample_block)
+        , to_read_block(sample_block_)
         , columns_description(getColumnsDescription(sample_block, source_info))
         , text_input_field_names(text_input_field_names_)
         , format_settings(getFormatSettings(getContext()))
     {
         /// Initialize to_read_block, which is used to read data from HDFS.
-        to_read_block = sample_block;
         for (const auto & name_type : source_info->partition_name_types)
         {
-            to_read_block.erase(name_type.name);
+            if (to_read_block.has(name_type.name))
+                to_read_block.erase(name_type.name);
+        }
+        if (!to_read_block.columns())
+        {
+            auto & col = sample_block.getByPosition(0);
+            to_read_block.insert(0, col);
+            all_to_read_are_partition_columns = true;
         }
 
         /// Initialize format settings
@@ -200,14 +209,15 @@ public:
             {
                 Columns columns = res.getColumns();
                 UInt64 num_rows = res.rows();
+                if (all_to_read_are_partition_columns)
+                    columns.clear();
                 LOG_TRACE(&Poco::Logger::get("StorageHiveSource"), "pull block, rows:{}, cols:{}", num_rows, columns.size());
 
                 /// Enrich with partition columns.
                 auto types = source_info->partition_name_types.getTypes();
-                auto const & names = source_info->partition_name_types.getNames();
                 for (size_t i = 0; i < types.size(); ++i)
                 {
-                    if (to_read_block.has(names[i]) || !sample_block.has(names[i]))
+                    if (!sample_block.has(source_info->partition_name_types.getNames()[i]))
                         continue;
                     auto column = types[i]->createColumnConst(num_rows, source_info->hive_files[current_idx]->getPartitionValues()[i]);
                     auto previous_idx = sample_block.getPositionByName(source_info->partition_name_types.getNames()[i]);
@@ -254,6 +264,7 @@ private:
     UInt64 max_block_size;
     Block sample_block;
     Block to_read_block;
+    bool all_to_read_are_partition_columns = false;
     ColumnsDescription columns_description;
     const Names & text_input_field_names;
     FormatSettings format_settings;
@@ -293,15 +304,23 @@ StorageHive::StorageHive(
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment_);
-    setInMemoryMetadata(storage_metadata);
+    setInMemoryMetadata(storage_metadata);   
+}
 
+void StorageHive::lazyInitialize()
+{
+    std::lock_guard lock{init_mutex};
+    if (has_initialized)
+        return;
+
+    
     auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url, getContext());
-    auto hive_table_metadata = hive_metastore_client->getTableMetadata(hive_database, hive_table);
+    auto hive_table_info = hive_metastore_client->getHiveTable(hive_database, hive_table);
 
-    hdfs_namenode_url = getNameNodeUrl(hive_table_metadata->getTable()->sd.location);
-    table_schema = hive_table_metadata->getTable()->sd.cols;
+    hdfs_namenode_url = getNameNodeUrl(hive_table_info->sd.location);
+    table_schema = hive_table_info->sd.cols;
 
-    FileFormat hdfs_file_format = IHiveFile::toFileFormat(hive_table_metadata->getTable()->sd.inputFormat);
+    FileFormat hdfs_file_format = IHiveFile::toFileFormat(hive_table_info->sd.inputFormat);
     switch (hdfs_file_format)
     {
         case FileFormat::TEXT:
@@ -339,14 +358,15 @@ StorageHive::StorageHive(
     }
 
     ASTPtr partition_key_expr_list = extractKeyExpressionList(partition_by_ast);
-    NamesAndTypesList all_name_and_types = columns_.getAllPhysical();
+    NamesAndTypesList all_name_and_types = getInMemoryMetadata().getColumns().getAllPhysical();
     if (!partition_key_expr_list->children.empty())
     {
-        auto syntax_result = TreeRewriter(context_).analyze(partition_key_expr_list, all_name_and_types);
-        auto partition_key_expr = ExpressionAnalyzer(partition_key_expr_list, syntax_result, context_).getActions(false);
+        auto syntax_result = TreeRewriter(getContext()).analyze(partition_key_expr_list, all_name_and_types);
+        auto partition_key_expr = ExpressionAnalyzer(partition_key_expr_list, syntax_result, getContext()).getActions(false);
         partition_name_types = partition_key_expr->getRequiredColumnsWithTypes();
     }
     
+    has_initialized = true;
 }
 ASTPtr StorageHive::extractKeyExpressionList(const ASTPtr & node)
 {
@@ -370,6 +390,7 @@ Pipe StorageHive::read(
     size_t max_block_size,
     unsigned num_streams)
 {
+    lazyInitialize();
     // If the StorageHive is created in StorageHiveCluster, hive_files_collector must not be null
     std::shared_ptr<IHiveTaskFilesCollector> hive_task_files_collector;
     IHiveTaskFilesCollector::Arguments args
@@ -390,7 +411,9 @@ Pipe StorageHive::read(
         hive_task_files_collector = (*hive_task_files_collector_builder)();
     hive_task_files_collector->initQueryEnv(args);
     /// Hive files to read
+    Stopwatch collect_hive_files_watch;
     HiveFiles hive_files = hive_task_files_collector->collectHiveFiles();
+    LOG_TRACE(&Poco::Logger::get("StorageHive"), "collect hive files elapsed:{}", collect_hive_files_watch.elapsed());
 
     auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url, getContext());
     
@@ -423,8 +446,7 @@ Pipe StorageHive::read(
             hdfs_namenode_url,
             format_name,
             compression_method,
-            //to_read_block,
-            metadata_snapshot->getSampleBlock(),
+            to_read_block,
             context_,
             max_block_size,
             text_input_field_names));

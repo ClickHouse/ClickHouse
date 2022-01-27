@@ -13,9 +13,10 @@
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/Hive/HiveSettings.h>
 #include <Storages/Hive/IHiveTaskPolicy.h>
+#include <Storages/Hive/HiveTaskPolicyFactory.h>
 #include <Storages/Hive/StorageHive.h>
 #include <Storages/StorageFactory.h>
-namespace  DB
+namespace DB
 {
 
 namespace ErrorCodes
@@ -66,10 +67,13 @@ Pipe StorageHiveCluster::read(
      * 
      */
     auto query_kind = context_->getClientInfo().query_kind;
-    LOG_TRACE(logger,
+    LOG_TRACE(
+        logger,
         "query kinkd: {}, processed stage: {}, query: {}"
         "task iterate policy:{}",
-        query_kind, processed_stage_, queryToString(query_info_.query),
+        query_kind,
+        processed_stage_,
+        queryToString(query_info_.query),
         context_->getSettings().getString("hive_cluster_task_iterate_policy"));
     auto policy_name = context_->getSettings().getString("hive_cluster_task_iterate_policy");
     // first stage. create remote executors pipeline
@@ -79,19 +83,19 @@ Pipe StorageHiveCluster::read(
         if (!iterate_callback_builder)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknow hive task policy : {}", policy_name);
         
-        IHiveTaskIterateCallback::Arguments args = {
-            .cluster_name = cluster_name,
-            .storage_settings = storage_settings,
-            .columns = getInMemoryMetadata().getColumns(),
-            .context = context_,
-            .query_info = &query_info_,
-            .hive_metastore_url = hive_metastore_url,
-            .hive_database = hive_database,
-            .hive_table = hive_table,
-            .partition_by_ast = partition_by_ast,
-            .num_streams = num_streams_
+        IHiveTaskIterateCallback::Arguments args
+            = {.cluster_name = cluster_name,
+               .storage_settings = storage_settings,
+               .columns = getInMemoryMetadata().getColumns(),
+               .context = context_,
+               .query_info = &query_info_,
+               .hive_metastore_url = hive_metastore_url,
+               .hive_database = hive_database,
+               .hive_table = hive_table,
+               .partition_by_ast = partition_by_ast,
+               .num_streams = num_streams_
 
-        };
+            };
         iterate_callback_builder->init(args);
 
         auto cluster = context_->getCluster(cluster_name)->getClusterWithReplicasAsShards(context_->getSettings());
@@ -106,11 +110,18 @@ Pipe StorageHiveCluster::read(
             for (const auto & node : replicas)
             {
                 auto connection = std::make_shared<Connection>(
-                    node.host_name, node.port, context_->getGlobalContext()->getCurrentDatabase(),
-                    node.user, node.password, node.cluster, node.cluster_secret,
-                    "HiveCluster", node.compression, node.secure);
-                
-                auto task_iter_callback = std::make_shared<TaskIterator>([node](){ return node.host_name; });
+                    node.host_name,
+                    node.port,
+                    context_->getGlobalContext()->getCurrentDatabase(),
+                    node.user,
+                    node.password,
+                    node.cluster,
+                    node.cluster_secret,
+                    "HiveCluster",
+                    node.compression,
+                    node.secure);
+
+                auto task_iter_callback = std::make_shared<TaskIterator>([node]() { return node.host_name; });
                 auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
                     connection,
                     queryToString(query_info_.query),
@@ -135,27 +146,28 @@ Pipe StorageHiveCluster::read(
     HiveTaskPackage task_package;
     stringToPackage(task_resp, task_package);
     files_collector->setupCallbackData(task_package.data);
-    IHiveTaskFilesCollector::Arguments args = {
-            .context = context_,
-            .query_info = &query_info_,
-            .hive_metastore_url = hive_metastore_url,
-            .hive_database = hive_database,
-            .hive_table = hive_table,
-            .storage_settings = storage_settings,
-            .columns = getInMemoryMetadata().getColumns(),
-            .num_streams = num_streams_,
-            .partition_by_ast = partition_by_ast
-    };
+    IHiveTaskFilesCollector::Arguments args
+        = {.context = context_,
+           .query_info = &query_info_,
+           .hive_metastore_url = hive_metastore_url,
+           .hive_database = hive_database,
+           .hive_table = hive_table,
+           .storage_settings = storage_settings,
+           .columns = getInMemoryMetadata().getColumns(),
+           .num_streams = num_streams_,
+           .partition_by_ast = partition_by_ast};
     files_collector->initQueryEnv(args);
-    auto files_collector_builder = [&files_collector](){return files_collector;};
+    auto files_collector_builder = [&files_collector]() { return files_collector; };
 
 
     const auto & client_info = context_->getClientInfo();
-    LOG_TRACE(logger, "replica info. count_participating_replicas:{}, number_of_current_replica:{}",
-        client_info.count_participating_replicas, client_info.number_of_current_replica);
+    LOG_TRACE(
+        logger,
+        "replica info. count_participating_replicas:{}, number_of_current_replica:{}",
+        client_info.count_participating_replicas,
+        client_info.number_of_current_replica);
 
 
-    
     // second stage, create local hive storage reading pipeline
     auto local_storage_settings = std::make_unique<HiveSettings>();
     local_storage_settings->applyChanges(*storage_settings);
@@ -176,9 +188,8 @@ Pipe StorageHiveCluster::read(
     return storage_hive->read(column_names_, metadata_snapshot_, query_info_, context_, processed_stage_, max_block_size_, num_streams_);
 }
 
-QueryProcessingStage::Enum StorageHiveCluster::getQueryProcessingStage(ContextPtr context_,
-    QueryProcessingStage::Enum to_stage_,
-    const StorageMetadataPtr &, SelectQueryInfo &) const
+QueryProcessingStage::Enum StorageHiveCluster::getQueryProcessingStage(
+    ContextPtr context_, QueryProcessingStage::Enum to_stage_, const StorageMetadataPtr &, SelectQueryInfo &) const
 {
     if (context_->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
         if (to_stage_ >= QueryProcessingStage::Enum::WithMergeableState)
@@ -195,7 +206,7 @@ void registerStorageHiveCluster(StorageFactory & factory_)
             std::unique_ptr<HiveSettings> hive_settings = std::make_unique<HiveSettings>();
             if (have_settings)
                 hive_settings->loadFromQuery(*args.storage_def);
-            
+
             ASTs engine_args = args.engine_args;
             for (const auto & ast : engine_args)
             {
@@ -205,11 +216,11 @@ void registerStorageHiveCluster(StorageFactory & factory_)
                 throw Exception(
                     "StorageHiveCluster requires 3 parameters: cluster, hive metadata server url, hive database and hive table",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-            
+
             auto * partition_by = args.storage_def->partition_by;
             if (!partition_by)
                 throw Exception("StorageHiveCluster requires partition by clause", ErrorCodes::BAD_ARGUMENTS);
-            
+
             for (auto & engine_arg : engine_args)
                 engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
 
@@ -218,14 +229,19 @@ void registerStorageHiveCluster(StorageFactory & factory_)
             const String & hive_database = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
             const String & hive_table = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
 
-            LOG_TRACE(&Poco::Logger::get("StorageHiveCluster"), 
+            LOG_TRACE(
+                &Poco::Logger::get("StorageHiveCluster"),
                 "settings: {}. \n"
                 "cluster:{}, hive url:{}, database: {}, table: {}\n"
                 "database:{}, table:{}\n"
-                "columns: {}\n", 
+                "columns: {}\n",
                 hive_settings->toString(),
-                cluster_name, hive_metastore_url, hive_database, hive_table,
-                args.table_id.getDatabaseName(), args.table_id.getTableName(),
+                cluster_name,
+                hive_metastore_url,
+                hive_database,
+                hive_table,
+                args.table_id.getDatabaseName(),
+                args.table_id.getTableName(),
                 args.columns.toString());
 
             return StorageHiveCluster::create(

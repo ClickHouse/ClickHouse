@@ -15,10 +15,8 @@ public:
     void initQueryEnv(const Arguments & args_) override;
     HiveFiles collectHiveFiles() override;
     String getName() override { return "SingleHiveTask"; }
-    void setupCallbackData(const String &) override
-    {
+    void setupCallbackData(const String &) override { }
 
-    }
 private:
     Arguments args;
     ExpressionActionsPtr partition_key_expr;
@@ -29,7 +27,7 @@ private:
     String format_name;
     String hdfs_namenode_url;
 
-    Poco::Logger *logger = &Poco::Logger::get("SingleHiveTaskFilesCollector");
+    Poco::Logger * logger = &Poco::Logger::get("SingleHiveTaskFilesCollector");
 
     HiveFiles collectHiveFilesFromPartition(
         const Apache::Hadoop::Hive::Partition & partition_,
@@ -41,10 +39,7 @@ private:
     ASTPtr extractKeyExpressionList(const ASTPtr & node);
 
     HiveFilePtr createHiveFileIfNeeded(
-        const HiveMetastoreClient::FileInfo & file_info_,
-        const FieldVector & fields_,
-        SelectQueryInfo & query_info_,
-        ContextPtr context_ );
+        const HiveMetastoreClient::FileInfo & file_info_, const FieldVector & fields_, SelectQueryInfo & query_info_, ContextPtr context_);
 };
 
 } // namespace DB

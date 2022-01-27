@@ -8,6 +8,39 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
+/**
+ * A light way for message serialization/deserialization
+ * Define your own message as following
+ *   struct MyMessage : public Marshallable
+ *   {
+ *       int i;
+ *       map<string, string> m;
+ *       AnotherMashallable x;
+ *       void marshal(MarshallablePack & p) const override { p << i << m << x; }
+ *       void unmarshal(MarshallableUnpack & p) override { p >> i >> m >> x; }
+ *   }; 
+ * marshal() serializes the message content into a WriteBuffer (see MarshallablePack)
+ * unmarshal() deserializes the message from a ReadBuffer (see MarshallableUnpack).
+ * The order of the message fields in marshal and unmarshal must be the same.
+ * 
+ * You can add new fields into an existed message with backward compatibility。For example, if we 
+ * want to add a new field into MyMessage, it would be like
+ *   struct MyMessage : public Marshallable
+ *   {
+ *       int i;
+ *       map<string, string> m;
+ *       AnotherMashallable x;
+ *       vector<int> v; // the new field
+ *
+ *       // the new field must be added at the end
+ *       void marshal(MarshallablePack & p) const override { p << i << m << x << v; }
+ *       void unmarshal(MarshallableUnpack & p) override { 
+ *           p >> i >> m >> x; 
+ *           // for backward compatibility, need to take this check
+ *           if (!p.eof()) p >> v;
+ *       }
+ *   };  
+ */
 namespace DB 
 {
 

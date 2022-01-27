@@ -52,7 +52,6 @@ HiveMetastoreClient::HiveTableMetadataPtr HiveMetastoreClient::getTableMetadata(
     try
     {
         client->get_table(*table, db_name, table_name);
-
         /// Query the latest partition info to check new change.
         client->get_partitions(partitions, db_name, table_name, -1);
     }
@@ -103,6 +102,21 @@ HiveMetastoreClient::HiveTableMetadataPtr HiveMetastoreClient::getTableMetadata(
         table_metadata_cache.set(cache_key, metadata);
     }
     return metadata;
+}
+
+std::shared_ptr<Apache::Hadoop::Hive::Table> HiveMetastoreClient::getHiveTable(const String & db_name, const String & table_name)
+{
+    auto table = std::make_shared<Apache::Hadoop::Hive::Table>();
+    try
+    {
+        client->get_table(*table, db_name, table_name);
+    }
+    catch (apache::thrift::transport::TTransportException & e)
+    {
+        setExpired();
+        throw Exception(ErrorCodes::NO_HIVEMETASTORE, "Hive Metastore expired because {}", String(e.what()));
+    }
+    return table;
 }
 
 void HiveMetastoreClient::clearTableMetadata(const String & db_name, const String & table_name)
