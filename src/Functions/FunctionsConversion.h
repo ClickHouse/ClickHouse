@@ -152,10 +152,11 @@ struct ConvertImpl
         if (const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get()))
         {
             typename ColVecTo::MutablePtr col_to = nullptr;
-            UInt32 scale = 0;
 
             if constexpr (IsDataTypeDecimal<ToDataType>)
             {
+                UInt32 scale;
+
                 if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
                     || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                 {
@@ -209,11 +210,11 @@ struct ConvertImpl
                             bool convert_result = false;
 
                             if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
-                                convert_result = tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], scale, scale, result);
+                                convert_result = tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result);
                             else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>)
-                                convert_result = tryConvertFromDecimal<FromDataType, ToDataType>(vec_from[i], scale, result);
+                                convert_result = tryConvertFromDecimal<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), result);
                             else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
-                                convert_result = tryConvertToDecimal<FromDataType, ToDataType>(vec_from[i], scale, result);
+                                convert_result = tryConvertToDecimal<FromDataType, ToDataType>(vec_from[i], col_to->getScale(), result);
 
                             if (convert_result)
                                 vec_to[i] = result;
@@ -226,11 +227,11 @@ struct ConvertImpl
                         else
                         {
                             if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
-                                vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], scale, scale);
+                                vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale());
                             else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>)
-                                vec_to[i] = convertFromDecimal<FromDataType, ToDataType>(vec_from[i], scale);
+                                vec_to[i] = convertFromDecimal<FromDataType, ToDataType>(vec_from[i], col_from->getScale());
                             else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
-                                vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], scale);
+                                vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], col_to->getScale());
                             else
                                 throw Exception("Unsupported data type in conversion function", ErrorCodes::CANNOT_CONVERT_TYPE);
                         }
