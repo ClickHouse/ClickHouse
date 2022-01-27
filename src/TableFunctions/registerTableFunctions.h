@@ -30,7 +30,8 @@ void registerTableFunctionHDFSCluster(TableFunctionFactory & factory);
 #endif
 
 #if USE_HIVE
-//void registerTableFunctionHiveCluster(TableFunctionFactory & factory_);
+void registerTableFunctionHiveCluster(TableFunctionFactory & factory);
+void registerTableFunctionHive(TableFunctionFactory & factory);
 #endif
 
 void registerTableFunctionODBC(TableFunctionFactory & factory);

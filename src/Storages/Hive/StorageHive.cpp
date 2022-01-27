@@ -114,7 +114,7 @@ public:
         , format(std::move(format_))
         , compression_method(compression_method_)
         , max_block_size(max_block_size_)
-        , sample_block(std::move(sample_block_))
+        , sample_block(sample_block_)
         , to_read_block(sample_block_)
         , columns_description(getColumnsDescription(sample_block, source_info))
         , text_input_field_names(text_input_field_names_)
@@ -124,7 +124,9 @@ public:
         for (const auto & name_type : source_info->partition_name_types)
         {
             if (to_read_block.has(name_type.name))
+            {
                 to_read_block.erase(name_type.name);
+            }
         }
         if (!to_read_block.columns())
         {
@@ -132,7 +134,6 @@ public:
             to_read_block.insert(0, col);
             all_to_read_are_partition_columns = true;
         }
-
         /// Initialize format settings
         format_settings.hive_text.input_field_names = text_input_field_names;
     }
@@ -211,7 +212,6 @@ public:
                 UInt64 num_rows = res.rows();
                 if (all_to_read_are_partition_columns)
                     columns.clear();
-                LOG_TRACE(&Poco::Logger::get("StorageHiveSource"), "pull block, rows:{}, cols:{}", num_rows, columns.size());
 
                 /// Enrich with partition columns.
                 auto types = source_info->partition_name_types.getTypes();
@@ -411,9 +411,7 @@ Pipe StorageHive::read(
         hive_task_files_collector = (*hive_task_files_collector_builder)();
     hive_task_files_collector->initQueryEnv(args);
     /// Hive files to read
-    Stopwatch collect_hive_files_watch;
     HiveFiles hive_files = hive_task_files_collector->collectHiveFiles();
-    LOG_TRACE(&Poco::Logger::get("StorageHive"), "collect hive files elapsed:{}", collect_hive_files_watch.elapsed());
 
     auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url, getContext());
     
@@ -427,7 +425,6 @@ Pipe StorageHive::read(
     const auto & sample_block = metadata_snapshot->getSampleBlock();
     for (const auto & column : column_names)
     {
-        LOG_TRACE(&Poco::Logger::get("StorageHive"), "insert to read col {}", column);
         to_read_block.insert(sample_block.getByName(column));
         if (column == "_path")
             sources_info->need_path_column = true;

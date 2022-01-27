@@ -234,7 +234,8 @@ void registerStorageHiveCluster(StorageFactory & factory_)
                 "settings: {}. \n"
                 "cluster:{}, hive url:{}, database: {}, table: {}\n"
                 "database:{}, table:{}\n"
-                "columns: {}\n",
+                "columns: {}\n"
+                "partition by ast: {}",
                 hive_settings->toString(),
                 cluster_name,
                 hive_metastore_url,
@@ -242,7 +243,8 @@ void registerStorageHiveCluster(StorageFactory & factory_)
                 hive_table,
                 args.table_id.getDatabaseName(),
                 args.table_id.getTableName(),
-                args.columns.toString());
+                args.columns.toString(),
+                partition_by->dumpTree());
 
             return StorageHiveCluster::create(
                 cluster_name,

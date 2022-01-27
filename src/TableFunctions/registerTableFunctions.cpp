@@ -32,7 +32,8 @@ void registerTableFunctions()
 #endif
 
 #if USE_HIVE
-    //registerTableFunctionHiveCluster(factory);
+    registerTableFunctionHive(factory);
+    registerTableFunctionHiveCluster(factory);
 #endif
     registerTableFunctionODBC(factory);
     registerTableFunctionJDBC(factory);
