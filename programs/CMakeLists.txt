@@ -160,7 +160,7 @@ else()
     message(STATUS "ClickHouse keeper-converter mode: OFF")
 endif()
 
-if(NOT (MAKE_STATIC_LIBRARIES OR SPLIT_SHARED_LIBRARIES))
+if(NOT (USE_STATIC_LIBRARIES OR SPLIT_SHARED_LIBRARIES))
     set(CLICKHOUSE_ONE_SHARED ON)
 endif()
 
