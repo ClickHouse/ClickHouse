@@ -41,10 +41,10 @@ add_executable (space_saving space_saving.cpp)
 target_link_libraries (space_saving PRIVATE clickhouse_common_io)
 
 add_executable (integer_hash_tables_and_hashes integer_hash_tables_and_hashes.cpp)
-target_link_libraries (integer_hash_tables_and_hashes PRIVATE dbms abseil_swiss_tables ch_contrib::sparsehash)
+target_link_libraries (integer_hash_tables_and_hashes PRIVATE dbms ch_contrib::abseil_swiss_tables ch_contrib::sparsehash)
 
 add_executable (integer_hash_tables_benchmark integer_hash_tables_benchmark.cpp)
-target_link_libraries (integer_hash_tables_benchmark PRIVATE dbms abseil_swiss_tables ch_contrib::sparsehash)
+target_link_libraries (integer_hash_tables_benchmark PRIVATE dbms ch_contrib::abseil_swiss_tables ch_contrib::sparsehash)
 
 add_executable (cow_columns cow_columns.cpp)
 target_link_libraries (cow_columns PRIVATE clickhouse_common_io)
@@ -78,8 +78,10 @@ target_link_libraries (shell_command_inout PRIVATE clickhouse_common_io)
 add_executable (executable_udf executable_udf.cpp)
 target_link_libraries (executable_udf PRIVATE dbms)
 
-add_executable (hive_metastore_client hive_metastore_client.cpp)
-target_link_libraries (hive_metastore_client PUBLIC ch_contrib::hivemetastore ch_contrib::thrift)
+if (ENABLE_HIVE)
+    add_executable (hive_metastore_client hive_metastore_client.cpp)
+    target_link_libraries (hive_metastore_client PUBLIC ch_contrib::hivemetastore ch_contrib::thrift)
+endif()
 
 add_executable (interval_tree interval_tree.cpp)
 target_link_libraries (interval_tree PRIVATE dbms)

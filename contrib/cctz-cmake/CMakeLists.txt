@@ -14,12 +14,12 @@ set (SRCS
     "${LIBRARY_DIR}/src/zone_info_source.cc"
 )
 
-add_library (cctz ${SRCS})
-target_include_directories (cctz PUBLIC "${LIBRARY_DIR}/include")
+add_library (_cctz ${SRCS})
+target_include_directories (_cctz PUBLIC "${LIBRARY_DIR}/include")
 
 if (OS_FREEBSD)
     # yes, need linux, because bsd check inside linux in time_zone_libc.cc:24
-    target_compile_definitions (cctz PRIVATE __USE_BSD linux _XOPEN_SOURCE=600)
+    target_compile_definitions (_cctz PRIVATE __USE_BSD linux _XOPEN_SOURCE=600)
 endif ()
 
 # Related to time_zones table:
@@ -57,7 +57,7 @@ clickhouse_embed_binaries(
     RESOURCE_DIR "${TZDIR}"
     RESOURCES ${TIMEZONE_RESOURCE_FILES}
 )
-add_dependencies(cctz tzdata)
-target_link_libraries(cctz INTERFACE "-Wl,${WHOLE_ARCHIVE} $<TARGET_FILE:tzdata> -Wl,${NO_WHOLE_ARCHIVE}")
+add_dependencies(_cctz tzdata)
+target_link_libraries(_cctz INTERFACE "-Wl,${WHOLE_ARCHIVE} $<TARGET_FILE:tzdata> -Wl,${NO_WHOLE_ARCHIVE}")
 
-add_library(ch_contrib::cctz ALIAS cctz)
+add_library(ch_contrib::cctz ALIAS _cctz)
