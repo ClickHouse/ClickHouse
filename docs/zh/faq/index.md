@@ -19,6 +19,7 @@ toc_priority: 76
     -   [什么是 OLAP?](../faq/general/olap.md)
     -   [什么是列存储数据库?](../faq/general/columnar-database.md)
     -   [为何不使用 MapReduce等技术?](../faq/general/mapreduce.md)
+    -   [我如何为 ClickHouse贡献代码?](../faq/general/how-do-i-contribute-code-to-clickhouse.md)
 -   **[应用案例](../faq/use-cases/index.md)**
     -   [我能把 ClickHouse 作为时序数据库来使用吗?](../faq/use-cases/time-series.md)
     -   [我能把 ClickHouse 作为 key-value 键值存储吗？](../faq/use-cases/key-value.md)
