@@ -42,11 +42,14 @@ bool ACLMap::ACLsComparator::operator()(const Coordination::ACLs & left, const C
 
 uint64_t ACLMap::convertACLs(const Coordination::ACLs & acls)
 {
+    if (acls.empty())
+        return 0;
+
     if (acl_to_num.count(acls))
         return acl_to_num[acls];
 
     /// Start from one
-    auto index = acl_to_num.size() + 1;
+    auto index = max_acl_id++;
 
     acl_to_num[acls] = index;
     num_to_acl[index] = acls;
@@ -69,6 +72,7 @@ void ACLMap::addMapping(uint64_t acls_id, const Coordination::ACLs & acls)
 {
     num_to_acl[acls_id] = acls;
     acl_to_num[acls] = acls_id;
+    max_acl_id = std::max(acls_id + 1, max_acl_id); /// max_acl_id pointer next slot
 }
 
 void ACLMap::addUsage(uint64_t acl_id)

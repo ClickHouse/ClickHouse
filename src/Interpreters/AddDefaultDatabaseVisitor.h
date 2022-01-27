@@ -19,6 +19,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/misc.h>
+#include <set>
 
 namespace DB
 {
@@ -33,11 +34,21 @@ public:
     explicit AddDefaultDatabaseVisitor(
         ContextPtr context_,
         const String & database_name_,
-        bool only_replace_current_database_function_ = false)
+        bool only_replace_current_database_function_ = false,
+        bool only_replace_in_join_ = false)
         : context(context_)
         , database_name(database_name_)
         , only_replace_current_database_function(only_replace_current_database_function_)
-    {}
+        , only_replace_in_join(only_replace_in_join_)
+    {
+        if (!context->isGlobalContext())
+        {
+            for (const auto & [table_name, _ /* storage */] : context->getExternalTables())
+            {
+                external_tables.insert(table_name);
+            }
+        }
+    }
 
     void visitDDL(ASTPtr & ast) const
     {
@@ -81,8 +92,10 @@ private:
     ContextPtr context;
 
     const String database_name;
+    std::set<String> external_tables;
 
     bool only_replace_current_database_function = false;
+    bool only_replace_in_join = false;
 
     void visit(ASTSelectWithUnionQuery & select, ASTPtr &) const
     {
@@ -124,6 +137,9 @@ private:
 
     void visit(ASTTablesInSelectQueryElement & tables_element, ASTPtr &) const
     {
+        if (only_replace_in_join && !tables_element.table_join)
+            return;
+
         if (tables_element.table_expression)
             tryVisit<ASTTableExpression>(tables_element.table_expression);
     }
@@ -138,13 +154,17 @@ private:
 
     void visit(const ASTTableIdentifier & identifier, ASTPtr & ast) const
     {
-        if (!identifier.compound())
-        {
-            auto qualified_identifier = std::make_shared<ASTTableIdentifier>(database_name, identifier.name());
-            if (!identifier.alias.empty())
-                qualified_identifier->setAlias(identifier.alias);
-            ast = qualified_identifier;
-        }
+        /// Already has database.
+        if (identifier.compound())
+            return;
+        /// There is temporary table with such name, should not be rewritten.
+        if (external_tables.count(identifier.shortName()))
+            return;
+
+        auto qualified_identifier = std::make_shared<ASTTableIdentifier>(database_name, identifier.name());
+        if (!identifier.alias.empty())
+            qualified_identifier->setAlias(identifier.alias);
+        ast = qualified_identifier;
     }
 
     void visit(ASTSubquery & subquery, ASTPtr &) const

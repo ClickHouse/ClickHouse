@@ -7,6 +7,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
+#include <Interpreters/TraceCollector.h>
 #include <Parsers/formatAST.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
@@ -14,7 +15,8 @@
 #include <Common/QueryProfiler.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadProfileEvents.h>
-#include <Common/TraceCollector.h>
+#include <Common/setThreadName.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <base/errnoToString.h>
 
 #if defined(OS_LINUX)
@@ -341,7 +343,7 @@ void ThreadStatus::finalizeQueryProfiler()
 
 void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 {
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
+    LockMemoryExceptionInThread lock(VariableContext::Global);
 
     if (exit_if_already_detached && thread_state == ThreadState::DetachedFromQuery)
     {
