@@ -152,9 +152,10 @@ struct ConvertImpl
         if (const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get()))
         {
             typename ColVecTo::MutablePtr col_to = nullptr;
+            UInt32 scale = 0;
+
             if constexpr (IsDataTypeDecimal<ToDataType>)
             {
-                UInt32 scale;
                 if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>
                     || std::is_same_v<Additions, AccurateOrNullConvertStrategyAdditions>)
                 {
@@ -208,11 +209,11 @@ struct ConvertImpl
                             bool convert_result = false;
 
                             if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
-                                convert_result = tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), vec_to.getScale(), result);
+                                convert_result = tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], scale, scale, result);
                             else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>)
-                                convert_result = tryConvertFromDecimal<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), result);
+                                convert_result = tryConvertFromDecimal<FromDataType, ToDataType>(vec_from[i], scale, result);
                             else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
-                                convert_result = tryConvertToDecimal<FromDataType, ToDataType>(vec_from[i], vec_to.getScale(), result);
+                                convert_result = tryConvertToDecimal<FromDataType, ToDataType>(vec_from[i], scale, result);
 
                             if (convert_result)
                                 vec_to[i] = result;
@@ -225,11 +226,11 @@ struct ConvertImpl
                         else
                         {
                             if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
-                                vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), vec_to.getScale());
+                                vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], scale, scale);
                             else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>)
-                                vec_to[i] = convertFromDecimal<FromDataType, ToDataType>(vec_from[i], vec_from.getScale());
+                                vec_to[i] = convertFromDecimal<FromDataType, ToDataType>(vec_from[i], scale);
                             else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
-                                vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], vec_to.getScale());
+                                vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], scale);
                             else
                                 throw Exception("Unsupported data type in conversion function", ErrorCodes::CANNOT_CONVERT_TYPE);
                         }
@@ -820,7 +821,7 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
             else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime>)
                 data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss") + 1));
             else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>)
-                data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss.") + vec_from.getScale() + 1));
+                data_to.resize(size * (strlen("YYYY-MM-DD hh:mm:ss.") + col_from->getScale() + 1));
             else
                 data_to.resize(size * 3);   /// Arbitrary
 
@@ -1169,7 +1170,7 @@ struct ConvertThroughParsing
                     if constexpr (to_datetime64)
                     {
                         DateTime64 res = 0;
-                        parseDateTime64BestEffort(res, vec_to.getScale(), read_buffer, *local_time_zone, *utc_time_zone);
+                        parseDateTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
                     }
                     else
@@ -1184,7 +1185,7 @@ struct ConvertThroughParsing
                     if constexpr (to_datetime64)
                     {
                         DateTime64 res = 0;
-                        parseDateTime64BestEffortUS(res, vec_to.getScale(), read_buffer, *local_time_zone, *utc_time_zone);
+                        parseDateTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
                     }
                     else
@@ -1199,12 +1200,12 @@ struct ConvertThroughParsing
                     if constexpr (to_datetime64)
                     {
                         DateTime64 value = 0;
-                        readDateTime64Text(value, vec_to.getScale(), read_buffer, *local_time_zone);
+                        readDateTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
                         vec_to[i] = value;
                     }
                     else if constexpr (IsDataTypeDecimal<ToDataType>)
                         SerializationDecimal<typename ToDataType::FieldType>::readText(
-                            vec_to[i], read_buffer, ToDataType::maxPrecision(), vec_to.getScale());
+                            vec_to[i], read_buffer, ToDataType::maxPrecision(), col_to->getScale());
                     else
                     {
                         parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone);
@@ -1223,7 +1224,7 @@ struct ConvertThroughParsing
                     if constexpr (to_datetime64)
                     {
                         DateTime64 res = 0;
-                        parsed = tryParseDateTime64BestEffort(res, vec_to.getScale(), read_buffer, *local_time_zone, *utc_time_zone);
+                        parsed = tryParseDateTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
                         vec_to[i] = res;
                     }
                     else
@@ -1244,12 +1245,12 @@ struct ConvertThroughParsing
                     if constexpr (to_datetime64)
                     {
                         DateTime64 value = 0;
-                        parsed = tryReadDateTime64Text(value, vec_to.getScale(), read_buffer, *local_time_zone);
+                        parsed = tryReadDateTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
                         vec_to[i] = value;
                     }
                     else if constexpr (IsDataTypeDecimal<ToDataType>)
                         parsed = SerializationDecimal<typename ToDataType::FieldType>::tryReadText(
-                            vec_to[i], read_buffer, ToDataType::maxPrecision(), vec_to.getScale());
+                            vec_to[i], read_buffer, ToDataType::maxPrecision(), col_to->getScale());
                     else
                         parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone);
                 }
