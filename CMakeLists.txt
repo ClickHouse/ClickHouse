@@ -247,8 +247,6 @@ endif()
 
 if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
     set(USE_DEBUG_HELPERS ON)
-else ()
-    set(USE_DEBUG_HELPERS ON)
 endif()
 option(USE_DEBUG_HELPERS "Enable debug helpers" ${USE_DEBUG_HELPERS})
 
