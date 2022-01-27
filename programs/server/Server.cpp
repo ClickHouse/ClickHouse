@@ -58,6 +58,8 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
+#include <Storages/Cache/ExternalDataSourceCache.h>
+#include <Storages/Cache/registerRemoteFileMetadatas.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -96,9 +98,7 @@
 #endif
 
 #if USE_SSL
-#    if USE_INTERNAL_SSL_LIBRARY
-#        include <Compression/CompressionCodecEncrypted.h>
-#    endif
+#    include <Compression/CompressionCodecEncrypted.h>
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
 #endif
@@ -110,10 +110,6 @@
 #if USE_NURAFT
 #    include <Coordination/FourLetterCommand.h>
 #    include <Server/KeeperTCPHandlerFactory.h>
-#endif
-
-#if USE_BASE64
-#   include <turbob64.h>
 #endif
 
 #if USE_JEMALLOC
@@ -525,6 +521,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     registerDictionaries();
     registerDisks();
     registerFormats();
+    registerRemoteFileMetadatas();
 
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
@@ -558,6 +555,21 @@ if (ThreadFuzzer::instance().isEffective())
         config().getUInt("max_thread_pool_free_size", 1000),
         config().getUInt("thread_pool_queue_size", 10000)
     );
+
+
+    /// Initialize global local cache for remote filesystem.
+    if (config().has("local_cache_for_remote_fs"))
+    {
+        bool enable = config().getBool("local_cache_for_remote_fs.enable", false);
+        if (enable)
+        {
+            String root_dir = config().getString("local_cache_for_remote_fs.root_dir");
+            UInt64 limit_size = config().getUInt64("local_cache_for_remote_fs.limit_size");
+            UInt64 bytes_read_before_flush
+                = config().getUInt64("local_cache_for_remote_fs.bytes_read_before_flush", DBMS_DEFAULT_BUFFER_SIZE);
+            ExternalDataSourceCache::instance().initOnce(global_context, root_dir, limit_size, bytes_read_before_flush);
+        }
+    }
 
     Poco::ThreadPool server_pool(3, config().getUInt("max_connections", 1024));
     std::mutex servers_lock;
@@ -955,6 +967,83 @@ if (ThreadFuzzer::instance().isEffective())
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
+    const auto listen_hosts = getListenHosts(config());
+    const auto listen_try = getListenTry(config());
+
+    if (config().has("keeper_server"))
+    {
+#if USE_NURAFT
+        //// If we don't have configured connection probably someone trying to use clickhouse-server instead
+        //// of clickhouse-keeper, so start synchronously.
+        bool can_initialize_keeper_async = false;
+
+        if (has_zookeeper) /// We have configured connection to some zookeeper cluster
+        {
+            /// If we cannot connect to some other node from our cluster then we have to wait our Keeper start
+            /// synchronously.
+            can_initialize_keeper_async = global_context->tryCheckClientConnectionToMyKeeperCluster();
+        }
+        /// Initialize keeper RAFT.
+        global_context->initializeKeeperDispatcher(can_initialize_keeper_async);
+        FourLetterCommandFactory::registerCommands(*global_context->getKeeperDispatcher());
+
+        for (const auto & listen_host : listen_hosts)
+        {
+            /// TCP Keeper
+            const char * port_name = "keeper_server.tcp_port";
+            createServer(
+                config(), listen_host, port_name, listen_try, /* start_server: */ false,
+                servers_to_start_before_tables,
+                [&](UInt16 port) -> ProtocolServerAdapter
+                {
+                    Poco::Net::ServerSocket socket;
+                    auto address = socketBindListen(socket, listen_host, port);
+                    socket.setReceiveTimeout(config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC));
+                    socket.setSendTimeout(config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC));
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        port_name,
+                        "Keeper (tcp): " + address.toString(),
+                        std::make_unique<TCPServer>(
+                            new KeeperTCPHandlerFactory(*this, false), server_pool, socket));
+                });
+
+            const char * secure_port_name = "keeper_server.tcp_port_secure";
+            createServer(
+                config(), listen_host, secure_port_name, listen_try, /* start_server: */ false,
+                servers_to_start_before_tables,
+                [&](UInt16 port) -> ProtocolServerAdapter
+                {
+#if USE_SSL
+                    Poco::Net::SecureServerSocket socket;
+                    auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
+                    socket.setReceiveTimeout(config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC));
+                    socket.setSendTimeout(config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC));
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        secure_port_name,
+                        "Keeper with secure protocol (tcp_secure): " + address.toString(),
+                        std::make_unique<TCPServer>(
+                            new KeeperTCPHandlerFactory(*this, true), server_pool, socket));
+#else
+                    UNUSED(port);
+                    throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
+                        ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
+                });
+        }
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ClickHouse server built without NuRaft library. Cannot use internal coordination.");
+#endif
+
+    }
+
+    for (auto & server : servers_to_start_before_tables)
+    {
+        server.start();
+        LOG_INFO(log, "Listening for {}", server.getDescription());
+    }
+
     auto & access_control = global_context->getAccessControl();
     if (config().has("custom_settings_prefixes"))
         access_control.setCustomSettingsPrefixes(config().getString("custom_settings_prefixes"));
@@ -1062,83 +1151,6 @@ if (ThreadFuzzer::instance().isEffective())
 
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
-
-    const auto listen_hosts = getListenHosts(config());
-    const auto listen_try = getListenTry(config());
-
-    if (config().has("keeper_server"))
-    {
-#if USE_NURAFT
-        //// If we don't have configured connection probably someone trying to use clickhouse-server instead
-        //// of clickhouse-keeper, so start synchronously.
-        bool can_initialize_keeper_async = false;
-
-        if (has_zookeeper) /// We have configured connection to some zookeeper cluster
-        {
-            /// If we cannot connect to some other node from our cluster then we have to wait our Keeper start
-            /// synchronously.
-            can_initialize_keeper_async = global_context->tryCheckClientConnectionToMyKeeperCluster();
-        }
-        /// Initialize keeper RAFT.
-        global_context->initializeKeeperDispatcher(can_initialize_keeper_async);
-        FourLetterCommandFactory::registerCommands(*global_context->getKeeperDispatcher());
-
-        for (const auto & listen_host : listen_hosts)
-        {
-            /// TCP Keeper
-            const char * port_name = "keeper_server.tcp_port";
-            createServer(
-                config(), listen_host, port_name, listen_try, /* start_server: */ false,
-                servers_to_start_before_tables,
-                [&](UInt16 port) -> ProtocolServerAdapter
-                {
-                    Poco::Net::ServerSocket socket;
-                    auto address = socketBindListen(socket, listen_host, port);
-                    socket.setReceiveTimeout(settings.receive_timeout);
-                    socket.setSendTimeout(settings.send_timeout);
-                    return ProtocolServerAdapter(
-                        listen_host,
-                        port_name,
-                        "Keeper (tcp): " + address.toString(),
-                        std::make_unique<TCPServer>(
-                            new KeeperTCPHandlerFactory(*this, false), server_pool, socket));
-                });
-
-            const char * secure_port_name = "keeper_server.tcp_port_secure";
-            createServer(
-                config(), listen_host, secure_port_name, listen_try, /* start_server: */ false,
-                servers_to_start_before_tables,
-                [&](UInt16 port) -> ProtocolServerAdapter
-                {
-#if USE_SSL
-                    Poco::Net::SecureServerSocket socket;
-                    auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
-                    socket.setReceiveTimeout(settings.receive_timeout);
-                    socket.setSendTimeout(settings.send_timeout);
-                    return ProtocolServerAdapter(
-                        listen_host,
-                        secure_port_name,
-                        "Keeper with secure protocol (tcp_secure): " + address.toString(),
-                        std::make_unique<TCPServer>(
-                            new KeeperTCPHandlerFactory(*this, true), server_pool, socket));
-#else
-                    UNUSED(port);
-                    throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
-                        ErrorCodes::SUPPORT_IS_DISABLED};
-#endif
-                });
-        }
-#else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ClickHouse server built without NuRaft library. Cannot use internal coordination.");
-#endif
-
-    }
-
-    for (auto & server : servers_to_start_before_tables)
-    {
-        server.start();
-        LOG_INFO(log, "Listening for {}", server.getDescription());
-    }
 
     SCOPE_EXIT({
         /// Stop reloading of the main config. This must be done before `global_context->shutdown()` because

@@ -29,6 +29,7 @@ namespace ErrorCodes
     extern const int CANNOT_TRUNCATE_FILE;
     extern const int CANNOT_UNLINK;
     extern const int CANNOT_RMDIR;
+    extern const int BAD_ARGUMENTS;
 }
 
 std::mutex DiskLocal::reservation_mutex;
@@ -84,6 +85,22 @@ static void loadDiskLocalConfig(const String & name,
         // Create tmp disk for getting total disk space.
         keep_free_space_bytes = static_cast<UInt64>(DiskLocal("tmp", tmp_path, 0).getTotalSpace() * ratio);
     }
+}
+
+std::optional<size_t> fileSizeSafe(const fs::path & path)
+{
+    std::error_code ec;
+
+    size_t size = fs::file_size(path, ec);
+    if (!ec)
+        return size;
+
+    if (ec == std::errc::no_such_file_or_directory)
+        return std::nullopt;
+    if (ec == std::errc::operation_not_supported)
+        return std::nullopt;
+
+    throw fs::filesystem_error("DiskLocal", path, ec);
 }
 
 class DiskLocalReservation : public IReservation
@@ -269,9 +286,11 @@ void DiskLocal::replaceFile(const String & from_path, const String & to_path)
     fs::rename(from_file, to_file);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path, const ReadSettings & settings, std::optional<size_t> size) const
+std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path, const ReadSettings & settings, std::optional<size_t> read_hint, std::optional<size_t> file_size) const
 {
-    return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, size);
+    if (!file_size.has_value())
+        file_size = fileSizeSafe(fs::path(disk_path) / path);
+    return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, read_hint, file_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
@@ -440,10 +459,16 @@ void registerDiskLocal(DiskFactory & factory)
                       const Poco::Util::AbstractConfiguration & config,
                       const String & config_prefix,
                       ContextPtr context,
-                      const DisksMap & /*map*/) -> DiskPtr {
+                      const DisksMap & map) -> DiskPtr {
         String path;
         UInt64 keep_free_space_bytes;
         loadDiskLocalConfig(name, config, config_prefix, context, path, keep_free_space_bytes);
+
+        for (const auto & [disk_name, disk_ptr] : map)
+        {
+            if (path == disk_ptr->getPath())
+                throw Exception("Disk " + name + " and Disk " + disk_name + " cannot have the same path" + " (" + path + ")", ErrorCodes::BAD_ARGUMENTS);
+        }
         return std::make_shared<DiskLocal>(name, path, keep_free_space_bytes);
     };
     factory.registerDiskType("local", creator);

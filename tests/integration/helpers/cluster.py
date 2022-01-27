@@ -271,6 +271,7 @@ class ClickHouseCluster:
         self.with_cassandra = False
         self.with_jdbc_bridge = False
         self.with_nginx = False
+        self.with_hive = False
 
         self.with_minio = False
         self.minio_dir = os.path.join(self.instances_dir, "minio")
@@ -320,6 +321,8 @@ class ClickHouseCluster:
         # available when with_mongo == True
         self.mongo_host = "mongo1"
         self.mongo_port = get_free_port()
+        self.mongo_no_cred_host = "mongo2"
+        self.mongo_no_cred_port = get_free_port()
 
         # available when with_cassandra == True
         self.cassandra_host = "cassandra1"
@@ -727,8 +730,8 @@ class ClickHouseCluster:
         env_variables['MONGO_HOST'] = self.mongo_host
         env_variables['MONGO_EXTERNAL_PORT'] = str(self.mongo_port)
         env_variables['MONGO_INTERNAL_PORT'] = "27017"
-        env_variables['MONGO_EXTERNAL_PORT_2'] = "27018"
-        env_variables['MONGO_INTERNAL_PORT_2'] = "27017"
+        env_variables['MONGO_NO_CRED_EXTERNAL_PORT'] = str(self.mongo_no_cred_port)
+        env_variables['MONGO_NO_CRED_INTERNAL_PORT'] = "27017"
         self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mongo.yml')])
         self.base_mongo_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
                                 '--file', p.join(docker_compose_yml_dir, 'docker_compose_mongo.yml')]
@@ -778,17 +781,24 @@ class ClickHouseCluster:
                                     '--file', p.join(docker_compose_yml_dir, 'docker_compose_nginx.yml')]
         return self.base_nginx_cmd
 
+    def setup_hive(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_hive = True
+        self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_hive.yml')])
+        self.base_hive_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
+                                    '--file', p.join(docker_compose_yml_dir, 'docker_compose_hive.yml')]
+        return self.base_hive_cmd
+
     def add_instance(self, name, base_config_dir=None, main_configs=None, user_configs=None, dictionaries=None,
                      macros=None, with_zookeeper=False, with_zookeeper_secure=False,
                      with_mysql_client=False, with_mysql=False, with_mysql8=False, with_mysql_cluster=False,
                      with_kafka=False, with_kerberized_kafka=False, with_rabbitmq=False, clickhouse_path_dir=None,
                      with_odbc_drivers=False, with_postgres=False, with_postgres_cluster=False, with_hdfs=False,
                      with_kerberized_hdfs=False, with_mongo=False, with_mongo_secure=False, with_nginx=False,
-                     with_redis=False, with_minio=False, with_azurite=False, with_cassandra=False, with_jdbc_bridge=False,
+                     with_redis=False, with_minio=False, with_azurite=False, with_cassandra=False, with_jdbc_bridge=False, with_hive=False,
                      hostname=None, env_variables=None, image="clickhouse/integration-test", tag=None,
                      stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, external_dirs=None, tmpfs=None,
                      zookeeper_docker_compose_path=None, minio_certs_dir=None, use_keeper=True,
-                     main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True, config_root_name="clickhouse") -> 'ClickHouseInstance':
+                     main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True, config_root_name="clickhouse", extra_configs=[]) -> 'ClickHouseInstance':
 
         """Add an instance to the cluster.
 
@@ -798,6 +808,7 @@ class ClickHouseCluster:
         user_configs - a list of config files that will be added to users.d/ directory
         with_zookeeper - if True, add ZooKeeper configuration to configs and ZooKeeper instances to the cluster.
         with_zookeeper_secure - if True, add ZooKeeper Secure configuration to configs and ZooKeeper instances to the cluster.
+        extra_configs - config files cannot put into config.d and users.d
         """
 
         if self.is_up:
@@ -843,6 +854,7 @@ class ClickHouseCluster:
             with_azurite=with_azurite,
             with_cassandra=with_cassandra,
             with_jdbc_bridge=with_jdbc_bridge,
+            with_hive = with_hive,
             server_bin_path=self.server_bin_path,
             odbc_bridge_bin_path=self.odbc_bridge_bin_path,
             library_bridge_bin_path=self.library_bridge_bin_path,
@@ -863,7 +875,8 @@ class ClickHouseCluster:
             copy_common_configs=copy_common_configs,
             external_dirs=external_dirs,
             tmpfs=tmpfs or [],
-            config_root_name=config_root_name)
+            config_root_name=config_root_name,
+            extra_configs = extra_configs)
 
         docker_compose_yml_dir = get_docker_compose_path()
 
@@ -958,6 +971,9 @@ class ClickHouseCluster:
 
         if with_jdbc_bridge and not self.with_jdbc_bridge:
             cmds.append(self.setup_jdbc_bridge_cmd(instance, env_variables, docker_compose_yml_dir))
+
+        if with_hive:
+            cmds.append(self.setup_hive(instance, env_variables, docker_compose_yml_dir))
 
         logging.debug("Cluster name:{} project_name:{}. Added instance name:{} tag:{} base_cmd:{} docker_compose_yml_dir:{}".format(
             self.name, self.project_name, name, tag, self.base_cmd, docker_compose_yml_dir))
@@ -1650,6 +1666,12 @@ class ClickHouseCluster:
                 self.up_called = True
                 time.sleep(10)
 
+            if self.with_hive and self.base_hive_cmd:
+                logging.debug('Setup hive')
+                subprocess_check_call(self.base_hive_cmd + common_opts)
+                self.up_called = True
+                time.sleep(300)
+
             if self.with_minio and self.base_minio_cmd:
                 # Copy minio certificates to minio/certs
                 os.mkdir(self.minio_dir)
@@ -1893,13 +1915,13 @@ class ClickHouseInstance:
             self, cluster, base_path, name, base_config_dir, custom_main_configs, custom_user_configs,
             custom_dictionaries,
             macros, with_zookeeper, zookeeper_config_path, with_mysql_client,  with_mysql, with_mysql8, with_mysql_cluster, with_kafka, with_kerberized_kafka,
-            with_rabbitmq, with_nginx, with_kerberized_hdfs, with_mongo, with_redis, with_minio, with_azurite, with_jdbc_bridge,
+            with_rabbitmq, with_nginx, with_kerberized_hdfs, with_mongo, with_redis, with_minio, with_azurite, with_jdbc_bridge, with_hive,
             with_cassandra, server_bin_path, odbc_bridge_bin_path, library_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers, with_postgres, with_postgres_cluster,
             clickhouse_start_command=CLICKHOUSE_START_COMMAND,
             main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True,
             hostname=None, env_variables=None,
             image="clickhouse/integration-test", tag="latest",
-            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, external_dirs=None, tmpfs=None, config_root_name="clickhouse"):
+            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, external_dirs=None, tmpfs=None, config_root_name="clickhouse", extra_configs=[]):
 
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -1913,6 +1935,7 @@ class ClickHouseInstance:
         self.custom_main_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_main_configs]
         self.custom_user_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_user_configs]
         self.custom_dictionaries_paths = [p.abspath(p.join(base_path, c)) for c in custom_dictionaries]
+        self.custom_extra_config_paths = [p.abspath(p.join(base_path,c)) for c in extra_configs]
         self.clickhouse_path_dir = p.abspath(p.join(base_path, clickhouse_path_dir)) if clickhouse_path_dir else None
         self.kerberos_secrets_dir = p.abspath(p.join(base_path, 'secrets'))
         self.macros = macros if macros is not None else {}
@@ -1940,6 +1963,7 @@ class ClickHouseInstance:
         self.with_azurite = with_azurite
         self.with_cassandra = with_cassandra
         self.with_jdbc_bridge = with_jdbc_bridge
+        self.with_hive = with_hive
 
         self.main_config_name = main_config_name
         self.users_config_name = users_config_name
@@ -2256,7 +2280,7 @@ class ClickHouseInstance:
         logging.debug('{} log line(s) matching "{}" appeared in a {:.3f} seconds'.format(repetitions, regexp, wait_duration))
         return wait_duration
 
-    def file_exists(self, path):
+    def path_exists(self, path):
         return self.exec_in_container(
             ["bash", "-c", "echo $(if [ -e '{}' ]; then echo 'yes'; else echo 'no'; fi)".format(path)]) == 'yes\n'
 
@@ -2507,6 +2531,8 @@ class ClickHouseInstance:
         os.mkdir(users_d_dir)
         dictionaries_dir = p.abspath(p.join(instance_config_dir, 'dictionaries'))
         os.mkdir(dictionaries_dir)
+        extra_conf_dir = p.abspath(p.join(instance_config_dir, 'extra_conf.d'))
+        os.mkdir(extra_conf_dir)
 
         def write_embedded_config(name, dest_dir, fix_log_level=False):
             with open(p.join(HELPERS_DIR, name), 'r') as f:
@@ -2553,6 +2579,8 @@ class ClickHouseInstance:
         # Copy dictionaries configs to configs/dictionaries
         for path in self.custom_dictionaries_paths:
             shutil.copy(path, dictionaries_dir)
+        for path in self.custom_extra_config_paths:
+            shutil.copy(path, extra_conf_dir)
 
         db_dir = p.abspath(p.join(self.path, 'database'))
         logging.debug(f"Setup database dir {db_dir}")
@@ -2693,6 +2721,20 @@ class ClickHouseInstance:
     def destroy_dir(self):
         if p.exists(self.path):
             shutil.rmtree(self.path)
+
+    def wait_for_path_exists(self, path, seconds):
+        while seconds > 0:
+            seconds -= 1
+            if self.path_exists(path):
+                return
+            time.sleep(1)
+
+    def get_backuped_s3_objects(self, disk, backup_name):
+        path = f'/var/lib/clickhouse/disks/{disk}/shadow/{backup_name}/store'
+        self.wait_for_path_exists(path, 10)
+        command = ['find', path, '-type', 'f',
+            '-exec', 'grep', '-o', 'r[01]\\{64\\}-file-[[:lower:]]\\{32\\}', '{}', ';']
+        return self.exec_in_container(command).split('\n')
 
 
 class ClickHouseKiller(object):

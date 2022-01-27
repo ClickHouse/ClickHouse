@@ -239,7 +239,7 @@ private:
     void sendEndOfStream();
     void sendPartUUIDs();
     void sendReadTaskRequestAssumeLocked();
-    void sendMergeTreeReadTaskRequstAssumeLocked(PartitionReadRequest request);
+    void sendMergeTreeReadTaskRequestAssumeLocked(PartitionReadRequest request);
     void sendProfileInfo(const ProfileInfo & info);
     void sendTotals(const Block & totals);
     void sendExtremes(const Block & extremes);
