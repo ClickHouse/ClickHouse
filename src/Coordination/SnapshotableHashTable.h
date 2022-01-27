@@ -39,7 +39,7 @@ private:
     size_t snapshot_up_to_size = 0;
     size_t delete_nodes_count = 0;
     ArenaWithFreeLists arena;
-    std::vector<Mapped> snapshot_coped_set;
+    //std::vector<Mapped> snapshot_coped_set;
 
     uint64_t approximate_data_size{0};
 
@@ -174,13 +174,14 @@ public:
         else
         {
             auto list_itr = it->getMapped();
-            if (snapshot_mode)
+            //if (snapshot_mode)
+            if (snapshot_mode && list_itr->distance_from_begin < snapshot_up_to_size + delete_nodes_count)
             {
                 ListElem elem{list_itr->key, value, list.back().distance_from_begin + 1, true};
                 list_itr->active_in_map = false;
                 auto new_list_itr = list.insert(list.end(), elem);
                 it->getMapped() = new_list_itr;
-                snapshot_coped_set.push_back(list_itr);
+                //snapshot_coped_set.push_back(list_itr);
             }
             else
             {
@@ -198,12 +199,13 @@ public:
 
         auto list_itr = it->getMapped();
         uint64_t old_data_size = list_itr->value.sizeInBytes();
-        if (snapshot_mode)
+        //if (snapshot_mode)
+        if (snapshot_mode && list_itr->distance_from_begin < snapshot_up_to_size)
         {
             list_itr->active_in_map = false;
             list_itr->free_key = true;
             map.erase(it->getKey());
-            snapshot_coped_set.push_back(list_itr);
+            //snapshot_coped_set.push_back(list_itr);
         }
         else
         {
@@ -240,7 +242,7 @@ public:
         /// We in snapshot mode but updating some node which is already more
         /// fresh than snapshot distance. So it will not participate in
         /// snapshot and we don't need to copy it.
-        if (snapshot_mode && list_itr->distance_from_begin < snapshot_up_to_size)
+        if (snapshot_mode && list_itr->distance_from_begin < snapshot_up_to_size + delete_nodes_count)
         {
             auto elem_copy = *(list_itr);
             list_itr->active_in_map = false;
@@ -249,7 +251,7 @@ public:
             auto itr = list.insert(list.end(), elem_copy);
             it->getMapped() = itr;
             ret = itr;
-            snapshot_coped_set.push_back(list_itr);
+            //snapshot_coped_set.push_back(list_itr);
         }
         else
         {
@@ -285,7 +287,6 @@ public:
     void clearOutdatedNodes(std::string name = "")
     {
         auto sm = mytime();
-        /*
         auto start = list.begin();
         auto end = list.end();
         size_t counter = 0;
@@ -307,7 +308,7 @@ public:
                 ++itr;
             }
         }
-        */
+        /*
         for (auto & itr: snapshot_coped_set)
         {
             if (itr->key.size)
@@ -316,9 +317,10 @@ public:
                 arena.free(const_cast<char *>(itr->key.data), itr->key.size);
             list.erase(itr);
         }
+        */
         delete_nodes_count = 0;
         auto em = mytime();
-        snapshot_coped_set.clear();
+        //snapshot_coped_set.clear();
         std::cout << name <<" call clearOutdatedNodes use time ms: " << em - sm << std::endl;
     }
 
@@ -354,9 +356,8 @@ public:
 
     size_t snapshotSize()
     {
-        //if (delete_nodes_count)
-        //    clearOutdatedNodes("snapshotSize");
-        return list.size();
+        clearOutdatedNodes("snapshotSize");
+        return list.size() - delete_nodes_count;
     }
 
     uint64_t getApproximateDataSize() const

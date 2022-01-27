@@ -179,7 +179,7 @@ public:
     /// Clear outdated data from internal container.
     void clearGarbageAfterSnapshot()
     {
-        container.clearOutdatedNodes("clearGarbageAfterSnapshot");
+        //container.clearOutdatedNodes("clearGarbageAfterSnapshot");
     }
 
     /// Get all active sessions
