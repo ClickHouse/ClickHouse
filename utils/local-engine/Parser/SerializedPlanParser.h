@@ -82,7 +82,7 @@ public:
     DB::Block parseNameStruct(const substrait::NamedStruct& struct_);
     DB::DataTypePtr parseType(const substrait::Type& type);
 
-    static ContextPtr global_context;
+    static ContextMutablePtr global_context;
 private:
     static DB::NamesAndTypesList blockToNameAndTypeList(const DB::Block & header);
     DB::QueryPlanPtr parseOp(const substrait::Rel &rel);

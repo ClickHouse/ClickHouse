@@ -2,11 +2,26 @@
 #include <Parser/SerializedPlanParser.h>
 #include <Builder/SerializedPlanBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include "Storages/CustomStorageMergeTree.h"
+#include <DataTypes/DataTypesNumber.h>
 #include <iostream>
 #include "testConfig.h"
 #include <fstream>
 #include <Parser/SparkColumnToCHColumn.h>
 #include <Parser/CHColumnToSparkRow.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Columns/ColumnVector.h>
+#include <Parsers/ASTFunction.h>
+#include <local/LocalServer.h>
+#include <Disks/DiskLocal.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/TreeRewriter.h>
+#include <Interpreters/TableJoin.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/Formats/Impl/CSVRowOutputFormat.h>
+#include <Storages/CustomStorageMergeTree.h>
+#include <Storages/CustomMergeTreeSink.h>
 //#include <Poco/URI.h>
 
 using namespace dbms;
@@ -181,28 +196,101 @@ TEST(TestSelect, TestAgg)
 
 TEST(TestSelect, MergeTreeWriteTest)
 {
-//    DB::StorageID id("default", "test");
-//    std::string relative_path = TEST_DATA(/data/mergetree);
-//    DB::StorageInMemoryMetadata storage_in_memory_metadata;
-//    auto shared = DB::Context::createShared();
-//    auto global = DB::Context::createGlobal(shared.get());
-//    auto merging_params = DB::MergeTreeData::MergingParams();
-//    auto storage_setting = std::make_unique<DB::MergeTreeSettings>();
+    std::shared_ptr<DB::StorageInMemoryMetadata> metadata = std::make_shared<DB::StorageInMemoryMetadata>();
+    ColumnsDescription columns_description;
+    auto shared_context = Context::createShared();
+    DB::LocalServer localServer;
+    auto global_context = Context::createGlobal(shared_context.get());
+    global_context->makeGlobalContext();
+    global_context->setPath("/home/kyligence/Documents/clickhouse_conf/data/");
+    global_context->getDisksMap().emplace();
+    auto int64_type = std::make_shared<DB::DataTypeInt64>();
+    auto int32_type = std::make_shared<DB::DataTypeInt32>();
+    auto double_type = std::make_shared<DB::DataTypeFloat64>();
+    columns_description.add(ColumnDescription("l_orderkey", int64_type));
+    columns_description.add(ColumnDescription("l_partkey", int64_type));
+    columns_description.add(ColumnDescription("l_suppkey", int64_type));
+    columns_description.add(ColumnDescription("l_linenumber", int32_type));
+    columns_description.add(ColumnDescription("l_quantity", double_type));
+    columns_description.add(ColumnDescription("l_extendedprice", double_type));
+    columns_description.add(ColumnDescription("l_discount", double_type));
+    columns_description.add(ColumnDescription("l_tax", double_type));
+    columns_description.add(ColumnDescription("l_shipdate_new", double_type));
+    columns_description.add(ColumnDescription("l_commitdate_new", double_type));
+    columns_description.add(ColumnDescription("l_receiptdate_new", double_type));
+    metadata->setColumns(columns_description);
+    metadata->partition_key.expression_list_ast = std::make_shared<ASTExpressionList>();
+    metadata->sorting_key = KeyDescription::getSortingKeyFromAST(makeASTFunction("tuple"), columns_description, global_context, {});
+    metadata->primary_key.expression = std::make_shared<ExpressionActions>(std::make_shared<ActionsDAG>());
+    auto param = DB::MergeTreeData::MergingParams();
+    auto settings = std::make_unique<DB::MergeTreeSettings>();
+    settings->set("min_bytes_for_wide_part", Field(0));
+    settings->set("min_rows_for_wide_part", Field(0));
 
-//    DB::MergeTreeData(id, relative_path, storage_in_memory_metadata, global, "", merging_params, std::move(storage_setting), false, false, nullptr);
-//std::string uri = "hdfs://d-bdap-nn-0002.cebbank.com:8020/user/ke/11";
-//const size_t begin_of_path = uri.find('/', uri.find("//") + 2);
-//const String path_from_uri = uri.substr(begin_of_path);
-//const String uri_without_path = uri.substr(0, begin_of_path);
-//std::cout << path_from_uri <<std::endl << uri_without_path <<std::endl;
-//String for_match = path_from_uri;
-//String path_for_ls = "/";
-//const size_t first_glob = for_match.find_first_of("*?{");
-//
-//const size_t end_of_path_without_globs = for_match.substr(0, first_glob).rfind('/');
-//const String suffix_with_globs = for_match.substr(end_of_path_without_globs);   /// begin with '/'
-//const String prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs); /// ends with '/'
-//std::cout << suffix_with_globs <<std::endl << prefix_without_globs;
+    local_engine::CustomStorageMergeTree custom_merge_tree(DB::StorageID("default", "test"),
+                                                                                    "test-intel/",
+                                                                                    *metadata,
+                                                                                    false,
+                                                           global_context,
+                                                                                    "",
+                                                                                    param,
+                                                                                    std::move(settings)
+                                                                                );
+
+    auto sink = std::make_shared<local_engine::CustomMergeTreeSink>(custom_merge_tree, metadata, global_context);
+
+    auto files_info = std::make_shared<FilesInfo>();
+    files_info->files.push_back("/home/kyligence/Documents/test-dataset/intel-gazelle-test-150.snappy.parquet");
+    auto source = std::make_shared<BatchParquetFileSource>(files_info, sink->getPort().getHeader());
+
+    QueryPlanOptimizationSettings optimization_settings{.optimize_plan = false};
+    QueryPipeline query_pipeline;
+    query_pipeline.init(Pipe(source));
+    query_pipeline.setSinks([&](const Block &, QueryPipeline::StreamType type) -> ProcessorPtr
+                          {
+                              if (type != QueryPipeline::StreamType::Main)
+                                  return nullptr;
+
+                              return std::make_shared<local_engine::CustomMergeTreeSink>(custom_merge_tree, metadata, global_context);
+                          });
+    query_pipeline.execute()->execute(1);
+
+
+
+//    ColumnsWithTypeAndName columns;
+//    auto col1 = int_type->createColumn();
+//    col1->reserve(30000);
+//    for (int i = 0; i < 10000; ++i)
+//    {
+//        col1->insert(1);
+//        col1->insert(2);
+//        col1->insert(3);
+//    }
+//    columns.push_back(ColumnWithTypeAndName(std::move(col1), int_type, "col1"));
+//    DB::BlockWithPartition block_with_partition(Block(columns), DB::Row{});
+//    SimpleIncrement increment;
+//    increment.set(100);
+//    auto part = custom_merge_tree.writer.writeTempPart(block_with_partition, metadata, global_context);
+//    custom_merge_tree.renameTempPartAndAdd(part, &increment, nullptr, nullptr);
+//    SelectQueryInfo query_info;
+//    query_info.query = std::make_shared<ASTSelectQuery>();
+//    auto syntax_analyzer_result = std::make_shared<TreeRewriterResult>(block_with_partition.block.getNamesAndTypesList());
+//    syntax_analyzer_result->analyzed_join = std::make_shared<TableJoin>();
+//    query_info.syntax_analyzer_result = syntax_analyzer_result;
+//    auto query = custom_merge_tree.reader.read({"col1"},
+//                                  metadata,
+//                                  query_info,
+//                                  global_context,
+//                                  10000,
+//                                  1,
+//                                  QueryProcessingStage::FetchColumns);
+//    QueryPlanOptimizationSettings optimization_settings{.optimize_plan = false};
+//    QueryPipeline query_pipeline;
+//    query_pipeline.init(query->convertToPipe(optimization_settings, BuildQueryPipelineSettings()));
+//    auto buffer = WriteBufferFromFile("/home/kyligence/Documents/clickhouse_conf/data/output.csv");
+//    auto output = std::make_shared<CSVRowOutputFormat>(buffer, query_pipeline.getHeader(), true, RowOutputFormatParams(), FormatSettings());
+//    query_pipeline.setOutputFormat(output);
+//    query_pipeline.execute()->execute(1);
 }
 
 int main(int argc, char **argv)

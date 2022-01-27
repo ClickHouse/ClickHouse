@@ -373,7 +373,7 @@ void dbms::SerializedPlanParser::initFunctionEnv()
 dbms::SerializedPlanParser::SerializedPlanParser(const DB::ContextPtr & context) : context(context)
 {
 }
-dbms::ContextPtr dbms::SerializedPlanParser::global_context = dbms::Context::createGlobal(dbms::Context::createShared().get());
+dbms::ContextMutablePtr dbms::SerializedPlanParser::global_context = nullptr;
 DB::Chunk DB::BatchParquetFileSource::generate()
 {
     while (!finished_generate)
@@ -403,8 +403,8 @@ DB::Chunk DB::BatchParquetFileSource::generate()
 
 
             read_buf = std::move(nested_buffer);
-            ProcessorPtr format = std::make_shared<local_engine::ParquetRowInputFormat>(*read_buf, header);
-
+//            ProcessorPtr format = std::make_shared<local_engine::ParquetRowInputFormat>(*read_buf, header);
+            auto format = DB::ParquetBlockInputFormat::getParquetFormat(*read_buf, header);
             pipeline = std::make_unique<QueryPipeline>();
             pipeline->init(Pipe(format));
 
