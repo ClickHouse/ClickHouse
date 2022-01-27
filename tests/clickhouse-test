@@ -67,7 +67,7 @@ def stringhash(s):
     # only during process invocation https://stackoverflow.com/a/42089311
     return zlib.crc32(s.encode('utf-8'))
 
-  
+
 class HTTPError(Exception):
     def __init__(self, message=None, code=None):
         self.message = message
