@@ -15,6 +15,9 @@
 
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <Interpreters/FunctionNameNormalizer.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseQuery.h>
 
 
 namespace DB
@@ -368,6 +371,19 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
         }
     }
     return result;
+}
+
+TTLTableDescription TTLTableDescription::parse(const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key)
+{
+    TTLTableDescription result;
+    if (str.empty())
+        return result;
+
+    ParserTTLElement parser;
+    ASTPtr ast = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    FunctionNameNormalizer().visit(ast.get());
+
+    return getTTLForTableFromAST(ast, columns, context, primary_key);
 }
 
 }
