@@ -73,24 +73,6 @@ namespace DB
             return getReturnType();
         }
 
-        const ColumnString * getColumnString(const ColumnWithTypeAndName & argument) const
-        {
-            const auto & first_column = argument;
-            if (!isString(first_column.type))
-                throw Exception{"The fifth and sixth argument of function " + getName() + " should be strings, illegal type: " + first_column.type->getName(),
-                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
-
-            const ColumnPtr & arg_json = first_column.column;
-            const auto * col_json_const = typeid_cast<const ColumnConst *>(arg_json.get());
-            const auto * col_json_string
-                = typeid_cast<const ColumnString *>(col_json_const ? col_json_const->getDataColumnPtr().get() : arg_json.get());
-
-            if (!col_json_string)
-                throw Exception{"Illegal column " + arg_json->getName(), ErrorCodes::ILLEGAL_COLUMN};
-
-            return col_json_string;
-        }
-
         static void nan(MutableColumnPtr & to)
         {
             const Float64 nan = std::numeric_limits<Float64>::quiet_NaN();
@@ -103,9 +85,10 @@ namespace DB
             MutableColumnPtr to{getReturnType()->createColumn()};
             to->reserve(input_rows_count);
 
-            const auto * col_usevar = getColumnString(arguments[5]);
-            const ColumnString::Chars & usevar_chars = col_usevar->getChars();
-            const ColumnString::Offsets & usevar_offsets = col_usevar->getOffsets();
+            if (!isString(arguments[5].type))
+                throw Exception{"The sixth argument of function " + getName() + " should be String, illegal type: " + arguments[5].type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+            const ColumnPtr & col_usevar = arguments[5].column;
 
             for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
             {
@@ -128,7 +111,7 @@ namespace DB
                     continue;
                 }
 
-                std::string_view usevar{reinterpret_cast<const char *>(&usevar_chars[usevar_offsets[row_num - 1]]), usevar_offsets[row_num] - usevar_offsets[row_num - 1] - 1};
+                String usevar = col_usevar->getDataAt(row_num).toString();
 
                 Float64 se = std::sqrt(props_x * (1.0 - props_x) / trials_x + props_y * (1.0 - props_y) / trials_y);
 
