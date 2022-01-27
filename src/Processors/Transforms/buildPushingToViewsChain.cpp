@@ -331,7 +331,7 @@ Chain buildPushingToViewsChain(
         {
             auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform>(
                 storage_header, views_data->views.back(), views_data);
-            executing_inner_query->setRuntimeData(view_thread_status, elapsed_counter_ms);
+            executing_inner_query->setRuntimeData(view_thread_status, view_counter_ms);
 
             out.addSource(std::move(executing_inner_query));
         }
