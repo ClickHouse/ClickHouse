@@ -291,6 +291,15 @@ public:
 
     size_t getIntervalsSize() const { return intervals_size; }
 
+    size_t getSizeInBytes() const
+    {
+        size_t nodes_size_in_bytes = nodes.size() * sizeof(Node);
+        size_t intervals_size_in_bytes = sorted_intervals.size() * sizeof(IntervalWithValue);
+        size_t result = nodes_size_in_bytes + intervals_size_in_bytes;
+
+        return result;
+    }
+
 private:
     struct Node
     {
