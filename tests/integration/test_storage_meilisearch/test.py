@@ -1,9 +1,12 @@
 import json
 import os
+from pydoc import cli
 from time import sleep
 import meilisearch
+from pymysql import NULL
 
 import pytest
+from sympy import true
 from helpers.client import QueryRuntimeException
 
 from helpers.cluster import ClickHouseCluster
@@ -154,8 +157,8 @@ def test_incorrect_data_type(started_cluster):
     node = started_cluster.instances['meili']
     node.query("CREATE TABLE strange_meili_table(id UInt64, data String, bbbb String) ENGINE = MeiliSearch('meili1:7700', 'new_table', '')")
 
-    with pytest.raises(QueryRuntimeException):
-        node.query("SELECT bbbb FROM strange_meili_table")
+    error = node.query_and_get_error("SELECT bbbb FROM strange_meili_table")
+    assert("MEILISEARCH_MISSING_SOME_COLUMNS" in error)
 
     node.query("DROP TABLE strange_meili_table")
     table.delete()
@@ -182,14 +185,14 @@ def test_simple_select_secure(started_cluster):
     assert node.query("SELECT sum(id) FROM simple_meili_table") == str(sum(range(0, 100))) + '\n'
     assert node.query("SELECT data FROM simple_meili_table WHERE id = 42") == hex(42 * 42) + '\n'
 
-    with pytest.raises(QueryRuntimeException):
-        node.query("SELECT COUNT() FROM wrong_meili_table")
+    error = node.query_and_get_error("SELECT COUNT() FROM wrong_meili_table")
+    assert("MEILISEARCH_EXCEPTION" in error)
 
-    with pytest.raises(QueryRuntimeException):
-        node.query("SELECT sum(id) FROM wrong_meili_table")
+    error = node.query_and_get_error("SELECT sum(id) FROM wrong_meili_table")
+    assert("MEILISEARCH_EXCEPTION" in error)
 
-    with pytest.raises(QueryRuntimeException):
-        node.query("SELECT data FROM wrong_meili_table WHERE id = 42")
+    error = node.query_and_get_error("SELECT data FROM wrong_meili_table WHERE id = 42")
+    assert("MEILISEARCH_EXCEPTION" in error)
 
     node.query("DROP TABLE simple_meili_table")
     node.query("DROP TABLE wrong_meili_table")
@@ -252,8 +255,8 @@ def test_incorrect_data_type_secure(started_cluster):
     node = started_cluster.instances['meili']
     node.query("CREATE TABLE strange_meili_table(id UInt64, data String, bbbb String) ENGINE = MeiliSearch('meili_secure:7700', 'new_table', 'password')")
 
-    with pytest.raises(QueryRuntimeException):
-        node.query("SELECT bbbb FROM strange_meili_table")
+    error = node.query_and_get_error("SELECT bbbb FROM strange_meili_table")
+    assert("MEILISEARCH_MISSING_SOME_COLUMNS" in error)
 
     node.query("DROP TABLE strange_meili_table")
     table.delete()
@@ -306,8 +309,8 @@ def test_security_levels(started_cluster):
     node.query(f"CREATE TABLE read_table(id UInt64, data String) ENGINE = MeiliSearch('meili_secure:7700', 'new_table', '{search_key}')")
     node.query(f"CREATE TABLE write_table(id UInt64, data String) ENGINE = MeiliSearch('meili_secure:7700', 'new_table', '{admin_key}')")
 
-    with pytest.raises(QueryRuntimeException):
-        node.query("INSERT INTO read_table (id, data) VALUES " + values)
+    error = node.query_and_get_error("INSERT INTO read_table (id, data) VALUES " + values)
+    assert("MEILISEARCH_EXCEPTION" in error)
 
     node.query("INSERT INTO write_table (id, data) VALUES " + values)
     sleep(1)
@@ -325,4 +328,81 @@ def test_security_levels(started_cluster):
     node.query("DROP TABLE read_table")
     node.query("DROP TABLE write_table")
     client.index("new_table").delete()
+
+
+@pytest.mark.parametrize('started_cluster', [False], indirect=['started_cluster'])
+def test_types(started_cluster):
+    client = get_meili_client(started_cluster)
+    table = client.index("types_table")
+
+    data = {
+        'id' : 1,
+        'UInt8_test' : 128,
+        'UInt16_test' : 32768,
+        'UInt32_test' : 2147483648,
+        'UInt64_test' : 9223372036854775808,
+        'Int8_test' : -128,
+        'Int16_test' : -32768,
+        'Int32_test' : -2147483648,
+        'Int64_test' : -9223372036854775808,
+        'String_test' : "abacaba",
+        'Float32_test' : 42.42,
+        'Float64_test' : 42.42,
+        'Array_test' : [['aba', 'caba'], ['2d', 'array']],
+        'Null_test1' : "value",
+        'Null_test2' : NULL,
+        'Bool_test1' : True,
+        'Bool_test2' : False,
+        'Json_test' : {"a" : 1, "b" : {"in_json" : "qwerty"}}
+        }
+
+    push_data(client, table, data)
+
+    node = started_cluster.instances['meili']
+    node.query("CREATE TABLE types_table(\
+                                        id UInt64,\
+                                        UInt8_test UInt8,\
+                                        UInt16_test UInt16,\
+                                        UInt32_test UInt32,\
+                                        UInt64_test UInt64,\
+                                        Int8_test Int8,\
+                                        Int16_test Int16,\
+                                        Int32_test Int32,\
+                                        Int64_test Int64,\
+                                        String_test String,\
+                                        Float32_test Float32,\
+                                        Float64_test Float64,\
+                                        Array_test Array(Array(String)),\
+                                        Null_test1 Nullable(String),\
+                                        Null_test2 Nullable(String),\
+                                        Bool_test1 Boolean,\
+                                        Bool_test2 Boolean,\
+                                        Json_test String\
+                                        ) ENGINE = MeiliSearch('meili1:7700', 'types_table', '')")
+
+    assert node.query("SELECT id FROM types_table") == '1\n'
+    assert node.query("SELECT UInt8_test FROM types_table") == '128\n'
+    assert node.query("SELECT UInt16_test FROM types_table") == '32768\n'
+    assert node.query("SELECT UInt32_test FROM types_table") == '2147483648\n'
+    assert node.query("SELECT UInt64_test FROM types_table") == '9223372036854775808\n'
+    assert node.query("SELECT Int8_test FROM types_table") == '-128\n'
+    assert node.query("SELECT Int16_test FROM types_table") == '-32768\n'
+    assert node.query("SELECT Int32_test FROM types_table") == '-2147483648\n'
+    assert node.query("SELECT Int64_test FROM types_table") == '-9223372036854775808\n'
+    assert node.query("SELECT String_test FROM types_table") == 'abacaba\n'
+    assert node.query("SELECT Float32_test FROM types_table") == '42.42\n'
+    assert node.query("SELECT Float32_test FROM types_table") == '42.42\n'
+    assert node.query("SELECT Array_test FROM types_table") == "[['aba','caba'],['2d','array']]\n"
+    assert node.query("SELECT Null_test1 FROM types_table") == 'value\n'
+    assert node.query("SELECT Null_test2 FROM types_table") == 'NULL\n'
+    assert node.query("SELECT Bool_test1 FROM types_table") == 'true\n'
+    assert node.query("SELECT Bool_test2 FROM types_table") == 'false\n'
+    assert node.query("SELECT Json_test FROM types_table") == '{"a":1,"b":{"in_json":"qwerty"}}\n'
+    
+    node.query("DROP TABLE types_table")
+    table.delete()    
+
+    
+
+
 

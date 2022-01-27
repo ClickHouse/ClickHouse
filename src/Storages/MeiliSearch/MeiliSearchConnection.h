@@ -4,7 +4,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <base/types.h>
-#include "curl/curl.h"
+#include <curl/curl.h>
 
 namespace DB
 {
@@ -33,11 +33,7 @@ public:
     String updateQuery(std::string_view data) const;
 
 private:
-
-    CURLcode execQuery(
-        std::string_view url, 
-        std::string_view post_fields,
-        std::string& response_buffer) const;
+    CURLcode execQuery(std::string_view url, std::string_view post_fields, std::string & response_buffer) const;
 
     MeiliConfig config;
 };

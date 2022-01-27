@@ -1,5 +1,5 @@
-#include "MeiliSearchConnection.h"
 #include <string_view>
+#include <Storages/MeiliSearch/MeiliSearchConnection.h>
 #include <curl/curl.h>
 #include <Common/Exception.h>
 
@@ -20,10 +20,7 @@ static size_t writeCallback(void * contents, size_t size, size_t nmemb, void * u
     return size * nmemb;
 }
 
-CURLcode MeiliSearchConnection::execQuery(
-    std::string_view url, 
-    std::string_view post_fields,
-    std::string& response_buffer) const 
+CURLcode MeiliSearchConnection::execQuery(std::string_view url, std::string_view post_fields, std::string & response_buffer) const
 {
     CURLcode ret_code;
     CURL * handle;
