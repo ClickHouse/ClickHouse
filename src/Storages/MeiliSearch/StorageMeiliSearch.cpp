@@ -1,4 +1,8 @@
+#include <Core/Types.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/IAST_fwd.h>
+#include <Processors/Formats/IOutputFormat.h>
 #include <QueryPipeline/Pipe.h>
 #include <Storages/IStorage.h>
 #include <Storages/MeiliSearch/MeiliSearchConnection.h>
@@ -11,10 +15,6 @@
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <base/logger_useful.h>
 #include <Common/parseAddress.h>
-#include "Core/Types.h"
-#include "Parsers/ASTFunction.h"
-#include "Parsers/IAST_fwd.h"
-#include "Processors/Formats/IOutputFormat.h"
 
 namespace DB
 {
@@ -39,16 +39,7 @@ StorageMeiliSearch::StorageMeiliSearch(
     setInMemoryMetadata(storage_metadata);
 }
 
-void printAST(ASTPtr ptr)
-{
-    WriteBufferFromOwnString out;
-    IAST::FormatSettings settings(out, true);
-    settings.identifier_quoting_style = IdentifierQuotingStyle::BackticksMySQL;
-    settings.always_quote_identifiers = IdentifierQuotingStyle::BackticksMySQL != IdentifierQuotingStyle::None;
-    ptr->format(settings);
-}
-
-std::string convertASTtoStr(ASTPtr ptr)
+String convertASTtoStr(ASTPtr ptr)
 {
     WriteBufferFromOwnString out;
     IAST::FormatSettings settings(out, true);
@@ -58,17 +49,17 @@ std::string convertASTtoStr(ASTPtr ptr)
     return out.str();
 }
 
-ASTPtr getFunctionParams(ASTPtr node, const std::string & name)
+ASTPtr getFunctionParams(ASTPtr node, const String & name)
 {
     if (!node)
         return nullptr;
-    
+
     const auto * ptr = node->as<ASTFunction>();
     if (ptr && ptr->name == name)
     {
-        if (node->children.size() == 1) 
+        if (node->children.size() == 1)
             return node->children[0];
-        else 
+        else
             return nullptr;
     }
     for (const auto & next : node->children)
@@ -105,7 +96,7 @@ Pipe StorageMeiliSearch::read(
             auto it = find(str.begin(), str.end(), '=');
             if (it == str.end())
                 throw Exception("meiliMatch function must have parameters of the form \'key=value\'", ErrorCodes::BAD_QUERY_PARAMETER);
-            
+
             String key(str.begin() + 1, it);
             String value(it + 1, str.end() - 1);
             kv_pairs_params[key] = value;

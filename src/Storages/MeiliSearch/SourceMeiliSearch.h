@@ -1,10 +1,12 @@
 #pragma once
 
 #include <unordered_map>
+#include <Core/ColumnsWithTypeAndName.h>
 #include <Core/ExternalResultDescription.h>
 #include <Processors/Chunk.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Storages/MeiliSearch/MeiliSearchConnection.h>
+#include <base/JSON.h>
 
 namespace DB
 {

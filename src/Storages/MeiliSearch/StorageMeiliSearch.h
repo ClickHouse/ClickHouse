@@ -1,10 +1,9 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
-
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/IStorage.h>
 #include <Storages/MeiliSearch/MeiliSearchConnection.h>
+#include <base/shared_ptr_helper.h>
 
 
 namespace DB
