@@ -69,8 +69,8 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
 }
 
 ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfiguration & config)
+    : ConnectionParameters(config, config.getString("host", "localhost"), getPortFromConfig(config))
 {
-    ConnectionParameters(config, config.getString("host", "localhost"), getPortFromConfig(config));
 }
 
 int ConnectionParameters::getPortFromConfig(const Poco::Util::AbstractConfiguration & config)
