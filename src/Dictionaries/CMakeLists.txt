@@ -33,9 +33,7 @@ target_link_libraries(clickhouse_dictionaries
         string_utils
 )
 
-target_link_libraries(clickhouse_dictionaries
-    PUBLIC
-        abseil_swiss_tables)
+target_link_libraries(clickhouse_dictionaries PUBLIC ch_contrib::abseil_swiss_tables)
 
 if (TARGET ch_contrib::cassandra)
     target_link_libraries(clickhouse_dictionaries PRIVATE ch_contrib::cassandra)
