@@ -482,10 +482,6 @@ catch (...)
 
 void Client::connect()
 {
-    for (auto host_port : hosts_ports)
-    {
-        DB::DNSResolver::instance().resolveHost(host_port.host);
-    }
     UInt16 default_port = ConnectionParameters::getPortFromConfig(config());
     connection_parameters = ConnectionParameters(config(), hosts_ports[0].host,
                                                  hosts_ports[0].port.value_or(default_port));
