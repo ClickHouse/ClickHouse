@@ -33,6 +33,7 @@ private:
     List list;
     IndexMap map;
     bool snapshot_mode{false};
+    /// Allows to avoid additional copies in updateValue function
     size_t snapshot_up_to_size = 0;
     ArenaWithFreeLists arena;
 
@@ -226,8 +227,10 @@ public:
 
         if (snapshot_mode)
         {
+            /// We in snapshot mode but updating some node which is already more
+            /// fresh than snapshot distance. So it will not participate in
+            /// snapshot and we don't need to copy it.
             size_t distance = std::distance(list.begin(), list_itr);
-
             if (distance < snapshot_up_to_size)
             {
                 auto elem_copy = *(list_itr);
@@ -269,11 +272,11 @@ public:
         return it->getMapped()->value;
     }
 
-    void clearOutdatedNodes(size_t up_to_size)
+    void clearOutdatedNodes()
     {
         auto start = list.begin();
-        size_t counter = 0;
-        for (auto itr = start; counter < up_to_size; ++counter)
+        auto end = list.end();
+        for (auto itr = start; itr != end;)
         {
             if (!itr->active_in_map)
             {
@@ -288,7 +291,6 @@ public:
                 itr++;
             }
         }
-
     }
 
     void clear()
@@ -308,6 +310,7 @@ public:
 
     void disableSnapshotMode()
     {
+
         snapshot_mode = false;
         snapshot_up_to_size = 0;
     }
