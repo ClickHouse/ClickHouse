@@ -5,6 +5,7 @@
 #include <Common/InterruptListener.h>
 #include <Common/ShellCommand.h>
 #include <Common/Stopwatch.h>
+#include <Common/DNSResolver.h>
 #include <Core/ExternalTable.h>
 #include <Poco/Util/Application.h>
 #include <Interpreters/Context.h>
@@ -239,20 +240,27 @@ protected:
     struct HostPort
     {
         String host;
-        std::optional<int> port{};
+        std::optional<UInt16> port{};
         friend std::istream & operator>>(std::istream & in, HostPort & hostPort)
         {
             String host_with_port;
-            String delimiter = ":";
             in >> host_with_port;
-            size_t delimiter_pos = host_with_port.find(delimiter);
-            if (delimiter_pos != String::npos)
+            DB::DNSResolver & resolver = DB::DNSResolver::instance();
+            try
             {
-                hostPort.host = host_with_port.substr(0, delimiter_pos);
-                hostPort.port = boost::lexical_cast<uint>(host_with_port.substr(delimiter_pos + 1, host_with_port.length()));
+                Poco::Net::SocketAddress address = resolver.resolveAddress(host_with_port);
+                hostPort.host = address.host().toString();
+                hostPort.port = address.port();
             }
-            else
-                hostPort.host = host_with_port;
+            catch (const Exception & e)
+            {
+                if (e.message() == "Missing port number") {
+                    hostPort.host = resolver.resolveHost(host_with_port).toString();
+                    hostPort.port = std::nullopt;
+                    return in;
+                }
+                throw;
+            }
             return in;
         }
     };
