@@ -1590,7 +1590,7 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_re
             pool.scheduleOrThrowOnError([&, thread_group = CurrentThread::getGroup()]
             {
                 if (thread_group)
-                    CurrentThread::attachTo(thread_group);
+                    CurrentThread::attachToIfDetached(thread_group);
 
                 LOG_DEBUG(log, "Removing part from filesystem {}", part->name);
                 part->remove();

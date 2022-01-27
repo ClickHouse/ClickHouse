@@ -988,7 +988,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 pool.scheduleOrThrowOnError([&, part_index, thread_group = CurrentThread::getGroup()]
                 {
                     if (thread_group)
-                        CurrentThread::attachTo(thread_group);
+                        CurrentThread::attachToIfDetached(thread_group);
 
                     process_part(part_index);
                 });
