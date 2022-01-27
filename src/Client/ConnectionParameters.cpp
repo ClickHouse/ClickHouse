@@ -70,10 +70,14 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
 
 ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfiguration & config)
 {
+    ConnectionParameters(config, config.getString("host", "localhost"), getPortFromConfig(config));
+}
+
+int ConnectionParameters::getPortFromConfig(const Poco::Util::AbstractConfiguration & config)
+{
     bool is_secure = config.getBool("secure", false);
-    std::string connection_host = config.getString("host", "localhost");
-    int connection_port = config.getInt("port",
-        config.getInt(is_secure ? "tcp_port_secure" : "tcp_port", is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
-    ConnectionParameters(config, connection_host, connection_port);
+    return config.getInt("port",
+        config.getInt(is_secure ? "tcp_port_secure" : "tcp_port",
+            is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
 }
 }
