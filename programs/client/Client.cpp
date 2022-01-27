@@ -486,13 +486,9 @@ void Client::connect()
     {
         DB::DNSResolver::instance().resolveHost(hosts_ports[attempted_address_index].host);
     }
-    bool is_secure = config().getBool("secure", false);
-    String tcp_port_config_key = is_secure ? "tcp_port_secure" : "tcp_port";
-    UInt16 default_port = config().getInt("port",
-        config().getInt(tcp_port_config_key,
-            is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
+    UInt16 default_port = ConnectionParameters::getPortFromConfig(config());
     connection_parameters = ConnectionParameters(config(), hosts_ports[0].host,
-        hosts_ports[0].port.value_or(default_port));
+                                                 hosts_ports[0].port.value_or(default_port));
 
     String server_name;
     UInt64 server_version_major = 0;
