@@ -307,7 +307,7 @@ void HiveTaskNodeHashIterateCallback::distributeHiveFilesToNodes(const std::vect
     for (const auto & hive_file_info : hive_file_infos_)
     {
         auto path_hash = sipHash64(hive_file_info.file_info.path.c_str(), hive_file_info.file_info.path.size());
-        std::ostringstream ostr;
+        WriteBufferFromOwnString ostr;
         for (const auto & partition_value : hive_file_info.partition_values)
         {
             ostr << partition_value;
@@ -354,9 +354,9 @@ void HiveTaskNodeHashFilesCollector::initQueryEnv(const Arguments & args_)
 void HiveTaskNodeHashFilesCollector::setupCallbackData(const String & data_)
 {
     stringToPackage(data_, task_metadata);
-    std::ostringstream ostr;
-    ostr << task_metadata;
-    LOG_TRACE(logger, "callback data : {}", ostr.str());
+    MarshallableTraceBuffer buf;
+    buf << task_metadata;
+    LOG_TRACE(logger, "callback data : {}", buf.str());
 }
 
 HiveFiles HiveTaskNodeHashFilesCollector::collectHiveFiles()

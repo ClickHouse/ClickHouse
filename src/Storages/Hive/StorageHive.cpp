@@ -172,14 +172,18 @@ public:
 
                 /// Use local cache for remote storage if enabled.
                 std::unique_ptr<ReadBuffer> remote_read_buf;
-                if (ExternalDataSourceCache::instance().isInitialized() && getContext()->getSettingsRef().use_local_cache_for_remote_storage)
+                if (ExternalDataSourceCache::instance().isInitialized()
+                    && getContext()->getSettingsRef().use_local_cache_for_remote_storage)
                 {
                     size_t buff_size = raw_read_buf->internalBuffer().size();
                     if (buff_size == 0)
                         buff_size = DBMS_DEFAULT_BUFFER_SIZE;
-                    remote_read_buf = RemoteReadBuffer::create(getContext(),
-                        std::make_shared<StorageHiveMetadata>("Hive", getNameNodeCluster(hdfs_namenode_url), uri_with_path, curr_file->getSize(), curr_file->getLastModTs()),
-                        std::move(raw_read_buf), buff_size);
+                    remote_read_buf = RemoteReadBuffer::create(
+                        getContext(),
+                        std::make_shared<StorageHiveMetadata>(
+                            "Hive", getNameNodeCluster(hdfs_namenode_url), uri_with_path, curr_file->getSize(), curr_file->getLastModTs()),
+                        std::move(raw_read_buf),
+                        buff_size);
                 }
                 else
                     remote_read_buf = std::move(raw_read_buf);
@@ -196,8 +200,7 @@ public:
                 builder.init(Pipe(input_format));
                 if (columns_description.hasDefaults())
                 {
-                    builder.addSimpleTransform([&](const Block & header)
-                    {
+                    builder.addSimpleTransform([&](const Block & header) {
                         return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, getContext());
                     });
                 }
@@ -297,14 +300,13 @@ StorageHive::StorageHive(
     , storage_settings(std::move(storage_settings_))
     , hive_task_files_collector_builder(hive_task_files_collector_builder_)
 {
-
     getContext()->getRemoteHostFilter().checkURL(Poco::URI(hive_metastore_url));
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment_);
-    setInMemoryMetadata(storage_metadata);   
+    setInMemoryMetadata(storage_metadata);
 }
 
 void StorageHive::lazyInitialize()
@@ -313,7 +315,7 @@ void StorageHive::lazyInitialize()
     if (has_initialized)
         return;
 
-    
+
     auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url, getContext());
     auto hive_table_info = hive_metastore_client->getHiveTable(hive_database, hive_table);
 
@@ -365,7 +367,7 @@ void StorageHive::lazyInitialize()
         auto partition_key_expr = ExpressionAnalyzer(partition_key_expr_list, syntax_result, getContext()).getActions(false);
         partition_name_types = partition_key_expr->getRequiredColumnsWithTypes();
     }
-    
+
     has_initialized = true;
 }
 ASTPtr StorageHive::extractKeyExpressionList(const ASTPtr & node)
@@ -414,7 +416,7 @@ Pipe StorageHive::read(
     HiveFiles hive_files = hive_task_files_collector->collectHiveFiles();
 
     auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url, getContext());
-    
+
     auto sources_info = std::make_shared<StorageHiveSource::SourcesInfo>();
     sources_info->hive_files = std::move(hive_files);
     sources_info->database = hive_database;
@@ -467,8 +469,7 @@ void registerStorageHive(StorageFactory & factory)
 {
     factory.registerStorage(
         "Hive",
-        [](const StorageFactory::Arguments & args)
-        {
+        [](const StorageFactory::Arguments & args) {
             bool have_settings = args.storage_def->settings;
             std::unique_ptr<HiveSettings> hive_settings = std::make_unique<HiveSettings>();
             if (have_settings)

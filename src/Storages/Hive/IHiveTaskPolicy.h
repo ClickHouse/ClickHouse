@@ -29,7 +29,6 @@ public:
 
 /**
  * @brief used to build task_iter callback in StorageHiveCluster for distributing files into different nodes
- * 
  */
 class IHiveTaskIterateCallback
 {
@@ -53,15 +52,13 @@ public:
     virtual void init(const Arguments &) = 0;
     /**
      * @brief build a callback for specified node
-     * 
      */
     virtual std::shared_ptr<TaskIterator> buildCallback(const Cluster::Address &) = 0;
     virtual String getName() = 0;
 };
 
 /**
- * @brief Every work node in StorageHiveCluster uses this to collect its own hdfs files 
- * 
+ * @brief Every work node in StorageHiveCluster uses this to collect its own hdfs files
  */
 class IHiveTaskFilesCollector : public WithContext
 {

@@ -34,11 +34,11 @@ public:
     void marshal(MarshallablePack & p) const override { p << partition_values << files; }
 
     void unmarshal(MarshallableUnPack & p) override { p >> partition_values >> files; }
-    std::ostream & trace(std::ostream & os) const override
+    MarshallableTraceBuffer & trace(MarshallableTraceBuffer & buf) const override
     {
-        os << "partition_values=" << partition_values << ";"
+        buf << "partition_values=" << partition_values << ";"
            << "files=" << files;
-        return os;
+        return buf;
     }
 };
 
@@ -58,18 +58,18 @@ public:
 
     void marshal(MarshallablePack & p) const override { p << file_format << hdfs_namenode_url << files; }
     void unmarshal(MarshallableUnPack & p) override { p >> file_format >> hdfs_namenode_url >> files; }
-    std::ostream & trace(std::ostream & os) const override
+    MarshallableTraceBuffer & trace(MarshallableTraceBuffer & buf) const override
     {
-        os << "file_format=" << file_format << ";"
+        buf << "file_format=" << file_format << ";"
            << "hdfs_namenode_url=" << hdfs_namenode_url << ";"
            << "files=" << files;
-        return os;
+        return buf;
     }
 };
 
 /**
  * @brief collect all hdfs files and distribute them into different nodes
- * 
+ *
  */
 class HiveTaskNodeHashIterateCallback : public IHiveTaskIterateCallback
 {
@@ -87,7 +87,7 @@ private:
     Arguments args;
     /**
      * @brief map node to a list of hive files
-     * 
+     *
      */
     std::map<String, AssginedTaskMetadata> node_tasks;
 

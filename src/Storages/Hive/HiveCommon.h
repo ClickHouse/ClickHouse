@@ -46,12 +46,12 @@ public:
             p >> path >> last_modify_time >> size;
         }
 
-        std::ostream & trace(std::ostream & os) const override
+        MarshallableTraceBuffer & trace(MarshallableTraceBuffer & buf) const override
         {
-            os << "path=" << path << ","
+            buf << "path=" << path << ","
                 << "last_modify_time=" << last_modify_time << ","
                 << "size=" << size;
-            return os;
+            return buf;
         }
     };
 
