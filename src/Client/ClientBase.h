@@ -254,7 +254,8 @@ protected:
             }
             catch (const Exception & e)
             {
-                if (e.message() == "Missing port number") {
+                if (e.message() == "Missing port number")
+                {
                     hostPort.host = resolver.resolveHost(host_with_port).toString();
                     hostPort.port = std::nullopt;
                     return in;
