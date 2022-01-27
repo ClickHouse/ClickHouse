@@ -254,6 +254,7 @@ zgrep -Fa " received signal " /test_output/gdb.log > /dev/null \
 echo -e "Backward compatibility check\n"
 
 echo "Download previous release server"
+mkdir previous_release_package_folder
 clickhouse-client --query="SELECT version()" | ./download_previous_release && echo -e 'Download script exit code\tOK' >> /test_output/backward_compatibility_check_results.tsv \
     || echo -e 'Download script failed\tFAIL' >> /test_output/backward_compatibility_check_results.tsv
 
