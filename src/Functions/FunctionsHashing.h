@@ -601,15 +601,12 @@ struct ImplBLAKE3
     static void apply(const char * begin, const size_t size, unsigned char* out_char_data)
     {
         auto err_msg = blake3_apply_shim(begin, size, out_char_data);
-        if (err_msg != nullptr) {
+        if (err_msg != nullptr)
+        {
             throw Exception("Function returned error message: " + std::string(err_msg), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             blake3_free_char_pointer(err_msg);
         }
     }
-
-    /*~ImplBLAKE3() {
-        blake3_free_hasher(blake3_hasher.hasher);
-    }*/
 };
 #endif
 
