@@ -11,7 +11,7 @@ if(COMPILER_PIPE)
 else()
     set(MAX_COMPILER_MEMORY 1500)
 endif()
-if(MAKE_STATIC_LIBRARIES)
+if(USE_STATIC_LIBRARIES)
     set(MAX_LINKER_MEMORY 3500)
 else()
     set(MAX_LINKER_MEMORY 2500)
@@ -193,7 +193,7 @@ add_subdirectory(Common/Config)
 
 set (all_modules)
 macro(add_object_library name common_path)
-    if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
+    if (USE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
         add_headers_and_sources(dbms ${common_path})
     else ()
         list (APPEND all_modules ${name})
@@ -253,15 +253,10 @@ if (TARGET ch_contrib::nuraft)
 endif()
 
 set (DBMS_COMMON_LIBRARIES)
-# libgcc_s does not provide an implementation of an atomics library. Instead,
-# GCC’s libatomic library can be used to supply these when using libgcc_s.
-if ((NOT USE_LIBCXX) AND COMPILER_CLANG AND OS_LINUX)
-    list (APPEND DBMS_COMMON_LIBRARIES atomic)
-endif()
 
-if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
+if (USE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
     add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
-    target_link_libraries (dbms PRIVATE libdivide ${DBMS_COMMON_LIBRARIES})
+    target_link_libraries (dbms PRIVATE ch_contrib::libdivide ${DBMS_COMMON_LIBRARIES})
     if (TARGET ch_contrib::jemalloc)
         target_link_libraries (dbms PRIVATE ch_contrib::jemalloc)
     endif()
@@ -269,7 +264,7 @@ if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
 else()
     add_library (dbms SHARED ${dbms_headers} ${dbms_sources})
     target_link_libraries (dbms PUBLIC ${all_modules} ${DBMS_COMMON_LIBRARIES})
-    target_link_libraries (clickhouse_interpreters PRIVATE libdivide)
+    target_link_libraries (clickhouse_interpreters PRIVATE ch_contrib::libdivide)
     if (TARGET ch_contrib::jemalloc)
         target_link_libraries (clickhouse_interpreters PRIVATE ch_contrib::jemalloc)
     endif()
@@ -316,7 +311,7 @@ target_link_libraries (clickhouse_common_io
         PUBLIC
             common
             ch_contrib::double_conversion
-            dragonbox_to_chars
+            ch_contrib::dragonbox_to_chars
 )
 
 # Use X86 AVX2/AVX512 instructions to accelerate filter operations
@@ -325,6 +320,7 @@ set_source_files_properties(
         Columns/ColumnsCommon.cpp
         Columns/ColumnVector.cpp
         Columns/ColumnDecimal.cpp
+        Columns/ColumnString.cpp
         PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS}")
 
 target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::re2_st)
@@ -346,9 +342,11 @@ if (TARGET ch_contrib::cpuid)
     target_link_libraries(clickhouse_common_io PRIVATE ch_contrib::cpuid)
 endif()
 
+dbms_target_link_libraries(PUBLIC ch_contrib::abseil_swiss_tables)
+
 # Make dbms depend on roaring instead of clickhouse_common_io so that roaring itself can depend on clickhouse_common_io
 # That way we we can redirect malloc/free functions avoiding circular dependencies
-dbms_target_link_libraries(PUBLIC roaring)
+dbms_target_link_libraries(PUBLIC ch_contrib::roaring)
 
 if (TARGET ch_contrib::rdkafka)
     dbms_target_link_libraries(PRIVATE ch_contrib::rdkafka ch_contrib::cppkafka)
@@ -522,7 +520,7 @@ if (TARGET ch_contrib::rapidjson)
     dbms_target_link_libraries(PRIVATE ch_contrib::rapidjson)
 endif()
 
-dbms_target_link_libraries(PUBLIC consistent-hashing)
+dbms_target_link_libraries(PUBLIC ch_contrib::consistent_hashing)
 
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
 
