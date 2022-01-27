@@ -51,7 +51,9 @@ private:
 
 using Paths = std::vector<Path>;
 
-template <typename ColumnHolder>
+struct EmptyNodeData {};
+
+template <typename LeafData, typename NodeData = EmptyNodeData>
 class SubcolumnsTree
 {
 public:
@@ -64,19 +66,21 @@ public:
             SCALAR,
         };
 
+        explicit Node(Kind kind_) : kind(kind_) {}
+        Node(Kind kind_, const NodeData & data_) : kind(kind_), data(data_) {}
+
         Kind kind = TUPLE;
         const Node * parent = nullptr;
+
         std::unordered_map<String, std::shared_ptr<Node>> children;
+        NodeData data;
 
         bool isNested() const { return kind == NESTED; }
 
-        std::shared_ptr<Node> addChild(const String & key_, Kind kind_)
+        void addChild(const String & key_, std::shared_ptr<Node> next_node)
         {
-            auto next_node = kind_ == SCALAR ? std::make_shared<Leaf>() : std::make_shared<Node>();
-            next_node->kind = kind_;
             next_node->parent = this;
-            children[key_] = next_node;
-            return next_node;
+            children[key_] = std::move(next_node);
         }
 
         virtual ~Node() = default;
@@ -84,14 +88,36 @@ public:
 
     struct Leaf : public Node
     {
+        Leaf(const Path & path_, const LeafData & data_)
+            : Node(Node::SCALAR), path(path_), data(data_)
+        {
+        }
+
         Path path;
-        ColumnHolder column;
+        LeafData data;
     };
 
+    using NodeKind = typename Node::Kind;
     using NodePtr = std::shared_ptr<Node>;
     using LeafPtr = std::shared_ptr<Leaf>;
 
-    bool add(const Path & path, const ColumnHolder & column)
+    bool add(const Path & path, const LeafData & leaf_data)
+    {
+        return add(path, [&](NodeKind kind, bool exists) -> NodePtr
+        {
+            if (exists)
+                return nullptr;
+
+            if (kind == Node::SCALAR)
+                return std::make_shared<Leaf>(path, leaf_data);
+
+            return std::make_shared<Node>(kind);
+        });
+    }
+
+    using NodeCreator = std::function<NodePtr(NodeKind, bool)>;
+
+    bool add(const Path & path, const NodeCreator & node_creator)
     {
         auto parts = path.getParts();
         auto is_nested = path.getIsNestedBitSet();
@@ -100,10 +126,7 @@ public:
             return false;
 
         if (!root)
-        {
-            root = std::make_shared<Node>();
-            root->kind = Node::TUPLE;
-        }
+            root = std::make_shared<Node>(Node::TUPLE);
 
         Node * current_node = root.get();
         for (size_t i = 0; i < parts.size() - 1; ++i)
@@ -114,6 +137,7 @@ public:
             if (it != current_node->children.end())
             {
                 current_node = it->second.get();
+                node_creator(current_node->kind, true);
                 bool current_node_is_nested = current_node->kind == Node::NESTED;
 
                 if (current_node_is_nested != is_nested.test(i))
@@ -122,7 +146,9 @@ public:
             else
             {
                 auto next_kind = is_nested.test(i) ? Node::NESTED : Node::TUPLE;
-                current_node = current_node->addChild(parts[i], next_kind).get();
+                auto next_node = node_creator(next_kind, false);
+                current_node->addChild(parts[i], next_node);
+                current_node = next_node.get();
             }
         }
 
@@ -130,12 +156,11 @@ public:
         if (it != current_node->children.end())
             return false;
 
-        auto node = current_node->addChild(parts.back(), Node::SCALAR);
-        auto leaf = std::dynamic_pointer_cast<Leaf>(node);
-        assert(leaf);
+        auto next_node = node_creator(Node::SCALAR, false);
+        current_node->addChild(parts.back(), next_node);
 
-        leaf->path = path;
-        leaf->column = column;
+        auto leaf = std::dynamic_pointer_cast<Leaf>(next_node);
+        assert(leaf);
         leaves.push_back(std::move(leaf));
 
         return true;
@@ -189,6 +214,7 @@ public:
 
     using Leaves = std::vector<LeafPtr>;
     const Leaves & getLeaves() const { return leaves; }
+    const Node * getRoot() const { return root.get(); }
 
     using iterator = typename Leaves::iterator;
     using const_iterator = typename Leaves::const_iterator;

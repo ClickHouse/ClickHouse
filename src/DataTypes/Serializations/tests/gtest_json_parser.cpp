@@ -10,7 +10,6 @@ using namespace DB;
 
 const String json1 = R"({"k1" : 1, "k2" : {"k3" : "aa", "k4" : 2}})";
 
-
 /// Nested(k2 String, k3 Nested(k4 String))
 const String json2 =
 R"({"k1" : [

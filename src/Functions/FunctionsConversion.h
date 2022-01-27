@@ -26,6 +26,8 @@
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/ObjectUtils.h>
+#include <DataTypes/DataTypeNested.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
 #include <Formats/FormatSettings.h>
 #include <Columns/ColumnString.h>
@@ -3076,13 +3078,15 @@ private:
                  throw Exception(ErrorCodes::TYPE_MISMATCH,
                     "Cast to Object can be performed only from flatten Named Tuple. Got: {}", from_type->getName());
 
-            const auto & names = from_tuple->getElementNames();
-            const auto & from_types = from_tuple->getElements();
+            Paths paths;
+            DataTypes from_types;
+
+            std::tie(paths, from_types) = flattenTuple(from_type);
             auto to_types = from_types;
 
             for (auto & type : to_types)
             {
-                if (checkAndGetDataType<DataTypeTuple>(type.get()))
+                if (isTuple(type) || isNested(type))
                      throw Exception(ErrorCodes::TYPE_MISMATCH,
                         "Cast to Object can be performed only from flatten Named Tuple. Got: {}", from_type->getName());
 
@@ -3090,18 +3094,24 @@ private:
             }
 
             return [element_wrappers = getElementWrappers(from_types, to_types),
-                has_nullable_subcolumns = to_type->hasNullableSubcolumns(), from_types, to_types, names]
+                has_nullable_subcolumns = to_type->hasNullableSubcolumns(), from_types, to_types, paths]
                 (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t input_rows_count)
             {
                 size_t tuple_size = to_types.size();
-                const ColumnTuple & column_tuple = assert_cast<const ColumnTuple &>(*arguments.front().column);
+                auto flattened_column = flattenTuple(arguments.front().column);
+                const auto & column_tuple = assert_cast<const ColumnTuple &>(*flattened_column);
+
+                if (tuple_size != column_tuple.getColumns().size())
+                    throw Exception(ErrorCodes::TYPE_MISMATCH,
+                        "Expected tuple with {} subcolumn, but got {} subcolumns",
+                        tuple_size, column_tuple.getColumns().size());
 
                 auto res = ColumnObject::create(has_nullable_subcolumns);
                 for (size_t i = 0; i < tuple_size; ++i)
                 {
                     ColumnsWithTypeAndName element = {{column_tuple.getColumns()[i], from_types[i], "" }};
                     auto converted_column = element_wrappers[i](element, to_types[i], nullable_source, input_rows_count);
-                    res->addSubcolumn(Path(names[i]), converted_column->assumeMutable());
+                    res->addSubcolumn(paths[i], converted_column->assumeMutable());
                 }
 
                 return res;

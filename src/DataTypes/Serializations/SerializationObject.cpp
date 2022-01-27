@@ -82,7 +82,7 @@ bool tryInsertDefaultFromNested(
         leaf = subcolumns.findLeaf(node_nested,
             [&](const auto & candidate)
             {
-                return candidate.column.size() == entry->column.size() + 1;
+                return candidate.data.size() == entry->data.size() + 1;
             });
 
         if (leaf)
@@ -95,11 +95,11 @@ bool tryInsertDefaultFromNested(
     if (!leaf)
         return false;
 
-    auto last_field = leaf->column.getLastField();
+    auto last_field = leaf->data.getLastField();
     if (last_field.isNull())
         return false;
 
-    const auto & least_common_type = entry->column.getLeastCommonType();
+    const auto & least_common_type = entry->data.getLeastCommonType();
     size_t num_dimensions = getNumberOfDimensions(*least_common_type);
     assert(num_skipped_nested < num_dimensions);
 
@@ -109,7 +109,7 @@ bool tryInsertDefaultFromNested(
         : getBaseTypeOfArray(least_common_type)->getDefault();
 
     auto default_field = applyVisitor(FieldVisitorReplaceScalars(default_scalar, num_dimensions_to_keep), last_field);
-    entry->column.insert(std::move(default_field));
+    entry->data.insert(std::move(default_field));
 
     return true;
 }
@@ -166,7 +166,7 @@ void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader &
         {
             bool inserted = tryInsertDefaultFromNested(entry, subcolumns);
             if (!inserted)
-                entry->column.insertDefault();
+                entry->data.insertDefault();
         }
     }
 
@@ -264,7 +264,7 @@ void SerializationObject<Parser>::serializeBinaryBulkWithMultipleStreams(
         settings.path.back() = Substream::ObjectStructure;
         settings.path.back().object_key_name = entry->path.getPath();
 
-        const auto & type = entry->column.getLeastCommonType();
+        const auto & type = entry->data.getLeastCommonType();
         if (auto * stream = settings.getter(settings.path))
         {
             entry->path.writeBinary(*stream);
@@ -276,7 +276,7 @@ void SerializationObject<Parser>::serializeBinaryBulkWithMultipleStreams(
         {
             auto serialization = type->getDefaultSerialization();
             serialization->serializeBinaryBulkWithMultipleStreams(
-                entry->column.getFinalizedColumn(), offset, limit, settings, state);
+                entry->data.getFinalizedColumn(), offset, limit, settings, state);
         }
     }
 
@@ -387,8 +387,8 @@ void SerializationObject<Parser>::serializeTextImpl(const IColumn & column, size
         writeDoubleQuoted((*it)->path.getPath(), ostr);
         writeChar(':', ostr);
 
-        auto serialization = (*it)->column.getLeastCommonType()->getDefaultSerialization();
-        serialization->serializeTextJSON((*it)->column.getFinalizedColumn(), row_num, ostr, settings);
+        auto serialization = (*it)->data.getLeastCommonType()->getDefaultSerialization();
+        serialization->serializeTextJSON((*it)->data.getFinalizedColumn(), row_num, ostr, settings);
     }
     writeChar('}', ostr);
 }
@@ -439,7 +439,7 @@ SerializationPtr getObjectSerialization(const String & schema_format)
         return std::make_shared<SerializationObject<JSONDataParser<RapidJSONParser>>>();
 #else
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "To use data type Object with JSON format, ClickHouse should be built with Simdjson or Rapidjson");
+            "To use data type Object with JSON format ClickHouse should be built with Simdjson or Rapidjson");
 #endif
     }
 
