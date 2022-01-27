@@ -6,7 +6,7 @@ all_2_2_0	data	Tuple(k5 String)
 all_1_2_1	data	Tuple(k1 String, k2 Tuple(k3 String, k4 String), k5 String)
 ============
 1	['aaa','ddd']	[['bbb','ccc'],['eee','fff']]
-all_3_3_0	data	Tuple(k1 Nested(k2 String, `k3.k4` Array(String)))
+all_3_3_0	data	Tuple(k1 Nested(k2 String, k3 Nested(k4 String)))
 ============
 1	a	42
 2	b	4200

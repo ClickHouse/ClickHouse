@@ -13,7 +13,7 @@ namespace DB
 size_t getNumberOfDimensions(const IDataType & type);
 size_t getNumberOfDimensions(const IColumn & column);
 DataTypePtr getBaseTypeOfArray(const DataTypePtr & type);
-DataTypePtr createArrayOfType(DataTypePtr type, size_t dimension);
+DataTypePtr createArrayOfType(DataTypePtr type, size_t num_dimensions);
 Array createEmptyArrayField(size_t num_dimensions);
 
 ColumnPtr getBaseColumnOfArray(const ColumnPtr & column);
@@ -29,12 +29,13 @@ void extendObjectColumns(NamesAndTypesList & columns_list, const ColumnsDescript
 using DataTypeTuplePtr = std::shared_ptr<DataTypeTuple>;
 
 std::pair<Paths, DataTypes> flattenTuple(const DataTypePtr & type);
+ColumnPtr flattenTuple(const ColumnPtr & column);
 
 DataTypePtr unflattenTuple(
     const Paths & paths,
     const DataTypes & tuple_types);
 
-std::pair<DataTypePtr, ColumnPtr> unflattenTuple(
+std::pair<ColumnPtr, DataTypePtr> unflattenTuple(
     const Paths & paths,
     const DataTypes & tuple_types,
     const Columns & tuple_columns);
