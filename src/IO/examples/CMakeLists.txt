@@ -68,7 +68,7 @@ add_executable (zlib_ng_bug zlib_ng_bug.cpp)
 target_link_libraries (zlib_ng_bug PRIVATE ch_contrib::zlib)
 
 add_executable (dragonbox_test dragonbox_test.cpp)
-target_link_libraries (dragonbox_test PRIVATE dragonbox_to_chars)
+target_link_libraries (dragonbox_test PRIVATE ch_contrib::dragonbox_to_chars)
 
 add_executable (zstd_buffers zstd_buffers.cpp)
 target_link_libraries (zstd_buffers PRIVATE clickhouse_common_io)

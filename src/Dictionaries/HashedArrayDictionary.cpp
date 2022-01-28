@@ -158,12 +158,6 @@ ColumnUInt8::Ptr HashedArrayDictionary<dictionary_key_type>::hasKeys(const Colum
     auto result = ColumnUInt8::create(keys_size, false);
     auto & out = result->getData();
 
-    if (attributes.empty())
-    {
-        query_count.fetch_add(keys_size, std::memory_order_relaxed);
-        return result;
-    }
-
     size_t keys_found = 0;
 
     for (size_t requested_key_index = 0; requested_key_index < keys_size; ++requested_key_index)

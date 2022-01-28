@@ -2528,8 +2528,13 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
 }
 
 
-bool MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr & part, MergeTreeTransaction * txn, SimpleIncrement * increment,
-                                         Transaction * out_transaction, MergeTreeDeduplicationLog * deduplication_log)
+bool MergeTreeData::renameTempPartAndAdd(
+    MutableDataPartPtr & part,
+    MergeTreeTransaction * txn,
+    SimpleIncrement * increment,
+    Transaction * out_transaction,
+    MergeTreeDeduplicationLog * deduplication_log,
+    std::string_view deduplication_token)
 {
     if (out_transaction && &out_transaction->data != this)
         throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
@@ -2538,7 +2543,7 @@ bool MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr & part, MergeTreeTra
     DataPartsVector covered_parts;
     {
         auto lock = lockParts();
-        if (!renameTempPartAndReplace(part, txn, increment, out_transaction, lock, &covered_parts, deduplication_log))
+        if (!renameTempPartAndReplace(part, txn, increment, out_transaction, lock, &covered_parts, deduplication_log, deduplication_token))
             return false;
     }
     if (!covered_parts.empty())
@@ -2550,8 +2555,14 @@ bool MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr & part, MergeTreeTra
 
 
 bool MergeTreeData::renameTempPartAndReplace(
-    MutableDataPartPtr & part, MergeTreeTransaction * txn, SimpleIncrement * increment, Transaction * out_transaction,
-    std::unique_lock<std::mutex> & lock, DataPartsVector * out_covered_parts, MergeTreeDeduplicationLog * deduplication_log, bool)
+    MutableDataPartPtr & part,
+    MergeTreeTransaction * txn,
+    SimpleIncrement * increment,
+    Transaction * out_transaction,
+    std::unique_lock<std::mutex> & lock,
+    DataPartsVector * out_covered_parts,
+    MergeTreeDeduplicationLog * deduplication_log,
+    std::string_view deduplication_token)
 {
     if (out_transaction && &out_transaction->data != this)
         throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
@@ -2612,7 +2623,7 @@ bool MergeTreeData::renameTempPartAndReplace(
     /// deduplication.
     if (deduplication_log)
     {
-        String block_id = part->getZeroLevelPartBlockID();
+        String block_id = part->getZeroLevelPartBlockID(deduplication_token);
         auto res = deduplication_log->addPart(block_id, part_info);
         if (!res.second)
         {

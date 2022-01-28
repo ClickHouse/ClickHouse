@@ -12,8 +12,7 @@ set (SRCS
     "${LIBRARY_DIR}/nanodbc/nanodbc.cpp"
 )
 
-add_library(nanodbc ${SRCS})
-
-target_link_libraries (nanodbc PUBLIC ch_contrib::unixodbc)
-target_include_directories (nanodbc SYSTEM PUBLIC "${LIBRARY_DIR}/")
-add_library(ch_contrib::nanodbc ALIAS nanodbc)
+add_library(_nanodbc ${SRCS})
+target_link_libraries(_nanodbc PUBLIC ch_contrib::unixodbc)
+target_include_directories(_nanodbc SYSTEM PUBLIC "${LIBRARY_DIR}/")
+add_library(ch_contrib::nanodbc ALIAS _nanodbc)

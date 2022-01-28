@@ -39,9 +39,9 @@ set (SRCS
     ${LIBRARY_DIR}/src/scantag.cpp
 )
 
-add_library (yaml-cpp ${SRCS})
+add_library (_yaml_cpp ${SRCS})
 
-target_include_directories(yaml-cpp PRIVATE ${LIBRARY_DIR}/include/yaml-cpp)
-target_include_directories(yaml-cpp SYSTEM BEFORE PUBLIC ${LIBRARY_DIR}/include)
+target_include_directories(_yaml_cpp PRIVATE ${LIBRARY_DIR}/include/yaml-cpp)
+target_include_directories(_yaml_cpp SYSTEM BEFORE PUBLIC ${LIBRARY_DIR}/include)
 
-add_library (ch_contrib::yaml_cpp ALIAS yaml-cpp)
+add_library (ch_contrib::yaml_cpp ALIAS _yaml_cpp)
