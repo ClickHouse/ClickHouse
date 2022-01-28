@@ -29,6 +29,7 @@ namespace ErrorCodes
     extern const int CANNOT_TRUNCATE_FILE;
     extern const int CANNOT_UNLINK;
     extern const int CANNOT_RMDIR;
+    extern const int BAD_ARGUMENTS;
 }
 
 std::mutex DiskLocal::reservation_mutex;
@@ -458,10 +459,16 @@ void registerDiskLocal(DiskFactory & factory)
                       const Poco::Util::AbstractConfiguration & config,
                       const String & config_prefix,
                       ContextPtr context,
-                      const DisksMap & /*map*/) -> DiskPtr {
+                      const DisksMap & map) -> DiskPtr {
         String path;
         UInt64 keep_free_space_bytes;
         loadDiskLocalConfig(name, config, config_prefix, context, path, keep_free_space_bytes);
+
+        for (const auto & [disk_name, disk_ptr] : map)
+        {
+            if (path == disk_ptr->getPath())
+                throw Exception("Disk " + name + " and Disk " + disk_name + " cannot have the same path" + " (" + path + ")", ErrorCodes::BAD_ARGUMENTS);
+        }
         return std::make_shared<DiskLocal>(name, path, keep_free_space_bytes);
     };
     factory.registerDiskType("local", creator);
