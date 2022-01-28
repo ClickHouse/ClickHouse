@@ -20,13 +20,12 @@ class AggregateFunctionState final : public IAggregateFunctionHelper<AggregateFu
 {
 private:
     AggregateFunctionPtr nested_func;
-    DataTypes arguments;
-    Array params;
 
 public:
     AggregateFunctionState(AggregateFunctionPtr nested_, const DataTypes & arguments_, const Array & params_)
         : IAggregateFunctionHelper<AggregateFunctionState>(arguments_, params_)
-        , nested_func(nested_), arguments(arguments_), params(params_) {}
+        , nested_func(nested_)
+    {}
 
     String getName() const override
     {
