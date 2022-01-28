@@ -91,30 +91,30 @@ set(S3_INCLUDES
     "${CMAKE_CURRENT_BINARY_DIR}/include/"
 )
 
-add_library(aws_s3_checksums ${AWS_CHECKSUMS_SOURCES})
-target_include_directories(aws_s3_checksums SYSTEM PUBLIC "${AWS_CHECKSUMS_LIBRARY_DIR}/include/")
+add_library(_aws_s3_checksums ${AWS_CHECKSUMS_SOURCES})
+target_include_directories(_aws_s3_checksums SYSTEM PUBLIC "${AWS_CHECKSUMS_LIBRARY_DIR}/include/")
 if(CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
-    target_compile_definitions(aws_s3_checksums PRIVATE "-DDEBUG_BUILD")
+    target_compile_definitions(_aws_s3_checksums PRIVATE "-DDEBUG_BUILD")
 endif()
-set_target_properties(aws_s3_checksums PROPERTIES LINKER_LANGUAGE C)
-set_property(TARGET aws_s3_checksums PROPERTY C_STANDARD 99)
+set_target_properties(_aws_s3_checksums PROPERTIES LINKER_LANGUAGE C)
+set_property(TARGET _aws_s3_checksums PROPERTY C_STANDARD 99)
 
-add_library(aws_s3 ${S3_UNIFIED_SRC})
+add_library(_aws_s3 ${S3_UNIFIED_SRC})
 
-target_compile_definitions(aws_s3 PUBLIC "AWS_SDK_VERSION_MAJOR=1")
-target_compile_definitions(aws_s3 PUBLIC "AWS_SDK_VERSION_MINOR=7")
-target_compile_definitions(aws_s3 PUBLIC "AWS_SDK_VERSION_PATCH=231")
-target_include_directories(aws_s3 SYSTEM BEFORE PUBLIC ${S3_INCLUDES})
+target_compile_definitions(_aws_s3 PUBLIC "AWS_SDK_VERSION_MAJOR=1")
+target_compile_definitions(_aws_s3 PUBLIC "AWS_SDK_VERSION_MINOR=7")
+target_compile_definitions(_aws_s3 PUBLIC "AWS_SDK_VERSION_PATCH=231")
+target_include_directories(_aws_s3 SYSTEM BEFORE PUBLIC ${S3_INCLUDES})
 
 if (TARGET OpenSSL::SSL)
-    target_compile_definitions(aws_s3 PUBLIC -DENABLE_OPENSSL_ENCRYPTION)
-    target_link_libraries(aws_s3 PRIVATE OpenSSL::Crypto OpenSSL::SSL)
+    target_compile_definitions(_aws_s3 PUBLIC -DENABLE_OPENSSL_ENCRYPTION)
+    target_link_libraries(_aws_s3 PRIVATE OpenSSL::Crypto OpenSSL::SSL)
 endif()
 
-target_link_libraries(aws_s3 PRIVATE aws_s3_checksums)
+target_link_libraries(_aws_s3 PRIVATE _aws_s3_checksums)
 
 # The library is large - avoid bloat.
-target_compile_options (aws_s3 PRIVATE -g0)
-target_compile_options (aws_s3_checksums PRIVATE -g0)
+target_compile_options (_aws_s3 PRIVATE -g0)
+target_compile_options (_aws_s3_checksums PRIVATE -g0)
 
-add_library(ch_contrib::aws_s3 ALIAS aws_s3)
+add_library(ch_contrib::aws_s3 ALIAS _aws_s3)
