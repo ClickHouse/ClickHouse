@@ -17,15 +17,11 @@ class AggregateFunctionSimpleState final : public IAggregateFunctionHelper<Aggre
 {
 private:
     AggregateFunctionPtr nested_func;
-    DataTypes arguments;
-    Array params;
 
 public:
     AggregateFunctionSimpleState(AggregateFunctionPtr nested_, const DataTypes & arguments_, const Array & params_)
         : IAggregateFunctionHelper<AggregateFunctionSimpleState>(arguments_, params_)
         , nested_func(nested_)
-        , arguments(arguments_)
-        , params(params_)
     {
     }
 
@@ -45,7 +41,7 @@ public:
         // Need to make a clone because it'll be customized.
         auto storage_type_arg = DataTypeFactory::instance().get(nested_func->getReturnType()->getName());
         DataTypeCustomNamePtr custom_name
-            = std::make_unique<DataTypeCustomSimpleAggregateFunction>(function, DataTypes{nested_func->getReturnType()}, params);
+            = std::make_unique<DataTypeCustomSimpleAggregateFunction>(function, DataTypes{nested_func->getReturnType()}, parameters);
         storage_type_arg->setCustomization(std::make_unique<DataTypeCustomDesc>(std::move(custom_name), nullptr));
         return storage_type_arg;
     }
