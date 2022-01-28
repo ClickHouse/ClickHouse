@@ -567,6 +567,9 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         analysis_result.required_columns = required_columns;
     }
 
+    if (query_info.projection)
+        storage_snapshot->addProjection(query_info.projection->desc);
+
     /// Blocks used in expression analysis contains size 1 const columns for constant folding and
     ///  null non-const columns to avoid useless memory allocations. However, a valid block sample
     ///  requires all columns to be of size 0, thus we need to sanitize the block here.
@@ -614,19 +617,13 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     query_info.has_window = query_analyzer->hasWindow();
     if (storage && !options.only_analyze)
     {
-        from_stage = storage->getQueryProcessingStage(context, options.to_stage, storage_snapshot, query_info);
-
-        if (query_info.projection)
-            storage_snapshot->addProjection(query_info.projection->desc);
-
         auto & query = getSelectQuery();
         query_analyzer->makeSetsForIndex(query.where());
         query_analyzer->makeSetsForIndex(query.prewhere());
         query_info.sets = query_analyzer->getPreparedSets();
-    }
 
-    if (storage && !options.only_analyze)
         from_stage = storage->getQueryProcessingStage(context, options.to_stage, storage_snapshot, query_info);
+    }
 
     /// Do I need to perform the first part of the pipeline?
     /// Running on remote servers during distributed processing or if query is not distributed.
