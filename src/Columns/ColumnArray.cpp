@@ -127,19 +127,8 @@ size_t ColumnArray::size() const
 
 Field ColumnArray::operator[](size_t n) const
 {
-    size_t offset = offsetAt(n);
-    size_t size = sizeAt(n);
-
-    if (size > max_array_size_as_field)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array of size {} is too large to be manipulated as single field, maximum size {}",
-            size, max_array_size_as_field);
-
-    Array res;
-    res.reserve(size);
-
-    for (size_t i = 0; i < size; ++i)
-        res.push_back(getData()[offset + i]);
-
+    Field res;
+    get(n, res);
     return res;
 }
 
