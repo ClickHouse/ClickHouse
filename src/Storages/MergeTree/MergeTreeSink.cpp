@@ -40,6 +40,7 @@ struct MergeTreeSink::DelayedChunk
     {
         MergeTreeDataWriter::TemporaryPart temp_part;
         UInt64 elapsed_ns;
+        String block_dedup_token;
     };
 
     std::vector<Partition> partitions;
@@ -55,6 +56,7 @@ void MergeTreeSink::consume(Chunk chunk)
     for (auto & current_block : part_blocks)
     {
         Stopwatch watch;
+        String block_dedup_token;
 
         auto temp_part = storage.writer.writeTempPart(current_block, metadata_snapshot, context);
 
@@ -65,7 +67,24 @@ void MergeTreeSink::consume(Chunk chunk)
         if (!temp_part.part)
             continue;
 
-        partitions.emplace_back(MergeTreeSink::DelayedChunk::Partition{.temp_part = std::move(temp_part), .elapsed_ns = elapsed_ns});
+        if (storage.getDeduplicationLog())
+        {
+            const String & dedup_token = context->getSettingsRef().insert_deduplication_token;
+            if (!dedup_token.empty())
+            {
+                /// multiple blocks can be inserted within the same insert query
+                /// an ordinal number is added to dedup token to generate a distinctive block id for each block
+                block_dedup_token = fmt::format("{}_{}", dedup_token, chunk_dedup_seqnum);
+                ++chunk_dedup_seqnum;
+            }
+        }
+
+        partitions.emplace_back(MergeTreeSink::DelayedChunk::Partition
+        {
+            .temp_part = std::move(temp_part),
+            .elapsed_ns = elapsed_ns,
+            .block_dedup_token = std::move(block_dedup_token)
+        });
     }
 
     finishDelayedChunk();
@@ -85,7 +104,7 @@ void MergeTreeSink::finishDelayedChunk()
         auto & part = partition.temp_part.part;
 
         /// Part can be deduplicated, so increment counters and add to part log only if it's really added
-        if (storage.renameTempPartAndAdd(part, &storage.increment, nullptr, storage.getDeduplicationLog()))
+        if (storage.renameTempPartAndAdd(part, &storage.increment, nullptr, storage.getDeduplicationLog(), partition.block_dedup_token))
         {
             PartLog::addNewPart(storage.getContext(), part, partition.elapsed_ns);
 

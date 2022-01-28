@@ -25,8 +25,8 @@ endif()
 
 set (SRCS ${SRCS} "${LIBRARY_DIR}/fastops/plain/ops_plain.cpp" "${LIBRARY_DIR}/fastops/core/avx_id.cpp" "${LIBRARY_DIR}/fastops/fastops.cpp")
 
-add_library(fastops ${SRCS})
+add_library(_fastops ${SRCS})
 
-target_include_directories(fastops SYSTEM PUBLIC "${LIBRARY_DIR}")
+target_include_directories(_fastops SYSTEM PUBLIC "${LIBRARY_DIR}")
 
-add_library(ch_contrib::fastops ALIAS fastops)
+add_library(ch_contrib::fastops ALIAS _fastops)

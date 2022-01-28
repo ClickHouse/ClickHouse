@@ -217,23 +217,23 @@ set (SRCS
     "${LIBRARY_DIR}/src/util/ue2string.cpp"
 )
 
-add_library (hyperscan ${SRCS})
+add_library (_hyperscan ${SRCS})
 
-target_compile_options (hyperscan
+target_compile_options (_hyperscan
     PRIVATE -g0 # Library has too much debug information
     -mno-avx -mno-avx2 # The library is using dynamic dispatch and is confused if AVX is enabled globally
     -march=corei7 -O2 -fno-strict-aliasing -fno-omit-frame-pointer -fvisibility=hidden # The options from original build system
     -fno-sanitize=undefined # Assume the library takes care of itself
 )
-target_include_directories (hyperscan
+target_include_directories (_hyperscan
     PRIVATE
         common
         "${LIBRARY_DIR}/include"
 )
-target_include_directories (hyperscan SYSTEM PUBLIC "${LIBRARY_DIR}/src")
+target_include_directories (_hyperscan SYSTEM PUBLIC "${LIBRARY_DIR}/src")
 if (ARCH_AMD64)
-    target_include_directories (hyperscan PRIVATE x86_64)
+    target_include_directories (_hyperscan PRIVATE x86_64)
 endif ()
-target_link_libraries (hyperscan PRIVATE boost::headers_only)
+target_link_libraries (_hyperscan PRIVATE boost::headers_only)
 
-add_library (ch_contrib::hyperscan ALIAS hyperscan)
+add_library (ch_contrib::hyperscan ALIAS _hyperscan)
