@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <Common/VariableContext.h>
 
 /// To be able to temporarily stop memory tracking from current thread.

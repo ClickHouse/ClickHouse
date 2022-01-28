@@ -60,11 +60,17 @@ void InterpreterCreateFunctionQuery::validateFunction(ASTPtr function, const Str
     auto & lambda_function = function->as<ASTFunction &>();
     auto & lambda_function_expression_list = lambda_function.arguments->children;
 
-    const auto & tuple_function_arguments = lambda_function_expression_list.at(0)->as<ASTFunction &>();
+    if (lambda_function_expression_list.size() != 2)
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Lambda must have arguments and body");
+
+    const ASTFunction * tuple_function_arguments = lambda_function_expression_list[0]->as<ASTFunction>();
+
+    if (!tuple_function_arguments || !tuple_function_arguments->arguments)
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Lambda must have valid arguments");
 
     std::unordered_set<String> arguments;
 
-    for (const auto & argument : tuple_function_arguments.arguments->children)
+    for (const auto & argument : tuple_function_arguments->arguments->children)
     {
         const auto * argument_identifier = argument->as<ASTIdentifier>();
 
@@ -77,7 +83,10 @@ void InterpreterCreateFunctionQuery::validateFunction(ASTPtr function, const Str
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Identifier {} already used as function parameter", argument_name);
     }
 
-    ASTPtr function_body = lambda_function_expression_list.at(1);
+    ASTPtr function_body = lambda_function_expression_list[1];
+    if (!function_body)
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Lambda must have valid function body");
+
     validateFunctionRecursiveness(function_body, name);
 }
 

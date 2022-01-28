@@ -63,6 +63,7 @@
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
 
 #include <base/EnumReflection.h>
+#include <base/demangle.h>
 
 #include <random>
 
@@ -677,7 +678,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 if (context->query_trace_context.trace_id != UUID())
                 {
                     auto * raw_interpreter_ptr = interpreter.get();
-                    std::string class_name(abi::__cxa_demangle(typeid(*raw_interpreter_ptr).name(), nullptr, nullptr, nullptr));
+                    std::string class_name(demangle(typeid(*raw_interpreter_ptr).name()));
                     span = std::make_unique<OpenTelemetrySpanHolder>(class_name + "::execute()");
                 }
                 res = interpreter->execute();
