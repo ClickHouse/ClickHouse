@@ -1,9 +1,105 @@
 #pragma once
 
+//
+// Mostly wait free, huge page optimized memory allocator
+//
+// Allocations are divided into 3 types
+//  * Huge, > 512mb
+//  * Large, > = 256k
+//  * Others
+//
+// ** Huge allocations **
+// Huge allocations are allocated and freed in GA * () functions using mmap (), the sizes are 
+// stored in a flat, fixed-size lockfree hash. There are no thread local caches, all the largest
+// allocations are forwarded to the system. The size is rounded up to huge pages.
+//
+// ** Large allocations **
+// Large allocations are handled by the LargeAlloc () / LargeFree () functions. At startup, we 
+// pre-allocate 640gb of virtual memory (LargeMemoryPtr) and cut large allocations from it. All
+// memory is divided into large blocks of 8mb each. Blocks are combined into large groups of 64
+// large blocks. Large allocations are divided into two types - more than 4mb and less. For 
+// allocations larger than 4mb, the size is rounded up to an integer number of blocks and we
+// look for a group in LargeGroupInfo[] that has room for allocation. Allocations less than 4mb
+// are allocated entirely within one large block. The size is rounded up to an integer number of
+// chunks (large chunk, 128kb). Each thread keeps the large block from which the previous
+// allocation was made (PrevThreadAllocLargeBlockId). First we try to allocate from this block.
+// If there is no room, then we look for a new suitable block in the global array.
+// 
+// ** Other allocations **
+// All other allocations come from "segments". A segment is 2MB of memory, ideally, located in
+// one huge page. This is achieved with aligned mmap () and MADV_HUGEPAGE. At startup, 640gb of
+// virtual memory is reserved for the array of segments. Pointer to this array is AllMemoryPtr.
+// 
+// Each segment is divided into 64 blocks. Each block can be further divided into allocations
+// for small blocks (small) or into several (up to 64) chunks with 64 allocations each for tiny
+// ones. Thus, segment allocations are divided into three types:
+//  * medium (>=32k)
+//  * small (>=512 bytes)
+//  * tiny (<512 bytes)
+// 
+// For each segment, TSegmentInfo contains a bitmask of free blocks. The first block is always
+// occupied by the segment header (TSegmentHeader). Since the first block is always occupied,
+// the first bit of the bitmask is used for the segment "owning" flag (SEGMENT_ACTIVE flag).
+// 
+// Each thread has one current segment. Each segment can only be current for one thread.
+// SwitchSegment() function finds a new segment for the current thread. The new segment should
+// have room for len blocks in a row and also MIN_FREE_BLOCKS blocks. ReleaseSegmentOwnership()
+// makes the segment belong to no thread, release the "ownership" of the segment.
+// 
+// All allocations smaller than 32kb are rounded to the power of two. Block can contain
+// allocations of the same size or block can also be the beginning of a medium-sized allocation.
+// The allocation size for a block is in the CurAllocLevel [] array in the segment header
+// (TSegmentHeader). Besides the power of two of size, there can be special AL_ * values in
+// CurAllocLevel[].
+// 
+// For medium allocations, atomic operations on TSegmentInfo are sufficient. Implemented in
+// SegmentMedium*() functions. BitMaskFind() finds a place in a bitmask where several bits are
+// set in a row.
+// 
+// Smaller allocations divide one block into several allocations. There are 2 cases. Simple
+// (64 or fewer allocations in one block) and complex (>64 allocations). Both options use the
+// functions of allocating and freeing whole blocks - Block*().
+// 
+// In the simple case (<= 64 allocations in one block), atomic operations are enough on a 64-bit
+// bitmask of free space in the block. These bitmasks are called BlockFreeBits[] and are stored
+// at the beginning of the segment in the second 512 bytes of the first block. Implemented in
+// SegmentSmall*().
+// 
+// In a more complex case, a 2-level system of dividing the block into allocations is used. The
+// block is divided into chunks of 64 allocations each. In this case, BlockFreeBits[] stores
+// the number of completely free chunks, and the allocation bitmasks themselves are in
+// MemFreeBits[]. MemFreeBits occupy the first block of the segment. Since the second 512 bytes
+// of the segment are already occupied by BlockFreeBits[], tiny allocations are possible only
+// starting from the third block of the segment (ALL_2LAYER_BLOCKS contains all blocks
+// available for such allocations).
+// 
+// Since allocations and releases are possible from different threads, all bitmask operations
+// are implemented using atomic operations. To make everything work faster for allocations
+// (and frees of recently allocated), thread-local bitmasks are used. Since these bitmasks are
+// used from one thread, operations with them are not atomic. These local bitmasks are stored
+// in the segment header in TSegmentSizeContext structures. When we release ownership of the
+// segment, local allocation caches are transferred to global bitmasks in the
+// DumpLocalAllocMasksLocked () function.
+// 
+// In the case when we have freed all allocations inside the block, we need to mark the block
+// as free. This can be done without races only by "owning" the segment. If we do not have
+// ownership, we set the required bit in the RetestBlockMask. Blocks from this mask will be
+// processed when the thread owning segment is looking for a free block or when other thread
+// is releasing the segment ownership, or we ourselves will seize the segment's ownership and
+// release the blocks using ProcessRetestMaskLocked().
+// 
+// In order to free unused memory into the system, one can run a special thread (RunHuReclaim())
+// which will watch once a second how much "extra" memory is used and if there is a lot of
+// committed but not used memory (more than ReclaimKeepSize), then this thread will release to
+// the system at most ReclaimMaxReclaim bytes per second. Memory is returned to the system
+// separately from the pool for large allocations and from the pool of segments.
+// 
+
 #include <atomic>
 #include <cassert>
 #include <cstdint>
 #include <algorithm>
+#include <string.h>
 
 #ifdef NDEBUG
 #define Y_ASSERT(expr) sizeof(expr)
@@ -127,7 +223,7 @@ static void* OsReserve(yint sz)
         ui64 rndVal = x * 0x83e385b21a346273ull + x * x * 0x554721eb2148deadull;
         ui64 alignment = HUGE_PAGE_SIZE - 1;
         char *ptr = (char*)((rndVal >> 17) & ~alignment); // high address bits are zero (48 bits for x64), low bits are zero for alignment
-        res = (char*)mmap(ptr, sz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON | MAP_NORESERVE, -1, 0);
+        res = (char*)mmap(ptr, sz, PROT_NONE, MAP_PRIVATE | MAP_ANON | MAP_NORESERVE, -1, 0);
         if (res == ptr) {
             break;
         }
@@ -148,14 +244,12 @@ static void* OsReserve(yint sz)
 }
 static void OsCommit(void *p, yint sz)
 {
-    // no special action required
-    (void)p;
-    (void)sz;
+    mprotect(p, sz, PROT_READ | PROT_WRITE);
 }
 static void OsReclaim(void *p, yint sz)
 {
     //madvise(segment, SEGMENT_SIZE, MADV_DONTNEED); // super slow for no apparent reason, use MAP_FIXED to map new memory over non needed
-    void *res = mmap(p, sz, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_PRIVATE | MAP_ANON | MAP_NORESERVE, -1, 0);
+    void *res = mmap(p, sz, PROT_NONE, MAP_FIXED | MAP_PRIVATE | MAP_ANON | MAP_NORESERVE, -1, 0);
     if (res != p) {
         abort(); // MAP_FIXED failed
     }
@@ -667,15 +761,7 @@ static void LargeReclaim(yint keepSize, yint maxReclaim)
 
 
 //////////////////////////////////////////////////////////////////////////////////////////////
-//
-// Segment structure
-// segment (2M) / block (32k) / chunk (in 2 layer) / element
-// segment 1st block has special usage : header(512 bytes), BlockFreeBits (512 bytes), MemFreeBits (62 * 512 bytes)
-//  BlockFreeBits usage:
-//   size for medium allocations
-//   free bit mask for 1layer structure
-//   number of completely free chunks for 2layer structure
-//  MemFreeBits are lower level free bitmasks for2 layer allocation structure
+// Allocations from segments
 //
 // basic principles:
 //   whenever possible alloc from local masks to avoid atomic operations

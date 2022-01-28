@@ -28,6 +28,71 @@ inline void hu_free_aligned(void *p, size_t align) {
     hu_free(p);
 }
 
+//////////////////////////////////////////////////////////////////////////
+// hooks
+#if defined(USE_INTELCC) || defined(_darwin_) || defined(_freebsd_) || defined(_STLPORT_VERSION)
+#define OP_THROWNOTHING throw ()
+#define OP_THROWBADALLOC throw (std::bad_alloc)
+#else
+#define OP_THROWNOTHING noexcept
+#define OP_THROWBADALLOC
+#endif
+
+void* operator new(size_t size) OP_THROWBADALLOC {
+    return ALLOC_FUNC(size);
+}
+
+void* operator new(size_t size, const std::nothrow_t&) OP_THROWNOTHING {
+    return ALLOC_FUNC(size);
+}
+
+void operator delete(void* p) OP_THROWNOTHING {
+    hu_free(p);
+}
+
+void operator delete(void* p, const std::nothrow_t&) OP_THROWNOTHING {
+    hu_free(p);
+}
+
+void* operator new[](size_t size) OP_THROWBADALLOC {
+    return ALLOC_FUNC(size);
+}
+
+void* operator new[](size_t size, const std::nothrow_t&) OP_THROWNOTHING {
+    return ALLOC_FUNC(size);
+}
+
+void operator delete[](void* p) OP_THROWNOTHING {
+    hu_free(p);
+}
+
+void operator delete[](void* p, const std::nothrow_t&) OP_THROWNOTHING {
+    hu_free(p);
+}
+
+#if (__cplusplus >= 201402L || _MSC_VER >= 1916)
+void operator delete  (void* p, size_t n) OP_THROWNOTHING {
+    (void)n;
+    hu_free(p);
+}
+void operator delete[](void* p, size_t n) OP_THROWNOTHING {
+    (void)n;
+    hu_free(p);
+}
+#endif
+
+#if (__cplusplus > 201402L && defined(__cpp_aligned_new)) && (!defined(__GNUC__) || (__GNUC__ > 5))
+void operator delete  (void* p, std::align_val_t al) OP_THROWNOTHING { hu_free_aligned(p, static_cast<size_t>(al)); }
+void operator delete[](void* p, std::align_val_t al) OP_THROWNOTHING { hu_free_aligned(p, static_cast<size_t>(al)); }
+void operator delete  (void* p, size_t n, std::align_val_t al) OP_THROWNOTHING { (void)n; hu_free_aligned(p, static_cast<size_t>(al)); };
+void operator delete[](void* p, size_t n, std::align_val_t al) OP_THROWNOTHING { (void)n; hu_free_aligned(p, static_cast<size_t>(al)); };
+
+void* operator new(size_t n, std::align_val_t al) OP_THROWBADALLOC { return hu_alloc_aligned(n, static_cast<size_t>(al)); }
+void* operator new[](size_t n, std::align_val_t al) OP_THROWBADALLOC { return hu_alloc_aligned(n, static_cast<size_t>(al)); }
+void* operator new(size_t n, std::align_val_t al, const std::nothrow_t&) OP_THROWNOTHING { return hu_alloc_aligned(n, static_cast<size_t>(al)); }
+void* operator new[](size_t n, std::align_val_t al, const std::nothrow_t&) OP_THROWNOTHING { return hu_alloc_aligned(n, static_cast<size_t>(al)); }
+#endif
+
 #ifdef _MSC_VER
 void DisableWarningHuGetSize()
 {
