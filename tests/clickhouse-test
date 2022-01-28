@@ -336,6 +336,24 @@ class FailureReason(enum.Enum):
     INTERNAL_ERROR = "Test internal error: "
 
 
+class SettingsRandomizer:
+    settings = {
+        "convert_query_to_cnf": lambda: random.randint(0, 1),
+        "max_block_size": lambda: random.randint(8000, 100000),
+        "max_threads": lambda: random.randint(1, 64),
+        "input_format_parallel_parsing": lambda: random.randint(0, 1),
+        "max_read_buffer_size": lambda: random.randint(1, 20) if random.random() < 0.1 else random.randint(500000, 1048576),
+        "use_uncompressed_cache": lambda: random.randint(0, 1),
+    }
+
+    @staticmethod
+    def add_random_settings(client_options):
+        client_options += " "
+        for setting, generator in SettingsRandomizer.settings.items():
+            client_options += "--" + setting + "=\"" + str(generator()) + "\" "
+        return client_options
+
+
 class TestResult:
     def __init__(self, case_name: str, status: TestStatus, reason: Optional[FailureReason], total_time: float, description: str):
         self.case_name: str = case_name
@@ -668,6 +686,7 @@ class TestCase:
 
             self.runs_count += 1
             self.testcase_args = self.configure_testcase_args(args, self.case_file, suite.suite_tmp_path)
+            client_options = SettingsRandomizer.add_random_settings(client_options)
             proc, stdout, stderr, total_time = self.run_single_test(server_logs_level, client_options)
 
             result = self.process_result_impl(proc, stdout, stderr, total_time)
