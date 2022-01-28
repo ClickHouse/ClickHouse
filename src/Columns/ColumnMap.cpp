@@ -64,8 +64,9 @@ MutableColumnPtr ColumnMap::cloneResized(size_t new_size) const
 
 Field ColumnMap::operator[](size_t n) const
 {
-    auto array = DB::get<Array>((*nested)[n]);
-    return Map(std::make_move_iterator(array.begin()), std::make_move_iterator(array.end()));
+    Field res;
+    get(n, res);
+    return res;
 }
 
 void ColumnMap::get(size_t n, Field & res) const
@@ -74,11 +75,12 @@ void ColumnMap::get(size_t n, Field & res) const
     size_t offset = offsets[n - 1];
     size_t size = offsets[n] - offsets[n - 1];
 
-    res = Map(size);
+    res = Map();
     auto & map = DB::get<Map &>(res);
+    map.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
-        getNestedData().get(offset + i, map[i]);
+        map.push_back(getNestedData()[offset + i]);
 }
 
 bool ColumnMap::isDefaultAt(size_t n) const
