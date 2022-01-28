@@ -1764,8 +1764,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         && processing_stage == QueryProcessingStage::FetchColumns
         && query_analyzer->hasAggregation()
         && (query_analyzer->aggregates().size() == 1)
-        && typeid_cast<const AggregateFunctionCount *>(query_analyzer->aggregates()[0].function.get())
-        && !context->getCurrentTransaction();
+        && typeid_cast<const AggregateFunctionCount *>(query_analyzer->aggregates()[0].function.get());
 
     if (optimize_trivial_count)
     {
@@ -1773,7 +1772,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         const auto & func = desc.function;
         std::optional<UInt64> num_rows{};
 
-        if (!query.prewhere() && !query.where())
+        if (!query.prewhere() && !query.where() && !context->getCurrentTransaction())
         {
             num_rows = storage->totalRows(settings);
         }

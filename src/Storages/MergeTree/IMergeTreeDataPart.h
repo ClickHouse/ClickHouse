@@ -317,7 +317,7 @@ public:
 
     CompressionCodecPtr default_codec;
 
-    mutable VersionMetadata versions;
+    mutable VersionMetadata version;
 
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;

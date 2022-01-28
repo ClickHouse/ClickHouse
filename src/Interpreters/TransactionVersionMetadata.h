@@ -21,19 +21,19 @@ struct TransactionInfoContext
 
 struct VersionMetadata
 {
-    TransactionID mintid = Tx::EmptyTID;
-    TransactionID maxtid = Tx::EmptyTID;
+    TransactionID creation_tid = Tx::EmptyTID;
+    TransactionID removal_tid = Tx::EmptyTID;
 
-    std::atomic<TIDHash> maxtid_lock = 0;
+    std::atomic<TIDHash> removal_tid_lock = 0;
 
-    std::atomic<CSN> mincsn = Tx::UnknownCSN;
-    std::atomic<CSN> maxcsn = Tx::UnknownCSN;
+    std::atomic<CSN> creation_csn = Tx::UnknownCSN;
+    std::atomic<CSN> removal_csn = Tx::UnknownCSN;
 
     bool isVisible(const MergeTreeTransaction & txn);
     bool isVisible(Snapshot snapshot_version, TransactionID current_tid = Tx::EmptyTID);
 
-    TransactionID getMinTID() const { return mintid; }
-    TransactionID getMaxTID() const;
+    TransactionID getCreationTID() const { return creation_tid; }
+    TransactionID getRemovalTID() const;
 
     bool tryLockMaxTID(const TransactionID & tid, const TransactionInfoContext & context, TIDHash * locked_by_id = nullptr);
     void lockMaxTID(const TransactionID & tid, const TransactionInfoContext & context);
@@ -42,7 +42,7 @@ struct VersionMetadata
     bool isMaxTIDLocked() const;
 
     /// It can be called only from MergeTreeTransaction or on server startup
-    void setMinTID(const TransactionID & tid, const TransactionInfoContext & context);
+    void setCreationTID(const TransactionID & tid, const TransactionInfoContext & context);
 
     bool canBeRemoved(Snapshot oldest_snapshot_version);
 

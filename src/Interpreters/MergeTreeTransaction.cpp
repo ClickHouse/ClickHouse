@@ -33,7 +33,7 @@ void MergeTreeTransaction::addNewPart(const StoragePtr & storage, const DataPart
 {
     TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
 
-    new_part->versions.setMinTID(tid, TransactionInfoContext{storage->getStorageID(), new_part->name});
+    new_part->version.setCreationTID(tid, TransactionInfoContext{storage->getStorageID(), new_part->name});
     if (txn)
         txn->addNewPart(storage, new_part);
 }
@@ -42,7 +42,7 @@ void MergeTreeTransaction::removeOldPart(const StoragePtr & storage, const DataP
 {
     TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
     TransactionInfoContext context{storage->getStorageID(), part_to_remove->name};
-    part_to_remove->versions.lockMaxTID(tid, context);
+    part_to_remove->version.lockMaxTID(tid, context);
     if (txn)
         txn->removeOldPart(storage, part_to_remove);
 }
@@ -52,7 +52,7 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage
     TransactionID tid = txn ? txn->tid : Tx::PrehistoricTID;
 
     TransactionInfoContext context{storage->getStorageID(), new_part->name};
-    new_part->versions.setMinTID(tid, context);
+    new_part->version.setCreationTID(tid, context);
     if (txn)
         txn->addNewPart(storage, new_part);
 
@@ -60,7 +60,7 @@ void MergeTreeTransaction::addNewPartAndRemoveCovered(const StoragePtr & storage
     for (const auto & covered : covered_parts)
     {
         context.part_name = covered->name;
-        covered->versions.lockMaxTID(tid, context);
+        covered->version.lockMaxTID(tid, context);
         if (txn)
             txn->removeOldPart(storage, covered);
     }
@@ -123,13 +123,13 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
     assert(prev_value == Tx::CommittingCSN);
     for (const auto & part : creating_parts)
     {
-        part->versions.mincsn.store(csn);
+        part->version.creation_csn.store(csn);
         part->storeVersionMetadata();
     }
 
     for (const auto & part : removing_parts)
     {
-        part->versions.maxcsn.store(csn);
+        part->version.removal_csn.store(csn);
         part->storeVersionMetadata();
     }
 }
@@ -146,17 +146,17 @@ bool MergeTreeTransaction::rollback() noexcept
         table_and_mutation.first->killMutation(table_and_mutation.second);
 
     for (const auto & part : creating_parts)
-        part->versions.mincsn.store(Tx::RolledBackCSN);
+        part->version.creation_csn.store(Tx::RolledBackCSN);
 
     for (const auto & part : removing_parts)    /// TODO update metadata file
-        part->versions.unlockMaxTID(tid, TransactionInfoContext{part->storage.getStorageID(), part->name});
+        part->version.unlockMaxTID(tid, TransactionInfoContext{part->storage.getStorageID(), part->name});
 
     /// FIXME const_cast
     for (const auto & part : creating_parts)
         const_cast<MergeTreeData &>(part->storage).removePartsFromWorkingSet(nullptr, {part}, true);
 
     for (const auto & part : removing_parts)
-        if (part->versions.getMinTID() != tid)
+        if (part->version.getCreationTID() != tid)
             const_cast<MergeTreeData &>(part->storage).restoreAndActivatePart(part);
 
     return true;
@@ -180,9 +180,9 @@ String MergeTreeTransaction::dumpDescription() const
     for (const auto & part : removing_parts)
     {
         res += part->name;
-        res += fmt::format(" (created by {}, {})\n", part->versions.getMinTID(), part->versions.mincsn);
-        assert(!part->versions.mincsn || part->versions.mincsn <= snapshot);
-        assert(!part->versions.maxcsn);
+        res += fmt::format(" (created by {}, {})\n", part->version.getCreationTID(), part->version.creation_csn);
+        assert(!part->version.creation_csn || part->version.creation_csn <= snapshot);
+        assert(!part->version.removal_csn);
     }
 
     return res;

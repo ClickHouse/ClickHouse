@@ -94,7 +94,7 @@ bool MergeTreePartsMover::selectPartsForMove(
     unsigned parts_to_move_by_ttl_rules = 0;
     double parts_to_move_total_size_bytes = 0.0;
 
-    MergeTreeData::DataPartsVector data_parts = data->getDataPartsVector();
+    MergeTreeData::DataPartsVector data_parts = data->getDataPartsVectorForInternalUsage();
 
     if (data_parts.empty())
         return false;

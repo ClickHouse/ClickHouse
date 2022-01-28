@@ -47,9 +47,9 @@ VersionMetadata::VersionMetadata()
 }
 
 /// It can be used for introspection purposes only
-TransactionID VersionMetadata::getMaxTID() const
+TransactionID VersionMetadata::getRemovalTID() const
 {
-    TIDHash max_lock = maxtid_lock.load();
+    TIDHash max_lock = removal_tid_lock.load();
     if (max_lock)
     {
         if (auto txn = TransactionLog::instance().tryGetRunningTransaction(max_lock))
@@ -58,10 +58,10 @@ TransactionID VersionMetadata::getMaxTID() const
             return Tx::PrehistoricTID;
     }
 
-    if (maxcsn.load(std::memory_order_relaxed))
+    if (removal_csn.load(std::memory_order_relaxed))
     {
-        /// maxtid cannot be changed since we have maxcsn, so it's readonly
-        return maxtid;
+        /// removal_tid cannot be changed since we have removal_csn, so it's readonly
+        return removal_tid;
     }
 
     return Tx::EmptyTID;
@@ -69,7 +69,7 @@ TransactionID VersionMetadata::getMaxTID() const
 
 void VersionMetadata::lockMaxTID(const TransactionID & tid, const TransactionInfoContext & context)
 {
-    LOG_TEST(log, "Trying to lock maxtid by {}, table: {}, part: {}", tid, context.table.getNameForLogs(), context.part_name);
+    LOG_TEST(log, "Trying to lock removal_tid by {}, table: {}, part: {}", tid, context.table.getNameForLogs(), context.part_name);
     TIDHash locked_by = 0;
     if (tryLockMaxTID(tid, context, &locked_by))
         return;
@@ -83,7 +83,7 @@ void VersionMetadata::lockMaxTID(const TransactionID & tid, const TransactionInf
                     "Serialization error: "
                     "Transaction {} tried to remove data part {} from {}, "
                     "but it's locked by another transaction (TID: {}, TIDH: {}) which is currently removing this part.",
-                    tid, part_desc, context.table.getNameForLogs(), getMaxTID(), locked_by);
+                    tid, part_desc, context.table.getNameForLogs(), getRemovalTID(), locked_by);
 }
 
 bool VersionMetadata::tryLockMaxTID(const TransactionID & tid, const TransactionInfoContext & context, TIDHash * locked_by_id)
@@ -91,14 +91,14 @@ bool VersionMetadata::tryLockMaxTID(const TransactionID & tid, const Transaction
     assert(!tid.isEmpty());
     TIDHash max_lock_value = tid.getHash();
     TIDHash expected_max_lock_value = 0;
-    bool locked = maxtid_lock.compare_exchange_strong(expected_max_lock_value, max_lock_value);
+    bool locked = removal_tid_lock.compare_exchange_strong(expected_max_lock_value, max_lock_value);
     if (!locked)
     {
         if (tid == Tx::PrehistoricTID && expected_max_lock_value == Tx::PrehistoricTID.getHash())
         {
             /// Don't need to lock part for queries without transaction
             //FIXME Transactions: why is it possible?
-            LOG_TEST(log, "Assuming maxtid is locked by {}, table: {}, part: {}", tid, context.table.getNameForLogs(), context.part_name);
+            LOG_TEST(log, "Assuming removal_tid is locked by {}, table: {}, part: {}", tid, context.table.getNameForLogs(), context.part_name);
             return true;
         }
 
@@ -107,30 +107,30 @@ bool VersionMetadata::tryLockMaxTID(const TransactionID & tid, const Transaction
         return false;
     }
 
-    maxtid = tid;
+    removal_tid = tid;
     tryWriteEventToSystemLog(log, TransactionsInfoLogElement::LOCK_PART, tid, context);
     return true;
 }
 
 void VersionMetadata::unlockMaxTID(const TransactionID & tid, const TransactionInfoContext & context)
 {
-    LOG_TEST(log, "Unlocking maxtid by {}, table: {}, part: {}", tid, context.table.getNameForLogs(), context.part_name);
+    LOG_TEST(log, "Unlocking removal_tid by {}, table: {}, part: {}", tid, context.table.getNameForLogs(), context.part_name);
     assert(!tid.isEmpty());
     TIDHash max_lock_value = tid.getHash();
-    TIDHash locked_by = maxtid_lock.load();
+    TIDHash locked_by = removal_tid_lock.load();
 
     auto throw_cannot_unlock = [&]()
     {
         auto locked_by_txn = TransactionLog::instance().tryGetRunningTransaction(locked_by);
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unlock maxtid, it's a bug. Current: {} {}, actual: {} {}",
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unlock removal_tid, it's a bug. Current: {} {}, actual: {} {}",
                         max_lock_value, tid, locked_by, locked_by_txn ? locked_by_txn->tid : Tx::EmptyTID);
     };
 
     if (locked_by != max_lock_value)
         throw_cannot_unlock();
 
-    maxtid = Tx::EmptyTID;
-    bool unlocked = maxtid_lock.compare_exchange_strong(locked_by, 0);
+    removal_tid = Tx::EmptyTID;
+    bool unlocked = removal_tid_lock.compare_exchange_strong(locked_by, 0);
     if (!unlocked)
         throw_cannot_unlock();
 
@@ -139,15 +139,15 @@ void VersionMetadata::unlockMaxTID(const TransactionID & tid, const TransactionI
 
 bool VersionMetadata::isMaxTIDLocked() const
 {
-    return maxtid_lock.load() != 0;
+    return removal_tid_lock.load() != 0;
 }
 
-void VersionMetadata::setMinTID(const TransactionID & tid, const TransactionInfoContext & context)
+void VersionMetadata::setCreationTID(const TransactionID & tid, const TransactionInfoContext & context)
 {
     /// TODO Transactions: initialize it in constructor on part creation and remove this method
     /// FIXME ReplicatedMergeTreeBlockOutputStream may add one part multiple times
-    assert(mintid.isEmpty() || mintid == tid);
-    const_cast<TransactionID &>(mintid) = tid;
+    assert(creation_tid.isEmpty() || creation_tid == tid);
+    const_cast<TransactionID &>(creation_tid) = tid;
 
     tryWriteEventToSystemLog(log, TransactionsInfoLogElement::ADD_PART, tid, context);
 }
@@ -159,18 +159,18 @@ bool VersionMetadata::isVisible(const MergeTreeTransaction & txn)
 
 bool VersionMetadata::isVisible(Snapshot snapshot_version, TransactionID current_tid)
 {
-    assert(!mintid.isEmpty());
-    CSN min = mincsn.load(std::memory_order_relaxed);
-    TIDHash max_lock = maxtid_lock.load(std::memory_order_relaxed);
-    CSN max = maxcsn.load(std::memory_order_relaxed);
+    assert(!creation_tid.isEmpty());
+    CSN min = creation_csn.load(std::memory_order_relaxed);
+    TIDHash max_lock = removal_tid_lock.load(std::memory_order_relaxed);
+    CSN max = removal_csn.load(std::memory_order_relaxed);
 
-    //LOG_TEST(log, "Checking if mintid {} mincsn {} maxtidhash {} maxcsn {} visible for {} {}", mintid, min, max_lock, max, snapshot_version, current_tid);
+    //LOG_TEST(log, "Checking if creation_tid {} creation_csn {} removal_tidhash {} removal_csn {} visible for {} {}", creation_tid, min, max_lock, max, snapshot_version, current_tid);
 
-    [[maybe_unused]] bool had_mincsn = min;
-    [[maybe_unused]] bool had_maxtid = max_lock;
-    [[maybe_unused]] bool had_maxcsn = max;
-    assert(!had_maxcsn || had_maxtid);
-    assert(!had_maxcsn || had_mincsn);
+    [[maybe_unused]] bool had_creation_csn = min;
+    [[maybe_unused]] bool had_removal_tid = max_lock;
+    [[maybe_unused]] bool had_removal_csn = max;
+    assert(!had_removal_csn || had_removal_tid);
+    assert(!had_removal_csn || had_creation_csn);
     assert(min == Tx::UnknownCSN || min == Tx::PrehistoricCSN || Tx::MaxReservedCSN < min);
     assert(max == Tx::UnknownCSN || max == Tx::PrehistoricCSN || Tx::MaxReservedCSN < max);
 
@@ -195,44 +195,44 @@ bool VersionMetadata::isVisible(Snapshot snapshot_version, TransactionID current
         return true;
     if (min && min <= snapshot_version && max && snapshot_version < max)
         return true;
-    if (!current_tid.isEmpty() && mintid == current_tid)
+    if (!current_tid.isEmpty() && creation_tid == current_tid)
         return true;
 
     /// End of fast path.
 
-    /// Data part has mintid/maxtid, but does not have mincsn/maxcsn.
+    /// Data part has creation_tid/removal_tid, but does not have creation_csn/removal_csn.
     /// It means that some transaction is creating/removing the part right now or has done it recently
     /// and we don't know if it was already committed or not.
-    assert(!had_mincsn || (had_maxtid && !had_maxcsn));
-    assert(current_tid.isEmpty() || (mintid != current_tid && max_lock != current_tid.getHash()));
+    assert(!had_creation_csn || (had_removal_tid && !had_removal_csn));
+    assert(current_tid.isEmpty() || (creation_tid != current_tid && max_lock != current_tid.getHash()));
 
     /// Before doing CSN lookup, let's check some extra conditions.
     /// If snapshot_version <= some_tid.start_csn, then changes of the transaction with some_tid
     /// are definitely not visible for us (because the transaction can be committed with greater CSN only),
     /// so we don't need to check if it was committed.
-    if (snapshot_version <= mintid.start_csn)
+    if (snapshot_version <= creation_tid.start_csn)
         return false;
 
-    /// Check if mintid/maxtid transactions are committed and write CSNs
+    /// Check if creation_tid/removal_tid transactions are committed and write CSNs
     /// TODO Transactions: we probably need some optimizations here
     /// to avoid some CSN lookups or make the lookups cheaper.
     /// NOTE: Old enough committed parts always have written CSNs,
     /// so we can determine their visibility through fast path.
     /// But for long-running writing transactions we will always do
     /// CNS lookup and get 0 (UnknownCSN) until the transaction is committer/rolled back.
-    min = TransactionLog::instance().getCSN(mintid);
+    min = TransactionLog::instance().getCSN(creation_tid);
     if (!min)
         return false;   /// Part creation is not committed yet
 
     /// We don't need to check if CSNs are already written or not,
     /// because once written CSN cannot be changed, so it's safe to overwrite it (with the same value).
-    mincsn.store(min, std::memory_order_relaxed);
+    creation_csn.store(min, std::memory_order_relaxed);
 
     if (max_lock)
     {
         max = TransactionLog::instance().getCSN(max_lock);
         if (max)
-            maxcsn.store(max, std::memory_order_relaxed);
+            removal_csn.store(max, std::memory_order_relaxed);
     }
 
     return min <= snapshot_version && (!max || snapshot_version < max);
@@ -240,7 +240,7 @@ bool VersionMetadata::isVisible(Snapshot snapshot_version, TransactionID current
 
 bool VersionMetadata::canBeRemoved(Snapshot oldest_snapshot_version)
 {
-    CSN min = mincsn.load(std::memory_order_relaxed);
+    CSN min = creation_csn.load(std::memory_order_relaxed);
     /// We can safely remove part if its creation was rolled back
     if (min == Tx::RolledBackCSN)
         return true;
@@ -248,9 +248,9 @@ bool VersionMetadata::canBeRemoved(Snapshot oldest_snapshot_version)
     if (!min)
     {
         /// Cannot remove part if its creation not committed yet
-        min = TransactionLog::instance().getCSN(mintid);
+        min = TransactionLog::instance().getCSN(creation_tid);
         if (min)
-            mincsn.store(min, std::memory_order_relaxed);
+            creation_csn.store(min, std::memory_order_relaxed);
         else
             return false;
     }
@@ -259,18 +259,18 @@ bool VersionMetadata::canBeRemoved(Snapshot oldest_snapshot_version)
     if (oldest_snapshot_version < min)
         return false;
 
-    TIDHash max_lock = maxtid_lock.load(std::memory_order_relaxed);
+    TIDHash max_lock = removal_tid_lock.load(std::memory_order_relaxed);
     /// Part is active
     if (!max_lock)
         return false;
 
-    CSN max = maxcsn.load(std::memory_order_relaxed);
+    CSN max = removal_csn.load(std::memory_order_relaxed);
     if (!max)
     {
         /// Part removal is not committed yet
         max = TransactionLog::instance().getCSN(max_lock);
         if (max)
-            maxcsn.store(max, std::memory_order_relaxed);
+            removal_csn.store(max, std::memory_order_relaxed);
         else
             return false;
     }
@@ -279,26 +279,31 @@ bool VersionMetadata::canBeRemoved(Snapshot oldest_snapshot_version)
     return max <= oldest_snapshot_version;
 }
 
+#define CREATION_TID_STR "creation_tid: "
+#define CREATION_CSN_STR "creation_csn: "
+#define REMOVAL_TID_STR  "removal_tid:  "
+#define REMOVAL_CSN_STR  "removal_csn:  "
+
 void VersionMetadata::write(WriteBuffer & buf) const
 {
     writeCString("version: 1", buf);
-    writeCString("\nmintid: ", buf);
-    TransactionID::write(mintid, buf);
-    if (CSN min = mincsn.load())
+    writeCString("\n" CREATION_TID_STR, buf);
+    TransactionID::write(creation_tid, buf);
+    if (CSN min = creation_csn.load())
     {
-        writeCString("\nmincsn: ", buf);
+        writeCString("\n" CREATION_CSN_STR, buf);
         writeText(min, buf);
     }
 
-    if (maxtid_lock)
+    if (removal_tid_lock)
     {
-        assert(!maxtid.isEmpty());
-        assert(maxtid.getHash() == maxtid_lock);
-        writeCString("\nmaxtid: ", buf);
-        TransactionID::write(maxtid, buf);
-        if (CSN max = maxcsn.load())
+        assert(!removal_tid.isEmpty());
+        assert(removal_tid.getHash() == removal_tid_lock);
+        writeCString("\n" REMOVAL_TID_STR, buf);
+        TransactionID::write(removal_tid, buf);
+        if (CSN max = removal_csn.load())
         {
-            writeCString("\nmaxcsn: ", buf);
+            writeCString("\n" REMOVAL_CSN_STR, buf);
             writeText(max, buf);
         }
     }
@@ -306,23 +311,27 @@ void VersionMetadata::write(WriteBuffer & buf) const
 
 void VersionMetadata::read(ReadBuffer & buf)
 {
+    constexpr size_t size = sizeof(CREATION_TID_STR) - 1;
+    static_assert(sizeof(CREATION_CSN_STR) - 1 == size);
+    static_assert(sizeof(REMOVAL_TID_STR) - 1 == size);
+    static_assert(sizeof(REMOVAL_CSN_STR) - 1 == size);
+
     assertString("version: 1", buf);
-    assertString("\nmintid: ", buf);
-    mintid = TransactionID::read(buf);
+    assertString("\n" CREATION_TID_STR, buf);
+    creation_tid = TransactionID::read(buf);
     if (buf.eof())
         return;
 
     String name;
-    constexpr size_t size = 8;
     name.resize(size);
 
     assertChar('\n', buf);
     buf.readStrict(name.data(), size);
-    if (name == "mincsn: ")
+    if (name == CREATION_CSN_STR)
     {
         UInt64 min;
         readText(min, buf);
-        mincsn = min;
+        creation_csn = min;
         if (buf.eof())
             return;
 
@@ -330,10 +339,10 @@ void VersionMetadata::read(ReadBuffer & buf)
         buf.readStrict(name.data(), size);
     }
 
-    if (name == "maxtid: ")
+    if (name == REMOVAL_TID_STR)
     {
-        maxtid = TransactionID::read(buf);
-        maxtid_lock = maxtid.getHash();
+        removal_tid = TransactionID::read(buf);
+        removal_tid_lock = removal_tid.getHash();
         if (buf.eof())
             return;
 
@@ -341,13 +350,13 @@ void VersionMetadata::read(ReadBuffer & buf)
         buf.readStrict(name.data(), size);
     }
 
-    if (name == "maxcsn: ")
+    if (name == REMOVAL_CSN_STR)
     {
-        if (maxtid.isEmpty())
-            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Found maxcsn in metadata file, but maxtid is {}", maxtid);
+        if (removal_tid.isEmpty())
+            throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Found removal_csn in metadata file, but removal_tid is {}", removal_tid);
         UInt64 max;
         readText(max, buf);
-        maxcsn = max;
+        removal_csn = max;
     }
 
     assertEOF(buf);
