@@ -132,6 +132,18 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
         return;
 
     ColumnsWithSortDescriptions columns_with_sort_desc = getColumnsWithSortDescription(block, description);
+    bool all_const = true;
+    for (const auto & column : columns_with_sort_desc)
+    {
+        if (!column.column_const)
+        {
+            all_const = false;
+            break;
+        }
+    }
+    if (all_const)
+        return;
+
     IColumn::Permutation perm;
     /// If only one column to sort by
     if (columns_with_sort_desc.size() == 1)
@@ -229,13 +241,9 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
             }
         }
     }
-
     size_t columns = block.columns();
     for (size_t i = 0; i < columns; ++i)
-    {
-        if (!isColumnConst(*block.getByPosition(i).column))
-            block.getByPosition(i).column = block.getByPosition(i).column->permute(perm, limit);
-    }
+        block.getByPosition(i).column = block.getByPosition(i).column->permute(perm, limit);
 }
 
 
