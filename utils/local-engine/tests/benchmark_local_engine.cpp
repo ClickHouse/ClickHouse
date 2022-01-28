@@ -17,6 +17,12 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Interpreters/Context.h>
+#include <cstdlib>
+#include <Common/PODArray_fwd.h>
+
+#if defined(__SSE2__)
+#    include <emmintrin.h>
+#endif
 
 
 using namespace dbms;
@@ -354,10 +360,96 @@ static void BM_SparkRowToCHColumnWithString(benchmark::State& state) {
     }
 }
 
-//BENCHMARK(BM_CHColumnToSparkRow)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
-BENCHMARK(BM_MergeTreeRead)->Unit(benchmark::kMillisecond)->Iterations(40);
-BENCHMARK(BM_SimpleAggregate)->Arg(3)->Unit(benchmark::kMillisecond)->Iterations(40);
+static void BM_SIMDFilter(benchmark::State& state)
+{
+    const int n = 10000000;
+    for (auto _: state)
+    {
+        state.PauseTiming();
+        PaddedPODArray<Int32> arr;
+        PaddedPODArray<UInt8> condition;
+        PaddedPODArray<Int32> res_data;
+        arr.reserve(n);
+        condition.reserve(n);
+        res_data.reserve(n);
+        for (int i=0; i<n; i++)
+        {
+            arr.push_back(i);
+            condition.push_back(state.range(0));
+        }
+        const Int32 * data_pos = arr.data();
+        const UInt8 * filt_pos =  condition.data();
+        state.ResumeTiming();
+#ifdef __SSE2__
+        int size =n;
+        static constexpr size_t SIMD_BYTES = 16;
+        const __m128i zero16 = _mm_setzero_si128();
+        const UInt8 * filt_end_sse = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
 
+        while (filt_pos < filt_end_sse)
+        {
+            UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16));
+            mask = ~mask;
+
+            if (0 == mask)
+            {
+                /// Nothing is inserted.
+            }
+            else if (0xFFFF == mask)
+            {
+                res_data.insert(data_pos, data_pos + SIMD_BYTES);
+            }
+            else
+            {
+                for (size_t i = 0; i < SIMD_BYTES; ++i)
+                    if (filt_pos[i])
+                        data_pos[i];
+            }
+
+            filt_pos += SIMD_BYTES;
+            data_pos += SIMD_BYTES;
+        }
+#endif
+    }
+}
+
+static void BM_NormalFilter(benchmark::State& state)
+{
+    const int n = 10000000;
+    for (auto _: state)
+    {
+        state.PauseTiming();
+        PaddedPODArray<Int32> arr;
+        PaddedPODArray<UInt8> condition;
+        PaddedPODArray<Int32> res_data;
+        arr.reserve(n);
+        condition.reserve(n);
+        res_data.reserve(n);
+        for (int i=0; i<n; i++)
+        {
+            arr.push_back(i);
+            condition.push_back(state.range(0));
+        }
+        const Int32 * data_pos = arr.data();
+        const UInt8 * filt_pos =  condition.data();
+        const UInt8 * filt_end = filt_pos + n;
+        state.ResumeTiming();
+        while (filt_pos < filt_end)
+        {
+            if (*filt_pos)
+                res_data.push_back(*data_pos);
+
+            ++filt_pos;
+            ++data_pos;
+        }
+    }
+}
+
+//BENCHMARK(BM_CHColumnToSparkRow)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
+//BENCHMARK(BM_MergeTreeRead)->Unit(benchmark::kMillisecond)->Iterations(40);
+//BENCHMARK(BM_SimpleAggregate)->Arg(3)->Unit(benchmark::kMillisecond)->Iterations(40);
+BENCHMARK(BM_SIMDFilter)->Arg(1)->Arg(0)->Unit(benchmark::kMillisecond)->Iterations(40);
+BENCHMARK(BM_NormalFilter)->Arg(1)->Arg(0)->Unit(benchmark::kMillisecond)->Iterations(40);
 //BENCHMARK(BM_TPCH_Q6)->Arg(1)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_CHColumnToSparkRowWithString)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
 //BENCHMARK(BM_SparkRowToCHColumn)->Arg(1)->Arg(3)->Arg(30)->Arg(90)->Arg(150)->Unit(benchmark::kMillisecond)->Iterations(10);
