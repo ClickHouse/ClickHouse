@@ -20,14 +20,15 @@ class BackupImpl : public IBackup
 public:
     BackupImpl(
         const String & backup_name_,
-        OpenMode open_mode_,
         const ContextPtr & context_,
         const std::optional<BackupInfo> & base_backup_info_ = {});
     ~BackupImpl() override;
 
     const String & getName() const override { return backup_name; }
-    OpenMode getOpenMode() const override { return open_mode; }
-    time_t getTimestamp() const override { return timestamp; }
+    void open(OpenMode open_mode_) override;
+    OpenMode getOpenMode() const override;
+    void close() override;
+    time_t getTimestamp() const override;
     UUID getUUID() const override { return uuid; }
     Strings listFiles(const String & prefix, const String & terminator) const override;
     bool fileExists(const String & file_name) const override;
@@ -38,11 +39,13 @@ public:
     void finalizeWriting() override;
 
 protected:
-    /// Should be called in the constructor of a derived class.
-    void open();
+    /// Checks if this backup exists.
+    virtual bool backupExists() const = 0;
 
-    /// Should be called in the destructor of a derived class.
-    void close();
+    virtual void openImpl(OpenMode open_mode_) = 0;
+    OpenMode getOpenModeNoLock() const { return open_mode; }
+
+    virtual void closeImpl(bool writing_finalized_) = 0;
 
     /// Read a file from the backup.
     /// Low level: the function doesn't check base backup or checksums.
@@ -52,16 +55,7 @@ protected:
     /// Low level: the function doesn't check base backup or checksums.
     virtual std::unique_ptr<WriteBuffer> addFileImpl(const String & file_name) = 0;
 
-    /// Checks if this backup exists.
-    virtual bool backupExists() const = 0;
-
-    /// Starts writing of this backup, only used if `open_mode == OpenMode::WRITE`.
-    /// After calling this function `backupExists()` should return true.
-    virtual void startWriting() = 0;
-
-    /// Removes all the backup files, called if something goes wrong while we're writing the backup.
-    /// This function is called by `close()` if `startWriting()` was called and `finalizeWriting()` wasn't.
-    virtual void removeAllFilesAfterFailure() = 0;
+    mutable std::mutex mutex;
 
 private:
     void writeBackupMetadata();
@@ -78,17 +72,16 @@ private:
     };
 
     const String backup_name;
-    const OpenMode open_mode;
-    UUID uuid;
-    time_t timestamp = 0;
     ContextPtr context;
+    const std::optional<BackupInfo> base_backup_info_param;
+    OpenMode open_mode = OpenMode::NONE;
+    UUID uuid = {};
+    time_t timestamp = 0;
     std::optional<BackupInfo> base_backup_info;
     std::shared_ptr<const IBackup> base_backup;
     std::optional<UUID> base_backup_uuid;
     std::map<String, FileInfo> file_infos;
-    bool writing_started = false;
     bool writing_finalized = false;
-    mutable std::mutex mutex;
 };
 
 }

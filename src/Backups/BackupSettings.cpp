@@ -1,5 +1,6 @@
 #include <Backups/BackupSettings.h>
 #include <Backups/BackupInfo.h>
+#include <Core/SettingsFields.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTSetQuery.h>
 
@@ -23,8 +24,14 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
         const auto & settings = query.settings->as<const ASTSetQuery &>().changes;
         for (const auto & setting : settings)
         {
-            if (setting.name == "structure_only")
-                res.structure_only = setting.value.safeGet<bool>();
+            if (setting.name == "compression_method")
+                res.compression_method = SettingFieldString{setting.value};
+            else if (setting.name == "compression_level")
+                res.compression_level = SettingFieldInt64{setting.value};
+            else if (setting.name == "password")
+                res.password = SettingFieldString{setting.value};
+            else if (setting.name == "structure_only")
+                res.structure_only = SettingFieldBool{setting.value};
             else
                 throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting {}", setting.name);
         }

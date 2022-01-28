@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/types.h>
 #include <memory>
 
 
@@ -19,6 +20,9 @@ struct RestoreSettings : public StorageRestoreSettings
     /// Any incremental backup keeps inside the information about its base backup,
     /// so using this setting is optional.
     std::shared_ptr<const BackupInfo> base_backup_info;
+
+    /// Password used to decrypt the backup.
+    String password;
 
     /// If this is set to true then only create queries will be read from backup,
     /// without the data of tables.
