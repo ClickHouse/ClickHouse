@@ -191,7 +191,8 @@ ReplxxLineReader::ReplxxLineReader(
     auto commit_action = [this](char32_t code)
     {
         /// If we allow multiline and there is already something in the input, start a newline.
-        if (multiline && !replxx_last_is_delimiter)
+        /// NOTE: Lexer is only available if we use highlighter.
+        if (highlighter && multiline && !replxx_last_is_delimiter)
             return rx.invoke(Replxx::ACTION::NEW_LINE, code);
         replxx_last_is_delimiter = false;
         return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
