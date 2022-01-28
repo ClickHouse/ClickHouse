@@ -97,7 +97,7 @@ Pipe StorageHiveCluster::read(
                .num_streams = num_streams_
 
             };
-        iterate_callback_builder->init(args);
+        iterate_callback_builder->setupArgs(args);
 
         auto cluster = context_->getCluster(cluster_name)->getClusterWithReplicasAsShards(context_->getSettings());
 
@@ -157,7 +157,7 @@ Pipe StorageHiveCluster::read(
            .columns = getInMemoryMetadata().getColumns(),
            .num_streams = num_streams_,
            .partition_by_ast = partition_by_ast};
-    files_collector->initQueryEnv(args);
+    files_collector->setupArgs(args);
     auto files_collector_builder = [&files_collector]() { return files_collector; };
 
 

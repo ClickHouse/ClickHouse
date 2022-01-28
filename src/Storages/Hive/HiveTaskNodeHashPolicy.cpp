@@ -62,7 +62,7 @@ static ASTPtr extractKeyExpressionList(const ASTPtr & node)
     res->children.push_back(node);
     return res;
 }
-void HiveTaskNodeHashIterateCallback::init(const Arguments & args_)
+void HiveTaskNodeHashIterateCallback::setupArgs(const Arguments & args_)
 {
     args = args_;
 
@@ -330,7 +330,7 @@ void HiveTaskNodeHashIterateCallback::distributeHiveFilesToNodes(const std::vect
     }
 }
 
-void HiveTaskNodeHashFilesCollector::initQueryEnv(const Arguments & args_)
+void HiveTaskNodeHashFilesCollector::setupArgs(const Arguments & args_)
 {
     args = args_;
     ASTPtr partition_key_expr_list = extractKeyExpressionList(args.partition_by_ast);
@@ -354,9 +354,10 @@ void HiveTaskNodeHashFilesCollector::initQueryEnv(const Arguments & args_)
 void HiveTaskNodeHashFilesCollector::setupCallbackData(const String & data_)
 {
     stringToPackage(data_, task_metadata);
-    MarshallableTraceBuffer buf;
-    buf << task_metadata;
-    LOG_TRACE(logger, "callback data : {}", buf.str());
+    
+    //MarshallableTraceBuffer buf;
+    //buf << task_metadata;
+    //LOG_TRACE(logger, "callback data : {}", buf.str());
 }
 
 HiveFiles HiveTaskNodeHashFilesCollector::collectHiveFiles()

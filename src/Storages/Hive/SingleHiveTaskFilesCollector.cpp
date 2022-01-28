@@ -22,7 +22,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-void SingleHiveTaskFilesCollector::initQueryEnv(const Arguments & args_)
+void SingleHiveTaskFilesCollector::setupArgs(const Arguments & args_)
 {
     args = args_;
 

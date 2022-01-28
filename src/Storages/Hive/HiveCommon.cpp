@@ -243,7 +243,7 @@ HiveMetastoreClientPtr HiveMetastoreClientFactory::getOrCreate(const String & na
 
         if (it == clients.end())
         {
-            HiveMetastoreClientPtr client = std::make_shared<HiveMetastoreClient>(std::move(thrift_client), context);
+            HiveMetastoreClientPtr client = std::make_shared<HiveMetastoreClient>(std::move(thrift_client), context->getGlobalContext());
             clients[name] = client;
             return client;
         }

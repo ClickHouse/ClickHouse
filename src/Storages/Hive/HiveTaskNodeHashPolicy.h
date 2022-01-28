@@ -76,7 +76,7 @@ class HiveTaskNodeHashIterateCallback : public IHiveTaskIterateCallback
 public:
     using Arguments = IHiveTaskIterateCallback::Arguments;
 
-    void init(const Arguments & args_) override;
+    void setupArgs(const Arguments & args_) override;
     std::shared_ptr<TaskIterator> buildCallback(const Cluster::Address & address_) override;
 
     String getName() override { return HIVE_TASK_NODE_HASH_POLICY; }
@@ -121,7 +121,7 @@ class HiveTaskNodeHashFilesCollector : public IHiveTaskFilesCollector
 {
 public:
     using Arguments = IHiveTaskFilesCollector::Arguments;
-    void initQueryEnv(const Arguments & args) override;
+    void setupArgs(const Arguments & args) override;
     HiveFiles collectHiveFiles() override;
     String getName() override { return HIVE_TASK_NODE_HASH_POLICY; }
 

@@ -12,7 +12,7 @@ class SingleHiveTaskFilesCollector : public IHiveTaskFilesCollector
 {
 public:
     using Arguments = IHiveTaskFilesCollector::Arguments;
-    void initQueryEnv(const Arguments & args_) override;
+    void setupArgs(const Arguments & args_) override;
     HiveFiles collectHiveFiles() override;
     String getName() override { return "SingleHiveTask"; }
     void setupCallbackData(const String &) override { }

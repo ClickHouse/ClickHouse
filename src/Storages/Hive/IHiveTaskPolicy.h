@@ -49,7 +49,7 @@ public:
     };
     virtual ~IHiveTaskIterateCallback() = default;
 
-    virtual void init(const Arguments &) = 0;
+    virtual void setupArgs(const Arguments &) = 0;
     /**
      * @brief build a callback for specified node
      */
@@ -78,7 +78,7 @@ public:
         Arguments & operator=(const Arguments & args) = default;
     };
     virtual void setupCallbackData(const String & data_) = 0;
-    virtual void initQueryEnv(const Arguments &) = 0;
+    virtual void setupArgs(const Arguments &) = 0;
     virtual HiveFiles collectHiveFiles() = 0;
     virtual String getName() = 0;
 };
