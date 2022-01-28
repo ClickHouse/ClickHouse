@@ -123,7 +123,7 @@ public:
         {
             for (auto & item : items)
                 if (!item->in_use)
-                { 
+                {
                     if (!item->is_expired)
                         return Entry(*item);
                     else
