@@ -318,15 +318,18 @@ public:
     virtual void updatePermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const = 0;
 
     /** Equivalent to getPermutation and updatePermutation but collator is used to compare values.
-      * Supported for String, LowCardinality(String), Nullable(String) and for Array and Tuple, containing them.
+      * Overrides in String, LowCardinality(String), Nullable(String) and for Array and Tuple, containing them.
       */
-    virtual void getPermutationWithCollation(const Collator &, bool, size_t, int, Permutation &) const
+    virtual void
+    getPermutationWithCollation(const Collator &, bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
     {
-        throw Exception("Collations could be specified only for String, LowCardinality(String), Nullable(String) or for Array or Tuple, containing them.", ErrorCodes::BAD_COLLATION);
+        getPermutation(reverse, limit, nan_direction_hint, res);
     }
-    virtual void updatePermutationWithCollation(const Collator &, bool, size_t, int, Permutation &, EqualRanges&) const
+
+    virtual void updatePermutationWithCollation(
+        const Collator &, bool reverse, size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const
     {
-        throw Exception("Collations could be specified only for String, LowCardinality(String), Nullable(String) or for Array or Tuple, containing them.", ErrorCodes::BAD_COLLATION);
+        updatePermutation(reverse, limit, nan_direction_hint, res, equal_ranges);
     }
 
     /** Copies each element according offsets parameter.

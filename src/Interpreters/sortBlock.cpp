@@ -58,6 +58,14 @@ ColumnsWithSortDescriptions getColumnsWithSortDescription(const Block & block, c
             ? block.getByName(description[i].column_name).column.get()
             : block.safeGetByPosition(description[i].column_number).column.get();
 
+        if (isCollationRequired(description[i]))
+        {
+            if (!column->isCollationSupported())
+                throw Exception(
+                    "Collations could be specified only for String, LowCardinality(String), Nullable(String) or for Array or Tuple, "
+                    "containing them.",
+                    ErrorCodes::BAD_COLLATION);
+        }
         if (const auto * tuple = typeid_cast<const ColumnTuple *>(column))
             flattenTupleColumnRecursively(res, tuple, &description[i], isColumnConst(*column));
         else
@@ -150,19 +158,9 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
     {
         bool reverse = columns_with_sort_desc[0].description->direction == -1;
         const IColumn * column = columns_with_sort_desc[0].column;
-        bool is_column_const = columns_with_sort_desc[0].column_const;
         if (isCollationRequired(description[0]))
-        {
-            if (!column->isCollationSupported())
-                throw Exception(
-                    "Collations could be specified only for String, LowCardinality(String), Nullable(String) or for Array or Tuple, "
-                    "containing them.",
-                    ErrorCodes::BAD_COLLATION);
-
-            if (!is_column_const)
-                column->getPermutationWithCollation(*description[0].collator, reverse, limit, description[0].nulls_direction, perm);
-        }
-        else if (!is_column_const)
+            column->getPermutationWithCollation(*description[0].collator, reverse, limit, description[0].nulls_direction, perm);
+        else
         {
             int nan_direction_hint = columns_with_sort_desc[0].description->nulls_direction;
             column->getPermutation(reverse, limit, nan_direction_hint, perm);
@@ -178,64 +176,31 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
         if (limit >= size)
             limit = 0;
 
-        bool need_collation = false;
+        EqualRanges ranges;
+        ranges.emplace_back(0, perm.size());
         for (const auto & column : columns_with_sort_desc)
         {
+            while (!ranges.empty() && limit && limit <= ranges.back().first)
+                ranges.pop_back();
+
+            if (ranges.empty())
+                break;
+
+            if (column.column_const)
+                continue;
+
             if (isCollationRequired(*column.description))
             {
-                if (!column.column->isCollationSupported())
-                    throw Exception(
-                        "Collations could be specified only for String, LowCardinality(String), Nullable(String) or for Array or Tuple, "
-                        "containing them.",
-                        ErrorCodes::BAD_COLLATION);
-                need_collation = true;
+                column.column->updatePermutationWithCollation(
+                    *column.description->collator,
+                    column.description->direction < 0,
+                    limit,
+                    column.description->nulls_direction,
+                    perm,
+                    ranges);
             }
-        }
-
-        if (need_collation)
-        {
-            EqualRanges ranges;
-            ranges.emplace_back(0, perm.size());
-            for (const auto & column : columns_with_sort_desc)
+            else
             {
-                while (!ranges.empty() && limit && limit <= ranges.back().first)
-                    ranges.pop_back();
-
-                if (ranges.empty())
-                    break;
-
-                if (column.column_const)
-                    continue;
-
-                if (isCollationRequired(*column.description))
-                {
-                    column.column->updatePermutationWithCollation(
-                        *column.description->collator,
-                        column.description->direction < 0,
-                        limit,
-                        column.description->nulls_direction,
-                        perm,
-                        ranges);
-                }
-                else
-                {
-                    column.column->updatePermutation(
-                        column.description->direction < 0, limit, column.description->nulls_direction, perm, ranges);
-                }
-            }
-        }
-        else
-        {
-            EqualRanges ranges;
-            ranges.emplace_back(0, perm.size());
-            for (const auto & column : columns_with_sort_desc)
-            {
-                while (!ranges.empty() && limit && limit <= ranges.back().first)
-                    ranges.pop_back();
-
-                if (ranges.empty())
-                    break;
-
                 column.column->updatePermutation(
                     column.description->direction < 0, limit, column.description->nulls_direction, perm, ranges);
             }
