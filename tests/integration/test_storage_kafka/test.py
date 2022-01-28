@@ -36,6 +36,7 @@ from kafka.admin import NewTopic
 
 from . import kafka_pb2
 from . import social_pb2
+from . import message_with_repeated_pb2
 
 
 # TODO: add test for run-time offset update in CH, if we manually update it on Kafka side.
@@ -444,15 +445,21 @@ def test_kafka_formats(kafka_cluster):
                 # /src/Processors/Formats/IRowInputFormat.cpp:0: DB::IRowInputFormat::generate() @ 0x1de72710 in /usr/bin/clickhouse
             ],
         },
-        # 'Template' : {
-        #     'data_sample' : [
-        #         '(id = 0, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)',
-        #        # '(id = 1, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 2, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 3, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 4, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 5, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 6, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 7, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 8, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 9, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 10, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 11, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 12, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 13, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 14, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 15, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)',
-        #        # '(id = 0, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)',
-        #         # '' # tolerates
-        #     ],
-        #     'extra_settings': ", format_template_row='template_row.format'"
-        # },
+        'CustomSeparated' : {
+            'data_sample' : [
+                '0\t0\tAM\t0.5\t1\n',
+                '1\t0\tAM\t0.5\t1\n2\t0\tAM\t0.5\t1\n3\t0\tAM\t0.5\t1\n4\t0\tAM\t0.5\t1\n5\t0\tAM\t0.5\t1\n6\t0\tAM\t0.5\t1\n7\t0\tAM\t0.5\t1\n8\t0\tAM\t0.5\t1\n9\t0\tAM\t0.5\t1\n10\t0\tAM\t0.5\t1\n11\t0\tAM\t0.5\t1\n12\t0\tAM\t0.5\t1\n13\t0\tAM\t0.5\t1\n14\t0\tAM\t0.5\t1\n15\t0\tAM\t0.5\t1\n',
+                '0\t0\tAM\t0.5\t1\n',
+            ],
+        },
+        'Template' : {
+            'data_sample' : [
+                '(id = 0, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)',
+               '(id = 1, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 2, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 3, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 4, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 5, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 6, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 7, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 8, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 9, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 10, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 11, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 12, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 13, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 14, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)\n(id = 15, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)',
+               '(id = 0, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)',
+            ],
+            'extra_settings': ", format_template_row='template_row.format'"
+        },
         'Regexp': {
             'data_sample': [
                 '(id = 0, blockNo = 0, val1 = "AM", val2 = 0.5, val3 = 1)',
@@ -1497,6 +1504,13 @@ def test_kafka_flush_on_big_message(kafka_cluster):
 
 
 def test_kafka_virtual_columns(kafka_cluster):
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
+    topic_config = {
+        # default retention, since predefined timestamp_ms is used.
+        'retention.ms': '-1',
+    }
+    kafka_create_topic(admin_client, "virt1", config=topic_config)
+
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
             ENGINE = Kafka
@@ -1529,6 +1543,13 @@ def test_kafka_virtual_columns(kafka_cluster):
 
 
 def test_kafka_virtual_columns_with_materialized_view(kafka_cluster):
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
+    topic_config = {
+        # default retention, since predefined timestamp_ms is used.
+        'retention.ms': '-1',
+    }
+    kafka_create_topic(admin_client, "virt2", config=topic_config)
+
     instance.query('''
         DROP TABLE IF EXISTS test.view;
         DROP TABLE IF EXISTS test.consumer;
@@ -1737,8 +1758,12 @@ def test_kafka_commit_on_block_write(kafka_cluster):
 def test_kafka_virtual_columns2(kafka_cluster):
     admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
 
-    kafka_create_topic(admin_client, "virt2_0", num_partitions=2)
-    kafka_create_topic(admin_client, "virt2_1", num_partitions=2)
+    topic_config = {
+        # default retention, since predefined timestamp_ms is used.
+        'retention.ms': '-1',
+    }
+    kafka_create_topic(admin_client, "virt2_0", num_partitions=2, config=topic_config)
+    kafka_create_topic(admin_client, "virt2_1", num_partitions=2, config=topic_config)
 
     instance.query('''
         CREATE TABLE test.kafka (value UInt64)
@@ -1866,6 +1891,13 @@ def test_kafka_produce_key_timestamp(kafka_cluster):
 
 
 def test_kafka_insert_avro(kafka_cluster):
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
+    topic_config = {
+        # default retention, since predefined timestamp_ms is used.
+        'retention.ms': '-1',
+    }
+    kafka_create_topic(admin_client, "avro1", config=topic_config)
+
     instance.query('''
         DROP TABLE IF EXISTS test.kafka;
         CREATE TABLE test.kafka (key UInt64, value UInt64, _timestamp DateTime('UTC'))
@@ -3217,6 +3249,124 @@ def test_kafka_predefined_configuration(kafka_cluster):
         if kafka_check_result(result):
             break
     kafka_check_result(result, True)
+
+
+# https://github.com/ClickHouse/ClickHouse/issues/26643
+def test_issue26643(kafka_cluster):
+
+    # for backporting:
+    # admin_client = KafkaAdminClient(bootstrap_servers="localhost:9092")
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
+    producer = KafkaProducer(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port), value_serializer=producer_serializer)
+
+    topic_list = []
+    topic_list.append(NewTopic(name="test_issue26643", num_partitions=4, replication_factor=1))
+    admin_client.create_topics(new_topics=topic_list, validate_only=False)
+
+    msg = message_with_repeated_pb2.Message(
+        tnow=1629000000,
+        server='server1',
+        clien='host1',
+        sPort=443,
+        cPort=50000,
+        r=[
+            message_with_repeated_pb2.dd(name='1', type=444, ttl=123123, data=b'adsfasd'),
+            message_with_repeated_pb2.dd(name='2')
+        ],
+        method='GET'
+    )
+
+    data = b''
+    serialized_msg = msg.SerializeToString()
+    data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
+
+    msg = message_with_repeated_pb2.Message(
+        tnow=1629000002
+    )
+
+    serialized_msg = msg.SerializeToString()
+    data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
+
+    producer.send(topic="test_issue26643", value=data)
+
+    data = _VarintBytes(len(serialized_msg)) + serialized_msg
+    producer.send(topic="test_issue26643", value=data)
+    producer.flush()
+
+    instance.query('''
+        CREATE TABLE IF NOT EXISTS test.test_queue
+        (
+            `tnow` UInt32,
+            `server` String,
+            `client` String,
+            `sPort` UInt16,
+            `cPort` UInt16,
+            `r.name` Array(String),
+            `r.class` Array(UInt16),
+            `r.type` Array(UInt16),
+            `r.ttl` Array(UInt32),
+            `r.data` Array(String),
+            `method` String
+        )
+        ENGINE = Kafka
+        SETTINGS
+            kafka_broker_list = 'kafka1:19092',
+            kafka_topic_list = 'test_issue26643',
+            kafka_group_name = 'test_issue26643_group',
+            kafka_format = 'Protobuf',
+            kafka_schema = 'message_with_repeated.proto:Message',
+            kafka_num_consumers = 4,
+            kafka_skip_broken_messages = 10000;
+
+        SET allow_suspicious_low_cardinality_types=1; 
+
+        CREATE TABLE test.log
+        (
+            `tnow` DateTime CODEC(DoubleDelta, LZ4),
+            `server` LowCardinality(String),
+            `client` LowCardinality(String),
+            `sPort` LowCardinality(UInt16),
+            `cPort` UInt16 CODEC(T64, LZ4),
+            `r.name` Array(String),
+            `r.class` Array(LowCardinality(UInt16)),
+            `r.type` Array(LowCardinality(UInt16)),
+            `r.ttl` Array(LowCardinality(UInt32)),
+            `r.data` Array(String),
+            `method` LowCardinality(String)
+        )
+        ENGINE = MergeTree
+        PARTITION BY toYYYYMMDD(tnow)
+        ORDER BY (tnow, server)
+        TTL toDate(tnow) + toIntervalMonth(1000)
+        SETTINGS index_granularity = 16384, merge_with_ttl_timeout = 7200;
+
+        CREATE MATERIALIZED VIEW test.test_consumer TO test.log AS
+        SELECT
+            toDateTime(a.tnow) AS tnow,
+            a.server AS server,
+            a.client AS client,
+            a.sPort AS sPort,
+            a.cPort AS cPort,
+            a.`r.name` AS `r.name`,
+            a.`r.class` AS `r.class`,
+            a.`r.type` AS `r.type`,
+            a.`r.ttl` AS `r.ttl`,
+            a.`r.data` AS `r.data`,
+            a.method AS method
+        FROM test.test_queue AS a;
+        ''')
+
+    instance.wait_for_log_line("Committed offset")
+    result = instance.query('SELECT * FROM test.log')
+
+    expected = '''\
+2021-08-15 07:00:00	server1		443	50000	['1','2']	[0,0]	[444,0]	[123123,0]	['adsfasd','']	GET
+2021-08-15 07:00:02			0	0	[]	[]	[]	[]	[]	
+2021-08-15 07:00:02			0	0	[]	[]	[]	[]	[]
+'''
+    assert TSV(result) == TSV(expected)
+
+    # kafka_cluster.open_bash_shell('instance')
 
 
 if __name__ == '__main__':

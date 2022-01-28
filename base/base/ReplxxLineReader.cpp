@@ -22,7 +22,14 @@ namespace
 /// Trim ending whitespace inplace
 void trim(String & s)
 {
-    s.erase(std::find_if(s.rbegin(), s.rend(), [](int ch) { return !std::isspace(ch); }).base(), s.end());
+    s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !std::isspace(ch); }).base(), s.end());
+}
+
+/// Check if string ends with given character after skipping whitespaces.
+bool ends_with(const std::string_view & s, const std::string_view & p)
+{
+    auto ss = std::string_view(s.data(), s.rend() - std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !std::isspace(ch); }));
+    return ss.ends_with(p);
 }
 
 std::string getEditor()
@@ -126,7 +133,7 @@ void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
 }
 
 ReplxxLineReader::ReplxxLineReader(
-    const Suggest & suggest,
+    Suggest & suggest,
     const String & history_file_path_,
     bool multiline_,
     Patterns extenders_,
@@ -172,9 +179,7 @@ ReplxxLineReader::ReplxxLineReader(
 
     auto callback = [&suggest] (const String & context, size_t context_size)
     {
-        if (auto range = suggest.getCompletions(context, context_size))
-            return Replxx::completions_t(range->first, range->second);
-        return Replxx::completions_t();
+        return suggest.getCompletions(context, context_size);
     };
 
     rx.set_completion_callback(callback);
@@ -189,8 +194,28 @@ ReplxxLineReader::ReplxxLineReader(
     rx.bind_key(Replxx::KEY::control('N'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_NEXT, code); });
     rx.bind_key(Replxx::KEY::control('P'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_PREVIOUS, code); });
 
+    auto commit_action = [this](char32_t code)
+    {
+        std::string_view str = rx.get_state().text();
+
+        /// Always commit line when we see extender at the end. It will start a new prompt.
+        for (const auto * extender : extenders)
+            if (ends_with(str, extender))
+                return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
+
+        /// If we see an delimiter at the end, commit right away.
+        for (const auto * delimiter : delimiters)
+            if (ends_with(str, delimiter))
+                return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
+
+        /// If we allow multiline and there is already something in the input, start a newline.
+        if (multiline && !input.empty())
+            return rx.invoke(Replxx::ACTION::NEW_LINE, code);
+        return rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
+    };
     /// bind C-j to ENTER action.
-    rx.bind_key(Replxx::KEY::control('J'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::COMMIT_LINE, code); });
+    rx.bind_key(Replxx::KEY::control('J'), commit_action);
+    rx.bind_key(Replxx::KEY::ENTER, commit_action);
 
     /// By default COMPLETE_NEXT/COMPLETE_PREV was binded to C-p/C-n, re-bind
     /// to M-P/M-N (that was used for HISTORY_COMMON_PREFIX_SEARCH before, but

@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexFullText.h>
 
+#include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <IO/WriteHelpers.h>
@@ -112,7 +113,7 @@ void MergeTreeIndexAggregatorFullText::update(const Block & block, size_t * pos,
                 size_t element_start_row = column_offsets[current_position - 1];
                 size_t elements_size = column_offsets[current_position] - element_start_row;
 
-                for (size_t row_num = 0; row_num < elements_size; row_num++)
+                for (size_t row_num = 0; row_num < elements_size; ++row_num)
                 {
                     auto ref = column_key.getDataAt(element_start_row + row_num);
                     token_extractor->stringPaddedToBloomFilter(ref.data, ref.size, granule->bloom_filters[col]);

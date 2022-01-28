@@ -66,10 +66,20 @@ void StorageMongoDB::connectIfNotConnected()
 
     if (!authenticated)
     {
+        Poco::URI poco_uri(uri);
+        auto query_params = poco_uri.getQueryParameters();
+        auto auth_source = std::find_if(query_params.begin(), query_params.end(),
+                                        [&](const std::pair<std::string, std::string> & param) { return param.first == "authSource"; });
+        auto auth_db = database_name;
+        if (auth_source != query_params.end())
+            auth_db = auth_source->second;
 #       if POCO_VERSION >= 0x01070800
-            Poco::MongoDB::Database poco_db(database_name);
-            if (!poco_db.authenticate(*connection, username, password, Poco::MongoDB::Database::AUTH_SCRAM_SHA1))
-                throw Exception("Cannot authenticate in MongoDB, incorrect user or password", ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+            if (!username.empty() && !password.empty())
+            {
+                Poco::MongoDB::Database poco_db(auth_db);
+                if (!poco_db.authenticate(*connection, username, password, Poco::MongoDB::Database::AUTH_SCRAM_SHA1))
+                    throw Exception("Cannot authenticate in MongoDB, incorrect user or password", ErrorCodes::MONGODB_CANNOT_AUTHENTICATE);
+            }
 #       else
             authenticate(*connection, database_name, username, password);
 #       endif
@@ -107,14 +117,12 @@ StorageMongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, C
     StorageMongoDBConfiguration configuration;
     if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context))
     {
-        auto [common_configuration, storage_specific_args] = named_collection.value();
+        auto [common_configuration, storage_specific_args, _] = named_collection.value();
         configuration.set(common_configuration);
 
         for (const auto & [arg_name, arg_value] : storage_specific_args)
         {
-            if (arg_name == "collection")
-                configuration.collection = arg_value->as<ASTLiteral>()->value.safeGet<String>();
-            else if (arg_name == "options")
+            if (arg_name == "options")
                 configuration.options = arg_value->as<ASTLiteral>()->value.safeGet<String>();
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -139,7 +147,7 @@ StorageMongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, C
         configuration.host = parsed_host_port.first;
         configuration.port = parsed_host_port.second;
         configuration.database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
-        configuration.collection = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+        configuration.table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         configuration.username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
         configuration.password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
 
@@ -163,7 +171,7 @@ void registerStorageMongoDB(StorageFactory & factory)
             configuration.host,
             configuration.port,
             configuration.database,
-            configuration.collection,
+            configuration.table,
             configuration.username,
             configuration.password,
             configuration.options,

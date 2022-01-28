@@ -1,9 +1,9 @@
 #include "QueryProfiler.h"
 
 #include <IO/WriteHelpers.h>
+#include <Interpreters/TraceCollector.h>
 #include <Common/Exception.h>
 #include <Common/StackTrace.h>
-#include <Common/TraceCollector.h>
 #include <Common/thread_local_rng.h>
 #include <base/logger_useful.h>
 #include <base/phdr_cache.h>
@@ -25,13 +25,13 @@ namespace
 {
 #if defined(OS_LINUX)
     thread_local size_t write_trace_iteration = 0;
+#endif
     /// Even after timer_delete() the signal can be delivered,
     /// since it does not do anything with pending signals.
     ///
     /// And so to overcome this flag is exists,
     /// to ignore delivered signals after timer_delete().
     thread_local bool signal_handler_disarmed = true;
-#endif
 
     void writeTraceInfo(TraceType trace_type, int /* sig */, siginfo_t * info, void * context)
     {

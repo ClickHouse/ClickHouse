@@ -17,6 +17,7 @@
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/formatAST.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/AlterCommands.h>
@@ -139,12 +140,18 @@ void StorageMergeTree::startup()
     }
 }
 
+void StorageMergeTree::flush()
+{
+    if (flush_called.exchange(true))
+        return;
+
+    flushAllInMemoryPartsIfNeeded();
+}
 
 void StorageMergeTree::shutdown()
 {
-    if (shutdown_called)
+    if (shutdown_called.exchange(true))
         return;
-    shutdown_called = true;
 
     /// Unlock all waiting mutations
     {
@@ -191,7 +198,14 @@ void StorageMergeTree::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    if (auto plan = reader.read(column_names, metadata_snapshot, query_info, local_context, max_block_size, num_streams, processed_stage))
+    /// If true, then we will ask initiator if we can read chosen ranges
+    bool enable_parallel_reading = local_context->getClientInfo().collaborate_with_initiator;
+
+    if (enable_parallel_reading)
+        LOG_TRACE(log, "Parallel reading from replicas enabled {}", enable_parallel_reading);
+
+    if (auto plan = reader.read(
+        column_names, metadata_snapshot, query_info, local_context, max_block_size, num_streams, processed_stage, nullptr, enable_parallel_reading))
         query_plan = std::move(*plan);
 }
 
@@ -218,7 +232,7 @@ std::optional<UInt64> StorageMergeTree::totalRows(const Settings &) const
 
 std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr local_context) const
 {
-    auto parts = getDataPartsVector({DataPartState::Committed});
+    auto parts = getDataPartsVector({DataPartState::Active});
     return totalRowsByPartitionPredicateImpl(query_info, local_context, parts);
 }
 
@@ -497,6 +511,9 @@ void StorageMergeTree::waitForMutation(Int64 version, const String & file_name)
 
 void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr query_context)
 {
+    /// Validate partition IDs (if any) before starting mutation
+    getPartitionIdsAffectedByCommands(commands, query_context);
+
     String mutation_file_name;
     Int64 version = startMutation(commands, mutation_file_name);
 
@@ -887,6 +904,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
         auto commands = MutationCommands::create();
 
         size_t current_ast_elements = 0;
+        auto last_mutation_to_apply = mutations_end_it;
         for (auto it = mutations_begin_it; it != mutations_end_it; ++it)
         {
             size_t commands_size = 0;
@@ -923,7 +941,8 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
                     MergeTreeMutationEntry & entry = it->second;
                     entry.latest_fail_time = time(nullptr);
                     entry.latest_fail_reason = getCurrentExceptionMessage(false);
-                    continue;
+                    /// NOTE we should not skip mutations, because exception may be retryable (e.g. MEMORY_LIMIT_EXCEEDED)
+                    break;
                 }
             }
 
@@ -932,8 +951,10 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
 
             current_ast_elements += commands_size;
             commands->insert(commands->end(), it->second.commands.begin(), it->second.commands.end());
+            last_mutation_to_apply = it;
         }
 
+        assert(commands->empty() == (last_mutation_to_apply == mutations_end_it));
         if (!commands->empty())
         {
             bool is_partition_affected = false;
@@ -958,13 +979,13 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
                 /// Shall not create a new part, but will do that later if mutation with higher version appear.
                 /// This is needed in order to not produce excessive mutations of non-related parts.
                 auto block_range = std::make_pair(part->info.min_block, part->info.max_block);
-                updated_version_by_block_range[block_range] = current_mutations_by_version.rbegin()->first;
+                updated_version_by_block_range[block_range] = last_mutation_to_apply->first;
                 were_some_mutations_for_some_parts_skipped = true;
                 continue;
             }
 
             auto new_part_info = part->info;
-            new_part_info.mutation = current_mutations_by_version.rbegin()->first;
+            new_part_info.mutation = last_mutation_to_apply->first;
 
             future_part->parts.push_back(part);
             future_part->part_info = new_part_info;
@@ -1276,7 +1297,7 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(const String & part_name, boo
     {
         /// Forcefully stop merges and make part outdated
         auto merge_blocker = stopMergesAndWait();
-        auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Committed});
+        auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active});
         if (!part)
             throw Exception("Part " + part_name + " not found, won't try to drop it.", ErrorCodes::NO_SUCH_DATA_PART);
         removePartsFromWorkingSet({part}, true);
@@ -1288,7 +1309,7 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(const String & part_name, boo
         /// Wait merges selector
         std::unique_lock lock(currently_processing_in_background_mutex);
 
-        auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Committed});
+        auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active});
         /// It's okay, part was already removed
         if (!part)
             return nullptr;
@@ -1326,7 +1347,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
         /// This protects against "revival" of data for a removed partition after completion of merge.
         auto merge_blocker = stopMergesAndWait();
         String partition_id = getPartitionIDFromQuery(partition, local_context);
-        parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+        parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Active, partition_id);
 
         /// TODO should we throw an exception if parts_to_remove is empty?
         removePartsFromWorkingSet(parts_to_remove, true);
@@ -1408,7 +1429,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, my_metadata_snapshot);
     String partition_id = getPartitionIDFromQuery(partition, local_context);
 
-    DataPartsVector src_parts = src_data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+    DataPartsVector src_parts = src_data.getDataPartsVectorInPartition(MergeTreeDataPartState::Active, partition_id);
     MutableDataPartsVector dst_parts;
 
     static const String TMP_PREFIX = "tmp_replace_from_";
@@ -1493,7 +1514,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(*this, metadata_snapshot, dest_metadata_snapshot);
     String partition_id = getPartitionIDFromQuery(partition, local_context);
 
-    DataPartsVector src_parts = src_data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+    DataPartsVector src_parts = src_data.getDataPartsVectorInPartition(MergeTreeDataPartState::Active, partition_id);
     MutableDataPartsVector dst_parts;
 
     static const String TMP_PREFIX = "tmp_move_from_";
@@ -1573,7 +1594,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
     if (const auto & check_query = query->as<ASTCheckQuery &>(); check_query.partition)
     {
         String partition_id = getPartitionIDFromQuery(check_query.partition, local_context);
-        data_parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+        data_parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Active, partition_id);
     }
     else
         data_parts = getDataPartsVector();

@@ -31,6 +31,7 @@ class StorageMergeTree final : public shared_ptr_helper<StorageMergeTree>, publi
     friend struct shared_ptr_helper<StorageMergeTree>;
 public:
     void startup() override;
+    void flush() override;
     void shutdown() override;
     ~StorageMergeTree() override;
 
@@ -139,8 +140,8 @@ private:
     std::map<std::pair<Int64, Int64>, UInt64> updated_version_by_block_range;
 
     std::atomic<bool> shutdown_called {false};
+    std::atomic<bool> flush_called {false};
 
-private:
     void loadMutations();
 
     /// Load and initialize deduplication logs. Even if deduplication setting

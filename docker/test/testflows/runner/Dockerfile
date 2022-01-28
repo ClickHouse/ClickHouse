@@ -21,7 +21,6 @@ RUN apt-get update \
     cgroupfs-mount \
     python3-pip \
     tzdata \
-    libreadline-dev \
     libicu-dev \
     bsdutils \
     curl \

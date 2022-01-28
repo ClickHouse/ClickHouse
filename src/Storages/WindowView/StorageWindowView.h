@@ -22,11 +22,11 @@ using ASTPtr = std::shared_ptr<IAST>;
  * [ENGINE [db.]name]
  * [WATERMARK strategy] [ALLOWED_LATENESS interval_function]
  * AS SELECT ...
- * GROUP BY [TUBLE/HOP(...)]
+ * GROUP BY [tumble/hop(...)]
  *
  * - only stores data that has not been triggered yet;
  * - fire_task checks if there is a window ready to be fired
- *   (each window result is fired in one output at the end of TUMBLE/HOP window interval);
+ *   (each window result is fired in one output at the end of tumble/hop window interval);
  * - intermediate data is stored in inner table with
  *   AggregatingMergeTree engine by default, but any other -MergeTree
  *   engine might be used as inner table engine;
@@ -35,24 +35,24 @@ using ASTPtr = std::shared_ptr<IAST>;
  *   Here function in GROUP BY clause results in a "window_id"
  *   represented as Tuple(DateTime, DateTime) - lower and upper bounds of the window.
  *   Function might be one of the following:
- *     1. TUMBLE(time_attr, interval [, timezone])
+ *     1. tumble(time_attr, interval [, timezone])
  *        - non-overlapping, continuous windows with a fixed duration (interval);
  *        - example:
- *            SELECT TUMBLE(toDateTime('2021-01-01 00:01:45'), INTERVAL 10 SECOND)
+ *            SELECT tumble(toDateTime('2021-01-01 00:01:45'), INTERVAL 10 SECOND)
  *            results in ('2021-01-01 00:01:40','2021-01-01 00:01:50')
- *     2. HOP(time_attr, hop_interval, window_interval [, timezone])
+ *     2. hop(time_attr, hop_interval, window_interval [, timezone])
  *        - sliding window;
  *        - has a fixed duration (window_interval parameter) and hops by a
  *          specified hop interval (hop_interval parameter);
  *          If the hop_interval is smaller than the window_interval, hopping windows
  *          are overlapping. Thus, records can be assigned to multiple windows.
  *        - example:
- *            SELECT HOP(toDateTime('2021-01-01 00:00:45'), INTERVAL 3 SECOND, INTERVAL 10 SECOND)
+ *            SELECT hop(toDateTime('2021-01-01 00:00:45'), INTERVAL 3 SECOND, INTERVAL 10 SECOND)
  *            results in ('2021-01-01 00:00:38','2021-01-01 00:00:48')
  *
  *   DateTime value can be used with the following functions to find out start/end of the window:
- *     - TUMPLE_START(time_attr, interval [, timezone]), TUMPLE_END(time_attr, interval [, timezone])
- *     - HOP_START(time_attr, hop_interval, window_interval [, timezone]), HOP_END(time_attr, hop_interval, window_interval [, timezone])
+ *     - tumbleStart(time_attr, interval [, timezone]), tumbleEnd(time_attr, interval [, timezone])
+ *     - hopStart(time_attr, hop_interval, window_interval [, timezone]), hopEnd(time_attr, hop_interval, window_interval [, timezone])
  *
  *
  * Time processing options.
@@ -61,8 +61,8 @@ using ASTPtr = std::shared_ptr<IAST>;
  *      - produces results based on the time of the local machine;
  *      - example:
  *          CREATE WINDOW VIEW test.wv TO test.dst
- *          AS SELECT count(number), TUMBLE_START(w_id) as w_start FROM test.mt
- *          GROUP BY TUMBLE(now(), INTERVAL '5' SECOND) as w_id
+ *          AS SELECT count(number), tumbleStart(w_id) as w_start FROM test.mt
+ *          GROUP BY tumble(now(), INTERVAL '5' SECOND) as w_id
  *
  *   2. event time
  *      - produces results based on the time that is contained in every record;
@@ -79,7 +79,7 @@ using ASTPtr = std::shared_ptr<IAST>;
  *          CREATE WINDOW VIEW test.wv TO test.dst
  *          WATERMARK=STRICTLY_ASCENDING
  *          AS SELECT count(number) FROM test.mt
- *          GROUP BY TUMBLE(timestamp, INTERVAL '5' SECOND);
+ *          GROUP BY tumble(timestamp, INTERVAL '5' SECOND);
  *        (where `timestamp` is a DateTime column in test.mt)
  *
  *
@@ -90,8 +90,8 @@ using ASTPtr = std::shared_ptr<IAST>;
  *   - Can be enabled by using ALLOWED_LATENESS=INTERVAL, like this:
  *       CREATE WINDOW VIEW test.wv TO test.dst
  *       WATERMARK=ASCENDING ALLOWED_LATENESS=INTERVAL '2' SECOND
- *       AS SELECT count(a) AS count, TUMBLE_END(wid) AS w_end FROM test.mt
- *       GROUP BY TUMBLE(timestamp, INTERVAL '5' SECOND) AS wid;
+ *       AS SELECT count(a) AS count, tumbleEnd(wid) AS w_end FROM test.mt
+ *       GROUP BY tumble(timestamp, INTERVAL '5' SECOND) AS wid;
  *
  *   - Instead of firing at the end of windows, WINDOW VIEW will fire
  *     immediately when encountering late events;
@@ -150,7 +150,11 @@ public:
 private:
     Poco::Logger * log;
 
+    /// Stored query, e.g. SELECT * FROM * GROUP BY tumble(now(), *)
+    ASTPtr select_query;
+    /// Used to generate the mergeable state of select_query, e.g. SELECT * FROM * GROUP BY windowID(____timestamp, *)
     ASTPtr mergeable_query;
+    /// Used to fetch the mergeable state and generate the final result. e.g. SELECT * FROM * GROUP BY tumble(____timestamp, *)
     ASTPtr final_query;
 
     ContextMutablePtr window_view_context;
@@ -206,9 +210,10 @@ private:
     BackgroundSchedulePool::TaskHolder clean_cache_task;
     BackgroundSchedulePool::TaskHolder fire_task;
 
+    String window_view_timezone;
     String function_now_timezone;
 
-    ASTPtr innerQueryParser(ASTSelectQuery & inner_query);
+    ASTPtr innerQueryParser(const ASTSelectQuery & query);
     void eventTimeParser(const ASTCreateQuery & query);
 
     std::shared_ptr<ASTCreateQuery> getInnerTableCreateQuery(

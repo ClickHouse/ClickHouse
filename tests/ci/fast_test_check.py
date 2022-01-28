@@ -7,7 +7,9 @@ import csv
 import sys
 
 from github import Github
-from pr_info import PRInfo, get_event
+
+from env_helper import CACHES_PATH, TEMP_PATH
+from pr_info import PRInfo
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from upload_result_helper import upload_results
@@ -39,17 +41,23 @@ def process_results(result_folder):
         test_files = [f for f in os.listdir(result_folder) if os.path.isfile(os.path.join(result_folder, f))]
         additional_files = [os.path.join(result_folder, f) for f in test_files]
 
+    status = []
     status_path = os.path.join(result_folder, "check_status.tsv")
-    logging.info("Found test_results.tsv")
-    status = list(csv.reader(open(status_path, 'r'), delimiter='\t'))
+    if os.path.exists(status_path):
+        logging.info("Found test_results.tsv")
+        with open(status_path, 'r', encoding='utf-8') as status_file:
+            status = list(csv.reader(status_file, delimiter='\t'))
     if len(status) != 1 or len(status[0]) != 2:
+        logging.info("Files in result folder %s", os.listdir(result_folder))
         return "error", "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
     results_path = os.path.join(result_folder, "test_results.tsv")
-    test_results = list(csv.reader(open(results_path, 'r'), delimiter='\t'))
+    if os.path.exists(results_path):
+        with open(results_path, 'r', encoding='utf-8') as results_file:
+            test_results = list(csv.reader(results_file, delimiter='\t'))
     if len(test_results) == 0:
-        raise Exception("Empty results")
+        return "error", "Empty test_results.tsv", test_results, additional_files
 
     return state, description, test_results, additional_files
 
@@ -60,13 +68,13 @@ if __name__ == "__main__":
 
     stopwatch = Stopwatch()
 
-    temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
-    caches_path = os.getenv("CACHES_PATH", temp_path)
+    temp_path = TEMP_PATH
+    caches_path = CACHES_PATH
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    pr_info = PRInfo(get_event())
+    pr_info = PRInfo()
 
     gh = Github(get_best_robot_token())
 

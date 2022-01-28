@@ -131,4 +131,10 @@ private:
     RowsMaskByColumnId rows_mask_by_column_id;
 };
 
+/// Converts all columns to full serialization in chunk.
+/// It's needed, when you have to access to the internals of the column,
+/// or when you need to perform operation with two columns
+/// and their structure must be equal (e.g. compareAt).
+void convertToFullIfSparse(Chunk & chunk);
+
 }

@@ -1,11 +1,13 @@
 #pragma once
 
 #include <memory>
-#include <Common/COW.h>
 #include <boost/noncopyable.hpp>
 #include <Core/Names.h>
 #include <Core/TypeId.h>
+#include <Common/COW.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 
 
 namespace DB
@@ -27,7 +29,6 @@ using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
 
 struct NameAndTypePair;
-class SerializationInfo;
 
 struct DataTypeWithConstInfo
 {
@@ -84,44 +85,53 @@ public:
     SerializationPtr getSubcolumnSerialization(const String & subcolumn_name, const SerializationPtr & serialization) const;
     ColumnPtr getSubcolumn(const String & subcolumn_name, const ColumnPtr & column) const;
 
+    using SubstreamData = ISerialization::SubstreamData;
+    using SubstreamPath = ISerialization::SubstreamPath;
+
     using SubcolumnCallback = std::function<void(
-        const ISerialization::SubstreamPath &,
+        const SubstreamPath &,
         const String &,
-        const ISerialization::SubstreamData &)>;
+        const SubstreamData &)>;
 
     static void forEachSubcolumn(
         const SubcolumnCallback & callback,
-        const SerializationPtr & serialization,
-        const DataTypePtr & type,
-        const ColumnPtr & column);
+        const SubstreamData & data);
 
     Names getSubcolumnNames() const;
 
-    /// Returns default serialization of data type.
+    virtual MutableSerializationInfoPtr createSerializationInfo(
+        const SerializationInfo::Settings & settings) const;
+
+    /// TODO: support more types.
+    virtual bool supportsSparseSerialization() const { return !haveSubtypes(); }
+
     SerializationPtr getDefaultSerialization() const;
+    SerializationPtr getSparseSerialization() const;
 
-    /// Asks whether the stream with given name exists in table.
-    /// If callback returned true for all streams, which are required for
-    /// one of serialization types, that serialization will be chosen for reading.
-    /// If callback always returned false, the default serialization will be chosen.
-    using StreamExistenceCallback = std::function<bool(const String &)>;
+    /// Chooses serialization according to serialization kind.
+    SerializationPtr getSerialization(ISerialization::Kind kind) const;
 
-    /// Chooses serialization for reading of one column or subcolumns by
-    /// checking existence of substreams using callback.
-    static SerializationPtr getSerialization(
-        const NameAndTypePair & column,
-        const StreamExistenceCallback & callback = [](const String &) { return false; });
+    /// Chooses serialization according to collected information about content of column.
+    virtual SerializationPtr getSerialization(const SerializationInfo & info) const;
 
-    virtual SerializationPtr getSerialization(const String & column_name, const StreamExistenceCallback & callback) const;
+    /// Chooses between subcolumn serialization and regular serialization according to @column.
+    /// This method typically should be used to get serialization for reading column or subcolumn.
+    static SerializationPtr getSerialization(const NameAndTypePair & column, const SerializationInfo & info);
+
+    static SerializationPtr getSerialization(const NameAndTypePair & column);
 
 protected:
     virtual String doGetName() const { return getFamilyName(); }
     virtual SerializationPtr doGetDefaultSerialization() const = 0;
 
 public:
-    /** Create empty column for corresponding type.
+    /** Create empty column for corresponding type and default serialization.
       */
     virtual MutableColumnPtr createColumn() const = 0;
+
+    /** Create empty column for corresponding type and serialization.
+     */
+    virtual MutableColumnPtr createColumn(const ISerialization & serialization) const;
 
     /** Create ColumnConst for corresponding type, with specified size and value.
       */
@@ -292,6 +302,14 @@ protected:
 public:
     const IDataTypeCustomName * getCustomName() const { return custom_name.get(); }
     const ISerialization * getCustomSerialization() const { return custom_serialization.get(); }
+
+private:
+    template <typename Ptr>
+    Ptr getForSubcolumn(
+        const String & subcolumn_name,
+        const SubstreamData & data,
+        Ptr SubstreamData::*member,
+        bool throw_if_null = true) const;
 };
 
 
@@ -360,6 +378,8 @@ struct WhichDataType
     constexpr bool isNullable() const { return idx == TypeIndex::Nullable; }
     constexpr bool isFunction() const { return idx == TypeIndex::Function; }
     constexpr bool isAggregateFunction() const { return idx == TypeIndex::AggregateFunction; }
+
+    constexpr bool isLowCarnality() const { return idx == TypeIndex::LowCardinality; }
 };
 
 /// IDataType helpers (alternative for IDataType virtual methods with single point of truth)
@@ -456,7 +476,7 @@ template <typename T, typename DataType>
 inline bool isColumnedAsDecimalT(const DataType & data_type)
 {
     const WhichDataType which(data_type);
-    return (which.isDecimal() || which.isDateTime64()) && which.idx == TypeId<T>;
+    return (which.isDecimal() || which.isDateTime64()) && which.idx == TypeToTypeIndex<T>;
 }
 
 template <typename T>
@@ -487,7 +507,7 @@ inline bool isNotCreatable(const T & data_type)
 inline bool isNotDecimalButComparableToDecimal(const DataTypePtr & data_type)
 {
     WhichDataType which(data_type);
-    return which.isInt() || which.isUInt();
+    return which.isInt() || which.isUInt() || which.isFloat();
 }
 
 inline bool isCompilableType(const DataTypePtr & data_type)
@@ -495,9 +515,15 @@ inline bool isCompilableType(const DataTypePtr & data_type)
     return data_type->isValueRepresentedByNumber() && !isDecimal(data_type);
 }
 
+inline bool isBool(const DataTypePtr & data_type)
+{
+    return data_type->getName() == "Bool";
+}
+
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;
 template <typename DataType> constexpr bool IsDataTypeNumber = false;
 template <typename DataType> constexpr bool IsDataTypeDateOrDateTime = false;
+template <typename DataType> constexpr bool IsDataTypeEnum = false;
 
 template <typename DataType> constexpr bool IsDataTypeDecimalOrNumber = IsDataTypeDecimal<DataType> || IsDataTypeNumber<DataType>;
 
@@ -521,5 +547,10 @@ template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate32> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime64> = true;
+
+template <typename T>
+class DataTypeEnum;
+
+template <typename T> inline constexpr bool IsDataTypeEnum<DataTypeEnum<T>> = true;
 
 }

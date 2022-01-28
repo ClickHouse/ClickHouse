@@ -27,7 +27,7 @@ public:
     /// Content-Type to set when sending HTTP response.
     String getContentType() const override
     {
-        return settings.json.array_of_rows ? "application/json; charset=UTF-8" : IRowOutputFormat::getContentType();
+        return settings.json.array_of_rows ? "application/json; charset=UTF-8" : "application/x-ndjson; charset=UTF-8" ;
     }
 
 protected:

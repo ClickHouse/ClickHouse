@@ -160,8 +160,16 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
         {
             /// We add the hash from the data and partition identifier to deduplication ID.
             /// That is, do not insert the same data to the same partition twice.
-            block_id = part->getZeroLevelPartBlockID();
 
+            String block_dedup_token = context->getSettingsRef().insert_deduplication_token;
+            if (!block_dedup_token.empty())
+            {
+                /// multiple blocks can be inserted within the same insert query
+                /// an ordinal number is added to dedup token to generate a distinctive block id for each block
+                block_dedup_token += fmt::format("_{}", chunk_dedup_seqnum);
+                ++chunk_dedup_seqnum;
+            }
+            block_id = part->getZeroLevelPartBlockID(block_dedup_token);
             LOG_DEBUG(log, "Wrote block with ID '{}', {} rows", block_id, current_block.block.rows());
         }
         else
@@ -227,6 +235,8 @@ void ReplicatedMergeTreeSink::commitPart(
     constexpr size_t max_iterations = 10;
 
     bool is_already_existing_part = false;
+
+    String old_part_name = part->name;
 
     while (true)
     {
@@ -370,7 +380,7 @@ void ReplicatedMergeTreeSink::commitPart(
                 block_id, existing_part_name);
 
             /// If it does not exist, we will write a new part with existing name.
-            /// Note that it may also appear on filesystem right now in PreCommitted state due to concurrent inserts of the same data.
+            /// Note that it may also appear on filesystem right now in PreActive state due to concurrent inserts of the same data.
             /// It will be checked when we will try to rename directory.
 
             part->name = existing_part_name;
@@ -508,6 +518,9 @@ void ReplicatedMergeTreeSink::commitPart(
 
         waitForQuorum(zookeeper, part->name, quorum_info.status_path, quorum_info.is_active_node_value);
     }
+
+    /// Cleanup shared locks made with old name
+    part->cleanupOldName(old_part_name);
 }
 
 void ReplicatedMergeTreeSink::onStart()

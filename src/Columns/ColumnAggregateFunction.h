@@ -103,7 +103,7 @@ private:
 public:
     ~ColumnAggregateFunction() override;
 
-    void set(const AggregateFunctionPtr & func_);
+    void set(const AggregateFunctionPtr & func_, size_t version_);
 
     AggregateFunctionPtr getAggregateFunction() { return func; }
     AggregateFunctionPtr getAggregateFunction() const { return func; }
@@ -132,6 +132,11 @@ public:
     Field operator[](size_t n) const override;
 
     void get(size_t n, Field & res) const override;
+
+    bool isDefaultAt(size_t) const override
+    {
+        throw Exception("Method isDefaultAt is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     StringRef getDataAt(size_t n) const override;
 
@@ -206,6 +211,16 @@ public:
     bool hasEqualValues() const override
     {
         throw Exception("Method hasEqualValues is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    double getRatioOfDefaultRows(double) const override
+    {
+        throw Exception("Method getRatioOfDefaultRows is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    void getIndicesOfNonDefaultRows(Offsets &, size_t, size_t) const override
+    {
+        throw Exception("Method getIndicesOfNonDefaultRows is not supported for ColumnAggregateFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;

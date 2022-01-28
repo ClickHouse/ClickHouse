@@ -293,7 +293,7 @@ void executeColumnIfNeeded(ColumnWithTypeAndName & column, bool empty)
         column.column = column_function->getResultType()->createColumn();
 }
 
-int checkShirtCircuitArguments(const ColumnsWithTypeAndName & arguments)
+int checkShortCircuitArguments(const ColumnsWithTypeAndName & arguments)
 {
     int last_short_circuit_argument_index = -1;
     for (size_t i = 0; i != arguments.size(); ++i)

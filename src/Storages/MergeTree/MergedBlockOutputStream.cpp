@@ -18,8 +18,9 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     const NamesAndTypesList & columns_list_,
     const MergeTreeIndices & skip_indices,
     CompressionCodecPtr default_codec_,
+    bool reset_columns_,
     bool blocks_are_granules_size)
-    : IMergedBlockOutputStream(data_part, metadata_snapshot_)
+    : IMergedBlockOutputStream(data_part, metadata_snapshot_, columns_list_, reset_columns_)
     , columns_list(columns_list_)
     , default_codec(default_codec_)
 {
@@ -71,16 +72,21 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
             projection_part->checksums.getTotalSizeOnDisk(),
             projection_part->checksums.getTotalChecksumUInt128());
 
-    NamesAndTypesList part_columns;
-    if (!total_columns_list)
-        part_columns = columns_list;
-    else
-        part_columns = *total_columns_list;
+    if (reset_columns)
+    {
+        auto part_columns = total_columns_list ? *total_columns_list : columns_list;
+        auto serialization_infos = new_part->getSerializationInfos();
+
+        serialization_infos.replaceData(new_serialization_infos);
+        removeEmptyColumnsFromPart(new_part, part_columns, serialization_infos, checksums);
+
+        new_part->setColumns(part_columns);
+        new_part->setSerializationInfos(serialization_infos);
+    }
 
     if (new_part->isStoredOnDisk())
-        finalizePartOnDisk(new_part, part_columns, checksums, sync);
+        finalizePartOnDisk(new_part, checksums, sync);
 
-    new_part->setColumns(part_columns);
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
     new_part->index = writer->releaseIndexColumns();
@@ -95,8 +101,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
 }
 
 void MergedBlockOutputStream::finalizePartOnDisk(
-    const MergeTreeData::MutableDataPartPtr & new_part,
-    NamesAndTypesList & part_columns,
+    const MergeTreeData::DataPartPtr & new_part,
     MergeTreeData::DataPart::Checksums & checksums,
     bool sync)
 {
@@ -127,15 +132,17 @@ void MergedBlockOutputStream::finalizePartOnDisk(
                 out->sync();
         }
 
-        if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || isCompactPart(new_part))
+        if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         {
             new_part->partition.store(storage, volume->getDisk(), part_path, checksums);
             if (new_part->minmax_idx->initialized)
                 new_part->minmax_idx->store(storage, volume->getDisk(), part_path, checksums);
             else if (rows_count)
                 throw Exception("MinMax index was not initialized for new non-empty part " + new_part->name
-                        + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
+                    + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
+        }
 
+        {
             auto count_out = volume->getDisk()->writeFile(fs::path(part_path) / "count.txt", 4096);
             HashingWriteBuffer count_out_hashing(*count_out);
             writeIntText(rows_count, count_out_hashing);
@@ -161,12 +168,22 @@ void MergedBlockOutputStream::finalizePartOnDisk(
             out->sync();
     }
 
-    removeEmptyColumnsFromPart(new_part, part_columns, checksums);
+    if (!new_part->getSerializationInfos().empty())
+    {
+        auto out = volume->getDisk()->writeFile(part_path + IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096);
+        HashingWriteBuffer out_hashing(*out);
+        new_part->getSerializationInfos().writeJSON(out_hashing);
+        checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
+        checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
+        out->finalize();
+        if (sync)
+            out->sync();
+    }
 
     {
         /// Write a file with a description of columns.
         auto out = volume->getDisk()->writeFile(fs::path(part_path) / "columns.txt", 4096);
-        part_columns.writeText(*out);
+        new_part->getColumns().writeText(*out);
         out->finalize();
         if (sync)
             out->sync();
@@ -202,6 +219,9 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         return;
 
     writer->write(block, permutation);
+    if (reset_columns)
+        new_serialization_infos.add(block);
+
     rows_count += rows;
 }
 

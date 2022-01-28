@@ -85,7 +85,7 @@ String DataTypeAggregateFunction::getNameImpl(bool with_version) const
 
 MutableColumnPtr DataTypeAggregateFunction::createColumn() const
 {
-    return ColumnAggregateFunction::create(function, version);
+    return ColumnAggregateFunction::create(function, getVersion());
 }
 
 
@@ -139,17 +139,20 @@ static DataTypePtr create(const ASTPtr & arguments)
 
     if (!arguments || arguments->children.empty())
         throw Exception("Data type AggregateFunction requires parameters: "
-            "name of aggregate function and list of data types for arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            "version(optionally), name of aggregate function and list of data types for arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     ASTPtr data_type_ast = arguments->children[0];
     size_t argument_types_start_idx = 1;
 
     /* If aggregate function definition doesn't have version, it will have in AST children args [ASTFunction, types...] - in case
      * it is parametric, or [ASTIdentifier, types...] - otherwise. If aggregate function has version in AST, then it will be:
-     * [ASTLitearl, ASTFunction (or ASTIdentifier), types...].
+     * [ASTLiteral, ASTFunction (or ASTIdentifier), types...].
      */
     if (auto * version_ast = arguments->children[0]->as<ASTLiteral>())
     {
+        if (arguments->children.size() < 2)
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Data type AggregateFunction has version, but it requires at least one more parameter - name of aggregate function");
         version = version_ast->value.safeGet<UInt64>();
         data_type_ast = arguments->children[1];
         argument_types_start_idx = 2;

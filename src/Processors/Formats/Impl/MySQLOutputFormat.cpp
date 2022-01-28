@@ -48,7 +48,7 @@ void MySQLOutputFormat::writePrefix()
     {
         packet_endpoint->sendPacket(LengthEncodedNumber(header.columns()));
 
-        for (size_t i = 0; i < header.columns(); i++)
+        for (size_t i = 0; i < header.columns(); ++i)
         {
             const auto & column_name = header.getColumnsWithTypeAndName()[i].name;
             packet_endpoint->sendPacket(getColumnDefinition(column_name, data_types[i]->getTypeId()));
@@ -63,7 +63,7 @@ void MySQLOutputFormat::writePrefix()
 
 void MySQLOutputFormat::consume(Chunk chunk)
 {
-    for (size_t i = 0; i < chunk.getNumRows(); i++)
+    for (size_t i = 0; i < chunk.getNumRows(); ++i)
     {
         ProtocolText::ResultSetRow row_packet(serializations, chunk.getColumns(), i);
         packet_endpoint->sendPacket(row_packet);

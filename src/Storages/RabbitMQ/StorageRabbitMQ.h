@@ -66,6 +66,7 @@ public:
 
     bool updateChannel(ChannelPtr & channel);
     void updateQueues(std::vector<String> & queues_) { queues_ = queues; }
+    void prepareChannelForBuffer(ConsumerBufferPtr buffer);
 
     void incrementReader();
     void decrementReader();

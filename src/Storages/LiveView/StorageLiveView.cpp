@@ -280,7 +280,8 @@ StorageLiveView::StorageLiveView(
     const StorageID & table_id_,
     ContextPtr context_,
     const ASTCreateQuery & query,
-    const ColumnsDescription & columns_)
+    const ColumnsDescription & columns_,
+    const String & comment)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
 {
@@ -291,6 +292,9 @@ StorageLiveView::StorageLiveView(
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
+    if (!comment.empty())
+        storage_metadata.setComment(comment);
+
     setInMemoryMetadata(storage_metadata);
 
     if (!query.select)
@@ -621,7 +625,7 @@ void registerStorageLiveView(StorageFactory & factory)
                 "Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')",
                 ErrorCodes::SUPPORT_IS_DISABLED);
 
-        return StorageLiveView::create(args.table_id, args.getLocalContext(), args.query, args.columns);
+        return StorageLiveView::create(args.table_id, args.getLocalContext(), args.query, args.columns, args.comment);
     });
 }
 

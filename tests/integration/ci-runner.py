@@ -10,6 +10,8 @@ from collections import defaultdict
 import random
 import json
 import csv
+# for crc32
+import zlib
 
 
 MAX_RETRY = 3
@@ -25,6 +27,9 @@ MAX_TIME_SECONDS = 3600
 
 MAX_TIME_IN_SANDBOX = 20 * 60   # 20 minutes
 TASK_TIMEOUT = 8 * 60 * 60      # 8 hours
+
+def stringhash(s):
+    return zlib.crc32(s.encode('utf-8'))
 
 def get_tests_to_run(pr_info):
     result = set([])
@@ -59,38 +64,45 @@ def chunks(lst, n):
     for i in range(0, len(lst), n):
         yield lst[i:i + n]
 
-def parse_test_results_output(fname):
-    read = False
-    description_output = []
-    with open(fname, 'r') as out:
-        for line in out:
-            if read and line.strip() and not line.startswith('=='):
-                description_output.append(line.strip())
-            if 'short test summary info' in line:
-                read = True
-    return description_output
-
-
-def get_counters(output):
+def get_counters(fname):
     counters = {
-        "ERROR": set([]),
-        "PASSED": set([]),
-        "FAILED": set([]),
+        "ERROR":   set([]),
+        "PASSED":  set([]),
+        "FAILED":  set([]),
+        "SKIPPED": set([]),
     }
 
-    for line in output:
-        if '.py' in line:
+    with open(fname, 'r') as out:
+        for line in out:
+            line = line.strip()
+            # Example of log:
+            #
+            #     test_mysql_protocol/test.py::test_golang_client
+            #     [gw0] [  7%] ERROR test_mysql_protocol/test.py::test_golang_client
+            #
+            # And only the line with test status should be matched
+            if not('.py::' in line and ' ' in line):
+                continue
+
             line_arr = line.strip().split(' ')
-            state = line_arr[0]
-            test_name = ' '.join(line_arr[1:])
-            if ' - ' in test_name:
-                test_name = test_name[:test_name.find(' - ')]
+            if len(line_arr) < 2:
+                logging.debug("Strange line %s", line)
+                continue
+
+            # Lines like:
+            #     [gw0] [  7%] ERROR test_mysql_protocol/test.py::test_golang_client
+            state = line_arr[-2]
+            test_name = line_arr[-1]
+
             if state in counters:
                 counters[state].add(test_name)
             else:
-                logging.info("Strange line %s", line)
-        else:
-            logging.info("Strange line %s", line)
+                # will skip lines line:
+                #     30.76s call     test_host_ip_change/test.py::test_ip_change_drop_dns_cache
+                #     5.71s teardown  test_host_ip_change/test.py::test_user_access_ip_change[node1]
+                # and similar
+                logging.debug("Strange state in line %s", line)
+
     return {k: list(v) for k, v in counters.items()}
 
 
@@ -183,6 +195,13 @@ class ClickhouseIntegrationTestsRunner:
         self.start_time = time.time()
         self.soft_deadline_time = self.start_time + (TASK_TIMEOUT - MAX_TIME_IN_SANDBOX)
 
+        if 'run_by_hash_total' in self.params:
+            self.run_by_hash_total = self.params['run_by_hash_total']
+            self.run_by_hash_num = self.params['run_by_hash_num']
+        else:
+            self.run_by_hash_total = 0
+            self.run_by_hash_num = 0
+
     def path(self):
         return self.result_path
 
@@ -216,6 +235,7 @@ class ClickhouseIntegrationTestsRunner:
                 "clickhouse/mysql-java-client", "clickhouse/mysql-js-client",
                 "clickhouse/mysql-php-client", "clickhouse/postgresql-java-client",
                 "clickhouse/integration-test", "clickhouse/kerberos-kdc",
+                "clickhouse/dotnet-client",
                 "clickhouse/integration-helper", ]
 
 
@@ -240,7 +260,7 @@ class ClickhouseIntegrationTestsRunner:
                         logging.info("Executing installation cmd %s", cmd)
                         retcode = subprocess.Popen(cmd, shell=True, stderr=log, stdout=log).wait()
                         if retcode == 0:
-                            logging.info("Instsallation of %s successfull", full_path)
+                            logging.info("Installation of %s successfull", full_path)
                         else:
                             raise Exception("Installation of %s failed", full_path)
                     break
@@ -446,7 +466,12 @@ class ClickhouseIntegrationTestsRunner:
 
             test_cmd = ' '.join([test for test in sorted(test_names)])
             parallel_cmd = " --parallel {} ".format(num_workers) if num_workers > 0 else ""
-            cmd = "cd {}/tests/integration && timeout -s 9 1h ./runner {} {} -t {} {} '-rfEp --run-id={} --color=no --durations=0 {}' | tee {}".format(
+            # -r -- show extra test summary:
+            # -f -- (f)ailed
+            # -E -- (E)rror
+            # -p -- (p)assed
+            # -s -- (s)kipped
+            cmd = "cd {}/tests/integration && timeout -s 9 1h ./runner {} {} -t {} {} '-rfEps --run-id={} --color=no --durations=0 {}' | tee {}".format(
                 repo_path, self._get_runner_opts(), image_cmd, test_cmd, parallel_cmd, i, _get_deselect_option(self.should_skip_tests()), info_path)
 
             log_basename = test_group_str + "_" + str(i) + ".log"
@@ -477,8 +502,9 @@ class ClickhouseIntegrationTestsRunner:
 
             if os.path.exists(info_path):
                 extra_logs_names.append(info_basename)
-                lines = parse_test_results_output(info_path)
-                new_counters = get_counters(lines)
+                new_counters = get_counters(info_path)
+                for state, tests in new_counters.items():
+                    logging.info("Tests with %s state (%s): %s", state, len(tests), tests)
                 times_lines = parse_test_times(info_path)
                 new_tests_times = get_test_times(times_lines)
                 self._update_counters(counters, new_counters)
@@ -508,6 +534,7 @@ class ClickhouseIntegrationTestsRunner:
             for test in tests_in_group:
                 if (test not in counters["PASSED"] and
                     test not in counters["ERROR"] and
+                    test not in counters["SKIPPED"] and
                     test not in counters["FAILED"] and
                     '::' in test):
                     counters["ERROR"].append(test)
@@ -576,6 +603,15 @@ class ClickhouseIntegrationTestsRunner:
         self._install_clickhouse(build_path)
         logging.info("Dump iptables before run %s", subprocess.check_output("sudo iptables -L", shell=True))
         all_tests = self._get_all_tests(repo_path)
+
+        if self.run_by_hash_total != 0:
+            grouped_tests = self.group_test_by_file(all_tests)
+            all_filtered_by_hash_tests = []
+            for group, tests_in_group in grouped_tests.items():
+                if stringhash(group) % self.run_by_hash_total == self.run_by_hash_num:
+                    all_filtered_by_hash_tests += tests_in_group
+            all_tests = all_filtered_by_hash_tests
+
         parallel_skip_tests = self._get_parallel_tests_skip_list(repo_path)
         logging.info("Found %s tests first 3 %s", len(all_tests), ' '.join(all_tests[:3]))
         filtered_sequential_tests = list(filter(lambda test: test in all_tests, parallel_skip_tests))
@@ -609,7 +645,7 @@ class ClickhouseIntegrationTestsRunner:
             random.shuffle(items_to_run)
 
         for group, tests in items_to_run:
-            logging.info("Running test group %s countaining %s tests", group, len(tests))
+            logging.info("Running test group %s containing %s tests", group, len(tests))
             group_counters, group_test_times, log_paths = self.try_run_test_group(repo_path, group, tests, MAX_RETRY, NUM_WORKERS)
             total_tests = 0
             for counter, value in group_counters.items():
