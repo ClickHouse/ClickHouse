@@ -6,6 +6,9 @@
 #include <Parsers/Lexer.h>
 #include <Common/UTF8Helpers.h>
 
+#if USE_REPLXX
+extern bool replxx_last_is_delimiter;
+#endif
 
 namespace DB
 {
@@ -114,6 +117,7 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
             {TokenType::Comma, replxx::color::bold(Replxx::Color::DEFAULT)},
             {TokenType::Semicolon, replxx::color::bold(Replxx::Color::DEFAULT)},
+            {TokenType::VerticalDelimiter, replxx::color::bold(Replxx::Color::DEFAULT)},
             {TokenType::Dot, replxx::color::bold(Replxx::Color::DEFAULT)},
             {TokenType::Asterisk, replxx::color::bold(Replxx::Color::DEFAULT)},
             {TokenType::HereDoc, Replxx::Color::CYAN},
@@ -151,6 +155,11 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
 
     for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
     {
+        if (token.type == TokenType::Semicolon || token.type == TokenType::VerticalDelimiter)
+            replxx_last_is_delimiter = true;
+        else if (token.type != TokenType::Whitespace)
+            replxx_last_is_delimiter = false;
+
         size_t utf8_len = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(token.begin), token.size());
         for (size_t code_point_index = 0; code_point_index < utf8_len; ++code_point_index)
         {
