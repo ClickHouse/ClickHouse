@@ -26,6 +26,7 @@
 #include <boost/algorithm/string.hpp>
 #include <base/EnumReflection.h>
 
+
 namespace DB
 {
 
@@ -582,41 +583,44 @@ void replaceMissedSubcolumnsByConstants(
     const ColumnsDescription & available_columns,
     ASTPtr query)
 {
-    NamesAndTypesList missed;
+    NamesAndTypes missed_names_types;
     for (const auto & column : available_columns)
     {
-        const auto * type_tuple = typeid_cast<const DataTypeTuple *>(column.type.get());
-        assert(type_tuple);
-
         auto expected_column = expected_columns.getColumn(GetColumnsOptions::All, column.name);
-        const auto * expected_type_tuple = typeid_cast<const DataTypeTuple *>(expected_column.type.get());
-        assert(expected_type_tuple);
 
-        if (!type_tuple->equals(*expected_type_tuple))
+        auto [available_paths, available_types] = flattenTuple(column.type);
+        auto [expected_paths, expected_types] = flattenTuple(expected_column.type);
+
+        auto extract_names_and_types = [&column](const auto & paths, const auto & types)
         {
-            const auto & names = type_tuple->getElementNames();
-            const auto & expected_names = expected_type_tuple->getElementNames();
-            const auto & expected_types = expected_type_tuple->getElements();
-
-            NameSet names_set(names.begin(), names.end());
-
-            for (size_t i = 0; i < expected_names.size(); ++i)
+            NamesAndTypes res;
+            res.reserve(paths.size());
+            for (size_t i = 0; i < paths.size(); ++i)
             {
-                if (!names_set.count(expected_names[i]))
-                {
-                    auto full_name = Nested::concatenateName(column.name, expected_names[i]);
-                    missed.emplace_back(std::move(full_name), expected_types[i]);
-                }
+                auto full_name = Nested::concatenateName(column.name, paths[i].getPath());
+                res.emplace_back(full_name, types[i]);
             }
-        }
+
+            std::sort(res.begin(), res.end());
+            return res;
+        };
+
+        auto available_names_types = extract_names_and_types(available_paths, available_types);
+        auto expected_names_types = extract_names_and_types(expected_paths, expected_types);
+
+        std::set_difference(
+            expected_names_types.begin(), expected_names_types.end(),
+            available_names_types.begin(), available_names_types.end(),
+            std::back_inserter(missed_names_types),
+            [](const auto & lhs, const auto & rhs) { return lhs.name < rhs.name; });
     }
 
-    if (missed.empty())
+    if (missed_names_types.empty())
         return;
 
     IdentifierNameSet identifiers;
     query->collectIdentifierNames(identifiers);
-    for (const auto & [name, type] : missed)
+    for (const auto & [name, type] : missed_names_types)
         if (identifiers.count(name))
             addConstantToWithClause(query, name, type);
 }
