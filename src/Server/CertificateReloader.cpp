@@ -90,7 +90,7 @@ void CertificateReloader::tryLoad(const Poco::Util::AbstractConfiguration & conf
         }
 
         /// If callback is not set yet
-    
+
         if (first_load)
             init();
     }
