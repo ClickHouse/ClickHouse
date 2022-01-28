@@ -129,45 +129,7 @@ private:
     /// is file descriptor. See getTableStructureFromFileDescriptor.
     std::unique_ptr<ReadBuffer> read_buffer_from_fd;
     std::unique_ptr<ReadBuffer> peekable_read_buffer_from_fd;
-    std::atomic<bool> has_peekable_read_buffer_from_fd = false 
-￼ 
-ClickHouse
-/
-ClickHouse
-Public
- Watch 668 
-Fork 4.3k
-￼ Starred 21.9k
-Code
-Issues
-1.7k
-Pull requests
-172
-Discussions
-Actions
-Projects
-Wiki
-Security
-32
-Insights
-￼Edit
- Code
-Fix data race in StorageFile #34113
- Open
-Avogar wants to merge 1 commit into ClickHouse:master from Avogar:data-race
-+13 −1 
- Conversation 1
- Commits 1
- Checks 84
- Files changed 2
-Changes from all commits 
-File filter 
-Conversations 
-Jump to 
- 
-0 / 2 files viewed
-Review changes 
-;
+    std::atomic<bool> has_peekable_read_buffer_from_fd = false;
 };
 
 }
