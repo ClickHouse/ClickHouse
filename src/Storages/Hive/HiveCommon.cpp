@@ -232,7 +232,7 @@ HiveMetastoreClientPtr HiveMetastoreClientFactory::getOrCreate(const String & na
         auto builder = [name](){
             return createThriftHiveMetastoreClient(name);
         };
-        auto client = std::make_shared<HiveMetastoreClient>(builder, context);
+        auto client = std::make_shared<HiveMetastoreClient>(builder, context->getGlobalContext());
         clients[name] = client;
         return client;
     }
