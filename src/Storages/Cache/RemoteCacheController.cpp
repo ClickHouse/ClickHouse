@@ -1,4 +1,5 @@
 #include <fstream>
+#include <Common/ProfileEvents.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -9,6 +10,10 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Parser.h>
 
+namespace ProfileEvents
+{
+extern const Event ExternalDataSourceCacheFileEvictCount;
+}
 namespace DB
 {
 namespace fs = std::filesystem;
@@ -205,7 +210,10 @@ void RemoteCacheController::close()
     // delete directory
     LOG_TRACE(log, "Removing the local cache. local path: {}", local_path.string());
     if (fs::exists(local_path))
+    {
+        ProfileEvents::increment(ProfileEvents::ExternalDataSourceCacheFileEvictCount, 1);
         fs::remove_all(local_path);
+    }
 }
 
 std::unique_ptr<ReadBufferFromFileBase> RemoteCacheController::allocFile()

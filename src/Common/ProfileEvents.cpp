@@ -279,6 +279,7 @@
     M(AsynchronousReadWaitMicroseconds, "Time spent in waiting for asynchronous reads.") \
     \
     M(ExternalDataSourceLocalCacheReadBytes, "Bytes read from local cache buffer in RemoteReadBufferCache")\
+    M(ExternalDataSourceCacheFileEvictCount, "cached file evicted count in ExternalDataSourceLocalCach")\
     \
     M(MainConfigLoads, "Number of times the main configuration was reloaded.") \
 
