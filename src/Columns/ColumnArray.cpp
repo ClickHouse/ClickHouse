@@ -134,10 +134,11 @@ Field ColumnArray::operator[](size_t n) const
         throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array of size {} is too large to be manipulated as single field, maximum size {}",
             size, max_array_size_as_field);
 
-    Array res(size);
+    Array res;
+    res.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
-        res[i] = getData()[offset + i];
+        res.push_back(getData()[offset + i]);
 
     return res;
 }
@@ -152,11 +153,12 @@ void ColumnArray::get(size_t n, Field & res) const
         throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array of size {} is too large to be manipulated as single field, maximum size {}",
             size, max_array_size_as_field);
 
-    res = Array(size);
+    res = Array();
     Array & res_arr = DB::get<Array &>(res);
+    res_arr.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
-        getData().get(offset + i, res_arr[i]);
+        res_arr.push_back(getData()[offset + i]);
 }
 
 
