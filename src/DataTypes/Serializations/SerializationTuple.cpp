@@ -44,11 +44,11 @@ void SerializationTuple::deserializeBinary(Field & field, ReadBuffer & istr) con
 {
     const size_t size = elems.size();
 
-    Tuple tuple(size);
+    field = Tuple();
+    Tuple & tuple = get<Tuple &>(field);
+    tuple.reserve(size);
     for (const auto i : collections::range(0, size))
-        elems[i]->deserializeBinary(tuple[i], istr);
-
-    field = tuple;
+        elems[i]->deserializeBinary(tuple.emplace_back(), istr);
 }
 
 void SerializationTuple::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
