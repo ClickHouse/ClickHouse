@@ -1,59 +1,80 @@
-#include <sys/auxv.h>
 #include "atomic.h"
-#include <unistd.h> // __environ
+#include <sys/auxv.h>
+#include <fcntl.h> // open
+#include <sys/stat.h> // O_RDONLY
+#include <unistd.h> // read, close
+#include <stdlib.h> // ssize_t
+#include <stdio.h> // perror, fprintf
+#include <link.h> // ElfW
 #include <errno.h>
 
-// We don't have libc struct available here. Compute aux vector manually.
-static unsigned long * __auxv = NULL;
-static unsigned long __auxv_secure = 0;
+#define ARRAY_SIZE(a) sizeof((a))/sizeof((a[0]))
 
-static size_t __find_auxv(unsigned long type)
-{
-    size_t i;
-    for (i = 0; __auxv[i]; i += 2)
-    {
-        if (__auxv[i] == type)
-            return i + 1;
-    }
-    return (size_t) -1;
-}
+// We don't have libc struct available here.
+// Compute aux vector manually (from /proc/self/auxv).
+//
+// Right now there is only 51 AT_* constants,
+// so 64 should be enough until this implementation will be replaced with musl.
+static unsigned long __auxv[64];
+static unsigned long __auxv_secure = 0;
 
 unsigned long __getauxval(unsigned long type)
 {
     if (type == AT_SECURE)
         return __auxv_secure;
 
-    if (__auxv)
+    if (type >= ARRAY_SIZE(__auxv))
     {
-        size_t index = __find_auxv(type);
-        if (index != ((size_t) -1))
-            return __auxv[index];
-    }
-
-    errno = ENOENT;
-    return 0;
-}
-
-static void * volatile getauxval_func;
-
-static unsigned long  __auxv_init(unsigned long type)
-{
-    if (!__environ)
-    {
-        // __environ is not initialized yet so we can't initialize __auxv right now.
-        // That's normally occurred only when getauxval() is called from some sanitizer's internal code.
         errno = ENOENT;
         return 0;
     }
 
-    // Initialize __auxv and __auxv_secure.
-    size_t i;
-    for (i = 0; __environ[i]; i++);
-    __auxv = (unsigned long *) (__environ + i + 1);
+    return __auxv[type];
+}
 
-    size_t secure_idx = __find_auxv(AT_SECURE);
-    if (secure_idx != ((size_t) -1))
-        __auxv_secure = __auxv[secure_idx];
+static void * volatile getauxval_func;
+
+ssize_t __retry_read(int fd, void *buf, size_t count)
+{
+    for (;;)
+    {
+        ssize_t ret = read(fd, buf, count);
+        if (ret == -1)
+        {
+            if (errno == EINTR)
+                continue;
+            perror("Cannot read /proc/self/auxv");
+            abort();
+        }
+        return ret;
+    }
+}
+static unsigned long  __auxv_init(unsigned long type)
+{
+    // od -t dL /proc/self/auxv
+    int fd = open("/proc/self/auxv", O_RDONLY);
+    if (fd == -1) {
+        perror("Cannot read /proc/self/auxv (likely kernel is too old or procfs is not mounted)");
+        abort();
+    }
+
+    ElfW(auxv_t) aux;
+
+    /// NOTE: sizeof(aux) is very small (less then PAGE_SIZE), so partial read should not be possible.
+    _Static_assert(sizeof(aux) < 4096, "Unexpected sizeof(aux)");
+    while (__retry_read(fd, &aux, sizeof(aux)) == sizeof(aux))
+    {
+        if (aux.a_type >= ARRAY_SIZE(__auxv))
+        {
+            fprintf(stderr, "AT_* is out of range: %li (maximum allowed is %zu)\n", aux.a_type, ARRAY_SIZE(__auxv));
+            abort();
+        }
+        __auxv[aux.a_type] = aux.a_un.a_val;
+    }
+    close(fd);
+
+    // AT_SECURE
+    __auxv_secure = __getauxval(AT_SECURE);
 
     // Now we've initialized __auxv, next time getauxval() will only call __get_auxval().
     a_cas_p(&getauxval_func, (void *)__auxv_init, (void *)__getauxval);
