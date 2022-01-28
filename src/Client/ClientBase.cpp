@@ -1641,6 +1641,10 @@ void ClientBase::runNonInteractive()
             ReadBufferFromFile in(file);
             readStringUntilEOF(queries_from_file, in);
 
+            if (queries_from_file.starts_with("#!")) {
+                queries_from_file.erase(0, queries_from_file.find('\n') + 1);
+            }
+
             return executeMultiQuery(queries_from_file);
         };
 
