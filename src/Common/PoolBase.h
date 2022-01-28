@@ -89,7 +89,7 @@ public:
         const Object & operator*() const &  { return *data->data.object; }
 
         /**
-         * Expire an object to make it reallocated later
+         * Expire an object to make it reallocated later.
          */
         void expire()
         {
