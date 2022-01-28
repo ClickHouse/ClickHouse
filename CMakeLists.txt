@@ -104,9 +104,8 @@ message (STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 string (TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 
 option(USE_STATIC_LIBRARIES "Disable to use shared libraries" ON)
-option(MAKE_STATIC_LIBRARIES "Disable to make shared libraries" ${USE_STATIC_LIBRARIES})
 
-if (NOT MAKE_STATIC_LIBRARIES)
+if (NOT USE_STATIC_LIBRARIES)
     # DEVELOPER ONLY.
     # Faster linking if turned on.
     option(SPLIT_SHARED_LIBRARIES "Keep all internal libraries as separate .so files")
@@ -115,11 +114,11 @@ if (NOT MAKE_STATIC_LIBRARIES)
         "Make several binaries (clickhouse-server, clickhouse-client etc.) instead of one bundled")
 endif ()
 
-if (MAKE_STATIC_LIBRARIES AND SPLIT_SHARED_LIBRARIES)
-    message(FATAL_ERROR "Defining SPLIT_SHARED_LIBRARIES=1 without MAKE_STATIC_LIBRARIES=0 has no effect.")
+if (USE_STATIC_LIBRARIES AND SPLIT_SHARED_LIBRARIES)
+    message(FATAL_ERROR "Defining SPLIT_SHARED_LIBRARIES=1 without USE_STATIC_LIBRARIES=0 has no effect.")
 endif()
 
-if (NOT MAKE_STATIC_LIBRARIES AND SPLIT_SHARED_LIBRARIES)
+if (NOT USE_STATIC_LIBRARIES AND SPLIT_SHARED_LIBRARIES)
     set(BUILD_SHARED_LIBS 1 CACHE INTERNAL "")
 endif ()
 
@@ -201,20 +200,12 @@ endif ()
 option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" ON)
 option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
 
-if (OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND NOT USE_MUSL)
+if (OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND USE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND NOT USE_MUSL)
     # Only for Linux, x86_64 or aarch64.
     option(GLIBC_COMPATIBILITY "Enable compatibility with older glibc libraries." ON)
 elseif(GLIBC_COMPATIBILITY)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Glibc compatibility cannot be enabled in current configuration")
 endif ()
-
-if (GLIBC_COMPATIBILITY)
-    # NOTE: we may also want to check glibc version and add -include only for 2.32+
-    # however this is extra complexity, especially for cross compiling.
-    # And anyway it should not break anything for <2.32.
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -include ${CMAKE_CURRENT_SOURCE_DIR}/base/glibc-compatibility/glibc-compat-2.32.h")
-    set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -include ${CMAKE_CURRENT_SOURCE_DIR}/base/glibc-compatibility/glibc-compat-2.32.h")
-endif()
 
 # Make sure the final executable has symbols exported
 set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
@@ -255,8 +246,6 @@ if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
 endif()
 
 if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
-    set(USE_DEBUG_HELPERS ON)
-else ()
     set(USE_DEBUG_HELPERS ON)
 endif()
 option(USE_DEBUG_HELPERS "Enable debug helpers" ${USE_DEBUG_HELPERS})
@@ -444,7 +433,7 @@ endif ()
 
 set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
-if (MAKE_STATIC_LIBRARIES)
+if (USE_STATIC_LIBRARIES)
     set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
     if (OS_LINUX AND NOT ARCH_ARM)
         # Slightly more efficient code can be generated
@@ -480,7 +469,6 @@ endif ()
 message (STATUS
     "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE_LIBRARY_ARCHITECTURE} ;
     USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES}
-    MAKE_STATIC_LIBRARIES=${MAKE_STATIC_LIBRARIES}
     SPLIT_SHARED=${SPLIT_SHARED_LIBRARIES}
     CCACHE=${CCACHE_FOUND} ${CCACHE_VERSION}")
 
@@ -528,7 +516,7 @@ macro (add_executable target)
         # - _je_zone_register due to JEMALLOC_PRIVATE_NAMESPACE=je_ under OS X.
         # - but jemalloc-cmake does not run private_namespace.sh
         #   so symbol name should be _zone_register
-        if (ENABLE_JEMALLOC AND MAKE_STATIC_LIBRARIES AND OS_DARWIN)
+        if (ENABLE_JEMALLOC AND USE_STATIC_LIBRARIES AND OS_DARWIN)
             set_property(TARGET ${target} APPEND PROPERTY LINK_OPTIONS -u_zone_register)
         endif()
     endif()
