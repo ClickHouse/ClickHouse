@@ -315,7 +315,7 @@ void LocalServer::cleanup()
 
 std::string LocalServer::getInitialCreateTableQuery()
 {
-    if (!config().has("table-structure") && !config().has("table-file"))
+    if (!config().has("table-structure") && !config().has("table-file") && !config().has("table-data-format"))
         return {};
 
     auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
