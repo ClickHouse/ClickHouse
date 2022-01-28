@@ -3365,7 +3365,6 @@ void StorageReplicatedMergeTree::startBeingLeader()
 
     LOG_INFO(log, "Became leader");
     is_leader = true;
-    merge_selecting_task->activateAndSchedule();
 }
 
 void StorageReplicatedMergeTree::stopBeingLeader()
@@ -3375,7 +3374,6 @@ void StorageReplicatedMergeTree::stopBeingLeader()
 
     LOG_INFO(log, "Stopped being leader");
     is_leader = false;
-    merge_selecting_task->deactivate();
 }
 
 ConnectionTimeouts StorageReplicatedMergeTree::getFetchPartHTTPTimeouts(ContextPtr local_context)
@@ -4038,14 +4036,13 @@ void StorageReplicatedMergeTree::startup()
         assert(prev_ptr == nullptr);
         getContext()->getInterserverIOHandler().addEndpoint(data_parts_exchange_ptr->getId(replica_path), data_parts_exchange_ptr);
 
+        startBeingLeader();
+
         /// In this thread replica will be activated.
         restarting_thread.start();
 
         /// Wait while restarting_thread finishing initialization
         startup_event.wait();
-
-        /// Restarting thread has initialized replication queue, replica can become leader now
-        startBeingLeader();
 
         startBackgroundMovesIfNeeded();
 
