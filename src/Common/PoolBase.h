@@ -137,6 +137,7 @@ public:
                     }
                 }
             }
+
             if (items.size() < max_items)
             {
                 ObjectPtr object = allocObject();
