@@ -9,7 +9,7 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Common/quoteString.h>
 #include <Interpreters/FunctionNameNormalizer.h>
-#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 
 
@@ -170,8 +170,8 @@ KeyDescription KeyDescription::parse(const String & str, const ColumnsDescriptio
     if (str.empty())
         return result;
 
-    ParserExpressionElement parser;
-    ASTPtr ast = parseQuery(parser, "(" + str + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    ParserExpression parser;
+    ASTPtr ast = parseQuery(parser,  "(" + str + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
     FunctionNameNormalizer().visit(ast.get());
 
     return getKeyFromAST(ast, columns, context);

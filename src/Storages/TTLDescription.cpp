@@ -16,7 +16,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <Interpreters/FunctionNameNormalizer.h>
-#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 
 
@@ -379,7 +379,7 @@ TTLTableDescription TTLTableDescription::parse(const String & str, const Columns
     if (str.empty())
         return result;
 
-    ParserTTLElement parser;
+    ParserTTLExpressionList parser;
     ASTPtr ast = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
     FunctionNameNormalizer().visit(ast.get());
 
