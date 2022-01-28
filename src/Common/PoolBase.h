@@ -41,6 +41,7 @@ private:
 
         ObjectPtr object;
         bool in_use = false;
+        bool is_expired = false;
         PoolBase & pool;
     };
 
@@ -87,6 +88,15 @@ public:
         Object & operator*() &              { return *data->data.object; }
         const Object & operator*() const &  { return *data->data.object; }
 
+        /**
+         * Expire an object to make it reallocated later
+         */
+        void expire()
+        {
+            std::unique_lock lock(data->data.pool.mutex);
+            data->data.is_expired = true;
+        }
+
         bool isNull() const { return data == nullptr; }
 
         PoolBase * getPool() const
@@ -113,7 +123,17 @@ public:
         {
             for (auto & item : items)
                 if (!item->in_use)
-                    return Entry(*item);
+                { 
+                    if (!item->is_expired)
+                        return Entry(*item);
+                    else
+                    {
+                        expireObject(item->object);
+                        item->object = allocObject();
+                        item->is_expired = false;
+                        return Entry(*item);
+                    }
+                }
 
             if (items.size() < max_items)
             {
@@ -139,6 +159,12 @@ public:
             items.emplace_back(std::make_shared<PooledObject>(allocObject(), *this));
     }
 
+    inline size_t aliveSize()
+    {
+        std::unique_lock lock(mutex);
+        return items.size();
+    }
+
 private:
     /** The maximum size of the pool. */
     unsigned max_items;
@@ -162,4 +188,5 @@ protected:
 
     /** Creates a new object to put into the pool. */
     virtual ObjectPtr allocObject() = 0;
+    virtual void expireObject(ObjectPtr) {}
 };
