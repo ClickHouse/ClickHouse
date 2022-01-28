@@ -1104,8 +1104,8 @@ void IMergeTreeDataPart::loadColumns(bool require)
 
 void IMergeTreeDataPart::storeVersionMetadata() const
 {
-    assert(!versions.mintid.isEmpty());
-    if (versions.mintid.isPrehistoric() && (versions.maxtid.isEmpty() || versions.maxtid.isPrehistoric()))
+    assert(!version.creation_tid.isEmpty());
+    if (version.creation_tid.isPrehistoric() && (version.removal_tid.isEmpty() || version.removal_tid.isPrehistoric()))
         return;
 
     String version_file_name = fs::path(getFullRelativePath()) / TXN_VERSION_METADATA_FILE_NAME;
@@ -1113,7 +1113,7 @@ void IMergeTreeDataPart::storeVersionMetadata() const
     DiskPtr disk = volume->getDisk();
     {
         auto out = volume->getDisk()->writeFile(tmp_version_file_name, 4096, WriteMode::Rewrite);
-        versions.write(*out);
+        version.write(*out);
         out->finalize();
         out->sync();
     }
@@ -1145,7 +1145,7 @@ try
     if (disk->exists(version_file_name))
     {
         auto buf = openForReading(disk, version_file_name);
-        versions.read(*buf);
+        version.read(*buf);
         if (disk->exists(tmp_version_file_name))
             remove_tmp_file();
         return;
@@ -1168,16 +1168,16 @@ try
         /// We do not have version metadata and transactions history for old parts,
         /// so let's consider that such parts were created by some ancient transaction
         /// and were committed with some prehistoric CSN.
-        versions.setMinTID(Tx::PrehistoricTID, txn_context);
-        versions.mincsn = Tx::PrehistoricCSN;
+        version.setCreationTID(Tx::PrehistoricTID, txn_context);
+        version.creation_csn = Tx::PrehistoricCSN;
         return;
     }
 
     /// Case 2.
     /// Content of *.tmp file may be broken, just use fake TID.
     /// Transaction was not committed if *.tmp file was not renamed, so we should complete rollback by removing part.
-    versions.setMinTID(Tx::DummyTID, txn_context);
-    versions.mincsn = Tx::RolledBackCSN;
+    version.setCreationTID(Tx::DummyTID, txn_context);
+    version.creation_csn = Tx::RolledBackCSN;
     remove_tmp_file();
 }
 catch (Exception & e)

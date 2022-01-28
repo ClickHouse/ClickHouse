@@ -84,10 +84,10 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
         {"projections",                                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
 
         {"visible",                                     std::make_shared<DataTypeUInt8>()},
-        {"mintid",                                      getTransactionIDDataType()},
-        {"maxtid",                                      getTransactionIDDataType()},
-        {"mincsn",                                      std::make_shared<DataTypeUInt64>()},
-        {"maxcsn",                                      std::make_shared<DataTypeUInt64>()},
+        {"creation_tid",                                      getTransactionIDDataType()},
+        {"removal_tid",                                      getTransactionIDDataType()},
+        {"creation_csn",                                      std::make_shared<DataTypeUInt64>()},
+        {"removal_csn",                                      std::make_shared<DataTypeUInt64>()},
     }
     )
 {
@@ -283,7 +283,7 @@ void StorageSystemParts::processNextStorage(
         {
             auto txn = context->getCurrentTransaction();
             if (txn)
-                columns[res_index++]->insert(part->versions.isVisible(*txn));
+                columns[res_index++]->insert(part->version.isVisible(*txn));
             else
                 columns[res_index++]->insert(part_state == State::Active);
         }
@@ -294,13 +294,13 @@ void StorageSystemParts::processNextStorage(
         };
 
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(get_tid_as_field(part->versions.mintid));
+            columns[res_index++]->insert(get_tid_as_field(part->version.creation_tid));
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(get_tid_as_field(part->versions.getMaxTID()));
+            columns[res_index++]->insert(get_tid_as_field(part->version.getRemovalTID()));
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->versions.mincsn.load(std::memory_order_relaxed));
+            columns[res_index++]->insert(part->version.creation_csn.load(std::memory_order_relaxed));
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->versions.maxcsn.load(std::memory_order_relaxed));
+            columns[res_index++]->insert(part->version.removal_csn.load(std::memory_order_relaxed));
 
         /// _state column should be the latest.
         /// Do not use part->getState*, it can be changed from different thread

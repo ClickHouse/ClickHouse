@@ -1,6 +1,6 @@
 drop table if exists txn_counters;
 
-create table txn_counters (n Int64, mintid DEFAULT transactionID()) engine=MergeTree order by n;
+create table txn_counters (n Int64, creation_tid DEFAULT transactionID()) engine=MergeTree order by n;
 
 insert into txn_counters(n) values (1);
 select transactionID();
@@ -10,14 +10,14 @@ system stop merges txn_counters;
 
 begin transaction;
 insert into txn_counters(n) values (2);
-select 1, system.parts.name, txn_counters.mintid = system.parts.mintid from txn_counters join system.parts on txn_counters._part = system.parts.name where database=currentDatabase() and table='txn_counters' order by system.parts.name;
-select 2, name, mincsn, maxtid, maxcsn from system.parts where database=currentDatabase() and table='txn_counters' order by system.parts.name;
+select 1, system.parts.name, txn_counters.creation_tid = system.parts.creation_tid from txn_counters join system.parts on txn_counters._part = system.parts.name where database=currentDatabase() and table='txn_counters' order by system.parts.name;
+select 2, name, creation_csn, removal_tid, removal_csn from system.parts where database=currentDatabase() and table='txn_counters' order by system.parts.name;
 rollback;
 
 begin transaction;
 insert into txn_counters(n) values (3);
-select 3, system.parts.name, txn_counters.mintid = system.parts.mintid from txn_counters join system.parts on txn_counters._part = system.parts.name where database=currentDatabase() and table='txn_counters' order by system.parts.name;
-select 4, name, mincsn, maxtid, maxcsn from system.parts where database=currentDatabase() and table='txn_counters' order by system.parts.name;
+select 3, system.parts.name, txn_counters.creation_tid = system.parts.creation_tid from txn_counters join system.parts on txn_counters._part = system.parts.name where database=currentDatabase() and table='txn_counters' order by system.parts.name;
+select 4, name, creation_csn, removal_tid, removal_csn from system.parts where database=currentDatabase() and table='txn_counters' order by system.parts.name;
 select 5, transactionID().3 == serverUUID();
 commit;
 
@@ -26,8 +26,8 @@ attach table txn_counters;
 
 begin transaction;
 insert into txn_counters(n) values (4);
-select 6, system.parts.name, txn_counters.mintid = system.parts.mintid from txn_counters join system.parts on txn_counters._part = system.parts.name where database=currentDatabase() and table='txn_counters' order by system.parts.name;
-select 7, name, maxtid, maxcsn from system.parts where database=currentDatabase() and table='txn_counters' order by system.parts.name;
+select 6, system.parts.name, txn_counters.creation_tid = system.parts.creation_tid from txn_counters join system.parts on txn_counters._part = system.parts.name where database=currentDatabase() and table='txn_counters' order by system.parts.name;
+select 7, name, removal_tid, removal_csn from system.parts where database=currentDatabase() and table='txn_counters' order by system.parts.name;
 select 8, transactionID().3 == serverUUID();
 commit;
 
@@ -43,4 +43,4 @@ from system.transactions_info_log
 where tid in (select tid from system.transactions_info_log where database=currentDatabase() and table='txn_counters' and not (tid.1=1 and tid.2=1))
 or (database=currentDatabase() and table='txn_counters') order by event_time;
 
-drop table txn_counters;
+--drop table txn_counters;

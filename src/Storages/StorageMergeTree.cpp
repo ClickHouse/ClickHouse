@@ -249,7 +249,7 @@ std::optional<UInt64> StorageMergeTree::totalRows(const Settings &) const
 
 std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr local_context) const
 {
-    auto parts = getDataPartsVector({DataPartState::Active});
+    auto parts = getVisibleDataPartsVector(local_context);
     return totalRowsByPartitionPredicateImpl(query_info, local_context, parts);
 }
 
@@ -587,7 +587,7 @@ std::optional<MergeTreeMutationStatus> StorageMergeTree::getIncompleteMutationsS
             else if (txn)
             {
                 /// Part is locked by concurrent transaction, most likely it will never be mutated
-                TIDHash part_locked = data_part->versions.maxtid_lock.load();
+                TIDHash part_locked = data_part->version.removal_tid_lock.load();
                 if (part_locked && part_locked != mutation_entry.tid.getHash())
                 {
                     result.latest_failed_part = data_part->name;
@@ -712,6 +712,19 @@ void StorageMergeTree::loadMutations()
                 MergeTreeMutationEntry entry(disk, relative_data_path, it->name());
                 UInt64 block_number = entry.block_number;
                 LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", it->name(), entry.commands.size());
+
+                if (!entry.tid.isPrehistoric())
+                {
+                    if (!TransactionLog::instance().getCSN(entry.tid))
+                    {
+                        LOG_DEBUG(log, "Mutation entry {} was created by transaction {}, but it was not committed. Removing mutation entry",
+                                  it->name(), entry.tid);
+                        disk->removeFile(it->path());
+                        continue;
+                    }
+                    /// Transaction is committed => mutation is finished, but let's load it anyway (so it will be shown in system.mutations)
+                }
+
                 auto inserted = current_mutations_by_version.try_emplace(block_number, std::move(entry)).second;
                 if (!inserted)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", block_number);
@@ -756,9 +769,9 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMerge(
         {
             /// Cannot merge parts if some of them is not visible in current snapshot
             /// TODO We can use simplified visibility rules (without CSN lookup) here
-            if (left && !left->versions.isVisible(tx->getSnapshot(), Tx::EmptyTID))
+            if (left && !left->version.isVisible(tx->getSnapshot(), Tx::EmptyTID))
                 return false;
-            if (right && !right->versions.isVisible(tx->getSnapshot(), Tx::EmptyTID))
+            if (right && !right->version.isVisible(tx->getSnapshot(), Tx::EmptyTID))
                 return false;
         }
 
@@ -939,7 +952,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
     }
 
     auto mutations_end_it = current_mutations_by_version.end();
-    for (const auto & part : getDataPartsVector())
+    for (const auto & part : getDataPartsVectorForInternalUsage())
     {
         if (currently_merging_mutating_parts.count(part))
             continue;
@@ -961,8 +974,6 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
 
         TransactionID first_mutation_tid = mutations_begin_it->second.tid;
         MergeTreeTransactionPtr txn = tryGetTransactionForMutation(mutations_begin_it->second, log);
-        /// FIXME Transactions: we should kill mutations, but cannot do it here while holding currently_processing_in_background_mutex
-        /// TIDs are not persistent, so it cannot happen for now
         assert(txn || first_mutation_tid.isPrehistoric());
 
         if (txn)
@@ -970,7 +981,7 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
             /// Mutate visible parts only
             /// NOTE Do not mutate visible parts in Outdated state, because it does not make sense:
             /// mutation will fail anyway due to serialization error.
-            if (!part->versions.isVisible(*txn))
+            if (!part->version.isVisible(*txn))
                 continue;
         }
 
@@ -1257,7 +1268,7 @@ std::vector<StorageMergeTree::PartVersionWithName> StorageMergeTree::getSortedPa
     std::unique_lock<std::mutex> & currently_processing_in_background_mutex_lock) const
 {
     std::vector<PartVersionWithName> part_versions_with_names;
-    auto data_parts = getDataPartsVector();
+    auto data_parts = getDataPartsVectorForInternalUsage();
     part_versions_with_names.reserve(data_parts.size());
     for (const auto & part : data_parts)
         part_versions_with_names.emplace_back(PartVersionWithName{
@@ -1290,7 +1301,7 @@ bool StorageMergeTree::optimize(
     String disable_reason;
     if (!partition && final)
     {
-        DataPartsVector data_parts = getDataPartsVector();
+        DataPartsVector data_parts = getVisibleDataPartsVector(local_context);
         std::unordered_set<String> partition_ids;
 
         for (const DataPartPtr & part : data_parts)
@@ -1681,7 +1692,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
         data_parts = getVisibleDataPartsVectorInPartition(local_context, partition_id);
     }
     else
-        data_parts = getDataPartsVector();
+        data_parts = getVisibleDataPartsVector(local_context);
 
     for (auto & part : data_parts)
     {

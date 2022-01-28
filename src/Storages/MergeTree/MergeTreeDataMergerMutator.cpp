@@ -129,7 +129,7 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectPartsToMerge(
 {
     /// NOTE It will contain uncommitted parts and future parts.
     /// But It's ok since merge predicate allows to include in range visible parts only.
-    MergeTreeData::DataPartsVector data_parts = data.getDataPartsVector();
+    MergeTreeData::DataPartsVector data_parts = data.getDataPartsVectorForInternalUsage();
     const auto data_settings = data.getSettings();
     auto metadata_snapshot = data.getInMemoryMetadataPtr();
 

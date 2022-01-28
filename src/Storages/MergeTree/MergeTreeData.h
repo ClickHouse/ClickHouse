@@ -433,7 +433,7 @@ public:
 
     /// Returns sorted list of the parts with specified states
     ///  out_states will contain snapshot of each part state
-    DataPartsVector getDataPartsVector(
+    DataPartsVector getDataPartsVectorForInternalUsage(
         const DataPartStates & affordable_states, DataPartStateVector * out_states = nullptr, bool require_projection_parts = false) const;
 
     /// Returns absolutely all parts (and snapshot of their states)
@@ -441,8 +441,7 @@ public:
 
     /// Returns parts in Active state
     DataParts getDataPartsForInternalUsage() const;
-
-    DataPartsVector getDataPartsVector() const;
+    DataPartsVector getDataPartsVectorForInternalUsage() const;
 
     void filterVisibleDataParts(DataPartsVector & maybe_visible_parts, Snapshot snapshot_version, TransactionID current_tid) const;
 
