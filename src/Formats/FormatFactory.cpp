@@ -13,6 +13,8 @@
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Poco/URI.h>
 #include <Common/Exception.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 
@@ -431,6 +433,9 @@ void FormatFactory::registerFileExtension(const String & extension, const String
 
 String FormatFactory::getFormatFromFileName(String file_name, bool throw_if_not_found)
 {
+    if (file_name == "stdin")
+        return getFormatFromFileDescriptor(STDIN_FILENO);
+
     CompressionMethod compression_method = chooseCompressionMethod(file_name, "");
     if (CompressionMethod::None != compression_method)
     {
@@ -457,6 +462,25 @@ String FormatFactory::getFormatFromFileName(String file_name, bool throw_if_not_
         return "";
     }
     return it->second;
+}
+
+String FormatFactory::getFormatFromFileDescriptor(int fd)
+{
+#ifdef OS_LINUX
+    char buf[32] = {'\0'};
+    snprintf(buf, sizeof(buf), "/proc/self/fd/%d", fd);
+    char file_path[PATH_MAX] = {'\0'};
+    if (readlink(buf, file_path, sizeof(file_path) - 1) != -1)
+        return getFormatFromFileName(file_path, false);
+    return "";
+#elif defined(__APPLE__)
+    char file_path[PATH_MAX] = {'\0'};
+    if (fcntl(fd, F_GETPATH, file_path) != -1)
+        return getFormatFromFileName(file_path, false);
+    return "";
+#else
+    return "";
+#endif
 }
 
 void FormatFactory::registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine)
