@@ -147,3 +147,31 @@ def test_database():
     instance.query(f"RESTORE DATABASE test FROM {backup_name}")
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+
+def test_zip_archive():
+    backup_name = f"File('/backups/archive.zip')"
+    create_and_fill_table()
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+
+    instance.query("DROP TABLE test.table")
+    assert instance.query("EXISTS test.table") == "0\n"
+
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+
+def test_zip_archive_with_settings():
+    backup_name = f"File('/backups/archive_with_settings.zip')"
+    create_and_fill_table()
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+    instance.query(f"BACKUP TABLE test.table TO {backup_name} SETTINGS compression_method='lzma', compression_level=3, password='qwerty'")
+
+    instance.query("DROP TABLE test.table")
+    assert instance.query("EXISTS test.table") == "0\n"
+
+    instance.query(f"RESTORE TABLE test.table FROM {backup_name} SETTINGS password='qwerty'")
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"

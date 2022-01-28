@@ -1,4 +1,4 @@
-#include <Backups/BackupImpl.h>
+﻿#include <Backups/BackupImpl.h>
 #include <Backups/BackupFactory.h>
 #include <Backups/BackupEntryConcat.h>
 #include <Backups/BackupEntryFromCallback.h>
@@ -47,33 +47,43 @@ namespace
     }
 }
 
-BackupImpl::BackupImpl(const String & backup_name_, OpenMode open_mode_, const ContextPtr & context_, const std::optional<BackupInfo> & base_backup_info_)
-    : backup_name(backup_name_), open_mode(open_mode_), context(context_), base_backup_info(base_backup_info_)
+BackupImpl::BackupImpl(const String & backup_name_, const ContextPtr & context_, const std::optional<BackupInfo> & base_backup_info_)
+    : backup_name(backup_name_), context(context_), base_backup_info_param(base_backup_info_)
 {
 }
 
 BackupImpl::~BackupImpl() = default;
 
-void BackupImpl::open()
+void BackupImpl::open(OpenMode open_mode_)
 {
-    if (open_mode == OpenMode::WRITE)
+    std::lock_guard lock{mutex};
+    if (open_mode == open_mode_)
+        return;
+
+    if (open_mode != OpenMode::NONE)
+        throw Exception("Backup is already opened", ErrorCodes::LOGICAL_ERROR);
+
+    if (open_mode_ == OpenMode::WRITE)
     {
         if (backupExists())
             throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", getName());
 
         timestamp = std::time(nullptr);
         uuid = UUIDHelpers::generateV4();
-
-        startWriting();
-        writing_started = true;
+        writing_finalized = false;
     }
 
-    if (open_mode == OpenMode::READ)
+    if (open_mode_ == OpenMode::READ)
     {
         if (!backupExists())
             throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", getName());
-        readBackupMetadata();
     }
+
+    openImpl(open_mode_);
+
+    base_backup_info = base_backup_info_param;
+    if (open_mode_ == OpenMode::READ)
+        readBackupMetadata();
 
     if (base_backup_info)
     {
@@ -83,25 +93,43 @@ void BackupImpl::open()
         params.context = context;
         base_backup = BackupFactory::instance().createBackup(params);
 
-        if (open_mode == OpenMode::WRITE)
+        if (open_mode_ == OpenMode::WRITE)
             base_backup_uuid = base_backup->getUUID();
         else if (base_backup_uuid != base_backup->getUUID())
             throw Exception(ErrorCodes::WRONG_BASE_BACKUP, "Backup {}: The base backup {} has different UUID ({} != {})",
                             getName(), base_backup->getName(), toString(base_backup->getUUID()), (base_backup_uuid ? toString(*base_backup_uuid) : ""));
     }
+
+    open_mode = open_mode_;
 }
 
 void BackupImpl::close()
 {
-    if (open_mode == OpenMode::WRITE)
-    {
-        if (writing_started && !writing_finalized)
-        {
-            /// Creating of the backup wasn't finished correctly,
-            /// so the backup cannot be used and it's better to remove its files.
-            removeAllFilesAfterFailure();
-        }
-    }
+    std::lock_guard lock{mutex};
+    if (open_mode == OpenMode::NONE)
+        return;
+
+    closeImpl(writing_finalized);
+
+    uuid = UUIDHelpers::Nil;
+    timestamp = 0;
+    base_backup_info.reset();
+    base_backup.reset();
+    base_backup_uuid.reset();
+    file_infos.clear();
+    open_mode = OpenMode::NONE;
+}
+
+IBackup::OpenMode BackupImpl::getOpenMode() const
+{
+    std::lock_guard lock{mutex};
+    return open_mode;
+}
+
+time_t BackupImpl::getTimestamp() const
+{
+    std::lock_guard lock{mutex};
+    return timestamp;
 }
 
 void BackupImpl::writeBackupMetadata()
@@ -244,6 +272,9 @@ UInt128 BackupImpl::getFileChecksum(const String & file_name) const
 BackupEntryPtr BackupImpl::readFile(const String & file_name) const
 {
     std::lock_guard lock{mutex};
+    if (open_mode != OpenMode::READ)
+        throw Exception("Backup is not opened for reading", ErrorCodes::LOGICAL_ERROR);
+
     auto it = file_infos.find(file_name);
     if (it == file_infos.end())
         throw Exception(
@@ -329,7 +360,7 @@ void BackupImpl::addFile(const String & file_name, BackupEntryPtr entry)
 {
     std::lock_guard lock{mutex};
     if (open_mode != OpenMode::WRITE)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal operation: Cannot write to a backup opened for reading");
+        throw Exception("Backup is not opened for writing", ErrorCodes::LOGICAL_ERROR);
 
     if (file_infos.contains(file_name))
         throw Exception(
@@ -467,8 +498,13 @@ void BackupImpl::addFile(const String & file_name, BackupEntryPtr entry)
 
 void BackupImpl::finalizeWriting()
 {
+    std::lock_guard lock{mutex};
+    if (writing_finalized)
+        return;
+
     if (open_mode != OpenMode::WRITE)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal operation: Cannot write to a backup opened for reading");
+        throw Exception("Backup is not opened for writing", ErrorCodes::LOGICAL_ERROR);
+
     writeBackupMetadata();
     writing_finalized = true;
 }
