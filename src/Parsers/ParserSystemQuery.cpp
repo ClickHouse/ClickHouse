@@ -112,13 +112,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
         case Type::RELOAD_MODEL:
         {
-            String cluster_str;
-            if (ParserKeyword{"ON"}.ignore(pos, expected))
-            {
-                if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
-                    return false;
-            }
-            res->cluster = cluster_str;
+            parseQueryWithOnCluster(res, pos, expected);
+
             ASTPtr ast;
             if (ParserStringLiteral{}.parse(pos, ast, expected))
             {
@@ -141,13 +136,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
         case Type::RELOAD_FUNCTION:
         {
-            String cluster_str;
-            if (ParserKeyword{"ON"}.ignore(pos, expected))
-            {
-                if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
-                    return false;
-            }
-            res->cluster = cluster_str;
+            parseQueryWithOnCluster(res, pos, expected);
+
             ASTPtr ast;
             if (ParserStringLiteral{}.parse(pos, ast, expected))
             {
@@ -253,12 +243,10 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::STOP_MERGES:
         case Type::START_MERGES:
         {
-            parseQueryWithOnCluster(res, pos, expected);
-
             String storage_policy_str;
             String volume_str;
 
-            if (ParserKeyword{"ON VOLUME"}.ignore(pos, expected))
+            auto parse_on_volume = [&]() -> bool
             {
                 ASTPtr ast;
                 if (ParserIdentifier{}.parse(pos, ast, expected))
@@ -273,7 +261,25 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                     volume_str = ast->as<ASTIdentifier &>().name();
                 else
                     return false;
+
+                return true;
+            };
+
+            if (ParserKeyword{"ON VOLUME"}.ignore(pos, expected))
+            {
+                if (!parse_on_volume())
+                    return false;
             }
+            else
+            {
+                parseQueryWithOnCluster(res, pos, expected);
+                if (ParserKeyword{"ON VOLUME"}.ignore(pos, expected))
+                {
+                    if (!parse_on_volume())
+                        return false;
+                }
+            }
+
             res->storage_policy = storage_policy_str;
             res->volume = volume_str;
             if (res->volume.empty() && res->storage_policy.empty())
