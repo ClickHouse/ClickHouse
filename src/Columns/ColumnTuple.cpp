@@ -9,9 +9,6 @@
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <base/sort.h>
-#include <base/map.h>
-#include <base/range.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
 
 
@@ -114,7 +111,7 @@ void ColumnTuple::get(size_t n, Field & res) const
     Tuple & res_tuple = DB::get<Tuple &>(res);
     res_tuple.reserve(tuple_size);
 
-    for (const auto i : collections::range(0, tuple_size))
+    for (size_t i = 0; i < tuple_size; ++i)
         res_tuple.push_back((*columns[i])[n]);
 }
 
@@ -487,7 +484,7 @@ void ColumnTuple::getExtremes(Field & min, Field & max) const
     Tuple min_tuple(tuple_size);
     Tuple max_tuple(tuple_size);
 
-    for (const auto i : collections::range(0, tuple_size))
+    for (size_t i = 0; i < tuple_size; ++i)
         columns[i]->getExtremes(min_tuple[i], max_tuple[i]);
 
     min = min_tuple;
@@ -508,7 +505,7 @@ bool ColumnTuple::structureEquals(const IColumn & rhs) const
         if (tuple_size != rhs_tuple->columns.size())
             return false;
 
-        for (const auto i : collections::range(0, tuple_size))
+        for (size_t i = 0; i < tuple_size; ++i)
             if (!columns[i]->structureEquals(*rhs_tuple->columns[i]))
                 return false;
 
