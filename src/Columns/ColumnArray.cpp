@@ -17,6 +17,7 @@
 #include <Common/HashTable/Hash.h>
 #include <base/unaligned.h>
 #include <cstring> // memcpy
+#include <pdqsort.h>
 
 
 namespace DB
@@ -812,7 +813,7 @@ void ColumnArray::getPermutationImpl(size_t limit, Permutation & res, Comparator
     if (limit)
         partial_sort(res.begin(), res.begin() + limit, res.end(), less);
     else
-        std::sort(res.begin(), res.end(), less);
+        pdqsort(res.begin(), res.end(), less);
 }
 
 void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
