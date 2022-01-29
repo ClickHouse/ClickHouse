@@ -26,6 +26,8 @@ set (CLICKHOUSE_SERVER_LINK
 )
 if (TARGET ch_contrib::jemalloc)
     list(APPEND CLICKHOUSE_SERVER_LINK PRIVATE ch_contrib::jemalloc)
+elseif (TARGET ch_contrib::hualloc)
+    list(APPEND CLICKHOUSE_SERVER_LINK PRIVATE ch_contrib::hualloc)
 endif()
 
 clickhouse_program_add(server)
