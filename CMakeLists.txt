@@ -484,7 +484,7 @@ endif ()
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
 
-if (NOT ENABLE_JEMALLOC)
+if (NOT ENABLE_JEMALLOC AND NOT ENABLE_HUALLOC)
     message (WARNING "Non default allocator is disabled. This is not recommended for production builds.")
 endif ()
 
