@@ -27,7 +27,7 @@ static bool isCollationRequired(const SortColumnDescription & description)
 struct ColumnWithSortDescription
 {
     const IColumn * column = nullptr;
-    const SortColumnDescription * description = nullptr;
+    SortColumnDescription description;
 
     /// It means, that this column is ColumnConst
     bool column_const = false;
@@ -35,14 +35,18 @@ struct ColumnWithSortDescription
 using ColumnsWithSortDescriptions = std::vector<ColumnWithSortDescription>;
 
 void flattenTupleColumnRecursively(
-    ColumnsWithSortDescriptions & res, const ColumnTuple * tuple, const SortColumnDescription * description, bool is_constant)
+    ColumnsWithSortDescriptions & res, const ColumnTuple * tuple, const SortColumnDescription & description, bool has_collation)
 {
     for (const auto & column : tuple->getColumns())
     {
         if (const auto * subtuple = typeid_cast<const ColumnTuple *>(column.get()))
-            flattenTupleColumnRecursively(res, subtuple, description, is_constant);
+            flattenTupleColumnRecursively(res, subtuple, description, has_collation);
         else
-            res.emplace_back(ColumnWithSortDescription{column.get(), description, is_constant});
+        {
+            res.emplace_back(ColumnWithSortDescription{column.get(), description, isColumnConst(*column)});
+            if (has_collation && !res.back().column->isCollationSupported())
+                res.back().description.collator = nullptr;
+        }
     }
 }
 
@@ -67,9 +71,9 @@ ColumnsWithSortDescriptions getColumnsWithSortDescription(const Block & block, c
                     ErrorCodes::BAD_COLLATION);
         }
         if (const auto * tuple = typeid_cast<const ColumnTuple *>(column))
-            flattenTupleColumnRecursively(res, tuple, &description[i], isColumnConst(*column));
+            flattenTupleColumnRecursively(res, tuple, description[i], isCollationRequired(description[i]));
         else
-            res.emplace_back(ColumnWithSortDescription{column, &description[i], isColumnConst(*column)});
+            res.emplace_back(ColumnWithSortDescription{column, description[i], isColumnConst(*column)});
     }
     return res;
 }
@@ -88,7 +92,7 @@ struct PartialSortingLess
             if (elem.column_const)
                 res = 0;
             else
-                res = elem.description->direction * elem.column->compareAt(a, b, *elem.column, elem.description->nulls_direction);
+                res = elem.description.direction * elem.column->compareAt(a, b, *elem.column, elem.description.nulls_direction);
             if (res < 0)
                 return true;
             else if (res > 0)
@@ -118,13 +122,13 @@ struct PartialSortingLessWithCollation
             {
                 res = 0;
             }
-            else if (isCollationRequired(*elem.description))
+            else if (isCollationRequired(elem.description))
             {
-                res = elem.column->compareAtWithCollation(a, b, *elem.column, elem.description->nulls_direction, *elem.description->collator);
+                res = elem.column->compareAtWithCollation(a, b, *elem.column, elem.description.nulls_direction, *elem.description.collator);
             }
             else
-                res = elem.column->compareAt(a, b, *elem.column, elem.description->nulls_direction);
-            res *= elem.description->direction;
+                res = elem.column->compareAt(a, b, *elem.column, elem.description.nulls_direction);
+            res *= elem.description.direction;
             if (res < 0)
                 return true;
             else if (res > 0)
@@ -156,13 +160,13 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
     /// If only one column to sort by
     if (columns_with_sort_desc.size() == 1)
     {
-        bool reverse = columns_with_sort_desc[0].description->direction == -1;
+        bool reverse = columns_with_sort_desc[0].description.direction == -1;
         const IColumn * column = columns_with_sort_desc[0].column;
         if (isCollationRequired(description[0]))
             column->getPermutationWithCollation(*description[0].collator, reverse, limit, description[0].nulls_direction, perm);
         else
         {
-            int nan_direction_hint = columns_with_sort_desc[0].description->nulls_direction;
+            int nan_direction_hint = columns_with_sort_desc[0].description.nulls_direction;
             column->getPermutation(reverse, limit, nan_direction_hint, perm);
         }
     }
@@ -189,20 +193,20 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
             if (column.column_const)
                 continue;
 
-            if (isCollationRequired(*column.description))
+            if (isCollationRequired(column.description))
             {
                 column.column->updatePermutationWithCollation(
-                    *column.description->collator,
-                    column.description->direction < 0,
+                    *column.description.collator,
+                    column.description.direction < 0,
                     limit,
-                    column.description->nulls_direction,
+                    column.description.nulls_direction,
                     perm,
                     ranges);
             }
             else
             {
                 column.column->updatePermutation(
-                    column.description->direction < 0, limit, column.description->nulls_direction, perm, ranges);
+                    column.description.direction < 0, limit, column.description.nulls_direction, perm, ranges);
             }
         }
     }
