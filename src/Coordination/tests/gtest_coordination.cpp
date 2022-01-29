@@ -865,19 +865,17 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
     EXPECT_FALSE(map_snp.insert("/hello", 145).second);
     map_snp.updateValue("/hello", [](IntNode & value) { value = 554; });
     EXPECT_EQ(map_snp.getValue("/hello"), 554);
-    EXPECT_EQ(map_snp.snapshotSize(), 2);
+    EXPECT_EQ(map_snp.snapshotSizeWithVersion().first, 2);
     EXPECT_EQ(map_snp.size(), 1);
 
     auto itr = map_snp.begin();
     EXPECT_EQ(itr->key, "/hello");
     EXPECT_EQ(itr->value, 7);
     EXPECT_EQ(itr->active_in_map, false);
-    EXPECT_EQ(itr->distance_from_begin, 0);
     itr = std::next(itr);
     EXPECT_EQ(itr->key, "/hello");
     EXPECT_EQ(itr->value, 554);
     EXPECT_EQ(itr->active_in_map, true);
-    EXPECT_EQ(itr->distance_from_begin, 1);
     itr = std::next(itr);
     EXPECT_EQ(itr, map_snp.end());
     for (size_t i = 0; i < 5; ++i)
@@ -886,7 +884,7 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
     }
     EXPECT_EQ(map_snp.getValue("/hello3"), 3);
 
-    EXPECT_EQ(map_snp.snapshotSize(), 7);
+    EXPECT_EQ(map_snp.snapshotSizeWithVersion().first, 7);
     EXPECT_EQ(map_snp.size(), 6);
     itr = std::next(map_snp.begin(), 2);
     for (size_t i = 0; i < 5; ++i)
@@ -894,14 +892,13 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
         EXPECT_EQ(itr->key, "/hello" + std::to_string(i));
         EXPECT_EQ(itr->value, i);
         EXPECT_EQ(itr->active_in_map, true);
-        EXPECT_EQ(itr->distance_from_begin, i + 2);
         itr = std::next(itr);
     }
 
     EXPECT_TRUE(map_snp.erase("/hello3"));
     EXPECT_TRUE(map_snp.erase("/hello2"));
 
-    EXPECT_EQ(map_snp.snapshotSize(), 7);
+    EXPECT_EQ(map_snp.snapshotSizeWithVersion().first, 7);
     EXPECT_EQ(map_snp.size(), 4);
     itr = std::next(map_snp.begin(), 2);
     for (size_t i = 0; i < 5; ++i)
@@ -909,33 +906,28 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
         EXPECT_EQ(itr->key, "/hello" + std::to_string(i));
         EXPECT_EQ(itr->value, i);
         EXPECT_EQ(itr->active_in_map, i != 3 && i != 2);
-        EXPECT_EQ(itr->distance_from_begin, i + 2);
         itr = std::next(itr);
     }
     map_snp.clearOutdatedNodes();
 
-    EXPECT_EQ(map_snp.snapshotSize(), 4);
+    EXPECT_EQ(map_snp.snapshotSizeWithVersion().first, 4);
     EXPECT_EQ(map_snp.size(), 4);
     itr = map_snp.begin();
     EXPECT_EQ(itr->key, "/hello");
     EXPECT_EQ(itr->value, 554);
     EXPECT_EQ(itr->active_in_map, true);
-    EXPECT_EQ(itr->distance_from_begin, 0);
     itr = std::next(itr);
     EXPECT_EQ(itr->key, "/hello0");
     EXPECT_EQ(itr->value, 0);
     EXPECT_EQ(itr->active_in_map, true);
-    EXPECT_EQ(itr->distance_from_begin, 1);
     itr = std::next(itr);
     EXPECT_EQ(itr->key, "/hello1");
     EXPECT_EQ(itr->value, 1);
     EXPECT_EQ(itr->active_in_map, true);
-    EXPECT_EQ(itr->distance_from_begin, 2);
     itr = std::next(itr);
     EXPECT_EQ(itr->key, "/hello4");
     EXPECT_EQ(itr->value, 4);
     EXPECT_EQ(itr->active_in_map, true);
-    EXPECT_EQ(itr->distance_from_begin, 3);
     itr = std::next(itr);
     EXPECT_EQ(itr, map_snp.end());
     map_snp.disableSnapshotMode();
@@ -1172,14 +1164,15 @@ TEST_P(CoordinationTest, TestStorageSnapshotMode)
                 storage.container.erase("/hello_" + std::to_string(i));
         }
         EXPECT_EQ(storage.container.size(), 26);
-        EXPECT_EQ(storage.container.snapshotSize(), 101);
+        EXPECT_EQ(storage.container.snapshotSizeWithVersion().first, 101);
+        EXPECT_EQ(storage.container.snapshotSizeWithVersion().second, 1);
         auto buf = manager.serializeSnapshotToBuffer(snapshot);
         manager.serializeSnapshotBufferToDisk(*buf, 50);
     }
     EXPECT_TRUE(fs::exists("./snapshots/snapshot_50.bin" + params.extension));
     EXPECT_EQ(storage.container.size(), 26);
     storage.clearGarbageAfterSnapshot();
-    EXPECT_EQ(storage.container.snapshotSize(), 26);
+    EXPECT_EQ(storage.container.snapshotSizeWithVersion().first, 26);
     for (size_t i = 0; i < 50; ++i)
     {
         if (i % 2 != 0)

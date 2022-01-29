@@ -160,9 +160,9 @@ public:
     /// Set of methods for creating snapshots
 
     /// Turn on snapshot mode, so data inside Container is not deleted, but replaced with new version.
-    void enableSnapshotMode(size_t up_to_size)
+    void enableSnapshotMode(size_t up_to_version)
     {
-        container.enableSnapshotMode(up_to_size);
+        container.enableSnapshotMode(up_to_version);
     }
 
     /// Turn off snapshot mode.
@@ -179,7 +179,7 @@ public:
     /// Clear outdated data from internal container.
     void clearGarbageAfterSnapshot()
     {
-        //container.clearOutdatedNodes("clearGarbageAfterSnapshot");
+        container.clearOutdatedNodes();
     }
 
     /// Get all active sessions

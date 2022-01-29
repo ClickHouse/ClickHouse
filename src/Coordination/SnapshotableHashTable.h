@@ -16,7 +16,7 @@ struct ListNode
 {
     StringRef key;
     V value;
-    size_t distance_from_begin{0};
+    size_t version{0};
 
     bool active_in_map{true};
     bool free_key{false};
@@ -34,12 +34,14 @@ private:
 
     List list;
     IndexMap map;
+
+    /// snapshot related data structure
     bool snapshot_mode{false};
+    size_t current_version{0};
     /// Allows to avoid additional copies in updateValue function
-    size_t snapshot_up_to_size = 0;
-    size_t delete_nodes_count = 0;
+    size_t snapshot_up_to_version{0};
+    std::vector<Mapped> snapshot_invalid_iters{100000};
     ArenaWithFreeLists arena;
-    //std::vector<Mapped> snapshot_coped_set;
 
     uint64_t approximate_data_size{0};
 
@@ -135,6 +137,8 @@ public:
 
     using ValueUpdater = std::function<void(V & value)>;
 
+    SnapshotableHashTable<V>() { clear(); }
+
     std::pair<typename IndexMap::LookupResult, bool> insert(const std::string & key, const V & value)
     {
         size_t hash_value = map.hash(key);
@@ -142,7 +146,7 @@ public:
 
         if (!it)
         {
-            ListElem elem{copyStringInArena(key), value, list.empty() ? 0 : list.back().distance_from_begin + 1, true};
+            ListElem elem{copyStringInArena(key), value, current_version};
             auto itr = list.insert(list.end(), elem);
             bool inserted;
             map.emplace(itr->key, it, inserted, hash_value);
@@ -164,7 +168,7 @@ public:
 
         if (it == map.end())
         {
-            ListElem elem{copyStringInArena(key), value, list.empty() ? 0 : list.back().distance_from_begin + 1, true};
+            ListElem elem{copyStringInArena(key), value, current_version};
             auto itr = list.insert(list.end(), elem);
             bool inserted;
             map.emplace(itr->key, it, inserted, hash_value);
@@ -174,14 +178,13 @@ public:
         else
         {
             auto list_itr = it->getMapped();
-            //if (snapshot_mode)
-            if (snapshot_mode && list_itr->distance_from_begin < snapshot_up_to_size + delete_nodes_count)
+            if (snapshot_mode)
             {
-                ListElem elem{list_itr->key, value, list.back().distance_from_begin + 1, true};
+                ListElem elem{list_itr->key, value, current_version};
                 list_itr->active_in_map = false;
                 auto new_list_itr = list.insert(list.end(), elem);
                 it->getMapped() = new_list_itr;
-                //snapshot_coped_set.push_back(list_itr);
+                snapshot_invalid_iters.push_back(list_itr);
             }
             else
             {
@@ -199,24 +202,18 @@ public:
 
         auto list_itr = it->getMapped();
         uint64_t old_data_size = list_itr->value.sizeInBytes();
-        //if (snapshot_mode)
-        if (snapshot_mode && list_itr->distance_from_begin < snapshot_up_to_size)
+        if (snapshot_mode)
         {
             list_itr->active_in_map = false;
             list_itr->free_key = true;
             map.erase(it->getKey());
-            //snapshot_coped_set.push_back(list_itr);
+            snapshot_invalid_iters.push_back(list_itr);
         }
         else
         {
-            /// lazy delete list node in clearOutdatedNodes(), just keep a iterator here
             map.erase(it->getKey());
             arena.free(const_cast<char *>(list_itr->key.data), list_itr->key.size);
-            list_itr->active_in_map = false;
-            list_itr->free_key = false;
-            list_itr->key.data = nullptr;
-            list_itr->key.size = 0;
-            ++delete_nodes_count;
+            list.erase(list_itr);
         }
 
         updateDataSize(ERASE, key.size(), 0, old_data_size);
@@ -242,16 +239,16 @@ public:
         /// We in snapshot mode but updating some node which is already more
         /// fresh than snapshot distance. So it will not participate in
         /// snapshot and we don't need to copy it.
-        if (snapshot_mode && list_itr->distance_from_begin < snapshot_up_to_size + delete_nodes_count)
+        if (snapshot_mode && list_itr->version <= snapshot_up_to_version)
         {
             auto elem_copy = *(list_itr);
             list_itr->active_in_map = false;
             updater(elem_copy.value);
-            elem_copy.distance_from_begin = list.back().distance_from_begin + 1;
+            elem_copy.version = current_version;
             auto itr = list.insert(list.end(), elem_copy);
             it->getMapped() = itr;
             ret = itr;
-            //snapshot_coped_set.push_back(list_itr);
+            snapshot_invalid_iters.push_back(list_itr);
         }
         else
         {
@@ -278,50 +275,17 @@ public:
         return it->getMapped()->value;
     }
 
-    int64_t mytime()
+    void clearOutdatedNodes()
     {
-        struct timeval tv;
-        gettimeofday(&tv, nullptr);
-        return tv.tv_sec * 1000 + tv.tv_usec / 1000;
-    }
-    void clearOutdatedNodes(std::string name = "")
-    {
-        auto sm = mytime();
-        auto start = list.begin();
-        auto end = list.end();
-        size_t counter = 0;
-        for (auto itr = start; itr != end;)
+        for (auto & itr: snapshot_invalid_iters)
         {
-            if (!itr->active_in_map)
-            {
-                if (itr->key.size)
-                    updateDataSize(CLEAR_OUTDATED_NODES, itr->key.size, itr->value.sizeInBytes(), 0);
-                if (itr->free_key)
-                    arena.free(const_cast<char *>(itr->key.data), itr->key.size);
-                /// truly delete list node here, not in erase()
-                itr = list.erase(itr);
-            }
-            else
-            {
-                assert(!itr->free_key);
-                itr->distance_from_begin = counter++;
-                ++itr;
-            }
-        }
-        /*
-        for (auto & itr: snapshot_coped_set)
-        {
-            if (itr->key.size)
-                updateDataSize(CLEAR_OUTDATED_NODES, itr->key.size, itr->value.sizeInBytes(), 0);
+            assert(!itr->active_in_map);
+            updateDataSize(CLEAR_OUTDATED_NODES, itr->key.size, itr->value.sizeInBytes(), 0);
             if (itr->free_key)
                 arena.free(const_cast<char *>(itr->key.data), itr->key.size);
             list.erase(itr);
         }
-        */
-        delete_nodes_count = 0;
-        auto em = mytime();
-        //snapshot_coped_set.clear();
-        std::cout << name <<" call clearOutdatedNodes use time ms: " << em - sm << std::endl;
+        snapshot_invalid_iters.clear();
     }
 
     void clear()
@@ -334,19 +298,22 @@ public:
         }
         list.clear();
         updateDataSize(CLEAR, 0, 0, 0);
-        delete_nodes_count = 0;
+        snapshot_invalid_iters.clear();
     }
 
-    void enableSnapshotMode(size_t up_to_size)
+    void enableSnapshotMode(size_t version)
     {
         snapshot_mode = true;
-        snapshot_up_to_size = up_to_size;
+        snapshot_up_to_version = version;
+        ++current_version;
+        snapshot_invalid_iters.clear();
     }
 
     void disableSnapshotMode()
     {
         snapshot_mode = false;
-        snapshot_up_to_size = 0;
+        snapshot_up_to_version = 0;
+        ++current_version;
     }
 
     size_t size() const
@@ -354,10 +321,9 @@ public:
         return map.size();
     }
 
-    size_t snapshotSize()
+    std::pair<size_t, size_t> snapshotSizeWithVersion()
     {
-        clearOutdatedNodes("snapshotSize");
-        return list.size() - delete_nodes_count;
+        return std::make_pair(list.size(), current_version);
     }
 
     uint64_t getApproximateDataSize() const
