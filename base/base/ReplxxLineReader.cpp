@@ -125,7 +125,12 @@ void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
 
 }
 
-bool replxx_last_is_delimiter = false;
+static bool replxx_last_is_delimiter = false;
+void ReplxxLineReader::setLastIsDelimiter(bool flag)
+{
+    replxx_last_is_delimiter = flag;
+}
+
 ReplxxLineReader::ReplxxLineReader(
     Suggest & suggest,
     const String & history_file_path_,
