@@ -86,6 +86,11 @@ public:
     using CollectorCreator = std::function<IMergeTreeColumnDistributionStatisticCollectorPtr(
         const StatisticDescription & stat, const ColumnDescription & column)>;
 
+    // TODO:
+    //void validate(
+    //    const std::vector<StatisticDescription> & stats,
+    //    const ColumnsDescription & columns) const;
+    
     MergeTreeStatisticsPtr get(
         const std::vector<StatisticDescription> & stats,
         const ColumnsDescription & columns) const;
@@ -102,6 +107,9 @@ private:
         const StatisticDescription & stat, const ColumnDescription & column) const;
 
     IMergeTreeColumnDistributionStatisticCollectorPtr getColumnDistributionStatisticCollector(
+        const StatisticDescription & stat, const ColumnDescription & column) const;
+    
+    std::vector<StatisticDescription> getSplittedStatistics(
         const StatisticDescription & stat, const ColumnDescription & column) const;
 
     void registerCreators(const std::string & stat_type, StatCreator creator, CollectorCreator collector);

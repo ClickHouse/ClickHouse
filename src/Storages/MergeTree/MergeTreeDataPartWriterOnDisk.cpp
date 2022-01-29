@@ -279,6 +279,7 @@ void MergeTreeDataPartWriterOnDisk::calculateStatistics(const Block & stat_block
             size_t pos = granule.start_row;
             stats_collector->update(stat_block, &pos, granule.rows_to_write);
         }
+        stats_collector->granuleFinished();
     }
 }
 

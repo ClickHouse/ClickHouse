@@ -246,10 +246,12 @@ MergeTreeStatisticsPtr MergeTreeStatisticFactory::get(
 {
     auto column_distribution_stats = std::make_shared<MergeTreeColumnDistributionStatistics>();
     Poco::Logger::get("MergeTreeStatisticFactory").information("STAT CREATE NEW");
-    for (const auto & stat : stats) {
-        for (const auto & column : stat.column_names) {
-            column_distribution_stats->add(column, getColumnDistributionStatistic(stat, columns.get(column)));
-            Poco::Logger::get("MergeTreeStatisticFactory").information("STAT CREATE name = " + stat.name + " column = " + column);
+    for (const auto & stat_description : stats) {
+        for (const auto & column : stat_description.column_names) {
+            for (const auto & stat : getSplittedStatistics(stat_description, columns.get(column))) {
+                column_distribution_stats->add(column, getColumnDistributionStatistic(stat, columns.get(column)));
+                Poco::Logger::get("MergeTreeStatisticFactory").information("STAT CREATE name = " + stat.name + " column = " + column);
+            }
         }
     }
 
@@ -283,12 +285,34 @@ IMergeTreeColumnDistributionStatisticCollectorPtrs MergeTreeStatisticFactory::ge
     const ColumnsDescription & columns) const
 {
     IMergeTreeColumnDistributionStatisticCollectorPtrs result;
-    for (const auto & stat : stats) {
-        for (const auto & column : stat.column_names) {
-            result.emplace_back(getColumnDistributionStatisticCollector(stat, columns.get(column)));
+    for (const auto & stat_description : stats) {
+        for (const auto & column : stat_description.column_names) {
+            for (const auto & stat : getSplittedStatistics(stat_description, columns.get(column))) {
+                result.emplace_back(getColumnDistributionStatisticCollector(stat, columns.get(column)));
+            }
         }
     }
     return result;
+}
+
+std::vector<StatisticDescription> MergeTreeStatisticFactory::getSplittedStatistics(
+    const StatisticDescription & stat, const ColumnDescription & column) const
+{
+    if (stat.type != "auto") {
+        return {stat};
+    } else {
+        std::vector<StatisticDescription> result;
+        if (column.type->isValueRepresentedByNumber() && !column.type->isNullable()) {
+            result.emplace_back();
+            result.back().column_names = {column.name};
+            result.back().data_types = {column.type};
+            result.back().definition_ast = nullptr;
+            result.back().expression_list_ast = nullptr;
+            result.back().name = stat.name;
+            result.back().type = "tdigest";
+        }
+        return result;
+    }
 }
 
 MergeTreeStatisticFactory::MergeTreeStatisticFactory() {
