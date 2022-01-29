@@ -197,20 +197,30 @@ void MergeTreeColumnDistributionStatisticCollectorTDigest::granuleFinished()
 }
 
 IColumnDistributionStatisticPtr creatorColumnDistributionStatisticTDigest(
-    const StatisticDescription & stat, const String & column)
+    const StatisticDescription & stat, const ColumnDescription & column)
 {
-    // TODO: check column is numeric
-    if (std::find(std::begin(stat.column_names), std::end(stat.column_names), column) == std::end(stat.column_names))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistic {} hasn't column {}.", stat.name, column);
-    return std::make_shared<MergeTreeColumnDistributionStatisticTDigest>(column);
+    validatorColumnDistributionStatisticTDigest(stat, column);
+    if (std::find(std::begin(stat.column_names), std::end(stat.column_names), column.name) == std::end(stat.column_names))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistic {} hasn't column {}.", stat.name, column.name);
+    return std::make_shared<MergeTreeColumnDistributionStatisticTDigest>(column.name);
 }
 
 IMergeTreeColumnDistributionStatisticCollectorPtr creatorColumnDistributionStatisticCollectorTDigest(
-    const StatisticDescription & stat, const String & column)
+    const StatisticDescription & stat, const ColumnDescription & column)
 {
-    if (std::find(std::begin(stat.column_names), std::end(stat.column_names), column) == std::end(stat.column_names))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistic {} hasn't column {}.", stat.name, column);
-    return std::make_shared<MergeTreeColumnDistributionStatisticCollectorTDigest>(column);
+    validatorColumnDistributionStatisticTDigest(stat, column);
+    if (std::find(std::begin(stat.column_names), std::end(stat.column_names), column.name) == std::end(stat.column_names))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistic {} hasn't column {}.", stat.name, column.name);
+    return std::make_shared<MergeTreeColumnDistributionStatisticCollectorTDigest>(column.name);
+}
+
+void validatorColumnDistributionStatisticTDigest(
+    const StatisticDescription &, const ColumnDescription & column)
+{
+    if (!column.type->isValueRepresentedByNumber())
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Statistic TDIGEST can be used only for numeric columns.");
+    if (column.type->isNullable())
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Statistic TDIGEST can be used only for not nullable columns.");   
 }
 
 }

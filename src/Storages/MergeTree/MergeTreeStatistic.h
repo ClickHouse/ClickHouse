@@ -8,6 +8,7 @@
 #include <IO/WriteBuffer.h>
 #include <Parsers/IAST_fwd.h>
 #include <Common/HashTable/HashTable.h>
+#include "Storages/ColumnsDescription.h"
 #include <Storages/StatisticsDescription.h>
 #include <Storages/Statistics.h>
 
@@ -81,24 +82,27 @@ public:
     static MergeTreeStatisticFactory & instance();
 
     using StatCreator = std::function<IColumnDistributionStatisticPtr(
-        const StatisticDescription & stat, const String & column)>;
+        const StatisticDescription & stat, const ColumnDescription & column)>;
     using CollectorCreator = std::function<IMergeTreeColumnDistributionStatisticCollectorPtr(
-        const StatisticDescription & stat, const String & column)>;
+        const StatisticDescription & stat, const ColumnDescription & column)>;
 
-    MergeTreeStatisticsPtr get(const std::vector<StatisticDescription> & stats) const;
+    MergeTreeStatisticsPtr get(
+        const std::vector<StatisticDescription> & stats,
+        const ColumnsDescription & columns) const;
 
     IMergeTreeColumnDistributionStatisticCollectorPtrs getColumnDistributionStatisticCollectors(
-        const std::vector<StatisticDescription> & stats) const;
+        const std::vector<StatisticDescription> & stats,
+        const ColumnsDescription & columns) const;
 
 protected:
     MergeTreeStatisticFactory();
 
 private:
     IColumnDistributionStatisticPtr getColumnDistributionStatistic(
-        const StatisticDescription & stat, const String & column) const;
+        const StatisticDescription & stat, const ColumnDescription & column) const;
 
     IMergeTreeColumnDistributionStatisticCollectorPtr getColumnDistributionStatisticCollector(
-        const StatisticDescription & stat, const String & column) const;
+        const StatisticDescription & stat, const ColumnDescription & column) const;
 
     void registerCreators(const std::string & stat_type, StatCreator creator, CollectorCreator collector);
 

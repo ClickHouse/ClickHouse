@@ -718,7 +718,8 @@ MergeTreeStatisticsPtr IMergeTreeDataPart::loadStats() const {
 
     const String stats_file_path = String(fs::path(getFullRelativePath()) / PART_STATS_FILE_NAME) + "." + PART_STATS_FILE_EXT;
     LOG_DEBUG(&Poco::Logger::get("PART"), "partitions stats create " + stats_file_path);
-    auto stats = MergeTreeStatisticFactory::instance().get(metadata_snapshot->getStatistics());
+    auto stats = MergeTreeStatisticFactory::instance().get(
+        metadata_snapshot->getStatistics(), metadata_snapshot->getColumns());
     LOG_DEBUG(&Poco::Logger::get("PART"), "KEK " + stats_file_path);
     if (volume->getDisk()->exists(stats_file_path))
     {

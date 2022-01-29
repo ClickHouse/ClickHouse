@@ -221,7 +221,7 @@ void MergeTreeStatisticFactory::registerCreators(
 }
 
 IColumnDistributionStatisticPtr MergeTreeStatisticFactory::getColumnDistributionStatistic(
-    const StatisticDescription & stat, const String & column) const
+    const StatisticDescription & stat, const ColumnDescription & column) const
 {
     auto it = creators.find(stat.type);
     if (it == creators.end())
@@ -241,13 +241,14 @@ IColumnDistributionStatisticPtr MergeTreeStatisticFactory::getColumnDistribution
 }
 
 MergeTreeStatisticsPtr MergeTreeStatisticFactory::get(
-    const std::vector<StatisticDescription> & stats) const
+    const std::vector<StatisticDescription> & stats,
+    const ColumnsDescription & columns) const
 {
     auto column_distribution_stats = std::make_shared<MergeTreeColumnDistributionStatistics>();
     Poco::Logger::get("MergeTreeStatisticFactory").information("STAT CREATE NEW");
     for (const auto & stat : stats) {
         for (const auto & column : stat.column_names) {
-            column_distribution_stats->add(column, getColumnDistributionStatistic(stat, column));
+            column_distribution_stats->add(column, getColumnDistributionStatistic(stat, columns.get(column)));
             Poco::Logger::get("MergeTreeStatisticFactory").information("STAT CREATE name = " + stat.name + " column = " + column);
         }
     }
@@ -258,7 +259,7 @@ MergeTreeStatisticsPtr MergeTreeStatisticFactory::get(
 }
 
 IMergeTreeColumnDistributionStatisticCollectorPtr MergeTreeStatisticFactory::getColumnDistributionStatisticCollector(
-    const StatisticDescription & stat, const String & column) const
+    const StatisticDescription & stat, const ColumnDescription & column) const
 {
     auto it = collectors.find(stat.type);
     if (it == collectors.end())
@@ -278,12 +279,13 @@ IMergeTreeColumnDistributionStatisticCollectorPtr MergeTreeStatisticFactory::get
 }
 
 IMergeTreeColumnDistributionStatisticCollectorPtrs MergeTreeStatisticFactory::getColumnDistributionStatisticCollectors(
-    const std::vector<StatisticDescription> & stats) const
+    const std::vector<StatisticDescription> & stats,
+    const ColumnsDescription & columns) const
 {
     IMergeTreeColumnDistributionStatisticCollectorPtrs result;
     for (const auto & stat : stats) {
         for (const auto & column : stat.column_names) {
-            result.emplace_back(getColumnDistributionStatisticCollector(stat, column));
+            result.emplace_back(getColumnDistributionStatisticCollector(stat, columns.get(column)));
         }
     }
     return result;

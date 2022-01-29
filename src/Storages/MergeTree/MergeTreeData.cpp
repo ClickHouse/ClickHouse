@@ -904,7 +904,8 @@ MergeTreeStatisticsPtr MergeTreeData::getStatisticsByPartitionPredicateImpl(
     /// TODO: support table without partitions
     auto metadata_snapshot = getInMemoryMetadataPtr();
     if (parts.empty()) {
-        return MergeTreeStatisticFactory::instance().get(metadata_snapshot->getStatistics());
+        return MergeTreeStatisticFactory::instance().get(
+            metadata_snapshot->getStatistics(), metadata_snapshot->getColumns());
     }
 
     ASTPtr expression_ast;
@@ -951,7 +952,8 @@ MergeTreeStatisticsPtr MergeTreeData::getStatisticsByPartitionPredicateImpl(
         }
     }
 
-    MergeTreeStatisticsPtr res = MergeTreeStatisticFactory::instance().get(metadata_snapshot->getStatistics());
+    MergeTreeStatisticsPtr res = MergeTreeStatisticFactory::instance().get(
+        metadata_snapshot->getStatistics(), metadata_snapshot->getColumns());
     for (const auto& stat : stats_for_merge)
         res->merge(stat);
     Poco::Logger::get("getStatisticsByPartitionPredicate").information("RES " + std::to_string(stats_for_merge.size()));

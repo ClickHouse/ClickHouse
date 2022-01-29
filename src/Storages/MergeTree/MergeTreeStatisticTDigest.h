@@ -53,8 +53,9 @@ private:
 };
 
 IColumnDistributionStatisticPtr creatorColumnDistributionStatisticTDigest(
-    const StatisticDescription & stat, const String & column);
+    const StatisticDescription & stat, const ColumnDescription & column);
 IMergeTreeColumnDistributionStatisticCollectorPtr creatorColumnDistributionStatisticCollectorTDigest(
-    const StatisticDescription & stat, const String & column);
-
+    const StatisticDescription & stat, const ColumnDescription & column);
+void validatorColumnDistributionStatisticTDigest(
+    const StatisticDescription & stat, const ColumnDescription & column);
 }
