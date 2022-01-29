@@ -13,6 +13,7 @@
 #include <Common/memcpySmall.h>
 #include <base/sort.h>
 #include <base/scope_guard.h>
+#include <pdqsort.h>
 
 #if defined(__SSE2__)
 #    include <emmintrin.h>
@@ -192,9 +193,9 @@ void ColumnFixedString::getPermutation(bool reverse, size_t limit, int /*nan_dir
     else
     {
         if (reverse)
-            std::sort(res.begin(), res.end(), greater(*this));
+            pdqsort(res.begin(), res.end(), greater(*this));
         else
-            std::sort(res.begin(), res.end(), less(*this));
+            pdqsort(res.begin(), res.end(), less(*this));
     }
 }
 

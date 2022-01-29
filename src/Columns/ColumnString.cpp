@@ -13,6 +13,7 @@
 #include <base/sort.h>
 #include <base/unaligned.h>
 #include <base/scope_guard.h>
+#include <pdqsort.h>
 
 
 namespace DB
@@ -337,7 +338,7 @@ void ColumnString::getPermutationImpl(size_t limit, Permutation & res, Comparato
     if (limit)
         partial_sort(res.begin(), res.begin() + limit, res.end(), less);
     else
-        std::sort(res.begin(), res.end(), less);
+        pdqsort(res.begin(), res.end(), less);
 }
 
 void ColumnString::getPermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res) const

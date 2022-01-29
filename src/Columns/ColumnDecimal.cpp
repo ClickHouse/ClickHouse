@@ -8,6 +8,7 @@
 #include <base/unaligned.h>
 #include <base/sort.h>
 #include <base/scope_guard.h>
+#include <pdqsort.h>
 
 
 #include <IO/WriteHelpers.h>
@@ -132,7 +133,7 @@ template <is_decimal T>
 void ColumnDecimal<T>::updatePermutation(bool reverse, size_t limit, int, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
     auto equals = [this](size_t lhs, size_t rhs) { return data[lhs] == data[rhs]; };
-    auto sort = [](auto begin, auto end, auto pred) { std::sort(begin, end, pred); };
+    auto sort = [](auto begin, auto end, auto pred) { pdqsort(begin, end, pred); };
     auto partial_sort = [](auto begin, auto mid, auto end, auto pred) { ::partial_sort(begin, mid, end, pred); };
 
     if (reverse)
