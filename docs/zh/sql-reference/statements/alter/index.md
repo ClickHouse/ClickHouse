@@ -72,29 +72,3 @@ toc_title: ALTER
 
 
 对于 `ALTER TABLE ... UPDATE|DELETE` 查询由 [mutations_sync](../../../operations/settings/settings.md#mutations_sync) 设置定义的同步度。
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
