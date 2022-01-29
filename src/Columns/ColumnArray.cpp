@@ -1,5 +1,3 @@
-#include <string.h> // memcpy
-
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
@@ -9,12 +7,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/MaskOperations.h>
-
-#include <base/unaligned.h>
-#include <base/sort.h>
-
 #include <Processors/Transforms/ColumnGathererTransform.h>
-
 #include <Common/Exception.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
@@ -22,6 +15,8 @@
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
+#include <base/unaligned.h>
+#include <cstring> // memcpy
 
 
 namespace DB
