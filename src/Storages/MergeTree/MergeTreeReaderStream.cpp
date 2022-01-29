@@ -155,7 +155,7 @@ std::pair<size_t, size_t> MergeTreeReaderStream::getRightOffsetAndBytesRange(siz
         while (result_right_mark != 0 && result_right_mark < marks_count
                && marks_loader.getMark(result_right_mark - 1).offset_in_compressed_file == right_offset)
         {
-            result_right_mark++;
+            ++result_right_mark;
             right_offset = marks_loader.getMark(result_right_mark).offset_in_compressed_file;
         }
 
