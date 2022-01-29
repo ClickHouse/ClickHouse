@@ -138,6 +138,27 @@ std::pair<size_t, size_t> MergeTreeReaderStream::getRightOffsetAndBytesRange(siz
     else
     {
         right_offset = marks_loader.getMark(result_right_mark).offset_in_compressed_file;
+        /// In LowCardinality dictionary several consecutive marks can point to
+        /// the same offset. So to get true bytes offset we have to get first
+        /// non-equal mark.
+        /// Example:
+        ///  Mark 186, points to [2003111, 0]
+        ///  Mark 187, points to [2003111, 0]
+        ///  Mark 188, points to [2003111, 0]
+        ///  Mark 189, points to [2003111, 0]
+        ///  Mark 190, points to [2003111, 0]
+        ///  Mark 191, points to [2003111, 0]
+        ///  Mark 192, points to [2081424, 0]
+        ///  Mark 193, points to [2081424, 0]
+        ///  Mark 194, points to [2081424, 0]
+
+        while (result_right_mark != 0 && result_right_mark < marks_count
+               && marks_loader.getMark(result_right_mark - 1).offset_in_compressed_file == right_offset)
+        {
+            result_right_mark++;
+            right_offset = marks_loader.getMark(result_right_mark).offset_in_compressed_file;
+        }
+
         mark_range_bytes = right_offset - marks_loader.getMark(left_mark).offset_in_compressed_file;
     }
 
