@@ -40,13 +40,13 @@ TEST(PoolBase, testDestroy1)
         obj_entry->x = 100;
         obj_entry.expire();
     }
-    ASSERT_EQ(1, pool.aliveSize());
+    ASSERT_EQ(1, pool.size());
 
     {
         auto obj_entry = pool.get(-1);
         ASSERT_TRUE(!obj_entry.isNull());
         ASSERT_EQ(obj_entry->x, 0);
-        ASSERT_EQ(1, pool.aliveSize());
+        ASSERT_EQ(1, pool.size());
     }
     ASSERT_EQ(100, pool.last_destroy_value);
 }
