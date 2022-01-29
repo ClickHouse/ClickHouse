@@ -1,0 +1,1 @@
+select count() from (select (number % 1) as id from numbers(10)) as a any join (select number from numbers(1)) as b on a.id = b.number;

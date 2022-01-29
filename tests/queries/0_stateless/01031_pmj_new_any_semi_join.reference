@@ -16,7 +16,10 @@ any inner
 4	a5	4	b3
 any inner (rev)
 2	a3	2	b1
+2	a3	2	b2
 4	a5	4	b3
+4	a5	4	b4
+4	a5	4	b5
 any right
 0		5	b6
 2	a3	2	b1

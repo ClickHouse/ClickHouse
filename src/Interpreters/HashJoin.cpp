@@ -975,17 +975,6 @@ NO_INLINE IColumn::Filter joinRightColumns(
                     addFoundRowAll<Map, add_missing>(mapped, added_columns, current_offset);
                 }
             }
-            else if constexpr (is_any_join && KIND == ASTTableJoin::Kind::Inner)
-            {
-                bool used_once = used_flags.template setUsedOnce<need_flags>(find_result.getOffset());
-
-                /// Use first appeared left key only
-                if (used_once)
-                {
-                    setUsed<need_filter>(filter, i);
-                    added_columns.appendFromBlock<add_missing>(*mapped.block, mapped.row_num);
-                }
-            }
             else if constexpr (is_any_join && full)
             {
                 /// TODO
