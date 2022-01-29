@@ -10,7 +10,6 @@ namespace DB
 /// Sort one block by `description`. If limit != 0, then the partial sort of the first `limit` rows is produced.
 void sortBlock(Block & block, const SortDescription & description, UInt64 limit = 0);
 
-
 /** Used only in StorageMergeTree to sort the data with INSERT.
   * Sorting is stable. This is important for keeping the order of rows in the CollapsingMergeTree engine
   *  - because based on the order of rows it is determined whether to delete or leave groups of rows when collapsing.
@@ -22,7 +21,6 @@ void stableSortBlock(Block & block, const SortDescription & description);
   *  so that you can rearrange the column values yourself.
   */
 void stableGetPermutation(const Block & block, const SortDescription & description, IColumn::Permutation & out_permutation);
-
 
 /** Quickly check whether the block is already sorted. If the block is not sorted - returns false as fast as possible.
   * Collations are not supported.
