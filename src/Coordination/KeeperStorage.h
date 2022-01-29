@@ -3,10 +3,12 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include "base/types.h"
 #include <Coordination/SessionExpiryQueue.h>
 #include <Coordination/ACLMap.h>
 #include <Coordination/SnapshotableHashTable.h>
 #include <IO/WriteBufferFromString.h>
+#include <memory>
 #include <unordered_map>
 #include <vector>
 
@@ -18,7 +20,9 @@ namespace DB
 struct KeeperStorageRequestProcessor;
 using KeeperStorageRequestProcessorPtr = std::shared_ptr<KeeperStorageRequestProcessor>;
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
-using ChildrenSet = absl::flat_hash_set<StringRef, StringRefHash>;
+//using ChildrenSet = absl::flat_hash_set<StringRef, StringRefHash>;
+using ChildType = absl::flat_hash_set<StringRef, StringRefHash>;
+using ChildrenSet = std::shared_ptr<ChildType>;
 using SessionAndTimeout = std::unordered_map<int64_t, int64_t>;
 
 struct KeeperStorageSnapshot;
@@ -37,7 +41,7 @@ public:
         bool is_sequental = false;
         Coordination::Stat stat{};
         int32_t seq_num = 0;
-        ChildrenSet children{};
+        ChildrenSet children{nullptr};
         uint64_t size_bytes; // save size to avoid calculate every time
 
         Node()
@@ -53,6 +57,36 @@ public:
         uint64_t sizeInBytes() const
         {
             return size_bytes;
+        }
+
+        bool addChild(const StringRef & child)
+        {
+            if (children == nullptr)
+                children = std::make_shared<ChildType>();
+            return children->insert(child).second;
+        }
+        bool removeChild(const StringRef & child)
+        {
+            if (children)
+            {
+                return children->erase(child);
+            }
+            return false;
+        }
+        size_t childSize() const
+        {
+            return children ? children->size() : 0;
+        }
+        typename ChildrenSet::element_type::const_iterator childrenBegin() const
+        {
+            if (!children)
+                return ChildrenSet::element_type::const_iterator();
+            const auto & ce = *children;
+            return ce.begin();
+        }
+        typename ChildrenSet::element_type::const_iterator childrenEnd() const
+        {
+            return children ? children->end() : ChildrenSet::element_type::const_iterator();
         }
     };
 
