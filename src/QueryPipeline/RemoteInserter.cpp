@@ -34,6 +34,8 @@ RemoteInserter::RemoteInserter(
             = CurrentThread::get().thread_trace_context;
     }
 
+    server_revision = connection.getServerRevision(timeouts);
+
     /** Send query and receive "header", that describes table structure.
       * Header is needed to know, what structure is required for blocks to be passed to 'write' method.
       */
