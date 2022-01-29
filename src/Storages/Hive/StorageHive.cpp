@@ -434,6 +434,9 @@ Pipe StorageHive::read(
             sources_info->need_file_column = true;
     }
 
+    if (format_name != "Parquet" && format_name != "ORC")
+        to_read_block = sample_block;
+
     if (num_streams > sources_info->hive_files.size())
         num_streams = sources_info->hive_files.size();
 
