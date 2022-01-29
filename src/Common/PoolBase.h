@@ -41,7 +41,7 @@ private:
 
         ObjectPtr object;
         bool in_use = false;
-        bool is_expired = false;
+        std::atomic<bool> is_expired = false;
         PoolBase & pool;
     };
 
@@ -93,7 +93,6 @@ public:
          */
         void expire()
         {
-            std::unique_lock lock(data->data.pool.mutex);
             data->data.is_expired = true;
         }
 
@@ -122,10 +121,13 @@ public:
         while (true)
         {
             for (auto & item : items)
+            {
                 if (!item->in_use)
                 {
-                    if (!item->is_expired)
+                    if (likely(!item->is_expired))
+                    {
                         return Entry(*item);
+                    }
                     else
                     {
                         expireObject(item->object);
@@ -134,7 +136,7 @@ public:
                         return Entry(*item);
                     }
                 }
-
+            }
             if (items.size() < max_items)
             {
                 ObjectPtr object = allocObject();
@@ -159,7 +161,7 @@ public:
             items.emplace_back(std::make_shared<PooledObject>(allocObject(), *this));
     }
 
-    inline size_t aliveSize()
+    inline size_t size()
     {
         std::unique_lock lock(mutex);
         return items.size();
