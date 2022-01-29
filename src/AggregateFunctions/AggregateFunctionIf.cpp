@@ -72,7 +72,7 @@ private:
     using Base = AggregateFunctionNullBase<result_is_nullable, serialize_flag,
         AggregateFunctionIfNullUnary<result_is_nullable, serialize_flag>>;
 
-    inline bool singleFilter(const IColumn ** columns, size_t row_num, size_t num_arguments) const
+    inline bool singleFilter(const IColumn ** columns, size_t row_num) const
     {
         const IColumn * filter_column = columns[num_arguments - 1];
 
@@ -112,7 +112,7 @@ public:
     {
         const ColumnNullable * column = assert_cast<const ColumnNullable *>(columns[0]);
         const IColumn * nested_column = &column->getNestedColumn();
-        if (!column->isNullAt(row_num) && singleFilter(columns, row_num, num_arguments))
+        if (!column->isNullAt(row_num) && singleFilter(columns, row_num))
         {
             this->setFlag(place);
             this->nested_function->add(this->nestedPlace(place), &nested_column, row_num, arena);

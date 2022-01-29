@@ -48,6 +48,7 @@
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTColumnDeclaration.h>
 
 #include <Processors/Formats/Impl/NullFormat.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -552,6 +553,25 @@ void ClientBase::initLogsOutputStream()
     }
 }
 
+void ClientBase::updateSuggest(const ASTCreateQuery & ast_create)
+{
+    std::vector<std::string> new_words;
+
+    if (ast_create.database)
+        new_words.push_back(ast_create.getDatabase());
+    new_words.push_back(ast_create.getTable());
+
+    if (ast_create.columns_list && ast_create.columns_list->columns)
+    {
+        for (const auto & elem : ast_create.columns_list->columns->children)
+        {
+            if (const auto * column = elem->as<ASTColumnDeclaration>())
+                new_words.push_back(column->name);
+        }
+    }
+
+    suggest->addWords(std::move(new_words));
+}
 
 void ClientBase::processTextAsSingleQuery(const String & full_query)
 {
@@ -564,6 +584,18 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
         return;
 
     String query_to_execute;
+
+    /// Query will be parsed before checking the result because error does not
+    /// always means a problem, i.e. if table already exists, and it is no a
+    /// huge problem if suggestion will be added even on error, since this is
+    /// just suggestion.
+    if (auto * create = parsed_query->as<ASTCreateQuery>())
+    {
+        /// Do not update suggest, until suggestion will be ready
+        /// (this will avoid extra complexity)
+        if (suggest)
+            updateSuggest(*create);
+    }
 
     // An INSERT query may have the data that follow query text. Remove the
     /// Send part of query without data, because data will be sent separately.
@@ -1463,7 +1495,6 @@ void ClientBase::runInteractive()
     /// Initialize DateLUT here to avoid counting time spent here as query execution time.
     const auto local_tz = DateLUT::instance().getTimeZone();
 
-    std::optional<Suggest> suggest;
     suggest.emplace();
     if (load_suggestions)
     {
