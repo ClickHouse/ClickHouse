@@ -5,8 +5,6 @@
 #include <unordered_map>
 #include <list>
 #include <atomic>
-#include <iostream>
-#include <sys/time.h>
 
 namespace DB
 {
