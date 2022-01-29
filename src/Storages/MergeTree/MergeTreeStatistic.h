@@ -85,11 +85,12 @@ public:
         const StatisticDescription & stat, const ColumnDescription & column)>;
     using CollectorCreator = std::function<IMergeTreeColumnDistributionStatisticCollectorPtr(
         const StatisticDescription & stat, const ColumnDescription & column)>;
+    using Validator = std::function<void(
+        const StatisticDescription & stat, const ColumnDescription & column)>;
 
-    // TODO:
-    //void validate(
-    //    const std::vector<StatisticDescription> & stats,
-    //    const ColumnsDescription & columns) const;
+    void validate(
+        const std::vector<StatisticDescription> & stats,
+        const ColumnsDescription & columns) const;
     
     MergeTreeStatisticsPtr get(
         const std::vector<StatisticDescription> & stats,
@@ -112,12 +113,19 @@ private:
     std::vector<StatisticDescription> getSplittedStatistics(
         const StatisticDescription & stat, const ColumnDescription & column) const;
 
-    void registerCreators(const std::string & stat_type, StatCreator creator, CollectorCreator collector);
+    void registerCreators(
+        const std::string & stat_type,
+        StatCreator creator,
+        CollectorCreator collector,
+        Validator validator);
 
     using StatCreators = std::unordered_map<std::string, StatCreator>;
     using CollectorCreators = std::unordered_map<std::string, CollectorCreator>;
+    using Validators = std::unordered_map<std::string, Validator>;
+
     StatCreators creators;
     CollectorCreators collectors;
+    Validators validators;
 };
 
 }

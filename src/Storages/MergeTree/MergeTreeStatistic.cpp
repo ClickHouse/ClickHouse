@@ -210,14 +210,46 @@ IConstColumnDistributionStatisticsPtr MergeTreeStatistics::getColumnDistribution
 }
 
 void MergeTreeStatisticFactory::registerCreators(
-    const std::string & stat_type, StatCreator creator, CollectorCreator collector)
+    const std::string & stat_type,
+    StatCreator creator,
+    CollectorCreator collector,
+    Validator validator)
 {
     if (!creators.emplace(stat_type, std::move(creator)).second)
-        throw Exception("MergeTreeStatisticFactory: the statistic creator name '" + stat_type + "' is not unique",
+        throw Exception("MergeTreeStatisticFactory: the statistic creator type '" + stat_type + "' is not unique",
                         ErrorCodes::LOGICAL_ERROR);
     if (!collectors.emplace(stat_type, std::move(collector)).second)
-        throw Exception("MergeTreeStatisticFactory: the statistic collector creator name '" + stat_type + "' is not unique",
+        throw Exception("MergeTreeStatisticFactory: the statistic collector creator type '" + stat_type + "' is not unique",
                         ErrorCodes::LOGICAL_ERROR);
+    if (!validators.emplace(stat_type, std::move(validator)).second)
+        throw Exception("MergeTreeStatisticFactory: the statistic validator type '" + stat_type + "' is not unique",
+                        ErrorCodes::LOGICAL_ERROR);
+}
+
+void MergeTreeStatisticFactory::validate(
+    const std::vector<StatisticDescription> & stats,
+    const ColumnsDescription & columns) const
+{
+    for (const auto & stat_description : stats) {
+        for (const auto & column : stat_description.column_names) {
+            for (const auto & stat : getSplittedStatistics(stat_description, columns.get(column))) {
+                auto it = validators.find(stat.type);
+                if (it == validators.end())
+                    throw Exception(
+                            "Unknown Stat type '" + stat.type + "'. Available statistic types: " +
+                            std::accumulate(validators.cbegin(), validators.cend(), std::string{},
+                                    [] (auto && left, const auto & right) -> std::string
+                                    {
+                                        if (left.empty())
+                                            return right.first;
+                                        else
+                                            return left + ", " + right.first;
+                                    }),
+                            ErrorCodes::INCORRECT_QUERY);
+                it->second(stat, columns.get(column));
+            }
+        }
+    }
 }
 
 IColumnDistributionStatisticPtr MergeTreeStatisticFactory::getColumnDistributionStatistic(
@@ -301,6 +333,7 @@ std::vector<StatisticDescription> MergeTreeStatisticFactory::getSplittedStatisti
     if (stat.type != "auto") {
         return {stat};
     } else {
+        /// let's select stats for column by ourselfs
         std::vector<StatisticDescription> result;
         if (column.type->isValueRepresentedByNumber() && !column.type->isNullable()) {
             result.emplace_back();
@@ -316,7 +349,11 @@ std::vector<StatisticDescription> MergeTreeStatisticFactory::getSplittedStatisti
 }
 
 MergeTreeStatisticFactory::MergeTreeStatisticFactory() {
-    registerCreators("tdigest", creatorColumnDistributionStatisticTDigest, creatorColumnDistributionStatisticCollectorTDigest);
+    registerCreators(
+        "tdigest",
+        creatorColumnDistributionStatisticTDigest,
+        creatorColumnDistributionStatisticCollectorTDigest,
+        validatorColumnDistributionStatisticTDigest);
 }
 
 MergeTreeStatisticFactory & MergeTreeStatisticFactory::instance()

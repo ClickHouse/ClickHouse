@@ -8,6 +8,10 @@
 namespace DB
 {
 
+namespace ErrorCodes {
+extern int INCORRECT_QUERY;
+}
+
 MergeTreeColumnDistributionStatisticTDigest::MergeTreeColumnDistributionStatisticTDigest(
     const String & column_name_)
     : column_name(column_name_)
@@ -218,9 +222,9 @@ void validatorColumnDistributionStatisticTDigest(
     const StatisticDescription &, const ColumnDescription & column)
 {
     if (!column.type->isValueRepresentedByNumber())
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Statistic TDIGEST can be used only for numeric columns.");
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Statistic TDIGEST can be used only for numeric columns.");
     if (column.type->isNullable())
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Statistic TDIGEST can be used only for not nullable columns.");   
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Statistic TDIGEST can be used only for not nullable columns.");
 }
 
 }
