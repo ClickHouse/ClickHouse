@@ -2,7 +2,7 @@
 title: 'A journey to io_uring, AIO and modern storage devices'
 image: 'https://blog-images.clickhouse.com/en/2021/reading-from-external-memory/all-single-read.png'
 date: '2021-03-09'
-author: '[Ruslan Savchenko](https://github.com/savrus)'
+author: 'Ruslan Savchenko'
 tags: ['Linux', 'benchmark', 'experiment']
 ---
 
@@ -67,4 +67,3 @@ We see that solid state device latencies are far better than HDD. For a single r
 So, how about testing modern IO interfaces in Linux? Continue reading the [full article](https://arxiv.org/pdf/2102.11198).
 
 2021-03-09 [Ruslan Savchenko](https://github.com/savrus)
-
