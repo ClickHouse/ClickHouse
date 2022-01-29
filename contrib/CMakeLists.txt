@@ -37,6 +37,8 @@ add_subdirectory (murmurhash)
 add_subdirectory (replxx-cmake)
 add_subdirectory (unixodbc-cmake)
 add_subdirectory (nanodbc-cmake)
+add_subdirectory(hiredis-cmake)
+add_subdirectory(redis-plus-plus-cmake)
 
 if (USE_INTERNAL_CAPNP_LIBRARY AND NOT MISSING_INTERNAL_CAPNP_LIBRARY)
     add_subdirectory(capnproto-cmake)
