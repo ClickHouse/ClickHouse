@@ -2,9 +2,7 @@
 #include <base/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/ArenaWithFreeLists.h>
-#include <unordered_map>
 #include <list>
-#include <atomic>
 
 namespace DB
 {
@@ -145,7 +143,7 @@ public:
         if (!it)
         {
             ListElem elem{copyStringInArena(key), value, current_version};
-            auto itr = list.insert(list.end(), elem);
+            auto itr = list.insert(list.end(), std::move(elem));
             bool inserted;
             map.emplace(itr->key, it, inserted, hash_value);
             assert(inserted);
@@ -167,7 +165,7 @@ public:
         if (it == map.end())
         {
             ListElem elem{copyStringInArena(key), value, current_version};
-            auto itr = list.insert(list.end(), elem);
+            auto itr = list.insert(list.end(), std::move(elem));
             bool inserted;
             map.emplace(itr->key, it, inserted, hash_value);
             assert(inserted);
@@ -180,7 +178,7 @@ public:
             {
                 ListElem elem{list_itr->key, value, current_version};
                 list_itr->active_in_map = false;
-                auto new_list_itr = list.insert(list.end(), elem);
+                auto new_list_itr = list.insert(list.end(), std::move(elem));
                 it->getMapped() = new_list_itr;
                 snapshot_invalid_iters.push_back(list_itr);
             }
@@ -243,7 +241,7 @@ public:
             list_itr->active_in_map = false;
             updater(elem_copy.value);
             elem_copy.version = current_version;
-            auto itr = list.insert(list.end(), elem_copy);
+            auto itr = list.insert(list.end(), std::move(elem_copy));
             it->getMapped() = itr;
             ret = itr;
             snapshot_invalid_iters.push_back(list_itr);
@@ -319,7 +317,7 @@ public:
         return map.size();
     }
 
-    std::pair<size_t, size_t> snapshotSizeWithVersion()
+    std::pair<size_t, size_t> snapshotSizeWithVersion() const
     {
         return std::make_pair(list.size(), current_version);
     }
