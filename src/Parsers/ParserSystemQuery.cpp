@@ -48,7 +48,7 @@ static bool parseQueryWithOnClusterAndMaybeTable(std::shared_ptr<ASTSystemQuery>
         parsed_table = parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
 
     if (!parsed_table && require_table)
-            return false;
+        return false;
 
     if (!parsed_on_cluster && ParserKeyword{"ON"}.ignore(pos, expected))
         if (!ASTQueryWithOnCluster::parse(pos, cluster, expected))
@@ -65,7 +65,7 @@ static bool parseQueryWithOnClusterAndMaybeTable(std::shared_ptr<ASTSystemQuery>
 }
 
 static bool parseQueryWithOnCluster(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
-                                                 Expected & expected)
+                                    Expected & expected)
 {
     String cluster_str;
     if (ParserKeyword{"ON"}.ignore(pos, expected))

@@ -1,7 +1,7 @@
 0
 10
 1
-SYSTEM DICTIONARIES ON CLUSTER test_shard_localhost
+SYSTEM RELOAD DICTIONARIES ON CLUSTER test_shard_localhost
 localhost	9000	0		0	0
 0
 11
