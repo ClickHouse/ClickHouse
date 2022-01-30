@@ -3,7 +3,7 @@ set -e
 
 usage() {
     cat <<EOF >&2
-USAGE: c++expr [-c CXX | -C | -I] [-i INCLUDE] [-b STEPS] [-t TESTS] [-o FILE] [-O CXX_OPTS...] [-g 'GLOBAL CODE'] 'MAIN CODE'
+USAGE: c++expr [-c CXX | -C | -I] [-i INCLUDE] [-l LIB] [-b STEPS] [-t TESTS] [-o FILE] [-O CXX_OPTS...] [-g 'GLOBAL CODE'] 'MAIN CODE'
 OPTIONS:
     -c CXX          use specified c++ compiler
     -C              use cmake
@@ -15,6 +15,19 @@ OPTIONS:
     -t TESTS_NUM    make program to benchmark specified code snippet and run TESTS_NUM tests
     -o FILE         do not run, just save binary executable file
     -O CXX_OPTS     forward option compiler (e.g. -O "-O3 -std=c++20")
+EXAMPLES:
+  $ c++expr -g 'int fib(int n) { return n < 2 ? n : fib(n-2) + fib(n-1); }' 'OUT(fib(10)) OUT(fib(20)) OUT(fib(30))'
+    fib(10) -> 55
+    fib(20) -> 6765
+    fib(30) -> 832040
+  $ c++expr -I -i Interpreters/Context.h 'OUT(sizeof(DB::Context))'
+    sizeof(DB::Context) -> 7776
+  $ c++expr -I -i Common/Stopwatch.h -b 10000 'Stopwatch sw;'
+    Steps per test: 10000
+    Test #0: 0.0178 us      5.61798e+07 sps
+    ...
+    Test #4: 0.0179 us      5.58659e+07 sps
+    Average: 0.0179 us      5.58659e+07 sps
 EOF
     exit 1
 }
@@ -37,7 +50,7 @@ CMD_PARAMS=
 # Parse command line
 #
 
-if [ "$1" == "--help" ]; then usage; fi
+if [ "$1" == "--help" ] || [ -z "$1" ]; then usage; fi
 while getopts "vc:CIi:l:b:t:o:O:g:" OPT; do
     case "$OPT" in
     v)      set -x; ;;

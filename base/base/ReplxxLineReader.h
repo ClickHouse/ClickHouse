@@ -9,7 +9,7 @@ class ReplxxLineReader : public LineReader
 {
 public:
     ReplxxLineReader(
-        const Suggest & suggest,
+        Suggest & suggest,
         const String & history_file_path,
         bool multiline,
         Patterns extenders_,
