@@ -598,7 +598,9 @@ void debugIncreaseOOMScore() {}
 
 void BaseDaemon::initialize(Application & self)
 {
+#if !defined(USE_XRAY)
     closeFDs();
+#endif
 
     ServerApplication::initialize(self);
 
