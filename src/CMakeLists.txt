@@ -506,6 +506,7 @@ if (ENABLE_NLP)
     dbms_target_link_libraries (PUBLIC ch_contrib::stemmer)
     dbms_target_link_libraries (PUBLIC ch_contrib::wnb)
     dbms_target_link_libraries (PUBLIC ch_contrib::lemmagen)
+    dbms_target_link_libraries (PUBLIC ch_contrib::nlp_data)
 endif()
 
 if (TARGET ch_contrib::bzip2)
@@ -558,3 +559,4 @@ if (ENABLE_TESTS)
 
     add_check(unit_tests_dbms)
 endif ()
+

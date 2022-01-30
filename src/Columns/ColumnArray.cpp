@@ -1,5 +1,3 @@
-#include <string.h> // memcpy
-
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
@@ -9,12 +7,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/MaskOperations.h>
-
-#include <base/unaligned.h>
-#include <base/sort.h>
-
 #include <Processors/Transforms/ColumnGathererTransform.h>
-
 #include <Common/Exception.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
@@ -22,6 +15,8 @@
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
+#include <base/unaligned.h>
+#include <cstring> // memcpy
 
 
 namespace DB
@@ -127,18 +122,8 @@ size_t ColumnArray::size() const
 
 Field ColumnArray::operator[](size_t n) const
 {
-    size_t offset = offsetAt(n);
-    size_t size = sizeAt(n);
-
-    if (size > max_array_size_as_field)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array of size {} is too large to be manipulated as single field, maximum size {}",
-            size, max_array_size_as_field);
-
-    Array res(size);
-
-    for (size_t i = 0; i < size; ++i)
-        res[i] = getData()[offset + i];
-
+    Field res;
+    get(n, res);
     return res;
 }
 
@@ -152,11 +137,12 @@ void ColumnArray::get(size_t n, Field & res) const
         throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Array of size {} is too large to be manipulated as single field, maximum size {}",
             size, max_array_size_as_field);
 
-    res = Array(size);
+    res = Array();
     Array & res_arr = DB::get<Array &>(res);
+    res_arr.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
-        getData().get(offset + i, res_arr[i]);
+        res_arr.push_back(getData()[offset + i]);
 }
 
 
