@@ -370,18 +370,32 @@ if (COMPILER_CLANG)
 
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fstrict-vtable-pointers")
 
-    # Set new experimental pass manager, it's a performance, build time and binary size win.
-    # Can be removed after https://reviews.llvm.org/D66490 merged and released to at least two versions of clang.
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexperimental-new-pass-manager")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fexperimental-new-pass-manager")
-    # FIXME: For some units with -fexperimental-new-pass-manager 8MiB stack is
+    # For some units with -fexperimental-new-pass-manager 8MiB stack is
     # not enough, and experimentally it had been discovered that 128MiB is
-    # enough.
+    # enough but sometimes even 128MiB is not enough...
+    #
     # Also it had been discovered, that only in conjunction with
     # -fcolor-diagnostics this problem had been occurred.
+    set(ENABLE_CLANG_NEW_PASS_MANAGER_DEFAULT ON)
+    if (CCACHE_FOUND)
+        if (CCACHE_VERSION VERSION_GREATER "4.2")
+            message(WARNING "cacche ${CCACHE_VERSION} supports -fcolor-diagnostics, "
+                            "turn off -fexperimental-new-pass-manager by default, "
+                            "since it may require significant stack size, i.e. 128MiB+ or it will fail with SIGSEGV")
+            set(ENABLE_CLANG_NEW_PASS_MANAGER_DEFAULT OFF)
+        endif()
+    endif()
+    # Note, that this may become a problem after ccache >4.2, since it starts
+    # to support -fcolor-diagnostics [1].
     #
-    # NOTE: that there are not at lot of such units, but they exist.
-    set(CMAKE_CXX_COMPILER_LAUNCHER prlimit --stack=134217728 ${CMAKE_CXX_COMPILER_LAUNCHER})
+    #   [1]: ccache/ccache@e3ecec59b8d76096edf15842a2677af2767f3851.
+    option(ENABLE_CLANG_NEW_PASS_MANAGER "Enable clang -fexperimental-new-pass-manager." ${ENABLE_CLANG_NEW_PASS_MANAGER_DEFAULT})
+    # Set new experimental pass manager, it's a performance, build time and binary size win.
+    # Can be removed after https://reviews.llvm.org/D66490 merged and released to at least two versions of clang.
+    if (ENABLE_CLANG_NEW_PASS_MANAGER)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexperimental-new-pass-manager")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fexperimental-new-pass-manager")
+    endif()
 
     # We cannot afford to use LTO when compiling unit tests, and it's not enough
     # to only supply -fno-lto at the final linking stage. So we disable it
