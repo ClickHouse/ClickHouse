@@ -3,6 +3,7 @@ title: 'How to speed up LZ4 decompression in ClickHouse?'
 image: 'https://blog-images.clickhouse.com/en/2019/how-to-speed-up-lz4-decompression-in-clickhouse/main.jpg'
 date: '2019-06-25'
 tags: ['performance', 'lz4', 'article', 'decompression']
+author: 'Alexey Milovidov'
 ---
 
 When you run queries in [ClickHouse](https://clickhouse.com/), you might notice that the profiler often shows the `LZ_decompress_fast` function near the top. What is going on? This question had us wondering how to choose the best compression algorithm.

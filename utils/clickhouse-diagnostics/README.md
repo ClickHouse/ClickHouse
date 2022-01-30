@@ -1,3 +1,18 @@
+## Download
+
+Cloning whole repo will take a lot of time and disk space. The following commands will download only this directory.
+
+* Requires Git 2.19
+
+```
+# mkdir chdiag
+# cd chdiag
+# git clone --depth 1 --filter=blob:none --no-checkout https://github.com/ClickHouse/ClickHouse
+# cd ClickHouse
+# git sparse-checkout set utils/clickhouse-diagnostics
+# git checkout master -- utils/clickhouse-diagnostics
+```
+
 ## Installation
 
 ```
