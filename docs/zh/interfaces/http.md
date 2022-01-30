@@ -23,7 +23,7 @@ Web UI 可以通过这个地址访问: `http://localhost:8123/play`.
 ![Web UI](../images/play.png)
 
 
-在运行状况检查脚本中，使用`GET /ping`请求。这个处理方法总是返回 "Ok"。(以换行结尾)。可从18.12.13版获得。请参见' /replicas_status '检查副本的延迟。
+在运行状况检查脚本中，使用`GET /ping`请求。这个处理方法总是返回 "Ok"。(以换行结尾)。可从18.12.13版获得。请参见' /replicas_status '检查复制集的延迟。
 
 
 ``` bash
