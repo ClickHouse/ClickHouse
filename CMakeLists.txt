@@ -374,6 +374,14 @@ if (COMPILER_CLANG)
     # Can be removed after https://reviews.llvm.org/D66490 merged and released to at least two versions of clang.
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexperimental-new-pass-manager")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fexperimental-new-pass-manager")
+    # FIXME: For some units with -fexperimental-new-pass-manager 8MiB stack is
+    # not enough, and experimentally it had been discovered that 128MiB is
+    # enough.
+    # Also it had been discovered, that only in conjunction with
+    # -fcolor-diagnostics this problem had been occurred.
+    #
+    # NOTE: that there are not at lot of such units, but they exist.
+    set(CMAKE_CXX_COMPILER_LAUNCHER prlimit --stack=134217728 ${CMAKE_CXX_COMPILER_LAUNCHER})
 
     # We cannot afford to use LTO when compiling unit tests, and it's not enough
     # to only supply -fno-lto at the final linking stage. So we disable it
