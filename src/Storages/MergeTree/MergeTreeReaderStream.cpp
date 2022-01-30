@@ -42,7 +42,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     {
         size_t left_mark = mark_range.begin;
         size_t right_mark = mark_range.end;
-        auto [right_offset, mark_range_bytes] = getRightOffsetAndBytesRange(left_mark, right_mark);
+        auto [_, mark_range_bytes] = getRightOffsetAndBytesRange(left_mark, right_mark);
 
         max_mark_range_bytes = std::max(max_mark_range_bytes, mark_range_bytes);
         sum_mark_range_bytes += mark_range_bytes;
@@ -110,6 +110,14 @@ std::pair<size_t, size_t> MergeTreeReaderStream::getRightOffsetAndBytesRange(siz
 {
     /// NOTE: if we are reading the whole file, then right_mark == marks_count
     /// and we will use max_read_buffer_size for buffer size, thus avoiding the need to load marks.
+
+    /// Special case, can happen in Collapsing/Replacing engines
+    if (marks_count == 0)
+        return std::make_pair(0, 0);
+
+    assert(left_mark < marks_count);
+    assert(right_mark_non_included <= marks_count);
+    assert(left_mark <= right_mark_non_included);
 
     size_t result_right_offset;
     if (0 < right_mark_non_included && right_mark_non_included < marks_count)
@@ -235,7 +243,7 @@ void MergeTreeReaderStream::adjustForRange(MarkRange range)
      * read from stream, but we must update last_right_offset only if it is bigger than
      * the last one to avoid redundantly cancelling prefetches.
      */
-    auto [right_offset, mark_range_bytes] = getRightOffsetAndBytesRange(range.begin, range.end);
+    auto [right_offset, _] = getRightOffsetAndBytesRange(range.begin, range.end);
     if (!right_offset)
     {
         if (last_right_offset && *last_right_offset == 0)
