@@ -305,9 +305,11 @@ public:
                 || (max_split_opt = getMaxSplit<UInt64>(arguments[2]))
                 || (max_split_opt = getMaxSplit<Int64>(arguments[2]))))
             {
-                throw Exception{
-                    "Illegal column " + arguments[2].column->getName() + " of third argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN};
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Illegal column {} of third argument of function {}",
+                    arguments[2].column->getName(),
+                    getName());
             }
             max_split = *max_split_opt;
         }
