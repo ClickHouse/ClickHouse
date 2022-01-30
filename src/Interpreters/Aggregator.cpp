@@ -132,8 +132,6 @@ void initDataVariants(
                 // Seems it's better to preallocate less than to preallocate too much in case when we are going to create several hash tables for each thread of aggregation.
                 if (params.group_by_two_level_threshold != 0 && params.max_threads > 1)
                     adjusted /= params.max_threads;
-                LOG_DEBUG(
-                    &Poco::Logger::get("Aggregator"), "Going to preallocate {} elements for key={}", adjusted, stats_collecting_params.key);
                 result.init(method_chosen, adjusted);
             }
             return;
