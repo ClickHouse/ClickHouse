@@ -422,9 +422,9 @@ private:
     using Container = typename ColumnDecimal<T>::Container;
 
 public:
-    static NO_INLINE void apply(const Container & in, Container & out, Scale scale_arg)
+    static NO_INLINE void apply(const Container & in, UInt32 in_scale, Container & out, Scale scale_arg)
     {
-        scale_arg = in.getScale() - scale_arg;
+        scale_arg = in_scale - scale_arg;
         if (scale_arg > 0)
         {
             size_t scale = intExp10(scale_arg);
@@ -498,11 +498,11 @@ public:
         const auto * const col = checkAndGetColumn<ColumnDecimal<T>>(col_general);
         const typename ColumnDecimal<T>::Container & vec_src = col->getData();
 
-        auto col_res = ColumnDecimal<T>::create(vec_src.size(), vec_src.getScale());
+        auto col_res = ColumnDecimal<T>::create(vec_src.size(), col->getScale());
         auto & vec_res = col_res->getData();
 
         if (!vec_res.empty())
-            DecimalRoundingImpl<T, rounding_mode, tie_breaking_mode>::apply(col->getData(), vec_res, scale_arg);
+            DecimalRoundingImpl<T, rounding_mode, tie_breaking_mode>::apply(col->getData(), col->getScale(), vec_res, scale_arg);
 
         return col_res;
     }

@@ -4,7 +4,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/memcpySmall.h>
 #include <Formats/FormatSettings.h>
-#include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/readFloatText.h>

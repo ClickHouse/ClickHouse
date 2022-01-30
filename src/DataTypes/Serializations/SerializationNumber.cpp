@@ -8,7 +8,6 @@
 #include <Common/assert_cast.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
 #include <Core/Field.h>
 
 namespace DB

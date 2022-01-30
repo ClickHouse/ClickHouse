@@ -105,10 +105,13 @@ toc_title: Adopters
 | <a href="https://www.mindsdb.com/" class="favicon">MindsDB</a> | Machine Learning | Main Product | — | — | [Official Website](https://www.mindsdb.com/blog/machine-learning-models-as-tables-in-ch) |
 | <a href="https://mux.com/" class="favicon">MUX</a> | Online Video | Video Analytics | — | — | [Talk in English, August 2019](https://altinity.com/presentations/2019/8/13/how-clickhouse-became-the-default-analytics-database-for-mux/) |
 | <a href="https://www.mgid.com/" class="favicon">MGID</a> | Ad network | Web-analytics | — | — | [Blog post in Russian, April 2020](http://gs-studio.com/news-about-it/32777----clickhouse---c) |
+| <a href="https://mu.se/" class="favicon">Muse Group</a> | Music Software | Performance Monitoring | — | — | [Blog post in Russian, January 2021](https://habr.com/en/post/647079/) |
 | <a href="https://www.netskope.com/" class="favicon">Netskope</a> | Network Security | — | — | — | [Job advertisement, March 2021](https://www.mendeley.com/careers/job/senior-software-developer-backend-developer-1346348) |
 | <a href="https://niclabs.cl/" class="favicon">NIC Labs</a> | Network Monitoring | RaTA-DNS | — | — | [Blog post, March 2021](https://niclabs.cl/ratadns/2021/03/Clickhouse) |
+| <a href="https://nlmk.com/en/" class="favicon">NLMK</a> | Steel | Monitoring | — | — | [Article in Russian, Jan 2022](https://habr.com/en/company/nlmk/blog/645943/) |
 | <a href="https://getnoc.com/" class="favicon">NOC Project</a> | Network Monitoring | Analytics | Main Product | — | [Official Website](https://getnoc.com/features/big-data/) |
 | <a href="https://www.noction.com" class="favicon">Noction</a> | Network Technology | Main Product | — | — | [Official Website](https://www.noction.com/news/irp-3-11-remote-triggered-blackholing-capability)
+| <a href="https://www.ntop.org/" class="favicon">ntop</a> | Network Monitoning | Monitoring | — | — | [Official website, Jan 2022](https://www.ntop.org/ntop/historical-traffic-analysis-at-scale-using-clickhouse-with-ntopng/) |
 | <a href="https://www.nuna.com/" class="favicon">Nuna Inc.</a> | Health Data Analytics | — | — | — | [Talk in English, July 2020](https://youtu.be/GMiXCMFDMow?t=170) |
 | <a href="https://ok.ru" class="favicon">Ok.ru</a> | Social Network | — | 72 servers | 810 TB compressed, 50bn rows/day, 1.5 TB/day | [SmartData conference, October 2021](https://assets.ctfassets.net/oxjq45e8ilak/4JPHkbJenLgZhBGGyyonFP/57472ec6987003ec4078d0941740703b/____________________ClickHouse_______________________.pdf) |
 | <a href="https://omnicomm.ru/" class="favicon">Omnicomm</a> | Transportation Monitoring | — | — | — | [Facebook post, October 2021](https://www.facebook.com/OmnicommTeam/posts/2824479777774500) |
@@ -190,5 +193,6 @@ toc_title: Adopters
 | <a href="https://promo.croc.ru/digitalworker" class="favicon">Цифровой Рабочий</a> | Industrial IoT, Analytics | — | — | — | [Blog post in Russian, March 2021](https://habr.com/en/company/croc/blog/548018/) |
 | <a href="https://shop.okraina.ru/" class="favicon">ООО «МПЗ Богородский»</a> | Agriculture | — | — | — | [Article in Russian, November 2020](https://cloud.yandex.ru/cases/okraina) |
 | <a href="https://domclick.ru/" class="favicon">ДомКлик</a> | Real Estate | — | — | — | [Article in Russian, October 2021](https://habr.com/ru/company/domclick/blog/585936/) |
+| <a href="https://magenta-technology.ru/sistema-upravleniya-marshrutami-inkassacii-as-strela/" class="favicon">АС "Стрела"</a> | Transportation | — | — | — | [Job posting, Jan 2022](https://vk.com/topic-111905078_35689124?post=3553) |
 
 [Original article](https://clickhouse.com/docs/en/introduction/adopters/) <!--hide-->

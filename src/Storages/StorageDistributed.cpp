@@ -309,7 +309,7 @@ NamesAndTypesList StorageDistributed::getVirtuals() const
             NameAndTypePair("_part_uuid", std::make_shared<DataTypeUUID>()),
             NameAndTypePair("_partition_id", std::make_shared<DataTypeString>()),
             NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
-            NameAndTypePair("_shard_num", std::make_shared<DataTypeUInt32>()),
+            NameAndTypePair("_shard_num", std::make_shared<DataTypeUInt32>()), /// deprecated
     };
 }
 
@@ -638,7 +638,7 @@ Pipe StorageDistributed::read(
 
 void StorageDistributed::read(
     QueryPlan & query_plan,
-    const Names & column_names,
+    const Names &,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
     ContextPtr local_context,
@@ -668,10 +668,6 @@ void StorageDistributed::read(
         return;
     }
 
-    bool has_virtual_shard_num_column = std::find(column_names.begin(), column_names.end(), "_shard_num") != column_names.end();
-    if (has_virtual_shard_num_column && !isVirtualColumn("_shard_num", storage_snapshot->metadata))
-        has_virtual_shard_num_column = false;
-
     StorageID main_table = StorageID::createEmpty();
     if (!remote_table_function_ptr)
         main_table = StorageID{remote_database, remote_table};
@@ -682,8 +678,7 @@ void StorageDistributed::read(
             header,
             snapshot_data.objects_by_shard,
             storage_snapshot,
-            processed_stage,
-            has_virtual_shard_num_column);
+            processed_stage);
 
     ClusterProxy::executeQuery(
         query_plan, header, processed_stage,

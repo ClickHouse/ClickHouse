@@ -18,10 +18,10 @@ target_link_libraries(clickhouse_functions
         clickhouse_dictionaries
         clickhouse_dictionaries_embedded
         clickhouse_parsers
-        consistent-hashing
+        ch_contrib::consistent_hashing
         dbms
-        metrohash
-        murmurhash
+        ch_contrib::metrohash
+        ch_contrib::murmurhash
 
     PRIVATE
         ch_contrib::zlib
@@ -75,6 +75,10 @@ if (TARGET ch_contrib::base64)
 endif()
 
 target_link_libraries(clickhouse_functions PRIVATE ch_contrib::lz4)
+
+if (ENABLE_NLP)
+    target_link_libraries(clickhouse_functions PRIVATE ch_contrib::cld2)
+endif()
 
 if (TARGET ch_contrib::h3)
     target_link_libraries (clickhouse_functions PRIVATE ch_contrib::h3)

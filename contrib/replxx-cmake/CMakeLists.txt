@@ -20,11 +20,11 @@ set(SRCS
     "${LIBRARY_DIR}/src/wcwidth.cpp"
 )
 
-add_library (replxx ${SRCS})
-target_include_directories(replxx SYSTEM PUBLIC "${LIBRARY_DIR}/include")
+add_library (_replxx ${SRCS})
+target_include_directories(_replxx SYSTEM PUBLIC "${LIBRARY_DIR}/include")
 
 if (COMPILER_CLANG)
-    target_compile_options(replxx PRIVATE -Wno-documentation)
+    target_compile_options(_replxx PRIVATE -Wno-documentation)
 endif ()
 
-add_library(ch_contrib::replxx ALIAS replxx)
+add_library(ch_contrib::replxx ALIAS _replxx)
