@@ -930,7 +930,7 @@ public:
             return LUTIndex(0);
 
         if (unlikely(year > DATE_LUT_MAX_YEAR))
-            return LUTIndex(DATE_LUT_SIZE-1);
+            return LUTIndex(DATE_LUT_SIZE - 1);
 
         auto year_lut_index = (year - DATE_LUT_MIN_YEAR) * 12 + month - 1;
         UInt32 index = years_months_lut[year_lut_index].toUnderType() + day_of_month - 1;
