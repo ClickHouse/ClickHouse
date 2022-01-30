@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <cmath>
+#include <cfloat>
 
 
 /// This function is used in implementations of different T-Tests.
@@ -101,7 +102,7 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} requires finite parameter values.", Data::name);
             }
 
-            if (confidence_level <= 0.0 || confidence_level >= 1.0)
+            if (confidence_level <= 0.0 || confidence_level >= 1.0 || fabs(confidence_level - 0.0) < FLT_EPSILON || fabs(confidence_level - 1.0) < FLT_EPSILON)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Confidence level parameter must be between 0 and 1 in aggregate function {}.", Data::name);
             }
