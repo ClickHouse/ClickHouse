@@ -441,10 +441,8 @@ public:
             }
         }
 
-        //Float64 x = level * count;
         Float64 prev_x = 0;
         Count sum = 0;
-        //Value prev_mean = centroids.front().mean;
         Count prev_count = centroids.front().count;
 
         for (const auto & c : centroids)
@@ -456,12 +454,11 @@ public:
 
             if (value <= c.mean) {
                 // interpolate? [prev_mean, c.mean]
-                Poco::Logger::get("CDF").information("left  " + std::to_string(left) + " right " + std::to_string(right) + " cnt" + std::to_string(count));
+                // Poco::Logger::get("CDF").information("left  " + std::to_string(left) + " right " + std::to_string(right) + " cnt" + std::to_string(count));
                 return {left / count, right / count};
             }
 
             sum += c.count;
-            //prev_mean = c.mean;
             prev_count = c.count;
             prev_x = current_x;
         }

@@ -1,9 +1,11 @@
-#include <cmath>
-#include <memory>
-#include <string>
 #include <Storages/MergeTree/MergeTreeStatisticTDigest.h>
-#include <Poco/Logger.h>
+
+#include <cmath>
 #include <Common/Exception.h>
+#include <limits>
+#include <memory>
+#include <Poco/Logger.h>
+#include <string>
 
 namespace DB
 {
@@ -109,7 +111,13 @@ double MergeTreeColumnDistributionStatisticTDigest::estimateQuantileLower(const 
 
     // TODO: process corner cases float32 vs float64
     double threshold = extractValue(value);
-    return sketch.cdf(threshold).first;
+    if (std::isnan(threshold)
+        || std::isinf(threshold)
+        || threshold < std::numeric_limits<Float32>::min()
+        || threshold > std::numeric_limits<Float32>::max())
+        return 0.0;
+    else
+        return sketch.cdf(threshold).first;
 }
 
 double MergeTreeColumnDistributionStatisticTDigest::estimateQuantileUpper(const Field& value) const
@@ -118,7 +126,13 @@ double MergeTreeColumnDistributionStatisticTDigest::estimateQuantileUpper(const 
         throw Exception("TDigest is empty", ErrorCodes::LOGICAL_ERROR);
 
     double threshold = extractValue(value);
-    return sketch.cdf(threshold).second;
+    if (std::isnan(threshold)
+        || std::isinf(threshold)
+        || threshold < std::numeric_limits<Float32>::min()
+        || threshold > std::numeric_limits<Float32>::max())
+        return 1.0;
+    else
+        return sketch.cdf(threshold).second;
 }
 
 double MergeTreeColumnDistributionStatisticTDigest::estimateProbability(const Field& lower, const Field& upper) const

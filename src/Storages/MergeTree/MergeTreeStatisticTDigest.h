@@ -3,7 +3,7 @@
 #include <optional>
 #include <Storages/MergeTree/MergeTreeStatistic.h>
 #include <AggregateFunctions/QuantileTDigest.h>
-#include "base/types.h"
+#include <base/types.h>
 
 namespace DB
 {
