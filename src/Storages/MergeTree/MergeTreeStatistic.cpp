@@ -1,14 +1,17 @@
 #include <Storages/MergeTree/MergeTreeStatistic.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Storages/MergeTree/MergeTreeStatisticTDigest.h>
-#include <DataTypes/DataTypeString.h>
-#include <Common/Exception.h>
-#include "Parsers/ASTExpressionList.h"
-#include <base/defines.h>
-#include <Poco/Logger.h>
 #include <algorithm>
+#include <base/defines.h>
+#include <Common/Exception.h>
+#include <Common/thread_local_rng.h>
+#include "base/types.h"
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
+#include <fmt/core.h>
 #include <memory>
 #include <numeric>
+#include <Parsers/ASTExpressionList.h>
+#include <Poco/Logger.h>
+#include <Storages/MergeTree/MergeTreeStatisticTDigest.h>
 #include <string>
 
 namespace DB
@@ -18,6 +21,13 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
+}
+
+String generateFileNameForStatistics() {
+    return fmt::format("{}_{}.{}",
+        PART_STATS_FILE_NAME,
+        std::uniform_int_distribution<UInt64>()(thread_local_rng),
+        PART_STATS_FILE_EXT);
 }
 
 bool MergeTreeColumnDistributionStatistics::empty() const
@@ -43,8 +53,6 @@ void MergeTreeColumnDistributionStatistics::merge(const std::shared_ptr<IColumnD
         }
         else
         {
-            // TODO: add stat to column_to_stats
-            // TODO: need also some control over stats versions
             column_to_stats[column]->merge(stat);
             Poco::Logger::get("MergeTreeColumnDistributionStatistics").information(
             "created" + column + " ");
@@ -253,7 +261,8 @@ void MergeTreeStatisticFactory::validate(
 }
 
 IColumnDistributionStatisticPtr MergeTreeStatisticFactory::getColumnDistributionStatistic(
-    const StatisticDescription & stat, const ColumnDescription & column) const
+    const StatisticDescription & stat,
+    const ColumnDescription & column) const
 {
     auto it = creators.find(stat.type);
     if (it == creators.end())
@@ -279,6 +288,7 @@ MergeTreeStatisticsPtr MergeTreeStatisticFactory::get(
     auto column_distribution_stats = std::make_shared<MergeTreeColumnDistributionStatistics>();
     Poco::Logger::get("MergeTreeStatisticFactory").information("STAT CREATE NEW");
     for (const auto & stat_description : stats) {
+        // move to params
         for (const auto & column : stat_description.column_names) {
             for (const auto & stat : getSplittedStatistics(stat_description, columns.get(column))) {
                 column_distribution_stats->add(column, getColumnDistributionStatistic(stat, columns.get(column)));

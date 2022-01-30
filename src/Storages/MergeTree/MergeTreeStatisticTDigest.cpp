@@ -43,6 +43,7 @@ bool MergeTreeColumnDistributionStatisticTDigest::empty() const
 void MergeTreeColumnDistributionStatisticTDigest::merge(const IStatisticPtr & other)
 {
     auto other_ptr = std::dynamic_pointer_cast<MergeTreeColumnDistributionStatisticTDigest>(other);
+    // versions control???
     if (other_ptr)
     {
         is_empty &= other_ptr->is_empty;

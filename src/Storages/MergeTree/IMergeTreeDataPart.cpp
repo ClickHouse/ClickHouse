@@ -1,5 +1,6 @@
 #include "IMergeTreeDataPart.h"
 
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <Core/Defines.h>
@@ -716,23 +717,34 @@ void IMergeTreeDataPart::loadIndex()
 MergeTreeStatisticsPtr IMergeTreeDataPart::loadStats() const {
     const auto metadata_snapshot = storage.getInMemoryMetadataPtr();
 
-    const String stats_file_path = String(fs::path(getFullRelativePath()) / PART_STATS_FILE_NAME) + "." + PART_STATS_FILE_EXT;
-    LOG_DEBUG(&Poco::Logger::get("PART"), "partitions stats create " + stats_file_path);
-    auto stats = MergeTreeStatisticFactory::instance().get(
+    auto total_stats = MergeTreeStatisticFactory::instance().get(
         metadata_snapshot->getStatistics(), metadata_snapshot->getColumns());
-    LOG_DEBUG(&Poco::Logger::get("PART"), "KEK " + stats_file_path);
-    if (volume->getDisk()->exists(stats_file_path))
-    {
-        LOG_DEBUG(&Poco::Logger::get("PART"), "partitions file exists " + stats_file_path);
-        auto stats_file = openForReading(volume->getDisk(), stats_file_path);
-        LOG_DEBUG(&Poco::Logger::get("PART"), "opened " + stats_file_path);
-        stats->deserializeBinary(*stats_file);
-        LOG_DEBUG(&Poco::Logger::get("PART"), "deserialized " + stats_file_path);
-        if (!stats_file->eof())
-                throw Exception("Stats file " + fullPath(volume->getDisk(), stats_file_path) + " is unexpectedly long", ErrorCodes::EXPECTED_END_OF_FILE);
+    std::vector<String> file_names;
+    volume->getDisk()->listFiles(getFullRelativePath(), file_names);
+    for (const String & file_name : file_names) {
+        if (file_name.ends_with(PART_STATS_FILE_EXT)) {
+            const String stats_file_path = String(fs::path(getFullRelativePath()) / file_name);
+            //const String stats_file_path = entry.path();
+            LOG_DEBUG(&Poco::Logger::get("PART"), "partitions stats create " + stats_file_path);
+            if (volume->getDisk()->exists(stats_file_path))
+            {
+                auto stats = MergeTreeStatisticFactory::instance().get(
+                    metadata_snapshot->getStatistics(), metadata_snapshot->getColumns());
+                LOG_DEBUG(&Poco::Logger::get("PART"), "partitions file exists " + stats_file_path);
+                auto stats_file = openForReading(volume->getDisk(), stats_file_path);
+                LOG_DEBUG(&Poco::Logger::get("PART"), "opened " + stats_file_path);
+                stats->deserializeBinary(*stats_file);
+                LOG_DEBUG(&Poco::Logger::get("PART"), "deserialized " + stats_file_path);
+                if (!stats_file->eof())
+                    throw Exception("Stats file " + fullPath(volume->getDisk(), stats_file_path) + " is unexpectedly long", ErrorCodes::EXPECTED_END_OF_FILE);
+
+                total_stats->merge(stats);
+            }
+            LOG_DEBUG(&Poco::Logger::get("PART"), "finish " + stats_file_path);
+        }
     }
-    LOG_DEBUG(&Poco::Logger::get("PART"), "finish " + stats_file_path);
-    return stats;
+    LOG_DEBUG(&Poco::Logger::get("PART"), "finish  TOTAL");
+    return total_stats;
 }
 
 NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const

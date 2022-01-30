@@ -18,6 +18,8 @@ constexpr auto PART_STATS_FILE_EXT = "bin_stats";
 namespace DB
 {
 
+String generateFileNameForStatistics();
+
 class IMergeTreeColumnDistributionStatisticCollector {
 public:
     virtual ~IMergeTreeColumnDistributionStatisticCollector() = default;

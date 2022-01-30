@@ -342,7 +342,7 @@ void MergeTreeDataPartWriterOnDisk::finishStatisticsSerialization(MergeTreeData:
     if (stats_collectors.empty())
         return;
 
-    const auto filename = String(PART_STATS_FILE_NAME) + "." + PART_STATS_FILE_EXT;
+    const auto filename = generateFileNameForStatistics(); //String(PART_STATS_FILE_NAME) + "." + PART_STATS_FILE_EXT;
     auto stats_file_stream = data_part->volume->getDisk()->writeFile(
         part_path + filename,
         DBMS_DEFAULT_BUFFER_SIZE,
