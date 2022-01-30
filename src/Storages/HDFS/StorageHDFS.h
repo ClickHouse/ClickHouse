@@ -31,7 +31,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/) override;
+    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override;
 
     void truncate(
         const ASTPtr & query,
@@ -70,11 +70,12 @@ protected:
         ASTPtr partition_by = nullptr);
 
 private:
-    const String uri;
+    std::vector<const String> uris;
     String format_name;
     String compression_method;
     const bool distributed_processing;
     ASTPtr partition_by;
+    bool is_path_with_globs;
 
     Poco::Logger * log = &Poco::Logger::get("StorageHDFS");
 };
@@ -88,6 +89,17 @@ public:
     {
         public:
             DisclosedGlobIterator(ContextPtr context_, const String & uri_);
+            String next();
+        private:
+            class Impl;
+            /// shared_ptr to have copy constructor
+            std::shared_ptr<Impl> pimpl;
+    };
+
+    class URISIterator
+    {
+        public:
+            URISIterator(const std::vector<const String> & uris_, ContextPtr context);
             String next();
         private:
             class Impl;

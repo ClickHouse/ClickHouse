@@ -368,7 +368,7 @@ elseif(WIN32)
 endif()
 
 add_library(
-  crypto
+  _crypto
 
   ${CRYPTO_ARCH_SOURCES}
   err_data.c
@@ -605,7 +605,7 @@ add_library(
 )
 
 add_library(
-  ssl
+  _ssl
 
   "${BORINGSSL_SOURCE_DIR}/ssl/bio_ssl.cc"
   "${BORINGSSL_SOURCE_DIR}/ssl/d1_both.cc"
@@ -672,21 +672,22 @@ add_executable(
   "${BORINGSSL_SOURCE_DIR}/tool/transport_common.cc"
 )
 
-target_link_libraries(ssl crypto)
-target_link_libraries(bssl ssl)
+target_link_libraries(_ssl _crypto)
+target_link_libraries(bssl _ssl)
 
 if(NOT WIN32 AND NOT ANDROID)
-  target_link_libraries(crypto pthread)
+  target_link_libraries(_crypto pthread)
 endif()
 
+# NOTE: that ClickHouse does not support WIN32 anyway.
 if(WIN32)
   target_link_libraries(bssl ws2_32)
 endif()
 
-target_include_directories(crypto SYSTEM PUBLIC "${BORINGSSL_SOURCE_DIR}/include")
-target_include_directories(ssl SYSTEM PUBLIC "${BORINGSSL_SOURCE_DIR}/include")
+target_include_directories(_crypto SYSTEM PUBLIC "${BORINGSSL_SOURCE_DIR}/include")
+target_include_directories(_ssl SYSTEM PUBLIC "${BORINGSSL_SOURCE_DIR}/include")
 
-target_compile_options(crypto PRIVATE -Wno-gnu-anonymous-struct)
+target_compile_options(_crypto PRIVATE -Wno-gnu-anonymous-struct)
 
-add_library(OpenSSL::Crypto ALIAS crypto)
-add_library(OpenSSL::SSL ALIAS ssl)
+add_library(OpenSSL::Crypto ALIAS _crypto)
+add_library(OpenSSL::SSL ALIAS _ssl)

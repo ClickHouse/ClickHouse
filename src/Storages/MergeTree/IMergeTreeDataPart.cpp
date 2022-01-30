@@ -1,6 +1,7 @@
 #include "IMergeTreeDataPart.h"
 
 #include <optional>
+#include <string_view>
 #include <Core/Defines.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
@@ -416,7 +417,7 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
 }
 
 
-void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos)
+void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns)
 {
     columns = new_columns;
 
@@ -425,21 +426,12 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
     size_t pos = 0;
 
     for (const auto & column : columns)
-    {
         column_name_to_position.emplace(column.name, pos++);
+}
 
-        auto it = new_infos.find(column.name);
-        if (it != new_infos.end())
-        {
-            auto & old_info = serialization_infos[column.name];
-            const auto & new_info = it->second;
-
-            if (old_info)
-                old_info->replaceData(*new_info);
-            else
-                old_info = new_info->clone();
-        }
-    }
+void IMergeTreeDataPart::setSerializationInfos(const SerializationInfoByName & new_infos)
+{
+    serialization_infos = new_infos;
 }
 
 SerializationPtr IMergeTreeDataPart::getSerialization(const NameAndTypePair & column) const
@@ -1098,7 +1090,8 @@ void IMergeTreeDataPart::loadColumns(bool require)
     if (volume->getDisk()->exists(path))
         infos.readJSON(*volume->getDisk()->readFile(path));
 
-    setColumns(loaded_columns, infos);
+    setColumns(loaded_columns);
+    setSerializationInfos(infos);
 }
 
 bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const
@@ -1638,13 +1631,21 @@ UInt32 IMergeTreeDataPart::getNumberOfRefereneces() const
 }
 
 
-String IMergeTreeDataPart::getZeroLevelPartBlockID() const
+String IMergeTreeDataPart::getZeroLevelPartBlockID(std::string_view token) const
 {
     if (info.level != 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get block id for non zero level part {}", name);
 
     SipHash hash;
-    checksums.computeTotalChecksumDataOnly(hash);
+    if (token.empty())
+    {
+        checksums.computeTotalChecksumDataOnly(hash);
+    }
+    else
+    {
+        hash.update(token.data(), token.size());
+    }
+
     union
     {
         char bytes[16];

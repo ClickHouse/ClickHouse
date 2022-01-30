@@ -21,8 +21,7 @@ public:
         const Block & header_,
         const ColumnsDescriptionByShardNum & objects_by_shard_,
         const StorageSnapshotPtr & storage_snapshot_,
-        QueryProcessingStage::Enum processed_stage_,
-        bool has_virtual_shard_num_column_);
+        QueryProcessingStage::Enum processed_stage_);
 
     void createForShard(
         const Cluster::ShardInfo & shard_info,
@@ -39,8 +38,6 @@ private:
     const ColumnsDescriptionByShardNum objects_by_shard;
     const StorageSnapshotPtr storage_snapshot;
     QueryProcessingStage::Enum processed_stage;
-
-    bool has_virtual_shard_num_column = false;
 };
 
 }
