@@ -100,7 +100,8 @@ public:
 
     IMergeTreeColumnDistributionStatisticCollectorPtrs getColumnDistributionStatisticCollectors(
         const std::vector<StatisticDescription> & stats,
-        const ColumnsDescription & columns) const;
+        const ColumnsDescription & columns,
+        const NamesAndTypesList & columns_for_collection) const;
 
 protected:
     MergeTreeStatisticFactory();

@@ -186,7 +186,9 @@ void MergeTreeDataPartWriterOnDisk::initStats()
 {
     stats_collectors = MergeTreeStatisticFactory::instance()
         .getColumnDistributionStatisticCollectors(
-            metadata_snapshot->getStatistics(), metadata_snapshot->getColumns());
+            metadata_snapshot->getStatistics(),
+            metadata_snapshot->getColumns(),
+            columns_list);
 }
 
 void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Block & primary_index_block, const Granules & granules_to_write)

@@ -324,13 +324,21 @@ IMergeTreeColumnDistributionStatisticCollectorPtr MergeTreeStatisticFactory::get
 
 IMergeTreeColumnDistributionStatisticCollectorPtrs MergeTreeStatisticFactory::getColumnDistributionStatisticCollectors(
     const std::vector<StatisticDescription> & stats,
-    const ColumnsDescription & columns) const
+    const ColumnsDescription & columns,
+    const NamesAndTypesList & columns_for_collection) const
 {
+    std::unordered_set<String> columns_names_for_collection;
+    for (const auto & column_for_collection : columns_for_collection) {
+        columns_names_for_collection.insert(column_for_collection.name);
+    }
+
     IMergeTreeColumnDistributionStatisticCollectorPtrs result;
     for (const auto & stat_description : stats) {
         for (const auto & column : stat_description.column_names) {
-            for (const auto & stat : getSplittedStatistics(stat_description, columns.get(column))) {
-                result.emplace_back(getColumnDistributionStatisticCollector(stat, columns.get(column)));
+            if (columns_names_for_collection.contains(column)) {
+                for (const auto & stat : getSplittedStatistics(stat_description, columns.get(column))) {
+                    result.emplace_back(getColumnDistributionStatisticCollector(stat, columns.get(column)));
+                }
             }
         }
     }
