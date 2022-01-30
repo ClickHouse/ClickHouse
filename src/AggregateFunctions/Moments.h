@@ -4,6 +4,7 @@
 #include <IO/ReadHelpers.h>
 #include <boost/math/distributions/students_t.hpp>
 #include <boost/math/distributions/normal.hpp>
+#include <cfloat>
 
 
 namespace DB
@@ -397,6 +398,11 @@ struct TTestMoments
         Float64 ci_high = mean_diff + t * se;
 
         return {ci_low, ci_high};
+    }
+
+    bool isEssentiallyConstant() const
+    {
+        return getStandardError() < 10 * DBL_EPSILON * std::max(std::abs(getMeanX()), std::abs(getMeanY()));
     }
 };
 
