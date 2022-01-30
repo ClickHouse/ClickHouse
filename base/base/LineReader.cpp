@@ -81,7 +81,7 @@ replxx::Replxx::completions_t LineReader::Suggest::getCompletions(const String &
     std::lock_guard lock(mutex);
 
     /// Only perform case sensitive completion when the prefix string contains any uppercase characters
-    if (std::none_of(prefix.begin(), prefix.end(), [&](auto c) { return c >= 'A' && c <= 'Z'; }))
+    if (std::none_of(prefix.begin(), prefix.end(), [](char32_t x) { return iswupper(static_cast<wint_t>(x)); }))
         range = std::equal_range(
             words_no_case.begin(), words_no_case.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
             {
