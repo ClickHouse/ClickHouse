@@ -110,13 +110,17 @@ std::pair<size_t, size_t> MergeTreeReaderStream::getRightOffsetAndBytesRange(siz
 {
     /// NOTE: if we are reading the whole file, then right_mark == marks_count
     /// and we will use max_read_buffer_size for buffer size, thus avoiding the need to load marks.
-    auto [result_right_offset, right_mark_offset_in_decompressed_block] = marks_loader.getMark(right_mark_non_included);
+
+    size_t result_right_offset;
     if (0 < right_mark_non_included && right_mark_non_included < marks_count)
     {
+        auto right_mark = marks_loader.getMark(right_mark_non_included);
+        result_right_offset = right_mark.offset_in_compressed_file;
+
         bool need_to_check_marks_from_the_right = false;
 
         /// If the end of range is inside the block, we will need to read it too.
-        if (right_mark_offset_in_decompressed_block > 0)
+        if (right_mark.offset_in_decompressed_block > 0)
         {
             need_to_check_marks_from_the_right = true;
         }
@@ -163,6 +167,14 @@ std::pair<size_t, size_t> MergeTreeReaderStream::getRightOffsetAndBytesRange(siz
                 result_right_offset = file_size;
             }
         }
+    }
+    else if (right_mark_non_included == 0)
+    {
+        result_right_offset = marks_loader.getMark(right_mark_non_included).offset_in_compressed_file;
+    }
+    else
+    {
+        result_right_offset = file_size;
     }
 
     size_t mark_range_bytes = result_right_offset - (left_mark < marks_count ? marks_loader.getMark(left_mark).offset_in_compressed_file : 0);
