@@ -1,5 +1,5 @@
 # https://llvm.org/docs/XRay.html
-option (ENABLE_XRAY "Enable LLVM XRay" OFF)
+option (ENABLE_XRAY "Enable LLVM XRay" ON)
 
 set (XRAY_FLAGS "-fxray-instrument -DUSE_XRAY")
 
