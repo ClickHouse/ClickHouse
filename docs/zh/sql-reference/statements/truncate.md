@@ -3,19 +3,29 @@ toc_priority: 52
 toc_title: TRUNCATE
 ---
 
-# TRUNCATE Statement {#truncate-statement}
+# TRUNCATE 语句 {#truncate-statement}
 
 ``` sql
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-Removes all data from a table. When the clause `IF EXISTS` is omitted, the query returns an error if the table does not exist.
+删除表中的所有数据。当省略子句 `IF EXISTS` 时，如果表不存在，则查询返回一个错误。
 
-The `TRUNCATE` query is not supported for [View](../../engines/table-engines/special/view.md), [File](../../engines/table-engines/special/file.md), [URL](../../engines/table-engines/special/url.md), [Buffer](../../engines/table-engines/special/buffer.md) and [Null](../../engines/table-engines/special/null.md) table engines.
 
-You can use the [replication_alter_partitions_sync](../../operations/settings/settings.md#replication-alter-partitions-sync) setting to set up waiting for actions to be executed on replicas.
 
-You can specify how long (in seconds) to wait for inactive replicas to execute `TRUNCATE` queries with the [replication_wait_for_inactive_replica_timeout](../../operations/settings/settings.md#replication-wait-for-inactive-replica-timeout) setting.
+`TRUNCATE` 查询不支持[View](../../engines/table-engines/special/view.md),[File](../../engines/table-engines/special/file.md), [URL](../../engines/table-engines/special/url.md), [Buffer](../../engines/table-engines/special/buffer.md) 和 [Null](../../engines/table-engines/special/null.md)表引擎。
 
-!!! info "Note"
-    If the `replication_alter_partitions_sync` is set to `2` and some replicas are not active for more than the time, specified by the `replication_wait_for_inactive_replica_timeout` setting, then an exception `UNFINISHED` is thrown.
+
+
+可以使用[replication_alter_partitions_sync](../../operations/settings/settings.md#replication-alter-partitions-sync)设置在复制集上等待执行的操作。
+
+
+
+通过 [replication_wait_for_inactive_replica_timeout](../../operations/settings/settings.md#replication-wait-for-inactive-replica-timeout) 设置，可以指定不活动副本执行 `TRUNCATE`查询需要等待多长时间(以秒为单位)。
+
+
+
+!!! info  "注意"
+    如果`replication_alter_partitions_sync` 被设置为`2`，并且某些复制集超过 `replication_wait_for_inactive_replica_timeout`设置的时间不激活，那么将抛出一个异常`UNFINISHED`。
+
+
