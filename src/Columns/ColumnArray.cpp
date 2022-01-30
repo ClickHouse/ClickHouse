@@ -16,8 +16,8 @@
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
 #include <base/unaligned.h>
+#include <base/sort.h>
 #include <cstring> // memcpy
-#include <pdqsort.h>
 
 
 namespace DB
@@ -811,9 +811,9 @@ void ColumnArray::getPermutationImpl(size_t limit, Permutation & res, Comparator
     auto less = [&cmp](size_t lhs, size_t rhs){ return cmp(lhs, rhs) < 0; };
 
     if (limit)
-        partial_sort(res.begin(), res.begin() + limit, res.end(), less);
+        ::partial_sort(res.begin(), res.begin() + limit, res.end(), less);
     else
-        pdqsort(res.begin(), res.end(), less);
+        ::sort(res.begin(), res.end(), less);
 }
 
 void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
