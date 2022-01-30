@@ -77,6 +77,13 @@ LRUFileCache::LRUFileCache(const String & cache_base_path_, size_t max_size_, si
 void LRUFileCache::useCell(
     const FileSegmentCell & cell, FileSegments & result, std::lock_guard<std::mutex> & /* cache_lock */)
 {
+    auto file_segment = cell.file_segment;
+    if (file_segment->download_state == FileSegment::State::DOWNLOADED
+        && fs::file_size(path(file_segment->key(), file_segment->offset())) == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Cannot have zero size downloaded file segments. Current file segment: {}",
+                        file_segment->range().toString());
+
     result.push_back(cell.file_segment);
 
     /**
@@ -305,7 +312,7 @@ bool LRUFileCache::tryReserve(const Key & key_, size_t offset_, size_t size, std
     size_t queue_size = queue.size();
     assert(queue_size <= max_element_size);
 
-    /// Since space reservation is incremental, cache cell already exists if it's state is DOWNLOADING.
+    /// Since space reservation is incremental, cache cell already exists if it's state is EMPTY.
     /// And it cache cell does not exist on startup -- as we first check for space and then add a cell.
     auto * cell_for_reserve = getCell(key_, offset_, cache_lock);
 
@@ -394,6 +401,7 @@ void LRUFileCache::remove(
     auto cache_file_path = path(key, offset);
     if (fs::exists(cache_file_path))
     {
+        std::cerr << "\n\n\nRemoving cache file for file segment key: " << keyToStr(key) << " and offset: " << offset << "\n\n\n";
         try
         {
             fs::remove(cache_file_path);

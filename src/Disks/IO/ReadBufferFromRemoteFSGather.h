@@ -9,13 +9,9 @@
 #include <azure/storage/blobs.hpp>
 #endif
 
-namespace Aws
-{
-namespace S3
-{
-class S3Client;
-}
-}
+namespace Aws { namespace S3 { class S3Client; } }
+
+namespace Poco { class Logger; }
 
 namespace DB
 {
@@ -81,6 +77,8 @@ private:
     size_t bytes_to_ignore = 0;
 
     String canonical_path;
+
+    Poco::Logger * log;
 };
 
 

@@ -157,6 +157,7 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
             auto result = prefetch_future.get();
             size = result.size;
             auto offset = result.offset;
+            LOG_TEST(&Poco::Logger::get("AsyncBuffer(" + impl->getFileName() + ")"), "Current size: {}, offset: {}", size, offset);
             assert(offset < size);
 
             if (size)
@@ -178,6 +179,7 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
         auto result = readInto(memory.data(), memory.size()).get();
         size = result.size;
         auto offset = result.offset;
+        LOG_TEST(&Poco::Logger::get("AsyncBuffer(" + impl->getFileName() + ")"), "Current size: {}, offset: {}", size, offset);
         assert(offset < size);
 
         if (size)

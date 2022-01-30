@@ -36,7 +36,7 @@ void printRanges(const auto & segments)
 {
     std::cerr << "\nHaving file segments: ";
     for (const auto & segment : segments)
-        std::cerr << '\n' << segment->range().toString() << " (state: " + DB::FileSegment::toString(segment->state()) + ")" << "\n";
+        std::cerr << '\n' << segment->range().toString() << " (state: " + DB::FileSegment::stateToString(segment->state()) + ")" << "\n";
 }
 
 std::vector<DB::FileSegmentPtr> fromHolder(const DB::FileSegmentsHolder & holder)
@@ -71,7 +71,6 @@ void download(DB::FileSegmentPtr file_segment)
 
 void prepareAndDownload(DB::FileSegmentPtr file_segment)
 {
-    ASSERT_TRUE(file_segment->getOrSetDownloader() == DB::FileSegment::getCallerId());
     // std::cerr << "Reserving: " << file_segment->range().size() << " for: " << file_segment->range().toString() << "\n";
     ASSERT_TRUE(file_segment->reserve(file_segment->range().size()));
     download(file_segment);
@@ -81,6 +80,7 @@ void complete(const DB::FileSegmentsHolder & holder)
 {
     for (const auto & file_segment : holder.file_segments)
     {
+        ASSERT_TRUE(file_segment->getOrSetDownloader() == DB::FileSegment::getCallerId());
         prepareAndDownload(file_segment);
         file_segment->complete(DB::FileSegment::State::DOWNLOADED);
     }
@@ -139,6 +139,7 @@ TEST(LRUFileCache, get)
         assertRange(4, segments[0], DB::FileSegment::Range(0, 9), DB::FileSegment::State::DOWNLOADED);
         assertRange(5, segments[1], DB::FileSegment::Range(10, 14), DB::FileSegment::State::EMPTY);
 
+        ASSERT_TRUE(segments[1]->getOrSetDownloader() == DB::FileSegment::getCallerId());
         prepareAndDownload(segments[1]);
         segments[1]->complete(DB::FileSegment::State::DOWNLOADED);
         assertRange(6, segments[1], DB::FileSegment::Range(10, 14), DB::FileSegment::State::DOWNLOADED);
@@ -189,7 +190,10 @@ TEST(LRUFileCache, get)
 
         /// Missing [15, 16] should be added in cache.
         assertRange(13, segments[2], DB::FileSegment::Range(15, 16), DB::FileSegment::State::EMPTY);
+
+        ASSERT_TRUE(segments[2]->getOrSetDownloader() == DB::FileSegment::getCallerId());
         prepareAndDownload(segments[2]);
+
         segments[2]->complete(DB::FileSegment::State::DOWNLOADED);
 
         assertRange(14, segments[3], DB::FileSegment::Range(17, 20), DB::FileSegment::State::DOWNLOADED);
@@ -227,7 +231,10 @@ TEST(LRUFileCache, get)
         assertRange(20, segments[2], DB::FileSegment::Range(17, 20), DB::FileSegment::State::DOWNLOADED);
 
         assertRange(21, segments[3], DB::FileSegment::Range(21, 21), DB::FileSegment::State::EMPTY);
+
+        ASSERT_TRUE(segments[3]->getOrSetDownloader() == DB::FileSegment::getCallerId());
         prepareAndDownload(segments[3]);
+
         segments[3]->complete(DB::FileSegment::State::DOWNLOADED);
         ASSERT_TRUE(segments[3]->state() == DB::FileSegment::State::DOWNLOADED);
     }
@@ -247,6 +254,8 @@ TEST(LRUFileCache, get)
         assertRange(23, segments[1], DB::FileSegment::Range(24, 26), DB::FileSegment::State::DOWNLOADED);
         assertRange(24, segments[2], DB::FileSegment::Range(27, 27), DB::FileSegment::State::EMPTY);
 
+        ASSERT_TRUE(segments[0]->getOrSetDownloader() == DB::FileSegment::getCallerId());
+        ASSERT_TRUE(segments[2]->getOrSetDownloader() == DB::FileSegment::getCallerId());
         prepareAndDownload(segments[0]);
         prepareAndDownload(segments[2]);
         segments[0]->complete(DB::FileSegment::State::DOWNLOADED);
@@ -267,8 +276,9 @@ TEST(LRUFileCache, get)
         auto s1 = fromHolder(holder1);
         ASSERT_EQ(s1.size(), 1);
         assertRange(26, s1[0], DB::FileSegment::Range(30, 31), DB::FileSegment::State::EMPTY);
-        ASSERT_TRUE(s1[0]->getOrSetDownloader() == DB::FileSegment::getCallerId());
 
+        ASSERT_TRUE(s5[0]->getOrSetDownloader() == DB::FileSegment::getCallerId());
+        ASSERT_TRUE(s1[0]->getOrSetDownloader() == DB::FileSegment::getCallerId());
         prepareAndDownload(s5[0]);
         prepareAndDownload(s1[0]);
         s5[0]->complete(DB::FileSegment::State::DOWNLOADED);
@@ -422,7 +432,7 @@ TEST(LRUFileCache, get)
             assertRange(42, segments_2[1], DB::FileSegment::Range(5, 23), DB::FileSegment::State::DOWNLOADING);
             assertRange(43, segments_2[2], DB::FileSegment::Range(24, 26), DB::FileSegment::State::DOWNLOADED);
 
-            ASSERT_TRUE(segments_2[1]->getOrSetDownloader() != DB::FileSegment::getCallerId());
+            ASSERT_TRUE(segments_2[1]->getDownloader() != DB::FileSegment::getCallerId());
             ASSERT_TRUE(segments_2[1]->state() == DB::FileSegment::State::DOWNLOADING);
 
             {
@@ -434,8 +444,10 @@ TEST(LRUFileCache, get)
             segments_2[1]->wait();
             printRanges(segments_2);
             ASSERT_TRUE(segments_2[1]->state() == DB::FileSegment::State::PARTIALLY_DOWNLOADED);
+
             ASSERT_TRUE(segments_2[1]->getOrSetDownloader() == DB::FileSegment::getCallerId());
             prepareAndDownload(segments_2[1]);
+            segments_2[1]->complete(DB::FileSegment::State::DOWNLOADED);
         });
 
         {

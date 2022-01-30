@@ -83,6 +83,7 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(const RemoteMetadata 
     : ReadBuffer(nullptr, 0)
     , metadata(metadata_)
     , canonical_path(path_)
+    , log(&Poco::Logger::get("ReadBufferFromRemoteFSGather"))
 {
 }
 
@@ -102,7 +103,7 @@ ReadBufferFromRemoteFSGather::ReadResult ReadBufferFromRemoteFSGather::readInto(
 
     auto result = nextImpl();
 
-    LOG_TEST(&Poco::Logger::get("kssenii"), "Returning with size: {}, offset: {}", working_buffer.size(), BufferBase::offset());
+    LOG_TEST(log, "Current path: {}, returning with size: {}, offset: {}", current_path, working_buffer.size(), BufferBase::offset());
     if (result)
         return {working_buffer.size(), BufferBase::offset()};
 

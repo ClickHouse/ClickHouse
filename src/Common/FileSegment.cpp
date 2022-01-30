@@ -1,5 +1,8 @@
 #include "FileSegment.h"
+#include <base/getThreadId.h>
 #include <Common/FileCache.h>
+#include <Common/hex.h>
+#include <filesystem>
 
 namespace DB
 {
@@ -7,6 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int FILE_CACHE_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 FileSegment::FileSegment(
@@ -19,6 +23,7 @@ FileSegment::FileSegment(
     , download_state(download_state_)
     , file_key(key_)
     , cache(cache_)
+    , log(&Poco::Logger::get(fmt::format("FileSegment({}) : {}", getHexUIntLowercase(key_), range().toString())))
 {
     if (download_state == State::DOWNLOADED)
         reserved_size = downloaded_size = size_;
@@ -53,13 +58,13 @@ String FileSegment::getOrSetDownloader()
     if (downloader_id.empty())
     {
         downloader_id = getCallerId();
-        LOG_TEST(&Poco::Logger::get("kssenii " + range().toString() + " "), "Set downloader: {}, prev state: {}", downloader_id, stateToString(download_state));
+        LOG_TEST(log, "Set downloader: {}, prev state: {}", downloader_id, stateToString(download_state));
         download_state = State::DOWNLOADING;
     }
     else if (downloader_id == getCallerId())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to set the same downloader for segment {} for the second time", range().toString());
 
-    LOG_TEST(&Poco::Logger::get("kssenii " + range().toString() + " "), "Returning with downloader: {} and state: {}", downloader_id, stateToString(download_state));
+    LOG_TEST(log, "Returning with downloader: {} and state: {}", downloader_id, stateToString(download_state));
     return downloader_id;
 }
 
@@ -128,7 +133,7 @@ FileSegment::State FileSegment::wait()
 
     if (download_state == State::DOWNLOADING)
     {
-        LOG_TEST(&Poco::Logger::get("kssenii " + range().toString() + " "), "{} waiting on: {}, current downloader: {}", getCallerId(), range().toString(), downloader_id);
+        LOG_TEST(log, "{} waiting on: {}, current downloader: {}", getCallerId(), range().toString(), downloader_id);
 
         assert(!downloader_id.empty() && downloader_id != getCallerId());
 
@@ -194,12 +199,16 @@ void FileSegment::completeBatchAndResetDownloader()
         }
 
         if (downloaded_size == range().size())
+        {
             download_state = State::DOWNLOADED;
+            cache_writer->sync();
+            cache_writer.reset();
+        }
         else
             download_state = State::PARTIALLY_DOWNLOADED;
 
         downloader_id.clear();
-        LOG_TEST(&Poco::Logger::get("kssenii " + range().toString() + " "), "Complete batch. Current download offset: {}", downloaded_size);
+        LOG_TEST(log, "Complete batch. Current downloaded size: {}", downloaded_size);
     }
 
     cv.notify_all();
@@ -243,7 +252,11 @@ void FileSegment::complete()
             return;
 
         if (downloaded_size == range().size() && download_state != State::DOWNLOADED)
+        {
             download_state = State::DOWNLOADED;
+            cache_writer->sync();
+            cache_writer.reset();
+        }
 
         if (download_state == State::DOWNLOADING || download_state == State::EMPTY)
             download_state = State::PARTIALLY_DOWNLOADED;
@@ -271,7 +284,7 @@ void FileSegment::completeImpl(std::lock_guard<std::mutex> & /* segment_lock */)
             if (!downloaded_size)
             {
                 download_state = State::SKIP_CACHE;
-                LOG_TEST(&Poco::Logger::get("kssenii " + range().toString() + " "), "Remove cell {} (downloaded: {})", range().toString(), downloaded_size);
+                LOG_TEST(log, "Remove cell {} (downloaded: {})", range().toString(), downloaded_size);
                 cache->remove(key(), offset(), cache_lock);
             }
             else if (is_last_holder)
@@ -282,7 +295,7 @@ void FileSegment::completeImpl(std::lock_guard<std::mutex> & /* segment_lock */)
                 * in FileSegmentsHolder represent a contiguous range, so we can resize
                 * it only when nobody needs it.
                 */
-                LOG_TEST(&Poco::Logger::get("kssenii " + range().toString() + " "), "Resize cell {} to downloaded: {}", range().toString(), downloaded_size);
+                LOG_TEST(log, "Resize cell {} to downloaded: {}", range().toString(), downloaded_size);
                 cache->reduceSizeToDownloaded(key(), offset(), cache_lock);
             }
         }
@@ -290,7 +303,7 @@ void FileSegment::completeImpl(std::lock_guard<std::mutex> & /* segment_lock */)
 
     if (downloader_id == getCallerId())
     {
-        LOG_TEST(&Poco::Logger::get("kssenii " + range().toString() + " "), "Clearing downloader id: {}, current state: {}", downloader_id, stateToString(download_state));
+        LOG_TEST(log, "Clearing downloader id: {}, current state: {}", downloader_id, stateToString(download_state));
         downloader_id.clear();
     }
 
@@ -299,6 +312,8 @@ void FileSegment::completeImpl(std::lock_guard<std::mutex> & /* segment_lock */)
         cache_writer->sync();
         cache_writer.reset();
     }
+
+    assert(download_state != FileSegment::State::DOWNLOADED || std::filesystem::file_size(cache->path(key(), offset())) > 0);
 }
 
 String FileSegment::stateToString(FileSegment::State state)
