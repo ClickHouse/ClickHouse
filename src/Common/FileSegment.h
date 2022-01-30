@@ -6,6 +6,7 @@
 #include <IO/SeekableReadBuffer.h>
 #include <list>
 
+namespace Poco { class Logger; }
 
 namespace DB
 {
@@ -136,6 +137,8 @@ private:
 
     Key file_key;
     FileCache * cache;
+
+    Poco::Logger * log;
 };
 
 struct FileSegmentsHolder : boost::noncopyable

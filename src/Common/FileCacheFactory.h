@@ -1,8 +1,10 @@
 #pragma once
 
+#include <Common/FileCache_fwd.h>
+
 #include <boost/noncopyable.hpp>
 #include <unordered_map>
-#include <Common/FileCache_fwd.h>
+#include <mutex>
 
 namespace DB
 {
