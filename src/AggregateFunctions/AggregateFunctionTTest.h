@@ -102,7 +102,7 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} requires finite parameter values.", Data::name);
             }
 
-            if (confidence_level <= 0.0 || confidence_level >= 1.0 || fabs(confidence_level - 0.0) < FLT_EPSILON || fabs(confidence_level - 1.0) < FLT_EPSILON)
+            if (confidence_level <= 0.0 || confidence_level >= 1.0 || fabs(confidence_level - 0.0) < DBL_EPSILON || fabs(confidence_level - 1.0) < DBL_EPSILON)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Confidence level parameter must be between 0 and 1 in aggregate function {}.", Data::name);
             }
@@ -194,7 +194,7 @@ public:
         auto & data = this->data(place);
         auto & column_tuple = assert_cast<ColumnTuple &>(to);
 
-        if (!data.hasEnoughObservations())
+        if (!data.hasEnoughObservations() || data.isEssentiallyConstant())
         {
             auto & column_stat = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(0));
             auto & column_value = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(1));
