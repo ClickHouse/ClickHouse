@@ -160,6 +160,7 @@ add_library(global-libs INTERFACE)
 
 include (cmake/fuzzer.cmake)
 include (cmake/sanitize.cmake)
+include (cmake/instrument.cmake)
 
 if (CMAKE_GENERATOR STREQUAL "Ninja" AND NOT DISABLE_COLORED_BUILD)
     # Turn on colored output. https://github.com/ninja-build/ninja/wiki/FAQ
