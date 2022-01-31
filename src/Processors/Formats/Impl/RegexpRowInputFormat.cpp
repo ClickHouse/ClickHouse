@@ -178,19 +178,11 @@ static std::pair<bool, size_t> fileSegmentationEngineRegexpImpl(ReadBuffer & in,
 
     while (loadAtPosition(in, memory, pos) && need_more_data)
     {
-        pos = find_first_symbols<'\n', '\r'>(pos, in.buffer().end());
+        pos = find_first_symbols<'\n'>(pos, in.buffer().end());
         if (pos > in.buffer().end())
-                throw Exception("Position in buffer is out of bounds. There must be a bug.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Position in buffer is out of bounds. There must be a bug.", ErrorCodes::LOGICAL_ERROR);
         else if (pos == in.buffer().end())
             continue;
-
-        // Support DOS-style newline ("\r\n")
-        if (*pos == '\r')
-        {
-            ++pos;
-            if (pos == in.buffer().end())
-                loadAtPosition(in, memory, pos);
-        }
 
         if (memory.size() + static_cast<size_t>(pos - in.position()) >= min_chunk_size)
             need_more_data = false;
