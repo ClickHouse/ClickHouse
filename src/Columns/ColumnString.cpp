@@ -335,9 +335,9 @@ void ColumnString::getPermutationImpl(size_t limit, Permutation & res, Comparato
     auto less = [&cmp](size_t lhs, size_t rhs){ return cmp(lhs, rhs) < 0; };
 
     if (limit)
-        partial_sort(res.begin(), res.begin() + limit, res.end(), less);
+        ::partial_sort(res.begin(), res.begin() + limit, res.end(), less);
     else
-        std::sort(res.begin(), res.end(), less);
+        ::sort(res.begin(), res.end(), less);
 }
 
 void ColumnString::getPermutation(bool reverse, size_t limit, int /*nan_direction_hint*/, Permutation & res) const
