@@ -17,11 +17,11 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 
 
 
-可以使用[replication_alter_partitions_sync](../../operations/settings/settings.md#replication-alter-partitions-sync)设置在复制集上等待执行的操作。
+可以使用 replication_alter_partitions_sync 设置在复制集上等待执行的操作。
 
 
 
-通过 [replication_wait_for_inactive_replica_timeout](../../operations/settings/settings.md#replication-wait-for-inactive-replica-timeout) 设置，可以指定不活动副本执行 `TRUNCATE`查询需要等待多长时间(以秒为单位)。
+通过 replication_wait_for_inactive_replica_timeout 设置，可以指定不活动副本执行 `TRUNCATE`查询需要等待多长时间(以秒为单位)。
 
 
 
