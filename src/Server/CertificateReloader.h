@@ -80,7 +80,7 @@ private:
     };
 
     MultiVersion<Data> data;
-    bool first_load = true;
+    bool init_was_not_made = true;
 };
 
 }

@@ -59,7 +59,7 @@ void CertificateReloader::init()
 
     auto* ctx = Poco::Net::SSLManager::instance().defaultServerContext()->sslContext();
     SSL_CTX_set_cert_cb(ctx, callSetCertificate, nullptr);
-    first_load = false;
+    init_was_not_made = false;
 }
 
 
@@ -90,9 +90,14 @@ void CertificateReloader::tryLoad(const Poco::Util::AbstractConfiguration & conf
         }
 
         /// If callback is not set yet
-
-        if (first_load)
-            init();
+        try
+        {
+            if (init_was_not_made)
+                init();
+        } catch (...) {
+            init_was_not_made = true;
+            LOG_ERROR(log, getCurrentExceptionMessage(false));
+        }
     }
 }
 
