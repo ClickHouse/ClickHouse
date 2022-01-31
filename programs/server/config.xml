@@ -238,14 +238,14 @@
         <server> <!-- Used for https server AND secure tcp port -->
             <!-- openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt -->
             <!-- Uncomment certificateFile and privateKeyFile if you want to use them. -->
-            <!-- <certificateFile>/etc/clickhouse-server/server.crt</certificateFile> -->
-            <!-- <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile> -->
+            <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile>
             <!-- dhparams are optional. You can delete the <dhParamsFile> element.
                  To generate dhparams, use the following command:
                   openssl dhparam -out /etc/clickhouse-server/dhparam.pem 4096
                  Only file format with BEGIN DH PARAMETERS is supported.
               -->
-            <!-- <dhParamsFile>/etc/clickhouse-server/dhparam.pem</dhParamsFile> -->
+            <dhParamsFile>/etc/clickhouse-server/dhparam.pem</dhParamsFile>
             <verificationMode>none</verificationMode>
             <loadDefaultCAFile>true</loadDefaultCAFile>
             <cacheSessions>true</cacheSessions>
