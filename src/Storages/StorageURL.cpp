@@ -146,6 +146,7 @@ namespace
 
         void onCancel() override
         {
+            std::lock_guard lock(reader_mutex);
             if (reader)
                 reader->cancel();
         }
@@ -245,6 +246,8 @@ namespace
         {
             while (true)
             {
+                std::lock_guard lock(reader_mutex);
+
                 if (!reader)
                 {
                     auto current_uri_pos = uri_info->next_uri_to_read.fetch_add(1);
@@ -274,6 +277,9 @@ namespace
         std::unique_ptr<ReadBuffer> read_buf;
         std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> reader;
+        /// onCancell and generate can be called concurrently and both of them
+        /// have R/W access to reader pointer.
+        std::mutex reader_mutex;
 
         Poco::Net::HTTPBasicCredentials credentials{};
     };

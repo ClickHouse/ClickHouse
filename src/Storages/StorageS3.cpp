@@ -253,6 +253,7 @@ StorageS3Source::StorageS3Source(
 
 void StorageS3Source::onCancel()
 {
+    std::lock_guard lock(reader_mutex);
     if (reader)
         reader->cancel();
 }
@@ -295,6 +296,7 @@ String StorageS3Source::getName() const
 
 Chunk StorageS3Source::generate()
 {
+    std::lock_guard lock(reader_mutex);
     if (!reader)
         return {};
 
