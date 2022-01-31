@@ -1123,6 +1123,7 @@ UInt64 IMergeTreeDataPart::calculateTotalSizeOnDisk(const DiskPtr & disk_, const
 
 
 void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const
+try
 {
     assertOnDisk();
 
@@ -1158,6 +1159,18 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
         sync_guard = volume->getDisk()->getDirectorySyncGuard(to);
 
     storage.lockSharedData(*this);
+}
+catch (...)
+{
+    if (startsWith(new_relative_path, "detached/"))
+    {
+        // Don't throw when the destination is to the detached folder. It might be able to
+        // recover in some cases, such as fetching parts into multi-disks while some of the
+        // disks are broken.
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+    else
+        throw;
 }
 
 void IMergeTreeDataPart::cleanupOldName(const String & old_part_name) const

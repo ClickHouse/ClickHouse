@@ -264,9 +264,13 @@ MergeTreeData::MergeTreeData(
     /// Creating directories, if not exist.
     for (const auto & disk : getDisks())
     {
+        if (disk->isBroken())
+            continue;
+
         disk->createDirectories(relative_data_path);
         disk->createDirectories(fs::path(relative_data_path) / MergeTreeData::DETACHED_DIR_NAME);
         String current_version_file_path = fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME;
+
         if (disk->exists(current_version_file_path))
         {
             if (!version_file.first.empty())
@@ -1195,6 +1199,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
         for (const auto & [disk_name, disk] : getContext()->getDisksMap())
         {
+            if (disk->isBroken())
+                continue;
+
             if (defined_disk_names.count(disk_name) == 0 && disk->exists(relative_data_path))
             {
                 for (const auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
@@ -1215,6 +1222,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     std::mutex wal_init_lock;
     for (const auto & disk_ptr : disks)
     {
+        if (disk_ptr->isBroken())
+            continue;
+
         auto & disk_parts = disk_part_map[disk_ptr->getName()];
         auto & disk_wal_parts = disk_wal_part_map[disk_ptr->getName()];
 
@@ -1286,6 +1296,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
 
     if (!parts_from_wal.empty())
         loadDataPartsFromWAL(broken_parts_to_detach, duplicate_parts_to_remove, parts_from_wal, part_lock);
+
+    for (auto & part : duplicate_parts_to_remove)
+        part->remove();
 
     for (auto & part : broken_parts_to_detach)
         part->renameToDetached("broken-on-start"); /// detached parts must not have '_' in prefixes
@@ -1381,6 +1394,9 @@ size_t MergeTreeData::clearOldTemporaryDirectories(const MergeTreeDataMergerMuta
     /// Delete temporary directories older than a day.
     for (const auto & disk : getDisks())
     {
+        if (disk->isBroken())
+            continue;
+
         for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
         {
             const std::string & basename = it->name();
@@ -1654,6 +1670,8 @@ size_t MergeTreeData::clearOldWriteAheadLogs()
     for (auto disk_it = disks.rbegin(); disk_it != disks.rend(); ++disk_it)
     {
         auto disk_ptr = *disk_it;
+        if (disk_ptr->isBroken())
+            continue;
         for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
         {
             auto min_max_block_number = MergeTreeWriteAheadLog::tryParseMinMaxBlockNumber(it->name());
@@ -1736,6 +1754,9 @@ void MergeTreeData::dropAllData()
 
     for (const auto & disk : getDisks())
     {
+        if (disk->isBroken())
+            continue;
+
         try
         {
             disk->removeRecursive(relative_data_path);
@@ -1770,6 +1791,8 @@ void MergeTreeData::dropIfEmpty()
     {
         for (const auto & disk : getDisks())
         {
+            if (disk->isBroken())
+                continue;
             /// Non recursive, exception is thrown if there are more files.
             disk->removeFileIfExists(fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME);
             disk->removeDirectory(fs::path(relative_data_path) / MergeTreeData::DETACHED_DIR_NAME);
@@ -5149,6 +5172,23 @@ Strings MergeTreeData::getDataPaths() const
     return res;
 }
 
+
+void MergeTreeData::reportBrokenPart(MergeTreeData::DataPartPtr & data_part) const
+{
+    if (data_part->volume && data_part->volume->getDisk()->isBroken())
+    {
+        auto disk = data_part->volume->getDisk();
+        auto parts = getDataParts();
+        LOG_WARNING(log, "Scanning parts to recover on broken disk {}.", disk->getName() + "@" + disk->getPath());
+        for (const auto & part : parts)
+        {
+            if (part->volume && part->volume->getDisk()->getName() == disk->getName())
+                broken_part_callback(part->name);
+        }
+    }
+    else
+        broken_part_callback(data_part->name);
+}
 
 MergeTreeData::MatcherFn MergeTreeData::getPartitionMatcher(const ASTPtr & partition_ast, ContextPtr local_context) const
 {

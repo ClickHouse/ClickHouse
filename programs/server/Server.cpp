@@ -194,6 +194,7 @@ namespace
 {
 
 void setupTmpPath(Poco::Logger * log, const std::string & path)
+try
 {
     LOG_DEBUG(log, "Setting up {} to store temporary data in it", path);
 
@@ -211,6 +212,15 @@ void setupTmpPath(Poco::Logger * log, const std::string & path)
         else
             LOG_DEBUG(log, "Skipped file in temporary path {}", it->path().string());
     }
+}
+catch (...)
+{
+    DB::tryLogCurrentException(
+        log,
+        fmt::format(
+            "Caught exception while setup temporary path: {}. It is ok to skip this exception as cleaning old temporary files is not "
+            "necessary",
+            path));
 }
 
 int waitServersToFinish(std::vector<DB::ProtocolServerAdapter> & servers, size_t seconds_to_wait)
