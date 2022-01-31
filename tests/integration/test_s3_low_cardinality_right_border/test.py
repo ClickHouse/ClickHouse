@@ -3,7 +3,7 @@
 #  1) Here we try to reproduce very rare error which is connected with
 #  LowCardinality. When we read data from S3 we are trying to make sequential
 #  reads without additional seeks. To achieve this we are trying to have as
-#  large mark ranges as possible for each thread which readata from S3.
+#  large mark ranges as possible for each thread which read data from S3.
 #  Additionaly, to avoid redundant reads we specify the "right border" for each
 #  read. Such possiblity supported by S3 API. For example you can send request
 #  to S3 to read data from 563 byte to 92753 byte and we use this feature in
