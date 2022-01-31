@@ -87,12 +87,12 @@ void run(String part_path, String date_column, String dest_path)
     IMergeTreeDataPart::MinMaxIndex minmax_idx(min_date, max_date);
     Names minmax_idx_columns = {date_column};
     DataTypes minmax_idx_column_types = {std::make_shared<DataTypeDate>()};
-    minmax_idx.store(minmax_idx_columns, minmax_idx_column_types, disk, new_tmp_part_path_str, checksums);
+    minmax_idx.store(minmax_idx_columns, minmax_idx_column_types, disk, new_tmp_part_path_str, checksums).finish();
 
     Block partition_key_sample{{nullptr, std::make_shared<DataTypeUInt32>(), makeASTFunction("toYYYYMM", std::make_shared<ASTIdentifier>(date_column))->getColumnName()}};
 
     MergeTreePartition partition(yyyymm);
-    partition.store(partition_key_sample, disk, new_tmp_part_path_str, checksums);
+    partition.store(partition_key_sample, disk, new_tmp_part_path_str, checksums).finish();
     String partition_id = partition.getID(partition_key_sample);
 
     Poco::File(new_tmp_part_path_str + "checksums.txt").setWriteable();
