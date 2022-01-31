@@ -94,7 +94,9 @@ void CertificateReloader::tryLoad(const Poco::Util::AbstractConfiguration & conf
         {
             if (init_was_not_made)
                 init();
-        } catch (...) {
+        }
+        catch (...)
+        {
             init_was_not_made = true;
             LOG_ERROR(log, getCurrentExceptionMessage(false));
         }
