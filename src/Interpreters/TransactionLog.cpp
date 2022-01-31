@@ -43,6 +43,8 @@ TransactionLog::TransactionLog()
     : log(&Poco::Logger::get("TransactionLog"))
 {
     global_context = Context::getGlobalContextInstance();
+    global_context->checkTransactionsAreAllowed();
+
     zookeeper_path = "/test/clickhouse/txn_log";
 
     loadLogFromZooKeeper();
@@ -334,17 +336,24 @@ MergeTreeTransactionPtr TransactionLog::tryGetRunningTransaction(const TIDHash &
     return it->second;
 }
 
-CSN TransactionLog::getCSN(const TransactionID & tid) const
+CSN TransactionLog::getCSN(const TransactionID & tid)
 {
     return getCSN(tid.getHash());
 }
 
-CSN TransactionLog::getCSN(const TIDHash & tid) const
+CSN TransactionLog::getCSN(const TIDHash & tid)
+{
+    /// Avoid creation of the instance if transactions are not actually involved
+    if (tid == Tx::PrehistoricTID.getHash())
+        return Tx::PrehistoricCSN;
+
+    return instance().getCSNImpl(tid);
+}
+
+CSN TransactionLog::getCSNImpl(const TIDHash & tid) const
 {
     assert(tid);
     assert(tid != Tx::EmptyTID.getHash());
-    if (tid == Tx::PrehistoricTID.getHash())
-        return Tx::PrehistoricCSN;
 
     std::lock_guard lock{mutex};
     auto it = tid_to_csn.find(tid);

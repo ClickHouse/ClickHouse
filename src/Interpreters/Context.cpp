@@ -2977,6 +2977,19 @@ void Context::resetZooKeeperMetadataTransaction()
 }
 
 
+void Context::checkTransactionsAreAllowed(bool explicit_tcl_query /* = false */) const
+{
+    int enable_mvcc_test_helper = getConfigRef().getInt("_enable_experimental_mvcc_prototype_test_helper_dev", 0);
+    if (enable_mvcc_test_helper == 42)
+        return;
+
+    if (explicit_tcl_query)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported");
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Experimental support for transactions is disabled, "
+                    "however, some query or background task tried to access TransactionLog. Probably it's a bug.");
+}
+
 void Context::initCurrentTransaction(MergeTreeTransactionPtr txn)
 {
     merge_tree_transaction_holder = MergeTreeTransactionHolder(txn, false);
@@ -2987,9 +3000,6 @@ void Context::setCurrentTransaction(MergeTreeTransactionPtr txn)
 {
     assert(!merge_tree_transaction || !txn);
     assert(this == session_context.lock().get() || this == query_context.lock().get());
-    int enable_mvcc_test_helper = getConfigRef().getInt("_enable_experimental_mvcc_prototype_test_helper_dev", 0);
-    if (enable_mvcc_test_helper != 42)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported");
     merge_tree_transaction = std::move(txn);
     if (!merge_tree_transaction)
         merge_tree_transaction_holder = {};

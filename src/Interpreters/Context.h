@@ -879,6 +879,7 @@ public:
     /// Removes context of current distributed DDL.
     void resetZooKeeperMetadataTransaction();
 
+    void checkTransactionsAreAllowed(bool explicit_tcl_query = false) const;
     void initCurrentTransaction(MergeTreeTransactionPtr txn);
     void setCurrentTransaction(MergeTreeTransactionPtr txn);
     MergeTreeTransactionPtr getCurrentTransaction() const;

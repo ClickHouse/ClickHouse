@@ -158,6 +158,10 @@ public:
     /// Returns true if the storage supports reading of subcolumns of complex types.
     virtual bool supportsSubcolumns() const { return false; }
 
+    /// Returns true if the storage supports transactions for SELECT, INSERT and ALTER queries.
+    /// Storage may throw an exception later if some query kind is not fully supported.
+    virtual bool supportsTransactions() const { return false; }
+
     /// Requires squashing small blocks to large for optimal storage.
     /// This is true for most storages that store data on disk.
     virtual bool prefersLargeBlocks() const { return true; }

@@ -29,6 +29,7 @@ struct VersionMetadata
     std::atomic<CSN> creation_csn = Tx::UnknownCSN;
     std::atomic<CSN> removal_csn = Tx::UnknownCSN;
 
+    /// Checks if an object is visible for transaction or not.
     bool isVisible(const MergeTreeTransaction & txn);
     bool isVisible(Snapshot snapshot_version, TransactionID current_tid = Tx::EmptyTID);
 
@@ -44,7 +45,9 @@ struct VersionMetadata
     /// It can be called only from MergeTreeTransaction or on server startup
     void setCreationTID(const TransactionID & tid, const TransactionInfoContext & context);
 
-    bool canBeRemoved(Snapshot oldest_snapshot_version);
+    /// Checks if it's safe to remove outdated version of an object
+    bool canBeRemoved();
+    bool canBeRemovedImpl(Snapshot oldest_snapshot_version);
 
     void write(WriteBuffer & buf) const;
     void read(ReadBuffer & buf);

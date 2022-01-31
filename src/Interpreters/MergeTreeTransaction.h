@@ -29,7 +29,6 @@ public:
 
     const TransactionID tid;
 
-    MergeTreeTransaction() = delete;
     MergeTreeTransaction(Snapshot snapshot_, LocalTID local_tid_, UUID host_id);
 
     void addNewPart(const StoragePtr & storage, const DataPartPtr & new_part);

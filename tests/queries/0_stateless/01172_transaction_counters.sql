@@ -8,6 +8,8 @@ select transactionID();
 -- stop background cleanup
 system stop merges txn_counters;
 
+set throw_on_unsupported_query_inside_transaction=0;
+
 begin transaction;
 insert into txn_counters(n) values (2);
 select 1, system.parts.name, txn_counters.creation_tid = system.parts.creation_tid from txn_counters join system.parts on txn_counters._part = system.parts.name where database=currentDatabase() and table='txn_counters' order by system.parts.name;

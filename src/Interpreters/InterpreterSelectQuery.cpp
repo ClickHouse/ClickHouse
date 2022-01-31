@@ -328,6 +328,22 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (has_input || !joined_tables.resolveTables())
         joined_tables.makeFakeTable(storage, metadata_snapshot, source_header);
 
+
+    if (context->getCurrentTransaction() && context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
+    {
+        if (storage)
+            checkStorageSupportsTransactionsIfNeeded(storage, context);
+        for (const auto & table : joined_tables.tablesWithColumns())
+        {
+            if (table.table.table.empty())
+                continue;
+            auto maybe_storage = DatabaseCatalog::instance().tryGetTable({table.table.database, table.table.table}, context);
+            if (!maybe_storage)
+                continue;
+            checkStorageSupportsTransactionsIfNeeded(storage, context);
+        }
+    }
+
     /// Rewrite JOINs
     if (!has_input && joined_tables.tablesCount() > 1)
     {

@@ -53,7 +53,6 @@ using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 class TransactionLog final : public SingletonHelper<TransactionLog>
 {
 public:
-    //static TransactionLog & instance();
 
     TransactionLog();
 
@@ -71,11 +70,10 @@ public:
 
     void rollbackTransaction(const MergeTreeTransactionPtr & txn) noexcept;
 
-    CSN getCSN(const TransactionID & tid) const;
-    CSN getCSN(const TIDHash & tid) const;
+    static CSN getCSN(const TransactionID & tid);
+    static CSN getCSN(const TIDHash & tid);
 
     MergeTreeTransactionPtr tryGetRunningTransaction(const TIDHash & tid);
-
 
 private:
     void loadLogFromZooKeeper();
@@ -89,6 +87,8 @@ private:
     static String writeTID(const TransactionID & tid);
 
     ZooKeeperPtr getZooKeeper() const;
+
+    CSN getCSNImpl(const TIDHash & tid) const;
 
     ContextPtr global_context;
     Poco::Logger * log;
