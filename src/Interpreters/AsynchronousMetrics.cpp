@@ -69,12 +69,10 @@ static std::unique_ptr<ReadBufferFromFilePRead> openFileIfExists(const std::stri
 AsynchronousMetrics::AsynchronousMetrics(
     ContextPtr global_context_,
     int update_period_seconds,
-    std::shared_ptr<std::vector<ProtocolServerAdapter>> servers_to_start_before_tables_,
-    std::shared_ptr<std::vector<ProtocolServerAdapter>> servers_)
+    const ProtocolServerMetricsFunc & protocol_server_metrics_func_)
     : WithContext(global_context_)
     , update_period(update_period_seconds)
-    , servers_to_start_before_tables(servers_to_start_before_tables_)
-    , servers(servers_)
+    , protocol_server_metrics_func(protocol_server_metrics_func_)
     , log(&Poco::Logger::get("AsynchronousMetrics"))
 {
 #if defined(OS_LINUX)
@@ -111,6 +109,23 @@ void AsynchronousMetrics::openSensors()
             else
                 break;
         }
+
+        file->rewind();
+        Int64 temperature = 0;
+        try
+        {
+            readText(temperature, *file);
+        }
+        catch (const ErrnoException & e)
+        {
+            LOG_WARNING(
+                &Poco::Logger::get("AsynchronousMetrics"),
+                "Thermal monitor '{}' exists but could not be read, error {}.",
+                thermal_device_index,
+                e.getErrno());
+            continue;
+        }
+
         thermal.emplace_back(std::move(file));
     }
 }
@@ -224,6 +239,23 @@ void AsynchronousMetrics::openSensorsChips()
                 std::replace(sensor_name.begin(), sensor_name.end(), ' ', '_');
             }
 
+            file->rewind();
+            Int64 temperature = 0;
+            try
+            {
+                readText(temperature, *file);
+            }
+            catch (const ErrnoException & e)
+            {
+                LOG_WARNING(
+                    &Poco::Logger::get("AsynchronousMetrics"),
+                    "Hardware monitor '{}', sensor '{}' exists but could not be read, error {}.",
+                    hwmon_name,
+                    sensor_name,
+                    e.getErrno());
+                continue;
+            }
+
             hwmon_devices[hwmon_name][sensor_name] = std::move(file);
         }
     }
@@ -238,7 +270,7 @@ void AsynchronousMetrics::start()
     thread = std::make_unique<ThreadFromGlobalPool>([this] { run(); });
 }
 
-AsynchronousMetrics::~AsynchronousMetrics()
+void AsynchronousMetrics::stop()
 {
     try
     {
@@ -249,12 +281,20 @@ AsynchronousMetrics::~AsynchronousMetrics()
 
         wait_cond.notify_one();
         if (thread)
+        {
             thread->join();
+            thread.reset();
+        }
     }
     catch (...)
     {
         DB::tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+}
+
+AsynchronousMetrics::~AsynchronousMetrics()
+{
+    stop();
 }
 
 
@@ -1381,22 +1421,11 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
                 return it->second;
         };
 
-        if (servers_to_start_before_tables)
+        const auto server_metrics = protocol_server_metrics_func();
+        for (const auto & server_metric : server_metrics)
         {
-            for (const auto & server : *servers_to_start_before_tables)
-            {
-                if (const auto * name = get_metric_name(server.getPortName()))
-                    new_values[name] = server.currentThreads();
-            }
-        }
-
-        if (servers)
-        {
-            for (const auto & server : *servers)
-            {
-                if (const auto * name = get_metric_name(server.getPortName()))
-                    new_values[name] = server.currentThreads();
-            }
+            if (const auto * name = get_metric_name(server_metric.port_name))
+                new_values[name] = server_metric.current_threads;
         }
     }
 

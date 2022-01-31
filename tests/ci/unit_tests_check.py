@@ -7,9 +7,10 @@ import subprocess
 
 from github import Github
 
+from env_helper import TEMP_PATH, REPO_COPY, REPORTS_PATH
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
-from pr_info import PRInfo, get_event
+from pr_info import PRInfo
 from build_download_helper import download_unit_tests
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
@@ -94,16 +95,16 @@ if __name__ == "__main__":
 
     stopwatch = Stopwatch()
 
-    temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
-    repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
-    reports_path = os.getenv("REPORTS_PATH", "./reports")
+    temp_path = TEMP_PATH
+    repo_path = REPO_COPY
+    reports_path = REPORTS_PATH
 
     check_name = sys.argv[1]
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    pr_info = PRInfo(get_event())
+    pr_info = PRInfo()
 
     gh = Github(get_best_robot_token())
 

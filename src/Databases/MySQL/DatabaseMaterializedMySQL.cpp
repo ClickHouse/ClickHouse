@@ -9,7 +9,6 @@
 #    include <Databases/MySQL/MaterializedMySQLSyncThread.h>
 #    include <Parsers/ASTCreateQuery.h>
 #    include <Storages/StorageMaterializedMySQL.h>
-#    include <Poco/Logger.h>
 #    include <Common/setThreadName.h>
 #    include <filesystem>
 

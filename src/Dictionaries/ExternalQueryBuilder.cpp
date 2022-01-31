@@ -1,14 +1,23 @@
 #include "ExternalQueryBuilder.h"
+
+#include <boost/range/join.hpp>
+
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <boost/range/join.hpp>
-#include "DictionaryStructure.h"
-#include "writeParenthesisedString.h"
+#include <Dictionaries/DictionaryStructure.h>
 
 
 namespace DB
 {
+
+static inline void writeParenthesisedString(const String & s, WriteBuffer & buf)
+{
+    writeChar('(', buf);
+    writeString(s, buf);
+    writeChar(')', buf);
+}
+
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;

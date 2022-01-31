@@ -5,7 +5,7 @@
 #include <Core/ServerUUID.h>
 #include <Common/SymbolIndex.h>
 #include <Common/DNSResolver.h>
-#include <base/DateLUT.h>
+#include <Common/DateLUT.h>
 
 #if defined(OS_LINUX)
 #    include <Poco/Environment.h>

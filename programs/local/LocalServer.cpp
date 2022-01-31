@@ -28,6 +28,7 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
 #include <Parsers/IAST.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <base/ErrorHandlers.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -36,6 +37,7 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
+#include <Formats/FormatFactory.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options/options_description.hpp>
 #include <base/argsToConfig.h>
@@ -313,14 +315,14 @@ void LocalServer::cleanup()
 
 std::string LocalServer::getInitialCreateTableQuery()
 {
-    if (!config().has("table-structure"))
+    if (!config().has("table-structure") && !config().has("table-file"))
         return {};
 
     auto table_name = backQuoteIfNeed(config().getString("table-name", "table"));
-    auto table_structure = config().getString("table-structure");
-    auto data_format = backQuoteIfNeed(config().getString("table-data-format", "TSV"));
+    auto table_structure = config().getString("table-structure", "auto");
 
     String table_file;
+    String format_from_file_name;
     if (!config().has("table-file") || config().getString("table-file") == "-")
     {
         /// Use Unix tools stdin naming convention
@@ -329,10 +331,20 @@ std::string LocalServer::getInitialCreateTableQuery()
     else
     {
         /// Use regular file
-        table_file = quoteString(config().getString("table-file"));
+        auto file_name = config().getString("table-file");
+        table_file = quoteString(file_name);
+        format_from_file_name = FormatFactory::instance().getFormatFromFileName(file_name, false);
     }
 
-    return fmt::format("CREATE TABLE {} ({}) ENGINE = File({}, {});",
+    auto data_format
+        = backQuoteIfNeed(config().getString("table-data-format", format_from_file_name.empty() ? "TSV" : format_from_file_name));
+
+    if (table_structure == "auto")
+        table_structure = "";
+    else
+        table_structure = "(" + table_structure + ")";
+
+    return fmt::format("CREATE TABLE {} {} ENGINE = File({}, {});",
                        table_name, table_structure, data_format, table_file);
 }
 
@@ -422,7 +434,7 @@ try
 #else
     is_interactive = stdin_is_a_tty
         && (config().hasOption("interactive")
-            || (!config().has("query") && !config().has("table-structure") && queries_files.empty()));
+            || (!config().has("query") && !config().has("table-structure") && queries_files.empty() && !config().has("table-file")));
 #endif
     if (!is_interactive)
     {
@@ -727,7 +739,6 @@ void LocalServer::printHelpMessage([[maybe_unused]] const OptionsDescription & o
 void LocalServer::addOptions(OptionsDescription & options_description)
 {
     options_description.main_description->add_options()
-        ("database,d", po::value<std::string>(), "database")
         ("table,N", po::value<std::string>(), "name of the initial table")
 
         /// If structure argument is omitted then initial query is not generated
@@ -793,9 +804,9 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
 
 int mainEntryClickHouseLocal(int argc, char ** argv)
 {
-    DB::LocalServer app;
     try
     {
+        DB::LocalServer app;
         app.init(argc, argv);
         return app.run();
     }

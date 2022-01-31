@@ -16,6 +16,7 @@
 #include <Common/createHardLink.h>
 #include <Common/quoteString.h>
 #include <Common/thread_local_rng.h>
+#include <Common/getRandomASCIIString.h>
 
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromS3.h>
@@ -213,12 +214,12 @@ void DiskS3::moveFile(const String & from_path, const String & to_path, bool sen
     metadata_disk->moveFile(from_path, to_path);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, const ReadSettings & read_settings, std::optional<size_t>) const
+std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, const ReadSettings & read_settings, std::optional<size_t>, std::optional<size_t>) const
 {
     auto settings = current_settings.get();
     auto metadata = readMeta(path);
 
-    LOG_TRACE(log, "Read from file by path: {}. Existing S3 objects: {}",
+    LOG_TEST(log, "Read from file by path: {}. Existing S3 objects: {}",
         backQuote(metadata_disk->getPath() + path), metadata.remote_fs_objects.size());
 
     bool threadpool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
@@ -246,7 +247,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
     auto metadata = readOrCreateMetaForWriting(path, mode);
 
     /// Path to store new S3 object.
-    auto s3_path = getRandomName();
+    auto s3_path = getRandomASCIIString();
 
     std::optional<ObjectMetadata> object_metadata;
     if (settings->send_metadata)
@@ -354,7 +355,7 @@ void DiskS3::findLastRevision()
     /// Construct revision number from high to low bits.
     String revision;
     revision.reserve(64);
-    for (int bit = 0; bit < 64; bit++)
+    for (int bit = 0; bit < 64; ++bit)
     {
         auto revision_prefix = revision + "1";
 
@@ -998,6 +999,7 @@ void DiskS3::restoreFileOperations(const RestoreInformation & restore_informatio
             if (metadata_disk->exists(to_path))
                 metadata_disk->removeRecursive(to_path);
 
+            createDirectories(directoryPath(to_path));
             metadata_disk->moveDirectory(from_path, to_path);
         }
     }

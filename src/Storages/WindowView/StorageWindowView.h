@@ -210,6 +210,7 @@ private:
     BackgroundSchedulePool::TaskHolder clean_cache_task;
     BackgroundSchedulePool::TaskHolder fire_task;
 
+    String window_view_timezone;
     String function_now_timezone;
 
     ASTPtr innerQueryParser(const ASTSelectQuery & query);

@@ -177,7 +177,7 @@ IDiskRemote::Metadata IDiskRemote::createMeta(const String & path) const
 
 void IDiskRemote::removeMeta(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper)
 {
-    LOG_DEBUG(log, "Remove file by path: {}", backQuote(metadata_disk->getPath() + path));
+    LOG_TRACE(log, "Remove file by path: {}", backQuote(metadata_disk->getPath() + path));
 
     if (!metadata_disk->isFile(path))
         throw Exception(ErrorCodes::CANNOT_DELETE_DIRECTORY, "Path '{}' is a directory", path);
@@ -464,7 +464,7 @@ bool IDiskRemote::tryReserve(UInt64 bytes)
     std::lock_guard lock(reservation_mutex);
     if (bytes == 0)
     {
-        LOG_DEBUG(log, "Reserving 0 bytes on remote_fs disk {}", backQuote(name));
+        LOG_TRACE(log, "Reserving 0 bytes on remote_fs disk {}", backQuote(name));
         ++reservation_count;
         return true;
     }
@@ -473,7 +473,7 @@ bool IDiskRemote::tryReserve(UInt64 bytes)
     UInt64 unreserved_space = available_space - std::min(available_space, reserved_bytes);
     if (unreserved_space >= bytes)
     {
-        LOG_DEBUG(log, "Reserving {} on disk {}, having unreserved {}.",
+        LOG_TRACE(log, "Reserving {} on disk {}, having unreserved {}.",
             ReadableSize(bytes), backQuote(name), ReadableSize(unreserved_space));
         ++reservation_count;
         reserved_bytes += bytes;
@@ -484,6 +484,7 @@ bool IDiskRemote::tryReserve(UInt64 bytes)
 
 String IDiskRemote::getUniqueId(const String & path) const
 {
+    LOG_TRACE(log, "Remote path: {}, Path: {}", remote_fs_root_path, path);
     Metadata metadata(remote_fs_root_path, metadata_disk, path);
     String id;
     if (!metadata.remote_fs_objects.empty())
@@ -498,6 +499,36 @@ AsynchronousReaderPtr IDiskRemote::getThreadPoolReader()
     constexpr size_t queue_size = 1000000;
     static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolRemoteFSReader>(pool_size, queue_size);
     return reader;
+}
+
+std::unique_ptr<ReadBufferFromFileBase> IDiskRemote::readMetaFile(
+    const String & path,
+    const ReadSettings & settings,
+    std::optional<size_t> size) const
+{
+    LOG_TRACE(log, "Read metafile: {}", path);
+    return metadata_disk->readFile(path, settings, size);
+}
+
+std::unique_ptr<WriteBufferFromFileBase> IDiskRemote::writeMetaFile(
+    const String & path,
+    size_t buf_size,
+    WriteMode mode)
+{
+    LOG_TRACE(log, "Write metafile: {}", path);
+    return metadata_disk->writeFile(path, buf_size, mode);
+}
+
+void IDiskRemote::removeMetaFileIfExists(const String & path)
+{
+    LOG_TRACE(log, "Remove metafile: {}", path);
+    return metadata_disk->removeFileIfExists(path);
+}
+
+UInt32 IDiskRemote::getRefCount(const String & path) const
+{
+    auto meta = readMeta(path);
+    return meta.ref_count;
 }
 
 }

@@ -128,14 +128,36 @@ function start()
         counter=$((counter + 1))
     done
 
+    # Set follow-fork-mode to parent, because we attach to clickhouse-server, not to watchdog
+    # and clickhouse-server can do fork-exec, for example, to run some bridge.
+    # Do not set nostop noprint for all signals, because some it may cause gdb to hang,
+    # explicitly ignore non-fatal signals that are used by server.
+    # Number of SIGRTMIN can be determined only in runtime.
+    RTMIN=$(kill -l SIGRTMIN)
     echo "
-set follow-fork-mode child
-handle all noprint
-handle SIGSEGV stop print
-handle SIGBUS stop print
-handle SIGABRT stop print
+set follow-fork-mode parent
+handle SIGHUP nostop noprint pass
+handle SIGINT nostop noprint pass
+handle SIGQUIT nostop noprint pass
+handle SIGPIPE nostop noprint pass
+handle SIGTERM nostop noprint pass
+handle SIGUSR1 nostop noprint pass
+handle SIGUSR2 nostop noprint pass
+handle SIG$RTMIN nostop noprint pass
+info signals
 continue
-thread apply all backtrace
+gcore
+backtrace full
+info locals
+info registers
+disassemble /s
+up
+info locals
+disassemble /s
+up
+info locals
+disassemble /s
+p \"done\"
 detach
 quit
 " > script.gdb
@@ -143,7 +165,10 @@ quit
     # FIXME Hung check may work incorrectly because of attached gdb
     # 1. False positives are possible
     # 2. We cannot attach another gdb to get stacktraces if some queries hung
-    sudo gdb -batch -command script.gdb -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" >> /test_output/gdb.log &
+    gdb -batch -command script.gdb -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log &
+    sleep 5
+    # gdb will send SIGSTOP, spend some time loading debug info and then send SIGCONT, wait for it (up to send_timeout, 300s)
+    time clickhouse-client --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
 }
 
 configure
@@ -214,6 +239,9 @@ zgrep -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.log* > /dev/n
 zgrep -Fa "########################################" /test_output/* > /dev/null \
     && echo -e 'Killed by signal (output files)\tFAIL' >> /test_output/test_results.tsv
 
+zgrep -Fa " received signal " /test_output/gdb.log > /dev/null \
+    && echo -e 'Found signal in gdb.log\tFAIL' >> /test_output/test_results.tsv
+
 # Put logs into /test_output/
 for log_file in /var/log/clickhouse-server/clickhouse-server.log*
 do
@@ -236,3 +264,10 @@ done
 # Write check result into check_status.tsv
 clickhouse-local --structure "test String, res String" -q "SELECT 'failure', test FROM table WHERE res != 'OK' order by (lower(test) like '%hung%') LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv
 [ -s /test_output/check_status.tsv ] || echo -e "success\tNo errors found" > /test_output/check_status.tsv
+
+# Core dumps (see gcore)
+# Default filename is 'core.PROCESS_ID'
+for core in core.*; do
+    pigz $core
+    mv $core.gz /output/
+done

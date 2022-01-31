@@ -20,9 +20,9 @@
 					<div class="form-group col-md-12 mb-3 is-select">
 						<select class="form-control" id="priority" name="priority">
 							<option disabled selected>Severity Classification</option>
-							<option value="Sev-1">Severity 1 - Critical Business Impact: DBMS is not functioning or is stopped or severely impacted so that Customer cannot reasonably continue use of DBMS and no Workaround is available.</option>
-							<option value="Sev-2">Severity 2 - Major Business Impact: DBMS is functioning inconsistently causing significantly impaired Customer usage and productivity, such as periodic work stoppages and feature crashes.</option>
-							<option value="Sev-3">Severity 3 - Minor Business Impact: DBMS is functioning inconsistently causing slightly impaired Customer usage and productivity but Customer can work around such inconsistency or impairment.</option>
+							<option value="Sev-1">Severity 1 Critical Business Impact</option>
+							<option value="Sev-2">Severity 2 Major Business Impact</option>
+							<option value="Sev-3">Severity 3 Minor Business Impact or General Questions</option>
 						</select>
 					</div>
 					<div class="form-group col-md-12 mb-3">
@@ -43,6 +43,35 @@
 			</div>
 			
 		</form>
+
+		<h2 class="h3 mt-10">Severity Classification Level Definitions</h2>
+
+		<table class="severity-table">
+			<thead>
+				<tr>
+					<th style="width:15%;">Severity Classification Level</th>
+					<th style="width:25%;">Organizational Impact</th>
+					<th style="width:60%;">Definition</th>
+				</tr>
+			</thead>
+			<tbody>
+				<tr>
+					<td>Severity 1</td>
+					<td>Critical Business Impact</td>
+					<td>ClickHouse DBMS LTS or stable software release in production use is not functioning or is stopped or severely impacted so that Customer cannot reasonably continue use of DBMS and no Workaround is available</td>
+				</tr>
+				<tr>
+					<td>Severity 2</td>
+					<td>Major Business Impact</td>
+					<td>ClickHouse DBMS LTS or stable software release is functioning inconsistently causing significantly impaired Customer usage and productivity, such as periodic work stoppages and feature crashes</td>
+				</tr>
+				<tr>
+					<td>Severity 3</td>
+					<td>Minor Business Impact or General Questions</td>
+					<td>ClickHouse DBMS LTS or stable software release is functioning inconsistently causing slightly impaired Customer usage and productivity but Customer can work around such inconsistency or impairment, or Customer has a question or enhancement for the DBMS or ClickHouse not determined an Error</td>
+				</tr>
+			</tbody>
+		</table>
         
         <hr class="is-yellow mt-10">
 
