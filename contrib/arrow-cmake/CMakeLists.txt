@@ -124,8 +124,6 @@ configure_file("${ORC_SOURCE_SRC_DIR}/Adaptor.hh.in" "${ORC_BUILD_INCLUDE_DIR}/A
 
 # ARROW_ORC + adapters/orc/CMakefiles
 set(ORC_SRCS
-        "${ARROW_SRC_DIR}/arrow/adapters/orc/adapter.cc"
-        "${ARROW_SRC_DIR}/arrow/adapters/orc/adapter_util.cc"
         "${ORC_SOURCE_SRC_DIR}/Exceptions.cc"
         "${ORC_SOURCE_SRC_DIR}/OrcFile.cc"
         "${ORC_SOURCE_SRC_DIR}/Reader.cc"
@@ -151,6 +149,22 @@ set(ORC_SRCS
         "${ORC_SOURCE_SRC_DIR}/io/OutputStream.cc"
         "${ORC_ADDITION_SOURCE_DIR}/orc_proto.pb.cc"
         )
+
+add_library(_orc ${ORC_SRCS})
+target_link_libraries(_orc PRIVATE
+    ch_contrib::protobuf
+    ch_contrib::lz4
+    ch_contrib::snappy
+    ch_contrib::zlib
+    ch_contrib::zstd)
+target_include_directories(_orc SYSTEM BEFORE PUBLIC ${ORC_INCLUDE_DIR})
+target_include_directories(_orc SYSTEM BEFORE PUBLIC ${ORC_BUILD_INCLUDE_DIR})
+target_include_directories(_orc SYSTEM PRIVATE
+    ${ORC_SOURCE_SRC_DIR}
+    ${ORC_SOURCE_WRAP_DIR}
+    ${ORC_BUILD_SRC_DIR}
+    ${ORC_ADDITION_SOURCE_DIR}
+    ${ARROW_SRC_DIR})
 
 
 # === arrow
@@ -337,7 +351,8 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/ipc/reader.cc"
         "${LIBRARY_DIR}/ipc/writer.cc"
 
-        ${ORC_SRCS}
+        "${ARROW_SRC_DIR}/arrow/adapters/orc/adapter.cc"
+        "${ARROW_SRC_DIR}/arrow/adapters/orc/adapter_util.cc"
         )
 
 add_definitions(-DARROW_WITH_LZ4)
@@ -361,7 +376,6 @@ target_link_libraries(_arrow PRIVATE
     boost::filesystem
 
     _flatbuffers
-    ch_contrib::protobuf
 
     ch_contrib::double_conversion
 
@@ -371,18 +385,13 @@ target_link_libraries(_arrow PRIVATE
     ch_contrib::zstd
     ch_contrib::zstd
 )
+target_link_libraries(_arrow PUBLIC _orc)
 
 add_dependencies(_arrow protoc)
 
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC ${ARROW_SRC_DIR})
 target_include_directories(_arrow SYSTEM BEFORE PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/cpp/src")
 
-target_include_directories(_arrow SYSTEM BEFORE PUBLIC  ${ORC_INCLUDE_DIR})
-target_include_directories(_arrow SYSTEM BEFORE PUBLIC  ${ORC_BUILD_INCLUDE_DIR})
-target_include_directories(_arrow SYSTEM PRIVATE ${ORC_SOURCE_SRC_DIR})
-target_include_directories(_arrow SYSTEM PRIVATE ${ORC_SOURCE_WRAP_DIR})
-target_include_directories(_arrow SYSTEM PRIVATE ${ORC_BUILD_SRC_DIR})
-target_include_directories(_arrow SYSTEM PRIVATE ${ORC_ADDITION_SOURCE_DIR})
 target_include_directories(_arrow SYSTEM PRIVATE ${ARROW_SRC_DIR})
 target_include_directories(_arrow SYSTEM PRIVATE ${HDFS_INCLUDE_DIR})
 
