@@ -17,7 +17,7 @@ BackupSettings BackupSettings::fromBackupQuery(const ASTBackupQuery & query)
     BackupSettings res;
 
     if (query.base_backup_name)
-        res.base_backup_info = std::make_shared<BackupInfo>(BackupInfo::fromAST(*query.base_backup_name));
+        res.base_backup_info = BackupInfo::fromAST(*query.base_backup_name);
 
     if (query.settings)
     {

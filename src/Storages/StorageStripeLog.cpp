@@ -35,7 +35,7 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
 
-#include <Backups/BackupEntryFromImmutableFile.h>
+#include <Backups/BackupEntryFromAppendOnlyFile.h>
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/IBackup.h>
 #include <Backups/IRestoreTask.h>
@@ -516,24 +516,24 @@ BackupEntries StorageStripeLog::backup(ContextPtr context, const ASTs & partitio
     {
         /// We make a copy of the data file because it can be changed later in write() or in truncate().
         String data_file_name = fileName(data_file_path);
-        String temp_file_path = temp_dir + "/" + data_file_name;
-        disk->copy(data_file_path, disk, temp_file_path);
+        String hardlink_file_path = temp_dir + "/" + data_file_name;
+        disk->createHardLink(data_file_path, hardlink_file_path);
         backup_entries.emplace_back(
             data_file_name,
-            std::make_unique<BackupEntryFromImmutableFile>(
-                disk, temp_file_path, file_checker.getFileSize(data_file_path), std::nullopt, temp_dir_owner));
+            std::make_unique<BackupEntryFromAppendOnlyFile>(
+                disk, hardlink_file_path, file_checker.getFileSize(data_file_path), std::nullopt, temp_dir_owner));
     }
 
     /// index.mrk
     {
         /// We make a copy of the data file because it can be changed later in write() or in truncate().
         String index_file_name = fileName(index_file_path);
-        String temp_file_path = temp_dir + "/" + index_file_name;
-        disk->copy(index_file_path, disk, temp_file_path);
+        String hardlink_file_path = temp_dir + "/" + index_file_name;
+        disk->createHardLink(index_file_path, hardlink_file_path);
         backup_entries.emplace_back(
             index_file_name,
-            std::make_unique<BackupEntryFromImmutableFile>(
-                disk, temp_file_path, file_checker.getFileSize(index_file_path), std::nullopt, temp_dir_owner));
+            std::make_unique<BackupEntryFromAppendOnlyFile>(
+                disk, hardlink_file_path, file_checker.getFileSize(index_file_path), std::nullopt, temp_dir_owner));
     }
 
     /// sizes.json
