@@ -1,13 +1,14 @@
 ---
-title: Does ClickHouse support multi-region replication?
+title: ClickHouse支持多区域复制吗?
 toc_hidden: true
 toc_priority: 30
 ---
 
-# Does ClickHouse support multi-region replication? {#does-clickhouse-support-multi-region-replication}
+# ClickHouse支持多区域复制吗? {#does-clickhouse-support-multi-region-replication}
 
-The short answer is "yes". However, we recommend keeping latency between all regions/datacenters in two-digit range, otherwise write performance will suffer as it goes through distributed consensus protocol. For example, replication between US coasts will likely work fine, but between the US and Europe won't.
+简短的回答是“是的”。然而，我们建议将所有区域/数据中心之间的延迟保持在两位数字范围内，否则，在通过分布式共识协议时，写性能将受到影响。例如，美国海岸之间的复制可能会很好，但美国和欧洲之间就不行。
 
-Configuration-wise there's no difference compared to single-region replication, simply use hosts that are located in different locations for replicas.
+在配置方面，这与单区域复制没有区别，只是使用位于不同位置的主机作为副本。
 
-For more information, see [full article on data replication](../../engines/table-engines/mergetree-family/replication.md).
+更多信息，请参见[关于数据复制的完整文章](../../engines/table-engines/mergetree-family/replication.md)。
+
