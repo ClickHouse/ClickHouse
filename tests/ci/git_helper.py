@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import argparse
 import os.path as p
 import re
 import subprocess
@@ -19,6 +20,15 @@ def removesuffix(string: str, suffix: str):
     if string.endswith(suffix):
         return string[: -len(suffix)]
     return string
+
+
+def commit(name: str):
+    r = re.compile(SHA_REGEXP)
+    if not r.match(name):
+        raise argparse.ArgumentTypeError(
+            "commit hash should contain exactly 40 hex characters"
+        )
+    return name
 
 
 class Runner:
