@@ -136,6 +136,8 @@ private:
     void readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> & external_tables_arguments);
     void parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments);
 
+    void updateSuggest(const ASTCreateQuery & ast_create);
+
 protected:
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool is_multiquery = false;
@@ -144,6 +146,8 @@ protected:
     bool echo_queries = false; /// Print queries before execution in batch mode.
     bool ignore_error = false; /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool print_time_to_stderr = false; /// Output execution time to stderr in batch mode.
+
+    std::optional<Suggest> suggest;
     bool load_suggestions = false;
 
     std::vector<String> queries_files; /// If not empty, queries will be read from these files

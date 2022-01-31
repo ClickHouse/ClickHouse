@@ -327,6 +327,7 @@ std::string LocalServer::getInitialCreateTableQuery()
     {
         /// Use Unix tools stdin naming convention
         table_file = "stdin";
+        format_from_file_name = FormatFactory::instance().getFormatFromFileDescriptor(STDIN_FILENO);
     }
     else
     {
