@@ -89,15 +89,12 @@ void run(String part_path, String date_column, String dest_path)
     DataTypes minmax_idx_column_types = {std::make_shared<DataTypeDate>()};
     auto idx_files = minmax_idx.store(minmax_idx_columns, minmax_idx_column_types, disk, new_tmp_part_path_str, checksums);
     for (auto & file : idx_files)
-        file.finish();
+        file->finalize();
 
     Block partition_key_sample{{nullptr, std::make_shared<DataTypeUInt32>(), makeASTFunction("toYYYYMM", std::make_shared<ASTIdentifier>(date_column))->getColumnName()}};
 
     MergeTreePartition partition(yyyymm);
-    auto partition_key_files = partition.store(partition_key_sample, disk, new_tmp_part_path_str, checksums);
-    for (auto & file : partition_key_files)
-        file.finish();
-
+    partition.store(partition_key_sample, disk, new_tmp_part_path_str, checksums)->finalize();
     String partition_id = partition.getID(partition_key_sample);
 
     Poco::File(new_tmp_part_path_str + "checksums.txt").setWriteable();
