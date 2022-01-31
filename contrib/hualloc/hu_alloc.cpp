@@ -84,8 +84,8 @@ extern "C" void* realloc(void* old_ptr, size_t new_size) {
     return new_ptr;
 }
 
-void* reallocf(void* p, size_t size) { return realloc(p, size); }
-void* reallocarray(void* p, size_t count, size_t size) { return realloc(p, count * size); }
+extern "C" void* reallocf(void* p, size_t size) { return realloc(p, size); }
+extern "C" void* reallocarray(void* p, size_t count, size_t size) { return realloc(p, count * size); }
 
 
 extern "C" int posix_memalign(void** ptr, size_t align, size_t size) {
@@ -93,14 +93,14 @@ extern "C" int posix_memalign(void** ptr, size_t align, size_t size) {
     return 0;
 }
 
-void* memalign(size_t align, size_t size) { return hu_alloc_aligned(size, align); }
+extern "C" void* memalign(size_t align, size_t size) { return hu_alloc_aligned(size, align); }
 // msvc specific?
 //void* _aligned_malloc(size_t align, size_t size) { return hu_alloc_aligned(align, size); }
 //void _aligned_free(void *p) { hu_free_aligned(p, 0); }
 
 // `aligned_alloc` is only available when __USE_ISOC11 is defined.
 #if __USE_ISOC11 
-void* aligned_alloc(size_t align, size_t size)   { return hu_alloc_aligned(size, align); }
+extern "C" void* aligned_alloc(size_t align, size_t size)   { return hu_alloc_aligned(size, align); }
 #endif
 
 
@@ -108,7 +108,7 @@ extern "C" size_t malloc_size(const void* p) { return hu_getsize(p); }
 extern "C" size_t malloc_usable_size(void *p) { return hu_getsize(p); }
 
 
-void* valloc(size_t size) { return hu_alloc_aligned(size, PAGE_SIZE); }
-void* pvalloc(size_t size) { return hu_alloc_aligned(size, PAGE_SIZE); }
+extern "C" void* valloc(size_t size) { return hu_alloc_aligned(size, PAGE_SIZE); }
+extern "C" void* pvalloc(size_t size) { return hu_alloc_aligned(size, PAGE_SIZE); }
 
 #endif
