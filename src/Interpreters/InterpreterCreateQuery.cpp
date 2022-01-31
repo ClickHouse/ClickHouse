@@ -9,6 +9,7 @@
 #include <Common/randomSeed.h>
 #include <Common/renameat2.h>
 #include <Common/hex.h>
+#include "Core/SettingsEnums.h"
 
 #include <Core/Defines.h>
 #include <Core/Settings.h>
@@ -728,11 +729,9 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         if (create.temporary && create.storage && create.storage->engine && create.storage->engine->name != "Memory")
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "Temporary tables can only be created with ENGINE = Memory, not {}", create.storage->engine->name);
-
-        return;
     }
 
-    if (create.temporary)
+    if (create.temporary && !create.storage)
     {
         auto engine_ast = std::make_shared<ASTFunction>();
         engine_ast->name = "Memory";
@@ -740,6 +739,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         auto storage_ast = std::make_shared<ASTStorage>();
         storage_ast->set(storage_ast->engine, engine_ast);
         create.set(create.storage, storage_ast);
+        return;
     }
     else if (!create.as_table.empty())
     {
@@ -779,6 +779,79 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             create.as_table_function = as_create.as_table_function->clone();
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set engine, it's a bug.");
+        return;
+    }
+
+    if (!create.storage)
+        create.set(create.storage, std::make_shared<ASTStorage>());
+
+    if (getContext()->getSettingsRef().default_table_engine.value != DefaultTableEngine::None)
+    {
+        auto default_table_engine = getContext()->getSettingsRef().default_table_engine.value;
+        String default_table_engine_name;
+        switch (default_table_engine)
+        {
+            case DefaultTableEngine::Log:
+                default_table_engine_name = "Log";
+                break;
+            case DefaultTableEngine::StripeLog:
+                default_table_engine_name = "StripeLog";
+                break;
+            case DefaultTableEngine::MergeTree:
+                default_table_engine_name = "MergeTree";
+                break;
+            case DefaultTableEngine::CollapsingMergeTree:
+                default_table_engine_name = "CollapsingMergeTree";
+                break;
+            case DefaultTableEngine::ReplacingMergeTree:
+                default_table_engine_name = "ReplacingMergeTree";
+                break;
+            case DefaultTableEngine::AggregatingMergeTree:
+                default_table_engine_name = "AggregatingMergeTree";
+                break;
+            case DefaultTableEngine::SummingMergeTree:
+                default_table_engine_name = "SummingMergeTree";
+                break;
+            case DefaultTableEngine::GraphiteMergeTree:
+                default_table_engine_name = "GraphiteMergeTree";
+                break;
+            case DefaultTableEngine::VersionedCollapsingMergeTree:
+                default_table_engine_name = "VersionedCollapsingMergeTree";
+                break;
+            case DefaultTableEngine::ReplicatedMergeTree:
+                default_table_engine_name = "ReplicatedMergeTree";
+                break;
+            case DefaultTableEngine::ReplicatedCollapsingMergeTree:
+                default_table_engine_name = "ReplicatedCollapsingMergeTree";
+                break;
+            case DefaultTableEngine::ReplicatedReplacingMergeTree:
+                default_table_engine_name = "ReplicatedReplacingMergeTree";
+                break;
+            case DefaultTableEngine::ReplicatedAggregatingMergeTree:
+                default_table_engine_name = "ReplicatedAggregatingMergeTree";
+                break;
+            case DefaultTableEngine::ReplicatedSummingMergeTree:
+                default_table_engine_name = "ReplicatedSummingMergeTree";
+                break;
+            case DefaultTableEngine::ReplicatedGraphiteMergeTree:
+                default_table_engine_name = "ReplicatedGraphiteMergeTree";
+                break;
+            case DefaultTableEngine::ReplicatedVersionedCollapsingMergeTree:
+                default_table_engine_name = "ReplicatedVersionedCollapsingMergeTree";
+                break;
+            case DefaultTableEngine::Memory:
+                default_table_engine_name = "Memory";
+                break;
+            default:
+                throw Exception( "default_table_engine is set to unknown value", ErrorCodes::BAD_ARGUMENTS);
+        }
+        if (!create.storage->engine)
+        {
+            auto engine_ast = std::make_shared<ASTFunction>();
+            engine_ast->name = default_table_engine_name;
+            engine_ast->no_empty_args = true;
+            create.storage->set(create.storage->engine, engine_ast);
+        }
     }
 }
 
