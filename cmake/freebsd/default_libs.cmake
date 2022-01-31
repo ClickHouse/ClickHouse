@@ -22,7 +22,7 @@ set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
-include (cmake/find/unwind.cmake)
+include (cmake/unwind.cmake)
 include (cmake/cxx.cmake)
 
 target_link_libraries(global-group INTERFACE
