@@ -38,6 +38,8 @@ FROM
     SELECT *
     FROM neighbor_test
     ORDER BY val_string ASC
-) format PrettyCompact;
+)
+ORDER By rowNr
+format PrettyCompact;
 
 drop table if exists neighbor_test;
