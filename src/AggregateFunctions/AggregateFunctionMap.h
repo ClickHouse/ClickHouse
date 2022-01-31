@@ -1,6 +1,7 @@
 #pragma once
 
 #include <unordered_map>
+#include <base/sort.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnFixedString.h>
@@ -226,7 +227,7 @@ public:
         {
             keys.push_back(it.first);
         }
-        std::sort(keys.begin(), keys.end());
+        ::sort(keys.begin(), keys.end());
 
         // insert using sorted keys to result column
         for (auto & key : keys)
