@@ -5,6 +5,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/parseAddress.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
+#include <Common/Config/ConfigHelper.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -101,7 +102,7 @@ Cluster::Address::Address(
     user = config.getString(config_prefix + ".user", "default");
     password = config.getString(config_prefix + ".password", "");
     default_database = config.getString(config_prefix + ".default_database", "");
-    secure = config.getBool(config_prefix + ".secure", false) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
+    secure = ConfigHelper::getBool(config, config_prefix + ".secure", false, /* empty_as */true) ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     priority = config.getInt(config_prefix + ".priority", 1);
     const char * port_type = secure == Protocol::Secure::Enable ? "tcp_port_secure" : "tcp_port";
     is_local = isLocal(config.getInt(port_type, 0));
@@ -320,13 +321,29 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
     if (old_config)
     {
         for (const auto & key : deleted_keys)
-            impl.erase(key);
+        {
+            if (!automatic_clusters.contains(key))
+                impl.erase(key);
+        }
     }
     else
-        impl.clear();
+    {
+        if (!automatic_clusters.empty())
+            std::erase_if(impl, [this](const auto & e) { return automatic_clusters.contains(e.first); });
+        else
+            impl.clear();
+    }
+
 
     for (const auto & key : new_config_keys)
     {
+        if (new_config.has(config_prefix + "." + key + ".discovery"))
+        {
+            /// Handled in ClusterDiscovery
+            automatic_clusters.insert(key);
+            continue;
+        }
+
         if (key.find('.') != String::npos)
             throw Exception("Cluster names with dots are not supported: '" + key + "'", ErrorCodes::SYNTAX_ERROR);
 

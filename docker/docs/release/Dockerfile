@@ -1,5 +1,7 @@
+# rebuild in #33610
 # docker build -t clickhouse/docs-release .
-FROM clickhouse/docs-builder
+ARG FROM_TAG=latest
+FROM clickhouse/docs-builder:$FROM_TAG
 
 COPY run.sh /
 

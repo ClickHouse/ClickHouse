@@ -1,3 +1,10 @@
+option (ENABLE_CAPNP "Enable Cap'n Proto" ${ENABLE_LIBRARIES})
+
+if (NOT ENABLE_CAPNP)
+    message(STATUS "Not using Cap'n Proto library")
+    return()
+endif()
+
 set (CAPNPROTO_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/capnproto/c++/src")
 
 set (CMAKE_CXX_STANDARD 17)
@@ -29,8 +36,8 @@ set (KJ_SRCS
     "${CAPNPROTO_SOURCE_DIR}/kj/parse/char.c++"
 )
 
-add_library(kj ${KJ_SRCS})
-target_include_directories(kj SYSTEM PUBLIC ${CAPNPROTO_SOURCE_DIR})
+add_library(_kj ${KJ_SRCS})
+target_include_directories(_kj SYSTEM PUBLIC ${CAPNPROTO_SOURCE_DIR})
 
 set (CAPNP_SRCS
     "${CAPNPROTO_SOURCE_DIR}/capnp/c++.capnp.c++"
@@ -51,11 +58,11 @@ set (CAPNP_SRCS
     "${CAPNPROTO_SOURCE_DIR}/capnp/stringify.c++"
 )
 
-add_library(capnp ${CAPNP_SRCS})
-set_target_properties(capnp
+add_library(_capnp ${CAPNP_SRCS})
+set_target_properties(_capnp
                       PROPERTIES LINKER_LANGUAGE CXX
                       )
-target_link_libraries(capnp PUBLIC kj)
+target_link_libraries(_capnp PUBLIC _kj)
 
 set (CAPNPC_SRCS
     "${CAPNPROTO_SOURCE_DIR}/capnp/compiler/type-id.c++"
@@ -71,8 +78,8 @@ set (CAPNPC_SRCS
     "${CAPNPROTO_SOURCE_DIR}/capnp/serialize-text.c++"
 )
 
-add_library(capnpc ${CAPNPC_SRCS})
-target_link_libraries(capnpc PUBLIC capnp)
+add_library(_capnpc ${CAPNPC_SRCS})
+target_link_libraries(_capnpc PUBLIC _capnp)
 
 # The library has substandard code
 if (COMPILER_GCC)
@@ -82,6 +89,8 @@ elseif (COMPILER_CLANG)
     set (CAPNP_PRIVATE_CXX_FLAGS -fno-char8_t)
 endif ()
 
-target_compile_options(kj PRIVATE ${SUPPRESS_WARNINGS} ${CAPNP_PRIVATE_CXX_FLAGS})
-target_compile_options(capnp PRIVATE ${SUPPRESS_WARNINGS} ${CAPNP_PRIVATE_CXX_FLAGS})
-target_compile_options(capnpc PRIVATE ${SUPPRESS_WARNINGS} ${CAPNP_PRIVATE_CXX_FLAGS})
+target_compile_options(_kj PRIVATE ${SUPPRESS_WARNINGS} ${CAPNP_PRIVATE_CXX_FLAGS})
+target_compile_options(_capnp PRIVATE ${SUPPRESS_WARNINGS} ${CAPNP_PRIVATE_CXX_FLAGS})
+target_compile_options(_capnpc PRIVATE ${SUPPRESS_WARNINGS} ${CAPNP_PRIVATE_CXX_FLAGS})
+
+add_library(ch_contrib::capnp ALIAS _capnpc)

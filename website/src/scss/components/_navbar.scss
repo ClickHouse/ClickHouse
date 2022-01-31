@@ -52,7 +52,7 @@
 
 	&-nav {
 		align-items: center;
-		height: 46px;
+		height: $navbar-nav-height;
 	}
 
 	.nav-item:not(:last-child) {
@@ -131,6 +131,35 @@
 	}
 
 	@media screen and (max-width: 399.98px) {
-		height: 80px;
+		height: $navbar-height-xl;
+	}
+}
+
+
+.navbar {
+	@for $i from 1 through 8 {
+		&.py-#{$i} {
+			+ div {
+				.anchor-fixer {
+					:target {
+						@media screen and (min-width: 616px) {
+							scroll-margin-top: $navbar-nav-height + $spacer * $i * 2;
+						}
+					}
+				}
+			}
+		}
+	}
+	+ div {
+		.anchor-fixer {
+			:target {
+				@media screen and (max-width: 615.98px) {
+					scroll-margin-top: 73px;
+				}
+				@media screen and (max-width: 399.98px) {
+					scroll-margin-top: $navbar-height-xl;
+				}
+			}
+		}
 	}
 }

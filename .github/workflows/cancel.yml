@@ -1,7 +1,12 @@
 name: Cancel
+
+env:
+  # Force the stdout and stderr streams to be unbuffered
+  PYTHONUNBUFFERED: 1
+
 on: # yamllint disable-line rule:truthy
   workflow_run:
-    workflows: ["CIGithubActions", "ReleaseCI", "DocsCheck", "BackportPR"]
+    workflows: ["PullRequestCI", "ReleaseCI", "DocsCheck", "BackportPR"]
     types:
       - requested
 jobs:

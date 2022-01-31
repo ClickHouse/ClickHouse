@@ -74,7 +74,7 @@ class Backport:
 
             # First pass. Find all must-backports
             for label in pr['labels']['nodes']:
-                if label['name'] == 'pr-bugfix' or label['name'] == 'pr-must-backport':
+                if label['name'] == 'pr-must-backport':
                     backport_map[pr['number']] = branch_set.copy()
                     continue
                 matched = RE_MUST_BACKPORT.match(label['name'])

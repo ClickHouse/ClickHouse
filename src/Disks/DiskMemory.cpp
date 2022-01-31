@@ -253,7 +253,7 @@ void DiskMemory::clearDirectory(const String & path)
             throw Exception(
                 "Failed to clear directory '" + path + "'. " + iter->first + " is a directory", ErrorCodes::CANNOT_DELETE_DIRECTORY);
 
-        files.erase(iter++);
+        iter = files.erase(iter);
     }
 }
 
@@ -315,7 +315,7 @@ void DiskMemory::replaceFileImpl(const String & from_path, const String & to_pat
     files.insert(std::move(node));
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskMemory::readFile(const String & path, const ReadSettings &, std::optional<size_t>) const
+std::unique_ptr<ReadBufferFromFileBase> DiskMemory::readFile(const String & path, const ReadSettings &, std::optional<size_t>, std::optional<size_t>) const
 {
     std::lock_guard lock(mutex);
 

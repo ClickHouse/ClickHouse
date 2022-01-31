@@ -25,7 +25,7 @@ def get_mongo_connection(started_cluster, secure=False, with_credentials=True):
     if with_credentials:
         connection_str = 'mongodb://root:clickhouse@localhost:{}'.format(started_cluster.mongo_port)
     else:
-        connection_str = 'mongodb://localhost:27018'
+        connection_str = 'mongodb://localhost:{}'.format(started_cluster.mongo_no_cred_port)
     if secure:
         connection_str += '/?tls=true&tlsAllowInvalidCertificates=true'
     return pymongo.MongoClient(connection_str)
@@ -158,4 +158,28 @@ def test_no_credentials(started_cluster):
     node = started_cluster.instances['node']
     node.query("create table simple_mongo_table_2(key UInt64, data String) engine = MongoDB('mongo2:27017', 'test', 'simple_table', '', '')")
     assert node.query("SELECT count() FROM simple_mongo_table_2") == '100\n'
+    simple_mongo_table.drop()
+
+@pytest.mark.parametrize('started_cluster', [False], indirect=['started_cluster'])
+def test_auth_source(started_cluster):
+    mongo_connection = get_mongo_connection(started_cluster, with_credentials=False)
+    admin_db = mongo_connection['admin']
+    admin_db.add_user('root', 'clickhouse', roles=[{ 'role': "userAdminAnyDatabase", 'db': "admin" }, "readWriteAnyDatabase"])
+    simple_mongo_table = admin_db['simple_table']
+    data = []
+    for i in range(0, 50):
+        data.append({'key': i, 'data': hex(i * i)})
+    simple_mongo_table.insert_many(data)
+    db = mongo_connection['test']
+    simple_mongo_table = db['simple_table']
+    data = []
+    for i in range(0, 100):
+        data.append({'key': i, 'data': hex(i * i)})
+    simple_mongo_table.insert_many(data)
+
+    node = started_cluster.instances['node']
+    node.query("create table simple_mongo_table_fail(key UInt64, data String) engine = MongoDB('mongo2:27017', 'test', 'simple_table', 'root', 'clickhouse')")
+    node.query_and_get_error("SELECT count() FROM simple_mongo_table_fail")
+    node.query("create table simple_mongo_table_ok(key UInt64, data String) engine = MongoDB('mongo2:27017', 'test', 'simple_table', 'root', 'clickhouse', 'authSource=admin')")
+    assert node.query("SELECT count() FROM simple_mongo_table_ok") == '100\n'
     simple_mongo_table.drop()

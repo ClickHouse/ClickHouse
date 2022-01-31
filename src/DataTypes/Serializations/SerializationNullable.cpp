@@ -40,30 +40,35 @@ ColumnPtr SerializationNullable::SubcolumnCreator::create(const ColumnPtr & prev
 void SerializationNullable::enumerateStreams(
     SubstreamPath & path,
     const StreamCallback & callback,
-    DataTypePtr type,
-    ColumnPtr column) const
+    const SubstreamData & data) const
 {
-    const auto * type_nullable = type ? &assert_cast<const DataTypeNullable &>(*type) : nullptr;
-    const auto * column_nullable = column ? &assert_cast<const ColumnNullable &>(*column) : nullptr;
+    const auto * type_nullable = data.type ? &assert_cast<const DataTypeNullable &>(*data.type) : nullptr;
+    const auto * column_nullable = data.column ? &assert_cast<const ColumnNullable &>(*data.column) : nullptr;
 
     path.push_back(Substream::NullMap);
     path.back().data =
     {
+        std::make_shared<SerializationNamed>(std::make_shared<SerializationNumber<UInt8>>(), "null", false),
         type_nullable ? std::make_shared<DataTypeUInt8>() : nullptr,
         column_nullable ? column_nullable->getNullMapColumnPtr() : nullptr,
-        std::make_shared<SerializationNamed>(std::make_shared<SerializationNumber<UInt8>>(), "null", false),
-        nullptr,
+        data.serialization_info,
     };
 
     callback(path);
 
     path.back() = Substream::NullableElements;
-    path.back().data = {type, column, getPtr(), std::make_shared<SubcolumnCreator>(path.back().data.column)};
+    path.back().creator = std::make_shared<SubcolumnCreator>(path.back().data.column);
+    path.back().data = data;
 
-    auto next_type = type_nullable ? type_nullable->getNestedType() : nullptr;
-    auto next_column = column_nullable ? column_nullable->getNestedColumnPtr() : nullptr;
+    SubstreamData next_data =
+    {
+        nested,
+        type_nullable ? type_nullable->getNestedType() : nullptr,
+        column_nullable ? column_nullable->getNestedColumnPtr() : nullptr,
+        data.serialization_info,
+    };
 
-    nested->enumerateStreams(path, callback, next_type, next_column);
+    nested->enumerateStreams(path, callback, next_data);
     path.pop_back();
 }
 

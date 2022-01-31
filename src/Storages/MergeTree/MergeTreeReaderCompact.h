@@ -52,6 +52,9 @@ private:
     /// Should we read full column or only it's offsets
     std::vector<bool> read_only_offsets;
 
+    /// For asynchronous reading from remote fs. Same meaning as in MergeTreeReaderStream.
+    std::optional<size_t> last_right_offset;
+
     size_t next_mark = 0;
     std::optional<std::pair<size_t, size_t>> last_read_granule;
 
@@ -67,6 +70,9 @@ private:
         MergeTreeMarksLoader & marks_loader,
         const ColumnPositions & column_positions,
         const MarkRanges & mark_ranges);
+
+    /// For asynchronous reading from remote fs.
+    void adjustUpperBound(size_t last_mark);
 };
 
 }

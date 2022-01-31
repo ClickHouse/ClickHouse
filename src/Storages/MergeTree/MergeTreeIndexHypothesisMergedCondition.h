@@ -21,11 +21,14 @@ public:
 private:
     void addConstraints(const ConstraintsDescription & constraints_description);
     std::unique_ptr<ComparisonGraph> buildGraph(const std::vector<bool> & values) const;
-    const ComparisonGraph & getGraph(const std::vector<bool> & values) const;
+    const ComparisonGraph * getGraph(const std::vector<bool> & values) const;
 
     ASTPtr expression_ast;
     std::unique_ptr<CNFQuery> expression_cnf;
 
+    /// Part analysis can be done in parallel.
+    /// So, we have shared answer and graph cache.
+    mutable std::mutex cache_mutex;
     mutable std::unordered_map<std::vector<bool>, std::unique_ptr<ComparisonGraph>> graph_cache;
     mutable std::unordered_map<std::vector<bool>, bool> answer_cache;
 

@@ -135,6 +135,9 @@ public:
     /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
 
+    /// Returns true if the storage supports optimization of moving conditions to PREWHERE section.
+    virtual bool canMoveConditionsToPrewhere() const { return supportsPrewhere(); }
+
     /// Returns true if the storage replicates SELECT, INSERT and ALTER commands among replicas.
     virtual bool supportsReplication() const { return false; }
 
@@ -511,7 +514,7 @@ public:
     virtual void shutdown() {}
 
     /// Called before shutdown() to flush data to underlying storage
-    /// (for Buffer)
+    /// Data in memory need to be persistent
     virtual void flush() {}
 
     /// Asks table to stop executing some action identified by action_type
