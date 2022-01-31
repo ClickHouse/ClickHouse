@@ -37,7 +37,7 @@ bool RegexpFieldExtractor::parseRow(PeekableReadBuffer & buf)
 
     do
     {
-        char * pos = find_first_symbols<'\n', '\r'>(buf.position(), buf.buffer().end());
+        char * pos = find_first_symbols<'\n'>(buf.position(), buf.buffer().end());
         line_size += pos - buf.position();
         buf.position() = pos;
     } while (buf.position() == buf.buffer().end() && !buf.eof());
@@ -45,15 +45,19 @@ bool RegexpFieldExtractor::parseRow(PeekableReadBuffer & buf)
     buf.makeContinuousMemoryFromCheckpointToPos();
     buf.rollbackToCheckpoint();
 
-    bool match = re2_st::RE2::FullMatchN(re2_st::StringPiece(buf.position(), line_size), regexp, re2_arguments_ptrs.data(), re2_arguments_ptrs.size());
+    /// Allow DOS line endings.
+    size_t line_to_match = line_size;
+    if (line_size > 0 && buf.position()[line_size - 1] == '\r')
+        --line_to_match;
+
+    bool match = re2_st::RE2::FullMatchN(re2_st::StringPiece(buf.position(), line_to_match), regexp, re2_arguments_ptrs.data(), re2_arguments_ptrs.size());
 
     if (!match && !skip_unmatched)
-        throw Exception("Line \"" + std::string(buf.position(), line_size) + "\" doesn't match the regexp.", ErrorCodes::INCORRECT_DATA);
+        throw Exception("Line \"" + std::string(buf.position(), line_to_match) + "\" doesn't match the regexp.", ErrorCodes::INCORRECT_DATA);
 
     buf.position() += line_size;
-    checkChar('\r', buf);
     if (!buf.eof() && !checkChar('\n', buf))
-        throw Exception("No \\n after \\r at the end of line.", ErrorCodes::INCORRECT_DATA);
+        throw Exception("No \\n at the end of line.", ErrorCodes::LOGICAL_ERROR);
 
     return match;
 }
@@ -65,12 +69,12 @@ RegexpRowInputFormat::RegexpRowInputFormat(
 }
 
 RegexpRowInputFormat::RegexpRowInputFormat(
-        std::unique_ptr<PeekableReadBuffer> buf_, const Block & header_, Params params_, const FormatSettings & format_settings_)
-        : IRowInputFormat(header_, *buf_, std::move(params_))
-        , buf(std::move(buf_))
-        , format_settings(format_settings_)
-        , escaping_rule(format_settings_.regexp.escaping_rule)
-        , field_extractor(RegexpFieldExtractor(format_settings_))
+    std::unique_ptr<PeekableReadBuffer> buf_, const Block & header_, Params params_, const FormatSettings & format_settings_)
+    : IRowInputFormat(header_, *buf_, std::move(params_))
+    , buf(std::move(buf_))
+    , format_settings(format_settings_)
+    , escaping_rule(format_settings_.regexp.escaping_rule)
+    , field_extractor(RegexpFieldExtractor(format_settings_))
 {
 }
 
