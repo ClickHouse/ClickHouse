@@ -205,8 +205,8 @@ private:
     /// and destroy object immediately.
     std::mutex finish_and_wait_mutex;
     /// We don't use parsing_finished flag because it can be setup from multiple
-    /// place in code. For example in case of bad of data. It doesn't mean that
-    /// we don't need to finishAndWait our class.
+    /// place in code. For example in case of bad data. It doesn't mean that we
+    /// don't need to finishAndWait our class.
     bool finish_and_wait_called = false;
 
     std::condition_variable reader_condvar;
