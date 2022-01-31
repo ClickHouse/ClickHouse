@@ -98,6 +98,8 @@ public:
 
     void removeSharedFileIfExists(const String & path, bool keep_in_remote_fs) override;
 
+    void removeSharedFiles(const RemoveBatchRequest & files, bool keep_in_remote_fs) override;
+
     void removeSharedRecursive(const String & path, bool keep_in_remote_fs) override;
 
     void listFiles(const String & path, std::vector<String> & file_names) override;
@@ -135,6 +137,7 @@ public:
     virtual RemoteFSPathKeeperPtr createFSPathKeeper() const = 0;
 
     static AsynchronousReaderPtr getThreadPoolReader();
+    static ThreadPool & getThreadPoolWriter();
 
     virtual std::unique_ptr<ReadBufferFromFileBase> readMetaFile(
         const String & path,

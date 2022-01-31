@@ -67,7 +67,7 @@
 #include <boost/algorithm/string/replace.hpp>
 
 #include <base/insertAtEnd.h>
-#include <base/scope_guard_safe.h>
+#include <base/sort.h>
 
 #include <algorithm>
 #include <iomanip>
@@ -1590,12 +1590,8 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_re
         {
             pool.scheduleOrThrowOnError([&, thread_group = CurrentThread::getGroup()]
             {
-                SCOPE_EXIT_SAFE(
-                    if (thread_group)
-                        CurrentThread::detachQueryIfNotDetached();
-                );
                 if (thread_group)
-                    CurrentThread::attachTo(thread_group);
+                    CurrentThread::attachToIfDetached(thread_group);
 
                 LOG_DEBUG(log, "Removing part from filesystem {}", part->name);
                 part->remove();
@@ -1627,7 +1623,7 @@ size_t MergeTreeData::clearOldWriteAheadLogs()
     if (all_block_numbers_on_disk.empty())
         return 0;
 
-    std::sort(all_block_numbers_on_disk.begin(), all_block_numbers_on_disk.end());
+    ::sort(all_block_numbers_on_disk.begin(), all_block_numbers_on_disk.end());
     block_numbers_on_disk.push_back(all_block_numbers_on_disk[0]);
     for (size_t i = 1; i < all_block_numbers_on_disk.size(); ++i)
     {
@@ -2442,7 +2438,12 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
 }
 
 
-bool MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction, MergeTreeDeduplicationLog * deduplication_log)
+bool MergeTreeData::renameTempPartAndAdd(
+    MutableDataPartPtr & part,
+    SimpleIncrement * increment,
+    Transaction * out_transaction,
+    MergeTreeDeduplicationLog * deduplication_log,
+    std::string_view deduplication_token)
 {
     if (out_transaction && &out_transaction->data != this)
         throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
@@ -2451,7 +2452,7 @@ bool MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrem
     DataPartsVector covered_parts;
     {
         auto lock = lockParts();
-        if (!renameTempPartAndReplace(part, increment, out_transaction, lock, &covered_parts, deduplication_log))
+        if (!renameTempPartAndReplace(part, increment, out_transaction, lock, &covered_parts, deduplication_log, deduplication_token))
             return false;
     }
     if (!covered_parts.empty())
@@ -2463,8 +2464,13 @@ bool MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrem
 
 
 bool MergeTreeData::renameTempPartAndReplace(
-    MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction,
-    std::unique_lock<std::mutex> & lock, DataPartsVector * out_covered_parts, MergeTreeDeduplicationLog * deduplication_log)
+    MutableDataPartPtr & part,
+    SimpleIncrement * increment,
+    Transaction * out_transaction,
+    std::unique_lock<std::mutex> & lock,
+    DataPartsVector * out_covered_parts,
+    MergeTreeDeduplicationLog * deduplication_log,
+    std::string_view deduplication_token)
 {
     if (out_transaction && &out_transaction->data != this)
         throw Exception("MergeTreeData::Transaction for one table cannot be used with another. It is a bug.",
@@ -2526,7 +2532,7 @@ bool MergeTreeData::renameTempPartAndReplace(
     /// deduplication.
     if (deduplication_log)
     {
-        String block_id = part->getZeroLevelPartBlockID();
+        String block_id = part->getZeroLevelPartBlockID(deduplication_token);
         auto res = deduplication_log->addPart(block_id, part_info);
         if (!res.second)
         {

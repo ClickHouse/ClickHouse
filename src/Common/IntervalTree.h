@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/defines.h>
+#include <base/sort.h>
 
 #include <vector>
 #include <utility>
@@ -489,14 +490,14 @@ private:
                 }
             }
 
-            std::sort(intervals_sorted_by_left_asc.begin(), intervals_sorted_by_left_asc.end(), [](auto & lhs, auto & rhs)
+            ::sort(intervals_sorted_by_left_asc.begin(), intervals_sorted_by_left_asc.end(), [](auto & lhs, auto & rhs)
             {
                 auto & lhs_interval = getInterval(lhs);
                 auto & rhs_interval = getInterval(rhs);
                 return lhs_interval.left < rhs_interval.left;
             });
 
-            std::sort(intervals_sorted_by_right_desc.begin(), intervals_sorted_by_right_desc.end(), [](auto & lhs, auto & rhs)
+            ::sort(intervals_sorted_by_right_desc.begin(), intervals_sorted_by_right_desc.end(), [](auto & lhs, auto & rhs)
             {
                 auto & lhs_interval = getInterval(lhs);
                 auto & rhs_interval = getInterval(rhs);
@@ -681,7 +682,7 @@ private:
         size_t size = points.size();
         size_t middle_element_index = size / 2;
 
-        std::nth_element(points.begin(), points.begin() + middle_element_index, points.end());
+        ::nth_element(points.begin(), points.begin() + middle_element_index, points.end());
 
         /** We should not get median as average of middle_element_index and middle_element_index - 1
           * because we want point in node to intersect some interval.
