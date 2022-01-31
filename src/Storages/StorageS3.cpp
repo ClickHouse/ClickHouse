@@ -296,7 +296,6 @@ String StorageS3Source::getName() const
 
 Chunk StorageS3Source::generate()
 {
-    std::lock_guard lock(reader_mutex);
     if (!reader)
         return {};
 
@@ -317,12 +316,15 @@ Chunk StorageS3Source::generate()
         return chunk;
     }
 
-    reader.reset();
-    pipeline.reset();
-    read_buf.reset();
+    {
+        std::lock_guard lock(reader_mutex);
+        reader.reset();
+        pipeline.reset();
+        read_buf.reset();
 
-    if (!initialize())
-        return {};
+        if (!initialize())
+            return {};
+    }
 
     return generate();
 }

@@ -246,7 +246,6 @@ namespace
         {
             while (true)
             {
-                std::lock_guard lock(reader_mutex);
 
                 if (!reader)
                 {
@@ -255,6 +254,8 @@ namespace
                         return {};
 
                     auto current_uri = uri_info->uri_list_to_read[current_uri_pos];
+
+                    std::lock_guard lock(reader_mutex);
                     initialize(current_uri);
                 }
 
@@ -262,8 +263,11 @@ namespace
                 if (reader->pull(chunk))
                     return chunk;
 
-                pipeline->reset();
-                reader.reset();
+                {
+                    std::lock_guard lock(reader_mutex);
+                    pipeline->reset();
+                    reader.reset();
+                }
             }
         }
 
