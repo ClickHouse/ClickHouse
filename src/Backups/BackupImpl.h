@@ -71,6 +71,8 @@ private:
         UInt128 base_checksum{0, 0};
     };
 
+    class BackupEntryFromBackupImpl;
+
     const String backup_name;
     ContextPtr context;
     const std::optional<BackupInfo> base_backup_info_param;

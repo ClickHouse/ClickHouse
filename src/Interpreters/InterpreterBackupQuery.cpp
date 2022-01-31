@@ -20,7 +20,7 @@ namespace
         params.open_mode = IBackup::OpenMode::WRITE;
         params.context = context;
         params.backup_info = backup_info;
-        params.base_backup_info = backup_settings.base_backup_info ? *backup_settings.base_backup_info : std::optional<BackupInfo>{};
+        params.base_backup_info = backup_settings.base_backup_info;
         params.compression_method = backup_settings.compression_method;
         params.compression_level = backup_settings.compression_level;
         params.password = backup_settings.password;
@@ -33,7 +33,7 @@ namespace
         params.open_mode = IBackup::OpenMode::READ;
         params.context = context;
         params.backup_info = backup_info;
-        params.base_backup_info = restore_settings.base_backup_info ? *restore_settings.base_backup_info : std::optional<BackupInfo>{};
+        params.base_backup_info = restore_settings.base_backup_info;
         params.password = restore_settings.password;
         return BackupFactory::instance().createBackup(params);
     }

@@ -17,7 +17,7 @@ RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)
     RestoreSettings res;
 
     if (query.base_backup_name)
-        res.base_backup_info = std::make_shared<BackupInfo>(BackupInfo::fromAST(*query.base_backup_name));
+        res.base_backup_info = BackupInfo::fromAST(*query.base_backup_name);
 
     if (query.settings)
     {
@@ -32,10 +32,10 @@ RestoreSettings RestoreSettings::fromRestoreQuery(const ASTBackupQuery & query)
                 res.throw_if_database_exists = SettingFieldBool{setting.value};
             else if (setting.name == "throw_if_table_exists")
                 res.throw_if_table_exists = SettingFieldBool{setting.value};
-            else if (setting.name == "throw_if_database_has_different_definition")
-                res.throw_if_database_has_different_definition = SettingFieldBool{setting.value};
-            else if (setting.name == "throw_if_table_has_different_definition")
-                res.throw_if_table_has_different_definition = SettingFieldBool{setting.value};
+            else if (setting.name == "throw_if_database_def_differs")
+                res.throw_if_database_def_differs = SettingFieldBool{setting.value};
+            else if (setting.name == "throw_if_table_def_differs")
+                res.throw_if_table_def_differs = SettingFieldBool{setting.value};
             else
                 throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting {}", setting.name);
         }

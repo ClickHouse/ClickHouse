@@ -37,6 +37,7 @@ namespace
     using Element = ASTBackupQuery::Element;
     using Elements = ASTBackupQuery::Elements;
     using ElementType = ASTBackupQuery::ElementType;
+    using RestoreSettingsPtr = std::shared_ptr<const RestoreSettings>;
 
 
     /// Restores a database (without tables inside), should be executed before executing
@@ -47,12 +48,12 @@ namespace
         RestoreDatabaseTask(
             ContextMutablePtr context_,
             const ASTPtr & create_query_,
-            const RestoreSettings & restore_settings_,
-            bool skip_same_definition_check_)
+            const RestoreSettingsPtr & restore_settings_,
+            bool ignore_if_database_def_differs_)
             : context(context_)
             , create_query(typeid_cast<std::shared_ptr<ASTCreateQuery>>(create_query_))
             , restore_settings(restore_settings_)
-            , skip_same_definition_check(skip_same_definition_check_)
+            , ignore_if_database_def_differs(ignore_if_database_def_differs_)
         {
         }
 
@@ -91,7 +92,7 @@ namespace
 
         void checkDatabaseCreateQuery()
         {
-            if (skip_same_definition_check || !restore_settings.throw_if_database_has_different_definition)
+            if (ignore_if_database_def_differs || !restore_settings->throw_if_database_def_differs)
                 return;
 
             getDatabaseCreateQuery();
@@ -109,8 +110,8 @@ namespace
 
         ContextMutablePtr context;
         std::shared_ptr<ASTCreateQuery> create_query;
-        RestoreSettings restore_settings;
-        bool skip_same_definition_check = false;
+        RestoreSettingsPtr restore_settings;
+        bool ignore_if_database_def_differs = false;
         DatabasePtr database;
         ASTPtr database_create_query;
     };
@@ -126,7 +127,7 @@ namespace
             const ASTs & partitions_,
             const BackupPtr & backup_,
             const DatabaseAndTableName & table_name_in_backup_,
-            const RestoreSettings & restore_settings_)
+            const RestoreSettingsPtr & restore_settings_)
             : context(context_), create_query(typeid_cast<std::shared_ptr<ASTCreateQuery>>(create_query_)),
               partitions(partitions_), backup(backup_), table_name_in_backup(table_name_in_backup_),
               restore_settings(restore_settings_)
@@ -177,7 +178,7 @@ namespace
 
         void checkStorageCreateQuery()
         {
-            if (!restore_settings.throw_if_table_has_different_definition)
+            if (!restore_settings->throw_if_table_def_differs)
                 return;
 
             getStorageCreateQuery();
@@ -199,7 +200,7 @@ namespace
                 return *has_data;
 
             has_data = false;
-            if (restore_settings.structure_only)
+            if (restore_settings->structure_only)
                 return false;
 
             data_path_in_backup = getDataPathInBackup(table_name_in_backup);
@@ -230,7 +231,7 @@ namespace
         {
             if (!hasData())
                 return {};
-            return storage->restoreFromBackup(context, partitions, backup, data_path_in_backup, restore_settings);
+            return storage->restoreFromBackup(context, partitions, backup, data_path_in_backup, *restore_settings);
         }
 
         ContextMutablePtr context;
@@ -239,7 +240,7 @@ namespace
         ASTs partitions;
         BackupPtr backup;
         DatabaseAndTableName table_name_in_backup;
-        RestoreSettings restore_settings;
+        RestoreSettingsPtr restore_settings;
         DatabasePtr database;
         StoragePtr storage;
         ASTPtr storage_create_query;
@@ -304,14 +305,16 @@ namespace
                                     serializeAST(*info.create_query), serializeAST(*info.different_create_query));
             }
 
+            auto restore_settings_ptr = std::make_shared<const RestoreSettings>(restore_settings);
+
             RestoreTasks res;
             for (auto & info : databases | boost::adaptors::map_values)
-                res.push_back(std::make_unique<RestoreDatabaseTask>(context, info.create_query, restore_settings,
-                                                                    /* skip_same_definition_check = */ !info.is_explicit));
+                res.push_back(std::make_unique<RestoreDatabaseTask>(context, info.create_query, restore_settings_ptr,
+                                                                    /* ignore_if_database_def_differs = */ !info.is_explicit));
 
             /// TODO: We need to restore tables according to their dependencies.
             for (auto & info : tables | boost::adaptors::map_values)
-                res.push_back(std::make_unique<RestoreTableTask>(context, info.create_query, info.partitions, backup, info.name_in_backup, restore_settings));
+                res.push_back(std::make_unique<RestoreTableTask>(context, info.create_query, info.partitions, backup, info.name_in_backup, restore_settings_ptr));
 
             return res;
         }
