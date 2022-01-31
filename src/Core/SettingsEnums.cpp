@@ -93,6 +93,26 @@ IMPLEMENT_SETTING_ENUM_WITH_RENAME(DefaultDatabaseEngine, ErrorCodes::BAD_ARGUME
     {{"Ordinary", DefaultDatabaseEngine::Ordinary},
      {"Atomic",   DefaultDatabaseEngine::Atomic}})
 
+IMPLEMENT_SETTING_ENUM_WITH_RENAME(DefaultTableEngine, ErrorCodes::BAD_ARGUMENTS,
+    {{"Non", DefaultTableEngine::None},
+     {"Log", DefaultTableEngine::Log},
+     {"StripeLog", DefaultTableEngine::StripeLog},
+     {"MergeTree", DefaultTableEngine::MergeTree},
+     {"CollapsingMergeTree", DefaultTableEngine::CollapsingMergeTree},
+     {"ReplacingMergeTree", DefaultTableEngine::ReplacingMergeTree},
+     {"AggregatingMergeTree", DefaultTableEngine::AggregatingMergeTree},
+     {"SummingMergeTree", DefaultTableEngine::SummingMergeTree},
+     {"GraphiteMergeTree", DefaultTableEngine::GraphiteMergeTree},
+     {"VersionedCollapsingMergeTree", DefaultTableEngine::VersionedCollapsingMergeTree},
+     {"ReplicatedMergeTree", DefaultTableEngine::ReplicatedMergeTree},
+     {"ReplicatedCollapsingMergeTree", DefaultTableEngine::ReplicatedCollapsingMergeTree},
+     {"ReplicatedReplacingMergeTree", DefaultTableEngine::ReplicatedReplacingMergeTree},
+     {"ReplicatedAggregatingMergeTree", DefaultTableEngine::ReplicatedAggregatingMergeTree},
+     {"ReplicatedSummingMergeTree", DefaultTableEngine::ReplicatedSummingMergeTree},
+     {"ReplicatedGraphiteMergeTree", DefaultTableEngine::ReplicatedGraphiteMergeTree},
+     {"ReplicatedVersionedCollapsingMergeTree", DefaultTableEngine::ReplicatedVersionedCollapsingMergeTree},
+     {"Memory", DefaultTableEngine::Memory}})
+
 IMPLEMENT_SETTING_MULTI_ENUM(MySQLDataTypesSupport, ErrorCodes::UNKNOWN_MYSQL_DATATYPES_SUPPORT_LEVEL,
     {{"decimal",    MySQLDataTypesSupport::DECIMAL},
      {"datetime64", MySQLDataTypesSupport::DATETIME64}})
