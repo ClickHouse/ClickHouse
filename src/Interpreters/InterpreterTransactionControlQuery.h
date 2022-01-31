@@ -18,6 +18,8 @@ public:
 
     bool ignoreQuota() const override { return true; }
     bool ignoreLimits() const override { return true; }
+    bool supportsTransactions() const override { return true; }
+
 private:
     BlockIO executeBegin(ContextMutablePtr session_context);
     static BlockIO executeCommit(ContextMutablePtr session_context);

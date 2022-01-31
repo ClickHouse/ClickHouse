@@ -304,6 +304,9 @@ void StorageMergeTree::alter(
     ContextPtr local_context,
     AlterLockHolder & table_lock_holder)
 {
+    if (local_context->getCurrentTransaction() && local_context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ALTER METADATA is not supported inside transactions");
+
     auto table_id = getStorageID();
     auto old_storage_settings = getSettings();
 
@@ -715,7 +718,7 @@ void StorageMergeTree::loadMutations()
 
                 if (!entry.tid.isPrehistoric())
                 {
-                    if (!TransactionLog::instance().getCSN(entry.tid))
+                    if (!TransactionLog::getCSN(entry.tid))
                     {
                         LOG_DEBUG(log, "Mutation entry {} was created by transaction {}, but it was not committed. Removing mutation entry",
                                   it->name(), entry.tid);
@@ -1247,7 +1250,7 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
         for (size_t i = 0; i < to_delete_count; ++i)
         {
             const auto & tid = it->second.tid;
-            if (!tid.isPrehistoric() && !TransactionLog::instance().getCSN(tid))
+            if (!tid.isPrehistoric() && !TransactionLog::getCSN(tid))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove mutation {}, because transaction {} is not committed. It's a bug",
                                 it->first, tid);
             mutations_to_delete.push_back(std::move(it->second));

@@ -67,5 +67,23 @@ begin transaction;
 select 'readonly', arraySort(groupArray(n)) from (select n from mt1 union all select * from mt2);
 commit;
 
+begin transaction;
+create table m (n int) engine=Memory; -- { serverError 48 }
+commit; -- { serverError 700 }
+rollback;
+
+create table m (n int) engine=Memory;
+begin transaction;
+insert into m values (1); -- { serverError 48 }
+select * from m; -- { serverError 700 }
+commit; -- { serverError 700 }
+rollback;
+
+begin transaction;
+select * from m; -- { serverError 48 }
+commit; -- { serverError 700 }
+rollback;
+
+drop table m;
 drop table mt1;
 drop table mt2;

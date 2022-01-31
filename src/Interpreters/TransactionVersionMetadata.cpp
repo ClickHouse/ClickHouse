@@ -220,7 +220,7 @@ bool VersionMetadata::isVisible(Snapshot snapshot_version, TransactionID current
     /// so we can determine their visibility through fast path.
     /// But for long-running writing transactions we will always do
     /// CNS lookup and get 0 (UnknownCSN) until the transaction is committer/rolled back.
-    min = TransactionLog::instance().getCSN(creation_tid);
+    min = TransactionLog::getCSN(creation_tid);
     if (!min)
         return false;   /// Part creation is not committed yet
 
@@ -230,7 +230,7 @@ bool VersionMetadata::isVisible(Snapshot snapshot_version, TransactionID current
 
     if (max_lock)
     {
-        max = TransactionLog::instance().getCSN(max_lock);
+        max = TransactionLog::getCSN(max_lock);
         if (max)
             removal_csn.store(max, std::memory_order_relaxed);
     }
@@ -238,7 +238,24 @@ bool VersionMetadata::isVisible(Snapshot snapshot_version, TransactionID current
     return min <= snapshot_version && (!max || snapshot_version < max);
 }
 
-bool VersionMetadata::canBeRemoved(Snapshot oldest_snapshot_version)
+bool VersionMetadata::canBeRemoved()
+{
+    if (creation_tid == Tx::PrehistoricTID)
+    {
+        /// Avoid access to Transaction log if transactions are not involved
+
+        TIDHash max_lock = removal_tid_lock.load(std::memory_order_relaxed);
+        if (!max_lock)
+            return false;
+
+        if (max_lock == Tx::PrehistoricTID.getHash())
+            return true;
+    }
+
+    return canBeRemovedImpl(TransactionLog::instance().getOldestSnapshot());
+}
+
+bool VersionMetadata::canBeRemovedImpl(Snapshot oldest_snapshot_version)
 {
     CSN min = creation_csn.load(std::memory_order_relaxed);
     /// We can safely remove part if its creation was rolled back
@@ -248,7 +265,7 @@ bool VersionMetadata::canBeRemoved(Snapshot oldest_snapshot_version)
     if (!min)
     {
         /// Cannot remove part if its creation not committed yet
-        min = TransactionLog::instance().getCSN(creation_tid);
+        min = TransactionLog::getCSN(creation_tid);
         if (min)
             creation_csn.store(min, std::memory_order_relaxed);
         else
@@ -268,7 +285,7 @@ bool VersionMetadata::canBeRemoved(Snapshot oldest_snapshot_version)
     if (!max)
     {
         /// Part removal is not committed yet
-        max = TransactionLog::instance().getCSN(max_lock);
+        max = TransactionLog::getCSN(max_lock);
         if (max)
             removal_csn.store(max, std::memory_order_relaxed);
         else

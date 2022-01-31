@@ -50,6 +50,7 @@ function thread_partition_src_to_dst()
         INSERT INTO src VALUES ($i, 3);
         INSERT INTO dst SELECT * FROM src;
         ALTER TABLE src DROP PARTITION ID 'all';
+        SET throw_on_unsupported_query_inside_transaction=0;
         SELECT throwIf((SELECT (count(), sum(n)) FROM merge(currentDatabase(), '') WHERE type=3) != ($count + 1, $sum + $i)) FORMAT Null;
         COMMIT;" 2>&1) ||:
 
@@ -73,6 +74,7 @@ function thread_partition_dst_to_src()
         INSERT INTO dst VALUES ($i, 4);
         INSERT INTO src SELECT * FROM dst;
         ALTER TABLE dst DROP PARTITION ID 'all';
+        SET throw_on_unsupported_query_inside_transaction=0;
         SYSTEM START MERGES dst;
         SELECT throwIf((SELECT (count(), sum(n)) FROM merge(currentDatabase(), '') WHERE type=4) != (toUInt8($i/2 + 1), (select sum(number) from numbers(1, $i) where number % 2 or number=$i))) FORMAT Null;
         $action;" || $CLICKHOUSE_CLIENT -q "SELECT _table, type, arraySort(groupArray(n)) FROM merge(currentDatabase(), '') GROUP BY _table, type ORDER BY _table, type"
@@ -90,6 +92,7 @@ function thread_select()
         SELECT type, throwIf(count(n) != countDistinct(n)) FROM src GROUP BY type FORMAT Null;
         SELECT type, throwIf(count(n) != countDistinct(n)) FROM dst GROUP BY type FORMAT Null;
         -- rows inserted by thread_insert moved together
+        SET throw_on_unsupported_query_inside_transaction=0;
         SELECT _table, throwIf(arraySort(groupArrayIf(n, type=1)) != arraySort(groupArrayIf(n, type=2))) FROM merge(currentDatabase(), '') GROUP BY _table FORMAT Null;
         -- all rows are inserted in insert_thread
         SELECT type, throwIf(count(n) != max(n)), throwIf(sum(n) != max(n)*(max(n)+1)/2) FROM merge(currentDatabase(), '') WHERE type IN (1, 2) GROUP BY type ORDER BY type FORMAT Null;

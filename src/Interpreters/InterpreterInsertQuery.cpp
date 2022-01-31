@@ -263,6 +263,8 @@ BlockIO InterpreterInsertQuery::execute()
     QueryPipelineBuilder pipeline;
 
     StoragePtr table = getTable(query);
+    checkStorageSupportsTransactionsIfNeeded(table, getContext());
+
     StoragePtr inner_table;
     if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
         inner_table = mv->getTargetTable();

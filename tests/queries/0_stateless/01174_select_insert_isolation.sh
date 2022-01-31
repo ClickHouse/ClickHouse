@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: long
 
 # shellcheck disable=SC2015
 

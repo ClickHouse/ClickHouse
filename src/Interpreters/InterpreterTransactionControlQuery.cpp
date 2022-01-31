@@ -38,6 +38,7 @@ BlockIO InterpreterTransactionControlQuery::executeBegin(ContextMutablePtr sessi
     if (session_context->getCurrentTransaction())
         throw Exception(ErrorCodes::INVALID_TRANSACTION, "Nested transactions are not supported");
 
+    session_context->checkTransactionsAreAllowed(/* explicit_tcl_query = */ true);
     auto txn = TransactionLog::instance().beginTransaction();
     session_context->initCurrentTransaction(txn);
     query_context->setCurrentTransaction(txn);

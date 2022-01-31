@@ -1320,7 +1320,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         bool versions_updated = false;
         if (!versions.creation_tid.isEmpty() && !part->version.creation_csn)
         {
-            auto min = TransactionLog::instance().getCSN(versions.creation_tid);
+            auto min = TransactionLog::getCSN(versions.creation_tid);
             if (!min)
             {
                 /// Transaction that created this part was not committed. Remove part.
@@ -1333,7 +1333,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
         }
         if (!versions.removal_tid.isEmpty() && !part->version.removal_csn)
         {
-            auto max = TransactionLog::instance().getCSN(versions.removal_tid);
+            auto max = TransactionLog::getCSN(versions.removal_tid);
             if (max)
             {
                 LOG_TRACE(log, "Will fix version metadata of {} after unclean restart: part has removal_tid={}, setting removal_csn={}",
@@ -1527,7 +1527,7 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
             const DataPartPtr & part = *it;
 
             /// Do not remove outdated part if it may be visible for some transaction
-            if (!part->version.canBeRemoved(TransactionLog::instance().getOldestSnapshot()))
+            if (!part->version.canBeRemoved())
                 continue;
 
             auto part_remove_time = part->remove_time.load(std::memory_order_relaxed);
@@ -1767,7 +1767,7 @@ size_t MergeTreeData::clearEmptyParts()
             continue;
 
         /// Do not try to drop uncommitted parts.
-        if (!part->version.isVisible(TransactionLog::instance().getLatestSnapshot()))
+        if (!part->version.getCreationTID().isPrehistoric() && !part->version.isVisible(TransactionLog::instance().getLatestSnapshot()))
             continue;
 
         LOG_TRACE(log, "Will drop empty part {}", part->name);

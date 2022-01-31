@@ -104,6 +104,8 @@ public:
 
     Names getRequiredColumns() { return required_columns; }
 
+    bool supportsTransactions() const override { return true; }
+
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,

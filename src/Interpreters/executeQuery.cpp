@@ -644,10 +644,17 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             const auto & table_id = insert_query->table_id;
             if (!table_id.empty())
                 context->setInsertionTable(table_id);
+
+            if (context->getCurrentTransaction() && context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts inside transactions are not supported");
         }
         else
         {
             interpreter = InterpreterFactory::get(ast, context, SelectQueryOptions(stage).setInternal(internal));
+
+            if (context->getCurrentTransaction() && !interpreter->supportsTransactions() &&
+                context->getSettingsRef().throw_on_unsupported_query_inside_transaction)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transactions are not supported for this type of query ({})", ast->getID());
 
             if (!interpreter->ignoreQuota())
             {
