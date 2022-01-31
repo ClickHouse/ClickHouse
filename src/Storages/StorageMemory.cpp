@@ -17,8 +17,8 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <Backups/BackupEntryFromImmutableFile.h>
 #include <Backups/IBackup.h>
+#include <Backups/IBackupEntriesBatch.h>
 #include <Backups/IRestoreTask.h>
 #include <IO/copyData.h>
 #include <IO/createReadBufferFromFileBase.h>
@@ -339,65 +339,106 @@ void StorageMemory::truncate(
 }
 
 
+class MemoryBackupEntriesBatch : public shared_ptr_helper<MemoryBackupEntriesBatch>, public IBackupEntriesBatch
+{
+private:
+    friend struct shared_ptr_helper<MemoryBackupEntriesBatch>;
+
+    MemoryBackupEntriesBatch(
+        const StorageMetadataPtr & metadata_snapshot_, const std::shared_ptr<const Blocks> blocks_, UInt64 max_compress_block_size_)
+        : IBackupEntriesBatch({"data.bin", "index.mrk", "sizes.json"})
+        , metadata_snapshot(metadata_snapshot_)
+        , blocks(blocks_)
+        , max_compress_block_size(max_compress_block_size_)
+    {
+    }
+
+    static constexpr const size_t kDataBinPos = 0;
+    static constexpr const size_t kIndexMrkPos = 1;
+    static constexpr const size_t kSizesJsonPos = 2;
+    static constexpr const size_t kSize = 3;
+
+    void initialize()
+    {
+        std::call_once(initialized_flag, [this]()
+        {
+            temp_dir_owner.emplace();
+            auto temp_dir = temp_dir_owner->path();
+            fs::create_directories(temp_dir);
+
+            /// Writing data.bin
+            constexpr char data_file_name[] = "data.bin";
+            String data_file_path = temp_dir + "/" + data_file_name;
+            IndexForNativeFormat index;
+            {
+                auto data_out_compressed = std::make_unique<WriteBufferFromFile>(data_file_path);
+                CompressedWriteBuffer data_out{*data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), max_compress_block_size};
+                NativeWriter block_out{data_out, 0, metadata_snapshot->getSampleBlock(), false, &index};
+                for (const auto & block : *blocks)
+                    block_out.write(block);
+            }
+
+            /// Writing index.mrk
+            constexpr char index_file_name[] = "index.mrk";
+            String index_file_path = temp_dir + "/" + index_file_name;
+            {
+                auto index_out_compressed = std::make_unique<WriteBufferFromFile>(index_file_path);
+                CompressedWriteBuffer index_out{*index_out_compressed};
+                index.write(index_out);
+            }
+
+            /// Writing sizes.json
+            constexpr char sizes_file_name[] = "sizes.json";
+            String sizes_file_path = temp_dir + "/" + sizes_file_name;
+            FileChecker file_checker{sizes_file_path};
+            file_checker.update(data_file_path);
+            file_checker.update(index_file_path);
+            file_checker.save();
+
+            file_paths[kDataBinPos] = data_file_path;
+            file_sizes[kDataBinPos] = file_checker.getFileSize(data_file_path);
+
+            file_paths[kIndexMrkPos] = index_file_path;
+            file_sizes[kIndexMrkPos] = file_checker.getFileSize(index_file_path);
+
+            file_paths[kSizesJsonPos] = sizes_file_path;
+            file_sizes[kSizesJsonPos] = fs::file_size(sizes_file_path);
+
+            /// We don't need to keep `blocks` any longer.
+            blocks.reset();
+            metadata_snapshot.reset();
+        });
+    }
+
+    std::unique_ptr<ReadBuffer> getReadBuffer(size_t index) override
+    {
+        initialize();
+        return createReadBufferFromFileBase(file_paths[index], {});
+    }
+
+    UInt64 getSize(size_t index) override
+    {
+        initialize();
+        return file_sizes[index];
+    }
+
+    StorageMetadataPtr metadata_snapshot;
+    std::shared_ptr<const Blocks> blocks;
+    UInt64 max_compress_block_size;
+    std::once_flag initialized_flag;
+    std::optional<Poco::TemporaryFile> temp_dir_owner;
+    std::array<String, kSize> file_paths;
+    std::array<UInt64, kSize> file_sizes;
+};
+
+
 BackupEntries StorageMemory::backup(ContextPtr context, const ASTs & partitions)
 {
     if (!partitions.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
 
-    auto blocks = data.get();
-
-    /// We store our data in the StripeLog format.
-    BackupEntries backup_entries;
-    auto temp_dir_owner = std::make_shared<Poco::TemporaryFile>();
-    auto temp_dir = temp_dir_owner->path();
-    fs::create_directories(temp_dir);
-
-    /// Writing data.bin
-    constexpr char data_file_name[] = "data.bin";
-    String data_file_path = temp_dir + "/" + data_file_name;
-    IndexForNativeFormat index;
-    {
-        auto data_out_compressed = std::make_unique<WriteBufferFromFile>(data_file_path);
-        CompressedWriteBuffer data_out{*data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), context->getSettingsRef().max_compress_block_size};
-        NativeWriter block_out{data_out, 0, getInMemoryMetadataPtr()->getSampleBlock(), false, &index};
-        for (const auto & block : *blocks)
-            block_out.write(block);
-    }
-
-    /// Writing index.mrk
-    constexpr char index_file_name[] = "index.mrk";
-    String index_file_path = temp_dir + "/" + index_file_name;
-    {
-        auto index_out_compressed = std::make_unique<WriteBufferFromFile>(index_file_path);
-        CompressedWriteBuffer index_out{*index_out_compressed};
-        index.write(index_out);
-    }
-
-    /// Writing sizes.json
-    constexpr char sizes_file_name[] = "sizes.json";
-    String sizes_file_path = temp_dir + "/" + sizes_file_name;
-    FileChecker file_checker{sizes_file_path};
-    file_checker.update(data_file_path);
-    file_checker.update(index_file_path);
-    file_checker.save();
-
-    /// Prepare backup entries.
-    backup_entries.emplace_back(
-        data_file_name,
-        std::make_unique<BackupEntryFromImmutableFile>(
-            data_file_path, file_checker.getFileSize(data_file_path), std::nullopt, temp_dir_owner));
-
-    backup_entries.emplace_back(
-        index_file_name,
-        std::make_unique<BackupEntryFromImmutableFile>(
-            index_file_path, file_checker.getFileSize(index_file_path), std::nullopt, temp_dir_owner));
-
-    backup_entries.emplace_back(
-        sizes_file_name,
-        std::make_unique<BackupEntryFromImmutableFile>(
-            sizes_file_path, std::nullopt, std::nullopt, temp_dir_owner));
-
-    return backup_entries;
+    return MemoryBackupEntriesBatch::create(getInMemoryMetadataPtr(), data.get(), context->getSettingsRef().max_compress_block_size)
+        ->getBackupEntries();
 }
 
 
@@ -433,7 +474,7 @@ public:
             auto backup_entry = backup->readFile(data_file_path);
             std::unique_ptr<ReadBuffer> in = backup_entry->getReadBuffer();
             std::optional<Poco::TemporaryFile> temp_data_copy;
-            if (!typeid_cast<ReadBufferFromFileBase *>(in.get()))
+            if (!dynamic_cast<ReadBufferFromFileBase *>(in.get()))
             {
                 temp_data_copy.emplace();
                 auto temp_data_copy_out = std::make_unique<WriteBufferFromFile>(temp_data_copy->path());

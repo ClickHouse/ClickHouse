@@ -25,7 +25,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sinks/SinkToStorage.h>
 
-#include <Backups/BackupEntryFromImmutableFile.h>
+#include <Backups/BackupEntryFromAppendOnlyFile.h>
 #include <Backups/BackupEntryFromSmallFile.h>
 #include <Backups/IBackup.h>
 #include <Backups/IRestoreTask.h>
@@ -910,12 +910,12 @@ BackupEntries StorageLog::backup(ContextPtr context, const ASTs & partitions)
     {
         /// We make a copy of the data file because it can be changed later in write() or in truncate().
         String data_file_name = fileName(data_file.path);
-        String temp_file_path = temp_dir + "/" + data_file_name;
-        disk->copy(data_file.path, disk, temp_file_path);
+        String hardlink_file_path = temp_dir + "/" + data_file_name;
+        disk->createHardLink(data_file.path, hardlink_file_path);
         backup_entries.emplace_back(
             data_file_name,
-            std::make_unique<BackupEntryFromImmutableFile>(
-                disk, temp_file_path, file_checker.getFileSize(data_file.path), std::nullopt, temp_dir_owner));
+            std::make_unique<BackupEntryFromAppendOnlyFile>(
+                disk, hardlink_file_path, file_checker.getFileSize(data_file.path), std::nullopt, temp_dir_owner));
     }
 
     /// __marks.mrk
@@ -923,12 +923,12 @@ BackupEntries StorageLog::backup(ContextPtr context, const ASTs & partitions)
     {
         /// We make a copy of the data file because it can be changed later in write() or in truncate().
         String marks_file_name = fileName(marks_file_path);
-        String temp_file_path = temp_dir + "/" + marks_file_name;
-        disk->copy(marks_file_path, disk, temp_file_path);
+        String hardlink_file_path = temp_dir + "/" + marks_file_name;
+        disk->createHardLink(marks_file_path, hardlink_file_path);
         backup_entries.emplace_back(
             marks_file_name,
-            std::make_unique<BackupEntryFromImmutableFile>(
-                disk, temp_file_path, file_checker.getFileSize(marks_file_path), std::nullopt, temp_dir_owner));
+            std::make_unique<BackupEntryFromAppendOnlyFile>(
+                disk, hardlink_file_path, file_checker.getFileSize(marks_file_path), std::nullopt, temp_dir_owner));
     }
 
     /// sizes.json

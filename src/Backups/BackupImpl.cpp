@@ -1,13 +1,11 @@
 ﻿#include <Backups/BackupImpl.h>
 #include <Backups/BackupFactory.h>
-#include <Backups/BackupEntryConcat.h>
-#include <Backups/BackupEntryFromCallback.h>
 #include <Backups/BackupEntryFromMemory.h>
 #include <Backups/IBackupEntry.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/hex.h>
-#include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
+#include <IO/ConcatReadBuffer.h>
 #include <IO/HashingReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
@@ -46,6 +44,44 @@ namespace
         return unhexUInt<UInt128>(checksum.data());
     }
 }
+
+
+class BackupImpl::BackupEntryFromBackupImpl : public IBackupEntry
+{
+public:
+    BackupEntryFromBackupImpl(
+        const std::shared_ptr<const BackupImpl> & backup_,
+        const String & file_name_,
+        UInt64 size_,
+        const std::optional<UInt128> checksum_,
+        BackupEntryPtr base_backup_entry_ = {})
+        : backup(backup_), file_name(file_name_), size(size_), checksum(checksum_),
+          base_backup_entry(std::move(base_backup_entry_))
+    {
+    }
+
+    std::unique_ptr<ReadBuffer> getReadBuffer() const override
+    {
+        auto read_buffer = backup->readFileImpl(file_name);
+        if (base_backup_entry)
+        {
+            auto base_backup_read_buffer = base_backup_entry->getReadBuffer();
+            read_buffer = std::make_unique<ConcatReadBuffer>(std::move(base_backup_read_buffer), std::move(read_buffer));
+        }
+        return read_buffer;
+    }
+
+    UInt64 getSize() const override { return size; }
+    std::optional<UInt128> getChecksum() const override { return checksum; }
+
+private:
+    const std::shared_ptr<const BackupImpl> backup;
+    const String file_name;
+    const UInt64 size;
+    const std::optional<UInt128> checksum;
+    BackupEntryPtr base_backup_entry;
+};
+
 
 BackupImpl::BackupImpl(const String & backup_name_, const ContextPtr & context_, const std::optional<BackupInfo> & base_backup_info_)
     : backup_name(backup_name_), context(context_), base_backup_info_param(base_backup_info_)
@@ -295,7 +331,8 @@ BackupEntryPtr BackupImpl::readFile(const String & file_name) const
     if (!info.base_size)
     {
         /// Data goes completely from this backup, the base backup isn't used.
-        return std::make_unique<BackupEntryFromCallback>(read_callback, info.size, info.checksum);
+        return std::make_unique<BackupEntryFromBackupImpl>(
+            std::static_pointer_cast<const BackupImpl>(shared_from_this()), file_name, info.size, info.checksum);
     }
 
     if (info.size < info.base_size)
@@ -349,10 +386,8 @@ BackupEntryPtr BackupImpl::readFile(const String & file_name) const
 
     /// The beginning of the data goes from the base backup,
     /// and the ending goes from this backup.
-    return std::make_unique<BackupEntryConcat>(
-        std::move(base_entry),
-        std::make_unique<BackupEntryFromCallback>(read_callback, info.size - info.base_size),
-        info.checksum);
+    return std::make_unique<BackupEntryFromBackupImpl>(
+        static_pointer_cast<const BackupImpl>(shared_from_this()), file_name, info.size, info.checksum, std::move(base_entry));
 }
 
 
@@ -406,7 +441,7 @@ void BackupImpl::addFile(const String & file_name, BackupEntryPtr entry)
                 checksum = hashing_read_buffer.getHash();
             }
             if (checksum == base_checksum)
-                use_base = true; /// The data has not been changed.
+                use_base = true; /// The data have not been changed.
         }
         else if (size > base_size)
         {
