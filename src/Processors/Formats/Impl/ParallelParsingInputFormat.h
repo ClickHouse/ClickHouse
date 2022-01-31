@@ -288,7 +288,7 @@ private:
         parsing_finished = true;
 
         {
-            /// Additionaly notify condvars
+            /// Additionally notify condvars
             std::lock_guard<std::mutex> lock(mutex);
             segmentator_condvar.notify_all();
             reader_condvar.notify_all();
