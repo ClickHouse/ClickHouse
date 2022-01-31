@@ -320,6 +320,7 @@ HDFSSource::HDFSSource(
 
 void HDFSSource::onCancel()
 {
+    std::lock_guard lock(reader_mutex);
     if (reader)
         reader->cancel();
 }
@@ -365,6 +366,7 @@ String HDFSSource::getName() const
 
 Chunk HDFSSource::generate()
 {
+    std::lock_guard lock(reader_mutex);
     if (!reader)
         return {};
 
