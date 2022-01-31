@@ -98,6 +98,7 @@ add_subdirectory(${FLATBUFFERS_SRC_DIR} "${FLATBUFFERS_BINARY_DIR}")
 message(STATUS "FLATBUFFERS_LIBRARY: ${FLATBUFFERS_LIBRARY}")
 
 # ===  hdfs
+# NOTE: cannot use ch_contrib::hdfs since it's INCLUDE_DIRECTORIES does not includes trailing "hdfs/"
 set(HDFS_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libhdfs3/include/hdfs/")
 
 # arrow-cmake cmake file calling orc cmake subroutine which detects certain compiler features.
