@@ -19,6 +19,8 @@
 #include <boost/algorithm/string/join.hpp>
 #include <iterator>
 #include <regex>
+#include <base/sort.h>
+
 
 namespace fs = std::filesystem;
 
@@ -298,7 +300,7 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
             throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);
 
         if (hashing_out.count() != size)
-            throw Exception("Unexpected size of file " + path, ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
+            throw Exception(ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART, "Unexpected size of file {}, expected {} got {}", path, hashing_out.count(), size);
 
         writePODBinary(hashing_out.getHash(), out);
 
@@ -425,7 +427,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     }
     if (!capability.empty())
     {
-        std::sort(capability.begin(), capability.end());
+        ::sort(capability.begin(), capability.end());
         capability.erase(std::unique(capability.begin(), capability.end()), capability.end());
         const String & remote_fs_metadata = boost::algorithm::join(capability, ", ");
         uri.addQueryParameter("remote_fs_metadata", remote_fs_metadata);
@@ -593,7 +595,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
             CompressionCodecFactory::instance().get("NONE", {}));
 
         part_out.write(block);
-        part_out.writeSuffixAndFinalizePart(new_projection_part);
+        part_out.finalizePart(new_projection_part, false);
         new_projection_part->checksums.checkEqual(checksums, /* have_uncompressed = */ true);
         new_data_part->addProjectionPart(projection_name, std::move(new_projection_part));
     }
@@ -617,7 +619,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
         CompressionCodecFactory::instance().get("NONE", {}));
 
     part_out.write(block);
-    part_out.writeSuffixAndFinalizePart(new_data_part);
+    part_out.finalizePart(new_data_part, false);
     new_data_part->checksums.checkEqual(checksums, /* have_uncompressed = */ true);
 
     return new_data_part;
