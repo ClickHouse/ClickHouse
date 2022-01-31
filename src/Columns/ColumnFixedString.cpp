@@ -13,7 +13,6 @@
 #include <Common/memcpySmall.h>
 #include <base/sort.h>
 #include <base/scope_guard.h>
-#include <base/sort.h>
 
 #if defined(__SSE2__)
 #    include <emmintrin.h>
