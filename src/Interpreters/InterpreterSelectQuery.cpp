@@ -72,6 +72,7 @@
 #include <Core/Field.h>
 #include <Core/ProtocolDefines.h>
 #include <base/types.h>
+#include <base/sort.h>
 #include <Columns/Collator.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
@@ -2269,7 +2270,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
     for (const auto & [_, w] : query_analyzer->windowDescriptions())
         windows_sorted.push_back(&w);
 
-    std::sort(windows_sorted.begin(), windows_sorted.end(), windowDescriptionComparator);
+    ::sort(windows_sorted.begin(), windows_sorted.end(), windowDescriptionComparator);
 
     const Settings & settings = context->getSettingsRef();
     for (size_t i = 0; i < windows_sorted.size(); ++i)

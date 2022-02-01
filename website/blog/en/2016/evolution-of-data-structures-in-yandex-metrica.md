@@ -3,6 +3,7 @@ title: 'Evolution of Data Structures in Yandex.Metrica'
 image: 'https://blog-images.clickhouse.com/en/2016/evolution-of-data-structures-in-yandex-metrica/main.jpg'
 date: '2016-12-13'
 tags: ['Yandex.Metrica', 'data structures', 'LSM tree', 'columnar storage']
+author: 'Alexey Milovidov'
 ---
 
 [Yandex.Metrica](https://metrica.yandex.com/) takes in a stream of data representing events that took place on sites or on apps. Our task is to keep this data and present it in an analyzable form. The real challenge lies in trying to determine what form the processed results should be saved in so that they are easy to work with. During the development process, we had to completely change our approach to data storage organization several times. We started with MyISAM tables, then used LSM-trees and eventually came up with column-oriented database, ClickHouse.
@@ -104,5 +105,3 @@ Effective hardware utilization is very important to us. In our experience, when 
 To maximize efficiency, it's important to customize your solution to meet the needs of specific type of workload. There is no data structure that copes well with completely different scenarios. For example, it's clear that key-value databases don't work for analytical queries. The greater the load on the system, the narrower the specialization required. One should not be afraid to use completely different data structures for different tasks.
 
 We were able to set things up so that Yandex.Metrica's hardware was relatively inexpensive. This has allowed us to offer the service free of charge to even very large sites and mobile apps, even larger than Yanex‘s own, while competitors typically start asking for a paid subscription plan.
-
-

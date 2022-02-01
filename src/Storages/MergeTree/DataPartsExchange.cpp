@@ -19,6 +19,8 @@
 #include <boost/algorithm/string/join.hpp>
 #include <iterator>
 #include <regex>
+#include <base/sort.h>
+
 
 namespace fs = std::filesystem;
 
@@ -425,7 +427,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     }
     if (!capability.empty())
     {
-        std::sort(capability.begin(), capability.end());
+        ::sort(capability.begin(), capability.end());
         capability.erase(std::unique(capability.begin(), capability.end()), capability.end());
         const String & remote_fs_metadata = boost::algorithm::join(capability, ", ");
         uri.addQueryParameter("remote_fs_metadata", remote_fs_metadata);

@@ -140,6 +140,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
         checkQuorumPrecondition(zookeeper);
 
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
+    String block_dedup_token;
 
     for (auto & current_block : part_blocks)
     {
@@ -160,8 +161,16 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
         {
             /// We add the hash from the data and partition identifier to deduplication ID.
             /// That is, do not insert the same data to the same partition twice.
-            block_id = part->getZeroLevelPartBlockID();
 
+            const String & dedup_token = context->getSettingsRef().insert_deduplication_token;
+            if (!dedup_token.empty())
+            {
+                /// multiple blocks can be inserted within the same insert query
+                /// an ordinal number is added to dedup token to generate a distinctive block id for each block
+                block_dedup_token = fmt::format("{}_{}", dedup_token, chunk_dedup_seqnum);
+                ++chunk_dedup_seqnum;
+            }
+            block_id = part->getZeroLevelPartBlockID(block_dedup_token);
             LOG_DEBUG(log, "Wrote block with ID '{}', {} rows", block_id, current_block.block.rows());
         }
         else

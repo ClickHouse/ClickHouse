@@ -12,6 +12,8 @@
 //#include <iostream>
 #include <filesystem>
 
+#include <base/sort.h>
+
 /**
 
 ELF object can contain three different places with symbol names and addresses:
@@ -498,8 +500,8 @@ void SymbolIndex::update()
 {
     dl_iterate_phdr(collectSymbols, &data);
 
-    std::sort(data.objects.begin(), data.objects.end(), [](const Object & a, const Object & b) { return a.address_begin < b.address_begin; });
-    std::sort(data.symbols.begin(), data.symbols.end(), [](const Symbol & a, const Symbol & b) { return a.address_begin < b.address_begin; });
+    ::sort(data.objects.begin(), data.objects.end(), [](const Object & a, const Object & b) { return a.address_begin < b.address_begin; });
+    ::sort(data.symbols.begin(), data.symbols.end(), [](const Symbol & a, const Symbol & b) { return a.address_begin < b.address_begin; });
 
     /// We found symbols both from loaded program headers and from ELF symbol tables.
     data.symbols.erase(std::unique(data.symbols.begin(), data.symbols.end(), [](const Symbol & a, const Symbol & b)

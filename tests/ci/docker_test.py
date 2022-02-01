@@ -22,24 +22,59 @@ class TestDockerImageCheck(unittest.TestCase):
             "docker/test/base",
             "docker/docs/builder",
         }
-        images = di.get_changed_docker_images(pr_info, "/", self.docker_images_path)
-        expected = {
-            di.DockerImage("docker/test/base", "clickhouse/test-base"),
-            di.DockerImage("docker/docs/builder", "clickhouse/docs-builder"),
-            di.DockerImage("docker/test/stateless", "clickhouse/stateless-test"),
-            di.DockerImage(
-                "docker/test/integration/base", "clickhouse/integration-test"
-            ),
-            di.DockerImage("docker/test/fuzzer", "clickhouse/fuzzer"),
-            di.DockerImage(
-                "docker/test/keeper-jepsen", "clickhouse/keeper-jepsen-test"
-            ),
-            di.DockerImage("docker/docs/check", "clickhouse/docs-check"),
-            di.DockerImage("docker/docs/release", "clickhouse/docs-release"),
-            di.DockerImage("docker/test/stateful", "clickhouse/stateful-test"),
-            di.DockerImage("docker/test/unit", "clickhouse/unit-test"),
-            di.DockerImage("docker/test/stress", "clickhouse/stress-test"),
-        }
+        images = sorted(
+            list(di.get_changed_docker_images(pr_info, "/", self.docker_images_path))
+        )
+        self.maxDiff = None
+        expected = sorted(
+            [
+                di.DockerImage("docker/test/base", "clickhouse/test-base"),
+                di.DockerImage("docker/docs/builder", "clickhouse/docs-builder"),
+                di.DockerImage(
+                    "docker/test/stateless",
+                    "clickhouse/stateless-test",
+                    "clickhouse/test-base",
+                ),
+                di.DockerImage(
+                    "docker/test/integration/base",
+                    "clickhouse/integration-test",
+                    "clickhouse/test-base",
+                ),
+                di.DockerImage(
+                    "docker/test/fuzzer", "clickhouse/fuzzer", "clickhouse/test-base"
+                ),
+                di.DockerImage(
+                    "docker/test/keeper-jepsen",
+                    "clickhouse/keeper-jepsen-test",
+                    "clickhouse/test-base",
+                ),
+                di.DockerImage(
+                    "docker/docs/check",
+                    "clickhouse/docs-check",
+                    "clickhouse/docs-builder",
+                ),
+                di.DockerImage(
+                    "docker/docs/release",
+                    "clickhouse/docs-release",
+                    "clickhouse/docs-builder",
+                ),
+                di.DockerImage(
+                    "docker/test/stateful",
+                    "clickhouse/stateful-test",
+                    "clickhouse/stateless-test",
+                ),
+                di.DockerImage(
+                    "docker/test/unit",
+                    "clickhouse/unit-test",
+                    "clickhouse/stateless-test",
+                ),
+                di.DockerImage(
+                    "docker/test/stress",
+                    "clickhouse/stress-test",
+                    "clickhouse/stateful-test",
+                ),
+            ]
+        )
         self.assertEqual(images, expected)
 
     def test_gen_version(self):

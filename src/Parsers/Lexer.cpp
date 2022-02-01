@@ -335,6 +335,13 @@ Token Lexer::nextTokenImpl()
                 return Token(TokenType::DoubleAt, token_begin, ++pos);
             return Token(TokenType::At, token_begin, pos);
         }
+        case '\\':
+        {
+            ++pos;
+            if (pos < end && *pos == 'G')
+                return Token(TokenType::VerticalDelimiter, token_begin, ++pos);
+            return Token(TokenType::Error, token_begin, pos);
+        }
 
         default:
             if (*pos == '$')

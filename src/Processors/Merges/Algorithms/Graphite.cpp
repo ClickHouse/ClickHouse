@@ -10,8 +10,10 @@
 #include <unordered_map>
 
 #include <fmt/format.h>
+#include <base/sort.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
+
 
 using namespace std::literals;
 
@@ -286,7 +288,7 @@ std::string buildTaggedRegex(std::string regexp_str)
     else
         regexp_str = "[\\?&]";
 
-    std::sort(std::begin(tags), std::end(tags)); /* sorted tag keys */
+    ::sort(std::begin(tags), std::end(tags)); /* sorted tag keys */
     regexp_str += fmt::format(
         "{}{}",
         fmt::join(tags, "&(.*&)?"),
@@ -419,7 +421,7 @@ appendGraphitePattern(
 
     /// retention should be in descending order of age.
     if (pattern.type & pattern.TypeRetention) /// TypeRetention or TypeAll
-        std::sort(pattern.retentions.begin(), pattern.retentions.end(), compareRetentions);
+        ::sort(pattern.retentions.begin(), pattern.retentions.end(), compareRetentions);
 
     patterns.emplace_back(pattern);
     return patterns.back();

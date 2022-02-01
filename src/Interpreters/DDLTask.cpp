@@ -1,4 +1,5 @@
 #include <Interpreters/DDLTask.h>
+#include <base/sort.h>
 #include <Common/DNSResolver.h>
 #include <Common/isLocalAddress.h>
 #include <IO/WriteHelpers.h>
@@ -13,6 +14,7 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Databases/DatabaseReplicated.h>
+
 
 namespace DB
 {
@@ -324,7 +326,7 @@ String DDLTask::getShardID() const
     Strings replica_names;
     for (const Cluster::Address & address : shard_addresses)
         replica_names.emplace_back(address.readableString());
-    std::sort(replica_names.begin(), replica_names.end());
+    ::sort(replica_names.begin(), replica_names.end());
 
     String res;
     for (auto it = replica_names.begin(); it != replica_names.end(); ++it)
