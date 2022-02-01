@@ -23,7 +23,7 @@ NamesAndTypesList StorageSystemGrants::getNamesAndTypes()
     NamesAndTypesList names_and_types{
         {"user_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"role_name", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"access_type", std::make_shared<DataTypeEnum8>(StorageSystemPrivileges::getAccessTypeEnumValues())},
+        {"access_type", std::make_shared<DataTypeEnum16>(StorageSystemPrivileges::getAccessTypeEnumValues())},
         {"database", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"table", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"column", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
