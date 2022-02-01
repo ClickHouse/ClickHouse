@@ -1,6 +1,7 @@
 #include "IMergeTreeDataPart.h"
 
 #include <optional>
+#include <string_view>
 #include <Core/Defines.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
@@ -1117,6 +1118,7 @@ UInt64 IMergeTreeDataPart::calculateTotalSizeOnDisk(const DiskPtr & disk_, const
 
 
 void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const
+try
 {
     assertOnDisk();
 
@@ -1152,6 +1154,18 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
         sync_guard = volume->getDisk()->getDirectorySyncGuard(to);
 
     storage.lockSharedData(*this);
+}
+catch (...)
+{
+    if (startsWith(new_relative_path, "detached/"))
+    {
+        // Don't throw when the destination is to the detached folder. It might be able to
+        // recover in some cases, such as fetching parts into multi-disks while some of the
+        // disks are broken.
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+    else
+        throw;
 }
 
 void IMergeTreeDataPart::cleanupOldName(const String & old_part_name) const
@@ -1630,13 +1644,21 @@ UInt32 IMergeTreeDataPart::getNumberOfRefereneces() const
 }
 
 
-String IMergeTreeDataPart::getZeroLevelPartBlockID() const
+String IMergeTreeDataPart::getZeroLevelPartBlockID(const std::string_view token) const
 {
     if (info.level != 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get block id for non zero level part {}", name);
 
     SipHash hash;
-    checksums.computeTotalChecksumDataOnly(hash);
+    if (token.empty())
+    {
+        checksums.computeTotalChecksumDataOnly(hash);
+    }
+    else
+    {
+        hash.update(token.data(), token.size());
+    }
+
     union
     {
         char bytes[16];

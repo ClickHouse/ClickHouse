@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <climits>
 #include <base/types.h>
+#include <base/sort.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -14,6 +15,7 @@
 #include <Common/NaNUtils.h>
 #include <Poco/Exception.h>
 #include <pcg_random.hpp>
+
 
 namespace DB
 {
@@ -249,7 +251,7 @@ private:
         if (sorted)
             return;
         sorted = true;
-        std::sort(samples.begin(), samples.end(), Comparer());
+        ::sort(samples.begin(), samples.end(), Comparer());
     }
 
     template <typename ResultType>
