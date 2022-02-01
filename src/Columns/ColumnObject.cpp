@@ -564,7 +564,7 @@ void ColumnObject::insert(const Field & field)
     size_t old_size = size();
     for (const auto & [key_str, value] : object)
     {
-        Path key(key_str);
+        PathInData key(key_str);
         inserted.insert(key_str);
         if (!hasSubcolumn(key))
             addSubcolumn(key, old_size);
@@ -652,7 +652,7 @@ void ColumnObject::popBack(size_t length)
     num_rows -= length;
 }
 
-const ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const Path & key) const
+const ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const PathInData & key) const
 {
     if (const auto * node = subcolumns.findLeaf(key))
         return node->data;
@@ -660,7 +660,7 @@ const ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const Path & key) con
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in ColumnObject", key.getPath());
 }
 
-ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const Path & key)
+ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const PathInData & key)
 {
     if (const auto * node = subcolumns.findLeaf(key))
         return const_cast<SubcolumnsTree::Leaf *>(node)->data;
@@ -668,12 +668,12 @@ ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const Path & key)
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in ColumnObject", key.getPath());
 }
 
-bool ColumnObject::hasSubcolumn(const Path & key) const
+bool ColumnObject::hasSubcolumn(const PathInData & key) const
 {
     return subcolumns.findLeaf(key) != nullptr;
 }
 
-void ColumnObject::addSubcolumn(const Path & key, MutableColumnPtr && subcolumn)
+void ColumnObject::addSubcolumn(const PathInData & key, MutableColumnPtr && subcolumn)
 {
     size_t new_size = subcolumn->size();
     bool inserted = subcolumns.add(key, Subcolumn(std::move(subcolumn), is_nullable));
@@ -685,7 +685,7 @@ void ColumnObject::addSubcolumn(const Path & key, MutableColumnPtr && subcolumn)
         num_rows = new_size;
 }
 
-void ColumnObject::addSubcolumn(const Path & key, size_t new_size)
+void ColumnObject::addSubcolumn(const PathInData & key, size_t new_size)
 {
     bool inserted = subcolumns.add(key, Subcolumn(new_size, is_nullable));
     if (!inserted)
@@ -695,7 +695,7 @@ void ColumnObject::addSubcolumn(const Path & key, size_t new_size)
         num_rows = new_size;
 }
 
-void ColumnObject::addNestedSubcolumn(const Path & key, const FieldInfo & field_info, size_t new_size)
+void ColumnObject::addNestedSubcolumn(const PathInData & key, const FieldInfo & field_info, size_t new_size)
 {
     if (!key.hasNested())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -726,9 +726,9 @@ void ColumnObject::addNestedSubcolumn(const Path & key, const FieldInfo & field_
         num_rows = new_size;
 }
 
-Paths ColumnObject::getKeys() const
+PathsInData ColumnObject::getKeys() const
 {
-    Paths keys;
+    PathsInData keys;
     keys.reserve(subcolumns.size());
     for (const auto & entry : subcolumns)
         keys.emplace_back(entry->path);
@@ -756,7 +756,7 @@ void ColumnObject::finalize()
     }
 
     if (new_subcolumns.empty())
-        new_subcolumns.add(Path{COLUMN_NAME_DUMMY}, Subcolumn{ColumnUInt8::create(old_size), is_nullable});
+        new_subcolumns.add(PathInData{COLUMN_NAME_DUMMY}, Subcolumn{ColumnUInt8::create(old_size), is_nullable});
 
     std::swap(subcolumns, new_subcolumns);
     checkObjectHasNoAmbiguosPaths(getKeys());

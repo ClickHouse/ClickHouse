@@ -1,55 +1,10 @@
-#pragma once
-
-#include <Core/Types.h>
+#include <DataTypes/Serializations/PathInData.h>
 #include <DataTypes/IDataType.h>
 #include <Columns/IColumn.h>
 #include <unordered_map>
-#include <Common/typeid_cast.h>
 
 namespace DB
 {
-
-class ReadBuffer;
-class WriteBuffer;
-
-class Path
-{
-public:
-    /// TODO: use dynamic bitset
-    using BitSet = std::bitset<64>;
-
-    Path() = default;
-    explicit Path(std::string_view path_);
-
-    void append(const Path & other);
-    void append(std::string_view key);
-
-    const String & getPath() const { return path; }
-    bool isNested(size_t i) const { return is_nested.test(i); }
-    bool hasNested() const { return is_nested.any(); }
-    BitSet getIsNestedBitSet() const { return is_nested; }
-
-    size_t getNumParts() const { return num_parts; }
-    bool empty() const { return path.empty(); }
-
-    Strings getParts() const;
-
-    static Path getNext(const Path & current_path, const Path & key, bool make_nested = false);
-
-    void writeBinary(WriteBuffer & out) const;
-    void readBinary(ReadBuffer & in);
-
-    bool operator==(const Path & other) const { return path == other.path; }
-    bool operator!=(const Path & other) const { return !(*this == other); }
-    struct Hash { size_t operator()(const Path & value) const; };
-
-private:
-    String path;
-    size_t num_parts = 0;
-    BitSet is_nested;
-};
-
-using Paths = std::vector<Path>;
 
 struct EmptyNodeData {};
 
@@ -72,15 +27,15 @@ public:
         Kind kind = TUPLE;
         const Node * parent = nullptr;
 
-        std::unordered_map<String, std::shared_ptr<Node>> children;
+        std::map<String, std::shared_ptr<Node>, std::less<>> children;
         NodeData data;
 
         bool isNested() const { return kind == NESTED; }
 
-        void addChild(const String & key_, std::shared_ptr<Node> next_node)
+        void addChild(const String & key, std::shared_ptr<Node> next_node)
         {
             next_node->parent = this;
-            children[key_] = std::move(next_node);
+            children[key] = std::move(next_node);
         }
 
         virtual ~Node() = default;
@@ -88,12 +43,12 @@ public:
 
     struct Leaf : public Node
     {
-        Leaf(const Path & path_, const LeafData & data_)
+        Leaf(const PathInData & path_, const LeafData & data_)
             : Node(Node::SCALAR), path(path_), data(data_)
         {
         }
 
-        Path path;
+        PathInData path;
         LeafData data;
     };
 
@@ -101,7 +56,7 @@ public:
     using NodePtr = std::shared_ptr<Node>;
     using LeafPtr = std::shared_ptr<Leaf>;
 
-    bool add(const Path & path, const LeafData & leaf_data)
+    bool add(const PathInData & path, const LeafData & leaf_data)
     {
         return add(path, [&](NodeKind kind, bool exists) -> NodePtr
         {
@@ -117,10 +72,9 @@ public:
 
     using NodeCreator = std::function<NodePtr(NodeKind, bool)>;
 
-    bool add(const Path & path, const NodeCreator & node_creator)
+    bool add(const PathInData & path, const NodeCreator & node_creator)
     {
-        auto parts = path.getParts();
-        auto is_nested = path.getIsNestedBitSet();
+        const auto & parts = path.getParts();
 
         if (parts.empty())
             return false;
@@ -133,31 +87,31 @@ public:
         {
             assert(current_node->kind != Node::SCALAR);
 
-            auto it = current_node->children.find(parts[i]);
+            auto it = current_node->children.find(parts[i].key);
             if (it != current_node->children.end())
             {
                 current_node = it->second.get();
                 node_creator(current_node->kind, true);
                 bool current_node_is_nested = current_node->kind == Node::NESTED;
 
-                if (current_node_is_nested != is_nested.test(i))
+                if (current_node_is_nested != parts[i].is_nested)
                     return false;
             }
             else
             {
-                auto next_kind = is_nested.test(i) ? Node::NESTED : Node::TUPLE;
+                auto next_kind = parts[i].is_nested ? Node::NESTED : Node::TUPLE;
                 auto next_node = node_creator(next_kind, false);
-                current_node->addChild(parts[i], next_node);
+                current_node->addChild(String(parts[i].key), next_node);
                 current_node = next_node.get();
             }
         }
 
-        auto it = current_node->children.find(parts.back());
+        auto it = current_node->children.find(parts.back().key);
         if (it != current_node->children.end())
             return false;
 
         auto next_node = node_creator(Node::SCALAR, false);
-        current_node->addChild(parts.back(), next_node);
+        current_node->addChild(String(parts.back().key), next_node);
 
         auto leaf = std::dynamic_pointer_cast<Leaf>(next_node);
         assert(leaf);
@@ -166,17 +120,17 @@ public:
         return true;
     }
 
-    const Node * findBestMatch(const Path & path) const
+    const Node * findBestMatch(const PathInData & path) const
     {
         return findImpl(path, false);
     }
 
-    const Node * findExact(const Path & path) const
+    const Node * findExact(const PathInData & path) const
     {
         return findImpl(path, true);
     }
 
-    const Leaf * findLeaf(const Path & path) const
+    const Leaf * findLeaf(const PathInData & path) const
     {
         return typeid_cast<const Leaf *>(findExact(path));
     }
@@ -226,17 +180,18 @@ public:
     const_iterator end() const { return leaves.end(); }
 
 private:
-    const Node * findImpl(const Path & path, bool find_exact) const
+    const Node * findImpl(const PathInData & path, bool find_exact) const
     {
         if (!root)
             return nullptr;
 
-        auto parts = path.getParts();
+        const auto & parts = path.getParts();
         const Node * current_node = root.get();
 
         for (const auto & part : parts)
         {
-            auto it = current_node->children.find(part);
+            auto it = current_node->children.find(part.key);
+            // std::cerr << "part: " << part.key << ", found: " << (it != current_node->children.end()) << '\n';
             if (it == current_node->children.end())
                 return find_exact ? nullptr : current_node;
 

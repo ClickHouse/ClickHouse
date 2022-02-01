@@ -307,7 +307,7 @@ void SerializationObject<Parser>::deserializeBinaryBulkWithMultipleStreams(
     settings.path.back() = Substream::ObjectElement;
     for (size_t i = 0; i < num_subcolumns; ++i)
     {
-        Path key;
+        PathInData key;
         String type_name;
 
         settings.path.back() = Substream::ObjectStructure;
@@ -331,7 +331,7 @@ void SerializationObject<Parser>::deserializeBinaryBulkWithMultipleStreams(
             auto serialization = type->getDefaultSerialization();
             ColumnPtr subcolumn_data = type->createColumn();
             serialization->deserializeBinaryBulkWithMultipleStreams(subcolumn_data, limit, settings, state, cache);
-            column_object.addSubcolumn(Path(key), subcolumn_data->assumeMutable());
+            column_object.addSubcolumn(PathInData(key), subcolumn_data->assumeMutable());
         }
         else
         {

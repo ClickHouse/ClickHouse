@@ -156,7 +156,7 @@ void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block, con
                     "Cannot convert to tuple column '{}' from type {}. Column should be finalized first",
                     name_type.name, name_type.type->getName());
 
-            Paths tuple_paths;
+            PathsInData tuple_paths;
             DataTypes tuple_types;
             Columns tuple_columns;
 
@@ -171,13 +171,6 @@ void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block, con
             if (it == storage_columns_map.end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' not found in storage", name_type.name);
 
-            Strings tuple_names;
-            tuple_names.reserve(tuple_paths.size());
-            for (const auto & path : tuple_paths)
-                tuple_names.push_back(path.getPath());
-
-            auto type_tuple = std::make_shared<DataTypeTuple>(tuple_types, tuple_names);
-
             std::tie(column.column, column.type) = unflattenTuple(tuple_paths, tuple_types, tuple_columns);
             name_type.type = column.type;
 
@@ -186,21 +179,21 @@ void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block, con
     }
 }
 
-static bool isPrefix(const Strings & prefix, const Strings & strings)
+static bool isPrefix(const PathInData::Parts & prefix, const PathInData::Parts & strings)
 {
     if (prefix.size() > strings.size())
         return false;
 
     for (size_t i = 0; i < prefix.size(); ++i)
-        if (prefix[i] != strings[i])
+        if (prefix[i].key != strings[i].key)
             return false;
     return true;
 }
 
-void checkObjectHasNoAmbiguosPaths(const Paths & paths)
+void checkObjectHasNoAmbiguosPaths(const PathsInData & paths)
 {
     size_t size = paths.size();
-    std::vector<Strings> names_parts(size);
+    std::vector<PathInData::Parts> names_parts(size);
 
     for (size_t i = 0; i < size; ++i)
         names_parts[i] = paths[i].getParts();
@@ -219,7 +212,23 @@ void checkObjectHasNoAmbiguosPaths(const Paths & paths)
 
 DataTypePtr getLeastCommonTypeForObject(const DataTypes & types, bool check_ambiguos_paths)
 {
-    std::unordered_map<Path, DataTypes, Path::Hash> subcolumns_types;
+    if (types.empty())
+        return nullptr;
+
+    bool all_equal = true;
+    for (size_t i = 1; i < types.size(); ++i)
+    {
+        if (!types[i]->equals(*types[0]))
+        {
+            all_equal = false;
+            break;
+        }
+    }
+
+    if (all_equal)
+        return types[0];
+
+    std::unordered_map<PathInData, DataTypes, PathInData::Hash> subcolumns_types;
 
     for (const auto & type : types)
     {
@@ -235,7 +244,7 @@ DataTypePtr getLeastCommonTypeForObject(const DataTypes & types, bool check_ambi
             subcolumns_types[tuple_paths[i]].push_back(tuple_types[i]);
     }
 
-    Paths tuple_paths;
+    PathsInData tuple_paths;
     DataTypes tuple_types;
 
     for (const auto & [key, subtypes] : subcolumns_types)
@@ -298,9 +307,10 @@ void extendObjectColumns(NamesAndTypesList & columns_list, const ColumnsDescript
 namespace
 {
 
-void flattenTupleImpl(Path path, DataTypePtr type, size_t array_level, Paths & new_paths, DataTypes & new_types)
+void flattenTupleImpl(PathInDataBuilder & builder, DataTypePtr type, size_t array_level, PathsInData & new_paths, DataTypes & new_types)
 {
     bool is_nested = isNested(type);
+
     if (is_nested)
         type = assert_cast<const DataTypeArray &>(*type).getNestedType();
 
@@ -311,18 +321,18 @@ void flattenTupleImpl(Path path, DataTypePtr type, size_t array_level, Paths & n
 
         for (size_t i = 0; i < tuple_names.size(); ++i)
         {
-            auto next_path = Path::getNext(path, Path(tuple_names[i]), is_nested);
-            size_t next_level = array_level + is_nested;
-            flattenTupleImpl(next_path, tuple_types[i], next_level, new_paths, new_types);
+            builder.append(tuple_names[i], is_nested);
+            flattenTupleImpl(builder, tuple_types[i], array_level + is_nested, new_paths, new_types);
+            builder.popBack();
         }
     }
     else if (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
     {
-        flattenTupleImpl(path, type_array->getNestedType(), array_level + 1, new_paths, new_types);
+        flattenTupleImpl(builder, type_array->getNestedType(), array_level + 1, new_paths, new_types);
     }
     else
     {
-        new_paths.push_back(path);
+        new_paths.emplace_back(builder.getParts());
         new_types.push_back(createArrayOfType(type, array_level));
     }
 }
@@ -352,7 +362,9 @@ void flattenTupleImpl(const ColumnPtr & column, Columns & new_columns, Columns &
             new_columns.push_back(std::move(new_column));
         }
         else
+        {
             new_columns.push_back(column);
+        }
     }
 }
 
@@ -464,12 +476,13 @@ std::pair<ColumnPtr, DataTypePtr> createTypeFromNode(const Node * node)
 
 }
 
-std::pair<Paths, DataTypes> flattenTuple(const DataTypePtr & type)
+std::pair<PathsInData, DataTypes> flattenTuple(const DataTypePtr & type)
 {
-    Paths new_paths;
+    PathsInData new_paths;
     DataTypes new_types;
+    PathInDataBuilder builder;
 
-    flattenTupleImpl({}, type, 0, new_paths, new_types);
+    flattenTupleImpl(builder, type, 0, new_paths, new_types);
     return {new_paths, new_types};
 }
 
@@ -482,7 +495,7 @@ ColumnPtr flattenTuple(const ColumnPtr & column)
     return ColumnTuple::create(new_columns);
 }
 
-DataTypePtr unflattenTuple(const Paths & paths, const DataTypes & tuple_types)
+DataTypePtr unflattenTuple(const PathsInData & paths, const DataTypes & tuple_types)
 {
     assert(paths.size() == types.size());
     Columns tuple_columns;
@@ -494,7 +507,7 @@ DataTypePtr unflattenTuple(const Paths & paths, const DataTypes & tuple_types)
 }
 
 std::pair<ColumnPtr, DataTypePtr> unflattenTuple(
-    const Paths & paths,
+    const PathsInData & paths,
     const DataTypes & tuple_types,
     const Columns & tuple_columns)
 {
@@ -508,8 +521,10 @@ std::pair<ColumnPtr, DataTypePtr> unflattenTuple(
         auto column = tuple_columns[i];
         auto type = tuple_types[i];
 
-        size_t num_parts = paths[i].getNumParts();
-        size_t nested_level = paths[i].getIsNestedBitSet().count();
+        const auto & parts = paths[i].getParts();
+
+        size_t num_parts = parts.size();
+        size_t nested_level = std::count_if(parts.begin(), parts.end(), [](const auto & part) { return part.is_nested; });
         size_t array_level = getNumberOfDimensions(*type);
 
         if (array_level < nested_level)
