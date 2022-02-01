@@ -782,6 +782,9 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         return;
     }
 
+    if (create.is_ordinary_view || create.is_live_view || create.is_window_view || create.is_dictionary)
+        return;
+
     if (!create.storage)
         create.set(create.storage, std::make_shared<ASTStorage>());
 
@@ -800,44 +803,14 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             case DefaultTableEngine::MergeTree:
                 default_table_engine_name = "MergeTree";
                 break;
-            case DefaultTableEngine::CollapsingMergeTree:
-                default_table_engine_name = "CollapsingMergeTree";
-                break;
             case DefaultTableEngine::ReplacingMergeTree:
                 default_table_engine_name = "ReplacingMergeTree";
-                break;
-            case DefaultTableEngine::AggregatingMergeTree:
-                default_table_engine_name = "AggregatingMergeTree";
-                break;
-            case DefaultTableEngine::SummingMergeTree:
-                default_table_engine_name = "SummingMergeTree";
-                break;
-            case DefaultTableEngine::GraphiteMergeTree:
-                default_table_engine_name = "GraphiteMergeTree";
-                break;
-            case DefaultTableEngine::VersionedCollapsingMergeTree:
-                default_table_engine_name = "VersionedCollapsingMergeTree";
                 break;
             case DefaultTableEngine::ReplicatedMergeTree:
                 default_table_engine_name = "ReplicatedMergeTree";
                 break;
-            case DefaultTableEngine::ReplicatedCollapsingMergeTree:
-                default_table_engine_name = "ReplicatedCollapsingMergeTree";
-                break;
             case DefaultTableEngine::ReplicatedReplacingMergeTree:
                 default_table_engine_name = "ReplicatedReplacingMergeTree";
-                break;
-            case DefaultTableEngine::ReplicatedAggregatingMergeTree:
-                default_table_engine_name = "ReplicatedAggregatingMergeTree";
-                break;
-            case DefaultTableEngine::ReplicatedSummingMergeTree:
-                default_table_engine_name = "ReplicatedSummingMergeTree";
-                break;
-            case DefaultTableEngine::ReplicatedGraphiteMergeTree:
-                default_table_engine_name = "ReplicatedGraphiteMergeTree";
-                break;
-            case DefaultTableEngine::ReplicatedVersionedCollapsingMergeTree:
-                default_table_engine_name = "ReplicatedVersionedCollapsingMergeTree";
                 break;
             case DefaultTableEngine::Memory:
                 default_table_engine_name = "Memory";

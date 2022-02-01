@@ -67,9 +67,6 @@ StoragePtr StorageFactory::get(
 {
     String name, comment;
 
-    if (!query.storage)
-        throw Exception("Incorrect CREATE query: storage required", ErrorCodes::INCORRECT_QUERY);
-
     ASTStorage * storage_def = query.storage;
 
     bool has_engine_args = false;
@@ -111,6 +108,9 @@ StoragePtr StorageFactory::get(
         }
         else
         {
+            if (!query.storage)
+                throw Exception("Incorrect CREATE query: storage required", ErrorCodes::INCORRECT_QUERY);
+
             if (!storage_def->engine)
                 throw Exception("Incorrect CREATE query: ENGINE required", ErrorCodes::ENGINE_REQUIRED);
 

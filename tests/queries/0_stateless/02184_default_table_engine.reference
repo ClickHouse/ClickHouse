@@ -1,4 +1,4 @@
-x	UInt8					
-x	UInt8					
-x	UInt8					
-x	UInt8					
+CREATE TABLE default.table_02184\n(\n    `x` UInt8\n)\nENGINE = Log
+CREATE TABLE default.table_02184\n(\n    `x` UInt8\n)\nENGINE = MergeTree\nPRIMARY KEY x\nORDER BY x\nSETTINGS index_granularity = 8192
+CREATE TABLE default.table_02184\n(\n    `x` UInt8\n)\nENGINE = MergeTree\nORDER BY x\nSETTINGS index_granularity = 8192
+CREATE TABLE default.table_02184\n(\n    `x` UInt8\n)\nENGINE = MergeTree\nPRIMARY KEY x\nORDER BY x\nSETTINGS index_granularity = 8192
