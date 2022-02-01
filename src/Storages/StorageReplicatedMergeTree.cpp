@@ -1211,7 +1211,7 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 
     if (unexpected_parts_nonnew_rows > 0)
     {
-        LOG_WARNING(log, sanity_report_fmt, getStorageID().getNameForLogs(),
+        LOG_WARNING(log, fmt::runtime(sanity_report_fmt), getStorageID().getNameForLogs(),
                     formatReadableQuantity(unexpected_parts_rows), formatReadableQuantity(total_rows_on_filesystem),
                     unexpected_parts.size(), unexpected_parts_rows, unexpected_parts_nonnew, unexpected_parts_nonnew_rows,
                     parts_to_fetch.size(), parts_to_fetch_blocks);
@@ -2861,17 +2861,17 @@ bool StorageReplicatedMergeTree::processQueueEntry(ReplicatedMergeTreeQueue::Sel
             if (e.code() == ErrorCodes::NO_REPLICA_HAS_PART)
             {
                 /// If no one has the right part, probably not all replicas work; We will not write to log with Error level.
-                LOG_INFO(log, e.displayText());
+                LOG_INFO(log, fmt::runtime(e.displayText()));
             }
             else if (e.code() == ErrorCodes::ABORTED)
             {
                 /// Interrupted merge or downloading a part is not an error.
-                LOG_INFO(log, e.message());
+                LOG_INFO(log, fmt::runtime(e.message()));
             }
             else if (e.code() == ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
             {
                 /// Part cannot be added temporarily
-                LOG_INFO(log, e.displayText());
+                LOG_INFO(log, fmt::runtime(e.displayText()));
                 cleanup_thread.wakeup();
             }
             else
@@ -4383,7 +4383,7 @@ bool StorageReplicatedMergeTree::optimize(
                 if (!partition_id.empty())
                     disable_reason += fmt::format(" (in partition {})", partition_id);
                 String message = fmt::format(message_fmt, disable_reason);
-                LOG_INFO(log, message);
+                LOG_INFO(log, fmt::runtime(message));
                 return handle_noop(message);
             }
 
@@ -4397,7 +4397,7 @@ bool StorageReplicatedMergeTree::optimize(
             if (create_result == CreateMergeEntryResult::MissingPart)
             {
                 String message = "Can't create merge queue node in ZooKeeper, because some parts are missing";
-                LOG_TRACE(log, message);
+                LOG_TRACE(log, fmt::runtime(message));
                 return handle_noop(message);
             }
 
@@ -4410,7 +4410,7 @@ bool StorageReplicatedMergeTree::optimize(
 
         assert(try_no == max_retries);
         String message = fmt::format("Can't create merge queue node in ZooKeeper, because log was updated in every of {} tries", try_no);
-        LOG_TRACE(log, message);
+        LOG_TRACE(log, fmt::runtime(message));
         return handle_noop(message);
     };
 
@@ -5569,7 +5569,7 @@ void StorageReplicatedMergeTree::fetchPartition(
                 && e.code() != ErrorCodes::CANNOT_READ_ALL_DATA)
                 throw;
 
-            LOG_INFO(log, e.displayText());
+            LOG_INFO(log, fmt::runtime(e.displayText()));
         }
         return;
     }
@@ -5706,7 +5706,7 @@ void StorageReplicatedMergeTree::fetchPartition(
                     && e.code() != ErrorCodes::CANNOT_READ_ALL_DATA)
                     throw;
 
-                LOG_INFO(log, e.displayText());
+                LOG_INFO(log, fmt::runtime(e.displayText()));
             }
 
             if (!fetched)
