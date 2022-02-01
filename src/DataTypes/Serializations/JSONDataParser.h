@@ -3,8 +3,7 @@
 #include <IO/ReadHelpers.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/checkStackSize.h>
-#include <DataTypes/Serializations/DataPath.h>
-#include <boost/dynamic_bitset.hpp>
+#include <DataTypes/Serializations/PathInData.h>
 
 namespace DB
 {
@@ -31,12 +30,6 @@ static Field getValueAsField(const Element & element)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported type of JSON field");
 }
 
-struct ParseResult
-{
-    std::vector<Path> paths;
-    std::vector<Field> values;
-};
-
 template <typename ParserImpl>
 class JSONDataParser
 {
@@ -56,33 +49,47 @@ public:
             return {};
 
         ParseResult result;
-        traverse(document, {}, result);
+        PathInDataBuilder builder;
+        std::vector<PathInData::Parts> paths;
+
+        traverse(document, builder, paths, result.values);
+
+        result.paths.reserve(paths.size());
+        for (auto && path : paths)
+            result.paths.emplace_back(std::move(path));
+
         return result;
     }
 
 private:
-    void traverse(const Element & element, Path current_path, ParseResult & result)
+    void traverse(
+        const Element & element,
+        PathInDataBuilder & builder,
+        std::vector<PathInData::Parts> & paths,
+        std::vector<Field> & values)
     {
         checkStackSize();
 
         if (element.isObject())
         {
             auto object = element.getObject();
-            result.paths.reserve(result.paths.size() + object.size());
-            result.values.reserve(result.values.size() + object.size());
+
+            paths.reserve(paths.size() + object.size());
+            values.reserve(values.size() + object.size());
 
             for (auto it = object.begin(); it != object.end(); ++it)
             {
                 const auto & [key, value] = *it;
-                traverse(value, Path::getNext(current_path, Path(key)), result);
+                traverse(value, builder.append(key, false), paths, values);
+                builder.popBack();
             }
         }
         else if (element.isArray())
         {
             auto array = element.getArray();
 
-            using PathWithArray = std::pair<Path, Array>;
-            using PathToArray = HashMap<StringRef, PathWithArray, StringRefHash>;
+            using PathPartsWithArray = std::pair<PathInData::Parts, Array>;
+            using PathToArray = HashMapWithStackMemory<UInt128, PathPartsWithArray, UInt128TrivialHash, 5>;
 
             PathToArray arrays_by_path;
             Arena strings_pool;
@@ -91,41 +98,47 @@ private:
 
             for (auto it = array.begin(); it != array.end(); ++it)
             {
-                ParseResult element_result;
-                traverse(*it, {}, element_result);
+                std::vector<PathInData::Parts> element_paths;
+                std::vector<Field> element_values;
+                PathInDataBuilder element_builder;
 
-                auto & [paths, values] = element_result;
-                for (size_t i = 0; i < paths.size(); ++i)
+                traverse(*it, element_builder, element_paths, element_values);
+                size_t size = element_paths.size();
+                size_t keys_to_update = arrays_by_path.size();
+
+                for (size_t i = 0; i < size; ++i)
                 {
-                    if (auto * found = arrays_by_path.find(paths[i].getPath()))
+                    UInt128 hash = PathInData::getPartsHash(element_paths[i]);
+                    if (auto * found = arrays_by_path.find(hash))
                     {
                         auto & path_array = found->getMapped().second;
 
                         assert(path_array.size() == current_size);
-                        path_array.push_back(std::move(values[i]));
+                        path_array.push_back(std::move(element_values[i]));
+                        --keys_to_update;
                     }
                     else
                     {
                         Array path_array;
                         path_array.reserve(array.size());
                         path_array.resize(current_size);
-                        path_array.push_back(std::move(values[i]));
+                        path_array.push_back(std::move(element_values[i]));
 
-                        const auto & path_str = paths[i].getPath();
-                        StringRef ref{strings_pool.insert(path_str.data(), path_str.size()), path_str.size()};
-
-                        auto & elem = arrays_by_path[ref];
-                        elem.first = std::move(paths[i]);
+                        auto & elem = arrays_by_path[hash];
+                        elem.first = std::move(element_paths[i]);
                         elem.second = std::move(path_array);
                     }
                 }
 
-                for (auto & [_, value] : arrays_by_path)
+                if (keys_to_update)
                 {
-                    auto & path_array = value.second;
-                    assert(path_array.size() == current_size || path_array.size() == current_size + 1);
-                    if (path_array.size() == current_size)
-                        path_array.push_back(Field());
+                    for (auto & [_, value] : arrays_by_path)
+                    {
+                        auto & path_array = value.second;
+                        assert(path_array.size() == current_size || path_array.size() == current_size + 1);
+                        if (path_array.size() == current_size)
+                            path_array.push_back(Field());
+                    }
                 }
 
                 ++current_size;
@@ -133,28 +146,31 @@ private:
 
             if (arrays_by_path.empty())
             {
-                result.paths.push_back(current_path);
-                result.values.push_back(Array());
+                paths.push_back(builder.getParts());
+                values.push_back(Array());
             }
             else
             {
-                result.paths.reserve(result.paths.size() + arrays_by_path.size());
-                result.values.reserve(result.paths.size() + arrays_by_path.size());
+                paths.reserve(paths.size() + arrays_by_path.size());
+                values.reserve(values.size() + arrays_by_path.size());
 
-                bool is_nested = arrays_by_path.size() > 1 || arrays_by_path.begin()->getKey().size != 0;
+                bool is_nested = arrays_by_path.size() > 1 || !arrays_by_path.begin()->getMapped().first.empty();
 
                 for (auto && [_, value] : arrays_by_path)
                 {
                     auto && [path, path_array] = value;
-                    result.paths.push_back(Path::getNext(current_path, path, is_nested));
-                    result.values.push_back(std::move(path_array));
+
+                    paths.push_back(builder.append(path, is_nested).getParts());
+                    values.push_back(std::move(path_array));
+
+                    builder.popBack(path.size());
                 }
             }
         }
         else
         {
-            result.paths.push_back(std::move(current_path));
-            result.values.push_back(getValueAsField(element));
+            paths.push_back(builder.getParts());
+            values.push_back(getValueAsField(element));
         }
     }
 

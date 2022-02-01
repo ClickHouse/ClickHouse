@@ -3103,7 +3103,7 @@ private:
                  throw Exception(ErrorCodes::TYPE_MISMATCH,
                     "Cast to Object can be performed only from flatten Named Tuple. Got: {}", from_type->getName());
 
-            Paths paths;
+            PathsInData paths;
             DataTypes from_types;
 
             std::tie(paths, from_types) = flattenTuple(from_type);

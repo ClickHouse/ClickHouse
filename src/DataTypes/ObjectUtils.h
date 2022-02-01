@@ -21,22 +21,22 @@ ColumnPtr createArrayOfColumn(const ColumnPtr & column, size_t num_dimensions);
 
 DataTypePtr getDataTypeByColumn(const IColumn & column);
 void convertObjectsToTuples(NamesAndTypesList & columns_list, Block & block, const NamesAndTypesList & extended_storage_columns);
-void checkObjectHasNoAmbiguosPaths(const Paths & paths);
+void checkObjectHasNoAmbiguosPaths(const PathsInData & paths);
 DataTypePtr getLeastCommonTypeForObject(const DataTypes & types, bool check_ambiguos_paths = false);
 NameSet getNamesOfObjectColumns(const NamesAndTypesList & columns_list);
 void extendObjectColumns(NamesAndTypesList & columns_list, const ColumnsDescription & object_columns, bool with_subcolumns);
 
 using DataTypeTuplePtr = std::shared_ptr<DataTypeTuple>;
 
-std::pair<Paths, DataTypes> flattenTuple(const DataTypePtr & type);
+std::pair<PathsInData, DataTypes> flattenTuple(const DataTypePtr & type);
 ColumnPtr flattenTuple(const ColumnPtr & column);
 
 DataTypePtr unflattenTuple(
-    const Paths & paths,
+    const PathsInData & paths,
     const DataTypes & tuple_types);
 
 std::pair<ColumnPtr, DataTypePtr> unflattenTuple(
-    const Paths & paths,
+    const PathsInData & paths,
     const DataTypes & tuple_types,
     const Columns & tuple_columns);
 

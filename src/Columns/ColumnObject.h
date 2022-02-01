@@ -6,7 +6,7 @@
 #include <Common/PODArray.h>
 #include <Common/HashTable/HashMap.h>
 #include <DataTypes/Serializations/JSONDataParser.h>
-#include <DataTypes/Serializations/DataPath.h>
+#include <DataTypes/Serializations/SubcolumnsTree.h>
 
 #include <DataTypes/IDataType.h>
 
@@ -72,11 +72,9 @@ public:
         size_t num_of_defaults_in_prefix = 0;
     };
 
-    // using SubcolumnsMap = std::unordered_map<Path, Subcolumn, Path::Hash>;
     using SubcolumnsTree = SubcolumnsTree<Subcolumn>;
 
 private:
-    // SubcolumnsMap subcolumns;
     const bool is_nullable;
 
     SubcolumnsTree subcolumns;
@@ -90,20 +88,20 @@ public:
 
     void checkConsistency() const;
 
-    bool hasSubcolumn(const Path & key) const;
+    bool hasSubcolumn(const PathInData & key) const;
 
-    const Subcolumn & getSubcolumn(const Path & key) const;
-    Subcolumn & getSubcolumn(const Path & key);
+    const Subcolumn & getSubcolumn(const PathInData & key) const;
+    Subcolumn & getSubcolumn(const PathInData & key);
 
     void incrementNumRows() { ++num_rows; }
 
-    void addSubcolumn(const Path & key, MutableColumnPtr && subcolumn);
-    void addSubcolumn(const Path & key, size_t new_size);
-    void addNestedSubcolumn(const Path & key, const FieldInfo & field_info, size_t new_size);
+    void addSubcolumn(const PathInData & key, MutableColumnPtr && subcolumn);
+    void addSubcolumn(const PathInData & key, size_t new_size);
+    void addNestedSubcolumn(const PathInData & key, const FieldInfo & field_info, size_t new_size);
 
     const SubcolumnsTree & getSubcolumns() const { return subcolumns; }
     SubcolumnsTree & getSubcolumns() { return subcolumns; }
-    Paths getKeys() const;
+    PathsInData getKeys() const;
 
     bool isFinalized() const;
     void finalize();
