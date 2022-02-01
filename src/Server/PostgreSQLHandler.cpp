@@ -105,7 +105,7 @@ void PostgreSQLHandler::run()
                             "0A000",
                             "Command is not supported"),
                         true);
-                    LOG_ERROR(log, Poco::format("Command is not supported. Command code %d", static_cast<Int32>(message_type)));
+                    LOG_ERROR(log, "Command is not supported. Command code {:d}", static_cast<Int32>(message_type));
                     message_transport->dropMessage();
             }
         }

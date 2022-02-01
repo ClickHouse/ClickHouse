@@ -525,7 +525,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         {
             if (e.code() != ErrorCodes::S3_ERROR && e.code() != ErrorCodes::ZERO_COPY_REPLICATION_ERROR)
                 throw;
-            LOG_WARNING(log, e.message() + " Will retry fetching part without zero-copy.");
+            LOG_WARNING(log, fmt::runtime(e.message() + " Will retry fetching part without zero-copy."));
             /// Try again but without zero-copy
             return fetchPart(metadata_snapshot, context, part_name, replica_path, host, port, timeouts,
                 user, password, interserver_scheme, throttler, to_detached, tmp_prefix_, nullptr, false, disk);
