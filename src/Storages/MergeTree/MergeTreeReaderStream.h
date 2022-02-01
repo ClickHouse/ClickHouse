@@ -39,7 +39,7 @@ public:
     ReadBuffer * data_buffer;
 
 private:
-    std::pair<size_t, size_t> getRightOffsetAndBytesRange(size_t left_mark, size_t right_mark);
+    std::pair<size_t, size_t> getRightOffsetAndBytesRange(size_t left_mark, size_t right_mark_non_included);
 
     DiskPtr disk;
     std::string path_prefix;
