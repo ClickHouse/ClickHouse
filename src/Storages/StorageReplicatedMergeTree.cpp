@@ -7046,7 +7046,7 @@ void StorageReplicatedMergeTree::checkBrokenDisks()
             LOG_INFO(log, "Scanning parts to recover on broken disk {} with path {}", disk_ptr->getName(), disk_ptr->getPath());
 
             if (!parts)
-                parts = std::make_unique<DataPartsVector>(getDataPartsVector());
+                parts = std::make_unique<DataPartsVector>(getDataPartsVectorForInternalUsage());
 
             for (auto & part : *parts)
             {
