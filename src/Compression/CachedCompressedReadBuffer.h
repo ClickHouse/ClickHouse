@@ -61,14 +61,14 @@ public:
 
     void setReadUntilPosition(size_t position) override
     {
-        initInput();
-        file_in->setReadUntilPosition(position);
+        if (file_in)
+            file_in->setReadUntilPosition(position);
     }
 
     void setReadUntilEnd() override
     {
-        initInput();
-        file_in->setReadUntilEnd();
+        if (file_in)
+            file_in->setReadUntilEnd();
     }
 };
 

@@ -1,5 +1,3 @@
--- Tags: no-s3-storage
--- Output slightly different plan
 drop table if exists t;
 
 create table t (a Int, b Int) engine = MergeTree order by (a, b) settings index_granularity = 400;
