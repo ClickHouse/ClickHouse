@@ -15,21 +15,22 @@ namespace DB
 class NativeInputFormat final : public IInputFormat
 {
 public:
-    NativeInputFormat(ReadBuffer & buf, const Block & header)
-        : IInputFormat(header, buf)
-        , reader(buf, header, 0) {}
+    NativeInputFormat(ReadBuffer & buf, const Block & header_)
+        : IInputFormat(header_, buf)
+        , reader(std::make_unique<NativeReader>(buf, header_, 0))
+        , header(header_) {}
 
     String getName() const override { return "Native"; }
 
     void resetParser() override
     {
         IInputFormat::resetParser();
-        reader.resetParser();
+        reader->resetParser();
     }
 
     Chunk generate() override
     {
-        auto block = reader.read();
+        auto block = reader->read();
         if (!block)
             return {};
 
@@ -40,8 +41,15 @@ public:
         return Chunk(block.getColumns(), num_rows);
     }
 
+    void setReadBuffer(ReadBuffer & in_) override
+    {
+        reader = std::make_unique<NativeReader>(in_, header, 0);
+        IInputFormat::setReadBuffer(in_);
+    }
+
 private:
-    NativeReader reader;
+    std::unique_ptr<NativeReader> reader;
+    Block header;
 };
 
 class NativeOutputFormat final : public IOutputFormat
