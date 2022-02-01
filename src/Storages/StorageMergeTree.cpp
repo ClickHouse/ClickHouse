@@ -2,6 +2,8 @@
 
 #include <optional>
 
+#include <base/sort.h>
+
 #include <Databases/IDatabase.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -1278,7 +1280,7 @@ std::vector<StorageMergeTree::PartVersionWithName> StorageMergeTree::getSortedPa
             getUpdatedDataVersion(part, currently_processing_in_background_mutex_lock),
             part->name
         });
-    std::sort(part_versions_with_names.begin(), part_versions_with_names.end());
+    ::sort(part_versions_with_names.begin(), part_versions_with_names.end());
     return part_versions_with_names;
 }
 

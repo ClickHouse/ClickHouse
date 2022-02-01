@@ -142,7 +142,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
                             "It's possible if the first replica is not fully created yet "
                             "or if the last replica was just dropped or due to logical error", database_name);
         Int32 cversion = stat.cversion;
-        std::sort(hosts.begin(), hosts.end());
+        ::sort(hosts.begin(), hosts.end());
 
         std::vector<zkutil::ZooKeeper::FutureGet> futures;
         futures.reserve(hosts.size());
