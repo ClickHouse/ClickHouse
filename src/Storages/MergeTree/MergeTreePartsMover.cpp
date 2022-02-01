@@ -113,7 +113,7 @@ bool MergeTreePartsMover::selectPartsForMove(
                 UInt64 required_maximum_available_space = disk->getTotalSpace() * policy->getMoveFactor();
                 UInt64 unreserved_space = disk->getUnreservedSpace();
 
-                if (unreserved_space < required_maximum_available_space)
+                if (unreserved_space < required_maximum_available_space && !disk->isBroken())
                     need_to_move.emplace(disk, required_maximum_available_space - unreserved_space);
             }
         }
