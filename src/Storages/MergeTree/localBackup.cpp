@@ -42,15 +42,31 @@ static void localBackupImpl(const DiskPtr & disk, const String & source_path, co
     }
 }
 
+namespace
+{
 class CleanupOnFail
 {
 public:
-    explicit CleanupOnFail(std::function<void()> && cleaner_) : cleaner(cleaner_), is_success(false) {}
+    explicit CleanupOnFail(std::function<void()> && cleaner_)
+        : cleaner(cleaner_)
+    {}
 
     ~CleanupOnFail()
     {
         if (!is_success)
-            cleaner();
+        {
+            /// We are trying to handle race condition here. So if we was not
+            /// able to backup directory try to remove garbage, but it's ok if
+            /// it doesn't exist.
+            try
+            {
+                cleaner();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+            }
+        }
     }
 
     void success()
@@ -60,8 +76,9 @@ public:
 
 private:
     std::function<void()> cleaner;
-    bool is_success;
+    bool is_success{false};
 };
+}
 
 void localBackup(const DiskPtr & disk, const String & source_path, const String & destination_path, std::optional<size_t> max_level)
 {
@@ -73,11 +90,11 @@ void localBackup(const DiskPtr & disk, const String & source_path, const String 
     size_t try_no = 0;
     const size_t max_tries = 10;
 
-    CleanupOnFail cleanup([&](){disk->removeRecursive(destination_path);});
+    CleanupOnFail cleanup([disk, destination_path]() { disk->removeRecursive(destination_path); });
 
     /** Files in the directory can be permanently added and deleted.
       * If some file is deleted during an attempt to make a backup, then try again,
-      *  because it's important to take into account any new files that might appear.
+      * because it's important to take into account any new files that might appear.
       */
     while (true)
     {
