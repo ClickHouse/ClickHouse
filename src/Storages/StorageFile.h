@@ -129,6 +129,7 @@ private:
     /// is file descriptor. See getTableStructureFromFileDescriptor.
     std::unique_ptr<ReadBuffer> read_buffer_from_fd;
     std::unique_ptr<ReadBuffer> peekable_read_buffer_from_fd;
+    std::atomic<bool> has_peekable_read_buffer_from_fd = false;
 };
 
 }

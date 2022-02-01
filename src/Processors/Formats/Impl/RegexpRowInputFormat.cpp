@@ -45,7 +45,7 @@ bool RegexpFieldExtractor::parseRow(PeekableReadBuffer & buf)
     buf.makeContinuousMemoryFromCheckpointToPos();
     buf.rollbackToCheckpoint();
 
-    bool match = RE2::FullMatchN(re2::StringPiece(buf.position(), line_size), regexp, re2_arguments_ptrs.data(), re2_arguments_ptrs.size());
+    bool match = re2_st::RE2::FullMatchN(re2_st::StringPiece(buf.position(), line_size), regexp, re2_arguments_ptrs.data(), re2_arguments_ptrs.size());
 
     if (!match && !skip_unmatched)
         throw Exception("Line \"" + std::string(buf.position(), line_size) + "\" doesn't match the regexp.", ErrorCodes::INCORRECT_DATA);

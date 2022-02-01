@@ -9,6 +9,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/CurrentMetrics.h>
 #include <Parsers/formatAST.h>
+#include <base/sort.h>
 
 
 namespace DB
@@ -145,7 +146,7 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
         LOG_DEBUG(log, "Having {} queue entries to load, {} entries already loaded.", (to_remove_it - children.begin()), (children.end() - to_remove_it));
         children.erase(to_remove_it, children.end());
 
-        std::sort(children.begin(), children.end());
+        ::sort(children.begin(), children.end());
 
         zkutil::AsyncResponses<Coordination::GetResponse> futures;
         futures.reserve(children.size());
@@ -600,7 +601,7 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
 
     if (!log_entries.empty())
     {
-        std::sort(log_entries.begin(), log_entries.end());
+        ::sort(log_entries.begin(), log_entries.end());
 
         for (size_t entry_idx = 0, num_entries = log_entries.size(); entry_idx < num_entries;)
         {

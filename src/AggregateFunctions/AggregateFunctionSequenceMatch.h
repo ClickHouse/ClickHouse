@@ -6,6 +6,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
 #include <base/range.h>
+#include <base/sort.h>
 #include <Common/PODArray.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -76,7 +77,7 @@ struct AggregateFunctionSequenceMatchData final
     {
         if (!sorted)
         {
-            std::sort(std::begin(events_list), std::end(events_list), Comparator{});
+            ::sort(std::begin(events_list), std::end(events_list), Comparator{});
             sorted = true;
         }
     }

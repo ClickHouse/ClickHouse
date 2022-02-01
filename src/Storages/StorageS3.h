@@ -99,6 +99,8 @@ private:
     std::unique_ptr<ReadBuffer> read_buf;
     std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
+    /// onCancel and generate can be called concurrently
+    std::mutex reader_mutex;
     bool initialized = false;
     bool with_file_column = false;
     bool with_path_column = false;

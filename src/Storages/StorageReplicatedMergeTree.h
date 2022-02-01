@@ -283,6 +283,9 @@ public:
 
     static const String getDefaultZooKeeperName() { return default_zookeeper_name; }
 
+    /// Check if there are new broken disks and enqueue part recovery tasks.
+    void checkBrokenDisks();
+
 private:
     std::atomic_bool are_restoring_replica {false};
 
@@ -417,6 +420,9 @@ private:
 
     /// Global ID, synced via ZooKeeper between replicas
     UUID table_shared_id;
+
+    std::mutex last_broken_disks_mutex;
+    std::set<String> last_broken_disks;
 
     template <class Func>
     void foreachActiveParts(Func && func, bool select_sequential_consistency) const;
