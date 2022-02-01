@@ -280,6 +280,18 @@ Token Lexer::nextTokenImpl()
             }
             return Token(TokenType::Slash, token_begin, pos);
         }
+        case '#':   /// start of single line comment, MySQL style
+        {           /// PostgreSQL has some operators using '#' character.
+                    /// For less ambiguity, we will recognize a comment only if # is followed by whitespace.
+                    /// or #! as a special case for "shebang".
+                    /// #hello - not a comment
+                    /// # hello - a comment
+                    /// #!/usr/bin/clickhouse-local --queries-file - a comment
+            ++pos;
+            if (pos < end && (*pos == ' ' || *pos == '!'))
+                return comment_until_end_of_line();
+            return Token(TokenType::Error, token_begin, pos);
+        }
         case '%':
             return Token(TokenType::Percent, token_begin, ++pos);
         case '=':   /// =, ==
