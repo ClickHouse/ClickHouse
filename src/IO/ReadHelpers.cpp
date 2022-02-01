@@ -4,7 +4,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/memcpySmall.h>
 #include <Formats/FormatSettings.h>
-#include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/readFloatText.h>
@@ -702,6 +701,25 @@ void readCSVString(String & s, ReadBuffer & buf, const FormatSettings::CSV & set
     readCSVStringInto(s, buf, settings);
 }
 
+void readCSVField(String & s, ReadBuffer & buf, const FormatSettings::CSV & settings)
+{
+    s.clear();
+    bool add_quote = false;
+    char quote = '\'';
+
+    if (!buf.eof() && (*buf.position() == '\'' || *buf.position() == '"'))
+    {
+        quote = *buf.position();
+        s.push_back(quote);
+        add_quote = true;
+    }
+
+    readCSVStringInto(s, buf, settings);
+
+    if (add_quote)
+        s.push_back(quote);
+}
+
 template void readCSVStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 
 
@@ -1212,6 +1230,19 @@ void skipToNextRowOrEof(PeekableReadBuffer & buf, const String & row_after_delim
     }
 }
 
+// Use PeekableReadBuffer to copy field to string after parsing.
+template <typename ParseFunc>
+static void readParsedValueIntoString(String & s, ReadBuffer & buf, ParseFunc parse_func)
+{
+    PeekableReadBuffer peekable_buf(buf);
+    peekable_buf.setCheckpoint();
+    parse_func(peekable_buf);
+    peekable_buf.makeContinuousMemoryFromCheckpointToPos();
+    auto * end = peekable_buf.position();
+    peekable_buf.rollbackToCheckpoint();
+    s.append(peekable_buf.position(), end);
+    peekable_buf.position() = end;
+}
 
 template <char opening_bracket, char closing_bracket>
 static void readQuotedFieldInBrackets(String & s, ReadBuffer & buf)
@@ -1266,7 +1297,11 @@ void readQuotedFieldIntoString(String & s, ReadBuffer & buf)
     /// - Number: integer, float, decimal.
 
     if (*buf.position() == '\'')
-        readQuotedString(s, buf);
+    {
+        s.push_back('\'');
+        readQuotedStringInto<false>(s, buf);
+        s.push_back('\'');
+    }
     else if (*buf.position() == '[')
         readQuotedFieldInBrackets<'[', ']'>(s, buf);
     else if (*buf.position() == '(')
@@ -1290,18 +1325,19 @@ void readQuotedFieldIntoString(String & s, ReadBuffer & buf)
     else
     {
         /// It's an integer, float or decimal. They all can be parsed as float.
-        /// Use PeekableReadBuffer to copy field to string after parsing.
-        PeekableReadBuffer peekable_buf(buf);
-        peekable_buf.setCheckpoint();
-        Float64 tmp;
-        readFloatText(tmp, peekable_buf);
-        peekable_buf.makeContinuousMemoryFromCheckpointToPos();
-        auto * end = peekable_buf.position();
-        peekable_buf.rollbackToCheckpoint();
-        s.append(peekable_buf.position(), end);
-        peekable_buf.position() = end;
+        auto parse_func = [](ReadBuffer & in)
+        {
+            Float64 tmp;
+            readFloatText(tmp, in);
+        };
+        readParsedValueIntoString(s, buf, parse_func);
     }
 }
 
+void readJSONFieldIntoString(String & s, ReadBuffer & buf)
+{
+    auto parse_func = [](ReadBuffer & in) { skipJSONField(in, "json_field"); };
+    readParsedValueIntoString(s, buf, parse_func);
+}
 
 }

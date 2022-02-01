@@ -1,13 +1,14 @@
 #pragma once
 
 #include <memory>
-#include <Common/COW.h>
 #include <boost/noncopyable.hpp>
 #include <Core/Names.h>
 #include <Core/TypeId.h>
+#include <Common/COW.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+
 
 namespace DB
 {
@@ -377,6 +378,8 @@ struct WhichDataType
     constexpr bool isNullable() const { return idx == TypeIndex::Nullable; }
     constexpr bool isFunction() const { return idx == TypeIndex::Function; }
     constexpr bool isAggregateFunction() const { return idx == TypeIndex::AggregateFunction; }
+
+    constexpr bool isLowCarnality() const { return idx == TypeIndex::LowCardinality; }
 };
 
 /// IDataType helpers (alternative for IDataType virtual methods with single point of truth)
@@ -473,7 +476,7 @@ template <typename T, typename DataType>
 inline bool isColumnedAsDecimalT(const DataType & data_type)
 {
     const WhichDataType which(data_type);
-    return (which.isDecimal() || which.isDateTime64()) && which.idx == TypeId<T>;
+    return (which.isDecimal() || which.isDateTime64()) && which.idx == TypeToTypeIndex<T>;
 }
 
 template <typename T>
@@ -504,7 +507,7 @@ inline bool isNotCreatable(const T & data_type)
 inline bool isNotDecimalButComparableToDecimal(const DataTypePtr & data_type)
 {
     WhichDataType which(data_type);
-    return which.isInt() || which.isUInt();
+    return which.isInt() || which.isUInt() || which.isFloat();
 }
 
 inline bool isCompilableType(const DataTypePtr & data_type)
@@ -520,6 +523,7 @@ inline bool isBool(const DataTypePtr & data_type)
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;
 template <typename DataType> constexpr bool IsDataTypeNumber = false;
 template <typename DataType> constexpr bool IsDataTypeDateOrDateTime = false;
+template <typename DataType> constexpr bool IsDataTypeEnum = false;
 
 template <typename DataType> constexpr bool IsDataTypeDecimalOrNumber = IsDataTypeDecimal<DataType> || IsDataTypeNumber<DataType>;
 
@@ -543,5 +547,10 @@ template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDate32> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime> = true;
 template <> inline constexpr bool IsDataTypeDateOrDateTime<DataTypeDateTime64> = true;
+
+template <typename T>
+class DataTypeEnum;
+
+template <typename T> inline constexpr bool IsDataTypeEnum<DataTypeEnum<T>> = true;
 
 }

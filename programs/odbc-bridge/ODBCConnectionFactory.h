@@ -91,6 +91,25 @@ T execute(nanodbc::ConnectionHolderPtr connection_holder, std::function<T(nanodb
             connection_holder->updateConnection();
             return query_func(connection_holder->get());
         }
+
+        /// psqlodbc driver error handling is incomplete and under some scenarious
+        /// it doesn't propagate correct errors to the caller.
+        /// As a quick workaround we run a quick "ping" query over the connection
+        /// on generic errors.
+        /// If "ping" fails, recycle the connection and try the query once more.
+        if (e.state().starts_with("HY00"))
+        {
+            try
+            {
+                just_execute(connection_holder->get(), "SELECT 1");
+            }
+            catch (...)
+            {
+                connection_holder->updateConnection();
+                return query_func(connection_holder->get());
+            }
+        }
+
         throw;
     }
 }

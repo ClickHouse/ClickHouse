@@ -1,65 +1,20 @@
 #pragma once
 
+#include <cmath>
+
+#include <base/sort.h>
+#include <base/TypeName.h>
+#include <Core/Field.h>
+#include <Core/DecimalFunctions.h>
+#include <Core/TypeId.h>
+#include <Common/typeid_cast.h>
 #include <Columns/ColumnVectorHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
-#include <Core/Field.h>
-#include <Core/DecimalFunctions.h>
-#include <Common/typeid_cast.h>
-#include <base/sort.h>
-#include <Core/TypeId.h>
-#include <base/TypeName.h>
-
-#include <cmath>
 
 
 namespace DB
 {
-
-/// PaddedPODArray extended by Decimal scale
-template <typename T>
-class DecimalPaddedPODArray : public PaddedPODArray<T>
-{
-public:
-    using Base = PaddedPODArray<T>;
-    using Base::operator[];
-
-    DecimalPaddedPODArray(size_t size, UInt32 scale_)
-    :   Base(size),
-        scale(scale_)
-    {}
-
-    DecimalPaddedPODArray(const DecimalPaddedPODArray & other)
-    :   Base(other.begin(), other.end()),
-        scale(other.scale)
-    {}
-
-    DecimalPaddedPODArray(DecimalPaddedPODArray && other)
-    {
-        this->swap(other);
-        std::swap(scale, other.scale);
-    }
-
-    DecimalPaddedPODArray & operator=(DecimalPaddedPODArray && other)
-    {
-        this->swap(other);
-        std::swap(scale, other.scale);
-        return *this;
-    }
-
-    UInt32 getScale() const { return scale; }
-
-private:
-    UInt32 scale;
-};
-
-/// Prevent implicit template instantiation of DecimalPaddedPODArray for common decimal types
-
-extern template class DecimalPaddedPODArray<Decimal32>;
-extern template class DecimalPaddedPODArray<Decimal64>;
-extern template class DecimalPaddedPODArray<Decimal128>;
-extern template class DecimalPaddedPODArray<Decimal256>;
-extern template class DecimalPaddedPODArray<DateTime64>;
 
 /// A ColumnVector for Decimals
 template <is_decimal T>
@@ -72,22 +27,22 @@ private:
 public:
     using ValueType = T;
     using NativeT = typename T::NativeType;
-    using Container = DecimalPaddedPODArray<T>;
+    using Container = PaddedPODArray<T>;
 
 private:
     ColumnDecimal(const size_t n, UInt32 scale_)
-    :   data(n, scale_),
+    :   data(n),
         scale(scale_)
     {}
 
     ColumnDecimal(const ColumnDecimal & src)
-    :   data(src.data),
+    :   data(src.data.begin(), src.data.end()),
         scale(src.scale)
     {}
 
 public:
     const char * getFamilyName() const override { return TypeName<T>.data(); }
-    TypeIndex getDataType() const override { return TypeId<T>; }
+    TypeIndex getDataType() const override { return TypeToTypeIndex<T>; }
 
     bool isNumeric() const override { return false; }
     bool canBeInsideNullable() const override { return true; }
@@ -195,7 +150,7 @@ public:
     const T & getElement(size_t n) const { return data[n]; }
     T & getElement(size_t n) { return data[n]; }
 
-    UInt32 getScale() const {return scale;}
+    UInt32 getScale() const { return scale; }
 
 protected:
     Container data;
@@ -206,17 +161,17 @@ protected:
     {
         size_t s = data.size();
         res.resize(s);
-        for (U i = 0; i < s; ++i)
-            res[i] = i;
+        for (size_t i = 0; i < s; ++i)
+            res[i] = static_cast<U>(i);
 
         auto sort_end = res.end();
         if (limit && limit < s)
             sort_end = res.begin() + limit;
 
         if (reverse)
-            partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] > data[b]; });
+            ::partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] > data[b]; });
         else
-            partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] < data[b]; });
+            ::partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] < data[b]; });
     }
 };
 

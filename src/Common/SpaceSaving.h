@@ -5,6 +5,8 @@
 
 #include <boost/range/adaptor/reversed.hpp>
 
+#include <base/sort.h>
+
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/HashTable/Hash.h>
@@ -242,7 +244,7 @@ public:
             }
         }
 
-        std::sort(counter_list.begin(), counter_list.end(), [](Counter * l, Counter * r) { return *l > *r; });
+        ::sort(counter_list.begin(), counter_list.end(), [](Counter * l, Counter * r) { return *l > *r; });
 
         if (counter_list.size() > m_capacity)
         {

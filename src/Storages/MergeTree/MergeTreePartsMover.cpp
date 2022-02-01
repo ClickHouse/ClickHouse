@@ -113,7 +113,7 @@ bool MergeTreePartsMover::selectPartsForMove(
                 UInt64 required_maximum_available_space = disk->getTotalSpace() * policy->getMoveFactor();
                 UInt64 unreserved_space = disk->getUnreservedSpace();
 
-                if (unreserved_space < required_maximum_available_space)
+                if (unreserved_space < required_maximum_available_space && !disk->isBroken())
                     need_to_move.emplace(disk, required_maximum_available_space - unreserved_space);
             }
         }
@@ -122,6 +122,9 @@ bool MergeTreePartsMover::selectPartsForMove(
     time_t time_of_move = time(nullptr);
 
     auto metadata_snapshot = data->getInMemoryMetadataPtr();
+
+    if (need_to_move.empty() && !metadata_snapshot->hasAnyMoveTTL())
+        return false;
 
     for (const auto & part : data_parts)
     {
@@ -197,7 +200,7 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
     auto settings = data->getSettings();
     auto part = moving_part.part;
     auto disk = moving_part.reserved_space->getDisk();
-    LOG_DEBUG(log, "Cloning part {} from {} to {}", part->name, part->volume->getDisk()->getName(), disk->getName());
+    LOG_DEBUG(log, "Cloning part {} from '{}' to '{}'", part->name, part->volume->getDisk()->getName(), disk->getName());
 
     const String directory_to_move = "moving";
     if (disk->supportZeroCopyReplication() && settings->allow_remote_fs_zero_copy_replication)

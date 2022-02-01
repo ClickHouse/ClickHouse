@@ -12,6 +12,8 @@
 //#include <iostream>
 #include <filesystem>
 
+#include <base/sort.h>
+
 /**
 
 ELF object can contain three different places with symbol names and addresses:
@@ -86,7 +88,7 @@ namespace
 /// https://stackoverflow.com/questions/32088140/multiple-string-tables-in-elf-object
 
 
-void updateResources(std::string_view name, const void * address, SymbolIndex::Resources & resources)
+void updateResources(ElfW(Addr) base_address, std::string_view object_name, std::string_view name, const void * address, SymbolIndex::Resources & resources)
 {
     const char * char_address = static_cast<const char *>(address);
 
@@ -97,18 +99,23 @@ void updateResources(std::string_view name, const void * address, SymbolIndex::R
             name = name.substr((name[0] == '_') + strlen("binary_"));
             name = name.substr(0, name.size() - strlen("_start"));
 
-            resources.emplace(name, std::string_view{char_address, 0}); // NOLINT
+            resources.emplace(name, SymbolIndex::ResourcesBlob{
+                base_address,
+                object_name,
+                std::string_view{char_address, 0}, // NOLINT
+            });
         }
         else if (name.ends_with("_end"))
         {
             name = name.substr((name[0] == '_') + strlen("binary_"));
             name = name.substr(0, name.size() - strlen("_end"));
 
-            if (auto it = resources.find(name); it != resources.end() && it->second.empty())
+            auto it = resources.find(name);
+            if (it != resources.end() && it->second.base_address == base_address && it->second.data.empty())
             {
-                const char * start = it->second.data();
+                const char * start = it->second.data.data();
                 assert(char_address >= start);
-                it->second = std::string_view{start, static_cast<size_t>(char_address - start)};
+                it->second.data = std::string_view{start, static_cast<size_t>(char_address - start)};
             }
         }
     }
@@ -153,10 +160,12 @@ void collectSymbolsFromProgramHeaders(
         size_t sym_cnt = 0;
         for (const auto * it = dyn_begin; it->d_tag != DT_NULL; ++it)
         {
+            ElfW(Addr) base_address = correct_address(info->dlpi_addr, it->d_un.d_ptr);
+
             // TODO: this branch leads to invalid address of the hash table. Need further investigation.
             // if (it->d_tag == DT_HASH)
             // {
-            //     const ElfW(Word) * hash = reinterpret_cast<const ElfW(Word) *>(correct_address(info->dlpi_addr, it->d_un.d_ptr));
+            //     const ElfW(Word) * hash = reinterpret_cast<const ElfW(Word) *>(base_address);
             //     sym_cnt = hash[1];
             //     break;
             // }
@@ -167,7 +176,7 @@ void collectSymbolsFromProgramHeaders(
                 const uint32_t * buckets = nullptr;
                 const uint32_t * hashval = nullptr;
 
-                const ElfW(Word) * hash = reinterpret_cast<const ElfW(Word) *>(correct_address(info->dlpi_addr, it->d_un.d_ptr));
+                const ElfW(Word) * hash = reinterpret_cast<const ElfW(Word) *>(base_address);
 
                 buckets = hash + 4 + (hash[2] * sizeof(size_t) / 4);
 
@@ -196,9 +205,11 @@ void collectSymbolsFromProgramHeaders(
         const char * strtab = nullptr;
         for (const auto * it = dyn_begin; it->d_tag != DT_NULL; ++it)
         {
+            ElfW(Addr) base_address = correct_address(info->dlpi_addr, it->d_un.d_ptr);
+
             if (it->d_tag == DT_STRTAB)
             {
-                strtab = reinterpret_cast<const char *>(correct_address(info->dlpi_addr, it->d_un.d_ptr));
+                strtab = reinterpret_cast<const char *>(base_address);
                 break;
             }
         }
@@ -208,10 +219,12 @@ void collectSymbolsFromProgramHeaders(
 
         for (const auto * it = dyn_begin; it->d_tag != DT_NULL; ++it)
         {
+            ElfW(Addr) base_address = correct_address(info->dlpi_addr, it->d_un.d_ptr);
+
             if (it->d_tag == DT_SYMTAB)
             {
                 /* Get the pointer to the first entry of the symbol table */
-                const ElfW(Sym) * elf_sym = reinterpret_cast<const ElfW(Sym) *>(correct_address(info->dlpi_addr, it->d_un.d_ptr));
+                const ElfW(Sym) * elf_sym = reinterpret_cast<const ElfW(Sym) *>(base_address);
 
                 /* Iterate over the symbol table */
                 for (ElfW(Word) sym_index = 0; sym_index < ElfW(Word)(sym_cnt); ++sym_index)
@@ -236,7 +249,7 @@ void collectSymbolsFromProgramHeaders(
                         symbols.push_back(symbol);
 
                     /// But resources can be represented by a pair of empty symbols (indicating their boundaries).
-                    updateResources(symbol.name, symbol.address_begin, resources);
+                    updateResources(base_address, info->dlpi_name, symbol.name, symbol.address_begin, resources);
                 }
 
                 break;
@@ -299,7 +312,7 @@ void collectSymbolsFromELFSymbolTable(
         if (symbol_table_entry->st_size)
             symbols.push_back(symbol);
 
-        updateResources(symbol.name, symbol.address_begin, resources);
+        updateResources(info->dlpi_addr, info->dlpi_name, symbol.name, symbol.address_begin, resources);
     }
 }
 
@@ -487,8 +500,8 @@ void SymbolIndex::update()
 {
     dl_iterate_phdr(collectSymbols, &data);
 
-    std::sort(data.objects.begin(), data.objects.end(), [](const Object & a, const Object & b) { return a.address_begin < b.address_begin; });
-    std::sort(data.symbols.begin(), data.symbols.end(), [](const Symbol & a, const Symbol & b) { return a.address_begin < b.address_begin; });
+    ::sort(data.objects.begin(), data.objects.end(), [](const Object & a, const Object & b) { return a.address_begin < b.address_begin; });
+    ::sort(data.symbols.begin(), data.symbols.end(), [](const Symbol & a, const Symbol & b) { return a.address_begin < b.address_begin; });
 
     /// We found symbols both from loaded program headers and from ELF symbol tables.
     data.symbols.erase(std::unique(data.symbols.begin(), data.symbols.end(), [](const Symbol & a, const Symbol & b)

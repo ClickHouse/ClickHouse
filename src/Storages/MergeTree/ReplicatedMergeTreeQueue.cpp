@@ -1,13 +1,15 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMergeStrategyPicker.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/CurrentMetrics.h>
+#include <Parsers/formatAST.h>
+#include <base/sort.h>
 
 
 namespace DB
@@ -144,7 +146,7 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
         LOG_DEBUG(log, "Having {} queue entries to load, {} entries already loaded.", (to_remove_it - children.begin()), (children.end() - to_remove_it));
         children.erase(to_remove_it, children.end());
 
-        std::sort(children.begin(), children.end());
+        ::sort(children.begin(), children.end());
 
         zkutil::AsyncResponses<Coordination::GetResponse> futures;
         futures.reserve(children.size());
@@ -599,7 +601,7 @@ int32_t ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper
 
     if (!log_entries.empty())
     {
-        std::sort(log_entries.begin(), log_entries.end());
+        ::sort(log_entries.begin(), log_entries.end());
 
         for (size_t entry_idx = 0, num_entries = log_entries.size(); entry_idx < num_entries;)
         {
@@ -1122,7 +1124,7 @@ bool ReplicatedMergeTreeQueue::addFuturePartIfNotCoveredByThem(const String & pa
 
     if (isNotCoveredByFuturePartsImpl(entry, part_name, reject_reason, lock))
     {
-        CurrentlyExecuting::setActualPartName(entry, part_name, *this);
+        CurrentlyExecuting::setActualPartName(entry, part_name, *this, lock);
         return true;
     }
 
@@ -1177,7 +1179,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                 return false;
             }
 
-            auto part = data.getPartIfExists(name, {MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
+            auto part = data.getPartIfExists(name, {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
             if (part)
             {
                 if (auto part_in_memory = asInMemoryPart(part))
@@ -1374,7 +1376,8 @@ Int64 ReplicatedMergeTreeQueue::getCurrentMutationVersion(const String & partiti
 }
 
 
-ReplicatedMergeTreeQueue::CurrentlyExecuting::CurrentlyExecuting(const ReplicatedMergeTreeQueue::LogEntryPtr & entry_, ReplicatedMergeTreeQueue & queue_)
+ReplicatedMergeTreeQueue::CurrentlyExecuting::CurrentlyExecuting(
+    const ReplicatedMergeTreeQueue::LogEntryPtr & entry_, ReplicatedMergeTreeQueue & queue_, std::lock_guard<std::mutex> & /* state_lock */)
     : entry(entry_), queue(queue_)
 {
     if (entry->type == ReplicatedMergeTreeLogEntry::DROP_RANGE || entry->type == ReplicatedMergeTreeLogEntry::REPLACE_RANGE)
@@ -1396,8 +1399,11 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::CurrentlyExecuting(const Replicate
 }
 
 
-void ReplicatedMergeTreeQueue::CurrentlyExecuting::setActualPartName(ReplicatedMergeTreeQueue::LogEntry & entry,
-                                                                     const String & actual_part_name, ReplicatedMergeTreeQueue & queue)
+void ReplicatedMergeTreeQueue::CurrentlyExecuting::setActualPartName(
+    ReplicatedMergeTreeQueue::LogEntry & entry,
+    const String & actual_part_name,
+    ReplicatedMergeTreeQueue & queue,
+    std::lock_guard<std::mutex> & /* state_lock */)
 {
     if (!entry.actual_new_part_name.empty())
         throw Exception("Entry actual part isn't empty yet. This is a bug.", ErrorCodes::LOGICAL_ERROR);
@@ -1476,7 +1482,7 @@ ReplicatedMergeTreeQueue::SelectedEntryPtr ReplicatedMergeTreeQueue::selectEntry
     }
 
     if (entry)
-        return std::make_shared<SelectedEntry>(entry, std::unique_ptr<CurrentlyExecuting>{ new CurrentlyExecuting(entry, *this) });
+        return std::make_shared<SelectedEntry>(entry, std::unique_ptr<CurrentlyExecuting>{new CurrentlyExecuting(entry, *this, lock)});
     else
         return {};
 }

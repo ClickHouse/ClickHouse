@@ -2,6 +2,8 @@
 
 #include <optional>
 
+#include <base/sort.h>
+
 #include <Databases/IDatabase.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -17,6 +19,7 @@
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/formatAST.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/AlterCommands.h>
@@ -141,14 +144,16 @@ void StorageMergeTree::startup()
 
 void StorageMergeTree::flush()
 {
+    if (flush_called.exchange(true))
+        return;
+
     flushAllInMemoryPartsIfNeeded();
 }
 
 void StorageMergeTree::shutdown()
 {
-    if (shutdown_called)
+    if (shutdown_called.exchange(true))
         return;
-    shutdown_called = true;
 
     /// Unlock all waiting mutations
     {
@@ -229,7 +234,7 @@ std::optional<UInt64> StorageMergeTree::totalRows(const Settings &) const
 
 std::optional<UInt64> StorageMergeTree::totalRowsByPartitionPredicate(const SelectQueryInfo & query_info, ContextPtr local_context) const
 {
-    auto parts = getDataPartsVector({DataPartState::Committed});
+    auto parts = getDataPartsVector({DataPartState::Active});
     return totalRowsByPartitionPredicateImpl(query_info, local_context, parts);
 }
 
@@ -1181,7 +1186,7 @@ std::vector<StorageMergeTree::PartVersionWithName> StorageMergeTree::getSortedPa
             getUpdatedDataVersion(part, currently_processing_in_background_mutex_lock),
             part->name
         });
-    std::sort(part_versions_with_names.begin(), part_versions_with_names.end());
+    ::sort(part_versions_with_names.begin(), part_versions_with_names.end());
     return part_versions_with_names;
 }
 
@@ -1294,7 +1299,7 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(const String & part_name, boo
     {
         /// Forcefully stop merges and make part outdated
         auto merge_blocker = stopMergesAndWait();
-        auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Committed});
+        auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active});
         if (!part)
             throw Exception("Part " + part_name + " not found, won't try to drop it.", ErrorCodes::NO_SUCH_DATA_PART);
         removePartsFromWorkingSet({part}, true);
@@ -1306,7 +1311,7 @@ MergeTreeDataPartPtr StorageMergeTree::outdatePart(const String & part_name, boo
         /// Wait merges selector
         std::unique_lock lock(currently_processing_in_background_mutex);
 
-        auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Committed});
+        auto part = getPartIfExists(part_name, {MergeTreeDataPartState::Active});
         /// It's okay, part was already removed
         if (!part)
             return nullptr;
@@ -1344,7 +1349,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
         /// This protects against "revival" of data for a removed partition after completion of merge.
         auto merge_blocker = stopMergesAndWait();
         String partition_id = getPartitionIDFromQuery(partition, local_context);
-        parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+        parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Active, partition_id);
 
         /// TODO should we throw an exception if parts_to_remove is empty?
         removePartsFromWorkingSet(parts_to_remove, true);
@@ -1426,7 +1431,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, my_metadata_snapshot);
     String partition_id = getPartitionIDFromQuery(partition, local_context);
 
-    DataPartsVector src_parts = src_data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+    DataPartsVector src_parts = src_data.getDataPartsVectorInPartition(MergeTreeDataPartState::Active, partition_id);
     MutableDataPartsVector dst_parts;
 
     static const String TMP_PREFIX = "tmp_replace_from_";
@@ -1511,7 +1516,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(*this, metadata_snapshot, dest_metadata_snapshot);
     String partition_id = getPartitionIDFromQuery(partition, local_context);
 
-    DataPartsVector src_parts = src_data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+    DataPartsVector src_parts = src_data.getDataPartsVectorInPartition(MergeTreeDataPartState::Active, partition_id);
     MutableDataPartsVector dst_parts;
 
     static const String TMP_PREFIX = "tmp_move_from_";
@@ -1591,7 +1596,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
     if (const auto & check_query = query->as<ASTCheckQuery &>(); check_query.partition)
     {
         String partition_id = getPartitionIDFromQuery(check_query.partition, local_context);
-        data_parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+        data_parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Active, partition_id);
     }
     else
         data_parts = getDataPartsVector();

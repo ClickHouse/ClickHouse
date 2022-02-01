@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -56,8 +57,27 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_hindex_origin = arguments[0].column.get();
-        const auto * col_hindex_dest = arguments[1].column.get();
+        const auto * col_hindex_origin = checkAndGetColumn<ColumnUInt64>(arguments[0].column.get());
+        if (!col_hindex_origin)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be UInt64.",
+                arguments[0].type->getName(),
+                1,
+                getName());
+
+        const auto & data_hindex_origin = col_hindex_origin->getData();
+
+        const auto * col_hindex_dest = checkAndGetColumn<ColumnUInt64>(arguments[1].column.get());
+        if (!col_hindex_dest)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal type {} of argument {} of function {}. Must be UInt64.",
+                arguments[1].type->getName(),
+                2,
+                getName());
+
+        const auto & data_hindex_dest = col_hindex_dest->getData();
 
         auto dst = ColumnVector<UInt8>::create();
         auto & dst_data = dst->getData();
@@ -65,8 +85,8 @@ public:
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const UInt64 hindex_origin = col_hindex_origin->getUInt(row);
-            const UInt64 hindex_dest = col_hindex_dest->getUInt(row);
+            const UInt64 hindex_origin = data_hindex_origin[row];
+            const UInt64 hindex_dest = data_hindex_dest[row];
 
             UInt8 res = areNeighborCells(hindex_origin, hindex_dest);
 
