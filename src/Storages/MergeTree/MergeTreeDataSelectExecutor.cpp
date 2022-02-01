@@ -1526,10 +1526,19 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     size_t final_mark = part->index_granularity.hasFinalMark();
     size_t index_marks_count = (marks_count - final_mark + index_granularity - 1) / index_granularity;
 
+    MarkRanges index_ranges;
+    for (const auto & range : ranges)
+    {
+        MarkRange index_range(
+                range.begin / index_granularity,
+                (range.end + index_granularity - 1) / index_granularity);
+        index_ranges.push_back(index_range);
+    }
+
     MergeTreeIndexReader reader(
         index_helper, part,
         index_marks_count,
-        ranges,
+        index_ranges,
         mark_cache,
         uncompressed_cache,
         reader_settings);
@@ -1540,11 +1549,9 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     /// this variable is stored to avoid reading the same granule twice.
     MergeTreeIndexGranulePtr granule = nullptr;
     size_t last_index_mark = 0;
-    for (const auto & range : ranges)
+    for (size_t i = 0; i < ranges.size(); ++i)
     {
-        MarkRange index_range(
-                range.begin / index_granularity,
-                (range.end + index_granularity - 1) / index_granularity);
+        const MarkRange & index_range = index_ranges[i];
 
         if (last_index_mark != index_range.begin || !granule)
             reader.seek(index_range.begin);
@@ -1557,8 +1564,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                 granule = reader.read();
 
             MarkRange data_range(
-                    std::max(range.begin, index_mark * index_granularity),
-                    std::min(range.end, (index_mark + 1) * index_granularity));
+                    std::max(ranges[i].begin, index_mark * index_granularity),
+                    std::min(ranges[i].end, (index_mark + 1) * index_granularity));
 
             if (!condition->mayBeTrueOnGranule(granule))
             {
