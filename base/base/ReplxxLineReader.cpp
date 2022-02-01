@@ -133,7 +133,7 @@ void convertHistoryFile(const std::string & path, replxx::Replxx & rx)
 }
 
 ReplxxLineReader::ReplxxLineReader(
-    const Suggest & suggest,
+    Suggest & suggest,
     const String & history_file_path_,
     bool multiline_,
     Patterns extenders_,
@@ -179,9 +179,7 @@ ReplxxLineReader::ReplxxLineReader(
 
     auto callback = [&suggest] (const String & context, size_t context_size)
     {
-        if (auto range = suggest.getCompletions(context, context_size))
-            return Replxx::completions_t(range->first, range->second);
-        return Replxx::completions_t();
+        return suggest.getCompletions(context, context_size);
     };
 
     rx.set_completion_callback(callback);
