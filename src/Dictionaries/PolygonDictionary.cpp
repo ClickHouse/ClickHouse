@@ -3,6 +3,8 @@
 #include <numeric>
 #include <cmath>
 
+#include <base/sort.h>
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
@@ -250,7 +252,7 @@ void IPolygonDictionary::loadData()
         polygon_ids.emplace_back(polygon, i);
     }
 
-    std::sort(polygon_ids.begin(), polygon_ids.end(), [& areas](const auto & lhs, const auto & rhs)
+    ::sort(polygon_ids.begin(), polygon_ids.end(), [& areas](const auto & lhs, const auto & rhs)
     {
         return areas[lhs.second] < areas[rhs.second];
     });
