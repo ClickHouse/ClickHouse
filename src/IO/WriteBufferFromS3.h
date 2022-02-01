@@ -30,6 +30,8 @@ namespace Aws::S3::Model
 namespace DB
 {
 
+using ScheduleFunc = std::function<void(std::function<void()>)>;
+
 /**
  * Buffer to write a data to a S3 object with specified bucket and key.
  * If data size written to the buffer is less than 'max_single_part_upload_size' write is performed using singlepart upload.
@@ -48,7 +50,7 @@ public:
         size_t max_single_part_upload_size_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-        ThreadPool * thread_pool_ = nullptr);
+        ScheduleFunc && schedule_ = {});
 
     ~WriteBufferFromS3() override;
 
@@ -97,7 +99,8 @@ private:
     bool is_prefinalized = false;
 
     /// Following fields are for background uploads in thread pool (if specified).
-    ThreadPool * thread_pool;
+    /// We use std::function to avoid dependency of Interpreters
+    ScheduleFunc schedule;
     std::unique_ptr<PutObjectTask> put_object_task;
     std::list<UploadPartTask> upload_object_tasks;
     size_t num_added_bg_tasks = 0;
