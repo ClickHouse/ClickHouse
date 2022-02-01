@@ -11,7 +11,6 @@
 #    include <aws/s3/model/PutObjectRequest.h>
 #    include <aws/s3/model/UploadPartRequest.h>
 #    include <base/logger_useful.h>
-#    include <base/scope_guard_safe.h>
 
 #    include <utility>
 
@@ -58,7 +57,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     size_t max_single_part_upload_size_,
     std::optional<std::map<String, String>> object_metadata_,
     size_t buffer_size_,
-    ThreadPool * thread_pool_)
+    ScheduleFunc && schedule_)
     : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
     , bucket(bucket_)
     , key(key_)
@@ -66,7 +65,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     , client_ptr(std::move(client_ptr_))
     , minimum_upload_part_size(minimum_upload_part_size_)
     , max_single_part_upload_size(max_single_part_upload_size_)
-    , thread_pool(thread_pool_)
+    , schedule(std::move(schedule_))
 {
     allocateBuffer();
 }
@@ -175,7 +174,7 @@ void WriteBufferFromS3::writePart()
         LOG_WARNING(log, "Maximum part number in S3 protocol has reached (too many parts). Server may not accept this whole upload.");
     }
 
-    if (thread_pool)
+    if (schedule)
     {
         UploadPartTask * task = nullptr;
         int part_number;
@@ -187,16 +186,8 @@ void WriteBufferFromS3::writePart()
         }
 
         fillUploadRequest(task->req, part_number);
-        thread_pool->scheduleOrThrow([this, task, thread_group = CurrentThread::getGroup()]()
+        schedule([this, task]()
         {
-            if (thread_group)
-                    CurrentThread::attachTo(thread_group);
-
-            SCOPE_EXIT_SAFE(
-                if (thread_group)
-                    CurrentThread::detachQueryIfNotDetached();
-            );
-
             try
             {
                 processUploadRequest(*task);
@@ -283,7 +274,7 @@ void WriteBufferFromS3::completeMultipartUpload()
 void WriteBufferFromS3::makeSinglepartUpload()
 {
     auto size = temporary_buffer->tellp();
-    bool with_pool = thread_pool != nullptr;
+    bool with_pool = bool(schedule);
 
     LOG_DEBUG(log, "Making single part upload. Bucket: {}, Key: {}, Size: {}, WithPool: {}", bucket, key, size, with_pool);
 
@@ -296,20 +287,12 @@ void WriteBufferFromS3::makeSinglepartUpload()
         return;
     }
 
-    if (thread_pool)
+    if (schedule)
     {
         put_object_task = std::make_unique<PutObjectTask>();
         fillPutRequest(put_object_task->req);
-        thread_pool->scheduleOrThrow([this, thread_group = CurrentThread::getGroup()]()
+        schedule([this]()
         {
-            if (thread_group)
-                    CurrentThread::attachTo(thread_group);
-
-            SCOPE_EXIT_SAFE(
-                if (thread_group)
-                    CurrentThread::detachQueryIfNotDetached();
-            );
-
             try
             {
                 processPutRequest(*put_object_task);
@@ -348,7 +331,7 @@ void WriteBufferFromS3::fillPutRequest(Aws::S3::Model::PutObjectRequest & req)
 void WriteBufferFromS3::processPutRequest(PutObjectTask & task)
 {
     auto outcome = client_ptr->PutObject(task.req);
-    bool with_pool = thread_pool != nullptr;
+    bool with_pool = bool(schedule);
 
     if (outcome.IsSuccess())
         LOG_DEBUG(log, "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}, WithPool: {}", bucket, key, task.req.GetContentLength(), with_pool);
@@ -358,7 +341,7 @@ void WriteBufferFromS3::processPutRequest(PutObjectTask & task)
 
 void WriteBufferFromS3::waitForReadyBackGroundTasks()
 {
-    if (thread_pool)
+    if (schedule)
     {
         std::lock_guard lock(bg_tasks_mutex);
         {
@@ -383,7 +366,7 @@ void WriteBufferFromS3::waitForReadyBackGroundTasks()
 
 void WriteBufferFromS3::waitForAllBackGroundTasks()
 {
-    if (thread_pool)
+    if (schedule)
     {
         std::unique_lock lock(bg_tasks_mutex);
         bg_tasks_condvar.wait(lock, [this]() { return num_added_bg_tasks == num_finished_bg_tasks; });

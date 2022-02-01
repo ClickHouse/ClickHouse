@@ -9,6 +9,7 @@
 
 #include <boost/algorithm/string.hpp>
 
+#include <base/scope_guard_safe.h>
 #include <base/unit.h>
 #include <base/FnTraits.h>
 
@@ -262,7 +263,20 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
     LOG_TRACE(log, "{} to file by path: {}. S3 path: {}",
               mode == WriteMode::Rewrite ? "Write" : "Append", backQuote(metadata_disk->getPath() + path), remote_fs_root_path + s3_path);
 
-    ThreadPool * writer = &getThreadPoolWriter();
+    ScheduleFunc schedule = [](auto && callback)
+    {
+        getThreadPoolWriter().scheduleOrThrow([&callback, thread_group = CurrentThread::getGroup()]()
+        {
+            if (thread_group)
+                CurrentThread::attachTo(thread_group);
+
+            SCOPE_EXIT_SAFE(
+                if (thread_group)
+                    CurrentThread::detachQueryIfNotDetached();
+            );
+            callback();
+        });
+    };
 
     auto s3_buffer = std::make_unique<WriteBufferFromS3>(
         settings->client,
@@ -272,7 +286,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
         settings->s3_max_single_part_upload_size,
         std::move(object_metadata),
         buf_size,
-        writer);
+        std::move(schedule));
 
     return std::make_unique<WriteIndirectBufferFromRemoteFS<WriteBufferFromS3>>(std::move(s3_buffer), std::move(metadata), s3_path);
 }
