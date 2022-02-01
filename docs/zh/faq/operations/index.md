@@ -1,19 +1,20 @@
 ---
-title: Question about operating ClickHouse servers and clusters
+title: 关于操作ClickHouse服务器和集群的问题
 toc_hidden_folder: true
 toc_priority: 3
 toc_title: Operations
 ---
 
-# Question About Operating ClickHouse Servers and Clusters {#question-about-operating-clickhouse-servers-and-clusters}
+# 关于操作ClickHouse服务器和集群的问题 {#question-about-operating-clickhouse-servers-and-clusters}
 
-Questions:
+问题:
 
--   [Which ClickHouse version to use in production?](../../faq/operations/production.md)
--   [Is it possible to delete old records from a ClickHouse table?](../../faq/operations/delete-old-data.md)
--   [Does ClickHouse support multi-region replication?](../../faq/operations/multi-region-replication.md)
+-   [如果想在生产环境部署，需要用哪个版本的 ClickHouse 呢?](../../faq/operations/production.md)
+-   [是否可能从 ClickHouse 数据表中删除所有旧的数据记录?](../../faq/operations/delete-old-data.md)
+-   [ClickHouse支持多区域复制吗?](../../faq/operations/multi-region-replication.md)
+    
 
-!!! info "Don’t see what you were looking for?"
-    Check out [other F.A.Q. categories](../../faq/index.md) or browse around main documentation articles found in the left sidebar.
+!!! info "没看到你要找的东西吗?"
+    查看[其他faq类别](../../faq/index.md)或浏览左边栏中的主要文档文章。
 
-{## [Original article](https://clickhouse.com/docs/en/faq/production/) ##}
+{## [原文](https://clickhouse.com/docs/en/faq/production/) ##}
