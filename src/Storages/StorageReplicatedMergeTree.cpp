@@ -7141,8 +7141,9 @@ void StorageReplicatedMergeTree::createTableSharedID()
 
 void StorageReplicatedMergeTree::lockSharedData(const IMergeTreeDataPart & part) const
 {
-    if (!part.volume)
+    if (!part.volume || !part.isStoredOnDisk())
         return;
+
     DiskPtr disk = part.volume->getDisk();
     if (!disk || !disk->supportZeroCopyReplication())
         return;
@@ -7174,8 +7175,9 @@ bool StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & par
 
 bool StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part, const String & name) const
 {
-    if (!part.volume)
+    if (!part.volume || !part.isStoredOnDisk())
         return true;
+
     DiskPtr disk = part.volume->getDisk();
     if (!disk || !disk->supportZeroCopyReplication())
         return true;
