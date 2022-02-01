@@ -17,6 +17,8 @@ $ docker run -d --name some-clickhouse-server --ulimit nofile=262144:262144 clic
 
 By default ClickHouse will be accessible only via docker network. See the [networking section below](#networking).
 
+By default, starting above server instance will be run as default user without password.
+
 ### connect to it from a native client
 ```bash
 $ docker run -it --rm --link some-clickhouse-server:clickhouse-server clickhouse/clickhouse-client --host clickhouse-server

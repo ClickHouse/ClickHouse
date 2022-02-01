@@ -128,11 +128,14 @@ public:
 
     String getTypeName() const { return getType().toString(); }
 
-    void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos = {});
+    void setColumns(const NamesAndTypesList & new_columns);
 
     const NamesAndTypesList & getColumns() const { return columns; }
+
+    void setSerializationInfos(const SerializationInfoByName & new_infos);
+
     const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
-    SerializationInfoByName & getSerializationInfos() { return serialization_infos; }
+
     SerializationPtr getSerialization(const NameAndTypePair & column) const;
 
     /// Throws an exception if part is not stored in on-disk format.
@@ -174,7 +177,8 @@ public:
     bool isEmpty() const { return rows_count == 0; }
 
     /// Compute part block id for zero level part. Otherwise throws an exception.
-    String getZeroLevelPartBlockID() const;
+    /// If token is not empty, block id is calculated based on it instead of block data
+    String getZeroLevelPartBlockID(std::string_view token) const;
 
     const MergeTreeData & storage;
 
@@ -218,19 +222,19 @@ public:
      * Part state should be modified under data_parts mutex.
      *
      * Possible state transitions:
-     * Temporary -> Precommitted:    we are trying to commit a fetched, inserted or merged part to active set
-     * Precommitted -> Outdated:     we could not add a part to active set and are doing a rollback (for example it is duplicated part)
-     * Precommitted -> Committed:    we successfully committed a part to active dataset
-     * Precommitted -> Outdated:     a part was replaced by a covering part or DROP PARTITION
+     * Temporary -> PreActive:       we are trying to add a fetched, inserted or merged part to active set
+     * PreActive -> Outdated:        we could not add a part to active set and are doing a rollback (for example it is duplicated part)
+     * PreActive -> Active:          we successfully added a part to active dataset
+     * PreActive -> Outdated:        a part was replaced by a covering part or DROP PARTITION
      * Outdated -> Deleting:         a cleaner selected this part for deletion
      * Deleting -> Outdated:         if an ZooKeeper error occurred during the deletion, we will retry deletion
-     * Committed -> DeleteOnDestroy: if part was moved to another disk
+     * Active -> DeleteOnDestroy:    if part was moved to another disk
      */
     enum class State
     {
         Temporary,       /// the part is generating now, it is not in data_parts list
-        PreCommitted,    /// the part is in data_parts, but not used for SELECTs
-        Committed,       /// active data part, used by current and upcoming SELECTs
+        PreActive,    /// the part is in data_parts, but not used for SELECTs
+        Active,       /// active data part, used by current and upcoming SELECTs
         Outdated,        /// not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes
         Deleting,        /// not active data part with identity refcounter, it is deleting right now by a cleaner
         DeleteOnDestroy, /// part was moved to another disk and should be deleted in own destructor
@@ -338,6 +342,9 @@ public:
     /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
     virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const;
 
+    /// Cleanup shared locks made with old name after part renaming
+    virtual void cleanupOldName(const String & old_part_name) const;
+
     /// Makes clone of a part in detached/ directory via hard links
     virtual void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const;
 
@@ -404,9 +411,13 @@ public:
     /// part creation (using alter query with materialize_ttl setting).
     bool checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const;
 
-    /// Return some uniq string for file
-    /// Required for distinguish different copies of the same part on S3
+    /// Return some uniq string for file.
+    /// Required for distinguish different copies of the same part on remote FS.
     String getUniqueId() const;
+
+    /// Return hardlink count for part.
+    /// Required for keep data on remote FS when part has shadow copies.
+    UInt32 getNumberOfRefereneces() const;
 
 protected:
 

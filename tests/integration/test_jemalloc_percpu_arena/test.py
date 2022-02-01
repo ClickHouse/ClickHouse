@@ -12,7 +12,7 @@ CPU_ID = 4
 
 
 def run_command_in_container(cmd, *args):
-    # /clickhouse is mounted by interation tests runner
+    # /clickhouse is mounted by integration tests runner
     alternative_binary = os.getenv('CLICKHOUSE_BINARY', '/clickhouse')
     if alternative_binary:
         args+=(
@@ -49,7 +49,6 @@ def skip_if_jemalloc_disabled():
     """).strip()
     if output != b'ON' and output != b'1':
         pytest.skip(f'Compiled w/o jemalloc (USE_JEMALLOC={output})')
-
 
 # Ensure that clickhouse works even when number of online CPUs
 # (_SC_NPROCESSORS_ONLN) is smaller then available (_SC_NPROCESSORS_CONF).

@@ -18,6 +18,17 @@ $ curl 'http://localhost:8123/'
 Ok.
 ```
 
+Web UI 可以通过这个地址访问: `http://localhost:8123/play`.
+在运行状况检查脚本中，使用`GET /ping`请求。这个处理方法总是返回 "Ok"。(以换行结尾)。可从18.12.13版获得。请参见' /replicas_status '检查复制集的延迟。
+
+
+``` bash
+$ curl 'http://localhost:8123/ping'
+Ok.
+$ curl 'http://localhost:8123/replicas_status'
+Ok.
+```
+
 通过URL中的 `query` 参数来发送请求，或者发送POST请求，或者将查询的开头部分放在URL的`query`参数中，其他部分放在POST中（我们会在后面解释为什么这样做是有必要的）。URL的大小会限制在16KB，所以发送大型查询时要时刻记住这点。
 
 如果请求成功，将会收到200的响应状态码和响应主体中的结果。
@@ -407,7 +418,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 `query` 是一个预定义的`predefined_query_handler`查询，它由ClickHouse在匹配HTTP请求并返回查询结果时执行。这是一个必须的配置。
 
-以下是定义的[max_threads](../operations/settings/settings.md#settings-max_threads)和`max_alter_threads`设置， 然后查询系统表以检查这些设置是否设置成功。
+以下是定义的[max_threads](../operations/settings/settings.md#settings-max_threads)和`max_final_threads`设置， 然后查询系统表以检查这些设置是否设置成功。
 
 示例:
 
@@ -430,9 +441,9 @@ $ curl -v 'http://localhost:8123/predefined_query'
 ```
 
 ``` bash
-$ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:8123/query_param_with_url/1/max_threads/max_alter_threads?max_threads=1&max_alter_threads=2'
+$ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_threads' 'http://localhost:8123/query_param_with_url/1/max_threads/max_final_threads?max_threads=1&max_final_threads=2'
 1
-max_alter_threads   2
+max_final_threads   2
 ```
 
 !!! note "警告"
@@ -444,7 +455,7 @@ max_alter_threads   2
 
 ClickHouse提取并执行与HTTP请求URL中的`query_param_name`值对应的值。`query_param_name`的默认值是`/query`。这是一个可选的配置。如果配置文件中没有定义，则不会传入参数。
 
-为了试验这个功能，示例定义了[max_threads](../operations/settings/settings.md#settings-max_threads)和`max_alter_threads`，`queries`设置是否成功的值。
+为了试验这个功能，示例定义了[max_threads](../operations/settings/settings.md#settings-max_threads)和`max_final_threads`，`queries`设置是否成功的值。
 
 示例:
 
@@ -462,9 +473,9 @@ ClickHouse提取并执行与HTTP请求URL中的`query_param_name`值对应的值
 ```
 
 ``` bash
-$ curl  -H 'XXX:TEST_HEADER_VALUE_DYNAMIC'  'http://localhost:8123/own?max_threads=1&max_alter_threads=2&param_name_1=max_threads&param_name_2=max_alter_threads&query_param=SELECT%20name,value%20FROM%20system.settings%20where%20name%20=%20%7Bname_1:String%7D%20OR%20name%20=%20%7Bname_2:String%7D'
+$ curl  -H 'XXX:TEST_HEADER_VALUE_DYNAMIC'  'http://localhost:8123/own?max_threads=1&max_final_threads=2&param_name_1=max_threads&param_name_2=max_final_threads&query_param=SELECT%20name,value%20FROM%20system.settings%20where%20name%20=%20%7Bname_1:String%7D%20OR%20name%20=%20%7Bname_2:String%7D'
 max_threads 1
-max_alter_threads   2
+max_final_threads   2
 ```
 
 ### static {#static}

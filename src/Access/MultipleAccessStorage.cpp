@@ -452,9 +452,11 @@ void MultipleAccessStorage::updateSubscriptionsToNestedStorages(std::unique_lock
 std::optional<UUID> MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool throw_if_user_not_exists) const
 {
     auto storages = getStoragesInternal();
-    for (const auto & storage : *storages)
+    for (size_t i = 0; i != storages->size(); ++i)
     {
-        auto id = storage->authenticate(credentials, address, external_authenticators, /* throw_if_user_not_exists = */ false);
+        const auto & storage = (*storages)[i];
+        bool is_last_storage = (i == storages->size() - 1);
+        auto id = storage->authenticate(credentials, address, external_authenticators, throw_if_user_not_exists && is_last_storage);
         if (id)
         {
             std::lock_guard lock{mutex};

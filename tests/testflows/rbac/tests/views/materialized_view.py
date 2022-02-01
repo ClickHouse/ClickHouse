@@ -826,6 +826,7 @@ def select_with_revoked_select_privilege(self, user_name, grant_target_name, nod
     """Grant and revoke SELECT privilege on a view and check the user is unable to SELECT from it.
     """
     view_name = f"view_{getuid()}"
+    exitcode, message = errors.not_enough_privileges(name=f"{user_name}")
 
     if node is None:
         node = self.context.node
@@ -2259,18 +2260,15 @@ def insert_on_target_table(self, grant_target_name, user_name, node=None):
     RQ_SRS_006_RBAC_MaterializedView("1.0"),
 )
 @Name("materialized view")
-def feature(self, stress=None, parallel=None, node="clickhouse1"):
+def feature(self, stress=None, node="clickhouse1"):
     self.context.node = self.context.cluster.node(node)
 
     if stress is not None:
         self.context.stress = stress
-    if parallel is not None:
-        self.context.stress = parallel
 
-    tasks = []
     with Pool(3) as pool:
         try:
             for suite in loads(current_module(), Suite):
-                run_scenario(pool, tasks, suite)
+                Suite(test=suite, parallel=True, executor=pool)
         finally:
-            join(tasks)
+            join()

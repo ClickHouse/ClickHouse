@@ -65,7 +65,12 @@ do
     # check if variable not empty
     [ -z "$dir" ] && continue
     # ensure directories exist
-    if ! mkdir -p "$dir"; then
+    if [ "$DO_CHOWN" = "1" ]; then
+      mkdir="mkdir"
+    else
+      mkdir="$gosu mkdir"
+    fi
+    if ! $mkdir -p "$dir"; then
         echo "Couldn't create necessary directory: $dir"
         exit 1
     fi

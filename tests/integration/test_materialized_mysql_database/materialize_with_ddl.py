@@ -1079,8 +1079,40 @@ def table_overrides(clickhouse_node, mysql_node, service_name):
     check_query(clickhouse_node, "SELECT count() FROM table_overrides.t1", "1000\n")
     mysql_node.query("INSERT INTO table_overrides.t1 VALUES(1001, '2021-10-01 00:00:00', 42.0)")
     check_query(clickhouse_node, "SELECT count() FROM table_overrides.t1", "1001\n")
+
+    explain_with_table_func = f"EXPLAIN TABLE OVERRIDE mysql('{service_name}:3306', 'table_overrides', 't1', 'root', 'clickhouse')"
+
+    for what in ['ORDER BY', 'PRIMARY KEY', 'SAMPLE BY', 'PARTITION BY', 'TTL']:
+        with pytest.raises(QueryRuntimeException) as exc:
+            clickhouse_node.query(f"{explain_with_table_func} {what} temperature")
+        assert f'{what} override refers to nullable column `temperature`' in \
+            str(exc.value)
+        assert f"{what} uses columns: `temperature` Nullable(Float32)" in \
+            clickhouse_node.query(f"{explain_with_table_func} {what} assumeNotNull(temperature)")
+
+    for testcase in [
+        ('COLUMNS (temperature Nullable(Float32) MATERIALIZED 1.0)',
+         'column `temperature`: modifying default specifier is not allowed'),
+        ('COLUMNS (sensor_id UInt64 ALIAS 42)',
+         'column `sensor_id`: modifying default specifier is not allowed')
+    ]:
+        with pytest.raises(QueryRuntimeException) as exc:
+            clickhouse_node.query(f"{explain_with_table_func} {testcase[0]}")
+        assert testcase[1] in str(exc.value)
+
+    for testcase in [
+        ('COLUMNS (temperature Nullable(Float64))',
+         'Modified columns: `temperature` Nullable(Float32) -> Nullable(Float64)'),
+        ('COLUMNS (temp_f Nullable(Float32) ALIAS if(temperature IS NULL, NULL, (temperature * 9.0 / 5.0) + 32),\
+                   temp_k Nullable(Float32) ALIAS if(temperature IS NULL, NULL, temperature + 273.15))',
+         'Added columns: `temp_f` Nullable(Float32), `temp_k` Nullable(Float32)')
+    ]:
+        assert testcase[1] in clickhouse_node.query(
+            f"{explain_with_table_func} {testcase[0]}")
+
     clickhouse_node.query("DROP DATABASE IF EXISTS table_overrides")
     mysql_node.query("DROP DATABASE IF EXISTS table_overrides")
+
 
 def materialized_database_support_all_kinds_of_mysql_datatype(clickhouse_node, mysql_node, service_name):
     mysql_node.query("DROP DATABASE IF EXISTS test_database_datatype")
@@ -1109,14 +1141,14 @@ def materialized_database_support_all_kinds_of_mysql_datatype(clickhouse_node, m
             `v19` datetime(6) DEFAULT CURRENT_TIMESTAMP(6),
             `v20` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             `v21` TIMESTAMP(6) DEFAULT CURRENT_TIMESTAMP(6),
-            /* todo support */
-            # `v22` YEAR,
-            # `v23` TIME,
-            # `v24` TIME(3),
-            # `v25` GEOMETRY,
+            `v22` YEAR,
+            `v23` TIME,
+            `v24` TIME(6),
+            `v25` GEOMETRY,
             `v26` bit(4),
+             /* todo support */
             # `v27` JSON DEFAULT NULL,
-            # `v28` set('a', 'c', 'f', 'd', 'e', 'b'),
+            `v28` set('a', 'c', 'f', 'd', 'e', 'b'),
             `v29` mediumint(4) unsigned NOT NULL DEFAULT '0',
             `v30` varbinary(255) DEFAULT NULL COMMENT 'varbinary support',
             `v31`  binary(200) DEFAULT NULL,
@@ -1126,8 +1158,9 @@ def materialized_database_support_all_kinds_of_mysql_datatype(clickhouse_node, m
         """)
 
     mysql_node.query("""
-        INSERT INTO test_database_datatype.t1 (v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v26, v29, v30, v31, v32) values 
-        (1, 11, 9223372036854775807, -1,  1, 11, 18446744073709551615, -1.1,  1.1, -1.111, 1.111, 1.1111, '2021-10-06', 'text', 'varchar', 'BLOB', '2021-10-06 18:32:57',  '2021-10-06 18:32:57.482786', '2021-10-06 18:32:57', '2021-10-06 18:32:57.482786', b'1010', 11, 'varbinary', 'binary', 'RED');
+        INSERT INTO test_database_datatype.t1 (v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23, v24, v25, v26, v28, v29, v30, v31, v32) values 
+        (1, 11, 9223372036854775807, -1,  1, 11, 18446744073709551615, -1.1,  1.1, -1.111, 1.111, 1.1111, '2021-10-06', 'text', 'varchar', 'BLOB', '2021-10-06 18:32:57',  
+        '2021-10-06 18:32:57.482786', '2021-10-06 18:32:57', '2021-10-06 18:32:57.482786', '2021', '838:59:59', '838:59:59.000000', ST_GeometryFromText('point(0.0 0.0)'), b'1010', 'a', 11, 'varbinary', 'binary', 'RED');
         """)
     clickhouse_node.query(
         "CREATE DATABASE test_database_datatype ENGINE = MaterializeMySQL('{}:3306', 'test_database_datatype', 'root', 'clickhouse')".format(
@@ -1135,14 +1168,18 @@ def materialized_database_support_all_kinds_of_mysql_datatype(clickhouse_node, m
 
     check_query(clickhouse_node, "SELECT name FROM system.tables WHERE database = 'test_database_datatype'", "t1\n")
     # full synchronization check
-    check_query(clickhouse_node, "SELECT v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v26, v29, v30, v32 FROM test_database_datatype.t1 FORMAT TSV",
-                "1\t1\t11\t9223372036854775807\t-1\t1\t11\t18446744073709551615\t-1.1\t1.1\t-1.111\t1.111\t1.1111\t2021-10-06\ttext\tvarchar\tBLOB\t2021-10-06 18:32:57\t2021-10-06 18:32:57.482786\t2021-10-06 18:32:57\t2021-10-06 18:32:57.482786\t10\t11\tvarbinary\tRED\n")
+    check_query(clickhouse_node, "SELECT v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23, v24, hex(v25), v26, v28, v29, v30, v32 FROM test_database_datatype.t1 FORMAT TSV",
+                "1\t1\t11\t9223372036854775807\t-1\t1\t11\t18446744073709551615\t-1.1\t1.1\t-1.111\t1.111\t1.1111\t2021-10-06\ttext\tvarchar\tBLOB\t2021-10-06 18:32:57\t2021-10-06 18:32:57.482786\t2021-10-06 18:32:57" +
+                "\t2021-10-06 18:32:57.482786\t2021\t3020399000000\t3020399000000\t00000000010100000000000000000000000000000000000000\t10\t1\t11\tvarbinary\tRED\n")
 
     mysql_node.query("""
-            INSERT INTO test_database_datatype.t1 (v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v26, v29, v30, v31, v32) values 
-            (2, 22, 9223372036854775807, -2,  2, 22, 18446744073709551615, -2.2,  2.2, -2.22, 2.222, 2.2222, '2021-10-07', 'text', 'varchar', 'BLOB',  '2021-10-07 18:32:57',  '2021-10-07 18:32:57.482786', '2021-10-07 18:32:57', '2021-10-07 18:32:57.482786', b'1011', 22, 'varbinary', 'binary', 'GREEN' );
+            INSERT INTO test_database_datatype.t1 (v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23, v24, v25, v26, v28, v29, v30, v31, v32) values 
+            (2, 22, 9223372036854775807, -2,  2, 22, 18446744073709551615, -2.2,  2.2, -2.22, 2.222, 2.2222, '2021-10-07', 'text', 'varchar', 'BLOB',  '2021-10-07 18:32:57',  
+            '2021-10-07 18:32:57.482786', '2021-10-07 18:32:57', '2021-10-07 18:32:57.482786', '2021', '-838:59:59', '-12:59:58.000001',  ST_GeometryFromText('point(120.153576 30.287459)'), b'1011', 'a,c', 22, 'varbinary', 'binary', 'GREEN' );
             """)
     # increment synchronization check
-    check_query(clickhouse_node, "SELECT v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v26, v29, v30, v32 FROM   test_database_datatype.t1 ORDER BY v1 FORMAT TSV",
-                "1\t1\t11\t9223372036854775807\t-1\t1\t11\t18446744073709551615\t-1.1\t1.1\t-1.111\t1.111\t1.1111\t2021-10-06\ttext\tvarchar\tBLOB\t2021-10-06 18:32:57\t2021-10-06 18:32:57.482786\t2021-10-06 18:32:57\t2021-10-06 18:32:57.482786\t10\t11\tvarbinary\tRED\n" +
-                "2\t2\t22\t9223372036854775807\t-2\t2\t22\t18446744073709551615\t-2.2\t2.2\t-2.22\t2.222\t2.2222\t2021-10-07\ttext\tvarchar\tBLOB\t2021-10-07 18:32:57\t2021-10-07 18:32:57.482786\t2021-10-07 18:32:57\t2021-10-07 18:32:57.482786\t11\t22\tvarbinary\tGREEN\n")
+    check_query(clickhouse_node, "SELECT v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17, v18, v19, v20, v21, v22, v23, v24, hex(v25), v26, v28, v29, v30, v32 FROM test_database_datatype.t1 FORMAT TSV",
+                "1\t1\t11\t9223372036854775807\t-1\t1\t11\t18446744073709551615\t-1.1\t1.1\t-1.111\t1.111\t1.1111\t2021-10-06\ttext\tvarchar\tBLOB\t2021-10-06 18:32:57\t2021-10-06 18:32:57.482786\t2021-10-06 18:32:57\t2021-10-06 18:32:57.482786" +
+                "\t2021\t3020399000000\t3020399000000\t00000000010100000000000000000000000000000000000000\t10\t1\t11\tvarbinary\tRED\n" +
+                "2\t2\t22\t9223372036854775807\t-2\t2\t22\t18446744073709551615\t-2.2\t2.2\t-2.22\t2.222\t2.2222\t2021-10-07\ttext\tvarchar\tBLOB\t2021-10-07 18:32:57\t2021-10-07 18:32:57.482786\t2021-10-07 18:32:57\t2021-10-07 18:32:57.482786" +
+                "\t2021\t-3020399000000\t-46798000001\t000000000101000000D55C6E30D4095E40DCF0BBE996493E40\t11\t3\t22\tvarbinary\tGREEN\n")

@@ -125,10 +125,6 @@ For installing CMake and Ninja on Mac OS X first install Homebrew and then insta
 
 Next, check the version of CMake: `cmake --version`. If it is below 3.12, you should install a newer version from the website: https://cmake.org/download/.
 
-## Optional External Libraries {#optional-external-libraries}
-
-ClickHouse uses several external libraries for building. All of them do not need to be installed separately as they are built together with ClickHouse from the sources located in the submodules. You can check the list in `contrib`.
-
 ## C++ Compiler {#c-compiler}
 
 Compilers Clang starting from version 11 is supported for building ClickHouse.
@@ -157,6 +153,8 @@ While inside the `build` directory, configure your build by running CMake. Befor
 
     export CC=clang CXX=clang++
     cmake ..
+
+If you installed clang using the automatic installation script above, also specify the version of clang installed in the first command, e.g. `export CC=clang-13 CXX=clang++-13`. The clang version will be in the script output.
 
 The `CC` variable specifies the compiler for C (short for C Compiler), and `CXX` variable instructs which C++ compiler is to be used for building.
 

@@ -24,6 +24,7 @@
 #   include <DataTypes/DataTypeMap.h>
 #   include <DataTypes/DataTypeNullable.h>
 #   include <DataTypes/DataTypeTuple.h>
+#   include <DataTypes/DataTypeString.h>
 #   include <DataTypes/Serializations/SerializationDecimal.h>
 #   include <DataTypes/Serializations/SerializationFixedString.h>
 #   include <Formats/ProtobufReader.h>
@@ -35,6 +36,7 @@
 #   include <IO/WriteBufferFromString.h>
 #   include <IO/WriteHelpers.h>
 #   include <base/range.h>
+#   include <base/sort.h>
 #   include <google/protobuf/descriptor.h>
 #   include <google/protobuf/descriptor.pb.h>
 #   include <boost/algorithm/string.hpp>
@@ -56,6 +58,7 @@ namespace ErrorCodes
     extern const int PROTOBUF_FIELD_NOT_REPEATED;
     extern const int PROTOBUF_BAD_CAST;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -2161,7 +2164,7 @@ namespace
             for (auto & desc : field_descs_)
                 field_infos.emplace_back(std::move(desc.column_indices), *desc.field_descriptor, std::move(desc.field_serializer));
 
-            std::sort(field_infos.begin(), field_infos.end(),
+            ::sort(field_infos.begin(), field_infos.end(),
                       [](const FieldInfo & lhs, const FieldInfo & rhs) { return lhs.field_tag < rhs.field_tag; });
 
             for (size_t i : collections::range(field_infos.size()))
@@ -2641,7 +2644,7 @@ namespace
             missing_column_indices.clear();
             missing_column_indices.reserve(column_names.size() - used_column_indices.size());
             auto used_column_indices_sorted = std::move(used_column_indices);
-            std::sort(used_column_indices_sorted.begin(), used_column_indices_sorted.end());
+            ::sort(used_column_indices_sorted.begin(), used_column_indices_sorted.end());
             boost::range::set_difference(collections::range(column_names.size()), used_column_indices_sorted,
                                          std::back_inserter(missing_column_indices));
 
@@ -2753,7 +2756,7 @@ namespace
             }
 
             /// Shorter suffixes first.
-            std::sort(out_field_descriptors_with_suffixes.begin(), out_field_descriptors_with_suffixes.end(),
+            ::sort(out_field_descriptors_with_suffixes.begin(), out_field_descriptors_with_suffixes.end(),
                       [](const std::pair<const FieldDescriptor *, std::string_view /* suffix */> & f1,
                          const std::pair<const FieldDescriptor *, std::string_view /* suffix */> & f2)
             {
@@ -3017,10 +3020,8 @@ namespace
                             {
                                 std::vector<std::string_view> column_names_used;
                                 column_names_used.reserve(used_column_indices_in_nested.size());
-
                                 for (size_t i : used_column_indices_in_nested)
                                     column_names_used.emplace_back(nested_column_names[i]);
-
                                 auto field_serializer = std::make_unique<ProtobufSerializerFlattenedNestedAsArrayOfNestedMessages>(
                                     std::move(column_names_used), field_descriptor, std::move(nested_message_serializer), get_root_desc_function);
                                 transformColumnIndices(used_column_indices_in_nested, nested_column_indices);
@@ -3230,8 +3231,105 @@ namespace
         std::function<String(size_t)> get_root_desc_function;
         std::shared_ptr<ProtobufSerializer *> root_serializer_ptr;
     };
-}
 
+    template <typename Type>
+    DataTypePtr getEnumDataType(const google::protobuf::EnumDescriptor * enum_descriptor)
+    {
+        std::vector<std::pair<String, Type>> values;
+        for (int i = 0; i != enum_descriptor->value_count(); ++i)
+        {
+            const auto * enum_value_descriptor = enum_descriptor->value(i);
+            values.emplace_back(enum_value_descriptor->name(), enum_value_descriptor->number());
+        }
+        return std::make_shared<DataTypeEnum<Type>>(std::move(values));
+    }
+
+    NameAndTypePair getNameAndDataTypeFromField(const google::protobuf::FieldDescriptor * field_descriptor, bool allow_repeat = true)
+    {
+        if (allow_repeat && field_descriptor->is_map())
+        {
+            auto name_and_type = getNameAndDataTypeFromField(field_descriptor, false);
+            const auto * tuple_type = assert_cast<const DataTypeTuple *>(name_and_type.type.get());
+            return {name_and_type.name, std::make_shared<DataTypeMap>(tuple_type->getElements())};
+        }
+
+        if (allow_repeat && field_descriptor->is_repeated())
+        {
+            auto name_and_type = getNameAndDataTypeFromField(field_descriptor, false);
+            return {name_and_type.name, std::make_shared<DataTypeArray>(name_and_type.type)};
+        }
+
+        switch (field_descriptor->type())
+        {
+            case FieldTypeId::TYPE_SFIXED32: [[fallthrough]];
+            case FieldTypeId::TYPE_SINT32: [[fallthrough]];
+            case FieldTypeId::TYPE_INT32:
+                return {field_descriptor->name(), std::make_shared<DataTypeInt32>()};
+            case FieldTypeId::TYPE_SFIXED64: [[fallthrough]];
+            case FieldTypeId::TYPE_SINT64: [[fallthrough]];
+            case FieldTypeId::TYPE_INT64:
+                return {field_descriptor->name(), std::make_shared<DataTypeInt64>()};
+            case FieldTypeId::TYPE_BOOL:
+                return {field_descriptor->name(), std::make_shared<DataTypeUInt8>()};
+            case FieldTypeId::TYPE_FLOAT:
+                return {field_descriptor->name(), std::make_shared<DataTypeFloat32>()};
+            case FieldTypeId::TYPE_DOUBLE:
+                return {field_descriptor->name(), std::make_shared<DataTypeFloat64>()};
+            case FieldTypeId::TYPE_UINT32: [[fallthrough]];
+            case FieldTypeId::TYPE_FIXED32:
+                return {field_descriptor->name(), std::make_shared<DataTypeUInt32>()};
+            case FieldTypeId::TYPE_UINT64: [[fallthrough]];
+            case FieldTypeId::TYPE_FIXED64:
+                return {field_descriptor->name(), std::make_shared<DataTypeUInt64>()};
+            case FieldTypeId::TYPE_BYTES: [[fallthrough]];
+            case FieldTypeId::TYPE_STRING:
+                return {field_descriptor->name(), std::make_shared<DataTypeString>()};
+            case FieldTypeId::TYPE_ENUM:
+            {
+                const auto * enum_descriptor = field_descriptor->enum_type();
+                if (enum_descriptor->value_count() == 0)
+                    throw Exception("Empty enum field", ErrorCodes::BAD_ARGUMENTS);
+                int max_abs = std::abs(enum_descriptor->value(0)->number());
+                for (int i = 1; i != enum_descriptor->value_count(); ++i)
+                {
+                    if (std::abs(enum_descriptor->value(i)->number()) > max_abs)
+                        max_abs = std::abs(enum_descriptor->value(i)->number());
+                }
+                if (max_abs < 128)
+                    return {field_descriptor->name(), getEnumDataType<Int8>(enum_descriptor)};
+                else if (max_abs < 32768)
+                    return {field_descriptor->name(), getEnumDataType<Int16>(enum_descriptor)};
+                else
+                    throw Exception("ClickHouse supports only 8-bit and 16-bit enums", ErrorCodes::BAD_ARGUMENTS);
+            }
+            case FieldTypeId::TYPE_GROUP: [[fallthrough]];
+            case FieldTypeId::TYPE_MESSAGE:
+            {
+                const auto * message_descriptor = field_descriptor->message_type();
+                if (message_descriptor->field_count() == 1)
+                {
+                    const auto * nested_field_descriptor = message_descriptor->field(0);
+                    auto nested_name_and_type = getNameAndDataTypeFromField(nested_field_descriptor);
+                    return {field_descriptor->name() + "_" + nested_name_and_type.name, nested_name_and_type.type};
+                }
+                else
+                {
+                    DataTypes nested_types;
+                    Strings nested_names;
+                    for (int i = 0; i != message_descriptor->field_count(); ++i)
+                    {
+                        auto nested_name_and_type = getNameAndDataTypeFromField(message_descriptor->field(i));
+                        nested_types.push_back(nested_name_and_type.type);
+                        nested_names.push_back(nested_name_and_type.name);
+                    }
+                    return {field_descriptor->name(), std::make_shared<DataTypeTuple>(std::move(nested_types), std::move(nested_names))};
+                }
+            }
+        }
+
+        __builtin_unreachable();
+    }
+}
 
 std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     const Strings & column_names,
@@ -3254,5 +3352,14 @@ std::unique_ptr<ProtobufSerializer> ProtobufSerializer::create(
     std::vector<size_t> missing_column_indices;
     return ProtobufSerializerBuilder(writer).buildMessageSerializer(column_names, data_types, missing_column_indices, message_descriptor, with_length_delimiter);
 }
+
+NamesAndTypesList protobufSchemaToCHSchema(const google::protobuf::Descriptor * message_descriptor)
+{
+    NamesAndTypesList schema;
+    for (int i = 0; i != message_descriptor->field_count(); ++i)
+        schema.push_back(getNameAndDataTypeFromField(message_descriptor->field(i)));
+    return schema;
+}
+
 }
 #endif

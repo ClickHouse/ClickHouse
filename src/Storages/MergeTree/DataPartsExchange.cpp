@@ -19,6 +19,8 @@
 #include <boost/algorithm/string/join.hpp>
 #include <iterator>
 #include <regex>
+#include <base/sort.h>
+
 
 namespace fs = std::filesystem;
 
@@ -361,10 +363,10 @@ void Service::sendPartFromDiskRemoteMeta(const MergeTreeData::DataPartPtr & part
 
 MergeTreeData::DataPartPtr Service::findPart(const String & name)
 {
-    /// It is important to include PreCommitted and Outdated parts here because remote replicas cannot reliably
+    /// It is important to include PreActive and Outdated parts here because remote replicas cannot reliably
     /// determine the local state of the part, so queries for the parts in these states are completely normal.
     auto part = data.getPartIfExists(
-        name, {MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
+        name, {MergeTreeDataPartState::PreActive, MergeTreeDataPartState::Active, MergeTreeDataPartState::Outdated});
     if (part)
         return part;
 
@@ -425,7 +427,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     }
     if (!capability.empty())
     {
-        std::sort(capability.begin(), capability.end());
+        ::sort(capability.begin(), capability.end());
         capability.erase(std::unique(capability.begin(), capability.end()), capability.end());
         const String & remote_fs_metadata = boost::algorithm::join(capability, ", ");
         uri.addQueryParameter("remote_fs_metadata", remote_fs_metadata);

@@ -6,6 +6,7 @@
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Coordination/Defines.h>
 #include <Common/Config/ConfigReloader.h>
+#include <Server/TCPServer.h>
 #include <filesystem>
 #include <IO/UseSSL.h>
 #include <Core/ServerUUID.h>
@@ -329,8 +330,6 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 
     DB::ServerUUID::load(path + "/uuid", log);
 
-    const Settings & settings = global_context->getSettingsRef();
-
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
 
     GlobalThreadPool::initialize(
@@ -376,14 +375,14 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
         {
             Poco::Net::ServerSocket socket;
             auto address = socketBindListen(socket, listen_host, port);
-            socket.setReceiveTimeout(settings.receive_timeout);
-            socket.setSendTimeout(settings.send_timeout);
+            socket.setReceiveTimeout(config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC));
+            socket.setSendTimeout(config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC));
             servers->emplace_back(
+                listen_host,
                 port_name,
-                std::make_unique<Poco::Net::TCPServer>(
-                    new KeeperTCPHandlerFactory(*this, false), server_pool, socket, new Poco::Net::TCPServerParams));
-
-            LOG_INFO(log, "Listening for connections to Keeper (tcp): {}", address.toString());
+                "Keeper (tcp): " + address.toString(),
+                std::make_unique<TCPServer>(
+                    new KeeperTCPHandlerFactory(*this, false), server_pool, socket));
         });
 
         const char * secure_port_name = "keeper_server.tcp_port_secure";
@@ -392,13 +391,14 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 #if USE_SSL
             Poco::Net::SecureServerSocket socket;
             auto address = socketBindListen(socket, listen_host, port, /* secure = */ true);
-            socket.setReceiveTimeout(settings.receive_timeout);
-            socket.setSendTimeout(settings.send_timeout);
+            socket.setReceiveTimeout(config().getUInt64("keeper_server.socket_receive_timeout_sec", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC));
+            socket.setSendTimeout(config().getUInt64("keeper_server.socket_send_timeout_sec", DBMS_DEFAULT_SEND_TIMEOUT_SEC));
             servers->emplace_back(
+                listen_host,
                 secure_port_name,
-                std::make_unique<Poco::Net::TCPServer>(
-                    new KeeperTCPHandlerFactory(*this, true), server_pool, socket, new Poco::Net::TCPServerParams));
-            LOG_INFO(log, "Listening for connections to Keeper with secure protocol (tcp_secure): {}", address.toString());
+                "Keeper with secure protocol (tcp_secure): " + address.toString(),
+                std::make_unique<TCPServer>(
+                    new KeeperTCPHandlerFactory(*this, true), server_pool, socket));
 #else
             UNUSED(port);
             throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
@@ -408,7 +408,10 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     }
 
     for (auto & server : *servers)
+    {
         server.start();
+        LOG_INFO(log, "Listening for {}", server.getDescription());
+    }
 
     zkutil::EventPtr unused_event = std::make_shared<Poco::Event>();
     zkutil::ZooKeeperNodeCache unused_cache([] { return nullptr; });

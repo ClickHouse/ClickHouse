@@ -1,6 +1,7 @@
 #include <future>
 #include <Poco/Util/Application.h>
 
+#include <base/sort.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 #include <Common/formatReadable.h>
@@ -361,7 +362,6 @@ void Aggregator::compileAggregateFunctionsIfNeeded()
                 auto compiled_aggregate_functions = compileAggregateFunctions(getJITInstance(), functions_to_compile, functions_description);
                 return std::make_shared<CompiledAggregateFunctionsHolder>(std::move(compiled_aggregate_functions));
             });
-
             compiled_aggregate_functions_holder = std::static_pointer_cast<CompiledAggregateFunctionsHolder>(compiled_function_cache_entry);
         }
         else
@@ -2168,7 +2168,7 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(ManyAggregatedData
     if (non_empty_data.size() > 1)
     {
         /// Sort the states in descending order so that the merge is more efficient (since all states are merged into the first).
-        std::sort(non_empty_data.begin(), non_empty_data.end(),
+        ::sort(non_empty_data.begin(), non_empty_data.end(),
             [](const AggregatedDataVariantsPtr & lhs, const AggregatedDataVariantsPtr & rhs)
             {
                 return lhs->sizeWithoutOverflowRow() > rhs->sizeWithoutOverflowRow();

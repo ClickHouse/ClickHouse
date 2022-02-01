@@ -13,7 +13,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/MemoryTracker.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
@@ -126,7 +126,13 @@ StorageBuffer::StorageBuffer(
     , bg_pool(getContext()->getBufferFlushSchedulePool())
 {
     StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(columns_);
+    if (columns_.empty())
+    {
+        auto dest_table = DatabaseCatalog::instance().getTable(destination_id, context_);
+        storage_metadata.setColumns(dest_table->getInMemoryMetadataPtr()->getColumns());
+    }
+    else
+        storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
@@ -443,44 +449,34 @@ void StorageBuffer::read(
 
 static void appendBlock(const Block & from, Block & to)
 {
-    if (!to)
-        throw Exception("Cannot append to empty block", ErrorCodes::LOGICAL_ERROR);
+    size_t rows = from.rows();
+    size_t old_rows = to.rows();
+    size_t old_bytes = to.bytes();
 
-    if (to.rows())
-        assertBlocksHaveEqualStructure(from, to, "Buffer");
+    if (!to)
+        to = from.cloneEmpty();
+
+    assertBlocksHaveEqualStructure(from, to, "Buffer");
 
     from.checkNumberOfRows();
     to.checkNumberOfRows();
 
-    size_t rows = from.rows();
-    size_t bytes = from.bytes();
-
-    CurrentMetrics::add(CurrentMetrics::StorageBufferRows, rows);
-    CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, bytes);
-
-    size_t old_rows = to.rows();
-
     MutableColumnPtr last_col;
     try
     {
-        MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
+        MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
-        if (to.rows() == 0)
+        for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
         {
-            to = from;
-        }
-        else
-        {
-            for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
-            {
-                const IColumn & col_from = *from.getByPosition(column_no).column.get();
-                last_col = IColumn::mutate(std::move(to.getByPosition(column_no).column));
+            const IColumn & col_from = *from.getByPosition(column_no).column.get();
+            last_col = IColumn::mutate(std::move(to.getByPosition(column_no).column));
 
-                last_col->insertRangeFrom(col_from, 0, rows);
+            last_col->insertRangeFrom(col_from, 0, rows);
 
-                to.getByPosition(column_no).column = std::move(last_col);
-            }
+            to.getByPosition(column_no).column = std::move(last_col);
         }
+        CurrentMetrics::add(CurrentMetrics::StorageBufferRows, rows);
+        CurrentMetrics::add(CurrentMetrics::StorageBufferBytes, to.bytes() - old_bytes);
     }
     catch (...)
     {
@@ -488,7 +484,7 @@ static void appendBlock(const Block & from, Block & to)
 
         /// In case of rollback, it is better to ignore memory limits instead of abnormal server termination.
         /// So ignore any memory limits, even global (since memory tracking has drift).
-        MemoryTracker::BlockerInThread temporarily_ignore_any_memory_limits(VariableContext::Global);
+        MemoryTrackerBlockerInThread temporarily_ignore_any_memory_limits(VariableContext::Global);
 
         try
         {
@@ -618,14 +614,7 @@ private:
         /// Sort the columns in the block. This is necessary to make it easier to concatenate the blocks later.
         Block sorted_block = block.sortColumns();
 
-        if (!buffer.data)
-        {
-            buffer.data = sorted_block.cloneEmpty();
-
-            storage.total_writes.rows += buffer.data.rows();
-            storage.total_writes.bytes += buffer.data.allocatedBytes();
-        }
-        else if (storage.checkThresholds(buffer, /* direct= */true, current_time, sorted_block.rows(), sorted_block.bytes()))
+        if (storage.checkThresholds(buffer, /* direct= */true, current_time, sorted_block.rows(), sorted_block.bytes()))
         {
             /** If, after inserting the buffer, the constraints are exceeded, then we will reset the buffer.
               * This also protects against unlimited consumption of RAM, since if it is impossible to write to the table,
@@ -727,7 +716,7 @@ bool StorageBuffer::optimize(
     if (deduplicate)
         throw Exception("DEDUPLICATE cannot be specified when optimizing table of type Buffer", ErrorCodes::NOT_IMPLEMENTED);
 
-    flushAllBuffers(false, true);
+    flushAllBuffers(false);
     return true;
 }
 
@@ -805,42 +794,32 @@ bool StorageBuffer::checkThresholdsImpl(bool direct, size_t rows, size_t bytes, 
 }
 
 
-void StorageBuffer::flushAllBuffers(bool check_thresholds, bool reset_blocks_structure)
+void StorageBuffer::flushAllBuffers(bool check_thresholds)
 {
     for (auto & buf : buffers)
-        flushBuffer(buf, check_thresholds, false, reset_blocks_structure);
+        flushBuffer(buf, check_thresholds, false);
 }
 
 
-void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool locked, bool reset_block_structure)
+bool StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool locked)
 {
     Block block_to_write;
     time_t current_time = time(nullptr);
-
-    size_t rows = 0;
-    size_t bytes = 0;
-    time_t time_passed = 0;
 
     std::optional<std::unique_lock<std::mutex>> lock;
     if (!locked)
         lock.emplace(buffer.lockForReading());
 
-    block_to_write = buffer.data.cloneEmpty();
-
-    rows = buffer.data.rows();
-    bytes = buffer.data.bytes();
+    time_t time_passed = 0;
+    size_t rows = buffer.data.rows();
+    size_t bytes = buffer.data.bytes();
     if (buffer.first_write_time)
         time_passed = current_time - buffer.first_write_time;
 
     if (check_thresholds)
     {
         if (!checkThresholdsImpl(/* direct= */false, rows, bytes, time_passed))
-            return;
-    }
-    else
-    {
-        if (rows == 0)
-            return;
+            return false;
     }
 
     buffer.data.swap(block_to_write);
@@ -861,7 +840,7 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
         total_writes.bytes -= block_allocated_bytes_delta;
 
         LOG_DEBUG(log, "Flushing buffer with {} rows (discarded), {} bytes, age {} seconds {}.", rows, bytes, time_passed, (check_thresholds ? "(bg)" : "(direct)"));
-        return;
+        return true;
     }
 
     /** For simplicity, buffer is locked during write.
@@ -875,8 +854,6 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     try
     {
         writeBlockToDestination(block_to_write, DatabaseCatalog::instance().tryGetTable(destination_id, getContext()));
-        if (reset_block_structure)
-            buffer.data.clear();
     }
     catch (...)
     {
@@ -901,6 +878,7 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 
     UInt64 milliseconds = watch.elapsedMilliseconds();
     LOG_DEBUG(log, "Flushing buffer with {} rows, {} bytes, age {} seconds, took {} ms {}.", rows, bytes, time_passed, milliseconds, (check_thresholds ? "(bg)" : "(direct)"));
+    return true;
 }
 
 
@@ -916,7 +894,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     }
     auto destination_metadata_snapshot = table->getInMemoryMetadataPtr();
 
-    MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
+    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
 
     auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = destination_id;
@@ -1165,6 +1143,7 @@ void registerStorageBuffer(StorageFactory & factory)
     },
     {
         .supports_parallel_insert = true,
+        .supports_schema_inference = true,
     });
 }
 
