@@ -7027,6 +7027,50 @@ CheckResults StorageReplicatedMergeTree::checkData(const ASTPtr & query, Context
 }
 
 
+void StorageReplicatedMergeTree::checkBrokenDisks()
+{
+    auto disks = getStoragePolicy()->getDisks();
+    std::unique_ptr<DataPartsVector> parts;
+
+    for (auto disk_it = disks.rbegin(); disk_it != disks.rend(); ++disk_it)
+    {
+        auto disk_ptr = *disk_it;
+        if (disk_ptr->isBroken())
+        {
+            {
+                std::unique_lock lock(last_broken_disks_mutex);
+                if (!last_broken_disks.insert(disk_ptr->getName()).second)
+                    continue;
+            }
+
+            LOG_INFO(log, "Scanning parts to recover on broken disk {} with path {}", disk_ptr->getName(), disk_ptr->getPath());
+
+            if (!parts)
+                parts = std::make_unique<DataPartsVector>(getDataPartsVector());
+
+            for (auto & part : *parts)
+            {
+                if (part->volume && part->volume->getDisk()->getName() == disk_ptr->getName())
+                    broken_part_callback(part->name);
+            }
+            continue;
+        }
+        else
+        {
+            {
+                std::unique_lock lock(last_broken_disks_mutex);
+                if (last_broken_disks.erase(disk_ptr->getName()) > 0)
+                    LOG_INFO(
+                        log,
+                        "Disk {} with path {} is recovered. Exclude it from last_broken_disks",
+                        disk_ptr->getName(),
+                        disk_ptr->getPath());
+            }
+        }
+    }
+}
+
+
 bool StorageReplicatedMergeTree::canUseAdaptiveGranularity() const
 {
     const auto storage_settings_ptr = getSettings();
@@ -7493,7 +7537,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     /// TODO(ab): What projections should we add to the empty part? How can we make sure that it
     /// won't block future merges? Perhaps we should also check part emptiness when selecting parts
     /// to merge.
-    out.finalizePart(new_data_part, sync_on_insert);
+    out.writeSuffixAndFinalizePart(new_data_part, sync_on_insert);
 
     try
     {
