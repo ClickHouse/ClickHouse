@@ -18,6 +18,7 @@
 #include <Processors/Sinks/EmptySink.h>
 #include <QueryPipeline/Pipe.h>
 #include <filesystem>
+#include <base/sort.h>
 
 
 namespace fs = std::filesystem;
@@ -127,7 +128,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
                     use_local_default_database = true;
             }
         }
-        std::sort(shard_default_databases.begin(), shard_default_databases.end());
+        ::sort(shard_default_databases.begin(), shard_default_databases.end());
         shard_default_databases.erase(std::unique(shard_default_databases.begin(), shard_default_databases.end()), shard_default_databases.end());
         assert(use_local_default_database || !shard_default_databases.empty());
 

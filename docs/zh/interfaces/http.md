@@ -18,6 +18,17 @@ $ curl 'http://localhost:8123/'
 Ok.
 ```
 
+Web UI 可以通过这个地址访问: `http://localhost:8123/play`.
+在运行状况检查脚本中，使用`GET /ping`请求。这个处理方法总是返回 "Ok"。(以换行结尾)。可从18.12.13版获得。请参见' /replicas_status '检查复制集的延迟。
+
+
+``` bash
+$ curl 'http://localhost:8123/ping'
+Ok.
+$ curl 'http://localhost:8123/replicas_status'
+Ok.
+```
+
 通过URL中的 `query` 参数来发送请求，或者发送POST请求，或者将查询的开头部分放在URL的`query`参数中，其他部分放在POST中（我们会在后面解释为什么这样做是有必要的）。URL的大小会限制在16KB，所以发送大型查询时要时刻记住这点。
 
 如果请求成功，将会收到200的响应状态码和响应主体中的结果。
