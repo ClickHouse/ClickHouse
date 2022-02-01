@@ -44,11 +44,11 @@ namespace
 }
 
 
-const std::vector<std::pair<String, Int8>> & StorageSystemPrivileges::getAccessTypeEnumValues()
+const std::vector<std::pair<String, Int16>> & StorageSystemPrivileges::getAccessTypeEnumValues()
 {
-    static const std::vector<std::pair<String, Int8>> values = []
+    static const std::vector<std::pair<String, Int16>> values = []
     {
-        std::vector<std::pair<String, Int8>> res;
+        std::vector<std::pair<String, Int16>> res;
 
 #define ADD_ACCESS_TYPE_ENUM_VALUE(name, aliases, node_type, parent_group_name) \
         res.emplace_back(toString(AccessType::name), static_cast<size_t>(AccessType::name));
@@ -65,10 +65,10 @@ const std::vector<std::pair<String, Int8>> & StorageSystemPrivileges::getAccessT
 NamesAndTypesList StorageSystemPrivileges::getNamesAndTypes()
 {
     NamesAndTypesList names_and_types{
-        {"privilege", std::make_shared<DataTypeEnum8>(getAccessTypeEnumValues())},
+        {"privilege", std::make_shared<DataTypeEnum16>(getAccessTypeEnumValues())},
         {"aliases", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"level", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum8>(getLevelEnumValues()))},
-        {"parent_group", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum8>(getAccessTypeEnumValues()))},
+        {"parent_group", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeEnum16>(getAccessTypeEnumValues()))},
     };
     return names_and_types;
 }
