@@ -18,7 +18,7 @@
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Common/typeid_cast.h>
-#include "Parsers/ASTColumnDeclaration.h"
+#include <Parsers/ASTColumnDeclaration.h>
 
 
 namespace DB

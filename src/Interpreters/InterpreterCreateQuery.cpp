@@ -9,7 +9,7 @@
 #include <Common/randomSeed.h>
 #include <Common/renameat2.h>
 #include <Common/hex.h>
-#include "Core/SettingsEnums.h"
+#include <Core/SettingsEnums.h>
 
 #include <Core/Defines.h>
 #include <Core/Settings.h>
@@ -843,7 +843,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
                 default_table_engine_name = "Memory";
                 break;
             default:
-                throw Exception( "default_table_engine is set to unknown value", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception( "default_table_engine is set to unknown value", ErrorCodes::LOGICAL_ERROR);
         }
         if (!create.storage->engine)
         {

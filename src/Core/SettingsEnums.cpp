@@ -94,7 +94,7 @@ IMPLEMENT_SETTING_ENUM_WITH_RENAME(DefaultDatabaseEngine, ErrorCodes::BAD_ARGUME
      {"Atomic",   DefaultDatabaseEngine::Atomic}})
 
 IMPLEMENT_SETTING_ENUM_WITH_RENAME(DefaultTableEngine, ErrorCodes::BAD_ARGUMENTS,
-    {{"Non", DefaultTableEngine::None},
+    {{"None", DefaultTableEngine::None},
      {"Log", DefaultTableEngine::Log},
      {"StripeLog", DefaultTableEngine::StripeLog},
      {"MergeTree", DefaultTableEngine::MergeTree},
