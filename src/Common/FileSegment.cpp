@@ -57,6 +57,12 @@ String FileSegment::getOrSetDownloader()
 
     if (downloader_id.empty())
     {
+        if (download_state != State::EMPTY
+            && download_state != State::PARTIALLY_DOWNLOADED)
+            throw Exception(ErrorCodes::FILE_CACHE_ERROR,
+                            "Can set downloader only for file segment with state EMPTY or PARTIALLY_DOWNLOADED, but got: {}",
+                            download_state);
+
         downloader_id = getCallerId();
         LOG_TEST(log, "Set downloader: {}, prev state: {}", downloader_id, stateToString(download_state));
         download_state = State::DOWNLOADING;
@@ -77,6 +83,7 @@ String FileSegment::getDownloader() const
 bool FileSegment::isDownloader() const
 {
     std::lock_guard segment_lock(mutex);
+    LOG_TEST(log, "Checking for current downloader. Caller: {}, downloader: {}, current state: {}", getCallerId(), downloader_id, stateToString(download_state));
     return getCallerId() == downloader_id;
 }
 
@@ -121,6 +128,8 @@ void FileSegment::write(const char * from, size_t size)
     }
 
     cache_writer->write(from, size);
+    cache_writer->next();
+
     downloaded_size += size;
 }
 
@@ -135,7 +144,8 @@ FileSegment::State FileSegment::wait()
     {
         LOG_TEST(log, "{} waiting on: {}, current downloader: {}", getCallerId(), range().toString(), downloader_id);
 
-        assert(!downloader_id.empty() && downloader_id != getCallerId());
+        assert(!downloader_id.empty());
+        assert(downloader_id != getCallerId());
 
 #ifndef NDEBUG
         {
@@ -192,6 +202,8 @@ void FileSegment::completeBatchAndResetDownloader()
         std::lock_guard segment_lock(mutex);
 
         bool is_downloader = downloader_id == getCallerId();
+        std::cerr << "caller id: " << getCallerId() << "\n";
+        std::cerr << "downloader id: " << downloader_id << "\n";
         if (!is_downloader)
         {
             cv.notify_all();
@@ -214,7 +226,7 @@ void FileSegment::completeBatchAndResetDownloader()
     cv.notify_all();
 }
 
-void FileSegment::complete(State state)
+void FileSegment::complete(State state, bool error)
 {
     {
         std::lock_guard segment_lock(mutex);
@@ -225,6 +237,10 @@ void FileSegment::complete(State state)
             cv.notify_all();
             throw Exception(ErrorCodes::FILE_CACHE_ERROR,
                             "File segment can be completed only by downloader or downloader's FileSegmentsHodler");
+        }
+        else if (error)
+        {
+            remote_file_reader.reset();
         }
 
         if (state != State::DOWNLOADED
