@@ -5407,7 +5407,7 @@ void MergeTreeData::reportBrokenPart(MergeTreeData::DataPartPtr & data_part) con
     if (data_part->volume && data_part->volume->getDisk()->isBroken())
     {
         auto disk = data_part->volume->getDisk();
-        auto parts = getDataParts();
+        auto parts = getDataPartsForInternalUsage();
         LOG_WARNING(log, "Scanning parts to recover on broken disk {}.", disk->getName() + "@" + disk->getPath());
         for (const auto & part : parts)
         {
