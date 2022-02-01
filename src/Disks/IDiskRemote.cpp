@@ -25,8 +25,9 @@ namespace ErrorCodes
     extern const int FILE_ALREADY_EXISTS;
     extern const int PATH_ACCESS_DENIED;;
     extern const int CANNOT_DELETE_DIRECTORY;
+    extern const int CANNOT_UNLINK;
+    extern const int CANNOT_STAT;
 }
-
 
 /// Load metadata by path or create empty if `create` flag is set.
 IDiskRemote::Metadata::Metadata(
@@ -177,7 +178,8 @@ IDiskRemote::Metadata IDiskRemote::createMeta(const String & path) const
 
 void IDiskRemote::removeMeta(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper)
 {
-    LOG_TRACE(log, "Remove file by path: {}", backQuote(metadata_disk->getPath() + path));
+    String file_path = fs::path(metadata_disk->getPath()) / path;
+    LOG_TRACE(log, "Remove file by path: {}", backQuote(file_path));
 
     if (!metadata_disk->isFile(path))
         throw Exception(ErrorCodes::CANNOT_DELETE_DIRECTORY, "Path '{}' is a directory", path);
@@ -185,19 +187,11 @@ void IDiskRemote::removeMeta(const String & path, RemoteFSPathKeeperPtr fs_paths
     try
     {
         auto metadata = readMeta(path);
-
         /// If there is no references - delete content from remote FS.
-        if (metadata.ref_count == 0)
+        if (1 == removeMetaFileAndReturnNumOfHardlinks(file_path))
         {
-            metadata_disk->removeFile(path);
             for (const auto & [remote_fs_object_path, _] : metadata.remote_fs_objects)
                 fs_paths_keeper->addPath(remote_fs_root_path + remote_fs_object_path);
-        }
-        else /// In other case decrement number of references, save metadata and delete file.
-        {
-            --metadata.ref_count;
-            metadata.save();
-            metadata_disk->removeFile(path);
         }
     }
     catch (const Exception & e)
@@ -440,11 +434,7 @@ Poco::Timestamp IDiskRemote::getLastModified(const String & path)
 
 void IDiskRemote::createHardLink(const String & src_path, const String & dst_path)
 {
-    /// Increment number of references.
-    auto src = readMeta(src_path);
-    ++src.ref_count;
-    src.save();
-
+    std::lock_guard lock(metadata_disk);
     /// Create FS hardlink to metadata file.
     metadata_disk->createHardLink(src_path, dst_path);
 }
@@ -527,8 +517,27 @@ void IDiskRemote::removeMetaFileIfExists(const String & path)
 
 UInt32 IDiskRemote::getRefCount(const String & path) const
 {
-    auto meta = readMeta(path);
-    return meta.ref_count;
+    struct stat buf;
+    if (-1 == ::stat(path.c_str(), &buf))
+    {
+        if (errno == ENOENT)
+            return 0;
+        throwFromErrno(fmt::format("Cannot stat file: {}", path), ErrorCodes::CANNOT_STAT);
+    }
+    return buf.st_nlink;
+}
+
+size_t IDiskRemote::removeMetaFileAndReturnNumOfHardlinks(const String & path)
+{
+    std::lock_guard lock(metadata_disk);
+    auto ref_count = getRefCount(path);
+    if (-1 == ::unlink(path.c_str()))
+    {
+        if (errno == ENOENT)
+            return 0;
+        throwFromErrno(fmt::format("Cannot unlink file: {}", path), ErrorCodes::CANNOT_UNLINK);
+    }
+    return ref_count;
 }
 
 }

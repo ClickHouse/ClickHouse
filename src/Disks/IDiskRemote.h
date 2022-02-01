@@ -157,11 +157,14 @@ protected:
     const String remote_fs_root_path;
 
     DiskPtr metadata_disk;
+    std::mutex metadata_mutex;
 
 private:
     void removeMeta(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper);
 
     void removeMetaRecursive(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper);
+
+    size_t removeMetaFileAndReturnNumOfHardlinks(const String & path);
 
     bool tryReserve(UInt64 bytes);
 
@@ -208,6 +211,7 @@ struct IDiskRemote::Metadata : RemoteMetadata
     size_t total_size = 0;
 
     /// Number of references (hardlinks) to this metadata file.
+    /// NOTE: Deprecated.
     UInt32 ref_count = 0;
 
     /// Flag indicates that file is read only.

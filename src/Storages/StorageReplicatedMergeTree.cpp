@@ -7185,7 +7185,7 @@ bool StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & par
         return true;
 
     auto ref_count = part.getNumberOfRefereneces();
-    if (ref_count > 0) /// Keep part shard info for frozen backups
+    if (ref_count > 1) /// Keep part shard info for frozen backups
         return false;
 
     return unlockSharedDataByID(part.getUniqueId(), getTableSharedID(), name, replica_name, disk, zookeeper, *getSettings(), log,
@@ -7763,8 +7763,7 @@ bool StorageReplicatedMergeTree::removeSharedDetachedPart(DiskPtr disk, const St
         fs::path checksums = fs::path(path) / "checksums.txt";
         if (disk->exists(checksums))
         {
-            auto ref_count = disk->getRefCount(checksums);
-            if (ref_count == 0)
+            if (disk->getRefCount(checksums) <= 1)
             {
                 String id = disk->getUniqueId(checksums);
                 keep_shared = !StorageReplicatedMergeTree::unlockSharedDataByID(id, table_uuid, part_name,
