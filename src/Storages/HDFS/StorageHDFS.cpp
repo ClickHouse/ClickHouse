@@ -320,6 +320,7 @@ HDFSSource::HDFSSource(
 
 void HDFSSource::onCancel()
 {
+    std::lock_guard lock(reader_mutex);
     if (reader)
         reader->cancel();
 }
@@ -393,12 +394,15 @@ Chunk HDFSSource::generate()
         return Chunk(std::move(columns), num_rows);
     }
 
-    reader.reset();
-    pipeline.reset();
-    read_buf.reset();
+    {
+        std::lock_guard lock(reader_mutex);
+        reader.reset();
+        pipeline.reset();
+        read_buf.reset();
 
-    if (!initialize())
-        return {};
+        if (!initialize())
+            return {};
+    }
     return generate();
 }
 
