@@ -29,6 +29,8 @@ def get_additional_envs(check_name, run_by_hash_num, run_by_hash_total):
         result.append("USE_DATABASE_ORDINARY=1")
     if 'wide parts enabled' in check_name:
         result.append("USE_POLYMORPHIC_PARTS=1")
+    if 's3 storage' in check_name:
+        result.append("USE_S3_STORAGE_FOR_MERGE_TREE=1")
 
     if run_by_hash_total != 0:
         result.append(f"RUN_BY_HASH_NUM={run_by_hash_num}")
