@@ -190,7 +190,7 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryT
     if (unlikely(current_hard_limit && will_be > current_hard_limit) && memoryTrackerCanThrow(level, false) && throw_if_memory_exceeded)
     {
         bool need_to_throw = true;
-        bool try_to_free_momory = overcommit_tracker != nullptr && query_tracker != nullptr;
+        bool try_to_free_memory = overcommit_tracker != nullptr && query_tracker != nullptr;
         if (try_to_free_momory)
             need_to_throw = overcommit_tracker->needToStopQuery(query_tracker);
 
