@@ -113,7 +113,7 @@ public:
 
     void completeBatchAndResetDownloader();
 
-    void complete(State state);
+    void complete(State state, bool error = false);
 
 private:
     size_t availableSize() const { return reserved_size - downloaded_size; }

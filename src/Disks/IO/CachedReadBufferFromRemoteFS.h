@@ -38,7 +38,7 @@ private:
     {
         CACHED,
         REMOTE_FS_READ_BYPASS_CACHE,
-        REMOTE_FS_AND_PUT_IN_CACHE,
+        REMOTE_FS_READ_AND_PUT_IN_CACHE,
     };
 
     SeekableReadBufferPtr getRemoteFSReadBuffer(FileSegmentPtr file_segment, ReadType read_type_);
@@ -80,8 +80,8 @@ private:
                 return "CACHED";
             case ReadType::REMOTE_FS_READ_BYPASS_CACHE:
                 return "REMOTE_FS_READ_BYPASS_CACHE";
-            case ReadType::REMOTE_FS_AND_PUT_IN_CACHE:
-                return "REMOTE_FS_AND_PUT_IN_CACHE";
+            case ReadType::REMOTE_FS_READ_AND_PUT_IN_CACHE:
+                return "REMOTE_FS_READ_AND_PUT_IN_CACHE";
         }
     }
 };
