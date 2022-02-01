@@ -81,8 +81,7 @@ try
 
         const auto & sample = reader->getColumns();
         Columns columns(sample.size());
-        /// TODO: pass stream size instead of zero?
-        size_t rows_read = reader->readRows(current_mark, 0, continue_reading, rows_to_read, columns);
+        size_t rows_read = reader->readRows(current_mark, data_part->getMarksCount(), continue_reading, rows_to_read, columns);
 
         if (rows_read)
         {
@@ -127,7 +126,7 @@ catch (...)
 {
     /// Suspicion of the broken part. A part is added to the queue for verification.
     if (getCurrentExceptionCode() != ErrorCodes::MEMORY_LIMIT_EXCEEDED)
-        storage.reportBrokenPart(data_part->name);
+        storage.reportBrokenPart(data_part);
     throw;
 }
 

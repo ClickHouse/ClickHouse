@@ -17,6 +17,7 @@
 #include <type_traits>
 #include <array>
 #include <base/bit_cast.h>
+#include <base/sort.h>
 #include <algorithm>
 
 #ifdef __SSE4_1__
@@ -738,7 +739,7 @@ private:
         for (size_t i = 0; i < boundaries.size(); ++i)
             boundary_values[i] = boundaries[i].get<ValueType>();
 
-        std::sort(boundary_values.begin(), boundary_values.end());
+        ::sort(boundary_values.begin(), boundary_values.end());
         boundary_values.erase(std::unique(boundary_values.begin(), boundary_values.end()), boundary_values.end());
 
         size_t size = src.size();

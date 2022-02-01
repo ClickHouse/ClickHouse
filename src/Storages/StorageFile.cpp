@@ -239,8 +239,11 @@ ColumnsDescription StorageFile::getTableStructureFromFileDescriptor(ContextPtr c
 
     auto columns = readSchemaFromFormat(format_name, format_settings, read_buffer_creator, context, peekable_read_buffer_from_fd);
     if (peekable_read_buffer_from_fd)
+    {
         /// If we have created read buffer in readSchemaFromFormat we should rollback to checkpoint.
         assert_cast<PeekableReadBuffer *>(peekable_read_buffer_from_fd.get())->rollbackToCheckpoint();
+        has_peekable_read_buffer_from_fd = true;
+    }
     return columns;
 }
 
@@ -619,8 +622,16 @@ Pipe StorageFile::read(
                 return storage_snapshot->metadata->getColumns();
         };
 
+        /// In case of reading from fd we have to check whether we have already created
+        /// the read buffer from it in Storage constructor (for schema inference) or not.
+        /// If yes, then we should use it in StorageFileSource. Atomic bool flag is needed
+        /// to prevent data race in case of parallel reads.
+        std::unique_ptr<ReadBuffer> read_buffer;
+        if (has_peekable_read_buffer_from_fd.exchange(false))
+            read_buffer = std::move(peekable_read_buffer_from_fd);
+
         pipes.emplace_back(std::make_shared<StorageFileSource>(
-            this_ptr, storage_snapshot, context, max_block_size, files_info, get_columns_for_format(), std::move(peekable_read_buffer_from_fd)));
+            this_ptr, storage_snapshot, context, max_block_size, files_info, get_columns_for_format(), std::move(read_buffer)));
     }
 
     return Pipe::unitePipes(std::move(pipes));
