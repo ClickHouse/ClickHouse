@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-s3-storage
+-- Tags: no-parallel
 
 drop table if exists ttl;
 set mutations_sync = 2;

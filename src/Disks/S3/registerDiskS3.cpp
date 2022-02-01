@@ -174,10 +174,6 @@ void registerDiskS3(DiskFactory & factory)
                       ContextPtr context,
                       const DisksMap & /*map*/) -> DiskPtr {
         S3::URI uri(Poco::URI(config.getString(config_prefix + ".endpoint")));
-
-        if (uri.key.empty())
-            throw Exception("Empty S3 path specified in disk configuration", ErrorCodes::BAD_ARGUMENTS);
-
         if (uri.key.back() != '/')
             throw Exception("S3 path must ends with '/', but '" + uri.key + "' doesn't.", ErrorCodes::BAD_ARGUMENTS);
 
