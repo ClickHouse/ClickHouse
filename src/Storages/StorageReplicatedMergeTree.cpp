@@ -2203,7 +2203,7 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
     if (replica.empty())
         throw Exception(ErrorCodes::NO_REPLICA_HAS_PART, "Not found active replica on shard {} to clone part {}", entry.source_shard, entry.new_part_name);
 
-    LOG_INFO(log, "Will clone part from shard " + entry.source_shard + " and replica " + replica);
+    LOG_INFO(log, "Will clone part from shard {} and replica {}", entry.source_shard, replica);
 
     MutableDataPartPtr part;
 
@@ -6685,7 +6685,7 @@ void StorageReplicatedMergeTree::movePartitionToShard(
     zkutil::KeeperMultiException::check(rc, ops, responses);
 
     String task_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
-    LOG_DEBUG(log, "Created task for part movement between shards at " + task_znode_path);
+    LOG_DEBUG(log, "Created task for part movement between shards at {}", task_znode_path);
 
     /// TODO(nv): Nice to have support for `replication_alter_partitions_sync`.
     ///     For now use the system.part_moves_between_shards table for status.
@@ -6824,7 +6824,7 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
 bool StorageReplicatedMergeTree::dropPartImpl(
     zkutil::ZooKeeperPtr & zookeeper, String part_name, LogEntry & entry, bool detach, bool throw_if_noop)
 {
-    LOG_TRACE(log, "Will try to insert a log entry to DROP_RANGE for part: " + part_name);
+    LOG_TRACE(log, "Will try to insert a log entry to DROP_RANGE for part {}", part_name);
 
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
 
