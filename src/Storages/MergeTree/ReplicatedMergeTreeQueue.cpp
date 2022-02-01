@@ -1616,7 +1616,11 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
 
     auto end = in_partition->second.lower_bound(desired_mutation_version);
     if (end == in_partition->second.end() || end->first != desired_mutation_version)
-        LOG_WARNING(log, "Mutation with version {} not found in partition ID {} (trying to mutate part {}", desired_mutation_version, part->info.partition_id, part->name + ")");
+        LOG_WARNING(log,
+            "Mutation with version {} not found in partition ID {} (trying to mutate part {})",
+            desired_mutation_version,
+            part->info.partition_id,
+            part->name);
     else
         ++end;
 

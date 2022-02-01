@@ -123,7 +123,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             }
             else
             {
-                LOG_TRACE(log, "Cannot clone from dictionary with id: {}, will call libNew instead");
+                LOG_TRACE(log, "Cannot clone from dictionary with id: {}, will call libNew instead", from_dictionary_id);
                 lib_new = true;
             }
         }
