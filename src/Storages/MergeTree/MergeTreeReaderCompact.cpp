@@ -271,8 +271,11 @@ void MergeTreeReaderCompact::seekToMark(size_t row_index, size_t column_index)
 
 void MergeTreeReaderCompact::adjustUpperBound(size_t last_mark)
 {
-    auto right_offset = marks_loader.getMark(last_mark).offset_in_compressed_file;
-    if (!right_offset)
+    size_t right_offset = 0;
+    if (last_mark < data_part->getMarksCount()) /// Otherwise read until the end of file
+        right_offset = marks_loader.getMark(last_mark).offset_in_compressed_file;
+
+    if (right_offset == 0)
     {
         /// If already reading till the end of file.
         if (last_right_offset && *last_right_offset == 0)
