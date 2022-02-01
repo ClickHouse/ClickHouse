@@ -1428,7 +1428,7 @@ void IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & di
 
     if (disk->exists(fs::path(path_to_clone) / relative_path))
     {
-        LOG_WARNING(storage.log, "Path " + fullPath(disk, path_to_clone + relative_path) + " already exists. Will remove it and clone again.");
+        LOG_WARNING(storage.log, "Path {} already exists. Will remove it and clone again.", fullPath(disk, path_to_clone + relative_path));
         disk->removeRecursive(fs::path(path_to_clone) / relative_path / "");
     }
     disk->createDirectories(path_to_clone);
