@@ -1,3 +1,4 @@
+-- Tags: no-s3-storage
 SELECT '*** Not partitioned ***';
 
 DROP TABLE IF EXISTS not_partitioned;
