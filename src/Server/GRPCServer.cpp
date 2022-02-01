@@ -754,7 +754,7 @@ namespace
 
         // Parse the OpenTelemetry traceparent header.
         ClientInfo client_info = session->getClientInfo();
-        auto & client_metadata = responder->grpc_context.client_metadata();
+        const auto & client_metadata = responder->grpc_context.client_metadata();
         auto traceparent = client_metadata.find("traceparent");
         if (traceparent != client_metadata.end())
         {
