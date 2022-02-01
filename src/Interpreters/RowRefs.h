@@ -19,7 +19,7 @@ namespace DB
 class Block;
 
 /// Reference to the row in block.
-struct RowRef
+struct __attribute__((__packed__)) RowRef
 {
     using SizeT = uint32_t; /// Do not use size_t cause of memory economy
 
