@@ -1220,7 +1220,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
             {
                 const char * format_str = "Not executing merge for the part {}, waiting for {} to execute merge.";
                 LOG_DEBUG(log, format_str, entry.new_part_name, replica_to_execute_merge.value());
-                out_postpone_reason = out_postpone_reason = fmt::format(format_str, format_str, entry.new_part_name, replica_to_execute_merge.value());
+                out_postpone_reason = fmt::format(format_str, entry.new_part_name, replica_to_execute_merge.value());
                 return false;
             }
         }
