@@ -89,15 +89,6 @@ public:
         return *this;
     }
 
-    template <typename F>
-    const CNFQuery & iterateAtoms(F func) const
-    {
-        for (const auto & group : statements)
-            for (const auto & atom : group)
-                func(atom);
-        return *this;
-    }
-
     CNFQuery & appendGroup(AndGroup&& and_group)
     {
         for (auto && or_group : and_group)
