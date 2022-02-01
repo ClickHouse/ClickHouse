@@ -55,14 +55,13 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
 }
 
 MergeTreeData::DataPart::Checksums
-MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(
+MergedColumnOnlyOutputStream::fillChecksums(
     MergeTreeData::MutableDataPartPtr & new_part,
-    MergeTreeData::DataPart::Checksums & all_checksums,
-    bool sync)
+    MergeTreeData::DataPart::Checksums & all_checksums)
 {
     /// Finish columns serialization.
     MergeTreeData::DataPart::Checksums checksums;
-    writer->finish(checksums, sync);
+    writer->fillChecksums(checksums);
 
     for (const auto & [projection_name, projection_part] : new_part->getProjectionParts())
         checksums.addFile(
@@ -83,6 +82,11 @@ MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(
     new_part->setSerializationInfos(serialization_infos);
 
     return checksums;
+}
+
+void MergedColumnOnlyOutputStream::finish(bool sync)
+{
+    writer->finish(sync);
 }
 
 }
