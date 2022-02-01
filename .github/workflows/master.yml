@@ -22,7 +22,7 @@ jobs:
           cd "$GITHUB_WORKSPACE/tests/ci"
           python3 -m unittest discover -s . -p '*_test.py'
   DockerHubPushAarch64:
-    runs-on: [self-hosted, func-tester-aarch64]
+    runs-on: [self-hosted, style-checker-aarch64]
     steps:
       - name: Clear repository
         run: |
