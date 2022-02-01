@@ -162,7 +162,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
             /// We add the hash from the data and partition identifier to deduplication ID.
             /// That is, do not insert the same data to the same partition twice.
 
-            const String& dedup_token = context->getSettingsRef().insert_deduplication_token;
+            const String & dedup_token = context->getSettingsRef().insert_deduplication_token;
             if (!dedup_token.empty())
             {
                 /// multiple blocks can be inserted within the same insert query
