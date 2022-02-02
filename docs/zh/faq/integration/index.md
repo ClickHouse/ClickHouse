@@ -1,19 +1,21 @@
 ---
-title: Questions about integrating ClickHouse and other systems
+title: 关于集成ClickHouse和其他系统的问题
 toc_hidden_folder: true
 toc_priority: 4
 toc_title: Integration
 ---
 
-# Questions About Integrating ClickHouse and Other Systems {#question-about-integrating-clickhouse-and-other-systems}
+# 关于集成ClickHouse和其他系统的问题 {#question-about-integrating-clickhouse-and-other-systems}
 
-Questions:
+问题:
 
--   [How do I export data from ClickHouse to a file?](../../faq/integration/file-export.md)
--   [How to import JSON into ClickHouse?](../../faq/integration/json-import.md)
--   [What if I have a problem with encodings when connecting to Oracle via ODBC?](../../faq/integration/oracle-odbc.md)
+-   [如何从 ClickHouse 导出数据到一个文件?](../../faq/integration/file-export.md)
+-   [如何导入JSON到ClickHouse?](../../faq/integration/json-import.md)
+-   [如果我用ODBC链接Oracle数据库出现编码问题该怎么办?](../../faq/integration/oracle-odbc.md)
 
-!!! info "Don’t see what you were looking for?"
-    Check out [other F.A.Q. categories](../../faq/index.md) or browse around main documentation articles found in the left sidebar.
 
-{## [Original article](https://clickhouse.com/docs/en/faq/integration/) ##}
+
+!!! info "没看到你要找的东西吗?"
+    查看[其他faq类别](../../faq/index.md)或浏览左边栏中的主要文档文章。
+
+{## [原文](https://clickhouse.com/docs/en/faq/integration/) ##}
