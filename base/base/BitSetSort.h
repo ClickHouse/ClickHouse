@@ -84,7 +84,77 @@ class __reverse_conditional_swap {
       *__y = __result ? _VSTD::move(*__y) : _VSTD::move(*__x);
       *__x = _VSTD::move(__min);
     } else {
-      if (__result) {
+      /** This change is required for ClickHouse.
+        * It seems that this is slow branch, and its logic should be identical to fast branch.
+        * Logic of fast branch,
+        * if (result)
+        *   min = x;
+        *   y = y;
+        *   x = x;
+        * else
+        *   min = y;
+        *   y = x;
+        *   x = y;
+        *
+        * We swap elements only if result is false.
+        *
+        * Example to reproduce sort bug:
+        * int main(int argc, char ** argv)
+        * {
+        *    (void)(argc);
+        *    (void)(argv);
+        *
+        *    std::vector<std::pair<Int64, Int64>> values = {
+        *        {1, 1},
+        *        {3, -1},
+        *        {2, 1},
+        *        {7, -1},
+        *        {3, 1},
+        *        {999, -1},
+        *        {4, 1},
+        *        {7, -1},
+        *        {5, 1},
+        *        {8, -1}
+        *    };
+        *
+        *    ::stdext::bitsetsort(values.begin(), values.end());
+        *    bool is_sorted = std::is_sorted(values.begin(), values.end());
+        *
+        *    std::cout << "Array " << values.size() << " is sorted " << is_sorted << std::endl;
+        *
+        *    for (auto & value : values)
+        *        std::cout << value.first << " " << value.second << std::endl;
+        *
+        *    return 0;
+        * }
+        *
+        * Output before change:
+        * Array 10 is sorted 0
+        * 1 1
+        * 2 1
+        * 3 -1
+        * 3 1
+        * 4 1
+        * 7 -1
+        * 7 -1
+        * 8 -1
+        * 5 1
+        * 999 -1
+        *
+        * After change:
+        * Array 10 is sorted 1
+        * 1 1
+        * 2 1
+        * 3 -1
+        * 3 1
+        * 4 1
+        * 5 1
+        * 7 -1
+        * 7 -1
+        * 8 -1
+        * 999 -1
+        */
+      if (!__result) {
         _VSTD::iter_swap(__x, __y);
       }
     }
