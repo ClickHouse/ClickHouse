@@ -87,7 +87,7 @@ void StorageSystemPrivileges::fillData(MutableColumns & res_columns, ContextPtr,
 
     auto add_row = [&](AccessType access_type, const std::string_view & aliases, Level max_level, AccessType parent_group)
     {
-        column_access_type.push_back(static_cast<Int8>(access_type));
+        column_access_type.push_back(static_cast<Int16>(access_type));
 
         for (size_t pos = 0; pos < aliases.length();)
         {
@@ -121,7 +121,7 @@ void StorageSystemPrivileges::fillData(MutableColumns & res_columns, ContextPtr,
         }
         else
         {
-            column_parent_group.push_back(static_cast<Int8>(parent_group));
+            column_parent_group.push_back(static_cast<Int16>(parent_group));
             column_parent_group_null_map.push_back(false);
         }
     };
