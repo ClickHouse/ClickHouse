@@ -80,7 +80,7 @@ void DatabaseAtomic::drop(ContextPtr)
     }
     catch (...)
     {
-        LOG_WARNING(log, getCurrentExceptionMessage(true));
+        LOG_WARNING(log, fmt::runtime(getCurrentExceptionMessage(true)));
     }
     fs::remove_all(getMetadataPath());
 }
@@ -469,7 +469,7 @@ void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & 
     }
     catch (...)
     {
-        LOG_WARNING(log, getCurrentExceptionMessage(true));
+        LOG_WARNING(log, fmt::runtime(getCurrentExceptionMessage(true)));
     }
 }
 
@@ -482,7 +482,7 @@ void DatabaseAtomic::tryRemoveSymlink(const String & table_name)
     }
     catch (...)
     {
-        LOG_WARNING(log, getCurrentExceptionMessage(true));
+        LOG_WARNING(log, fmt::runtime(getCurrentExceptionMessage(true)));
     }
 }
 
@@ -527,7 +527,7 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     }
     catch (...)
     {
-        LOG_WARNING(log, getCurrentExceptionMessage(true));
+        LOG_WARNING(log, fmt::runtime(getCurrentExceptionMessage(true)));
     }
 
     auto new_name_escaped = escapeForFileName(new_name);
