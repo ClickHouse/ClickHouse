@@ -57,7 +57,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     size_t max_single_part_upload_size_,
     std::optional<std::map<String, String>> object_metadata_,
     size_t buffer_size_,
-    ScheduleFunc && schedule_)
+    ScheduleFunc schedule_)
     : BufferWithOwnMemory<WriteBuffer>(buffer_size_, nullptr, 0)
     , bucket(bucket_)
     , key(key_)

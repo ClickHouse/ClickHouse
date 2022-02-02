@@ -50,7 +50,7 @@ public:
         size_t max_single_part_upload_size_,
         std::optional<std::map<String, String>> object_metadata_ = std::nullopt,
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-        ScheduleFunc && schedule_ = {});
+        ScheduleFunc schedule_ = {});
 
     ~WriteBufferFromS3() override;
 
