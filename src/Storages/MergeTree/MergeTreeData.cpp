@@ -4543,6 +4543,23 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     if (virtual_columns_block.rows() == 0)
         return {};
 
+    std::optional<PartitionPruner> partition_pruner;
+    std::optional<KeyCondition> minmax_idx_condition;
+    DataTypes minmax_columns_types;
+    if (metadata_snapshot->hasPartitionKey())
+    {
+        const auto & partition_key = metadata_snapshot->getPartitionKey();
+        auto minmax_columns_names = getMinMaxColumnsNames(partition_key);
+        minmax_columns_types = getMinMaxColumnsTypes(partition_key);
+
+        minmax_idx_condition.emplace(
+            query_info,
+            query_context,
+            minmax_columns_names,
+            getMinMaxExpr(partition_key, ExpressionActionsSettings::fromContext(query_context)));
+        partition_pruner.emplace(metadata_snapshot, query_info, query_context, false /* strict */);
+    }
+
     // Generate valid expressions for filtering
     VirtualColumnUtils::prepareFilterBlockWithQuery(query_info.query, query_context, virtual_columns_block, expression_ast);
     if (expression_ast)
@@ -4551,6 +4568,8 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
     size_t rows = virtual_columns_block.rows();
     const ColumnString & part_name_column = typeid_cast<const ColumnString &>(*virtual_columns_block.getByName("_part").column);
     size_t part_idx = 0;
+    auto filter_column = ColumnUInt8::create();
+    auto & filter_column_data = filter_column->getData();
     for (size_t row = 0; row < rows; ++row)
     {
         while (parts[part_idx]->name != part_name_column.getDataAt(row))
@@ -4561,12 +4580,24 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         if (!part->minmax_idx->initialized)
             throw Exception("Found a non-empty part with uninitialized minmax_idx. It's a bug", ErrorCodes::LOGICAL_ERROR);
 
+        filter_column_data.emplace_back();
+        if (minmax_idx_condition
+            && !minmax_idx_condition->checkInHyperrectangle(part->minmax_idx->hyperrectangle, minmax_columns_types).can_be_true)
+            continue;
+
+        if (partition_pruner)
+        {
+            if (partition_pruner->canBePruned(*part))
+                continue;
+        }
+
         if (need_primary_key_max_column && !part->index_granularity.hasFinalMark())
         {
             normal_parts.push_back(part);
             continue;
         }
 
+        filter_column_data.back() = 1;
         size_t pos = 0;
         for (size_t i : metadata_snapshot->minmax_count_projection->partition_value_indices)
         {
@@ -4608,6 +4639,13 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         }
     }
     block.setColumns(std::move(partition_minmax_count_columns));
+
+    FilterDescription filter(*filter_column);
+    for (size_t i = 0; i < virtual_columns_block.columns(); ++i)
+    {
+        ColumnPtr & column = virtual_columns_block.safeGetByPosition(i).column;
+        column = column->filter(*filter.data, -1);
+    }
 
     Block res;
     for (const auto & name : required_columns)
