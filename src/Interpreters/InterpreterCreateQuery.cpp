@@ -817,7 +817,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
                 default_table_engine_name = "Memory";
                 break;
             default:
-                throw Exception( "default_table_engine is set to unknown value", ErrorCodes::LOGICAL_ERROR);
+                throw Exception("default_table_engine is set to unknown value", ErrorCodes::LOGICAL_ERROR);
         }
         if (!create.storage->engine)
         {
