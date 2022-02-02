@@ -4,4 +4,4 @@ sudo yum-config-manager --add-repo https://repo.clickhouse.com/rpm/clickhouse.re
 sudo yum install clickhouse-server clickhouse-client
 
 sudo /etc/init.d/clickhouse-server start
-clickhouse-client
+clickhouse-client --password
