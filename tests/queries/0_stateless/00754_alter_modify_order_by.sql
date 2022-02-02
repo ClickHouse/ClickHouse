@@ -21,11 +21,9 @@ ALTER TABLE summing MODIFY ORDER BY (x, y, nonexistent); -- { serverError 47}
 /* Can't modyfy ORDER BY so that it is no longer a prefix of the PRIMARY KEY. */
 ALTER TABLE summing MODIFY ORDER BY x; -- { serverError 36}
 
-INSERT INTO summing(x, y, val) VALUES (1, 2, 10);
-
 ALTER TABLE summing ADD COLUMN z UInt32 AFTER y, MODIFY ORDER BY (x, y, -z);
 
-INSERT INTO summing(x, y, z, val) values (1, 2, 1, 30), (1, 2, 2, 40);
+INSERT INTO summing(x, y, z, val) values (1, 2, 0, 10), (1, 2, 1, 30), (1, 2, 2, 40);
 
 SELECT '*** Check that the parts are sorted according to the new key. ***';
 SELECT * FROM summing;
