@@ -77,12 +77,12 @@ NamesAndTypesList StorageSystemPrivileges::getNamesAndTypes()
 void StorageSystemPrivileges::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
 {
     size_t column_index = 0;
-    auto & column_access_type = assert_cast<ColumnInt8 &>(*res_columns[column_index++]).getData();
+    auto & column_access_type = assert_cast<ColumnInt16 &>(*res_columns[column_index++]).getData();
     auto & column_aliases = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
     auto & column_aliases_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
     auto & column_level = assert_cast<ColumnInt8 &>(assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn()).getData();
     auto & column_level_null_map = assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
-    auto & column_parent_group = assert_cast<ColumnInt8 &>(assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn()).getData();
+    auto & column_parent_group = assert_cast<ColumnInt16 &>(assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn()).getData();
     auto & column_parent_group_null_map = assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
 
     auto add_row = [&](AccessType access_type, const std::string_view & aliases, Level max_level, AccessType parent_group)

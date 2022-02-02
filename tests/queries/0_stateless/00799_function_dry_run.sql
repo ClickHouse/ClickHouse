@@ -30,6 +30,6 @@ FROM
         business_dttm
     FROM bm
     ORDER BY business_dttm
-);
+) ORDER BY amount, business_dttm;
 
 DROP TABLE bm;

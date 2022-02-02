@@ -4,7 +4,7 @@ SELECT
 FROM
     (
         SELECT 1 AS col
-        UNION ALL
+        UNION DISTINCT
         SELECT 2
     );
 
@@ -13,7 +13,7 @@ SELECT groupArray(max_size)(col)
 FROM
      (
          SELECT 1 as col
-         UNION ALL
+         UNION DISTINCT
          SELECT 2
      );
 
