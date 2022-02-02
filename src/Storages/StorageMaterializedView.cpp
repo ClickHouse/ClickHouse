@@ -135,6 +135,8 @@ QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(
     const StorageMetadataPtr &,
     SelectQueryInfo & query_info) const
 {
+    /// TODO: Find a way to support projections for StorageMaterializedView
+    query_info.ignore_projections = true;
     return getTargetTable()->getQueryProcessingStage(local_context, to_stage, getTargetTable()->getInMemoryMetadataPtr(), query_info);
 }
 
