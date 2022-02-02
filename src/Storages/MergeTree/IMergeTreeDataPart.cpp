@@ -1118,6 +1118,7 @@ UInt64 IMergeTreeDataPart::calculateTotalSizeOnDisk(const DiskPtr & disk_, const
 
 
 void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const
+try
 {
     assertOnDisk();
 
@@ -1153,6 +1154,18 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
         sync_guard = volume->getDisk()->getDirectorySyncGuard(to);
 
     storage.lockSharedData(*this);
+}
+catch (...)
+{
+    if (startsWith(new_relative_path, "detached/"))
+    {
+        // Don't throw when the destination is to the detached folder. It might be able to
+        // recover in some cases, such as fetching parts into multi-disks while some of the
+        // disks are broken.
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+    else
+        throw;
 }
 
 void IMergeTreeDataPart::cleanupOldName(const String & old_part_name) const
@@ -1415,7 +1428,7 @@ void IMergeTreeDataPart::makeCloneOnDisk(const DiskPtr & disk, const String & di
 
     if (disk->exists(fs::path(path_to_clone) / relative_path))
     {
-        LOG_WARNING(storage.log, "Path " + fullPath(disk, path_to_clone + relative_path) + " already exists. Will remove it and clone again.");
+        LOG_WARNING(storage.log, "Path {} already exists. Will remove it and clone again.", fullPath(disk, path_to_clone + relative_path));
         disk->removeRecursive(fs::path(path_to_clone) / relative_path / "");
     }
     disk->createDirectories(path_to_clone);
@@ -1631,7 +1644,7 @@ UInt32 IMergeTreeDataPart::getNumberOfRefereneces() const
 }
 
 
-String IMergeTreeDataPart::getZeroLevelPartBlockID(std::string_view token) const
+String IMergeTreeDataPart::getZeroLevelPartBlockID(const std::string_view token) const
 {
     if (info.level != 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get block id for non zero level part {}", name);

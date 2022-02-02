@@ -537,7 +537,7 @@ class UpdatableSession : public UpdatableSessionBase<HTTPSessionPtr>
     using Parent = UpdatableSessionBase<HTTPSessionPtr>;
 
 public:
-    explicit UpdatableSession(
+    UpdatableSession(
         const Poco::URI uri,
         const ConnectionTimeouts & timeouts_,
         const UInt64 max_redirects_)
@@ -557,7 +557,7 @@ class ReadWriteBufferFromHTTP : public detail::ReadWriteBufferFromHTTPBase<std::
     using Parent = detail::ReadWriteBufferFromHTTPBase<std::shared_ptr<UpdatableSession>>;
 
 public:
-        explicit ReadWriteBufferFromHTTP(
+        ReadWriteBufferFromHTTP(
         Poco::URI uri_,
         const std::string & method_,
         OutStreamCallback out_stream_callback_,
