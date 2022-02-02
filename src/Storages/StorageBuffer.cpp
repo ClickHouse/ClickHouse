@@ -199,6 +199,8 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
+        /// TODO: Find a way to support projections for StorageBuffer
+        query_info.ignore_projections = true;
         return destination->getQueryProcessingStage(local_context, to_stage, destination->getInMemoryMetadataPtr(), query_info);
     }
 
@@ -365,9 +367,10 @@ void StorageBuffer::read(
       */
     if (processed_stage > QueryProcessingStage::FetchColumns)
     {
+        /// TODO: Find a way to support projections for StorageBuffer
         auto interpreter = InterpreterSelectQuery(
                 query_info.query, local_context, std::move(pipe_from_buffers),
-                SelectQueryOptions(processed_stage));
+                SelectQueryOptions(processed_stage).ignoreProjections());
         interpreter.buildQueryPlan(buffers_plan);
     }
     else
