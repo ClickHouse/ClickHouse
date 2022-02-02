@@ -217,7 +217,7 @@ void DiskS3::moveFile(const String & from_path, const String & to_path, bool sen
 std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, const ReadSettings & read_settings, std::optional<size_t>, std::optional<size_t>) const
 {
     auto settings = current_settings.get();
-    auto metadata = readMeta(path);
+    auto metadata = readMetadata(path);
 
     LOG_TEST(log, "Read from file by path: {}. Existing S3 objects: {}",
         backQuote(metadata_disk->getPath() + path), metadata.remote_fs_objects.size());
@@ -244,7 +244,6 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, co
 std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, size_t buf_size, WriteMode mode)
 {
     auto settings = current_settings.get();
-    auto metadata = readOrCreateMetaForWriting(path, mode);
 
     /// Path to store new S3 object.
     auto s3_path = getRandomASCIIString();
@@ -265,13 +264,18 @@ std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, 
     auto s3_buffer = std::make_unique<WriteBufferFromS3>(
         settings->client,
         bucket,
-        metadata.remote_fs_root_path + s3_path,
+        remote_fs_root_path + s3_path,
         settings->s3_min_upload_part_size,
         settings->s3_max_single_part_upload_size,
         std::move(object_metadata),
         buf_size);
 
-    return std::make_unique<WriteIndirectBufferFromRemoteFS<WriteBufferFromS3>>(std::move(s3_buffer), std::move(metadata), s3_path);
+    auto create_metadata_callback = [this, path, s3_path, mode] (size_t count)
+    {
+        readOrCreateUpdateAndStoreMetadata(path, mode, false, [s3_path, count] (Metadata & metadata) { metadata.addObject(s3_path, count); return true; });
+    };
+
+    return std::make_unique<WriteIndirectBufferFromRemoteFS<WriteBufferFromS3>>(std::move(s3_buffer), std::move(create_metadata_callback), path);
 }
 
 void DiskS3::createHardLink(const String & src_path, const String & dst_path)
@@ -293,13 +297,7 @@ void DiskS3::createHardLink(const String & src_path, const String & dst_path, bo
         createFileOperationObject("hardlink", revision, object_metadata);
     }
 
-    /// Increment number of references.
-    auto src = readMeta(src_path);
-    ++src.ref_count;
-    src.save();
-
-    /// Create FS hardlink to metadata file.
-    metadata_disk->createHardLink(src_path, dst_path);
+    IDiskRemote::createHardLink(src_path, dst_path);
 }
 
 void DiskS3::shutdown()
@@ -415,7 +413,7 @@ void DiskS3::migrateFileToRestorableSchema(const String & path)
 {
     LOG_TRACE(log, "Migrate file {} to restorable schema", metadata_disk->getPath() + path);
 
-    auto meta = readMeta(path);
+    auto meta = readMetadata(path);
 
     for (const auto & [key, _] : meta.remote_fs_objects)
     {
@@ -871,15 +869,19 @@ void DiskS3::processRestoreFiles(const String & source_bucket, const String & so
         const auto & path = path_entry->second;
 
         createDirectories(directoryPath(path));
-        auto metadata = createMeta(path);
         auto relative_key = shrinkKey(source_path, key);
 
         /// Copy object if we restore to different bucket / path.
         if (bucket != source_bucket || remote_fs_root_path != source_path)
             copyObject(source_bucket, key, bucket, remote_fs_root_path + relative_key, head_result);
 
-        metadata.addObject(relative_key, head_result.GetContentLength());
-        metadata.save();
+        auto updater = [relative_key, head_result] (Metadata & metadata)
+        {
+            metadata.addObject(relative_key, head_result.GetContentLength());
+            return true;
+        };
+
+        createUpdateAndStoreMetadata(path, false, updater);
 
         LOG_TRACE(log, "Restored file {}", path);
     }

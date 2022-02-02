@@ -9,6 +9,8 @@
 namespace DB
 {
 
+using CreateMetadataCallback = std::function<void(size_t bytes_count)>;
+
 /// Stores data in S3/HDFS and adds the object path and object size to metadata file on local FS.
 template <typename T>
 class WriteIndirectBufferFromRemoteFS final : public WriteBufferFromFileDecorator
@@ -16,21 +18,18 @@ class WriteIndirectBufferFromRemoteFS final : public WriteBufferFromFileDecorato
 public:
     WriteIndirectBufferFromRemoteFS(
         std::unique_ptr<T> impl_,
-        IDiskRemote::Metadata metadata_,
-        const String & remote_fs_path_);
+        CreateMetadataCallback && create_callback_,
+        const String & metadata_file_path_);
 
-    virtual ~WriteIndirectBufferFromRemoteFS() override;
+    ~WriteIndirectBufferFromRemoteFS() override;
 
-    void sync() override;
-
-    String getFileName() const override { return metadata.metadata_file_path; }
+    String getFileName() const override { return metadata_file_path; }
 
 private:
     void finalizeImpl() override;
 
-    IDiskRemote::Metadata metadata;
-
-    String remote_fs_path;
+    CreateMetadataCallback create_metadata_callback;
+    String metadata_file_path;
 };
 
 }

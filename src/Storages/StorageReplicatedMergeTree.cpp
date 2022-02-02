@@ -7182,15 +7182,11 @@ bool StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & par
     if (!disk || !disk->supportZeroCopyReplication())
         return true;
 
-    zkutil::ZooKeeperPtr zookeeper = tryGetZooKeeper();
-    if (!zookeeper)
-        return true;
-
-    auto ref_count = part.getNumberOfRefereneces();
+    auto ref_count = disk->getRefCount(fs::path(part.getFullRelativePath()) / IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK);
     if (ref_count > 0) /// Keep part shard info for frozen backups
         return false;
 
-    return unlockSharedDataByID(part.getUniqueId(), getTableSharedID(), name, replica_name, disk, zookeeper, *getSettings(), log,
+    return unlockSharedDataByID(part.getUniqueId(), getTableSharedID(), name, replica_name, disk, getZooKeeper(), *getSettings(), log,
         zookeeper_path);
 }
 
@@ -7203,7 +7199,7 @@ bool StorageReplicatedMergeTree::unlockSharedDataByID(String part_id, const Stri
 
     Strings zc_zookeeper_paths = getZeroCopyPartPath(settings, disk->getType(), table_uuid, part_name, zookeeper_path_old);
 
-    bool res = true;
+    bool part_has_no_more_locks = true;
 
     for (const auto & zc_zookeeper_path : zc_zookeeper_paths)
     {
@@ -7223,7 +7219,7 @@ bool StorageReplicatedMergeTree::unlockSharedDataByID(String part_id, const Stri
         if (!children.empty())
         {
             LOG_TRACE(logger, "Found zookeper locks for {}", zookeeper_part_uniq_node);
-            res = false;
+            part_has_no_more_locks = false;
             continue;
         }
 
@@ -7252,7 +7248,7 @@ bool StorageReplicatedMergeTree::unlockSharedDataByID(String part_id, const Stri
         }
     }
 
-    return res;
+    return part_has_no_more_locks;
 }
 
 
@@ -7660,10 +7656,12 @@ public:
         table_shared_id = storage.getTableSharedID();
     }
 
-    void save(DiskPtr disk, const String & path) const
+    void save(DiskPtr data_disk, const String & path) const
     {
+        auto metadata_disk = data_disk->getMetadataDiskIfExistsOrSelf();
+
         auto file_path = getFileName(path);
-        auto buffer = disk->writeMetaFile(file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+        auto buffer = metadata_disk->writeFile(file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
         writeIntText(version, *buffer);
         buffer->write("\n", 1);
         writeBoolText(is_replicated, *buffer);
@@ -7678,12 +7676,14 @@ public:
         buffer->write("\n", 1);
     }
 
-    bool load(DiskPtr disk, const String & path)
+    bool load(DiskPtr data_disk, const String & path)
     {
+        auto metadata_disk = data_disk->getMetadataDiskIfExistsOrSelf();
         auto file_path = getFileName(path);
-        if (!disk->exists(file_path))
+
+        if (!metadata_disk->exists(file_path))
             return false;
-        auto buffer = disk->readMetaFile(file_path, ReadSettings(), {});
+        auto buffer = metadata_disk->readFile(file_path, ReadSettings(), {});
         readIntText(version, *buffer);
         if (version != 1)
         {
@@ -7704,9 +7704,10 @@ public:
         return true;
     }
 
-    static void clean(DiskPtr disk, const String & path)
+    static void clean(DiskPtr data_disk, const String & path)
     {
-        disk->removeMetaFileIfExists(getFileName(path));
+        auto metadata_disk = data_disk->getMetadataDiskIfExistsOrSelf();
+        metadata_disk->removeFileIfExists(getFileName(path));
     }
 
 private:
@@ -7760,22 +7761,18 @@ bool StorageReplicatedMergeTree::removeSharedDetachedPart(DiskPtr disk, const St
 
     zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
 
-    if (zookeeper)
+    fs::path checksums = fs::path(path) / IMergeTreeDataPart::FILE_FOR_REFERENCES_CHECK;
+    if (disk->exists(checksums))
     {
-        fs::path checksums = fs::path(path) / "checksums.txt";
-        if (disk->exists(checksums))
+        if (disk->getRefCount(checksums) == 0)
         {
-            auto ref_count = disk->getRefCount(checksums);
-            if (ref_count == 0)
-            {
-                String id = disk->getUniqueId(checksums);
-                keep_shared = !StorageReplicatedMergeTree::unlockSharedDataByID(id, table_uuid, part_name,
-                    detached_replica_name, disk, zookeeper, getContext()->getReplicatedMergeTreeSettings(), log,
-                    detached_zookeeper_path);
-            }
-            else
-                keep_shared = true;
+            String id = disk->getUniqueId(checksums);
+            keep_shared = !StorageReplicatedMergeTree::unlockSharedDataByID(id, table_uuid, part_name,
+                detached_replica_name, disk, zookeeper, getContext()->getReplicatedMergeTreeSettings(), log,
+                detached_zookeeper_path);
         }
+        else
+            keep_shared = true;
     }
 
     disk->removeSharedRecursive(path, keep_shared);

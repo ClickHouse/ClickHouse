@@ -1633,16 +1633,8 @@ String IMergeTreeDataPart::getUniqueId() const
     if (!disk->supportZeroCopyReplication())
         throw Exception(fmt::format("Disk {} doesn't support zero-copy replication", disk->getName()), ErrorCodes::LOGICAL_ERROR);
 
-    String id = disk->getUniqueId(fs::path(getFullRelativePath()) / "checksums.txt");
-    return id;
+    return disk->getUniqueId(fs::path(getFullRelativePath()) / FILE_FOR_REFERENCES_CHECK);
 }
-
-
-UInt32 IMergeTreeDataPart::getNumberOfRefereneces() const
-{
-    return volume->getDisk()->getRefCount(fs::path(getFullRelativePath()) / "checksums.txt");
-}
-
 
 String IMergeTreeDataPart::getZeroLevelPartBlockID(std::string_view token) const
 {
