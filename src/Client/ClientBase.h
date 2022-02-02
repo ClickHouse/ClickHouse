@@ -138,6 +138,8 @@ private:
 
     void updateSuggest(const ASTCreateQuery & ast_create);
 
+    void initQueryIdFormats();
+
 protected:
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool is_multiquery = false;

@@ -1485,12 +1485,33 @@ String ClientBase::prompt() const
 }
 
 
+void ClientBase::initQueryIdFormats()
+{
+    if (!query_id_formats.empty())
+        return;
+
+    /// Initialize query_id_formats if any
+    if (config().has("query_id_formats"))
+    {
+        Poco::Util::AbstractConfiguration::Keys keys;
+        config().keys("query_id_formats", keys);
+        for (const auto & name : keys)
+            query_id_formats.emplace_back(name + ":", config().getString("query_id_formats." + name));
+    }
+
+    if (query_id_formats.empty())
+        query_id_formats.emplace_back("Query id:", " {query_id}\n");
+}
+
+
 void ClientBase::runInteractive()
 {
     if (config().has("query_id"))
         throw Exception("query_id could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
     if (print_time_to_stderr)
         throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
+
+    initQueryIdFormats();
 
     /// Initialize DateLUT here to avoid counting time spent here as query execution time.
     const auto local_tz = DateLUT::instance().getTimeZone();
@@ -1511,18 +1532,6 @@ void ClientBase::runInteractive()
         if (home_path_cstr)
             home_path = home_path_cstr;
     }
-
-    /// Initialize query_id_formats if any
-    if (config().has("query_id_formats"))
-    {
-        Poco::Util::AbstractConfiguration::Keys keys;
-        config().keys("query_id_formats", keys);
-        for (const auto & name : keys)
-            query_id_formats.emplace_back(name + ":", config().getString("query_id_formats." + name));
-    }
-
-    if (query_id_formats.empty())
-        query_id_formats.emplace_back("Query id:", " {query_id}\n");
 
     /// Load command history if present.
     if (config().has("history_file"))
@@ -1632,6 +1641,9 @@ void ClientBase::runInteractive()
 
 void ClientBase::runNonInteractive()
 {
+    if (delayed_interactive)
+        initQueryIdFormats();
+
     if (!queries_files.empty())
     {
         auto process_multi_query_from_file = [&](const String & file)
