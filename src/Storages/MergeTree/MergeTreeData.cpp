@@ -1677,7 +1677,7 @@ size_t MergeTreeData::clearOldWriteAheadLogs()
             auto min_max_block_number = MergeTreeWriteAheadLog::tryParseMinMaxBlockNumber(it->name());
             if (min_max_block_number && is_range_on_disk(min_max_block_number->first, min_max_block_number->second))
             {
-                LOG_DEBUG(log, "Removing from filesystem the outdated WAL file " + it->name());
+                LOG_DEBUG(log, "Removing from filesystem the outdated WAL file {}", it->name());
                 disk_ptr->removeFile(relative_data_path + it->name());
                 ++cleared_count;
             }
@@ -2555,7 +2555,7 @@ bool MergeTreeData::renameTempPartAndReplace(
     /// deduplication.
     if (deduplication_log)
     {
-        String block_id = part->getZeroLevelPartBlockID(deduplication_token);
+        const String block_id = part->getZeroLevelPartBlockID(deduplication_token);
         auto res = deduplication_log->addPart(block_id, part_info);
         if (!res.second)
         {
@@ -5918,7 +5918,7 @@ ReservationPtr MergeTreeData::balancedReservation(
             writeCString("\nbalancer: \n", log_str);
             for (const auto & [disk_name, per_disk_parts] : disk_parts_for_logging)
                 writeString(fmt::format("  {}: [{}]\n", disk_name, fmt::join(per_disk_parts, ", ")), log_str);
-            LOG_DEBUG(log, log_str.str());
+            LOG_DEBUG(log, fmt::runtime(log_str.str()));
 
             if (ttl_infos)
                 reserved_space = tryReserveSpacePreferringTTLRules(
