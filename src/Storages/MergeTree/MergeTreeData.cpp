@@ -4646,23 +4646,19 @@ std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAgg
     if (select_query->final())
         return std::nullopt;
 
+    // Currently projections don't support sample yet.
+    if (select_query->sampleSize())
+        return std::nullopt;
+
     // Currently projections don't support ARRAY JOIN yet.
     if (select_query->arrayJoinExpressionList().first)
         return std::nullopt;
 
     // In order to properly analyze joins, aliases should be recognized. However, aliases get lost during projection analysis.
-    // Rewrite JOIN clauses to always true when doing projection analysis.
+    // Let's disable projection if there are any JOIN clauses.
+    // TODO: We need a better identifier resolution mechanism for projection analysis.
     if (select_query->join())
-    {
-        query_ptr = query_ptr->clone();
-        auto & new_select_query = query_ptr->as<ASTSelectQuery &>();
-        auto * table_join = new_select_query.join()->table_join->as<ASTTableJoin>();
-        if (table_join)
-        {
-            table_join->using_expression_list = nullptr;
-            table_join->on_expression = nullptr;
-        }
-    }
+        return std::nullopt;
 
     InterpreterSelectQuery select(
         query_ptr,
