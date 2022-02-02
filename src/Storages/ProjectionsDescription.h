@@ -73,7 +73,7 @@ struct ProjectionDescription
 
     static ProjectionDescription getMinMaxCountProjection(
         const ColumnsDescription & columns,
-        const ASTPtr & partition_columns,
+        ASTPtr partition_columns,
         const Names & minmax_columns,
         const ASTs & primary_key_asts,
         ContextPtr query_context);
