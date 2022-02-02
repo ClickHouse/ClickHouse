@@ -211,7 +211,7 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
         String relative_path = part->relative_path;
         if (disk->exists(path_to_clone + relative_path))
         {
-            LOG_WARNING(log, "Path " + fullPath(disk, path_to_clone + relative_path) + " already exists. Will remove it and clone again.");
+            LOG_WARNING(log, "Path {} already exists. Will remove it and clone again.", fullPath(disk, path_to_clone + relative_path));
             disk->removeRecursive(fs::path(path_to_clone) / relative_path / "");
         }
         disk->createDirectories(path_to_clone);

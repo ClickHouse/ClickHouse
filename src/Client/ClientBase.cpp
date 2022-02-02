@@ -1261,7 +1261,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         for (const auto & query_id_format : query_id_formats)
         {
             writeString(query_id_format.first, std_out);
-            writeString(fmt::format(query_id_format.second, fmt::arg("query_id", global_context->getCurrentQueryId())), std_out);
+            writeString(fmt::format(fmt::runtime(query_id_format.second), fmt::arg("query_id", global_context->getCurrentQueryId())), std_out);
             writeChar('\n', std_out);
             std_out.next();
         }
