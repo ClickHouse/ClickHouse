@@ -70,7 +70,7 @@ public:
         // We'll maintain the maximum among all the observed values until the next prediction turns out to be too wrong.
         if (!hint || observed_size > *hint || observed_size < *hint / 2)
         {
-            LOG_DEBUG(&Poco::Logger::get("Aggregator"), "Statictics updated for key={}: new size_hint={}", params.key, observed_size);
+            LOG_DEBUG(&Poco::Logger::get("Aggregator"), "Statistics updated for key={}: new size_hint={}", params.key, observed_size);
             cache->set(params.key, std::make_shared<size_t>(observed_size));
         }
     }
@@ -234,9 +234,9 @@ void AggregatedDataVariants::init(Type type_, std::optional<size_t> size_hint)
 #define M(NAME, IS_TWO_LEVEL) \
     case Type::NAME: \
         if (size_hint) \
-            NAME = constructWithReserveIfPossible<decltype(NAME)::element_type>(*size_hint); \
+            (NAME) = constructWithReserveIfPossible<decltype(NAME)::element_type>(*size_hint); \
         else \
-            NAME = std::make_unique<decltype(NAME)::element_type>(); \
+            (NAME) = std::make_unique<decltype(NAME)::element_type>(); \
         break;
             APPLY_FOR_AGGREGATED_VARIANTS(M)
 #undef M

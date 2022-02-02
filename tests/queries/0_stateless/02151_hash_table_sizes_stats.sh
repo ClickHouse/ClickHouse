@@ -73,7 +73,7 @@ print_border() {
 }
 
 
-# shellcheck source=../02151_hash_table_sizes_stats.testcases
+# shellcheck source=./02151_hash_table_sizes_stats.testcases
 source "$CURDIR"/02151_hash_table_sizes_stats.testcases
 
 

@@ -499,8 +499,8 @@ class IColumn;
     M(UInt64, insert_shard_id, 0, "If non zero, when insert into a distributed table, the data will be inserted into the shard `insert_shard_id` synchronously. Possible values range from 1 to `shards_number` of corresponding distributed table", 0) \
     \
     M(Bool, collect_hash_table_stats_during_aggregation, true, "Enable collecting hash table statistics to optimize memory allocation", 0) \
-    M(UInt64, max_entries_for_hash_table_stats, 10'000, "How much entries hash table statistics collected during aggregation is allowed to have", 0) \
-    M(UInt64, max_size_to_preallocate_for_aggregation, 10'000'000, "For how much elements it is allowed to preallocate space in a hash table before aggregation", 0) \
+    M(UInt64, max_entries_for_hash_table_stats, 10'000, "How many entries hash table statistics collected during aggregation is allowed to have", 0) \
+    M(UInt64, max_size_to_preallocate_for_aggregation, 10'000'000, "For how many elements it is allowed to preallocate space in a hash table before aggregation", 0) \
     \
     /** Experimental feature for moving data between shards. */ \
     \
