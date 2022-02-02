@@ -2,6 +2,8 @@
 #include <base/getThreadId.h>
 #include <Common/FileCache.h>
 #include <Common/hex.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 #include <filesystem>
 
 namespace DB
@@ -40,7 +42,7 @@ FileSegment::State FileSegment::state() const
 size_t FileSegment::downloadOffset() const
 {
     std::lock_guard segment_lock(mutex);
-    return range().left + downloaded_size - 1;
+    return range().left + downloaded_size;
 }
 
 String FileSegment::getCallerId()
@@ -121,14 +123,23 @@ void FileSegment::write(const char * from, size_t size)
                         "Only downloader can do the downloading. (CallerId: {}, DownloaderId: {})",
                         getCallerId(), downloader_id);
 
+    std::cerr << "\n\n\nWRITE: " << size << ", file info: " << getInfoForLog() << "\n\n\n";
     if (!cache_writer)
     {
         auto download_path = cache->path(key(), offset());
         cache_writer = std::make_unique<WriteBufferFromFile>(download_path);
     }
 
-    cache_writer->write(from, size);
-    cache_writer->next();
+    try
+    {
+        cache_writer->write(from, size);
+        cache_writer->next();
+    }
+    catch (...)
+    {
+        /// TODO: Mark this segment as NO_DOWNLOAD and remove from cache?
+        throw;
+    }
 
     downloaded_size += size;
 }
@@ -330,6 +341,20 @@ void FileSegment::completeImpl(std::lock_guard<std::mutex> & /* segment_lock */)
     }
 
     assert(download_state != FileSegment::State::DOWNLOADED || std::filesystem::file_size(cache->path(key(), offset())) > 0);
+}
+
+String FileSegment::getInfoForLog() const
+{
+    std::lock_guard segment_lock(mutex);
+
+    WriteBufferFromOwnString info;
+    info << "File segment: " << range().toString() << ", ";
+    info << "state: " << download_state << ", ";
+    info << "downloaded size: " << downloaded_size << ", ";
+    info << "downloader id: " << downloader_id << ", ";
+    info << "caller id: " << getCallerId();
+
+    return info.str();
 }
 
 String FileSegment::stateToString(FileSegment::State state)

@@ -115,6 +115,8 @@ public:
 
     void complete(State state, bool error = false);
 
+    String getInfoForLog() const;
+
 private:
     size_t availableSize() const { return reserved_size - downloaded_size; }
     bool lastFileSegmentHolder() const;

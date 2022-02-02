@@ -148,6 +148,8 @@ bool ReadBufferFromS3::nextImpl()
     ProfileEvents::increment(ProfileEvents::S3ReadBytes, working_buffer.size());
     offset += working_buffer.size();
 
+    LOG_TEST(log, "\n\n\nReadBufferFromS3 just read: {}, current offset: {}, read until: {}\n\n\n", working_buffer.size(), offset, read_until_position);
+
     return true;
 }
 
@@ -162,8 +164,8 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
     if (impl && restricted_seek)
         throw Exception(
             ErrorCodes::CANNOT_SEEK_THROUGH_FILE,
-            "Seek is allowed only before first read attempt from the buffer (current offset: {}, new offset: {})",
-            offset, offset_);
+            "Seek is allowed only before first read attempt from the buffer (current offset: {}, new offset: {}, reading until position: {})",
+            offset, offset_, read_until_position);
 
     if (whence != SEEK_SET)
         throw Exception("Only SEEK_SET mode is allowed.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
