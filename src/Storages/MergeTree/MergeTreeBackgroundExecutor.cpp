@@ -97,7 +97,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
     catch (const Exception & e)
     {
         if (e.code() == ErrorCodes::ABORTED)    /// Cancelled merging parts is not an error - log as info.
-            LOG_INFO(log, getCurrentExceptionMessage(false));
+            LOG_INFO(log, fmt::runtime(getCurrentExceptionMessage(false)));
         else
             tryLogCurrentException(__PRETTY_FUNCTION__);
     }
@@ -148,7 +148,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         catch (const Exception & e)
         {
             if (e.code() == ErrorCodes::ABORTED)    /// Cancelled merging parts is not an error - log as info.
-                LOG_INFO(log, getCurrentExceptionMessage(false));
+                LOG_INFO(log, fmt::runtime(getCurrentExceptionMessage(false)));
             else
                 tryLogCurrentException(__PRETTY_FUNCTION__);
         }
