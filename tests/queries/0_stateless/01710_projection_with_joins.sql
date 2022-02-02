@@ -17,5 +17,5 @@ drop table mt;
 drop table if exists j;
 create table j (id1 Int8, id2 Int8, projection p (select id1, id2 order by id2)) Engine=MergeTree order by id1 settings index_granularity = 1;
 insert into j select number, number from numbers(10);
-select id1 as alias1 from j all inner join (select id2 as alias1 from j where id2 in (1, 2, 3)) as t using (alias1) where id2 in (2, 3, 4) settings allow_experimental_projection_optimization = 1, force_optimize_projection = 1;
+select id1 as alias1 from j all inner join (select id2 as alias1 from j where id2 in (1, 2, 3)) as t using (alias1) where id2 in (2, 3, 4) settings allow_experimental_projection_optimization = 1;
 drop table j;
