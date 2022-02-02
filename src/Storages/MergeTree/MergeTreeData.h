@@ -605,6 +605,10 @@ public:
         broken_part_callback(name);
     }
 
+    /// Same as above but has the ability to check all other parts
+    /// which reside on the same disk of the suspicious part.
+    void reportBrokenPart(MergeTreeData::DataPartPtr & data_part) const;
+
     /// TODO (alesap) Duplicate method required for compatibility.
     /// Must be removed.
     static ASTPtr extractKeyExpressionList(const ASTPtr & node)
