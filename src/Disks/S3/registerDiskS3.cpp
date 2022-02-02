@@ -202,7 +202,7 @@ void registerDiskS3(DiskFactory & factory)
 
         s3disk->startup();
 
-        if (config.getBool(config_prefix + ".cache_enabled", true))
+        if (config.getBool(config_prefix + ".cache_enabled", false))
         {
             String cache_path = config.getString(config_prefix + ".cache_path", context->getPath() + "disks/" + name + "/cache/");
             s3disk = wrapWithCache(s3disk, "s3-cache", cache_path, metadata_path);
