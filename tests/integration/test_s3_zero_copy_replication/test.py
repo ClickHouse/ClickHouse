@@ -329,6 +329,7 @@ def test_s3_zero_copy_unfreeze(cluster):
     check_objects_exisis(cluster, objects01)
 
     node1.query("TRUNCATE TABLE unfreeze_test")
+    node2.query("SYSTEM SYNC REPLICA unfreeze_test")
 
     objects11 = node1.get_backuped_s3_objects("s31", "freeze_backup1")
     objects12 = node2.get_backuped_s3_objects("s31", "freeze_backup2")

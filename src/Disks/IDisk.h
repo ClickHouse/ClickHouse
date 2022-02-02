@@ -251,26 +251,19 @@ public:
     /// Applies new settings for disk in runtime.
     virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextPtr, const String &, const DisksMap &) {}
 
-    /// Open the local file for read and return ReadBufferFromFileBase object.
-    /// Overridden in IDiskRemote.
-    /// Used for work with custom metadata.
-    virtual std::unique_ptr<ReadBufferFromFileBase> readMetaFile(
-        const String & path,
-        const ReadSettings & settings,
-        std::optional<size_t> size) const;
-
-    /// Open the local file for write and return WriteBufferFromFileBase object.
-    /// Overridden in IDiskRemote.
-    /// Used for work with custom metadata.
-    virtual std::unique_ptr<WriteBufferFromFileBase> writeMetaFile(
-        const String & path,
-        size_t buf_size,
-        WriteMode mode);
-
-    virtual void removeMetaFileIfExists(const String & path);
+    virtual std::shared_ptr<IDisk> getMetadataDiskIfExistsOrSelf() { return std::static_pointer_cast<IDisk>(shared_from_this()); }
 
     /// Return reference count for remote FS.
-    /// Overridden in IDiskRemote.
+    /// You can ask -- why we have zero and what does it mean? For some unknown reason
+    /// the decision was made to take 0 as "no references exist", but only file itself left.
+    /// With normal file system we will get 1 in this case:
+    /// $ stat clickhouse
+    ///  File: clickhouse
+    ///  Size: 3014014920      Blocks: 5886760    IO Block: 4096   regular file
+    ///  Device: 10301h/66305d   Inode: 3109907     Links: 1
+    /// Why we have always zero by default? Because normal filesystem
+    /// manages hardlinks by itself. So you can always remove hardlink and all
+    /// other alive harlinks will not be removed.
     virtual UInt32 getRefCount(const String &) const { return 0; }
 
 protected:
