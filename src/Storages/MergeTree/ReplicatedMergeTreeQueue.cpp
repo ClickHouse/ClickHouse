@@ -1218,9 +1218,10 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 
             if (replica_to_execute_merge && !merge_strategy_picker.isMergeFinishedByReplica(replica_to_execute_merge.value(), entry))
             {
-                const char * format_str = "Not executing merge for the part {}, waiting for {} to execute merge.";
-                LOG_DEBUG(log, format_str, entry.new_part_name, replica_to_execute_merge.value());
-                out_postpone_reason = fmt::format(format_str, entry.new_part_name, replica_to_execute_merge.value());
+                out_postpone_reason = fmt::format(
+                    "Not executing merge for the part {}, waiting for {} to execute merge.",
+                    entry.new_part_name, replica_to_execute_merge.value());
+                LOG_DEBUG(log, fmt::runtime(out_postpone_reason));
                 return false;
             }
         }
