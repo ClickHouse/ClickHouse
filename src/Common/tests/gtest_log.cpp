@@ -17,7 +17,7 @@ TEST(Logger, Log)
     Poco::Logger * log = &Poco::Logger::get("Log");
 
     /// This test checks that we don't pass this string to fmtlib, because it is the only argument.
-    EXPECT_NO_THROW(LOG_INFO(log, "Hello {} World"));
+    EXPECT_NO_THROW(LOG_INFO(log, fmt::runtime("Hello {} World")));
 }
 
 TEST(Logger, TestLog)
